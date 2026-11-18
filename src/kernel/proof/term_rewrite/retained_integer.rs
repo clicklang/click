@@ -1,5 +1,5 @@
-//! Raw retained Integer arithmetic uses the native walker's substitution and
-//! accounting rules. Scoped folds, matches and other families are integrated
+//! Retained Integer arithmetic, observations and conditionals preserve the
+//! native walker's substitution, selection and accounting rules. Scoped folds, matches and other families are integrated
 //! separately; this entry point does not export an unsupported prefix.
 use super::*;
 
@@ -28,9 +28,21 @@ impl TermRewrite<'_> {
                 }
                 match term.node() {
                     KernelTermNode::Variable(variable) => {
-                        variables.integer.insert(*variable);
+                        if term.ty() == &KernelType::Integer {
+                            variables.integer.insert(*variable);
+                        }
                     }
-                    KernelTermNode::IntegerLiteral(_) => {}
+                    KernelTermNode::IntegerLiteral(_) | KernelTermNode::BoolLiteral(_) => {}
+                    KernelTermNode::IntegerIf { arguments } => {
+                        if self.collected_conditions.is_some() {
+                            // Native IntegerIf also emits its written guard as
+                            // a candidate; common candidate output is separate.
+                            return None;
+                        }
+                        pending.extend(arguments);
+                    }
+                    KernelTermNode::BoolIf { arguments } => pending.extend(arguments),
+                    KernelTermNode::BoolEqual { arguments } => pending.extend(arguments),
                     KernelTermNode::IntegerOperation { arguments, .. } => pending.extend(arguments),
                     KernelTermNode::MachineObservation { operand, .. } => {
                         collect_machine_operand_carriers(
@@ -127,6 +139,36 @@ impl TermRewrite<'_> {
                         term.clone()
                     } else {
                         import.integer(&observed.into())
+                    }
+                }
+                KernelTermNode::IntegerIf { arguments } => {
+                    if self.collected_conditions.is_some() {
+                        return None;
+                    }
+                    if !finish {
+                        self.shared_boolean_operand(&arguments[0])?;
+                        let guard = memo.borrow()[&key(&arguments[0])].clone();
+                        pending.push((term.clone(), true));
+                        if let Some(value) = BooleanOperandView::Shared(&guard).constant() {
+                            pending.push((arguments[if value { 1 } else { 2 }].clone(), false));
+                        } else {
+                            pending.push((arguments[2].clone(), false));
+                            pending.push((arguments[1].clone(), false));
+                        }
+                        continue;
+                    }
+                    let guard = memo.borrow()[&key(&arguments[0])].clone();
+                    if let Some(value) = BooleanOperandView::Shared(&guard).constant() {
+                        memo.borrow()[&key(&arguments[if value { 1 } else { 2 }])].clone()
+                    } else {
+                        let yes = memo.borrow()[&key(&arguments[1])].clone();
+                        let no = memo.borrow()[&key(&arguments[2])].clone();
+                        crate::instrumentation::record_deterministic_work(1);
+                        if yes.integer_native_syntax_equal(&no) {
+                            yes
+                        } else {
+                            KernelTerm::integer_if_raw([guard, yes, no])
+                        }
                     }
                 }
                 KernelTermNode::IntegerOperation {
@@ -293,7 +335,7 @@ mod tests {
     }
 
     #[test]
-    fn partial_integer_dispatch_does_not_admit_exact_mode_or_other_nodes() {
+    fn partial_integer_dispatch_does_not_admit_exact_mode_or_unsupported_guards() {
         let _session = VerificationSession::enter();
         let source = SharedIntegerTerm::from(IntegerTerm::Variable(Variable(991940)));
         let target = SharedIntegerTerm::from(IntegerTerm::constant_i64(7));
@@ -302,7 +344,10 @@ mod tests {
         assert!(exact.shared_integer_operand(&root).is_none());
         assert!(exact.refusal_status().is_none());
         assert!(!root.has_cached_native_argument());
-        let guard = KernelTerm::variable(KernelType::Bool, Variable(991941));
+        let guard = KernelTermImport::default().condition(&ConditionTerm::BoolLoad(
+            ProgramPoint::at(&intern_memory(SymbolicMemory::new())),
+            Box::new(Address::symbolic(Variable(991941))),
+        ));
         let conditional = KernelTerm::integer_if_raw([guard, root.clone(), root.clone()]);
         let renamings = BTreeMap::new();
         let replacement = IntegerTerm::constant_i64(7);
@@ -404,4 +449,248 @@ mod tests {
 #[cfg(test)]
 mod scaling_tests {
     include!("../../../scaling_tests/kernel/proof/term_rewrite/retained_integer.rs");
+}
+
+#[cfg(test)]
+mod conditional_tests {
+    use super::*;
+
+    #[test]
+    fn retained_integer_conditionals_match_native_guard_scope_and_arm_rules() {
+        let _session = VerificationSession::enter();
+        let from = Variable(995100);
+        let other = Variable(995101);
+        let guard = Variable(995102);
+        for condition in [
+            ConditionTerm::Constant(false),
+            ConditionTerm::Constant(true),
+            ConditionTerm::Variable(guard),
+            ConditionTerm::BoolEqual(
+                Box::new(ConditionTerm::Variable(guard)),
+                Box::new(ConditionTerm::Variable(guard)),
+            ),
+        ] {
+            for no in [IntegerTerm::Variable(other), IntegerTerm::constant_i64(3)] {
+                let input = IntegerTerm::If {
+                    condition: Box::new(condition.clone()),
+                    then_term: IntegerTerm::Variable(from).into(),
+                    else_term: no.into(),
+                };
+                let root = KernelTermImport::default().integer(&input.clone().into());
+                for truth in [
+                    ConditionTerm::Constant(false),
+                    ConditionTerm::Constant(true),
+                    ConditionTerm::Variable(Variable(995103)),
+                ] {
+                    let program = BTreeMap::from([(
+                        guard,
+                        TypedProgramValueReplacement::Bitvector(MachineTerm::bool_cast(
+                            MachineIntegerType::UInt8,
+                            truth,
+                        )),
+                    )]);
+                    let integers = BTreeMap::from([(from, IntegerTerm::Variable(other))]);
+                    let algebraic = BTreeMap::new();
+                    let mut baseline =
+                        TermRewrite::for_typed_variables(&program, &integers, &algebraic);
+                    let mut rewrite =
+                        TermRewrite::for_typed_variables(&program, &integers, &algebraic);
+                    for scoped in [false, true, false] {
+                        let a = scoped.then(|| {
+                            baseline.push_program_substitution_scope(guard, Variable(995104))
+                        });
+                        let b = scoped.then(|| {
+                            rewrite.push_program_substitution_scope(guard, Variable(995104))
+                        });
+                        let c = scoped.then(|| {
+                            baseline.push_integer_substitution_scope(from, Variable(995105), false)
+                        });
+                        let d = scoped.then(|| {
+                            rewrite.push_integer_substitution_scope(from, Variable(995105), false)
+                        });
+                        let expected = baseline.integer(&input);
+                        let exports = KernelTermExport::machine_export_count();
+                        let cached = root.has_cached_native_argument();
+                        let actual = rewrite.shared_integer_operand(&root).unwrap();
+                        assert_eq!(KernelTermExport::machine_export_count(), exports);
+                        assert_eq!(root.has_cached_native_argument(), cached);
+                        assert!(!actual.has_cached_native_argument());
+                        assert_eq!(rewrite.changed, baseline.changed);
+                        assert_eq!(rewrite.refusal(), baseline.refusal());
+                        assert_eq!(
+                            rewrite.reserved_variables, baseline.reserved_variables,
+                            "Boolean guard names must not enter Integer source reservation"
+                        );
+                        let actual = KernelTermExport::default().integer(&actual).unwrap();
+                        assert_eq!(
+                            actual.as_ref(),
+                            &expected,
+                            "input={input:?}, scoped={scoped}"
+                        );
+                        assert_eq!(format!("{:?}", actual.as_ref()), format!("{expected:?}"));
+                        if let Some(scope) = d {
+                            rewrite.pop_integer_substitution_scope(scope);
+                        }
+                        if let Some(scope) = c {
+                            baseline.pop_integer_substitution_scope(scope);
+                        }
+                        if let Some(scope) = b {
+                            rewrite.pop_program_substitution_scope(scope);
+                        }
+                        if let Some(scope) = a {
+                            baseline.pop_program_substitution_scope(scope);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn retained_integer_equal_native_arms_keep_the_left_producer() {
+        let _session = VerificationSession::enter();
+        let ProgramValue::Pointer(pointer) =
+            crate::kernel::symbolic_call_result(ProgramType::Int32Pointer, Variable(995120))
+        else {
+            unreachable!("typed pointer")
+        };
+        let calls = [false, true].map(|constant| {
+            IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
+                "retained_if_arm".into(),
+                vec![PureFunctionArgument::Value(ProgramValue::Pointer(
+                    pointer.clone().with_pointee_constant(constant),
+                ))],
+            ))
+        });
+        assert_eq!(calls[0], calls[1]);
+        let arms = calls
+            .clone()
+            .map(|call| KernelTermImport::default().integer(&call.into()));
+        assert_ne!(arms[0], arms[1], "distinct retained pointer qualifiers");
+        let from = Variable(995121);
+        let to = Variable(995122);
+        let input = IntegerTerm::If {
+            condition: Box::new(ConditionTerm::Variable(Variable(995123))),
+            then_term: IntegerTerm::Variable(from).into(),
+            else_term: IntegerTerm::Variable(to).into(),
+        };
+        let root = KernelTermImport::default().integer(&input.clone().into());
+        let program = BTreeMap::new();
+        let integers = BTreeMap::from([(from, calls[0].clone()), (to, calls[1].clone())]);
+        let algebraic = BTreeMap::new();
+        let mut baseline = TermRewrite::for_typed_variables(&program, &integers, &algebraic);
+        let expected = baseline.integer(&input);
+        let mut rewrite = TermRewrite::for_typed_variables(&program, &integers, &algebraic);
+        let actual = rewrite.shared_integer_operand(&root).unwrap();
+        assert_eq!(
+            actual.id(),
+            arms[0].id(),
+            "native equal-arm reduction retains the left producer"
+        );
+        assert!(!root.has_cached_native_argument());
+        assert_eq!(rewrite.refusal(), baseline.refusal());
+        assert_eq!(
+            KernelTermExport::default()
+                .integer(&actual)
+                .unwrap()
+                .as_ref(),
+            &expected
+        );
+    }
+
+    #[test]
+    fn retained_integer_conditionals_skip_unreachable_literal_work_and_preserve_refusal() {
+        let _session = VerificationSession::enter();
+        let large = IntegerTerm::Constant(num_bigint::BigInt::from(1) << 1024usize);
+        let guard = Variable(995140);
+        for truth in [false, true] {
+            for selected_large in [false, true] {
+                let arms = if truth == selected_large {
+                    [large.clone(), IntegerTerm::constant_i64(3)]
+                } else {
+                    [IntegerTerm::constant_i64(3), large.clone()]
+                };
+                let input = IntegerTerm::If {
+                    condition: Box::new(ConditionTerm::Variable(guard)),
+                    then_term: arms[0].clone().into(),
+                    else_term: arms[1].clone().into(),
+                };
+                let root = KernelTermImport::default().integer(&input.clone().into());
+                let program = BTreeMap::from([(
+                    guard,
+                    TypedProgramValueReplacement::Bitvector(MachineTerm::bool_cast(
+                        MachineIntegerType::UInt8,
+                        ConditionTerm::Constant(truth),
+                    )),
+                )]);
+                let integer = BTreeMap::new();
+                let algebraic = BTreeMap::new();
+                let (expected, native_refusal) =
+                    crate::instrumentation::with_run_work_limit(128, || {
+                        let mut rewrite =
+                            TermRewrite::for_typed_variables(&program, &integer, &algebraic);
+                        let result = rewrite.integer(&input);
+                        (result, rewrite.refusal())
+                    });
+                let exports = KernelTermExport::machine_export_count();
+                let (result, refusal, reserved) =
+                    crate::instrumentation::with_run_work_limit(128, || {
+                        let mut rewrite =
+                            TermRewrite::for_typed_variables(&program, &integer, &algebraic);
+                        let result = rewrite.shared_integer_operand(&root);
+                        (result, rewrite.refusal(), rewrite.source_variables_reserved)
+                    });
+                assert!(
+                    reserved,
+                    "both arms' carrier collection completes before guard selection"
+                );
+                assert_eq!(refusal, native_refusal);
+                assert_eq!(
+                    refusal,
+                    selected_large.then_some(RewriteRefusal::WorkExhausted)
+                );
+                assert_eq!(KernelTermExport::machine_export_count(), exports);
+                assert!(!root.has_cached_native_argument());
+                if selected_large {
+                    assert!(result.is_none());
+                } else {
+                    assert_eq!(
+                        KernelTermExport::default()
+                            .integer(&result.unwrap())
+                            .unwrap()
+                            .as_ref(),
+                        &expected
+                    );
+                }
+            }
+        }
+    }
+    #[test]
+    fn retained_dispatch_memos_do_not_widen_machine_input_domains() {
+        let _session = VerificationSession::enter();
+        let roots = [
+            KernelTerm::variable(KernelType::Integer, Variable(995180)),
+            KernelTerm::variable(KernelType::Bool, Variable(995181)),
+        ];
+        let mut rejected_after_caching = Vec::new();
+        for root in roots {
+            let mut rewrite = TermRewrite::empty();
+            assert!(
+                rewrite.shared_machine_operand(&root).is_none(),
+                "cold numeric admission"
+            );
+            if root.ty() == &KernelType::Integer {
+                rewrite.shared_integer_operand(&root).unwrap();
+            } else {
+                rewrite.shared_boolean_operand(&root).unwrap();
+            }
+            rejected_after_caching.push(rewrite.shared_machine_operand(&root).is_none());
+            assert!(rewrite.refusal().is_none());
+        }
+        assert_eq!(
+            rejected_after_caching,
+            vec![true, true],
+            "a retained result is not evidence of numeric input admission"
+        );
+    }
 }

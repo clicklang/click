@@ -612,7 +612,7 @@ sequence below. These rows record planned scope, not completed implementation.
 | 10n | Migrate theorem argument and recorded-state value storage. | Stored arguments and recorded values retain shared operands with unchanged substitution and state selection. | Landed in [PR #3181](https://github.com/clicklang/click/pull/3181); all six pushed commits verified on upstream. Validation and program-point integration evidence below. |
 | 10o | Migrate program-valued resource-field storage. | Program-valued fields retain shared operands while preserving resource identity and substitution. | Landed in [PR #3213](https://github.com/clicklang/click/pull/3213); all pushed commits verified on upstream. Local validation and final 648-check upstream integration passed. |
 | 10p | Migrate remaining expression payloads in sequence/resource descriptors. | Inventory and subdivide independent families before implementation; preserve legitimate opaque descriptor identities. | Complete: 10p1–10p6 landed, with every pushed commit verified upstream. |
-| 10q | Migrate remaining native expression payloads in proposition outputs. | Proposition outputs retain shared operands with unchanged fact identity, raising/lowering and proof admission. | In progress: 10q1–10q3 landed; 10q4a landed in PR #3305. The 10q4b1 carrier prerequisite is locally validated; the 10q4b2 Term schema/retained visitors and 10q4c producer handoffs remain required. |
+| 10q | Migrate remaining native expression payloads in proposition outputs. | Proposition outputs retain shared operands with unchanged fact identity, raising/lowering and proof admission. | In progress: 10q1–10q3 landed; 10q4a landed in PR #3305. The 10q4b1/10q4b2a preparations landed in PR #3322 and observations in PR #3334; logical/Integer conditional rewriting is locally validated. The full 10q4b2 Term schema/retained visitors and 10q4c producer handoffs remain required. |
 | 10r | Remove obsolete machine compatibility caches and reverse bridges. | Remove only after their live readers migrate; account for any retained reader and reason. | Planned; after affected consumers. |
 | 10s | Remove obsolete Boolean, float and algebraic compatibility caches. | Remove only after their live readers migrate; preserve explicit native input/output boundaries. | Planned; after affected consumers. |
 | 10t | Closure audit: account for every remaining native adapter and remove dead APIs. | Inventory every remaining adapter/cache/native expression field with a live consumer and reason, remove dead APIs, and report any unresolved migration gaps. | Planned; final audit. |
@@ -1618,7 +1618,9 @@ equality and predicate `Term` payloads remain assigned to 10q4.
 | 10q4b1 | Exact carrier contracts (preparation) | PR #3322 merged as `5376cb9a7`; all three pushed commits were verified upstream. Exact carrier contracts landed; the Term schema remains required. |
 | 10q4b2 | Term schema and retained visitors | Retain roots in the five expression-bearing Term fields; extend selected-root dispatch and source/binder reservation, preserving exact native identity, scope, refusals and substitution. |
 | 10q4b2a | Raw retained Integer arithmetic (preparation) | Landed with 10q4b1 in PR #3322. Literal/variable/six-operator substitution is prepared; exact-source mode, other node families and the Term dispatch switch remain required. |
-| 10q4b2b | Retained machine observations (preparation) | Reuse the shared numeric child walker and existing observation/retain/rekey policy, preserving literal readings, width, read scope and nonliteral no-op roots. |
+| 10q4b2b | Retained machine observations (preparation) | PR #3334 merged as `0a11ab053`; all three pushed commits were verified upstream. Numeric child rewriting and observation/retain/rekey policy preserve literal readings, width, read scope and nonliteral no-op roots. |
+| 10q4b2c | Retained Boolean value connectives (preparation) | Reuse the active rewrite scope for literal/variable leaves and shared BoolIf/BoolEqual reconstruction; preserve native checking/raw constructor, scope and refusal rules. |
+| 10q4b2d | Retained Integer conditionals (preparation) | Reserve both arms, rewrite the guard in the active scope, visit the selected arm and preserve native equal-arm/refusal rules; memoized guard prefixes keep mixed DAG work bounded. |
 | 10q4c | Equality and predicate producers | Forward actual evaluated roots into the carriers, close the producer inventory, and verify proof/refusal, fact stability and scaling parity. |
 
 Sequence and pointer-offset descriptors retain the operands migrated in their
@@ -1659,9 +1661,9 @@ explicit non-admission of exact-source mode and other nodes all passed. Existing
 default replacement import matched the native observation oracle and was not
 changed. Four focused checks, 222 affected checks, all 1,952 regular scaling
 checks and quality passed; nightly was excluded. This is preparation, not a
-Term schema or production dispatch switch. Exact-source/read-through matching,
-conditionals, calls, observation inputs, folds, matches and other payload
-families remain part of the required integration.
+Term schema or production dispatch switch. Subsequent preparations below
+admit observations and conditionals; exact-source/read-through matching,
+calls, folds, matches and other payload families remain required.
 
 10q4b2b admits MachineObservation in that staged Integer dispatcher. Numeric
 children use the existing shared machine walker; observation reading, retain
@@ -1672,11 +1674,10 @@ substitutions. Growing ordinary numeric DAGs remain shared without export;
 existing selected conversion/Fold/Match adapters are unchanged and remain
 assigned to 10r–10t. All six focused checks, 281 affected checks, all 1,953
 regular scaling checks and quality passed. Nightly was excluded. This remains
-an inactive preparation entry point. Integer conditionals need a same-scope
-retained logical guard walker; exporting a whole common guard is not the
-substitute. Exact-source
-matching, remaining families, the actual Term schema and 10q4c producer
-handoffs remain required.
+an inactive preparation entry point. The subsequent logical/Integer conditional
+preparations supply its same-scope retained guard path. Exact-source matching,
+remaining families, the actual Term schema and 10q4c producer handoffs remain
+required.
 
 After integrating upstream `989ad800d`, all 326 affected checks, all 1,953
 regular scaling checks, three selected regular proof fixtures with fact auditing,
@@ -1684,6 +1685,43 @@ and quality passed. The fixtures cover hosted-stream opacity, null-pointer
 fold requirements and signed literal divisor conditionals. No term or path
 changes were recorded. The local C exporter was rebuilt to match upstream;
 full nightly was excluded.
+
+10q4b2c adds an inactive, explicitly bounded retained Boolean value walker.
+Literal and variable leaves use the same active native rewrite scope, while
+`map_boolean_with_connectives` memoizes the selected shared connective DAG.
+Existing constructors preserve guard selection, equal-arm folding and raw
+connectives in Integer-exact mode. Native/root substitution and changed-flag
+parity, lexical shadowing, checked source-collection refusal, and growing
+changed/no-op DAG retention passed all five focused checks. Compatibility
+reads follow the retention assertions. After integration with upstream
+`989ad800d`, all five focused checks, 366 affected checks, all 1,954 regular
+scaling checks and quality passed; nightly was excluded. Native UInt8 Boolean
+constants are admitted, while ordinary Int32
+zero/one truth-word replacements remain explicit non-admission cases alongside
+symbolic scalar replacements. Scalar predicate/application/read leaves,
+compound exact/cited/collected guard lookup, remaining Integer families, the
+full Term schema and actual 10q4c producer handoffs remain required. No whole common
+guard is exported to substitute for a missing retained dispatch.
+
+10q4b2d admits Integer conditionals in the staged retained walker. Source
+reservation visits both arms and keeps Boolean names out of the Integer
+carrier domain. Guard rewriting uses the same active scope; a constant guard
+visits only its selected Integer arm. Equal-arm reduction reuses the unchanged
+IntegerResult syntax comparison as a shared internal utility, including its
+existing selected leaf bridges assigned to 10r–10t. The Boolean mapper can
+reuse nodes from the existing scope-keyed rewrite memo across different guard
+roots sharing prefixes. Lookup, collection and exact modes disable cached-node
+reuse, preserving native callback effects. Deferred compound guard modes stay
+explicitly unadmitted. The numeric walker's existing input-type gate now
+precedes memo lookup, so cached Integer/Boolean results cannot widen numeric
+admission; a regression failed for both domains before this fix. Native/root
+scope and DTO parity, distinct left-producer retention, unreachable large
+literal work/refusal, callback replay and mixed guard/Integer DAG work passed.
+After integration with upstream `0a11ab053`, all 23 focused checks, 373 affected
+checks, all 1,959 regular scaling checks and quality passed; nightly was
+excluded. Exact-source Integer matching, scalar/whole-guard logical modes,
+remaining node families, the actual Term schema and producer handoffs remain
+required.
 
 The required 10q4b2 integration checklist is:
 

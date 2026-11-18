@@ -548,6 +548,17 @@ impl KernelTerm {
 
     pub(crate) fn map_boolean_with_connectives<E>(
         &self,
+        leaf: impl FnMut(&Self) -> Result<Self, E>,
+        connective: impl FnMut(&Self, &[Self]) -> Result<Self, E>,
+    ) -> Result<Self, E> {
+        self.map_boolean_with_connectives_cached(|_| None, leaf, connective)
+    }
+
+    /// The caller's active-scope memo can stop at an already rewritten common
+    /// prefix. The per-call memo still shares all newly visited connectives.
+    pub(crate) fn map_boolean_with_connectives_cached<E>(
+        &self,
+        mut cached: impl FnMut(&Self) -> Option<Self>,
         mut leaf: impl FnMut(&Self) -> Result<Self, E>,
         mut connective: impl FnMut(&Self, &[Self]) -> Result<Self, E>,
     ) -> Result<Self, E> {
@@ -555,6 +566,10 @@ impl KernelTerm {
         let mut pending = vec![(self, false)];
         while let Some((term, finish)) = pending.pop() {
             if rewritten.contains_key(&term.id()) {
+                continue;
+            }
+            if let Some(result) = cached(term) {
+                rewritten.insert(term.id(), result);
                 continue;
             }
             crate::instrumentation::record_deterministic_work(1);
