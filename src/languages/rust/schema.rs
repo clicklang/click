@@ -723,8 +723,13 @@ pub enum MirTerminator {
     /// `destination = Box::new(source)`: allocate the record on the heap,
     /// move the record local `source` into it, and make `destination` its
     /// address. A failed allocation aborts the process, so it never returns.
+    /// Without a `source`, `Box::new(R { a, b })` writes `fields`, the
+    /// record's field values in order, into the allocation itself.
     BoxNew {
-        source: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        source: Option<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        fields: Vec<Expression>,
         record: String,
         destination: String,
         target: usize,

@@ -417,11 +417,16 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
             // record moves into a live block, and the box is its address.
             T::BoxNew {
                 source,
+                fields,
                 record,
                 destination,
                 ..
             } => {
-                check(source, record)?;
+                if let Some(source) = source {
+                    check(source, record)?;
+                } else if fields.is_empty() {
+                    return Err("Box::new without its record".into());
+                }
                 let layout = cx
                     .layouts
                     .get(record.as_str())
@@ -443,14 +448,22 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                         object_type: class,
                         ends_program_on_failure: true,
                     },
-                    crate::kernel::program_copy_aggregate(
-                        crate::kernel::program_expression::variable(cx.binding(&destination)),
-                        crate::kernel::program_expression::cast(
-                            crate::kernel::program_expression::variable(cx.binding(&source)),
-                            ProgramType::Int32Pointer,
+                    match source {
+                        Some(source) => crate::kernel::program_copy_aggregate(
+                            crate::kernel::program_expression::variable(cx.binding(destination)),
+                            crate::kernel::program_expression::cast(
+                                crate::kernel::program_expression::variable(cx.binding(source)),
+                                ProgramType::Int32Pointer,
+                            ),
+                            layout.to_kernel_aggregate_layout(),
                         ),
-                        layout.to_kernel_aggregate_layout(),
-                    ),
+                        None => write_fields(
+                            cx,
+                            crate::kernel::program_expression::variable(cx.binding(destination)),
+                            record,
+                            fields,
+                        )?,
+                    },
                 )
             }
             // A non-null box's record is dropped through its glue before
@@ -838,41 +851,12 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                     fields,
                 } => {
                     check(target, record)?;
-                    let r = cx
-                        .records
-                        .get(record.as_str())
-                        .ok_or("unknown constructor record")?;
-                    if fields.len() != r.fields.len() {
-                        return Err("partial record initialization".into());
-                    }
-                    let mut initialize = program_skip();
-                    let record_fields = r.fields.clone();
-                    for (value, field) in fields.iter().zip(&record_fields) {
-                        let address = crate::kernel::program_expression::pointer_offset_bytes(
-                            crate::kernel::program_expression::variable(cx.binding(&target)),
-                            field.offset,
-                        );
-                        let write = if let Type::Array { element, length } = &field.value_type {
-                            cx.assign_array_region(
-                                address,
-                                scalar_type(element)?.to_kernel_type(),
-                                *length,
-                                value,
-                            )?
-                        } else {
-                            let (prefix, value) = cx.prepared_expr(value)?;
-                            program_seq(
-                                prefix,
-                                program_typed_store(
-                                    address,
-                                    value,
-                                    scalar_type(&field.value_type)?.to_kernel_type(),
-                                ),
-                            )
-                        };
-                        initialize = program_seq(initialize, write);
-                    }
-                    initialize
+                    write_fields(
+                        cx,
+                        crate::kernel::program_expression::variable(cx.binding(target)),
+                        record,
+                        fields,
+                    )?
                 }
                 S::Move {
                     target,
@@ -1016,6 +1000,51 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
         None,
     )?;
     Ok(Sited::unsited(declarations).then(structured))
+}
+
+/// Writes a record's field values, in order, at the record object `base`:
+/// each scalar field by a typed store, each array field from the array
+/// value itself, `[v; n]` or `[a, b]`, or from the array it copies.
+fn write_fields(
+    cx: &mut Context<'_>,
+    base: ProgramExpression,
+    record: &str,
+    fields: &[E],
+) -> Result<ProgramStatement, String> {
+    let record_fields = cx
+        .records
+        .get(record)
+        .ok_or("unknown constructor record")?
+        .fields
+        .clone();
+    if fields.len() != record_fields.len() {
+        return Err("partial record initialization".into());
+    }
+    let mut initialize = program_skip();
+    for (value, field) in fields.iter().zip(&record_fields) {
+        let address =
+            crate::kernel::program_expression::pointer_offset_bytes(base.clone(), field.offset);
+        let write = if let Type::Array { element, length } = &field.value_type {
+            cx.assign_array_region(
+                address,
+                scalar_type(element)?.to_kernel_type(),
+                *length,
+                value,
+            )?
+        } else {
+            let (prefix, value) = cx.prepared_expr(value)?;
+            program_seq(
+                prefix,
+                program_typed_store(
+                    address,
+                    value,
+                    scalar_type(&field.value_type)?.to_kernel_type(),
+                ),
+            )
+        };
+        initialize = program_seq(initialize, write);
+    }
+    Ok(initialize)
 }
 
 fn successors(t: &T, exit: usize) -> Vec<usize> {
