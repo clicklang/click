@@ -66,7 +66,7 @@ fn tail_byte(bytes: &[u8]) -> u8 {
 } by {
     have bytes.len() % 4u64 == 3u64;
     have bytes.len() - bytes.len() % 4u64 == 4u64;
-    step_until(statement(2));
+    step_until(assignment(tail, 0)); step(); step();
     have tail.len() == 3u64;
     have tail == bytes + 4u64;
     step_until(function.exit);
