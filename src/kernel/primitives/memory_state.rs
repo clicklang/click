@@ -10101,6 +10101,20 @@ impl ExecutionState {
         self
     }
 
+    /// Use a temporary view that only names cells at this state's observation
+    /// point. Settle the source's pending steps first, then discard the naming
+    /// entries from the temporary view's path log.
+    pub(crate) fn with_materialized_memory_at_current_point(
+        mut self,
+        mut memory: SymbolicMemory,
+    ) -> Self {
+        if self.memory.pending_steps.is_some() {
+            self.point = self.program_point().path_link().clone();
+        }
+        memory.pending_steps = None;
+        self.with_materialized_memory(memory)
+    }
+
     /// Replace memory through the single checked-state transition hook.
     /// Keeping this beside `with_memory` prevents evaluator paths that already
     /// own a mutable state from bypassing resource-observation invalidation.
