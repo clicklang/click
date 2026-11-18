@@ -81,6 +81,7 @@ pub struct LocalBindingId(Arc<LocalDeclaration>);
 enum LocalBindingKind {
     Source,
     Temporary,
+    PreparedArgument,
     LoopEscape,
     EnumerateCount,
 }
@@ -118,10 +119,18 @@ impl LocalBindingId {
     }
     /// A frontend temporary is distinct from all source declaration ordinals.
     pub(crate) fn temporary(owner: LocalFunctionId, ordinal: u32) -> Self {
+        Self::frontend_temporary(owner, ordinal, LocalBindingKind::Temporary)
+    }
+
+    pub(crate) fn prepared_argument(owner: LocalFunctionId, ordinal: u32) -> Self {
+        Self::frontend_temporary(owner, ordinal, LocalBindingKind::PreparedArgument)
+    }
+
+    fn frontend_temporary(owner: LocalFunctionId, ordinal: u32, kind: LocalBindingKind) -> Self {
         Self(Arc::new(LocalDeclaration {
             owner,
             parameter: false,
-            kind: LocalBindingKind::Temporary,
+            kind,
             ordinal,
             scope_depth: 0,
             spelling: None,
@@ -163,7 +172,11 @@ impl LocalBindingId {
     }
 
     pub fn is_temporary(&self) -> bool {
-        self.0.kind == LocalBindingKind::Temporary
+        matches!(self.0.kind, LocalBindingKind::Temporary | LocalBindingKind::PreparedArgument)
+    }
+
+    pub(crate) fn is_prepared_argument(&self) -> bool {
+        self.0.kind == LocalBindingKind::PreparedArgument
     }
     pub(crate) fn with_scope_depth(self, scope_depth: u32) -> Self {
         Self(Arc::new(LocalDeclaration {
@@ -258,6 +271,7 @@ impl Hash for LocalBindingId {
             LocalBindingKind::Temporary => (&self.0.owner, 2u8, self.0.ordinal).hash(state),
             LocalBindingKind::LoopEscape => (&self.0.owner, 3u8, self.0.ordinal).hash(state),
             LocalBindingKind::EnumerateCount => (&self.0.owner, 4u8, self.0.ordinal).hash(state),
+            LocalBindingKind::PreparedArgument => (&self.0.owner, 5u8, self.0.ordinal).hash(state),
         }
     }
 }

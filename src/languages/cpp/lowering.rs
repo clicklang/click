@@ -1793,7 +1793,10 @@ impl LoweringContext<'_> {
                 conversions,
             } => {
                 let target = self.call_name(callee, arguments)?;
-                let (prefix, arguments) = self.normalize_arguments(arguments)?;
+                let (prefix, arguments, temporaries) = self.normalize_temporary_arguments(
+                    arguments,
+                    arguments.iter().any(CppCallArgument::is_opaque_copy),
+                )?;
                 // Keep the callee's own type until the source conversion
                 // reads the value, including reference loads.
                 let capture_type = cpp_return_scalar_type(value_type)?;
@@ -1829,6 +1832,14 @@ impl LoweringContext<'_> {
                     } else {
                         (self.coerced(call), raw)
                     };
+                let operation = if temporaries.is_empty() {
+                    operation
+                } else {
+                    program_seq(
+                        operation,
+                        program_end_automatic_lifetimes(temporaries.into_iter().rev().collect()),
+                    )
+                };
                 let mut result_type = capture_type;
                 for conversion in conversions {
                     if conversion.cast_kind == super::CppScalarCastKind::ReferenceLoad {
@@ -1941,26 +1952,27 @@ impl LoweringContext<'_> {
                         "C++ record temporaries require a statement-call full expression".into(),
                     );
                 }
-                let (callee, arguments, value_type, constructor) = match argument {
+                let (callee, arguments, value_type, constructor, opaque_copy) = match argument {
                     CppCallArgument::Construct {
                         callee,
                         arguments,
                         value_type,
+                        opaque_copy,
                         ..
-                    } => (callee, arguments, value_type, true),
+                    } => (callee, arguments, value_type, true, *opaque_copy),
                     CppCallArgument::Call {
                         callee,
                         arguments,
                         value_type,
                         ..
-                    } => (callee, arguments, value_type, false),
+                    } => (callee, arguments, value_type, false, false),
                     _ => unreachable!(),
                 };
                 let CppType::Record { name, .. } = value_type else {
                     unreachable!()
                 };
                 let layout = self.record_layout(name)?;
-                let capture = self.fresh_aggregate_capture(name)?;
+                let capture = self.fresh_aggregate_capture_with(name, opaque_copy)?;
                 let (prefix, mut actual, inner_temporaries) =
                     self.normalize_temporary_arguments(arguments, true)?;
                 temporaries.extend(inner_temporaries);
@@ -2214,12 +2226,25 @@ impl LoweringContext<'_> {
     }
 
     fn fresh_temporary(&mut self, program_type: ProgramType) -> Result<BindingName, String> {
+        self.fresh_temporary_with(program_type, false)
+    }
+
+    fn fresh_temporary_with(
+        &mut self,
+        program_type: ProgramType,
+        prepared_argument: bool,
+    ) -> Result<BindingName, String> {
         let ordinal = self.next_temporary;
         self.next_temporary = ordinal
             .checked_add(1)
             .ok_or("C++ temporary ordinal overflow")?;
         crate::instrumentation::record_deterministic_work(1);
-        let id = LocalBindingId::temporary(self.temporary_owner.clone(), ordinal);
+        let owner = self.temporary_owner.clone();
+        let id = if prepared_argument {
+            LocalBindingId::prepared_argument(owner, ordinal)
+        } else {
+            LocalBindingId::temporary(owner, ordinal)
+        };
         id.initialize_program_type(program_type);
         Ok(id.into())
     }
@@ -2234,7 +2259,15 @@ impl LoweringContext<'_> {
     }
 
     fn fresh_aggregate_capture(&mut self, record: &str) -> Result<BindingName, String> {
-        let binding = self.fresh_temporary(ProgramType::Int32Pointer)?;
+        self.fresh_aggregate_capture_with(record, false)
+    }
+
+    fn fresh_aggregate_capture_with(
+        &mut self,
+        record: &str,
+        prepared_argument: bool,
+    ) -> Result<BindingName, String> {
+        let binding = self.fresh_temporary_with(ProgramType::Int32Pointer, prepared_argument)?;
         binding
             .local_id()
             .expect("temporary identity")

@@ -184,3 +184,54 @@ fn typed_contract_exception_lookup_and_update_skip_unrelated_locals() {
         "direct binding operations: {samples:?}"
     );
 }
+
+#[test]
+fn prepared_argument_checks_lookup_only_the_live_destination_and_its_resources() {
+    let mut samples = Vec::new();
+    for count in [16, 128, 512] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let function = LocalFunctionId::new(None, "prepared".into());
+        let name = BindingName::from(LocalBindingId::prepared_argument(function.clone(), 0));
+        let address = SymbolicMemory::local_lifetime_pointer(1, &name);
+        let layout = AggregateLayout::new(4, 4, Vec::new());
+        let memory = SymbolicMemory::new().with_block(address.base.clone(), 4);
+        let mut state = ExecutionState::new();
+        state.set_memory(memory);
+        state.locals.set_aggregate_object_at(name.clone(), layout.clone(), address.clone());
+        let token = |key: Address, index: u32| {
+            ResourceFact::own_token(
+                "logical_state".into(),
+                vec![ProgramValue::typed_pointer(key, ProgramType::UInt8Pointer), int32(index)],
+            )
+        };
+        let mut resources = ResourceContext::new();
+        for index in 0..count {
+            let other = BindingName::from(LocalBindingId::prepared_argument(
+                function.clone(),
+                index + 1,
+            ));
+            let other_address = SymbolicMemory::local_lifetime_pointer(1, &other);
+            state.locals.set_aggregate_object_at(
+                other,
+                layout.clone(),
+                other_address.clone(),
+            );
+            resources = resources.unchecked_with_fact(token(other_address, 0));
+        }
+        let hit = (0..count).fold(resources.clone(), |resources, index| {
+            resources.unchecked_with_fact(token(address.clone(), index))
+        });
+        let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+            assert!(is_prepared_aggregate_argument(&state, &address, &layout));
+            assert!(!is_prepared_aggregate_argument(
+                &state,
+                &address.offset_by_bytes(1),
+                &layout,
+            ));
+            assert!(resources.prepared_argument_resource_name(&address.base).is_none());
+            assert!(hit.prepared_argument_resource_name(&address.base).is_some());
+        });
+        samples.push(work);
+    }
+    assert_eq!(samples, [samples[0]; 3]);
+}

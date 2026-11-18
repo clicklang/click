@@ -829,6 +829,25 @@ pub(super) fn append_string_literal_loadable_facts(
     }
 }
 
+/// The only aggregate arguments whose constructor has already initialized
+/// the parameter object itself are frontend-created prepared destinations.
+/// Verify the address is the caller's live destination, so an ordinary
+/// by-value copy inside the callee cannot reuse its parameter.
+pub(super) fn is_prepared_aggregate_argument(
+    caller: &ExecutionState,
+    address: &Address,
+    layout: &AggregateLayout,
+) -> bool {
+    let Some(binding) = address.base.prepared_argument_binding() else {
+        return false;
+    };
+    let name = BindingName::from(binding.clone());
+    crate::instrumentation::record_deterministic_work(1);
+    caller.locals.slot(&name) == Some(address)
+        && caller.locals.aggregate_layout(&name) == Some(layout)
+        && caller.memory.has_block(&address.base)
+}
+
 pub(in crate::kernel) fn bind_program_function_arguments(
     caller_state: &ExecutionState,
     function: &ProgramFunction,
@@ -958,6 +977,14 @@ fn bind_program_function_arguments_impl(
                 return None;
             }
             let source = pointer.address().clone();
+            if is_prepared_aggregate_argument(caller_state, &source, layout) {
+                callee_state.locals.set_aggregate_object_at(
+                    parameter.binding_name().clone(),
+                    layout.clone(),
+                    source,
+                );
+                continue;
+            }
             let slot = SymbolicMemory::frame_local_pointer(frame, parameter.binding_name());
             register_block_alignment(&slot.base, layout.alignment_bytes());
             // A proof's input object holds its own entry values: each field
@@ -1136,6 +1163,14 @@ pub(super) fn bind_contract_arguments(
                 return None;
             }
             let source = pointer.address().clone();
+            if is_prepared_aggregate_argument(caller_state, &source, layout) {
+                callee_state.locals.set_aggregate_object_at(
+                    parameter.binding_name().clone(),
+                    layout.clone(),
+                    source,
+                );
+                continue;
+            }
             let slot = SymbolicMemory::frame_local_pointer(frame, parameter.binding_name());
             register_block_alignment(&slot.base, layout.alignment_bytes());
             callee_state.set_memory(copy_aggregate_fields(

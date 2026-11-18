@@ -908,12 +908,15 @@ pub enum CppCallArgument {
         value_type: CppType,
         span: CppSpan,
     },
-    /// A resolved trivial prvalue constructed for a by-value argument.
+    /// A resolved constructor for a trivially destructible by-value argument.
     Construct {
         callee: CppFunctionReference,
         arguments: Vec<CppCallArgument>,
         value_type: CppType,
         span: CppSpan,
+        /// Bind the parameter to the object initialized by an opaque copy contract.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        opaque_copy: bool,
     },
 }
 
@@ -4032,7 +4035,10 @@ impl CppStatement {
                 cleanups,
                 span,
             } => {
-                validate_call(callee, arguments, span, places, records, logical_source)?;
+                validate_call_in_context(
+                    callee, arguments, span, places, records, logical_source, false,
+                    arguments.iter().any(CppCallArgument::is_opaque_copy),
+                )?;
                 validate_scalar_conversions(conversions, value_type, logical_source)?;
                 require_return_value_type(value_type, "return-call value")?;
                 for cleanup in cleanups {
@@ -4299,7 +4305,10 @@ impl CppInitializer {
                 },
                 CppType::Integer { .. } | CppType::Enumeration { .. } | CppType::Pointer { .. },
             ) => {
-                validate_call(callee, arguments, span, places, records, logical_source)?;
+                validate_call_in_context(
+                    callee, arguments, span, places, records, logical_source, false,
+                    arguments.iter().any(CppCallArgument::is_opaque_copy),
+                )?;
                 validate_scalar_conversions(conversions, local_type, logical_source)
             }
             (
@@ -4555,6 +4564,10 @@ fn checked_boolean_condition(
 }
 
 impl CppCallArgument {
+    pub(super) fn is_opaque_copy(&self) -> bool {
+        matches!(self, Self::Construct { opaque_copy: true, .. })
+    }
+
     pub(super) fn is_record_temporary(&self) -> bool {
         matches!(
             self,
@@ -4642,6 +4655,7 @@ impl CppCallArgument {
                 arguments,
                 value_type,
                 span,
+                opaque_copy,
             } => {
                 let CppType::Record {
                     declaration_id,
@@ -4654,7 +4668,11 @@ impl CppCallArgument {
                     );
                 };
                 validate_trivial_record_value(records, declaration_id, name)?;
-                if arguments
+                if *opaque_copy {
+                    if !matches!(arguments.as_slice(), [Self::Reference { .. }]) {
+                        return Err("C++ opaque copy construction requires a single lvalue reference argument".into());
+                    }
+                } else if arguments
                     .iter()
                     .any(|argument| !matches!(argument, Self::Value { .. }))
                 {
@@ -5855,7 +5873,10 @@ fn validate_reachable_calls(
                     records,
                 )?;
             }
-            CollectedCall::ReturnedConstructor { value_type, .. } => {
+            CollectedCall::ReturnedConstructor { value_type, opaque_copy, .. } => {
+                if opaque_copy && (target.axiom.is_none() || !target.has_nonthrowing_interface()) {
+                    return Err("C++ opaque copy construction requires a nonthrowing opaque constructor interface".into());
+                }
                 let CppFunctionKind::Constructor {
                     record_declaration_id,
                     record_name,
@@ -5873,6 +5894,14 @@ fn validate_reachable_calls(
                 let Some((_, explicit_parameters)) = target.parameters.split_first() else {
                     return Err("C++ returned constructor is missing its object parameter".into());
                 };
+                if opaque_copy
+                    && !matches!(explicit_parameters, [CppPlace {
+                        value_type: CppType::LvalueReference { pointee }, ..
+                    }] if matches!(pointee.as_ref(), CppType::Record { declaration_id, name, .. }
+                        if declaration_id == record_declaration_id && name == record_name))
+                {
+                    return Err("C++ opaque copy constructor must take a reference to its own record type".into());
+                }
                 validate_call_arguments(
                     &places,
                     &target.name,
@@ -6043,6 +6072,7 @@ enum CollectedCall<'a> {
         value_type: &'a CppType,
         callee: &'a CppFunctionReference,
         arguments: &'a [CppCallArgument],
+        opaque_copy: bool,
     },
     MemberConstructor {
         object: &'a CppPlaceReference,
@@ -6114,6 +6144,7 @@ fn collect_calls<'a>(statements: &'a [CppStatement], calls: &mut Vec<CollectedCa
             } => {
                 calls.push(CollectedCall::ReturnedConstructor {
                     value_type,
+                    opaque_copy: false,
                     callee,
                     arguments,
                 });
@@ -6466,6 +6497,7 @@ fn collect_nested_calls<'a>(arguments: &'a [CppCallArgument], calls: &mut Vec<Co
             callee,
             arguments,
             value_type,
+            opaque_copy,
             ..
         } = argument
         {
@@ -6473,6 +6505,7 @@ fn collect_nested_calls<'a>(arguments: &'a [CppCallArgument], calls: &mut Vec<Co
                 callee,
                 arguments,
                 value_type,
+                opaque_copy: *opaque_copy,
             });
             collect_nested_calls(arguments, calls);
         }

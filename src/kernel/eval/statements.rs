@@ -3777,6 +3777,13 @@ pub(in crate::kernel) fn end_scope_automatic_lifetimes(
             continue;
         };
         if slot.base.is_local_block() && memory.has_block(&slot.base) {
+            if slot.base.prepared_argument_binding().is_some()
+                && let Some(resource) = state.resources.prepared_argument_resource_name(&slot.base)
+            {
+                return Err(RuntimeError::FunctionContract(format!(
+                    "C++ by-value argument still holds `{resource}` at the end of the full expression"
+                )));
+            }
             if let Some(error) = state.population_storage_retirement_refusal(&slot.base) {
                 return Err(error);
             }

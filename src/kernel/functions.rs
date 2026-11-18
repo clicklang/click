@@ -11587,11 +11587,14 @@ fn with_private_aggregate_parameter_owners(
     interface: &FunctionContractInterface,
 ) -> ResourceContext {
     // Only the selected parameters, never the caller's unrelated frame.
-    // Argument binding has already allocated each slot independently.
+    // Prepared C++ arguments already belong to the full expression.
+    // Their original owner remains in the caller's transfer frame unless
+    // explicitly selected by the resource interface.
     for parameter in interface.parameters() {
         crate::instrumentation::record_deterministic_work(1);
         if let Some(layout) = parameter.aggregate_layout()
             && let Some(slot) = callee.locals.slot(parameter.binding_name().clone())
+            && slot.base.prepared_argument_binding().is_none()
         {
             resources = resources
                 .unchecked_with_fact(private_aggregate_storage_owner(slot.clone(), layout));
