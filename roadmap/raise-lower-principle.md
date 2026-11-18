@@ -1568,10 +1568,13 @@ checks that held facts are not enumerated, and checks split, borrow, return and
 restoration contents. It covers 16, 64, 256 and 1,024 owners at different selected
 positions. This accepts legitimate tree shapes without permitting ambient
 scans. Deliberate cached-subtree traversal and sorted-fact enumeration each
-failed the new contract. On the 10q3d1 candidate baseline, all 1,944 regular
-scaling checks, 68 affected checks and quality passed. Only test counters and
-test code change; production algorithms and machine output remain unchanged.
-Upstream integration and its affected checks precede publication.
+failed the new contract. On the initial 10q3d1 baseline, all 1,944 regular
+scaling checks and 68 affected checks passed. After integrating upstream
+`d5ca2616e`, all 1,949 regular scaling checks, 1,033 affected regular checks,
+12 new proof fixtures and quality passed. Nightly-only tests remained skipped.
+Only test counters and test code change; production algorithms and machine
+output remain unchanged. Later upstream changes receive affected integration
+checks before publication.
 
 10q3d2 remains part of this family. Its first activation passed 1,942 of
 1,943 scaling checks after the other eight regressions were repaired, but
