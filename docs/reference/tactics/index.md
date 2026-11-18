@@ -2120,18 +2120,17 @@ planning again.
 
 **Form:** `preserve(resource, region);`
 
-A simple tactic for a read-equality or read-definedness goal. Select the resource
-being read and the recorded region across which to preserve it. The exact fact
-`separate(region.footprint, resource)` (in either order) must already be
-available; establish it with `have` first. For evidence at a saved snapshot, write
+A simple tactic for read equality, read definedness, or range viewability.
+Select the resource and the recorded region across which to preserve it. Use
+`have` to establish the exact fact `separate(region.footprint, resource)` in
+either order. For evidence at a saved snapshot, write
 `preserve(at(mark, resource), region)`. Here `at(mark, resource)` is an ordinary
 resource descriptor evaluated at the saved snapshot, just as in `separate` or
 `contains`. Parentheses only group: `(at(mark, resource))` has the same meaning.
-The recorded region endpoints remain fixed. The tactic
-constructs equality of the selected read at the region's exit and entry, in
-that order. It applies one primitive directly, with no premise discovery or
-history search. The current goal selects the read type or named-resource
-field; it must match the constructed equality.
+The tactic applies one primitive using the recorded region endpoints and exact
+facts. For equality goals, it constructs equality of the selected read at the
+exit and entry, in that order. The goal selects the read type or named-resource
+field and must match the constructed equality.
 
 For `defined(read)`, the separated resource must be the complete typed cell.
 The tactic looks up the exact `defined(read)` fact at the footprint's entry
@@ -2140,13 +2139,20 @@ separated cell supplies the address. Missing old definedness is a local refusal,
 not a request to search memory history. This rule preserves definedness; it
 does not establish initialization from ownership or value equality alone.
 
-Use an ordinary `have` to establish this equality, then `rewrite` and
-`known` to carry a proposition across the change. The tactic remains
+For a `viewable(range)` goal, `preserve` accepts a complete footprint from a
+single declaration of fresh local storage without an initializer. Prove
+separation from that footprint and supply the exact entry viewability fact
+for the selected range. The conclusion is a pure live-storage fact for the
+same range at the exit, including for symbolic `uint64` byte ranges.
+
+For equality goals, use an ordinary `have` to establish the equality, then
+`rewrite` and `known` to carry a proposition across the change. The tactic remains
 `preserve(...)` in expansion. Unavailable separation, an unsupported observation,
 or mismatched endpoints is a local refusal. This tactic is distinct from a
 loop's `preserve by { ... }` proof block.
 
-**Checked example:** [`preserve_step_carries_a_fact.md`](https://github.com/clicklang/click/blob/master/mdtests/preserve_step_carries_a_fact.md).
+- Read equality. [`preserve_step_carries_a_fact.md`](https://github.com/clicklang/click/blob/master/mdtests/preserve_step_carries_a_fact.md)
+- Range viewability. [`cstr_plain_char_kernel_requirement_reaches_callee.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_plain_char_kernel_requirement_reaches_callee.md)
 
 `region.footprint` is a resource descriptor, not ownership. Execution records
 writes, call effects, resource changes, and allocation lifetime changes while
@@ -2213,7 +2219,8 @@ no alias or history fallback runs.
 Pointer preservation also accepts address equality when the pointer domains
 already agree. Equality composition uses ordinary `rewrite` and `known` steps.
 Footprints can record non-memory resources, symbolic release spans, and
-multiple mutable call resources. Wide-index memory ranges are not yet supported.
+multiple mutable call resources. Wide-index memory ranges are supported for
+viewability preservation.
 Joined branch/loop footprints still need
 producer integration; use recorded individual transitions where available.
 An unavailable premise, unsupported rule, or mismatched endpoint fails locally.
