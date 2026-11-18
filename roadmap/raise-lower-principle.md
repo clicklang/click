@@ -1038,6 +1038,15 @@ lowerings and zero changed terms or paths); quality passed again. The aggregate
 validation script exited zero. PR delivery follows 10n; full nightly was not run. Live native views, whole-list outputs and identity readers remain
 compatibility consumers for 10r–10t, not proof or search changes.
 
+The subsequent 10p1 parity regression exposed a literal-carrier difference in
+retained program-value substitution (`uint32` wrapping keeps a typed root
+constant). Stored-value substitution now applies the existing native typed
+constructor to that selected literal only, then retains its common root. It
+never exports the surrounding expression. The same helper covers fields and
+sequence elements. All 437 focused checks on the combined 10o/10p1 tree passed,
+including six signed/unsigned 8/16/32-bit field carriers. The full regular corpus
+above predates this final selected-literal fix; CI gates the published tree.
+
 ### 10p Inventory and sequential descriptor families
 
 The owning native expression stores divide into the following independent PRs.
