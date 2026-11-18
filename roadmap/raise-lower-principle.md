@@ -1440,6 +1440,9 @@ passed. All 1,939 regular scaling cases and all 5,623 regular proof fixtures
 passed. Fact stability recorded 121 refusals and zero changed terms/paths;
 quality passed. Full nightly was not run.
 
+After integrating upstream `2ada6bd35`, all 1,143 affected function, execution,
+loadability and memory-reasoning checks passed, followed by quality.
+
 ## Chunk 3: machine-valued pure-function results
 
 Finish the remaining machine-valued call-result boundaries in six sequential
