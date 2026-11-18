@@ -895,7 +895,7 @@ fn collect_condition_carriers(condition: &ConditionTerm, variables: &mut Carrier
         return;
     }
     match condition {
-        ConditionTerm::PointerValueEqual(left, right) => {
+        ConditionTerm::PointerEqual(left, right) => {
             collect_program_value_carriers(&ProgramValue::Pointer((**left).clone()), variables);
             collect_program_value_carriers(&ProgramValue::Pointer((**right).clone()), variables);
         }
@@ -931,14 +931,14 @@ fn collect_condition_carriers(condition: &ConditionTerm, variables: &mut Carrier
                 }
             });
         }
-        ConditionTerm::PointerOffsetEqual(left, right) => {
+        ConditionTerm::AddressOffsetEqual(left, right) => {
             collect_pointer_offset_carriers(left, variables);
             if variables.exhausted() {
                 return;
             }
             collect_pointer_offset_carriers(right, variables);
         }
-        ConditionTerm::PointerEqual(left, right) => {
+        ConditionTerm::AddressEqual(left, right) => {
             collect_pointer_carriers(left, variables);
             if variables.exhausted() {
                 return;
@@ -1090,7 +1090,7 @@ fn collect_bitvector_carriers(term: &MachineTerm, variables: &mut CarrierVariabl
             }
             collect_pointer_carriers(pointer, variables);
         }
-        MachineTerm::PointerAddress(pointer, _) => {
+        MachineTerm::IntegerAddress(pointer, _) => {
             collect_pointer_carriers(pointer, variables);
         }
         MachineTerm::IntegerToMachine { value, .. } => {
@@ -5329,7 +5329,7 @@ impl<'a> TermRewrite<'a> {
                         // Use the same null representation as the original
                         // cast, keeping the displacement outside this block.
                         let result = if let Some(bits) = rewritten.integer_address_bits() {
-                            Address::integer_address(bits.clone()).base
+                            Address::from_integer_address(bits.clone()).base
                         } else {
                             AddressBase::PureFunctionApplication(rewritten)
                         };
@@ -5624,8 +5624,8 @@ impl<'a> TermRewrite<'a> {
                 let right = self.bits(b);
                 if matches!(
                     (&left, &right),
-                    (MachineTerm::PointerAddress(_, _), zero)
-                        | (zero, MachineTerm::PointerAddress(_, _))
+                    (MachineTerm::IntegerAddress(_, _), zero)
+                        | (zero, MachineTerm::IntegerAddress(_, _))
                         if zero.uint64_as_const() == Some(0)
                 ) {
                     // Rewriting can expose a null address after the original
@@ -5645,7 +5645,7 @@ impl<'a> TermRewrite<'a> {
                     }
                 }
             }
-            ConditionTerm::PointerValueEqual(a, b) => {
+            ConditionTerm::PointerEqual(a, b) => {
                 let ProgramValue::Pointer(a) = self.value(&ProgramValue::Pointer((**a).clone()))
                 else {
                     unreachable!()
@@ -5660,12 +5660,12 @@ impl<'a> TermRewrite<'a> {
                         offset: crate::kernel::eval::canonical_offset_term(&p.offset),
                     })
                 };
-                ConditionTerm::pointer_value_equal(canonical(a), canonical(b))
+                ConditionTerm::pointer_equal(canonical(a), canonical(b))
             }
-            ConditionTerm::PointerEqual(a, b) => {
-                ConditionTerm::PointerEqual(Box::new(self.pointer(a)), Box::new(self.pointer(b)))
+            ConditionTerm::AddressEqual(a, b) => {
+                ConditionTerm::AddressEqual(Box::new(self.pointer(a)), Box::new(self.pointer(b)))
             }
-            ConditionTerm::PointerOffsetEqual(a, b) => ConditionTerm::PointerOffsetEqual(
+            ConditionTerm::AddressOffsetEqual(a, b) => ConditionTerm::AddressOffsetEqual(
                 Box::new(self.offset(a)),
                 Box::new(self.offset(b)),
             ),
@@ -5947,7 +5947,7 @@ impl<'a> TermRewrite<'a> {
         if self.checked_work_exhausted() {
             ConditionTerm::Constant(false)
         } else if self.equality_graph.is_some_and(|graph| match &result {
-            ConditionTerm::PointerValueEqual(left, right) => {
+            ConditionTerm::PointerEqual(left, right) => {
                 let matches = self.pointer_context.map_or_else(
                     || {
                         left.provenance() == right.provenance()
@@ -5958,8 +5958,8 @@ impl<'a> TermRewrite<'a> {
                 );
                 matches && graph.are_equal(left.address(), right.address())
             }
-            ConditionTerm::PointerEqual(left, right) => graph.are_equal(left, right),
-            ConditionTerm::PointerOffsetEqual(left, right) => graph.are_offsets_equal(left, right),
+            ConditionTerm::AddressEqual(left, right) => graph.are_equal(left, right),
+            ConditionTerm::AddressOffsetEqual(left, right) => graph.are_offsets_equal(left, right),
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
@@ -6266,7 +6266,7 @@ impl<'a> TermRewrite<'a> {
                 | KernelTermNode::BoolCast { .. }
                 | KernelTermNode::Legacy(_)
                 | KernelTermNode::Call { .. }
-                | KernelTermNode::PointerAddress { .. } => {
+                | KernelTermNode::IntegerAddress { .. } => {
                     if !shared
                         .machine_conversion_leaf()
                         .is_some_and(|leaf| same_payload(self, leaf, native))
@@ -6632,7 +6632,7 @@ impl<'a> TermRewrite<'a> {
                 };
                 crate::kernel::eval::scalar_read_for_exact_cell(&memory, &rewritten, *kind, bytes)
             }
-            MachineTerm::PointerAddress(pointer, class) => {
+            MachineTerm::IntegerAddress(pointer, class) => {
                 MachineTerm::object_pointer_address(self.pointer(pointer), class.class())
             }
             MachineTerm::IntegerToMachine { value, destination } => MachineTerm::IntegerToMachine {
@@ -9336,7 +9336,7 @@ mod pointer_association_boundary_tests {
             value: SharedMachineIntegerTerm::from_shared(ty, root).unwrap(),
             byte_width: 4,
         };
-        let condition = ConditionTerm::PointerOffsetEqual(
+        let condition = ConditionTerm::AddressOffsetEqual(
             Box::new(AddressOffset::Add(
                 Box::new(scaled(left)),
                 Box::new(scaled(right)),

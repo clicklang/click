@@ -114,7 +114,7 @@ fn view_misses_ignore_a_growing_exact_alias_star_in_one_block() {
         });
         for index in 0..size {
             context = context.assume_condition(
-                ConditionTerm::pointer_equal(base.clone(), pointer(830_001 + index)),
+                ConditionTerm::address_equal(base.clone(), pointer(830_001 + index)),
                 true,
             );
         }
@@ -235,7 +235,7 @@ fn selected_views_follow_same_block_aliases_without_walking_the_star() {
                 });
             for index in 0..size {
                 context = context.assume_condition(
-                    ConditionTerm::pointer_equal(source.clone(), pointer(870_001 + index)),
+                    ConditionTerm::address_equal(source.clone(), pointer(870_001 + index)),
                     true,
                 );
             }

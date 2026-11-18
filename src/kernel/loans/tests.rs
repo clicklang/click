@@ -4239,7 +4239,7 @@ fn nested_view_reborrow_accepts_checked_offset_alias_and_preserves_authority() {
     let assumptions = empty
         .clone()
         .assume_condition(
-            crate::kernel::ConditionTerm::pointer_equal(
+            crate::kernel::ConditionTerm::address_equal(
                 alias.clone(),
                 base.offset_by_elements(offset.clone(), 1),
             ),
@@ -4458,7 +4458,7 @@ fn indexed_loan_blocks_write_through_exact_pointer_alias() {
         offset: AddressOffset::Constant(0),
     };
     let assumptions = PureFactContext::new().assume_condition(
-        ConditionTerm::pointer_equal(query_base.clone(), protected_base.clone()),
+        ConditionTerm::address_equal(query_base.clone(), protected_base.clone()),
         true,
     );
     assert!(
@@ -4506,7 +4506,7 @@ fn symbolic_loan_fallback_checks_equal_pointer_alias_buckets() {
         offset: AddressOffset::Variable(Variable(701)),
     };
     let assumptions = PureFactContext::new().assume_condition(
-        ConditionTerm::pointer_equal(query_base.clone(), protected_base.clone()),
+        ConditionTerm::address_equal(query_base.clone(), protected_base.clone()),
         true,
     );
     assert!(
@@ -4681,7 +4681,7 @@ fn indexed_write_witness_keeps_the_least_loan_across_buckets_and_aliases() {
         offset: AddressOffset::Constant(0),
     };
     let facts = PureFactContext::new().assume_condition(
-        ConditionTerm::pointer_equal(
+        ConditionTerm::address_equal(
             alias.clone(),
             original.memory_range().unwrap().base().clone(),
         ),

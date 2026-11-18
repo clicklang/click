@@ -881,7 +881,7 @@ fn pointer_numeric_observations_retain_prepared_dags_without_export() {
                 )
             });
             assert!(
-                matches!(numeric.node(), KernelTermNode::PointerAddress { address: a, .. } if a == &address)
+                matches!(numeric.node(), KernelTermNode::IntegerAddress { address: a, .. } if a == &address)
             );
             assert!(numeric.0.machine_leaf.0.get().is_none());
             assert_eq!(KernelTermExport::machine_export_count(), exports);

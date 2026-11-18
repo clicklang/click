@@ -22,7 +22,7 @@ fn full_pointer_fact_transport_checks_provenance_and_the_whole_read() {
     );
     let fact = |pointer| {
         Proposition::ConditionIs(
-            ConditionTerm::PointerValueEqual(Box::new(pointer), Box::new(rhs.clone())),
+            ConditionTerm::PointerEqual(Box::new(pointer), Box::new(rhs.clone())),
             true,
         )
     };
@@ -57,7 +57,7 @@ fn full_pointer_fact_transport_checks_provenance_and_the_whole_read() {
                 width: MachineTerm::constant(u32::try_from(index + 1).unwrap()),
             }));
             facts = facts.with_fact(Proposition::ConditionIs(
-                ConditionTerm::PointerValueEqual(Box::new(selected.clone()), Box::new(selected)),
+                ConditionTerm::PointerEqual(Box::new(selected.clone()), Box::new(selected)),
                 true,
             ));
         }

@@ -1217,7 +1217,7 @@ impl PointerInRangeEvidence {
                     .find_map(|alias| {
                         let membership = Self::for_pointer_direct(alias, range, assumptions)?;
                         let condition =
-                            ConditionTerm::pointer_equal(pointer.clone(), alias.clone());
+                            ConditionTerm::address_equal(pointer.clone(), alias.clone());
                         crate::kernel::record_implicit_consulted_premises(
                             assumptions,
                             &Proposition::ConditionIs(condition.clone(), true),
@@ -1245,7 +1245,7 @@ impl PointerInRangeEvidence {
                         crate::kernel::record_implicit_consulted_premises(
                             assumptions,
                             &Proposition::ConditionIs(
-                                ConditionTerm::pointer_equal(base.clone(), range.base().clone()),
+                                ConditionTerm::address_equal(base.clone(), range.base().clone()),
                                 true,
                             ),
                         );
@@ -1393,7 +1393,7 @@ impl PointerInRangeEvidence {
         } = self
         {
             return *pointer == base.offset_by_bytes(*bytes)
-                && assumptions.exact_condition_value(&ConditionTerm::pointer_equal(
+                && assumptions.exact_condition_value(&ConditionTerm::address_equal(
                     base.clone(),
                     alias.clone(),
                 )) == Some(true)
@@ -1409,7 +1409,7 @@ impl PointerInRangeEvidence {
             membership,
         } = self
         {
-            return *condition == ConditionTerm::pointer_equal(pointer.clone(), alias.clone())
+            return *condition == ConditionTerm::address_equal(pointer.clone(), alias.clone())
                 && assumptions.exact_condition_value(condition) == Some(true)
                 && matches!(
                     membership.as_ref(),

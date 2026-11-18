@@ -738,7 +738,7 @@ load. Two things were `Symbolic` before, and only one of them still is:
 
 Framing a load of the second kind therefore needs evidence, and one route
 spends it: `pointers_proven_distinct_for_memory_resolution` takes **one hop**
-through the index of assumed `PointerEqual` facts to a non-symbolic form and
+through the index of assumed `AddressEqual` facts to a non-symbolic form and
 asks the same question there
 (`pointers_distinct_through_one_exact_alias`). `ensures result == &g[0]` and
 `ensures result == p` are what that reads, and

@@ -63,7 +63,7 @@ fn pointer_spelling_skips_cyclic_offsets_and_tries_the_next_local() {
                 let cyclic = Address {
                     base: pointer.base.clone(),
                     offset: AddressOffset::scaled_int32_node(
-                        MachineTerm::pointer_address(pointer.clone()),
+                        MachineTerm::integer_address(pointer.clone()),
                         4,
                     ),
                 };
@@ -859,7 +859,7 @@ fn pointer_comparison_spelling_does_not_export_bounds_payloads() {
         let arguments = [ProgramExpression::Value(ProgramValue::Pointer(
             value.clone(),
         ))];
-        let root = KernelTermImport::default().condition(&ConditionTerm::PointerValueEqual(
+        let root = KernelTermImport::default().condition(&ConditionTerm::PointerEqual(
             Box::new(value.clone()),
             Box::new(value),
         ));

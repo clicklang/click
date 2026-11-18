@@ -126,7 +126,7 @@ fn control_read_body_retains_its_held_frame_as_owners_and_aliases_grow() {
                 let other = Address::symbolic(Variable(7_993_100 + index));
                 if aliases {
                     facts = facts.assume_condition(
-                        ConditionTerm::pointer_equal(pointer.clone(), other),
+                        ConditionTerm::address_equal(pointer.clone(), other),
                         true,
                     );
                 } else {

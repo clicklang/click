@@ -97,7 +97,7 @@ fn child_witness_aliases_use_the_published_point_index() {
         resources.synchronize_memory_equalities(&assumptions);
         let state = state.with_resource_context(resources);
         let aliased = assumptions.assume_proposition(Proposition::ConditionIs(
-            ConditionTerm::PointerValueEqual(
+            ConditionTerm::PointerEqual(
                 Box::new(Pointer::new(
                     Address::symbolic(Variable(2)),
                     ProgramType::Int32Pointer,

@@ -16,15 +16,15 @@ fn separate(a: &Address, b: &Address) -> Proposition {
 
 fn numeric(a: &Address, b: &Address) -> ConditionTerm {
     ConditionTerm::uint64_equal(
-        MachineTerm::pointer_address(a.clone()),
-        MachineTerm::pointer_address(b.clone()),
+        MachineTerm::integer_address(a.clone()),
+        MachineTerm::integer_address(b.clone()),
     )
 }
 fn different(a: &Address, b: &Address) -> Proposition {
     Proposition::ConditionIs(numeric(a, b), false)
 }
 fn alias(a: &Address, b: &Address) -> Proposition {
-    Proposition::ConditionIs(ConditionTerm::pointer_equal(a.clone(), b.clone()), true)
+    Proposition::ConditionIs(ConditionTerm::address_equal(a.clone(), b.clone()), true)
 }
 
 #[test]
@@ -123,7 +123,7 @@ fn empty_unknown_ranges_views_and_pointer_value_inequality_supply_no_address_sep
             .unchecked_with_fact(ResourceFact::view_memory(range(&b, 0, 1))),
     );
     let unequal = Proposition::ConditionIs(
-        ConditionTerm::PointerValueEqual(
+        ConditionTerm::PointerEqual(
             Box::new(Pointer::new(a.clone(), ProgramType::Int32Pointer)),
             Box::new(Pointer::new(b.clone(), ProgramType::Int32Pointer)),
         ),

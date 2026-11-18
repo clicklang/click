@@ -191,7 +191,7 @@ mod tests {
                 .support,
             a.support
         );
-        let aliases = facts.assume_condition(ConditionTerm::pointer_equal(p, q), true);
+        let aliases = facts.assume_condition(ConditionTerm::address_equal(p, q), true);
         let mut index = ReturnLoanBackings::default();
         index.add(a.clone(), &aliases);
         index.add(b, &aliases);
@@ -213,7 +213,7 @@ mod coverage_tests {
         let p = Address::symbolic(Variable(8_915_000));
         let q = Address::symbolic(Variable(8_915_001));
         let facts = PureFactContext::new().assume_condition(
-            ConditionTerm::pointer_equal(q.clone(), p.offset_by_bytes(4)),
+            ConditionTerm::address_equal(q.clone(), p.offset_by_bytes(4)),
             true,
         );
         let whole =

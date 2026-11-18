@@ -17,7 +17,7 @@ fn integer_address_queries_ignore_unrelated_equations_and_reuse_definitions() {
             );
         }
         let bits = MachineTerm::Variable(Variable(960_004));
-        let decoded = Address::integer_address(bits.clone());
+        let decoded = Address::from_integer_address(bits.clone());
         assert!(graph.are_uint64_equal(&raw_address(&decoded), &bits));
         let (((), work), maps) = crate::persistent::measure_persistent_work(|| {
             crate::instrumentation::measure_deterministic_work(|| {
@@ -246,7 +246,7 @@ fn a_recorded_address_fact_is_found_through_its_word_class_without_scanning() {
         }
         let read = word(9_000);
         let recorded = word(9_001);
-        let address = MachineTerm::pointer_address(Address::symbolic(Variable(976_000)));
+        let address = MachineTerm::integer_address(Address::symbolic(Variable(976_000)));
         context = context
             .assume_proposition(fact(recorded.clone(), address))
             .assume_proposition(fact(read.clone(), recorded.clone()));
@@ -286,7 +286,7 @@ fn shared_wide_endpoint_queries_reuse_growing_prefixes() {
             .unwrap();
         let observe =
             |root| IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(ty, root).unwrap());
-        let address = MachineTerm::pointer_address(Address::symbolic(Variable(984102)));
+        let address = MachineTerm::integer_address(Address::symbolic(Variable(984102)));
         let mut context = PureFactContext::new().assume_proposition(fact(name.clone(), address));
         let exports = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {

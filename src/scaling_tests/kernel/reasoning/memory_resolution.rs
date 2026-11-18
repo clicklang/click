@@ -12,7 +12,7 @@ fn memory_resolution_graph_offset_queries_scale_without_legacy_fact_index() {
         let offset = |id| AddressOffset::scale_int32(scalar(id), 4);
         let named = AddressOffset::Variable(Variable(94_000));
         let mut context = PureFactContext::new().assume_condition(
-            ConditionTerm::pointer_offset_equal(offset(0), named.clone()),
+            ConditionTerm::address_offset_equal(offset(0), named.clone()),
             true,
         );
         for index in 0..size {
@@ -46,7 +46,7 @@ fn stored_load_alias_lookup_ignores_unrelated_cells() {
         offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(8_991_002)), 4),
     };
     let assumptions = PureFactContext::new().assume_condition(
-        ConditionTerm::pointer_offset_equal(target.offset.clone(), alias.offset.clone()),
+        ConditionTerm::address_offset_equal(target.offset.clone(), alias.offset.clone()),
         true,
     );
     let mut samples = Vec::new();
@@ -98,13 +98,13 @@ fn interior_base_alias_frames_only_distinct_objects_and_is_indexed() {
         base: "local:interior-alias-store".into(),
         offset: AddressOffset::Constant(0),
     };
-    let equality = ConditionTerm::pointer_equal(alias.clone(), base.clone());
+    let equality = ConditionTerm::address_equal(alias.clone(), base.clone());
     let mut samples = Vec::new();
     for size in [16u64, 64, 256, 1024] {
         let mut facts = PureFactContext::new();
         for index in 0..size {
             facts = facts.assume_condition(
-                ConditionTerm::pointer_equal(
+                ConditionTerm::address_equal(
                     Address {
                         base: AddressBase::Symbolic(Variable(930_000 + index)),
                         offset: AddressOffset::Constant(0),

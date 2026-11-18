@@ -132,10 +132,10 @@ fn is_reflexive_pointer_equality(mut proposition: &Proposition) -> bool {
         positive = !positive;
     }
     matches!(proposition,
-        Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), value)
+        Proposition::ConditionIs(ConditionTerm::AddressEqual(left, right), value)
             if *value == positive && left == right)
         || matches!(proposition,
-            Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, right), value)
+            Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), value)
                 if *value == positive && left == right)
 }
 

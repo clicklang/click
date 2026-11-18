@@ -85,7 +85,7 @@ fn collect_offset_load_variables_from_term(
     match term {
         MachineTerm::ThreadHandle(_) => {}
         MachineTerm::Constant { .. } | MachineTerm::Variable(_) => {}
-        MachineTerm::MemoryLoad(_, pointer, _) | MachineTerm::PointerAddress(pointer, _) => {
+        MachineTerm::MemoryLoad(_, pointer, _) | MachineTerm::IntegerAddress(pointer, _) => {
             collect_offset_load_variables_from_offset(&pointer.offset, load_variables);
         }
         crate::kernel::binary_bitvector32_term!(left, right) => {
@@ -168,7 +168,7 @@ fn assert_scaled_index_free_of_raw_loads(
         MachineTerm::MemoryLoad(_, _, _) => {
             panic!("production pointer offset contains a raw memory load: {term:?}")
         }
-        MachineTerm::PointerAddress(pointer, _) => {
+        MachineTerm::IntegerAddress(pointer, _) => {
             for value in pointer.offset.native_scaled_values_for_output() {
                 assert_scaled_index_free_of_raw_loads(value, load_variables);
             }
@@ -635,7 +635,7 @@ fn atomic_canonicalization_reaches_loads_in_every_condition_region() {
         else_term: Box::new(MachineTerm::constant(3)),
     };
     let pointer_offset = MachineTerm::If {
-        condition: Box::new(ConditionTerm::PointerOffsetEqual(
+        condition: Box::new(ConditionTerm::AddressOffsetEqual(
             Box::new(AddressOffset::scaled_int32_node(load.clone(), 4)),
             Box::new(AddressOffset::Constant(28)),
         )),
@@ -659,7 +659,7 @@ fn atomic_canonicalization_reaches_loads_in_every_condition_region() {
     };
     assert!(matches!(
         condition.as_ref(),
-        ConditionTerm::PointerOffsetEqual(left, _)
+        ConditionTerm::AddressOffsetEqual(left, _)
             if left.as_ref() == &AddressOffset::scaled_int32_node(load.clone(), 4)
     ));
 }

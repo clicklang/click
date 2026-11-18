@@ -387,7 +387,7 @@ mod tests {
         let before = PureFactContext::new();
         let after = before
             .clone()
-            .assume_condition(ConditionTerm::pointer_equal(a, b), true);
+            .assume_condition(ConditionTerm::address_equal(a, b), true);
         for (facts, expected) in [(&before, false), (&after, true)] {
             let selected =
                 Selected::new(facts, &[(&left, &sl), (&right, &sr), (&wrong_width, &sw)]);
@@ -427,15 +427,15 @@ mod tests {
         }));
         let held = MemoryRange::new(base.clone(), 0u32.into(), 8u32.into());
         let before = PureFactContext::new().assume_condition(
-            ConditionTerm::pointer_equal(read.address().clone(), base),
+            ConditionTerm::address_equal(read.address().clone(), base),
             true,
         );
         let after = before.clone().assume_condition(
-            ConditionTerm::pointer_value_equal(read.clone(), stored.clone()),
+            ConditionTerm::pointer_equal(read.clone(), stored.clone()),
             true,
         );
         let bounded_facts = before.clone().assume_condition(
-            ConditionTerm::pointer_value_equal(read.clone(), bounded.clone()),
+            ConditionTerm::pointer_equal(read.clone(), bounded.clone()),
             true,
         );
         let sr = SharedPointer::import(&read);

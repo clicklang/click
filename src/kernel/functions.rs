@@ -6328,51 +6328,55 @@ fn prepare_verified_function_call<'a>(
                 }
                 established_requirements.push(guarded);
             }
-            let contract_requirement_is_proven = !assumptions.retains_required_obligations()
-                && function_contract_requirement_is_proven(
-                    &requirement_path.proposition,
-                    &path_assumptions,
-                    environment,
-                    budget,
-                )?;
-            let requirement_is_proven = !assumptions.retains_required_obligations()
-                && super::assumptions::capture_implicit_consulted_premises(|| {
-                    if contract_requirement_is_proven {
-                        return true;
-                    }
-                    // Range bounds are the definition of this atomic source
-                    // clause. User-written logical structure still needs its
-                    // ordinary explicit proof rather than this unpacking.
-                    if matches!(requirement, SpecProposition::ResourceSeparate { .. }) {
-                        return separation_requirement_parts_are_established(
-                            &path_assumptions,
-                            &requirement_path.proposition,
-                        );
-                    }
-                    match &requirement_path.proposition {
-                        Proposition::ConditionIs(condition, value) => {
-                            path_assumptions.proves_exact(&requirement_path.proposition)
-                                || path_assumptions
-                                    .has_matching_condition_fact_for_memory_resolution(
-                                        condition, *value,
-                                    )
+            // A concrete function's refinement of a named contract consults
+            // no path fact, so it is decided even where every consulted fact
+            // must be explicit: nothing on the proof side could prove it.
+            let contract_requirement_is_proven = function_contract_requirement_is_proven(
+                &requirement_path.proposition,
+                &path_assumptions,
+                environment,
+                !assumptions.retains_required_obligations(),
+                budget,
+            )?;
+            let requirement_is_proven = contract_requirement_is_proven
+                || !assumptions.retains_required_obligations()
+                    && super::assumptions::capture_implicit_consulted_premises(|| {
+                        if contract_requirement_is_proven {
+                            return true;
                         }
-                        Proposition::ResourceSeparate { .. }
-                            if requirement_path.proposition.memory_separation().is_some() =>
-                        {
-                            let (left, right) = requirement_path
-                                .proposition
-                                .memory_separation()
-                                .expect("the guard matched a memory separation");
-                            path_assumptions.proves_exact(&requirement_path.proposition)
+                        // Range bounds are the definition of this atomic source
+                        // clause. User-written logical structure still needs its
+                        // ordinary explicit proof rather than this unpacking.
+                        if matches!(requirement, SpecProposition::ResourceSeparate { .. }) {
+                            return separation_requirement_parts_are_established(
+                                &path_assumptions,
+                                &requirement_path.proposition,
+                            );
+                        }
+                        match &requirement_path.proposition {
+                            Proposition::ConditionIs(condition, value) => {
+                                path_assumptions.proves_exact(&requirement_path.proposition)
+                                    || path_assumptions
+                                        .has_matching_condition_fact_for_memory_resolution(
+                                            condition, *value,
+                                        )
+                            }
+                            Proposition::ResourceSeparate { .. }
+                                if requirement_path.proposition.memory_separation().is_some() =>
+                            {
+                                let (left, right) = requirement_path
+                                    .proposition
+                                    .memory_separation()
+                                    .expect("the guard matched a memory separation");
+                                path_assumptions.proves_exact(&requirement_path.proposition)
                                     || path_assumptions
                                         .memory_ranges_proven_disjoint_by_explicit_separation_for_memory_resolution(
                                             left, right,
                                         )
+                            }
+                            proposition => path_assumptions.proves_exact(proposition),
                         }
-                        proposition => path_assumptions.proves_exact(proposition),
-                    }
-                });
+                    });
             if requirement_is_proven {
                 super::assumptions::record_consulted_premises(
                     &path_assumptions,
@@ -7449,24 +7453,33 @@ fn separation_requirement_parts_are_established(
     }
 }
 
+/// Whether a named-contract requirement holds by the refinement check.
+/// With `consult_facts` false, only an argument that is itself the address
+/// of a function is decided: the judgment then reads the two declarations
+/// the call names and no path fact, so a step that must make every consulted
+/// fact explicit can still take it. A pointer known to be a function only
+/// through facts is left to those facts' explicit route.
 fn function_contract_requirement_is_proven(
     proposition: &Proposition,
     assumptions: &PureFactContext,
     environment: &ExecutionEnvironment,
+    consult_facts: bool,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<bool> {
     match proposition {
-        Proposition::And(left, right) => {
-            Ok(
-                function_contract_requirement_is_proven(left, assumptions, environment, budget)?
-                    && function_contract_requirement_is_proven(
-                        right,
-                        assumptions,
-                        environment,
-                        budget,
-                    )?,
-            )
-        }
+        Proposition::And(left, right) => Ok(function_contract_requirement_is_proven(
+            left,
+            assumptions,
+            environment,
+            consult_facts,
+            budget,
+        )? && function_contract_requirement_is_proven(
+            right,
+            assumptions,
+            environment,
+            consult_facts,
+            budget,
+        )?),
         Proposition::Predicate { name, arguments } => {
             let Some(contract_name) = FunctionContract::surface_name_from_predicate(name) else {
                 return Ok(false);
@@ -7482,9 +7495,13 @@ fn function_contract_requirement_is_proven(
             // Contract formation checks the complete value's graph class.
             // The lowered requirement keeps its structural read; it need not
             // contain the literal function that the read is known to equal.
-            let comparison_pointer = assumptions
-                .equality_graph
-                .pointer_value_representative(pointer);
+            let comparison_pointer = if consult_facts {
+                assumptions
+                    .equality_graph
+                    .pointer_value_representative(pointer)
+            } else {
+                pointer.clone()
+            };
             let target = match comparison_pointer.address() {
                 Address {
                     base: AddressBase::Function(target),
@@ -7522,6 +7539,9 @@ fn function_contract_requirement_is_proven(
             // has those contracts as its implementations: a closure instance
             // carries its own contract, fixed to its captured values.
             let Some(target) = target else {
+                if !consult_facts {
+                    return Ok(false);
+                }
                 for source in contracts_for_pointer(
                     pointer.address(),
                     assumptions,
@@ -9662,7 +9682,7 @@ fn allocation_continuity(
     } else if pointers_proven_distinct_for_memory_resolution(input_base, output_base, assumptions) {
         AllocationContinuity::Distinct
     } else {
-        AllocationContinuity::Undecided(ConditionTerm::pointer_equal(
+        AllocationContinuity::Undecided(ConditionTerm::address_equal(
             input_base.clone(),
             output_base.clone(),
         ))
@@ -14181,7 +14201,7 @@ fn held_child_witness(
             own_pointers.iter().all(|own| {
                 own.base != pointer.base
                     || assumptions
-                        .decide(&ConditionTerm::pointer_equal(pointer.clone(), own.clone()))
+                        .decide(&ConditionTerm::address_equal(pointer.clone(), own.clone()))
                         == Some(false)
             })
         });
@@ -14675,7 +14695,7 @@ fn resource_body_fact_is_established(
     // logical read retains its own producer identity. Reuse only the exact
     // typed read relation already checked for contract facts: it requires
     // the same recorded state and address, or a checked stored value.
-    if let Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) = proposition
+    if let Proposition::ConditionIs(ConditionTerm::AddressEqual(left, right), true) = proposition
         && crate::kernel::memory_history::pointer_read_has_recorded_value(left, right, established)
     {
         return true;
@@ -14683,7 +14703,7 @@ fn resource_body_fact_is_established(
     if matches!(
         proposition,
         Proposition::ConditionIs(
-            ConditionTerm::PointerOffsetEqual(left, right),
+            ConditionTerm::AddressOffsetEqual(left, right),
             true,
         ) if crate::kernel::memory_history::pointer_load_offset_proven_equal(
             left,

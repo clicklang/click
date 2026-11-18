@@ -34,7 +34,7 @@ fn separation_class_lookup_visits_only_the_selected_payload() {
                 ));
                 if aliases {
                     context = context.assume_condition(
-                        ConditionTerm::pointer_equal(model.clone(), pointer(9_886_000 + index)),
+                        ConditionTerm::address_equal(model.clone(), pointer(9_886_000 + index)),
                         true,
                     );
                 }
@@ -42,7 +42,7 @@ fn separation_class_lookup_visits_only_the_selected_payload() {
             let selected = separation(model.offset_by_bytes(8), node.offset_by_bytes(16));
             context = context.assume_proposition(selected.clone());
             context = context
-                .assume_condition(ConditionTerm::pointer_equal(model, program.clone()), true);
+                .assume_condition(ConditionTerm::address_equal(model, program.clone()), true);
             let before = SOURCE_VISITS.with(Cell::get);
             let candidates = context.separated_address_classes.candidates(
                 &program.offset_by_bytes(8),
@@ -99,14 +99,14 @@ fn exact_separation_lookup_ignores_related_widths_and_alias_history() {
                 i as u32 + 5,
             ));
             context = context.assume_condition(
-                ConditionTerm::pointer_equal(model.clone(), pointer(9_943_000 + i)),
+                ConditionTerm::address_equal(model.clone(), pointer(9_943_000 + i)),
                 true,
             );
         }
         context = context.assume_proposition(separated(model.clone(), 1, source.clone(), 4));
         let branch = context
             .clone()
-            .assume_condition(ConditionTerm::pointer_equal(copied.clone(), model), true);
+            .assume_condition(ConditionTerm::address_equal(copied.clone(), model), true);
         let before = SOURCE_VISITS.with(Cell::get);
         let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
             branch.contains_known(&Proposition::ResourceSeparate {

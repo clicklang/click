@@ -1241,7 +1241,7 @@ For a native uint64 `index <= 2147483647u64`, `pointer + index` and
 `pointer + index as int32` denote the same address. `solve() using { ... }` checks
 that the cited native bound is available and preserves the pointer stride.
 A bound on the low word or a signed comparison cannot establish this unsigned
-projection, and address equality grants no permission to access the backing
+projection, and integer address equality grants no permission to access the backing
 storage. Conditional normalization does not enter binder bodies.
 
 Two displacements of one pointer by full-width unsigned indices regroup:

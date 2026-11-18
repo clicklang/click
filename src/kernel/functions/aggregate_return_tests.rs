@@ -803,7 +803,7 @@ fn symbolic_construction_storage_respects_known_aliases() {
     let source = Address::symbolic(Variable(870_005));
     let alias = Address::symbolic(Variable(870_006));
     let assumptions = PureFactContext::new().assume_condition(
-        ConditionTerm::pointer_equal(source.clone(), alias.clone()),
+        ConditionTerm::address_equal(source.clone(), alias.clone()),
         true,
     );
     for forgotten in [false, true] {

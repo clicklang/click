@@ -19,7 +19,7 @@ fn pointer_rewrite_integer_reads_preserves_state_kind_and_scales() {
                 q.offset = AddressOffset::scale_int32(MachineTerm::Variable(Variable(241_003)), 1);
             }
             let cited =
-                Proposition::ConditionIs(ConditionTerm::pointer_equal(p.clone(), q.clone()), true);
+                Proposition::ConditionIs(ConditionTerm::address_equal(p.clone(), q.clone()), true);
             let mut memory = SymbolicMemory::new();
             let mut facts = PureFactStore::default().with_fact(cited.clone());
             for index in 0..size {
@@ -118,7 +118,7 @@ fn pointer_read_rewrite_preserves_value_state_and_scales() {
         let address = owner.offset_by_bytes(16);
         let alias_address = alias.offset_by_bytes(16);
         let cited = Proposition::ConditionIs(
-            ConditionTerm::pointer_equal(owner.clone(), alias.clone()),
+            ConditionTerm::address_equal(owner.clone(), alias.clone()),
             true,
         );
         let mut facts = PureFactStore::default().with_fact(cited.clone());
@@ -157,7 +157,7 @@ fn pointer_read_rewrite_preserves_value_state_and_scales() {
         let original = read(&memory, &address);
         let leaf = Address::symbolic(Variable(211_003));
         let goal = Proposition::ConditionIs(
-            ConditionTerm::pointer_equal(original.clone(), leaf.clone()),
+            ConditionTerm::address_equal(original.clone(), leaf.clone()),
             true,
         );
         assert!(
@@ -170,7 +170,7 @@ fn pointer_read_rewrite_preserves_value_state_and_scales() {
                 facts.check_equality_rewrite(&goal, &cited).unwrap()
             })
         });
-        let Proposition::ConditionIs(ConditionTerm::PointerEqual(actual, rhs), true) =
+        let Proposition::ConditionIs(ConditionTerm::AddressEqual(actual, rhs), true) =
             rewritten.proposition()
         else {
             panic!("full pointer equality retained");
@@ -190,14 +190,14 @@ fn pointer_read_rewrite_preserves_value_state_and_scales() {
         // A read created after the store must rewrite to the new pointer,
         // while the previously rewritten read above retains its state.
         let stored_goal = Proposition::ConditionIs(
-            ConditionTerm::pointer_equal(read(&later, &address), replacement.clone()),
+            ConditionTerm::address_equal(read(&later, &address), replacement.clone()),
             true,
         );
         let stored_rewrite = facts.check_equality_rewrite(&stored_goal, &cited).unwrap();
         assert_eq!(
             stored_rewrite.proposition(),
             &Proposition::ConditionIs(
-                ConditionTerm::pointer_equal(replacement.clone(), replacement),
+                ConditionTerm::address_equal(replacement.clone(), replacement),
                 true,
             )
         );
@@ -205,14 +205,14 @@ fn pointer_read_rewrite_preserves_value_state_and_scales() {
         let index = MachineTerm::Variable(Variable(211_005));
         let indexed = Address::loaded(&index.clone()).unwrap();
         let arithmetic_goal =
-            Proposition::ConditionIs(ConditionTerm::pointer_equal(indexed, leaf.clone()), true);
+            Proposition::ConditionIs(ConditionTerm::address_equal(indexed, leaf.clone()), true);
         let arithmetic = facts
             .check_equality_rewrite(&arithmetic_goal, &cited)
             .unwrap();
         let expected_indexed = alias.offset_by_int32_elements(index);
         assert_eq!(
             arithmetic.proposition(),
-            &Proposition::ConditionIs(ConditionTerm::pointer_equal(expected_indexed, leaf), true,)
+            &Proposition::ConditionIs(ConditionTerm::address_equal(expected_indexed, leaf), true,)
         );
         samples.push((work, map_work));
     }
@@ -488,7 +488,7 @@ fn same_block_pointer_view_rewrite_preserves_span_and_selected_work() {
     let source = AddressOffset::scale_int32(MachineTerm::Variable(Variable(192_920)), 1);
     let target = AddressOffset::scale_int32(MachineTerm::Variable(Variable(192_921)), 1);
     let cited = Proposition::ConditionIs(
-        ConditionTerm::PointerOffsetEqual(Box::new(source.clone()), Box::new(target.clone())),
+        ConditionTerm::AddressOffsetEqual(Box::new(source.clone()), Box::new(target.clone())),
         true,
     );
     let memory = SymbolicMemory::new().with_block("offset-view-rewrite", 8);
@@ -557,7 +557,7 @@ fn pointer_view_rewrite_preserves_state_span_and_ambient_scaling() {
     let source = Address::symbolic(Variable(192_910));
     let target = Address::symbolic(Variable(192_911));
     let cited = Proposition::ConditionIs(
-        ConditionTerm::pointer_equal(source.clone(), target.clone()),
+        ConditionTerm::address_equal(source.clone(), target.clone()),
         true,
     );
     let memory = SymbolicMemory::new().with_block("pointer-view-rewrite", 8);
@@ -611,7 +611,7 @@ fn pointer_rewrite_enters_scalar_calls_and_preserves_scope_and_states() {
     let source = Address::symbolic(variable);
     let target = Address::symbolic(Variable(921));
     let cited = Proposition::ConditionIs(
-        ConditionTerm::PointerValueEqual(
+        ConditionTerm::PointerEqual(
             Box::new(Pointer::new(source.clone(), ProgramType::Int32Pointer)),
             Box::new(Pointer::new(target.clone(), ProgramType::Int32Pointer)),
         ),
@@ -661,7 +661,7 @@ fn pointer_rewrite_enters_scalar_calls_and_preserves_scope_and_states() {
         );
     }
     let displaced = Proposition::ConditionIs(
-        ConditionTerm::pointer_equal(
+        ConditionTerm::address_equal(
             Address {
                 base: source.base.clone(),
                 offset: AddressOffset::Constant(4),
@@ -1240,7 +1240,7 @@ fn retained_pointer_index_rewrite_scales_with_distinct_nodes() {
             },
         };
         let goal = Proposition::ConditionIs(
-            ConditionTerm::pointer_equal(pointer.clone(), Address::symbolic(Variable(1081303))),
+            ConditionTerm::address_equal(pointer.clone(), Address::symbolic(Variable(1081303))),
             true,
         );
         let equality = Proposition::ConditionIs(ConditionTerm::equal(x, y.clone()), true);

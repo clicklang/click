@@ -32,7 +32,7 @@ fn typed_access_does_not_search_unrelated_address_equalities_or_ranges() {
     let mut samples = Vec::new();
     for size in [4u64, 16, 64, 256] {
         let mut context = PureFactContext::new().assume_condition(
-            ConditionTerm::pointer_equal(a.address().clone(), b.address().clone()),
+            ConditionTerm::address_equal(a.address().clone(), b.address().clone()),
             true,
         );
         let mut resources = ResourceContext::new().unchecked_with_fact(ResourceFact::view_memory(
@@ -41,7 +41,7 @@ fn typed_access_does_not_search_unrelated_address_equalities_or_ranges() {
         for index in 0..size {
             let unrelated = value(880_000 + index * 2);
             context = context.assume_condition(
-                ConditionTerm::pointer_equal(
+                ConditionTerm::address_equal(
                     unrelated.address().clone(),
                     value(880_001 + index * 2).address().clone(),
                 ),
@@ -137,7 +137,7 @@ fn packed_word_contract_lookup_and_scope_ignore_unrelated_words() {
     let value = |id| Pointer::new(Address::symbolic(Variable(id)), ProgramType::Int32Pointer);
     let equality = |a: &Pointer, b: &Pointer| {
         Proposition::ConditionIs(
-            ConditionTerm::PointerValueEqual(Box::new(a.clone()), Box::new(b.clone())),
+            ConditionTerm::PointerEqual(Box::new(a.clone()), Box::new(b.clone())),
             true,
         )
     };
@@ -219,7 +219,7 @@ fn recent_pointer_read_origin_avoids_older_alias_histories() {
         );
         let fact = |pointer: &Address| {
             Proposition::ConditionIs(
-                ConditionTerm::PointerValueEqual(
+                ConditionTerm::PointerEqual(
                     Box::new(read(&before, pointer)),
                     Box::new(value.clone()),
                 ),

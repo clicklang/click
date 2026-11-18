@@ -213,9 +213,9 @@ fn condition_value(condition: &ConditionTerm) -> Option<bool> {
             // In particular, this key must never canonicalize a memory read.
             machine_affine_equality(condition, Clone::clone)
         }
+        ConditionTerm::AddressEqual(left, right) if left == right => Some(true),
         ConditionTerm::PointerEqual(left, right) if left == right => Some(true),
-        ConditionTerm::PointerValueEqual(left, right) if left == right => Some(true),
-        ConditionTerm::PointerOffsetEqual(left, right) if left == right => Some(true),
+        ConditionTerm::AddressOffsetEqual(left, right) if left == right => Some(true),
         ConditionTerm::AlgebraicEqual(left, right) => algebraic_equality(left, right),
         ConditionTerm::BoolEqual(left, right) if left == right => Some(true),
         // Float comparisons deliberately have no reflexivity rule: NaNs

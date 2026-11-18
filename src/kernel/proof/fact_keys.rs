@@ -74,7 +74,7 @@ pub(crate) struct MemoryErasedMemoryRangeKey {
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub(crate) enum MemoryErasedConditionKey {
-    PointerValueEqual(MemoryErasedPointerKey, MemoryErasedPointerKey),
+    PointerEqual(MemoryErasedPointerKey, MemoryErasedPointerKey),
     AlgebraicEqual(Box<AlgebraicTerm>, Box<AlgebraicTerm>),
     Constant(bool),
     Variable(Variable),
@@ -85,8 +85,8 @@ pub(crate) enum MemoryErasedConditionKey {
     ),
     Float32(MemoryErasedFloatConditionKey),
     Float64(MemoryErasedFloatConditionKey),
-    PointerOffsetEqual(MemoryErasedAddressOffsetKey, MemoryErasedAddressOffsetKey),
-    PointerEqual(MemoryErasedAddressKey, MemoryErasedAddressKey),
+    AddressOffsetEqual(MemoryErasedAddressOffsetKey, MemoryErasedAddressOffsetKey),
+    AddressEqual(MemoryErasedAddressKey, MemoryErasedAddressKey),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -213,7 +213,7 @@ impl MemoryErasedConditionKey {
     fn requires_checked_match(&self) -> bool {
         match self {
             Self::AlgebraicEqual(_, _) => false,
-            Self::PointerValueEqual(left, right) => {
+            Self::PointerEqual(left, right) => {
                 left.requires_checked_match() || right.requires_checked_match()
             }
             Self::Comparison(_, left, right) => {
@@ -222,10 +222,10 @@ impl MemoryErasedConditionKey {
             Self::Float32(condition) | Self::Float64(condition) => {
                 condition.requires_checked_match()
             }
-            Self::PointerOffsetEqual(left, right) => {
+            Self::AddressOffsetEqual(left, right) => {
                 left.requires_checked_match() || right.requires_checked_match()
             }
-            Self::PointerEqual(left, right) => {
+            Self::AddressEqual(left, right) => {
                 left.requires_checked_match() || right.requires_checked_match()
             }
             Self::Constant(_) | Self::Variable(_) => false,
@@ -252,7 +252,7 @@ impl MemoryErasedAddressKey {
 }
 
 type MemoryErasedAddressOffsetKey = Canonical<MemoryErasedAddressOffsetNode>;
-type AlphaPointerOffsetKey = Canonical<AlphaPointerOffsetNode>;
+type AlphaAddressOffsetKey = Canonical<AlphaPointerOffsetNode>;
 
 impl MemoryErasedAddressOffsetNode {
     fn requires_checked_match(&self) -> bool {
@@ -484,19 +484,19 @@ fn memory_erased_boolean_operand_key(
         );
     }
     if let Some([a, b]) = condition.pointer_offsets() {
-        return MemoryErasedConditionKey::PointerOffsetEqual(
+        return MemoryErasedConditionKey::AddressOffsetEqual(
             pointer_keys::state_offset(&a),
             pointer_keys::state_offset(&b),
         );
     }
     if let Some([a, b]) = condition.pointer_values() {
-        return MemoryErasedConditionKey::PointerValueEqual(
+        return MemoryErasedConditionKey::PointerEqual(
             pointer_keys::recorded_value(&a),
             pointer_keys::recorded_value(&b),
         );
     }
     if let Some([a, b]) = condition.pointer_addresses() {
-        return MemoryErasedConditionKey::PointerEqual(
+        return MemoryErasedConditionKey::AddressEqual(
             pointer_keys::state_address(&a),
             pointer_keys::state_address(&b),
         );
@@ -515,12 +515,10 @@ fn memory_erased_condition_key(condition: &ConditionTerm) -> MemoryErasedConditi
         );
     }
     match condition {
-        ConditionTerm::PointerValueEqual(left, right) => {
-            MemoryErasedConditionKey::PointerValueEqual(
-                memory_erased_pointer_key(left),
-                memory_erased_pointer_key(right),
-            )
-        }
+        ConditionTerm::PointerEqual(left, right) => MemoryErasedConditionKey::PointerEqual(
+            memory_erased_pointer_key(left),
+            memory_erased_pointer_key(right),
+        ),
 
         ConditionTerm::Constant(value) => MemoryErasedConditionKey::Constant(*value),
         ConditionTerm::AlgebraicEqual(left, right) => {
@@ -533,13 +531,13 @@ fn memory_erased_condition_key(condition: &ConditionTerm) -> MemoryErasedConditi
         ConditionTerm::Float64(float_condition) => {
             MemoryErasedConditionKey::Float64(memory_erased_float_condition_key(float_condition))
         }
-        ConditionTerm::PointerOffsetEqual(left, right) => {
-            MemoryErasedConditionKey::PointerOffsetEqual(
+        ConditionTerm::AddressOffsetEqual(left, right) => {
+            MemoryErasedConditionKey::AddressOffsetEqual(
                 memory_erased_address_offset_key(left),
                 memory_erased_address_offset_key(right),
             )
         }
-        ConditionTerm::PointerEqual(left, right) => MemoryErasedConditionKey::PointerEqual(
+        ConditionTerm::AddressEqual(left, right) => MemoryErasedConditionKey::AddressEqual(
             memory_erased_address_key(left),
             memory_erased_address_key(right),
         ),
@@ -701,12 +699,12 @@ enum AlphaPropositionKey {
     },
     MemoryReadDefined {
         memory: AlphaStateKey,
-        pointer: AlphaPointerKey,
+        pointer: AlphaAddressKey,
         value_type: ProgramType,
     },
     MemoryLoadable {
         memory: AlphaStateKey,
-        base: AlphaPointerKey,
+        base: AlphaAddressKey,
         bytes: AlphaBitvectorKey,
         wide: bool,
     },
@@ -885,9 +883,9 @@ enum AlphaBitvectorKey {
         name: String,
         arguments: Vec<AlphaPureFunctionArgumentKey>,
     },
-    Load(Box<AlphaPointerKey>, LoadKind),
+    Load(Box<AlphaAddressKey>, LoadKind),
     RegisteredLoad(AlphaRegisteredLoadId),
-    Address(Box<AlphaPointerKey>),
+    Address(Box<AlphaAddressKey>),
     IntegerToMachine(MachineIntegerType, AlphaIntegerKey),
     MachineIntegerCast(MachineIntegerType, MachineIntegerType, Box<Self>),
     BoolCast(MachineIntegerType, Box<AlphaConditionKey>),
@@ -921,12 +919,12 @@ enum AlphaProgramValueKey {
         program_type: ProgramType,
         pointee_volatile: bool,
         pointee_constant: bool,
-        pointer: AlphaPointerKey,
-        provenance: AlphaPointerKey,
+        pointer: AlphaAddressKey,
+        provenance: AlphaAddressKey,
         bounds_known: bool,
-        bounds_owner: Option<AlphaPointerKey>,
+        bounds_owner: Option<AlphaAddressKey>,
         /// The subobject bounds' start key and byte width.
-        bounds: Option<(AlphaPointerKey, AlphaMachineKey)>,
+        bounds: Option<(AlphaAddressKey, AlphaMachineKey)>,
     },
 }
 
@@ -1023,7 +1021,7 @@ impl Hash for AlphaStateKey {
 enum AlphaPointerOffsetNode {
     Constant(i64),
     Variable(AlphaVariableKey),
-    Add(AlphaPointerOffsetKey, AlphaPointerOffsetKey),
+    Add(AlphaAddressOffsetKey, AlphaAddressOffsetKey),
     RegisteredLoad(AlphaRegisteredLoadId),
     Int32Scaled {
         value: Canonical<AlphaMachineKey>,
@@ -1081,9 +1079,9 @@ enum AlphaAddressBaseKey {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
-struct AlphaPointerKey {
-    block: AlphaAddressBaseKey,
-    offset: AlphaPointerOffsetKey,
+struct AlphaAddressKey {
+    base: AlphaAddressBaseKey,
+    offset: AlphaAddressOffsetKey,
 }
 
 /// A compact reference to one live canonical registered-load node. The node
@@ -1140,7 +1138,7 @@ struct AlphaRegisteredLoadRecord {
     interner: Arc<std::sync::Mutex<AlphaRegisteredLoadInterner>>,
     fingerprint: u64,
     retained_state: AlphaStateKey,
-    pointer: AlphaPointerKey,
+    pointer: AlphaAddressKey,
     kind: LoadKind,
 }
 
@@ -1199,7 +1197,7 @@ fn alpha_registered_load_interner() -> Option<Arc<std::sync::Mutex<AlphaRegister
 
 fn alpha_registered_load_descriptor_fingerprint(
     retained_state: &AlphaStateKey,
-    pointer: &AlphaPointerKey,
+    pointer: &AlphaAddressKey,
     kind: LoadKind,
 ) -> u64 {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -1212,7 +1210,7 @@ fn alpha_registered_load_descriptor_fingerprint(
 fn intern_alpha_registered_load(
     interner: &Arc<std::sync::Mutex<AlphaRegisteredLoadInterner>>,
     retained_state: AlphaStateKey,
-    pointer: AlphaPointerKey,
+    pointer: AlphaAddressKey,
     kind: LoadKind,
 ) -> Option<AlphaRegisteredLoadId> {
     let fingerprint = alpha_registered_load_descriptor_fingerprint(&retained_state, &pointer, kind);
@@ -1255,12 +1253,12 @@ fn intern_alpha_registered_load(
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 enum AlphaConditionKey {
     AlgebraicEqual(Box<AlphaAlgebraicKey>, Box<AlphaAlgebraicKey>),
-    PointerValueEqual(Box<AlphaProgramValueKey>, Box<AlphaProgramValueKey>),
+    PointerEqual(Box<AlphaProgramValueKey>, Box<AlphaProgramValueKey>),
     Constant(bool),
     Variable(AlphaVariableKey),
     Binary(BitvectorComparisonOp, AlphaBitvectorKey, AlphaBitvectorKey),
-    PointerOffsetEqual(AlphaPointerOffsetKey, AlphaPointerOffsetKey),
-    PointerEqual(AlphaPointerKey, AlphaPointerKey),
+    AddressOffsetEqual(AlphaAddressOffsetKey, AlphaAddressOffsetKey),
+    AddressEqual(AlphaAddressKey, AlphaAddressKey),
     IntegerComparison(IntegerComparisonOperator, AlphaIntegerKey, AlphaIntegerKey),
     MachineComparison(MachineIntegerType, u8, AlphaMachineKey, AlphaMachineKey),
     /// The `Bool` value forms (Stage 5).
@@ -2100,7 +2098,7 @@ fn alpha_pointer_offset_key_with_bindings<const ALLOW_LOADS: bool>(
     offset: &AddressOffset,
     bindings: &mut AlphaBindings,
     next_binder: &mut usize,
-) -> Option<AlphaPointerOffsetKey> {
+) -> Option<AlphaAddressOffsetKey> {
     alpha_work_checkpoint(bindings, 1)?;
     Some(Canonical::new(match offset {
         AddressOffset::Constant(value) => AlphaPointerOffsetNode::Constant(*value),
@@ -2240,11 +2238,11 @@ fn alpha_pointer_key_with_bindings<const ALLOW_LOADS: bool>(
     pointer: &Address,
     bindings: &mut AlphaBindings,
     next_binder: &mut usize,
-) -> Option<AlphaPointerKey> {
+) -> Option<AlphaAddressKey> {
     alpha_work_checkpoint(bindings, 1)?;
     let block = alpha_address_base_key::<ALLOW_LOADS>(&pointer.base, bindings, next_binder)?;
-    Some(AlphaPointerKey {
-        block,
+    Some(AlphaAddressKey {
+        base: block,
         offset: alpha_pointer_offset_key_with_bindings::<ALLOW_LOADS>(
             &pointer.offset,
             bindings,
@@ -2670,7 +2668,7 @@ fn alpha_bitvector_key_with_bindings<const ALLOW_LOADS: bool>(
                 *kind,
             )
         }
-        MachineTerm::PointerAddress(pointer, _) => AlphaBitvectorKey::Address(Box::new(
+        MachineTerm::IntegerAddress(pointer, _) => AlphaBitvectorKey::Address(Box::new(
             alpha_pointer_key_with_bindings::<ALLOW_LOADS>(pointer, bindings, next_binder)?,
         )),
         MachineTerm::IntegerToMachine { value, destination } => {
@@ -2860,11 +2858,11 @@ fn alpha_condition_key_with_bindings<const ALLOW_LOADS: bool>(
                 &bindings.bitvector,
             )?)
         }
-        ConditionTerm::PointerOffsetEqual(left, right) => AlphaConditionKey::PointerOffsetEqual(
+        ConditionTerm::AddressOffsetEqual(left, right) => AlphaConditionKey::AddressOffsetEqual(
             alpha_pointer_offset_key_with_bindings::<ALLOW_LOADS>(left, bindings, next_binder)?,
             alpha_pointer_offset_key_with_bindings::<ALLOW_LOADS>(right, bindings, next_binder)?,
         ),
-        ConditionTerm::PointerValueEqual(left, right) => AlphaConditionKey::PointerValueEqual(
+        ConditionTerm::PointerEqual(left, right) => AlphaConditionKey::PointerEqual(
             Box::new(alpha_program_value_key_with_bindings::<ALLOW_LOADS>(
                 &ProgramValue::Pointer((**left).clone()),
                 bindings,
@@ -2876,7 +2874,7 @@ fn alpha_condition_key_with_bindings<const ALLOW_LOADS: bool>(
                 next_binder,
             )?),
         ),
-        ConditionTerm::PointerEqual(left, right) => AlphaConditionKey::PointerEqual(
+        ConditionTerm::AddressEqual(left, right) => AlphaConditionKey::AddressEqual(
             alpha_pointer_key_with_bindings::<ALLOW_LOADS>(left, bindings, next_binder)?,
             alpha_pointer_key_with_bindings::<ALLOW_LOADS>(right, bindings, next_binder)?,
         ),
@@ -5223,7 +5221,7 @@ mod offset_condition_tests {
         let mut keys = Vec::new();
         for width in [1, 8] {
             for unsigned in [false, true] {
-                let source = ConditionTerm::PointerOffsetEqual(
+                let source = ConditionTerm::AddressOffsetEqual(
                     Box::new(AddressOffset::Add(
                         Box::new(AddressOffset::Constant(0)),
                         Box::new(AddressOffset::scaled_int64_node(
@@ -5259,7 +5257,7 @@ mod raw_pointer_condition_tests {
             AddressBase::ExternalObject(Variable(998610)),
             AddressBase::FunctionSymbolic(Variable(998610)),
         ] {
-            let source = ConditionTerm::PointerEqual(
+            let source = ConditionTerm::AddressEqual(
                 Box::new(Address {
                     base: block,
                     offset: AddressOffset::scaled_int64_node(
@@ -5300,7 +5298,7 @@ mod complete_pointer_condition_tests {
                 width: MachineTerm::constant(4),
             })),
         ] {
-            let source = ConditionTerm::PointerValueEqual(Box::new(value), Box::new(a.clone()));
+            let source = ConditionTerm::PointerEqual(Box::new(value), Box::new(a.clone()));
             let root = crate::kernel::KernelTermImport::default().condition(&source);
             let actual =
                 memory_erased_boolean_operand_key(crate::kernel::BooleanOperandView::Shared(&root));

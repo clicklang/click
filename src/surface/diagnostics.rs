@@ -636,8 +636,15 @@ pub(super) fn describe_pure_fact_with_environment(
         }
         None => skeleton,
     };
+    // A proved theorem is a fact only where it is applied: the caller cites
+    // it before the step that needs the contract.
+    let apply = skeleton
+        .strip_prefix("theorem ")
+        .and_then(|rest| rest.split_once('('))
+        .map(|(name, _)| format!("\nthen apply it before the call: `apply({name}());`"))
+        .unwrap_or_default();
     format!(
-        "function `{target}` does not satisfy named contract `{contract}` automatically;\nprove it explicitly:\n{skeleton}"
+        "function `{target}` does not satisfy named contract `{contract}` automatically;\nprove it explicitly:\n{skeleton}{apply}"
     )
 }
 
@@ -736,7 +743,7 @@ pub(in crate::surface) fn value_naming_tables(
 /// diagnostic that has no source spelling of its operands.
 pub(super) fn condition_kind(condition: &ConditionTerm) -> &'static str {
     match condition {
-        ConditionTerm::PointerValueEqual(_, _) => "pointer value equality",
+        ConditionTerm::PointerEqual(_, _) => "pointer value equality",
 
         ConditionTerm::AlgebraicEqual(_, _) => "algebraic equality",
         ConditionTerm::IntegerLessThan(_, _) => "Integer less-than",
@@ -919,8 +926,8 @@ pub(super) fn condition_kind(condition: &ConditionTerm) -> &'static str {
         ConditionTerm::Float32(FloatCondition::Classification { .. }) => "float32 classification",
         ConditionTerm::Float64(FloatCondition::Comparison { .. }) => "float64 comparison",
         ConditionTerm::Float64(FloatCondition::Classification { .. }) => "float64 classification",
-        ConditionTerm::PointerOffsetEqual(_, _) => "pointer-offset equality",
-        ConditionTerm::PointerEqual(_, _) => "pointer equality",
+        ConditionTerm::AddressOffsetEqual(_, _) => "pointer-offset equality",
+        ConditionTerm::AddressEqual(_, _) => "pointer equality",
         ConditionTerm::Constant(_) => "constant condition",
         ConditionTerm::Variable(_) => "condition variable",
         ConditionTerm::BoolApplication(_) => "Bool function application",
@@ -8093,7 +8100,7 @@ pub(super) fn describe_bitvector_with_context(
         }
         MachineTerm::AlgebraicMatch { .. } => "match <algebraic value> { ... }".to_string(),
         MachineTerm::MemoryLoad(_, pointer, _) => describe_load_at(pointer, parameter_binding),
-        MachineTerm::PointerAddress(pointer, _) => {
+        MachineTerm::IntegerAddress(pointer, _) => {
             format!(
                 "({})",
                 click_cast(&describe_pointer(pointer, parameter_binding), "uint64")
@@ -8358,7 +8365,7 @@ pub(super) fn describe_condition(condition: &ConditionTerm) -> String {
         };
     }
     match condition {
-        ConditionTerm::PointerValueEqual(left, right) => format!(
+        ConditionTerm::PointerEqual(left, right) => format!(
             "{} == {}",
             describe_pointer(left.address(), ParameterBinding::default()),
             describe_pointer(right.address(), ParameterBinding::default())
@@ -8385,12 +8392,12 @@ pub(super) fn describe_condition(condition: &ConditionTerm) -> String {
         ConditionTerm::Variable(variable) => lowering_only_variable("cond", variable.0),
         ConditionTerm::Float32(float_condition) => describe_float_condition(float_condition),
         ConditionTerm::Float64(float_condition) => describe_float_condition(float_condition),
-        ConditionTerm::PointerOffsetEqual(left, right) => format!(
+        ConditionTerm::AddressOffsetEqual(left, right) => format!(
             "{} == {}",
             describe_pointer_offset(left),
             describe_pointer_offset(right)
         ),
-        ConditionTerm::PointerEqual(left, right) => {
+        ConditionTerm::AddressEqual(left, right) => {
             format!(
                 "{} == {}",
                 describe_pointer(left, ParameterBinding::default()),
@@ -8548,7 +8555,7 @@ pub(super) fn describe_condition_with_context(
             left,
             right,
         } => binary(left, ">=", right),
-        ConditionTerm::PointerEqual(left, right) => format!(
+        ConditionTerm::AddressEqual(left, right) => format!(
             "{} == {}",
             describe_pointer(left, parameter_binding),
             describe_pointer(right, parameter_binding)

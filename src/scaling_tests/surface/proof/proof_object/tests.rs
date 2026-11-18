@@ -146,7 +146,7 @@ fn same_block_offset_rewrite_work(
             );
             [
                 Proposition::ConditionIs(
-                    ConditionTerm::pointer_equal(
+                    ConditionTerm::address_equal(
                         Address {
                             base: base.base.clone(),
                             offset: AddressOffset::Add(
@@ -221,7 +221,7 @@ fn same_block_offset_rewrite_work(
         let mut shifted_value = base_value.clone();
         shifted_value.replace_pointer(shifted.clone());
         let relation = Proposition::ConditionIs(
-            ConditionTerm::pointer_value_equal(cursor_value.clone(), shifted_value),
+            ConditionTerm::pointer_equal(cursor_value.clone(), shifted_value),
             true,
         );
         let relation_surface = fixture.theorem_definitions()[0].requires[1]
@@ -263,7 +263,7 @@ fn same_block_offset_rewrite_work(
         0,
         &facts,
         Proposition::ConditionIs(
-            ConditionTerm::pointer_equal(if from_cursor { cursor } else { shifted }, base),
+            ConditionTerm::address_equal(if from_cursor { cursor } else { shifted }, base),
             true,
         ),
         ParameterBinding::default(),

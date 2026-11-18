@@ -250,7 +250,7 @@ mod tests {
         let source = ConditionTerm::Overflows {
             format: MachineIntegerType::Int64,
             op: OverflowOperation::Add,
-            left: Box::new(MachineTerm::PointerAddress(
+            left: Box::new(MachineTerm::IntegerAddress(
                 Box::new(Address::symbolic(Variable(999210))),
                 AddressObjectClass::NONE,
             )),

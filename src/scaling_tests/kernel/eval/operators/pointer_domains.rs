@@ -8,7 +8,7 @@ fn known_domains_do_not_readmit_unrelated_path_facts() {
         );
         let root = opaque.clone().with_root_bounds();
         let cached = PureFactContext::new().assume_condition(
-            ConditionTerm::pointer_value_equal(opaque.clone(), root.clone()),
+            ConditionTerm::pointer_equal(opaque.clone(), root.clone()),
             true,
         );
         for (pointer, context) in [(root, PureFactContext::new()), (opaque, cached)] {

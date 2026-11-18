@@ -8009,7 +8009,7 @@ fn rewrite_int32_term_by_exact_equality(
         bits32_constant!(_)
         | MachineTerm::Variable(_)
         | MachineTerm::MemoryLoad(_, _, _)
-        | MachineTerm::PointerAddress(_, _)
+        | MachineTerm::IntegerAddress(_, _)
         | int64_constant!(_)
         | uint64_constant!(_)
         | native_constant!(_, _)
