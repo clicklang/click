@@ -1170,16 +1170,20 @@ fn saved_iterated_base_ignores_aliases_states_and_unrelated_resources() {
             .map(|i| format!("    mark unrelated{i};\n"))
             .collect::<String>();
         click = click.replace("    mark before;", &format!("{marks}    mark before;"));
+        // The two unfolds, the mark, and the step precede the indexed fold.
+        let indexed_fold = 4 + size;
         let (result, samples) = crate::instrumentation::collect_tactic_work(|| {
             verify_c_sources(&click, &[(sources[0].0.as_str(), c.as_str())])
         });
         result.unwrap_or_else(|error| panic!("size {size}: {}", error.message()));
         let successful = samples
             .iter()
-            .filter(|sample| sample.tactic.tactic_name == "give")
+            .filter(|sample| {
+                sample.tactic.tactic_name == "fold" && sample.tactic.source_index == indexed_fold
+            })
             .map(|sample| sample.work)
             .max()
-            .expect("give work");
+            .expect("indexed fold work");
         let false_guard = c.replace("occupied[index] = 0", "occupied[index] = 1");
         let (result, samples) = crate::instrumentation::collect_tactic_work(|| {
             verify_c_sources(&click, &[(sources[0].0.as_str(), false_guard.as_str())])
@@ -1187,10 +1191,12 @@ fn saved_iterated_base_ignores_aliases_states_and_unrelated_resources() {
         assert!(result.unwrap_err().message().contains("the guard is false"));
         let refused = samples
             .iter()
-            .filter(|sample| sample.tactic.tactic_name == "give")
+            .filter(|sample| {
+                sample.tactic.tactic_name == "fold" && sample.tactic.source_index == indexed_fold
+            })
             .map(|sample| sample.work)
             .max()
-            .expect("refused give work");
+            .expect("refused indexed fold work");
         (successful, refused)
     });
     assert_eq!(work[0], work[1], "saved-base work: {work:?}");
