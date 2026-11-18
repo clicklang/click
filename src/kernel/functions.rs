@@ -4686,15 +4686,12 @@ fn execute_verified_function_applications_with_suspension(
                 .map(ExecutionPureFact::certified),
             );
         }
-        // The applicable interfaces share the result and post-call memory,
+        // The applicable interfaces share the result and post-call point,
         // but bind their own argument names against the original entry state.
         for additional in additional_calls {
             let mut additional_facts = additional.facts;
             let entry_fact_count = additional_facts.len();
-            let mut additional_post = additional
-                .entry_state
-                .clone()
-                .with_memory(post_state.memory.clone());
+            let mut additional_post = additional.entry_state.clone().with_memory_of(&post_state);
             if additional.interface.return_type() != ProgramType::Void {
                 set_contract_result(&mut additional_post, additional.interface, result.clone());
             }
