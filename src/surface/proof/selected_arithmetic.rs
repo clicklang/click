@@ -533,6 +533,7 @@ enum DefinitionPlan {
     /// followed into their definitions, each unfolded after the fact's own.
     End {
         unfolds: Vec<ClickFunctionApplication>,
+        value: ContractExpression,
     },
 }
 
@@ -564,7 +565,6 @@ struct DefinitionRefutation {
     application: ClickFunctionApplication,
     differs: ClickProposition,
     fact: ClickProposition,
-    negated_goal: ClickProposition,
 }
 
 /// An integer constant, or a `bool` one as `1` or `0`: a definition's end
@@ -677,7 +677,8 @@ theorem shift_bound(v: uint64) {{
             let expanded =
                 crate::surface::expand_c_tactic_source_at(&source, &[], line + 1, column + 1)
                     .unwrap();
-            assert!(expanded.contains("normalize();"), "{expanded}");
+            assert!(!expanded.contains("normalize("), "{expanded}");
+            assert!(!expanded.contains("solve("), "{expanded}");
             assert!(!expanded.contains("operation_bound"), "{expanded}");
             without_implicit_solve(|| crate::surface::verify_click_theorems(&expanded)).unwrap();
             let missing = source.replace(&format!("    requires {premise};\n"), "");
@@ -1009,3 +1010,39 @@ theorem black_color_is_black(color: Color) {
 
 // Source spelling adapters for the kernel ProofSearch interface.
 mod search;
+
+#[cfg(test)]
+#[test]
+#[ignore = "nightly: definition refutation expansion and strict replay"]
+fn definition_refutation_expands_with_branch_equations() {
+    use crate::surface::{
+        expand_c_claim_source_by_label, verify_c_sources, without_implicit_solve,
+    };
+    for source in [
+        r#"
+        function choose(x: int32, y: int32) -> int32 {
+            if x == 0 { if y == 0 { 1 } else { 2 } } else { 0 }
+        }
+        theorem forced(x: int32, y: int32) {
+            requires choose(x, y) == 1;
+            ensures y == 0;
+        }
+        "#,
+        r#"
+        import click::list;
+        theorem forced(v: int32, x: int32) {
+            requires list::contains(List<int32>::Cons(v, List<int32>::Nil), x);
+            ensures v == x;
+        }
+        "#,
+    ] {
+        let expanded = expand_c_claim_source_by_label(source, &[], "forced.ensures_0")
+            .unwrap_or_else(|error| panic!("{}\n{source}", error.message()));
+        assert!(expanded.contains("unfold("), "{expanded}");
+        assert!(expanded.contains("contradiction("), "{expanded}");
+        assert!(!expanded.contains("normalize("), "{expanded}");
+        assert!(!expanded.contains("solve("), "{expanded}");
+        without_implicit_solve(|| verify_c_sources(&expanded, &[]))
+            .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+    }
+}

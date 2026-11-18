@@ -429,7 +429,7 @@ mod tests {
         let pointer = Address::symbolic(Variable(998_701));
         let read = KernelTerm::scalar_read_descriptor(
             MachineIntegerType::Int32,
-            &memory,
+            &crate::kernel::ProgramPoint::at(&memory),
             &pointer,
             LoadKind::Int32,
         )

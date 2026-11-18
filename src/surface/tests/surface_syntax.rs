@@ -73,11 +73,12 @@ fn integer_solve_expansion_rechecks_without_smart_search() {
         if parameters.contains("y: Integer") {
             assert!(expanded.contains("le_antisymmetric"), "{expanded}");
         } else {
-            assert!(expanded.contains("normalize();"), "{expanded}");
+            assert!(expanded.contains("known();"), "{expanded}");
+            assert!(!expanded.contains("normalize("), "{expanded}");
         }
         assert!(!expanded.contains("solve"), "{expanded}");
         let rechecked = source.replace(&format!("by {{ {proof} }}"), &expanded);
-        verify_click_theorems(&rechecked)
+        without_implicit_solve(|| verify_click_theorems(&rechecked))
             .unwrap_or_else(|error| panic!("{rechecked}: {}", error.message()));
     }
 }
@@ -1297,28 +1298,48 @@ fn signed_compound_expansion_uses_ordinary_operations_and_rejects_false_goal() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_11")]
-fn float_reflexive_smart_expansion_has_one_finite_premise_and_rechecks() {
+fn float_reflexive_smart_expansion_replays_as_known() {
     let source = r#"
         theorem finite_float_reflexive(value: float) {
             requires isfinite(value);
             ensures value == value by { solve(); }
         }
+        theorem finite_double_reflexive(value: double) {
+            requires isfinite(value);
+            ensures not(value < value) by { solve() using { isfinite(value); }; }
+        }
     "#;
     let verified = verify_click_theorems(source).expect("finite float reflexivity should verify");
-    let expanded = verified[0]
-        .expanded_proof_source()
-        .expect("float reflexivity should expand");
-    assert_eq!(
-        expanded.matches("isfinite(value);").count(),
-        1,
-        "{expanded}"
-    );
-    let rechecked = source.replace("by { solve(); }", &expanded);
+    let mut rechecked = source.to_owned();
+    for (theorem, original) in verified.iter().zip([
+        "by { solve(); }",
+        "by { solve() using { isfinite(value); }; }",
+    ]) {
+        let expanded = theorem
+            .expanded_proof_source()
+            .expect("float reflexivity should expand");
+        assert!(expanded.contains("known()"), "{expanded}");
+        for forbidden in ["normalize(", "solve("] {
+            assert!(!expanded.contains(forbidden), "{expanded}");
+        }
+        rechecked = rechecked.replace(original, &expanded);
+    }
     let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
-        verify_click_theorems(&rechecked)
+        crate::surface::without_implicit_solve(|| verify_click_theorems(&rechecked))
     });
     result.expect("expanded float reflexivity should recheck");
     assert_eq!(planning, 0, "ordinary float recheck must not plan");
+
+    for source in [
+        "theorem missing(x: float) { ensures x == x by known(); }",
+        "theorem omitted(x: double) { requires isfinite(x); ensures x == x by { solve() using {}; } }",
+        "theorem other(x: float, y: float) { requires isfinite(y); ensures x == x by known(); }",
+        "theorem wrong(x: double) { requires isfinite(x); ensures x < x by known(); }",
+    ] {
+        crate::surface::parse(source).expect("refusal control should parse");
+        crate::surface::without_implicit_solve(|| verify_click_theorems(source))
+            .expect_err("reflexivity must require the matching premise and polarity");
+    }
 }
 
 #[test]
@@ -1336,8 +1357,8 @@ fn signed_arithmetic_smart_planner_expands_to_ordinary_proof() {
         .expanded_proof_source()
         .expect("smart arithmetic should expand");
     assert!(
-        expanded.contains("normalize"),
-        "ordinary interval normalization expected: {expanded}"
+        !expanded.contains("normalize("),
+        "signed interval expansion must use ordinary proof steps: {expanded}"
     );
     let rechecked = source.replace("by { solve() using { 0 <= n; n <= 100; } }", &expanded);
     assert!(
@@ -5296,7 +5317,7 @@ test_batches! {
         signed_compound_expansion_uses_ordinary_operations_and_rejects_false_goal,
     ],
     surface_syntax_batch_11: [
-        float_reflexive_smart_expansion_has_one_finite_premise_and_rechecks,
+        float_reflexive_smart_expansion_replays_as_known,
         signed_arithmetic_smart_planner_expands_to_ordinary_proof,
     ],
     surface_syntax_batch_12: [

@@ -1035,6 +1035,9 @@ pub(in crate::kernel) fn copy_aggregate_fields_checked(
     destination: &Address,
     layout: &AggregateLayout,
 ) -> Result<SymbolicMemory, UndefinedBehavior> {
+    if let Some(bytes) = layout.bit_field_bytes.as_deref() {
+        return memory.copy_local_bit_field_record(source, destination, layout.size_bytes(), bytes);
+    }
     if aggregate_copy_reads_uninitialized(&memory, source, layout) {
         return Err(UndefinedBehavior::UninitializedRead);
     }

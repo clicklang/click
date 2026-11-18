@@ -1,14 +1,14 @@
 use super::*;
 
 #[test]
-fn bit_field_lookup_work_is_independent_of_other_bindings() {
+fn bit_field_lookup_work_is_independent_of_other_bindings_and_words() {
     let mut measurements = Vec::new();
     for unrelated in [0, 64, 1024] {
-        let mut parser = Parser::new(
-            "struct flags { unsigned int ready : 1; }; f.ready",
-            CAbi::SUPPORTED,
-        )
-        .unwrap();
+        let prefix: String = (0..unrelated)
+            .map(|index| format!("unsigned int prefix_{index} : 32; "))
+            .collect();
+        let source = format!("struct flags {{ {prefix} unsigned int ready : 29; }}; f.ready");
+        let mut parser = Parser::new(&source, CAbi::SUPPORTED).unwrap();
         parser.parse_struct_declaration().unwrap();
         parser.push_scope();
         let record = parser.bit_field_records["flags"].clone();
@@ -16,10 +16,6 @@ fn bit_field_lookup_work_is_independent_of_other_bindings() {
         let object = LocalBitFields {
             record,
             word: BindingName::from("private"),
-            partial: PartialInitialization {
-                mask: BindingName::from("written"),
-                unwritten: BindingName::from("unwritten"),
-            },
             pointer: None,
             read_only: false,
         };
@@ -31,7 +27,7 @@ fn bit_field_lookup_work_is_independent_of_other_bindings() {
         let (parsed, work) =
             crate::instrumentation::measure_deterministic_work(|| parser.parse_primary());
         assert!(parsed.is_ok());
-        assert!(work > 0);
+        assert!(work >= 4);
         measurements.push(work);
     }
     assert!(

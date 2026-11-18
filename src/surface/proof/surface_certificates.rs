@@ -3979,40 +3979,34 @@ pub(super) fn plan_explicit_increment_below_max_is_defined(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
-    let (crate::kernel::SignedDefinedWidth::Int32, operands, false) =
-        crate::kernel::proof::arithmetic_special::signed_definedness_query(goal)?
-    else {
-        return None;
-    };
-    let [value, amount] = [&operands[0], &operands[1]].map(|operand| operand.operand_view());
-    if amount.literal() != Some(MachineTerm::constant(1)) {
-        return None;
-    }
-    for (kernel, surface) in premise_pairs {
-        let Some((premise_value, upper)) = signed_strict_parts(kernel) else {
-            continue;
-        };
-        if !same_written_int32_operand(value, premise_value)
-            || upper != &MachineTerm::constant(i32::MAX as u32)
-        {
-            continue;
-        }
-        surface_strict_parts(surface)?;
-        return Some(vec![ProofTactic::ArithmeticUsing(vec![surface.clone()])]);
-    }
-    None
+    let (_, premise) = int32_increment_bound(goal, premise_pairs, false)?;
+    Some(vec![ProofTactic::ArithmeticUsing(vec![premise.clone()])])
 }
 
 pub(super) fn plan_explicit_one_plus_below_max_is_defined(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
+    let (_, premise) = int32_increment_bound(goal, premise_pairs, true)?;
+    Some(vec![ProofTactic::ArithmeticUsing(vec![premise.clone()])])
+}
+
+fn int32_increment_bound<'s>(
+    goal: &Proposition,
+    premise_pairs: &'s [(Proposition, ClickProposition)],
+    one_first: bool,
+) -> Option<(ContractExpression, &'s ClickProposition)> {
     let (crate::kernel::SignedDefinedWidth::Int32, operands, false) =
         crate::kernel::proof::arithmetic_special::signed_definedness_query(goal)?
     else {
         return None;
     };
-    let [one, value] = [&operands[0], &operands[1]].map(|operand| operand.operand_view());
+    let [left, right] = [&operands[0], &operands[1]].map(|operand| operand.operand_view());
+    let (value, one) = if one_first {
+        (right, left)
+    } else {
+        (left, right)
+    };
     if one.literal() != Some(MachineTerm::constant(1)) {
         return None;
     }
@@ -4025,10 +4019,72 @@ pub(super) fn plan_explicit_one_plus_below_max_is_defined(
         {
             continue;
         }
-        surface_strict_parts(surface)?;
-        return Some(vec![ProofTactic::ArithmeticUsing(vec![surface.clone()])]);
+        let (value, _) = surface_strict_parts(surface)?;
+        return Some((value, surface));
     }
     None
+}
+
+/// An exact named bound supplies the complete domain for a pure increment.
+pub(super) fn plan_int32_increment_definedness_theorem(
+    goal: &Proposition,
+    premise_pairs: &[(Proposition, ClickProposition)],
+) -> Option<Vec<ProofTactic>> {
+    if let Some((value, surface)) = int32_increment_bound(goal, premise_pairs, false) {
+        return Some(vec![int32_increment_definedness_application(
+            value, surface,
+        )]);
+    }
+
+    let (value, surface) = int32_increment_bound(goal, premise_pairs, true)?;
+    let one =
+        ContractExpression::ProgramExpression(ProgramExpression::Value(crate::kernel::int32(1)));
+    let increment = ClickProposition::Defined {
+        expression: ContractExpression::Add(Box::new(value.clone()), Box::new(one)),
+    };
+    // The domains differ only in the order of the exact Integer sum.
+    let observed = wide_arithmetic::to_integer(&value);
+    let one = ContractExpression::IntegerLiteral("1".to_string());
+    let value_plus_one = ContractExpression::Add(Box::new(observed.clone()), Box::new(one.clone()));
+    let one_plus_value = ContractExpression::Add(Box::new(one.clone()), Box::new(observed.clone()));
+    let equal = |left, right| ClickProposition::Comparison {
+        left,
+        operator: ComparisonOperator::Equal,
+        right,
+    };
+    Some(vec![
+        ProofTactic::Have(ProofHave {
+            proposition: increment,
+            proof: SourceProof::Script(vec![int32_increment_definedness_application(
+                value, surface,
+            )]),
+        }),
+        ProofTactic::Have(ProofHave {
+            proposition: equal(value_plus_one.clone(), one_plus_value.clone()),
+            proof: SourceProof::Script(vec![ProofTactic::ApplyTheoremUsing {
+                application: TheoremApplication {
+                    name: "click::integer::sum_commute".to_string(),
+                    arguments: vec![value_plus_one.clone(), observed, one],
+                },
+                premises: vec![equal(value_plus_one.clone(), value_plus_one.clone())],
+            }]),
+        }),
+        ProofTactic::Rewrite(equal(one_plus_value, value_plus_one)),
+        ProofTactic::Known,
+    ])
+}
+
+fn int32_increment_definedness_application(
+    value: ContractExpression,
+    premise: &ClickProposition,
+) -> ProofTactic {
+    ProofTactic::ApplyTheoremUsing {
+        application: TheoremApplication {
+            name: "click::integer::int32_increment_below_max_is_defined".to_string(),
+            arguments: vec![value],
+        },
+        premises: vec![premise.clone()],
+    }
 }
 
 pub(super) fn plan_explicit_one_plus_strictly_increases(

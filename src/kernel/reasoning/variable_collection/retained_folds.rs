@@ -283,7 +283,8 @@ pub(super) fn common_variables(
                 );
             }
             KernelTermNode::BoolRead(read) => {
-                let (memory, address) = read.parts();
+                let (point, address) = read.parts();
+                let memory = point.shared_memory();
                 match mode {
                     FoldVariableRead::ExpressionFree => {
                         collect_shared_memory_bitvector_variables(memory, &mut leaf_variables);

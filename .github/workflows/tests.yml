@@ -19,10 +19,10 @@ jobs:
       docs_only: ${{ steps.scope.outputs.docs_only }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+        if: github.event_name != 'merge_group'
       - name: Determine check scope
         id: scope
+        shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
           PR_BASE: ${{ github.event.pull_request.base.sha }}
@@ -41,9 +41,11 @@ jobs:
             base="$BEFORE"
           fi
 
-          # A missing base (for example, the first push) gets the full gate.
-          if [[ -z "$base" || "$base" == 0000000000000000000000000000000000000000 ]] || \
-             ! git cat-file -e "$base^{commit}"; then
+          # Compare the two trees without downloading their history. A missing
+          # or inaccessible base (for example, a first push) gets the full gate.
+          if [[ -z "$base" || "$base" == 0000000000000000000000000000000000000000 ]]; then
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"
+          elif ! git cat-file -e "$base^{commit}" 2>/dev/null && ! git fetch --depth=1 origin "$base"; then
             echo "docs_only=false" >> "$GITHUB_OUTPUT"
           elif git diff --name-only "$base" "$HEAD" | scripts/is-docs-only-change.sh; then
             echo "docs_only=true" >> "$GITHUB_OUTPUT"
@@ -137,11 +139,17 @@ jobs:
       # Compile the single cfg(test) executable, plus the exporter. All test
       # execution happens on consumers of this immutable build artifact.
       - name: Build exporters and test archive
+        if: github.event_name != 'push'
         run: scripts/check.sh --ci-prepare "$RUNNER_TEMP/compiled-tests"
-      # Two artifacts: every test shard downloads the test binaries, and only
-      # the Rust import shards download Charon and its compiler runtime,
-      # which are nearly half of the build output.
+      # The queue tested this tree already. Build the same targets for reuse
+      # by later runs and skip archives that no job on a push consumes.
+      - name: Warm the build cache
+        if: github.event_name == 'push'
+        run: scripts/check.sh --ci-warm-cache
+      # Every shard downloads the test binaries. Only Rust import shards
+      # download the much larger Charon and compiler runtime artifact.
       - uses: actions/upload-artifact@v4
+        if: github.event_name != 'push'
         with:
           name: compiled-tests
           path: |
@@ -151,6 +159,7 @@ jobs:
           if-no-files-found: error
           retention-days: 1
       - uses: actions/upload-artifact@v4
+        if: github.event_name != 'push'
         with:
           name: rust-toolchain
           path: ${{ runner.temp }}/compiled-tests/rust
@@ -256,7 +265,7 @@ jobs:
           path: ${{ runner.temp }}/compiled-tests/rust
       - name: Restore pinned Charon runtime from the build artifact
         if: matrix.suite == 'rust'
-        run: scripts/charon-runtime.sh restore "$RUNNER_TEMP/compiled-tests/rust/rust-runtime.tar.gz"
+        run: scripts/charon-runtime.sh restore "$RUNNER_TEMP/compiled-tests/rust/rust-runtime.tar.zst"
       - name: Set up test runner
         run: scripts/setup-environment.sh ${{ matrix.suite == 'rust' && '--rust-test-runner' || matrix.suite == 'unit' && '--unit-test-runner' || '--test-runner' }}
       - name: Run ${{ matrix.suite }} tests (${{ matrix.partition }})
