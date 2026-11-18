@@ -511,7 +511,12 @@ pub(crate) fn rust_iterator_method(
         // its length. An enumeration also counts what it has yielded.
         (K::Slice | K::Enumerate, "len()") => variable("len"),
         (K::Slice | K::Enumerate, "as_slice()") => variable("ptr"),
-        (K::Enumerate, "count") => variable("count"),
+        (K::Enumerate, "count") => ProgramExpression::Variable(
+            iterator
+                .count_binding
+                .clone()
+                .ok_or("missing count binding for enumerated iterator")?,
+        ),
         (K::Range, "start") => variable("start"),
         (K::Range, "end") => variable("end"),
         (K::RangeInclusive, "start()") => variable("start"),

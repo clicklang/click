@@ -127,6 +127,7 @@ struct PlaceScope {
     /// An expansion scope's function: whether its signature is written in
     /// Rust syntax, and its slice parameters (`enter_rust_spelling`).
     rust_spelling: Option<Option<std::rc::Rc<[String]>>>,
+    rust_loop_iterators: Option<rust_spelling::RustLoopIterators>,
 }
 
 thread_local! {
@@ -269,6 +270,7 @@ impl ParameterPlaceScope {
                         .rust_slice_parameters()
                         .map(std::rc::Rc::<[String]>::from),
                 ),
+                rust_loop_iterators: Some(block.signature().rust_loop_iterators().clone()),
             })
         });
         Self(())
@@ -6099,6 +6101,7 @@ pub(super) fn describe_program_expression(expression: &ProgramExpression) -> Str
         ProgramExpression::Variable(name) => name
             .named()
             .and_then(rust_variable_spelling)
+            .or_else(|| rust_spelling::rust_enumerate_count_spelling(name))
             .unwrap_or_else(|| name.to_string()),
         ProgramExpression::FunctionAddress(name) => format!("&{name}"),
         ProgramExpression::StepResult {
