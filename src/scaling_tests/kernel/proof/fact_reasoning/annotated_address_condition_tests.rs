@@ -29,7 +29,7 @@ fn annotated_condition_lookup_and_selected_normalization_skip_unrelated_facts() 
             )
         };
         for index in 0..size {
-            let address = |id| MachineTerm::pointer_address(Address::symbolic(Variable(id)));
+            let address = |id| MachineTerm::integer_address(Address::symbolic(Variable(id)));
             premises.push(wrapped(Proposition::ConditionIs(
                 ConditionTerm::uint64_equal(address(984_000 + index), address(985_000 + index)),
                 true,

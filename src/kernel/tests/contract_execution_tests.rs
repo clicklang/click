@@ -1758,7 +1758,7 @@ fn verified_function_rule_does_not_publish_one_spec_alias_path() {
     assert!(!path.facts().iter().any(|fact| {
         matches!(
             fact.proposition(),
-            Proposition::ConditionIs(ConditionTerm::PointerOffsetEqual(_, _), _)
+            Proposition::ConditionIs(ConditionTerm::AddressOffsetEqual(_, _), _)
         )
     }));
 }
@@ -1847,7 +1847,7 @@ fn opaque_pointer_result_can_alias_its_argument() {
     assert!(crate::kernel::search::ProofSearch::proves(
         &(assumptions),
         &Proposition::ConditionIs(
-            ConditionTerm::pointer_equal(result.address().clone(), argument),
+            ConditionTerm::address_equal(result.address().clone(), argument),
             true,
         )
     ));

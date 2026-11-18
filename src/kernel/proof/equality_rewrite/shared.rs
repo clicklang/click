@@ -859,7 +859,7 @@ fn static_syntax(root: &KernelTerm) -> Option<bool> {
                 | KernelTermNode::BoolCast { .. }
                 | KernelTermNode::MemoryLoad { .. }
                 | KernelTermNode::Legacy(_)
-                | KernelTermNode::PointerAddress { .. }
+                | KernelTermNode::IntegerAddress { .. }
                 | KernelTermNode::Fold(_)
                 | KernelTermNode::Match(_) => false,
                 _ => nodes.iter().all(|node| cache[&node.id()]),
@@ -1133,7 +1133,7 @@ mod tests {
     fn opaque_address_sources_keep_the_native_mask_matching_rule() {
         let _session = VerificationSession::enter();
         let pointer = Address::symbolic(Variable(1006440));
-        let plain = MachineTerm::pointer_address(pointer.clone());
+        let plain = MachineTerm::integer_address(pointer.clone());
         let annotated = MachineTerm::object_pointer_address(
             pointer,
             Some(crate::kernel::effective_type::CAccessClass::Struct(

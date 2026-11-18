@@ -529,7 +529,7 @@ fn normalize_condition_selection(
     {
         return Ok(());
     }
-    if let Some((ConditionTerm::PointerEqual(left, right), true)) =
+    if let Some((ConditionTerm::AddressEqual(left, right), true)) =
         crate::kernel::spec::proposition_as_single_condition(goal)
         && crate::kernel::memory_history::pointer_read_has_recorded_value(&left, &right, &selected)
     {
@@ -2218,7 +2218,7 @@ mod tests {
         (
             goal,
             separation,
-            Proposition::ConditionIs(ConditionTerm::pointer_equal(actual, named), true),
+            Proposition::ConditionIs(ConditionTerm::address_equal(actual, named), true),
         )
     }
 
@@ -2954,7 +2954,7 @@ mod tests {
         // denote one offset, and the loaded pointer's field is separate from
         // the written cell range.
         let offsets_equal = Proposition::ConditionIs(
-            ConditionTerm::PointerOffsetEqual(
+            ConditionTerm::AddressOffsetEqual(
                 Box::new(cell_element_offset(&havoc)),
                 Box::new(cell_element_offset(&entry)),
             ),
@@ -3013,7 +3013,7 @@ impl ScalarReadBridgeSide for AddressOffset {
 
     fn equality(left: Self, right: Self) -> Proposition {
         Proposition::ConditionIs(
-            ConditionTerm::PointerOffsetEqual(Box::new(left), Box::new(right)),
+            ConditionTerm::AddressOffsetEqual(Box::new(left), Box::new(right)),
             true,
         )
     }
@@ -3457,11 +3457,11 @@ fn separations_equal_modulo_proven_states(
                 && left.element_width() == right.element_width()
                 && left.base().base == right.base().base
                 && assumptions.conditions_equal_modulo_proven_states(
-                    &ConditionTerm::PointerOffsetEqual(
+                    &ConditionTerm::AddressOffsetEqual(
                         Box::new(expand_offset_load_variables_shallow(&left.base().offset)),
                         Box::new(AddressOffset::Constant(0)),
                     ),
-                    &ConditionTerm::PointerOffsetEqual(
+                    &ConditionTerm::AddressOffsetEqual(
                         Box::new(expand_offset_load_variables_shallow(&right.base().offset)),
                         Box::new(AddressOffset::Constant(0)),
                     ),
@@ -3726,7 +3726,7 @@ mod integer_reflexivity_tests {
 
     fn normalization_pointer_equality(left: &Address, right: &Address) -> Proposition {
         Proposition::ConditionIs(
-            ConditionTerm::pointer_equal(left.clone(), right.clone()),
+            ConditionTerm::address_equal(left.clone(), right.clone()),
             true,
         )
     }
@@ -4437,7 +4437,7 @@ mod annotated_address_condition_tests {
                             pointer,
                             annotated.then_some(CAccessClass::Scalar(CScalarClass::Int)),
                         ),
-                        MachineTerm::pointer_address(Address {
+                        MachineTerm::integer_address(Address {
                             base: "annotated-address-target".into(),
                             offset: AddressOffset::Constant(0),
                         }),
@@ -4530,7 +4530,7 @@ mod index_sum_offset_tests {
         );
         let whole = AddressOffset::Add(Box::new(common), Box::new(scaled(3, width)));
         Proposition::ConditionIs(
-            ConditionTerm::PointerEqual(Box::new(pointer(summed)), Box::new(pointer(whole))),
+            ConditionTerm::AddressEqual(Box::new(pointer(summed)), Box::new(pointer(whole))),
             true,
         )
     }
@@ -4563,7 +4563,7 @@ mod index_sum_offset_tests {
         );
         // Indices at different element widths are different displacements.
         let mixed = Proposition::ConditionIs(
-            ConditionTerm::PointerEqual(
+            ConditionTerm::AddressEqual(
                 Box::new(Address {
                     base: AddressBase::ExternalArgument,
                     offset: AddressOffset::Add(Box::new(scaled(1, 4)), Box::new(scaled(2, 8))),

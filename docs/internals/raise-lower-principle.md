@@ -427,16 +427,16 @@ Lowering never folds a comparison of two literals.
   node: recognition compares the two variable IDs, without consulting facts
   or walking expression trees.
 - A contract `p == p` (or `p != p`) of one non-null pointer value retains a
-  `PointerEqual` node rather than folding to `true` (`false`), and
+  `AddressEqual` node rather than folding to `true` (`false`), and
   `address(p) == address(p)` retains its `int64` address-word comparison.
   Lowering and the producers whose results must match a lowered goal
   (`preserve`) build the pointer equality with
-  `ConditionTerm::logical_pointer_value_equal`. A pointer equality raises as
+  `ConditionTerm::logical_pointer_equal`. A pointer equality raises as
   contract `p == q`, which lowers back to it; the weaker
   `address(p) == address(q)` is the address-word equality a C comparison
-  states (`design/pointer-subobject-bounds.md`, Phase B). A `PointerEqual`
+  states (`design/pointer-subobject-bounds.md`, Phase B). A `AddressEqual`
   between two pointer values of different provenance has no Surface form yet:
-  `p == q` lowers to `PointerValueEqual` for them, and the round trip refuses.
+  `p == q` lowers to `PointerEqual` for them, and the round trip refuses.
 - A comparison of two `bool` literals, `true == false`, retains a
   `BoolEqual` of the two constants.
 - A written `true` or `false` is a literal proposition, not `literal ==
@@ -559,7 +559,7 @@ graph then joins that offset to element `i` at stride four; memory resolution
 asks the same overflow question itself within the statement that forms it
 (`a_word_read_through_a_byte_offset_is_the_element_read.md`).
 Literal-mask bounds are recorded when the graph introduces the index node;
-address equalities over a common exact wide stride retain full-width index
+integer address equalities over a common exact wide stride retain full-width index
 equalities. A table-read branch extends its context with its one new address
 disequality before considering the next cell.
 

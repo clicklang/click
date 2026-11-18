@@ -162,7 +162,7 @@ fn state_source_index_matches_retained_signed_and_unsigned_ring_terms() {
         assert_eq!(offset_state_shape(&source), offset_state_shape(&target));
         let end = AddressOffset::Constant(12);
         let fact = Proposition::ConditionIs(
-            ConditionTerm::pointer_offset_equal(source.clone(), end.clone()),
+            ConditionTerm::address_offset_equal(source.clone(), end.clone()),
             true,
         );
         let parent = PureFactContext::new();
@@ -193,7 +193,7 @@ fn cached_state_syntax_never_caches_context_authority() {
         ))
     });
     let fact = Proposition::ConditionIs(
-        ConditionTerm::pointer_offset_equal(pointers[0].offset.clone(), pointers[1].offset.clone()),
+        ConditionTerm::address_offset_equal(pointers[0].offset.clone(), pointers[1].offset.clone()),
         true,
     );
     let parent = PureFactContext::new();

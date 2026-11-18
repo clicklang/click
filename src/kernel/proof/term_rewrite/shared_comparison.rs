@@ -276,7 +276,7 @@ impl TermRewrite<'_> {
                 KernelTermNode::MachineLiteral(_) => term.clone(),
                 KernelTermNode::Legacy(_)
                 | KernelTermNode::Call { .. }
-                | KernelTermNode::PointerAddress { .. } => {
+                | KernelTermNode::IntegerAddress { .. } => {
                     let original = term
                         .machine_conversion_leaf()
                         .expect("retained native operand");

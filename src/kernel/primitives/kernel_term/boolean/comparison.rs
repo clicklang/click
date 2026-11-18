@@ -103,10 +103,10 @@ impl KernelTerm {
                 for (address, other) in [(views[0], views[1]), (views[1], views[0])] {
                     if other.uint64_constant() == Some(0)
                         && let MachineOperandView::Shared(root) = address
-                        && let Some(MachineTerm::PointerAddress(pointer, _)) =
+                        && let Some(MachineTerm::IntegerAddress(pointer, _)) =
                             root.machine_conversion_leaf()
                     {
-                        return native(ConditionTerm::pointer_equal(
+                        return native(ConditionTerm::address_equal(
                             pointer.as_ref().clone(),
                             Address::null(),
                         ));
@@ -129,7 +129,7 @@ impl KernelTerm {
                             left: Box::new(MachineTerm::Binary {
                                 format: T::UInt64,
                                 op: MachineBinaryOp::BitwiseAnd,
-                                left: Box::new(MachineTerm::PointerAddress(
+                                left: Box::new(MachineTerm::IntegerAddress(
                                     Box::new(pointer.clone()),
                                     crate::kernel::AddressObjectClass::NONE,
                                 )),
@@ -211,7 +211,7 @@ mod tests {
     #[test]
     fn retained_comparison_constructors_preserve_address_and_mask_rules() {
         let _session = crate::kernel::VerificationSession::enter();
-        let address = MachineTerm::PointerAddress(
+        let address = MachineTerm::IntegerAddress(
             Box::new(Address::symbolic(Variable(971_103))),
             crate::kernel::AddressObjectClass::NONE,
         );

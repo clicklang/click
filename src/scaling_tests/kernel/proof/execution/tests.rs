@@ -113,7 +113,7 @@ fn constructor_partition_transports_pointer_payloads_without_scanning_ambient_fa
         )],
     };
     let alias = Proposition::ConditionIs(
-        crate::kernel::ConditionTerm::pointer_equal(payload.clone(), program.clone()),
+        crate::kernel::ConditionTerm::address_equal(payload.clone(), program.clone()),
         true,
     );
     let env = crate::kernel::ExecutionEnvironment::new();
@@ -133,7 +133,7 @@ fn constructor_partition_transports_pointer_payloads_without_scanning_ambient_fa
             });
         let witness = Address::symbolic(fields[0][0].0);
         let transported = Proposition::ConditionIs(
-            crate::kernel::ConditionTerm::pointer_equal(program.clone(), witness),
+            crate::kernel::ConditionTerm::address_equal(program.clone(), witness),
             true,
         );
         assert!(partition.facts_for_case(0).unwrap().available(&transported));
@@ -936,7 +936,7 @@ fn interface_aliased_wide_read_preserves_scope_history_and_scales() {
         memory = memory.store(owner.clone(), ProgramValue::UInt64(value.clone()));
         let state = ExecutionState::new().with_memory(memory.clone());
         let arm = parent.with_fact(Proposition::ConditionIs(
-            ConditionTerm::pointer_equal(alias.clone(), owner.clone()),
+            ConditionTerm::address_equal(alias.clone(), owner.clone()),
             true,
         ));
         let check = |state: &ExecutionState, facts: &PureFactStore, spec: &SpecProposition| {

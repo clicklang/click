@@ -1081,7 +1081,7 @@ fn bitvector_term_exceeds_depth_limit(root: &MachineTerm) -> bool {
                     pending.push((value.structural_value(), depth + 1));
                 }
             }
-            MachineTerm::PointerAddress(pointer, _) => {
+            MachineTerm::IntegerAddress(pointer, _) => {
                 if let AddressOffset::Int32Scaled { value, .. }
                 | AddressOffset::Int64Scaled { value, .. } = &pointer.offset
                 {
@@ -2811,7 +2811,7 @@ fn synthesize_surface_atomic_proposition(
             ClickProposition::Not(Box::new(literal))
         });
     }
-    if let ConditionTerm::PointerOffsetEqual(left, right) = condition {
+    if let ConditionTerm::AddressOffsetEqual(left, right) = condition {
         return Some(ClickProposition::Comparison {
             left: synthesize_surface_pointer_offset(
                 left,
@@ -2832,7 +2832,7 @@ fn synthesize_surface_atomic_proposition(
             )?,
         });
     }
-    if let ConditionTerm::PointerValueEqual(left, right) = condition {
+    if let ConditionTerm::PointerEqual(left, right) = condition {
         return Some(ClickProposition::Comparison {
             left: synthesize_pointer_equality_operand(
                 left,
@@ -2856,7 +2856,7 @@ fn synthesize_surface_atomic_proposition(
     // A pointer equality raises as contract `p == q`, which lowers to it; the
     // weaker `address(p) == address(q)` is the address-word equality a C
     // comparison states (`design/pointer-subobject-bounds.md`, Phase B).
-    if let ConditionTerm::PointerEqual(left, right) = condition {
+    if let ConditionTerm::AddressEqual(left, right) = condition {
         let pointer = synthesize_surface_pointer_expression;
         return Some(ClickProposition::Comparison {
             left: pointer(left, parameter_binding, state, bound_variables)?,
@@ -3456,7 +3456,7 @@ fn raise_pointer_comparison(
 ) -> Option<SurfaceTerm> {
     use crate::kernel::{KernelAddressOffset, KernelTermNode as Node};
     let (left, right) = match term.node() {
-        Node::PointerValueEqual(pair) => {
+        Node::PointerEqual(pair) => {
             let operand = |value: &crate::kernel::SharedPointer| {
                 synthesize_pointer_equality_address(
                     &value.node().address.export().ok()?,
@@ -3471,7 +3471,7 @@ fn raise_pointer_comparison(
                 operand(&pair.arguments()[1])?,
             )
         }
-        Node::PointerEqual { arguments } => {
+        Node::AddressEqual { arguments } => {
             let left = arguments[0].export().ok()?;
             let right = arguments[1].export().ok()?;
             // As the condition form above: a pointer equality is `p == q`.
@@ -3481,7 +3481,7 @@ fn raise_pointer_comparison(
                 pointer(&right, parameter_binding, state, bound_variables)?,
             )
         }
-        Node::PointerOffsetEqual { arguments } => (
+        Node::AddressOffsetEqual { arguments } => (
             synthesize_surface_pointer_offset(
                 &KernelAddressOffset::export(&arguments[0]).ok()?,
                 parameter_binding,
@@ -3998,9 +3998,7 @@ fn raise_kernel_term_dispatch(
             };
             synthesize_surface_bool(value, parameter_binding, state, bound_variables)?
         }
-        Node::PointerValueEqual(_)
-        | Node::PointerEqual { .. }
-        | Node::PointerOffsetEqual { .. } => {
+        Node::PointerEqual(_) | Node::AddressEqual { .. } | Node::AddressOffsetEqual { .. } => {
             raise_pointer_comparison(term, parameter_binding, state, bound_variables)?
         }
         Node::Variable(variable) if term.ty() == &KernelType::Bool => synthesize_surface_bool(
@@ -4118,7 +4116,7 @@ fn raise_kernel_term_dispatch(
             }
         }
         Node::MachineUnary { operand, .. } => SurfaceTerm::BitwiseNot(Box::new(recurse(operand)?)),
-        Node::PointerAddress { .. } | Node::ThreadHandle(_) => {
+        Node::IntegerAddress { .. } | Node::ThreadHandle(_) => {
             let expression = synthesize_surface_bitvector(
                 term.machine_conversion_leaf()?,
                 parameter_binding,
@@ -5176,7 +5174,7 @@ fn synthesize_surface_bitvector(
         | MachineTerm::Float32Binary { .. }
         | MachineTerm::Float64Negate(_)
         | MachineTerm::Float64Binary { .. } => None,
-        MachineTerm::PointerAddress(pointer, _) => {
+        MachineTerm::IntegerAddress(pointer, _) => {
             let pointer =
                 synthesize_surface_pointer(pointer, parameter_binding, state, bound_variables)?;
             Some(ContractExpression::ProgramExpression(

@@ -330,12 +330,12 @@ fn pointer_address_operand(operand: crate::kernel::MachineOperandView<'_>) -> Op
         V::Shared(root)
             if matches!(
                 root.node(),
-                crate::kernel::KernelTermNode::PointerAddress { .. }
+                crate::kernel::KernelTermNode::IntegerAddress { .. }
             ) =>
         {
             root.machine_conversion_leaf().cloned()
         }
-        V::Legacy(term @ MachineTerm::PointerAddress(..)) => Some(term.clone()),
+        V::Legacy(term @ MachineTerm::IntegerAddress(..)) => Some(term.clone()),
         _ => None,
     }
 }
@@ -496,7 +496,7 @@ pub(crate) fn condition_for_operand_views(
             if matches!(
                 root.node(),
                 crate::kernel::KernelTermNode::Call { .. }
-                    | crate::kernel::KernelTermNode::PointerAddress { .. }
+                    | crate::kernel::KernelTermNode::IntegerAddress { .. }
             ) =>
         {
             V::Legacy(

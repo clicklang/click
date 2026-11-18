@@ -2891,9 +2891,9 @@ fn condition_is_disequality(condition: &crate::kernel::ConditionTerm, value: boo
         }
         | IntegerEqual(..)
         | AlgebraicEqual(..)
+        | AddressEqual(..)
         | PointerEqual(..)
-        | PointerValueEqual(..)
-        | PointerOffsetEqual(..) => !value,
+        | AddressOffsetEqual(..) => !value,
         _ => false,
     }
 }

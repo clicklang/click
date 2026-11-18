@@ -244,7 +244,7 @@ fn reads_at_equal_addresses_are_equal_without_equal_pointers() {
         base: block.into(),
         offset: AddressOffset::Constant(bytes),
     };
-    let address_of = |pointer: Address| MachineTerm::pointer_address(pointer);
+    let address_of = |pointer: Address| MachineTerm::integer_address(pointer);
     let after = intern_memory(
         memory
             .memory()

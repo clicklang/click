@@ -2888,7 +2888,7 @@ fn local_storage_classification_does_not_restore_partial_or_aliased_authority() 
             "aliased_partial" | "aliased_whole" | "owner_with_alias_fact"
         ) {
             facts = facts.assume_condition(
-                ConditionTerm::pointer_equal(local.clone(), Address::symbolic(Variable(941_001))),
+                ConditionTerm::address_equal(local.clone(), Address::symbolic(Variable(941_001))),
                 true,
             );
         }

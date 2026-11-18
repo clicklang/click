@@ -167,7 +167,7 @@ impl EqualityGraph {
     /// Select an exact common-base address equality by its indexed offset
     /// coordinates. The index nominates sources; their complete offset sides
     /// must still match, so this does not cancel scaling or discard a base.
-    pub(in crate::kernel) fn exact_pointer_offset_equality_source(
+    pub(in crate::kernel) fn exact_address_offset_equality_source(
         &self,
         left: &AddressOffset,
         right: &AddressOffset,
@@ -412,7 +412,7 @@ impl EqualityGraph {
             return true;
         }
         let mut variables = BTreeSet::new();
-        let selector = ConditionTerm::PointerOffsetEqual(
+        let selector = ConditionTerm::AddressOffsetEqual(
             Box::new(offset.clone()),
             Box::new(AddressOffset::Constant(0)),
         );

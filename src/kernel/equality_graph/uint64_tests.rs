@@ -13,7 +13,7 @@ fn packed(value: &MachineTerm, parent: &Address) -> MachineTerm {
     MachineTerm::Binary {
         format: MachineIntegerType::UInt64,
         op: MachineBinaryOp::Add,
-        left: Box::new(MachineTerm::PointerAddress(
+        left: Box::new(MachineTerm::IntegerAddress(
             Box::new(parent.clone()),
             crate::kernel::AddressObjectClass::NONE,
         )),
@@ -29,7 +29,7 @@ fn fact(a: MachineTerm, b: MachineTerm) -> Proposition {
     Proposition::ConditionIs(ConditionTerm::uint64_equal(a, b), true)
 }
 fn alias(a: &Address, b: &Address) -> Proposition {
-    Proposition::ConditionIs(ConditionTerm::pointer_equal(a.clone(), b.clone()), true)
+    Proposition::ConditionIs(ConditionTerm::address_equal(a.clone(), b.clone()), true)
 }
 fn proved(context: &PureFactContext, goal: &Proposition) -> bool {
     crate::kernel::reasoning::required_obligation_is_exactly_discharged(context, goal)
@@ -37,7 +37,7 @@ fn proved(context: &PureFactContext, goal: &Proposition) -> bool {
 
 fn raw_address(pointer: &Address) -> MachineTerm {
     // Deliberately bypass the surface constructor's address cancellation.
-    MachineTerm::PointerAddress(Box::new(pointer.clone()), AddressObjectClass::NONE)
+    MachineTerm::IntegerAddress(Box::new(pointer.clone()), AddressObjectClass::NONE)
 }
 
 #[test]
@@ -45,7 +45,7 @@ fn integer_address_coordinates_join_word_classes_and_follow_scoped_equalities() 
     let _session = VerificationSession::enter();
     let bits = MachineTerm::Variable(Variable(960_001));
     let pointer = Address::symbolic(Variable(960_002));
-    let decoded = Address::integer_address(bits.clone());
+    let decoded = Address::from_integer_address(bits.clone());
     let equation = fact(bits.clone(), raw_address(&pointer));
     let goal = Proposition::ConditionIs(
         ConditionTerm::uint64_equal(raw_address(&decoded), raw_address(&pointer)),
@@ -73,23 +73,20 @@ fn integer_address_coordinates_join_word_classes_and_follow_scoped_equalities() 
     // numeric coordinates. A bare address name cannot manufacture that domain.
     let original_domain = right.clone().with_address(decoded.clone());
     assert!(child.contains_known(&Proposition::ConditionIs(
-        ConditionTerm::PointerValueEqual(
-            Box::new(original_domain.clone()),
-            Box::new(right.clone())
-        ),
+        ConditionTerm::PointerEqual(Box::new(original_domain.clone()), Box::new(right.clone())),
         true,
     )));
     assert!(child.contains_known(&Proposition::ConditionIs(
-        ConditionTerm::pointer_value_equal(original_domain, right.clone()),
+        ConditionTerm::pointer_equal(original_domain, right.clone()),
         true,
     )));
     assert!(!child.contains_known(&Proposition::ConditionIs(
-        ConditionTerm::pointer_equal(decoded, pointer),
+        ConditionTerm::address_equal(decoded, pointer),
         true,
     )));
     assert!(!child.pointer_provenance_match(&left, &right));
     assert!(!child.contains_known(&Proposition::ConditionIs(
-        ConditionTerm::pointer_value_equal(left, right),
+        ConditionTerm::pointer_equal(left, right),
         true,
     )));
 }
@@ -98,7 +95,7 @@ fn integer_address_coordinates_join_word_classes_and_follow_scoped_equalities() 
 fn integer_address_definition_preserves_byte_displacements_and_load_states() {
     let _session = VerificationSession::enter();
     let bits = MachineTerm::Variable(Variable(960_003));
-    let decoded = Address::integer_address(bits.clone());
+    let decoded = Address::from_integer_address(bits.clone());
     let shifted = Address {
         base: decoded.base.clone(),
         offset: AddressOffset::Constant(8),
@@ -129,8 +126,8 @@ fn equal_integer_address_words_do_not_merge_pointer_names_or_domains() {
     let _session = VerificationSession::enter();
     let a = MachineTerm::Variable(Variable(960_005));
     let b = MachineTerm::Variable(Variable(960_006));
-    let p = Address::integer_address(a.clone());
-    let q = Address::integer_address(b.clone());
+    let p = Address::from_integer_address(a.clone());
+    let q = Address::from_integer_address(b.clone());
     let mut context = PureFactContext::new();
     assert!(
         !context
@@ -148,7 +145,7 @@ fn equal_integer_address_words_do_not_merge_pointer_names_or_domains() {
     let q = Pointer::new(q, ProgramType::Int32Pointer);
     assert!(!context.pointer_provenance_match(&p, &q));
     assert!(!context.contains_known(&Proposition::ConditionIs(
-        ConditionTerm::pointer_value_equal(p, q),
+        ConditionTerm::pointer_equal(p, q),
         true,
     )));
 }
@@ -185,7 +182,7 @@ fn wide_read_and_packed_word_congruence_compose_early_and_late() {
         assert!(!proved(&context.restricted_to_facts(&[], &[]), &goal));
         let impossible = context
             .clone()
-            .assume_condition(ConditionTerm::pointer_equal(q.clone(), sid.clone()), false);
+            .assume_condition(ConditionTerm::address_equal(q.clone(), sid.clone()), false);
         assert!(impossible.is_inconsistent());
         assert!(proved(&impossible, &goal));
         // Cached closure results must not survive a weakened sibling context.
@@ -363,7 +360,7 @@ fn shared_wide_endpoint_queries_preserve_exact_sources_and_scope() {
     let root = KernelTermImport::default()
         .machine_arithmetic(ty, &query)
         .unwrap();
-    let address = MachineTerm::pointer_address(Address::symbolic(Variable(984004)));
+    let address = MachineTerm::integer_address(Address::symbolic(Variable(984004)));
     let parent = PureFactContext::new().assume_proposition(fact(source.clone(), address));
     let exports = KernelTermExport::machine_export_count();
     assert!(

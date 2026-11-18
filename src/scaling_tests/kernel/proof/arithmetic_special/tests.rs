@@ -126,7 +126,7 @@ fn shared_tagged_word_certificates_preserve_bounds_without_exports() {
     for size in [8, 32, 96] {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::UInt64;
-        let address = MachineTerm::PointerAddress(
+        let address = MachineTerm::IntegerAddress(
             Box::new(pointer(AddressOffset::Constant(0))),
             crate::kernel::AddressObjectClass::NONE,
         );

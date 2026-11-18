@@ -43,7 +43,7 @@ fn typed_held_observation_does_not_search_a_growing_alias_class() {
                 offset: AddressOffset::Constant(0),
             };
             assumptions = assumptions.assume_proposition(Proposition::ConditionIs(
-                ConditionTerm::PointerEqual(Box::new(address(0)), Box::new(alias)),
+                ConditionTerm::AddressEqual(Box::new(address(0)), Box::new(alias)),
                 true,
             ));
         }

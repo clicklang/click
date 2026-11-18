@@ -3261,7 +3261,7 @@ fn execute_program_heap_free_paths(
             };
             if before != after {
                 facts.push(ExecutionPureFact::certified(Proposition::ConditionIs(
-                    ConditionTerm::pointer_value_equal(before, after),
+                    ConditionTerm::pointer_equal(before, after),
                     true,
                 )));
             }

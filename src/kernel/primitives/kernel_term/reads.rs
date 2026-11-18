@@ -653,7 +653,7 @@ mod tests {
         for class in [CScalarClass::Int, CScalarClass::Char] {
             let expected = Some(CAccessClass::Scalar(class));
             let index = AddressOffset::scaled_int64_node(
-                MachineTerm::PointerAddress(
+                MachineTerm::IntegerAddress(
                     Box::new(Address::symbolic(Variable(993161))),
                     crate::kernel::AddressObjectClass::new(expected.clone()),
                 ),
@@ -664,7 +664,7 @@ mod tests {
                 unreachable!()
             };
             assert!(value.shared_operand().is_none());
-            let MachineTerm::PointerAddress(_, actual) = value.structural_value() else {
+            let MachineTerm::IntegerAddress(_, actual) = value.structural_value() else {
                 panic!("address payload")
             };
             assert_eq!(actual.class(), expected);
@@ -679,7 +679,7 @@ mod tests {
         let address = Address {
             base: AddressBase::Symbolic(Variable(993130)),
             offset: AddressOffset::scaled_int32_node(
-                MachineTerm::PointerAddress(
+                MachineTerm::IntegerAddress(
                     Box::new(Address::symbolic(Variable(993131))),
                     crate::kernel::AddressObjectClass::NONE,
                 ),

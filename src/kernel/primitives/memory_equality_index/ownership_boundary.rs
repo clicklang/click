@@ -374,7 +374,7 @@ fn checked_pair(
         return None;
     }
     if a.base() != b.base()
-        && facts.decide(&ConditionTerm::pointer_equal(
+        && facts.decide(&ConditionTerm::address_equal(
             a.base().clone(),
             b.base().clone(),
         )) != Some(true)

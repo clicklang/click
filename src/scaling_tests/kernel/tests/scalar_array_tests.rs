@@ -323,7 +323,7 @@ fn scalar_array_write_loan_requirement_ignores_alias_and_loan_counts() {
             if grow_aliases {
                 for i in 0..count {
                     assumptions = assumptions.assume_condition(
-                        ConditionTerm::pointer_equal(
+                        ConditionTerm::address_equal(
                             source.clone(),
                             Address::symbolic(Variable(913_000 + i)),
                         ),

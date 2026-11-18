@@ -1119,12 +1119,12 @@ pub(in crate::surface::proof) fn path_condition_equivalent(
                 },
             ) => left == other_right && right == other_left,
             (
-                ConditionTerm::PointerOffsetEqual(left, right),
-                ConditionTerm::PointerOffsetEqual(other_left, other_right),
+                ConditionTerm::AddressOffsetEqual(left, right),
+                ConditionTerm::AddressOffsetEqual(other_left, other_right),
             ) => left == other_right && right == other_left,
             (
-                ConditionTerm::PointerEqual(left, right),
-                ConditionTerm::PointerEqual(other_left, other_right),
+                ConditionTerm::AddressEqual(left, right),
+                ConditionTerm::AddressEqual(other_left, other_right),
             ) => left == other_right && right == other_left,
             _ => false,
         }
@@ -1460,11 +1460,11 @@ mod path_condition_tests {
         let left = AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(41)), 4);
         let right = AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(42)), 4);
         let forward = Proposition::ConditionIs(
-            ConditionTerm::PointerOffsetEqual(Box::new(left.clone()), Box::new(right.clone())),
+            ConditionTerm::AddressOffsetEqual(Box::new(left.clone()), Box::new(right.clone())),
             true,
         );
         let reversed = Proposition::ConditionIs(
-            ConditionTerm::PointerOffsetEqual(Box::new(right), Box::new(left)),
+            ConditionTerm::AddressOffsetEqual(Box::new(right), Box::new(left)),
             true,
         );
 

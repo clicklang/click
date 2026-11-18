@@ -9576,7 +9576,7 @@ fn allocation_continuity(
     } else if pointers_proven_distinct_for_memory_resolution(input_base, output_base, assumptions) {
         AllocationContinuity::Distinct
     } else {
-        AllocationContinuity::Undecided(ConditionTerm::pointer_equal(
+        AllocationContinuity::Undecided(ConditionTerm::address_equal(
             input_base.clone(),
             output_base.clone(),
         ))
@@ -14095,7 +14095,7 @@ fn held_child_witness(
             own_pointers.iter().all(|own| {
                 own.base != pointer.base
                     || assumptions
-                        .decide(&ConditionTerm::pointer_equal(pointer.clone(), own.clone()))
+                        .decide(&ConditionTerm::address_equal(pointer.clone(), own.clone()))
                         == Some(false)
             })
         });
@@ -14589,7 +14589,7 @@ fn resource_body_fact_is_established(
     // logical read retains its own producer identity. Reuse only the exact
     // typed read relation already checked for contract facts: it requires
     // the same recorded state and address, or a checked stored value.
-    if let Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) = proposition
+    if let Proposition::ConditionIs(ConditionTerm::AddressEqual(left, right), true) = proposition
         && crate::kernel::memory_history::pointer_read_has_recorded_value(left, right, established)
     {
         return true;
@@ -14597,7 +14597,7 @@ fn resource_body_fact_is_established(
     if matches!(
         proposition,
         Proposition::ConditionIs(
-            ConditionTerm::PointerOffsetEqual(left, right),
+            ConditionTerm::AddressOffsetEqual(left, right),
             true,
         ) if crate::kernel::memory_history::pointer_load_offset_proven_equal(
             left,

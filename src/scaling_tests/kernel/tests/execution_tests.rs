@@ -37,7 +37,7 @@ fn direct_local_write_builds_loan_obligation_without_visiting_aliases() {
         let mut assumptions = PureFactContext::new();
         for i in 0..count {
             assumptions = assumptions.assume_condition(
-                ConditionTerm::pointer_equal(
+                ConditionTerm::address_equal(
                     slot.clone(),
                     Address::symbolic(Variable(931_000 + i)),
                 ),

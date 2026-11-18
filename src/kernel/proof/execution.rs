@@ -3276,10 +3276,9 @@ impl OpenedContractEntry {
             // keep the entry producer's form, avoiding extra read-over-write
             // equations being admitted as independent premises.
             let selected = match fact {
-                Proposition::ConditionIs(
-                    crate::kernel::ConditionTerm::PointerValueEqual(..),
-                    _,
-                ) => contract.explicitly_states(fact),
+                Proposition::ConditionIs(crate::kernel::ConditionTerm::PointerEqual(..), _) => {
+                    contract.explicitly_states(fact)
+                }
                 _ => contract.states(fact),
             };
             if selected && kept.insert(fact.clone()) {
@@ -6718,9 +6717,9 @@ pub(super) fn checked_interface_pointer_equality(
     matches!(
         goal,
         Proposition::ConditionIs(
-            crate::kernel::ConditionTerm::PointerEqual(_, _)
-                | crate::kernel::ConditionTerm::PointerValueEqual(_, _)
-                | crate::kernel::ConditionTerm::PointerOffsetEqual(_, _),
+            crate::kernel::ConditionTerm::AddressEqual(_, _)
+                | crate::kernel::ConditionTerm::PointerEqual(_, _)
+                | crate::kernel::ConditionTerm::AddressOffsetEqual(_, _),
             true
         )
     ) && super::fact_reasoning::normalize_using_conditions(goal, &[], facts).is_ok()

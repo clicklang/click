@@ -192,7 +192,7 @@ fn joining_one_worker_keeps_the_current_frame_as_owners_and_aliases_grow() {
             if aliases {
                 for index in 0..size {
                     assumptions = assumptions.assume_condition(
-                        ConditionTerm::pointer_equal(
+                        ConditionTerm::address_equal(
                             pointer(0),
                             Address::symbolic(Variable(8_796_000 + index as u64)),
                         ),

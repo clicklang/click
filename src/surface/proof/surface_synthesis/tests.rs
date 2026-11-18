@@ -3263,7 +3263,7 @@ fn a_pointer_a_local_no_longer_holds_is_spelled_where_it_was_introduced() {
         now.clone(),
     );
     let fact = Proposition::ConditionIs(
-        ConditionTerm::PointerEqual(Box::new(returned), Box::new(Address::null())),
+        ConditionTerm::AddressEqual(Box::new(returned), Box::new(Address::null())),
         false,
     );
     let spelled = {
@@ -3492,7 +3492,7 @@ fn allocation_result_names_survive_reassignment_and_follow_state_scope() {
     assert_eq!(
         lowered,
         Proposition::ConditionIs(
-            ConditionTerm::PointerEqual(Box::new(first.clone()), Box::new(first.clone())),
+            ConditionTerm::AddressEqual(Box::new(first.clone()), Box::new(first.clone())),
             true
         )
     );
@@ -4203,7 +4203,7 @@ fn volatile_read_event_results_raise_and_lower_exactly() {
                 true,
             ),
             ProgramValue::Pointer(pointer) => Proposition::ConditionIs(
-                ConditionTerm::PointerEqual(
+                ConditionTerm::AddressEqual(
                     Box::new(pointer.address().clone()),
                     Box::new(pointer.address().clone()),
                 ),
@@ -6425,12 +6425,12 @@ fn shared_pointer_comparisons_preserve_native_spelling() {
     let state = ExecutionState::new();
     let names = BTreeMap::<Variable, SurfaceBinder>::new();
     for native in [
-        ConditionTerm::PointerValueEqual(Box::new(left.clone()), Box::new(right.clone())),
-        ConditionTerm::PointerEqual(
+        ConditionTerm::PointerEqual(Box::new(left.clone()), Box::new(right.clone())),
+        ConditionTerm::AddressEqual(
             Box::new(left.address().clone()),
             Box::new(right.address().clone()),
         ),
-        ConditionTerm::PointerEqual(Box::new(left.address().clone()), Box::new(Address::null())),
+        ConditionTerm::AddressEqual(Box::new(left.address().clone()), Box::new(Address::null())),
     ] {
         let expected = synthesize_surface_bool(&native, binding, &state, &names).unwrap();
         let root = KernelTermImport::default().condition(&native);
@@ -7835,7 +7835,7 @@ fn a_reflexive_pointer_equality_raises_as_contract_equality_that_lowers_back() {
     // address-word equality, and lowering keeps its node.
     for (held, expected) in [(true, "node == node"), (false, "node != node")] {
         let equality = Proposition::ConditionIs(
-            ConditionTerm::PointerEqual(
+            ConditionTerm::AddressEqual(
                 Box::new(node.address().clone()),
                 Box::new(node.address().clone()),
             ),
