@@ -640,6 +640,13 @@ pub enum CppBinaryOperator {
     LogicalAnd,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CppCompoundAssignment {
+    Add,
+    Subtract,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum CppExpression {
@@ -1213,6 +1220,8 @@ pub enum CppStatement {
         value_type: CppType,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         field: Option<Box<CppFieldReference>>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        compound_operator: Option<CppCompoundAssignment>,
         value: CppExpression,
         span: CppSpan,
     },
@@ -3874,6 +3883,7 @@ impl CppStatement {
                 arguments,
                 value_type,
                 field,
+                compound_operator,
                 value,
                 span,
             } => {
@@ -3894,6 +3904,12 @@ impl CppStatement {
                     require_native_pointer_element(pointee, false, "call store referent")?;
                     pointee
                 };
+                if compound_operator.is_some()
+                    && (field.is_none()
+                        || !matches!(Scalar::mutable_kind(stored_type), Some(ScalarKind::Int32 | ScalarKind::Int64)))
+                {
+                    return Err("C++ compound call store requires a mutable signed integer field".into());
+                }
                 value.validate(places, records, logical_source)?;
                 if !same_scalar_type(&super::scalar::scalar_value_type(stored_type), value.value_type()) {
                     return Err("C++ call store must preserve the referent's native type".into());
