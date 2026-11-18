@@ -159,7 +159,10 @@ mod memory_equality_index;
 mod sequence_values;
 pub use sequence_values::{SequenceValues, SequenceValuesIter};
 mod descriptor_values;
-pub use descriptor_values::{StoredConditionTerm, StoredMachineTerm, StoredProgramValue};
+pub use descriptor_values::{
+    StoredAlgebraicTerm, StoredConditionTerm, StoredIntegerTerm, StoredMachineTerm,
+    StoredProgramValue,
+};
 mod resource_fields;
 pub(crate) use resource_fields::StoredResourceField;
 pub use resource_fields::{ResourceFieldValue, ResourceFieldValues};
