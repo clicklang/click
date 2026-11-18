@@ -195,10 +195,10 @@ excluding prose and Rust test strings, leaves:
 
 | Corpus | Files | Sites |
 | --- | ---: | ---: |
-| `mdtests/` | 4 | 11 |
+| `mdtests/` | 3 | 3 |
 | `examples/` | 16 | 105 |
 | `library/` | 0 | 0 |
-| Total | 20 | 116 |
+| Total | 19 | 108 |
 
 Positive fixtures also supply exact input text to expansion and mutation tests.
 Migrate those inputs together with their tests and keep the smart proof inputs.
@@ -221,8 +221,6 @@ pattern is understood but the complete family has not yet been validated.
 | ID | Work | Confidence |
 | --- | --- | --- |
 | 11 | Remaining loop-frame mdtests | Medium |
-| 13 | Named-root aliased-pointer baseline diagnosis/repair | Uncertain |
-| 14 | Named-root fixture migration after baseline repair | Medium |
 | 15 | Remaining fold, resource-observation, count mdtests | Medium |
 | 17 | Red-black insertion baseline diagnosis/repair | Uncertain |
 | 18 | Insertion: field and parent-link preservation | Medium |
@@ -256,11 +254,6 @@ pattern is understood but the complete family has not yet been validated.
 ### Excluded or still unconfirmed
 
 Do not count these as additional confirmed generated-output families:
-
-- `named_root_call_preserves_aliased_pointer_field` reaches its unchanged
-  deterministic smart-work limit while proving `cursor->left == rid` after the
-  helper call. Repair that proof explicitly before migrating its written sites;
-  a successful expansion prefix is not a passing whole-fixture regression.
 
 - Computed lower endpoint `p[index + 1..length]`, nested upper endpoint
   `p[index..index + 1 + 1]`, and native upper endpoint
