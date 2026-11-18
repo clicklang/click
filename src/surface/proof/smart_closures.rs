@@ -3414,7 +3414,16 @@ impl<'a> Proof<'a> {
         // is a spelling defect, not a reason to search other spellings.
         // Calls have their own authoritative source at this frontier. A
         // context fact's source may instead be relative to function entry.
-        let recorded = if requirement.call_site.is_none() {
+        // Generated write separation already names its caller-side ranges.
+        // Its call site restricts proof to entry, but supplies no source clause.
+        let generated_separation = requirement.call_site.as_ref().is_some_and(|site| {
+            site.source_requirement_ordinal.is_none()
+                && matches!(
+                    requirement.proposition,
+                    Proposition::ResourceSeparate { .. }
+                )
+        });
+        let recorded = if requirement.call_site.is_none() || generated_separation {
             self.local_surface_facts()
                 .recorded_requirement_surface(&requirement.proposition)
                 .or_else(|| {
@@ -3527,7 +3536,7 @@ impl<'a> Proof<'a> {
                 .is_ok()
                 .then_some(RequirementSpelling { surface }));
         }
-        if requirement.call_site.is_some() {
+        if requirement.call_site.is_some() && !generated_separation {
             // A call requirement must retain its authoritative call source.
             // Synthesis may restate an admitted source, never replace missing
             // or mismatching call metadata.
