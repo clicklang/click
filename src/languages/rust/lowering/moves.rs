@@ -804,9 +804,9 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                         if matches!(target, E::Index { .. }) {
                             let value_type = indexed_element_type(cx.place_type(target)?)
                                 .ok_or("unsupported Rust indexed assignment type")?;
-                            let (capture, name) = cx.capture_operand(value, &value_type)?;
+                            let (capture, result) = cx.capture_operand(value, &value_type)?;
                             checks = program_seq(checks, capture);
-                            value = crate::kernel::program_expression::variable(name);
+                            value = result;
                         }
                         let (target_checks, address) = cx.prepared_address(target)?;
                         let value_type = cx.place_type(target)?;
@@ -1719,7 +1719,7 @@ mod tests {
                 mir_point: None,
                 mir_nodes: BTreeMap::new(),
                 next_temporary: 0,
-                next_call_result: std::cell::Cell::new(0),
+                next_result_step: std::cell::Cell::new(0),
                 loop_iterators: Vec::new(),
                 locals: BTreeSet::new(),
                 return_type: InterfaceType::Void,
