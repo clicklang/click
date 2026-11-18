@@ -7532,6 +7532,41 @@ fn symbolic_unsigned_equality_guards_keep_high_bit_literals() {
 }
 
 #[test]
+fn boolean_equality_guards_round_trip_after_rewrite() {
+    use MachineIntegerType as T;
+    for (format, spelling) in [
+        (T::Int32, "int32"),
+        (T::UInt32, "uint32"),
+        (T::Int64, "int64"),
+        (T::UInt64, "uint64"),
+    ] {
+        let mut fixture = ConditionalRoundTrip::new(format, spelling);
+        for (name, id) in [("a", 999712), ("b", 999713)] {
+            fixture.state = fixture.state.with_local(
+                name,
+                ProgramValue::of_bool(ConditionTerm::Variable(Variable(id))),
+            );
+        }
+        for replacement in [
+            "if a == b { true } else { false }",
+            "a",
+            "if y < z { true } else { false }",
+        ] {
+            let equality = fixture.lower(&format!("flag == ({replacement})"));
+            let literal = format!("(5 as {spelling})");
+            for guard in ["flag", "not flag"] {
+                for arm in ["x", literal.as_str()] {
+                    for reverse in [false, true] {
+                        let original = fixture.goal(guard, reverse, arm);
+                        fixture.check(&original, &equality, guard, reverse);
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn boolean_variable_guard_conditionals_round_trip_after_rewrite() {
     use crate::kernel::MachineIntegerType as T;
     for (format, spelling) in [
@@ -8285,6 +8320,41 @@ fn widening_casts_in_conditionals_round_trip_after_rewrite() {
                         reverse,
                     );
                 }
+            }
+        }
+    }
+}
+
+#[test]
+fn signedness_casts_in_conditionals_round_trip_after_rewrite() {
+    use MachineIntegerType as T;
+    for (source, destination, spelling) in [
+        (T::UInt32, T::Int32, "int32"),
+        (T::Int32, T::UInt32, "uint32"),
+        (T::UInt64, T::Int64, "int64"),
+        (T::Int64, T::UInt64, "uint64"),
+    ] {
+        let mut fixture = ConditionalRoundTrip::new(destination, spelling);
+        fixture.state = fixture.state.with_local(
+            "w",
+            source.value_from_term(MachineTerm::Variable(Variable(999712))),
+        );
+        let equality = fixture.lower(&format!("x == (w as {spelling})"));
+        for reverse in [false, true] {
+            for (guard, arm) in [
+                ("flag", "x"),
+                ("not flag", "x"),
+                ("x < y", "z"),
+                ("x == y", "z"),
+                ("y <= x", "z"),
+                ("y != x", "z"),
+            ] {
+                fixture.check(
+                    &fixture.goal(guard, reverse, arm),
+                    &equality,
+                    guard,
+                    reverse,
+                );
             }
         }
     }
