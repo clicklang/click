@@ -1383,7 +1383,7 @@ fn memory_load_store_are_native_theorems() {
         &Proposition::MemoryLoads {
             memory: SymbolicMemory::new().store(pointer.clone(), value.clone()),
             pointer,
-            outcome: ExpressionOutcome::Value(value),
+            outcome: ExpressionOutcome::Value((value).into()),
         }
     );
 }
@@ -1412,7 +1412,7 @@ fn store_preserves_distinct_memory_cell_frame() {
         &Proposition::MemoryLoads {
             memory: memory.store(stored_pointer, int32(9)),
             pointer: loaded_pointer,
-            outcome: ExpressionOutcome::Value(int32(42)),
+            outcome: ExpressionOutcome::Value((int32(42)).into()),
         }
     );
 }

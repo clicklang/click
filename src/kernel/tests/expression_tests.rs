@@ -412,7 +412,7 @@ fn floating_point_constant_conversions_round_in_integer_space() {
             &Proposition::ProgramExpressionEvaluates {
                 state: Box::new(state.clone()),
                 expression,
-                outcome: ExpressionOutcome::Value(expected),
+                outcome: ExpressionOutcome::Value((expected).into()),
             }
         );
     }
@@ -452,7 +452,7 @@ fn floating_point_to_integer_conversion_truncates_and_rejects_invalid_values() {
             &Proposition::ProgramExpressionEvaluates {
                 state: Box::new(state.clone()),
                 expression,
-                outcome: ExpressionOutcome::Value(expected),
+                outcome: ExpressionOutcome::Value((expected).into()),
             }
         );
     }
@@ -679,7 +679,7 @@ fn floating_point_arithmetic_rounds_both_widths_in_integer_space() {
         let theorem = prove_program_expression_evaluation(state.clone(), expression)
             .expect("constant floating arithmetic should evaluate");
         match theorem.proposition() {
-            Proposition::ProgramExpressionEvaluates { outcome, .. } => outcome.clone(),
+            Proposition::ProgramExpressionEvaluates { outcome, .. } => outcome.native_compat(),
             proposition => panic!("unexpected floating arithmetic theorem {proposition:?}"),
         }
     };
@@ -771,7 +771,7 @@ fn floating_point_arithmetic_preserves_ieee_exceptions_and_ties() {
         let theorem = prove_program_expression_evaluation(state.clone(), expression)
             .expect("constant floating arithmetic should evaluate");
         match theorem.proposition() {
-            Proposition::ProgramExpressionEvaluates { outcome, .. } => outcome.clone(),
+            Proposition::ProgramExpressionEvaluates { outcome, .. } => outcome.native_compat(),
             proposition => panic!("unexpected floating arithmetic theorem {proposition:?}"),
         }
     };
@@ -908,10 +908,13 @@ fn symbolic_floating_arithmetic_remains_typed_and_opaque() {
     let theorem =
         prove_program_expression_evaluation(state, expression).expect("symbolic float add");
     let Proposition::ProgramExpressionEvaluates {
-        outcome: ExpressionOutcome::Value(ProgramValue::Float32(term)),
+        outcome: ExpressionOutcome::Value(stored_outcome_value),
         ..
     } = theorem.proposition()
     else {
+        panic!("symbolic float addition should produce a float value");
+    };
+    let ProgramValue::Float32(term) = stored_outcome_value.native_compat() else {
         panic!("symbolic float addition should produce a float value");
     };
     assert!(matches!(term, MachineTerm::Float32Binary { .. }));
@@ -924,7 +927,7 @@ fn mixed_floating_arithmetic_promotes_to_the_wider_or_present_float_type() {
         let theorem = prove_program_expression_evaluation(state.clone(), expression)
             .expect("mixed floating arithmetic should evaluate");
         match theorem.proposition() {
-            Proposition::ProgramExpressionEvaluates { outcome, .. } => outcome.clone(),
+            Proposition::ProgramExpressionEvaluates { outcome, .. } => outcome.native_compat(),
             proposition => panic!("unexpected mixed floating theorem {proposition:?}"),
         }
     };
@@ -975,10 +978,13 @@ fn symbolic_float_conversions_remain_typed_and_float_to_integer_is_guarded() {
     )
     .expect("symbolic integer-to-float conversion should evaluate");
     let Proposition::ProgramExpressionEvaluates {
-        outcome: ExpressionOutcome::Value(ProgramValue::Float64(term)),
+        outcome: ExpressionOutcome::Value(stored_outcome_value),
         ..
     } = theorem.proposition()
     else {
+        panic!("symbolic integer-to-float conversion should produce a double");
+    };
+    let ProgramValue::Float64(term) = stored_outcome_value.native_compat() else {
         panic!("symbolic integer-to-float conversion should produce a double");
     };
     assert!(matches!(term, MachineTerm::PureFunctionApplication { .. }));
@@ -992,10 +998,13 @@ fn symbolic_float_conversions_remain_typed_and_float_to_integer_is_guarded() {
     )
     .expect("symbolic float widening conversion should evaluate");
     let Proposition::ProgramExpressionEvaluates {
-        outcome: ExpressionOutcome::Value(ProgramValue::Float64(term)),
+        outcome: ExpressionOutcome::Value(stored_outcome_value),
         ..
     } = theorem.proposition()
     else {
+        panic!("symbolic float widening conversion should produce a double");
+    };
+    let ProgramValue::Float64(term) = stored_outcome_value.native_compat() else {
         panic!("symbolic float widening conversion should produce a double");
     };
     assert!(matches!(term, MachineTerm::PureFunctionApplication { .. }));
@@ -1401,7 +1410,7 @@ fn int32_comparisons_return_c_int32_zero_or_one() {
             &Proposition::ProgramExpressionEvaluates {
                 state: Box::new(state.clone()),
                 expression,
-                outcome: ExpressionOutcome::Value(expected),
+                outcome: ExpressionOutcome::Value((expected).into()),
             }
         );
     }
@@ -1462,7 +1471,7 @@ fn pointer_equality_returns_c_int32_zero_or_one() {
             &Proposition::ProgramExpressionEvaluates {
                 state: Box::new(state.clone()),
                 expression,
-                outcome: ExpressionOutcome::Value(expected),
+                outcome: ExpressionOutcome::Value((expected).into()),
             }
         );
     }
@@ -1565,8 +1574,8 @@ fn pointer_cast_retags_the_view_but_pointer_type_mismatch_is_not_implicit() {
     else {
         panic!("explicit pointer cast did not produce a value");
     };
-    assert_eq!(value.program_type(), ProgramType::UInt8Pointer);
-    let ProgramValue::Pointer(value) = value else {
+    assert_eq!(value.value().program_type(), ProgramType::UInt8Pointer);
+    let ProgramValue::Pointer(value) = value.native_compat() else {
         unreachable!();
     };
     assert_eq!(value.address(), &address);
@@ -1777,7 +1786,7 @@ fn pointer_equality_accepts_int32_zero_as_null_pointer_constant() {
             &Proposition::ProgramExpressionEvaluates {
                 state: Box::new(state.clone()),
                 expression,
-                outcome: ExpressionOutcome::Value(expected),
+                outcome: ExpressionOutcome::Value((expected).into()),
             }
         );
     }
@@ -1884,7 +1893,7 @@ fn not_equal_and_not_return_c_int32_zero_or_one() {
             &Proposition::ProgramExpressionEvaluates {
                 state: Box::new(state.clone()),
                 expression,
-                outcome: ExpressionOutcome::Value(expected),
+                outcome: ExpressionOutcome::Value((expected).into()),
             }
         );
     }
@@ -1933,7 +1942,7 @@ fn logical_and_or_short_circuit_right_operand() {
             &Proposition::ProgramExpressionEvaluates {
                 state: Box::new(state.clone()),
                 expression,
-                outcome: ExpressionOutcome::Value(expected),
+                outcome: ExpressionOutcome::Value((expected).into()),
             }
         );
     }
@@ -2049,10 +2058,13 @@ fn captured_void_pointer_arithmetic_retains_the_gnu_byte_stride() {
             &Proposition::ProgramExpressionEvaluates {
                 state: Box::new(state.clone()),
                 expression,
-                outcome: ExpressionOutcome::Value(ProgramValue::typed_pointer(
-                    pointer.offset_by_bytes(1),
-                    ProgramType::VoidPointer,
-                )),
+                outcome: ExpressionOutcome::Value(
+                    (ProgramValue::typed_pointer(
+                        pointer.offset_by_bytes(1),
+                        ProgramType::VoidPointer,
+                    ))
+                    .into()
+                ),
             }
         );
     }
@@ -2611,7 +2623,7 @@ fn pointer_addition_allows_the_one_past_int32_element() {
         &Proposition::ProgramExpressionEvaluates {
             state: Box::new(state),
             expression,
-            outcome: ExpressionOutcome::Value(ProgramValue::pointer(result)),
+            outcome: ExpressionOutcome::Value((ProgramValue::pointer(result)).into()),
         }
     );
 }
@@ -2725,7 +2737,7 @@ fn pointer_relational_comparison_orders_same_block_elements() {
             &Proposition::ProgramExpressionEvaluates {
                 state: Box::new(state.clone()),
                 expression,
-                outcome: ExpressionOutcome::Value(int32(expected)),
+                outcome: ExpressionOutcome::Value((int32(expected)).into()),
             }
         );
     }
@@ -2757,7 +2769,7 @@ fn pointer_subtraction_returns_same_block_element_distance() {
         &Proposition::ProgramExpressionEvaluates {
             state: Box::new(state),
             expression,
-            outcome: ExpressionOutcome::Value(int32(2)),
+            outcome: ExpressionOutcome::Value((int32(2)).into()),
         }
     );
 }
@@ -2796,7 +2808,7 @@ fn uint8_pointer_subtraction_returns_byte_distance() {
         &Proposition::ProgramExpressionEvaluates {
             state: Box::new(state),
             expression,
-            outcome: ExpressionOutcome::Value(int32(3)),
+            outcome: ExpressionOutcome::Value((int32(3)).into()),
         }
     );
 }
@@ -2827,7 +2839,7 @@ fn pointer_subtraction_by_one_steps_back_one_element() {
         &Proposition::ProgramExpressionEvaluates {
             state: Box::new(state),
             expression,
-            outcome: ExpressionOutcome::Value(ProgramValue::pointer(result)),
+            outcome: ExpressionOutcome::Value((ProgramValue::pointer(result)).into()),
         }
     );
 }
@@ -4205,10 +4217,13 @@ fn uint64_bit_reinterpretation_has_a_distinct_checked_cast_boundary() {
         let theorem =
             prove_program_expression_evaluation(ExecutionState::new(), expression).unwrap();
         let Proposition::ProgramExpressionEvaluates {
-            outcome: ExpressionOutcome::Value(ProgramValue::Int64(value)),
+            outcome: ExpressionOutcome::Value(stored_outcome_value),
             ..
         } = theorem.proposition()
         else {
+            panic!("expected signed bits");
+        };
+        let ProgramValue::Int64(value) = stored_outcome_value.native_compat() else {
             panic!("expected signed bits");
         };
         assert_eq!(value.int64_as_const(), Some(bits as i64));
@@ -4222,10 +4237,13 @@ fn uint64_bit_reinterpretation_has_a_distinct_checked_cast_boundary() {
             let theorem =
                 prove_program_expression_evaluation(ExecutionState::new(), ordinary).unwrap();
             let Proposition::ProgramExpressionEvaluates {
-                outcome: ExpressionOutcome::Value(ProgramValue::Int64(value)),
+                outcome: ExpressionOutcome::Value(stored_outcome_value),
                 ..
             } = theorem.proposition()
             else {
+                panic!("representable ordinary cast must preserve its value");
+            };
+            let ProgramValue::Int64(value) = stored_outcome_value.native_compat() else {
                 panic!("representable ordinary cast must preserve its value");
             };
             assert_eq!(value.int64_as_const(), Some(bits as i64));
@@ -4284,6 +4302,8 @@ fn modulo_casts_are_explicit_integer_boundaries_and_preserve_operand_definedness
         let Proposition::ProgramExpressionEvaluates { outcome, .. } = theorem.proposition() else {
             panic!("expected evaluation");
         };
+        let native_outcome = outcome.native_compat();
+        let outcome = &native_outcome;
         outcome.clone()
     };
     for target in [
@@ -4480,10 +4500,13 @@ fn evaluated_pointer(state: &ExecutionState, expression: ProgramExpression) -> P
     let theorem = prove_program_expression_evaluation(state.clone(), expression)
         .expect("the pointer expression should evaluate");
     let Proposition::ProgramExpressionEvaluates {
-        outcome: ExpressionOutcome::Value(ProgramValue::Pointer(value)),
+        outcome: ExpressionOutcome::Value(stored_outcome_value),
         ..
     } = theorem.proposition()
     else {
+        panic!("the pointer expression did not produce a pointer");
+    };
+    let ProgramValue::Pointer(value) = stored_outcome_value.native_compat() else {
         panic!("the pointer expression did not produce a pointer");
     };
     value.clone()

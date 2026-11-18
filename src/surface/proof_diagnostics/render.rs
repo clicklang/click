@@ -2761,9 +2761,9 @@ impl Renderer<'_> {
             }
         }
     }
-    fn outcome(&mut self, outcome: &ExpressionOutcome) {
+    fn outcome(&mut self, outcome: &ExpressionOutcome<crate::kernel::StoredProgramValue>) {
         match outcome {
-            ExpressionOutcome::Value(value) => self.cvalue(value),
+            ExpressionOutcome::Value(value) => self.cvalue(value.native_compat()),
             ExpressionOutcome::UndefinedBehavior(_) => self.push("undefined-behavior"),
             ExpressionOutcome::RuntimeError(_) => self.push("runtime-error"),
         }

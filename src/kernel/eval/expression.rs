@@ -205,22 +205,6 @@ fn float_to_integer_conversion_value(
     })
 }
 
-#[cfg(test)]
-pub(in crate::kernel) fn evaluate_program_expression(
-    state: &ExecutionState,
-    expression: &ProgramExpression,
-    assumptions: &PureFactContext,
-    budget: &mut ExecutionBudget,
-) -> Option<ExpressionOutcome> {
-    let paths = evaluate_program_expression_paths(state, expression, assumptions, budget).ok()?;
-    let mut paths = paths.into_iter();
-    let path = paths.next()?;
-    if paths.next().is_some() || !path.obligations.is_empty() {
-        return None;
-    }
-    Some(path.outcome)
-}
-
 thread_local! {
     /// How many specification-fragment evaluations enclose the current read.
     static SPECIFICATION_READS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };

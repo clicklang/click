@@ -17,7 +17,9 @@ fn evaluated(expression: ProgramExpression) -> ExpressionOutcome {
     let Proposition::ProgramExpressionEvaluates { outcome, .. } = theorem.proposition() else {
         unreachable!()
     };
-    outcome.clone()
+    let native_outcome = outcome.native_compat();
+    let outcome = &native_outcome;
+    outcome.clone().map_value(Into::into)
 }
 
 fn value(ty: MachineIntegerType, variable: Variable) -> ProgramValue {
