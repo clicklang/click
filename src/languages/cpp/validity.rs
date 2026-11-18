@@ -639,6 +639,7 @@ impl Metadata<'_> {
                     field,
                     value,
                     span,
+                    ..
                 } => {
                     self.callee(callee)?;
                     self.arguments(arguments)?;

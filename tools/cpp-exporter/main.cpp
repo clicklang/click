@@ -2061,11 +2061,12 @@ private:
       }
       llvm::json::Object result;
       const clang::Expr *left = binary->getLHS()->IgnoreParens();
+      const auto *member = llvm::dyn_cast<clang::MemberExpr>(left);
+      const char *compound_operator = nullptr;
       if (binary->getOpcode() == clang::BO_AddAssign ||
           binary->getOpcode() == clang::BO_SubAssign) {
         const auto *compound =
             llvm::cast<clang::CompoundAssignOperator>(binary);
-        const auto *member = llvm::dyn_cast<clang::MemberExpr>(left);
         if (member == nullptr ||
             !context_.hasSameType(compound->getComputationLHSType(),
                                   left->getType()) ||
@@ -2080,26 +2081,8 @@ private:
                                          "same-width operands");
           return std::nullopt;
         }
-        auto loaded = lower_member(member, function);
-        auto value_type = lower_type(left->getType(), left->getExprLoc());
-        auto sum_type = lower_type(left->getType(), left->getExprLoc());
-        if (!loaded || !value_type || !sum_type)
-          return std::nullopt;
-        llvm::json::Object load;
-        load["kind"] = "member_load";
-        load["object"] = std::move(loaded->object);
-        load["field"] = std::move(loaded->field);
-        load["value_type"] = std::move(*value_type);
-        load["span"] = span(left->getSourceRange());
-        llvm::json::Object sum;
-        sum["kind"] = "binary";
-        sum["operator"] =
+        compound_operator =
             binary->getOpcode() == clang::BO_AddAssign ? "add" : "subtract";
-        sum["left"] = std::move(load);
-        sum["right"] = std::move(*value);
-        sum["value_type"] = std::move(*sum_type);
-        sum["span"] = span(binary->getSourceRange());
-        value = Json(std::move(sum));
       }
       if (const auto *call = llvm::dyn_cast<clang::CallExpr>(left);
           call != nullptr && binary->getOpcode() == clang::BO_Assign) {
@@ -2123,9 +2106,9 @@ private:
         result["callee"] = std::move(operation->callee);
         result["arguments"] = std::move(operation->arguments);
         result["value_type"] = std::move(*value_type);
-      } else if (const auto *member = llvm::dyn_cast<clang::MemberExpr>(left)) {
+      } else if (member != nullptr) {
         const auto *call = llvm::dyn_cast<clang::CallExpr>(member->getBase()->IgnoreParens());
-        if (call != nullptr && !member->isArrow() && binary->getOpcode() == clang::BO_Assign) {
+        if (call != nullptr && !member->isArrow()) {
           auto lowered = lower_returned_member(member, call, function);
           if (!lowered) return std::nullopt;
           result["kind"] = "call_store";
@@ -2133,9 +2116,29 @@ private:
           result["arguments"] = std::move(lowered->call.arguments);
           result["value_type"] = std::move(lowered->reference_type);
           result["field"] = std::move(lowered->field);
+          if (compound_operator != nullptr)
+            result["compound_operator"] = compound_operator;
         } else {
           auto lowered = lower_member(member, function);
           if (!lowered) return std::nullopt;
+          if (compound_operator != nullptr) {
+            auto value_type = lower_type(left->getType(), left->getExprLoc());
+            if (!value_type) return std::nullopt;
+            llvm::json::Object load;
+            load["kind"] = "member_load";
+            load["object"] = lowered->object;
+            load["field"] = lowered->field;
+            load["value_type"] = *value_type;
+            load["span"] = span(left->getSourceRange());
+            llvm::json::Object sum;
+            sum["kind"] = "binary";
+            sum["operator"] = compound_operator;
+            sum["left"] = std::move(load);
+            sum["right"] = std::move(*value);
+            sum["value_type"] = std::move(*value_type);
+            sum["span"] = span(binary->getSourceRange());
+            value = Json(std::move(sum));
+          }
           result["kind"] = "member_store";
           result["object"] = std::move(lowered->object);
           result["field"] = std::move(lowered->field);

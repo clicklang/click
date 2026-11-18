@@ -1351,6 +1351,7 @@ impl LoweringContext<'_> {
                 arguments,
                 value_type,
                 field,
+                compound_operator,
                 value,
                 ..
             } => {
@@ -1382,15 +1383,25 @@ impl LoweringContext<'_> {
                     ),
                     None => evaluation.value,
                 };
+                let operand = crate::kernel::program_expression::variable(stored);
+                let value = match compound_operator {
+                    Some(operator) => {
+                        use super::CppCompoundAssignment;
+                        use crate::kernel::program_expression::{add, subtract};
+
+                        let previous = self.lower_typed_load(pointer.clone(), stored_type)?;
+                        match operator {
+                            CppCompoundAssignment::Add => add(previous, operand),
+                            CppCompoundAssignment::Subtract => subtract(previous, operand),
+                        }
+                    }
+                    None => operand,
+                };
                 Ok(program_seq(
                     read,
                     evaluate_then(
                         evaluation.prefix,
-                        program_typed_store(
-                            pointer,
-                            crate::kernel::program_expression::variable(stored),
-                            stored_type,
-                        ),
+                        program_typed_store(pointer, value, stored_type),
                     ),
                 ))
             }
