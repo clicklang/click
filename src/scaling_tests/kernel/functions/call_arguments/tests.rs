@@ -52,7 +52,7 @@ fn pointer_return_handoffs_retain_prepared_dags_without_export() {
         Vec::new(),
         program_return(crate::kernel::program_expression::int32_literal(0)),
     );
-    let payload = SharedPointerValue::import(&Pointer::new(
+    let payload = SharedPointer::import(&Pointer::new(
         Address::symbolic(Variable(1027300)),
         ProgramType::Int32Pointer,
     ));

@@ -1,6 +1,25 @@
 use super::*;
 
 #[test]
+#[ignore = "nightly: named-root alias proof, expansion, and cold replay"]
+fn named_root_preserves_aliased_pointer_fields_without_transport() {
+    let (source, c_sources) =
+        mdtest_sources("mdtests/named_root_call_preserves_aliased_pointer_field.md");
+    let sources = crate::cli::source_refs(&c_sources);
+    assert!(!source.contains("transport("));
+    verify_c_sources(&source, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
+
+    let label = "probe.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, label)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim(label, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
 #[ignore = "nightly: ranked search proof, expansion, and cold replay"]
 fn ranked_search_preserves_its_reads_without_transport() {
     let (source, c_sources) = mdtest_sources("mdtests/search_terminates_by_unmarked_count.md");
@@ -23159,6 +23178,24 @@ fn unsigned_division_domain_expands_to_an_explicit_step_proof() {
     let missing = implicit.replace("    requires y != 0u32;\n", "");
     assert_ne!(missing, implicit);
     assert!(verify_c_sources(&missing, &sources).is_err());
+}
+
+#[test]
+fn indexed_store_bounds_expand_to_an_explicit_step_proof() {
+    let (source, sources) = mdtest_sources("mdtests/indexed_store_exposes_its_bounds.md");
+    let implicit = source.replace("step() by { known(); }", "step();");
+    assert_ne!(implicit, source);
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_function_proof_source(&implicit, &sources, "set").unwrap();
+    assert!(expanded.contains("step() by"), "{expanded}");
+    crate::surface::without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
+
+    let one_past = implicit.replace("requires 0 <= i and i < len;", "requires i == len;");
+    assert_ne!(one_past, implicit);
+    assert!(verify_c_sources(&one_past, &sources).is_err());
 }
 
 #[test]

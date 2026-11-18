@@ -813,6 +813,14 @@ No unsafe sibling operation can be hidden by selecting an argument order that
 skips it. Resource-bearing exceptional contracts remain outside the proof
 surface slice.
 
+An omitted argument of a supported integer type can come from a direct,
+non-`constexpr`, `noexcept` helper with no arguments, such as `limit()` for
+`int limit(int n = default_limit())`. The helper follows the ordinary
+nested-call sequencing checks and runs once before `limit` is entered.
+The import tracks the source supplying the default and records the nested
+call at the omission site. An explicit argument uses the ordinary call path.
+Integral constant defaults continue to use Clang's evaluated value.
+
 Each nested result has a checked typed capture; an inner exception skips the
 outer call and uses the return's cleanup edge. Verification, selected-caller
 expansion/reverification, and retained audit cover all supported scalar types,

@@ -285,7 +285,7 @@ mod tests {
             KernelTerm::variable(KernelType::Program(ProgramType::UInt64), Variable(996902)),
             KernelTerm::variable(KernelType::Program(ProgramType::Float64), Variable(996903)),
             KernelTermImport::default().condition(&ConditionTerm::Variable(Variable(996904))),
-            KernelTerm::shared_pointer_value(crate::kernel::SharedPointerValue::import(&pointer)),
+            KernelTerm::shared_pointer_value(crate::kernel::SharedPointer::import(&pointer)),
             KernelTerm::variable(
                 KernelType::Algebraic(crate::kernel::AlgebraicType::parameter("T".into())),
                 Variable(996905),

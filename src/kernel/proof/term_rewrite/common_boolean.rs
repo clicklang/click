@@ -262,11 +262,11 @@ impl TermRewrite<'_> {
     /// and opaque-domain policy. This entry has no exact-value or fact rewrite.
     fn boolean_pointer_value(
         &mut self,
-        source: &crate::kernel::SharedPointerValue,
-    ) -> Option<crate::kernel::SharedPointerValue> {
+        source: &crate::kernel::SharedPointer,
+    ) -> Option<crate::kernel::SharedPointer> {
         use crate::kernel::{
             KernelAddressOffset as O, SharedAddress as A, SharedAddressOffset as S,
-            SharedPointerValue as V,
+            SharedPointer as V,
         };
         let (from, to) = self.pointer_variable?;
         debug_assert!(

@@ -65,7 +65,7 @@ impl PointerStorageKey {
                 .map(|e| (AddressKey::native(&e.start), e.width.clone())),
         })
     }
-    fn shared(value: &SharedPointerValue) -> Self {
+    fn shared(value: &SharedPointer) -> Self {
         let value = value.node();
         let q = value.qualifiers.as_deref();
         let bounds_known = q.is_some_and(|q| q.bounds_known);

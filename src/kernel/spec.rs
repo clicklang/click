@@ -2191,15 +2191,19 @@ fn evaluate_spec_integer_expression_paths_in(
             } else {
                 state
             };
-            let Some(crate::kernel::ResourceFieldValue::Integer(value)) = retained_state
+            let instance = retained_state
                 .resource_instance_at_path(projection.identity, &projection.children)
-                .and_then(|instance| {
-                    crate::kernel::eval::typed_reads::record_field(
-                        instance,
-                        projection.field_index,
-                    );
-                    instance.fields().get(projection.field_index)
-                })
+                .ok_or(ExecutionLimit::ResourceFieldInstanceUnavailable)?;
+            crate::kernel::eval::typed_reads::record_field(instance, projection.field_index);
+            if let Some(root) = instance.fields().retained_integer(projection.field_index) {
+                return Ok(vec![SpecIntegerPath {
+                    value: IntegerResult::from_kernel(root.clone()),
+                    facts: Vec::new().into(),
+                    obligations: Vec::new(),
+                }]);
+            }
+            let Some(crate::kernel::ResourceFieldValue::Integer(value)) =
+                instance.fields().get(projection.field_index)
             else {
                 return Err(ExecutionLimit::ResourceFieldInstanceUnavailable);
             };
@@ -3794,15 +3798,27 @@ fn evaluate_spec_algebraic_non_call_in(
             } else {
                 state
             };
-            let Some(crate::kernel::ResourceFieldValue::Algebraic(value)) = retained_state
+            let instance = retained_state
                 .resource_instance_at_path(projection.identity, &projection.children)
-                .and_then(|instance| {
-                    crate::kernel::eval::typed_reads::record_field(
-                        instance,
-                        projection.field_index,
-                    );
-                    instance.fields().get(projection.field_index)
-                })
+                .ok_or(ExecutionLimit::ResourceFieldInstanceUnavailable)?;
+            crate::kernel::eval::typed_reads::record_field(instance, projection.field_index);
+            if let Some(root) = instance.fields().retained_algebraic(projection.field_index) {
+                if root.ty() != &KernelType::Algebraic(expression.algebraic_type.clone()) {
+                    return Err(ExecutionLimit::Paths);
+                }
+                let value = if budget.machine_result_production_disabled {
+                    AlgebraicResult::Imported(root.clone())
+                } else {
+                    AlgebraicResult::Shared(root.clone())
+                };
+                return Ok(vec![SpecAlgebraicPath {
+                    value,
+                    facts: vec![].into(),
+                    obligations: vec![],
+                }]);
+            }
+            let Some(crate::kernel::ResourceFieldValue::Algebraic(value)) =
+                instance.fields().get(projection.field_index)
             else {
                 return Err(ExecutionLimit::ResourceFieldInstanceUnavailable);
             };
@@ -4815,6 +4831,8 @@ fn concatenate_sequence_terms(left: SequenceTerm, right: SequenceTerm) -> Sequen
     }
 }
 
+#[cfg(test)]
+mod logical_field_storage_tests;
 #[cfg(test)]
 mod sequence_term_tests;
 
@@ -7847,7 +7865,7 @@ fn evaluate_spec_pure_function_application_paths_in(
                     .pointer_call(
                         &application,
                         retained,
-                        SharedPointerValue::import_produced(&value),
+                        SharedPointer::import_produced(&value),
                     )
                     .into()
             } else {

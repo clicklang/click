@@ -1,20 +1,20 @@
 //! Complete pointer names retain payloads, independently of logical address
 //! equality. The existing proof-local scope owns these selected source values.
 use super::*;
-use crate::kernel::SharedPointerValue;
+use crate::kernel::SharedPointer;
 
 pub(super) struct NamedValue {
     value: Value,
     name: SurfaceBinder,
 }
 enum Value {
-    Pointer(SharedPointerValue),
+    Pointer(SharedPointer),
     Other(ProgramValue),
 }
 impl NamedValue {
     pub(super) fn new((value, name): (ProgramValue, SurfaceBinder)) -> Self {
         let value = match value {
-            ProgramValue::Pointer(pointer) => Value::Pointer(SharedPointerValue::import(&pointer)),
+            ProgramValue::Pointer(pointer) => Value::Pointer(SharedPointer::import(&pointer)),
             value => Value::Other(value),
         };
         Self { value, name }
@@ -23,7 +23,7 @@ impl NamedValue {
 
 /// The shared producer path needs neither an exported address nor a native
 /// complete value. Scope ordering and lifetime are unchanged.
-pub(super) fn shared_name(value: &SharedPointerValue) -> Option<SurfaceBinder> {
+pub(super) fn shared_name(value: &SharedPointer) -> Option<SurfaceBinder> {
     PROOF_LOCAL_VALUE_NAMES.with(|names| {
         names.borrow().iter().find_map(|named| match &named.value {
             Value::Pointer(held) if held.same_source_payload(value) => Some(named.name.clone()),
@@ -34,7 +34,7 @@ pub(super) fn shared_name(value: &SharedPointerValue) -> Option<SurfaceBinder> {
 
 pub(super) fn native_name(value: &ProgramValue) -> Option<SurfaceBinder> {
     if let ProgramValue::Pointer(pointer) = value {
-        return shared_name(&SharedPointerValue::import(pointer));
+        return shared_name(&SharedPointer::import(pointer));
     }
     PROOF_LOCAL_VALUE_NAMES.with(|names| {
         names.borrow().iter().find_map(|named| match &named.value {
@@ -61,7 +61,7 @@ mod tests {
             .collect();
         with_proof_local_value_names(names, || {
             for (name, pointer) in values {
-                let retained = SharedPointerValue::import(&pointer);
+                let retained = SharedPointer::import(&pointer);
                 let read_root = crate::kernel::KernelTerm::retained_pointer_read(&pointer);
                 let root = crate::kernel::KernelTermImport::default().argument(
                     &crate::kernel::PureFunctionArgument::Value(ProgramValue::Pointer(
@@ -166,7 +166,7 @@ mod tests {
                 let ProgramValue::Pointer(restored) = value else {
                     panic!("pointer name")
                 };
-                assert!(retained.same_source_payload(&SharedPointerValue::import(&restored)));
+                assert!(retained.same_source_payload(&SharedPointer::import(&restored)));
             }
         });
     }
@@ -294,7 +294,7 @@ mod tests {
             Address::symbolic(Variable(1015020)),
             ProgramType::Int32Pointer,
         );
-        let shared = SharedPointerValue::import(&pointer);
+        let shared = SharedPointer::import(&pointer);
         let value = ProgramValue::Pointer(pointer);
         assert!(shared_name(&shared).is_none());
         with_proof_local_value_names(vec![(value.clone(), "outer".into())], || {

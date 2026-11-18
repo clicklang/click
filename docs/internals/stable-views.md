@@ -199,9 +199,11 @@ returns and throws, and temporary cleanup check that ledger by automatic
 object identity. A live loan pins its backing object until the loan ends,
 including when its protected bytes have symbolic bounds. Retained proof
 events repeat the same check.
-The same ledger already guards direct local assignments and alias stores,
+
+Direct scalar assignments to address-taken locals and stores through their
+addresses require separation from the ledger's live memory footprint,
 including same-value writes. A nested reader reborrows the local loan through
-its exact resource binding. No new surface clause is needed.
+its exact resource binding.
 
 For a suspended modeled-pthread worker borrowing a parent view, the checked
 entry splits the parent's current share. The parent retains one sibling and
@@ -420,7 +422,7 @@ between compiler-checked borrow legality and Click's functional claims.
 | Partial borrows and widths | `mdtests/stable_view_partial_borrow.md`, `bytewise_overlap_is_decided_across_mismatched_element_widths`, `memory_entailment_relates_two_spellings_of_one_byte_footprint` |
 | Free and realloc under a loan | `heap_free_requires_separation_from_an_interior_loan_until_it_ends`, `realloc_failure_preserves_a_loan_and_success_requires_call_entry_separation`, `undecided_continuity_retire_refuses_a_lent_allocation` |
 | Local loans, bounds, and lifetime | `candidate_local_array_view_uses_a_checked_loan_and_recovers`, `thread_local_view_blocks_writes_and_all_scope_exits_until_join`, `automatic_lifetime_event_rejects_active_local_loan_and_forged_retirement`, `local_views_preserve_aliases_check_bounds_and_mint_no_owned_escrow`, `mdtests/stable_view_local_job.md`, `local_job_views_expand_and_reverify_without_ownership_annotations` |
-| Locals and empty views | `active_stable_loan_rejects_direct_local_assignment_and_alias_store`, `candidate_local_array_view_out_of_bounds_is_refused`, `mdtests/empty_view_authorizes_nothing.md` |
+| Locals and empty views | `active_stable_loan_requires_separation_for_local_assignment_and_alias_store`, `mdtests/direct_local_write_separation.md`, `candidate_local_array_view_out_of_bounds_is_refused`, `mdtests/empty_view_authorizes_nothing.md` |
 | Entry footprint | `field_derived_view_does_not_retarget_after_a_pointer_write` |
 | Composites | `composite_loan_protects_primitive_frontier_and_restores_head_once`, `projection_extends_permitted_descriptions_without_a_transition`, `candidate_composite_with_unstable_facts_is_refused`, `candidate_composite_view_is_backed_by_a_covering_owned_composite`, `mdtests/produced_composite_body_overlapping_a_held_owner.md` |
 | Explicit frame evidence | `frame_queries_ignore_folded_compositions_until_explicitly_opened`, `mdtests/call_keeps_an_uncached_flat_field_beside_folded_state.md` |

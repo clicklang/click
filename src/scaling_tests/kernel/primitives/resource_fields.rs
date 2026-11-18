@@ -34,3 +34,57 @@ fn resource_field_handoffs_preserve_growing_dags_without_native_exports() {
         assert_eq!(work, *baseline.get_or_insert(work), "size={size}");
     }
 }
+
+#[test]
+fn logical_field_handoffs_keep_integer_dags_and_algebraic_children_shared() {
+    let mut baseline = None;
+    for size in [4, 16, 64, 256] {
+        let _session = VerificationSession::enter();
+        let mut integer = KernelTerm::variable(KernelType::Integer, Variable(10993504));
+        for _ in 0..size {
+            integer = KernelTerm::integer_operation(
+                KernelIntegerOperator::Add,
+                vec![integer.clone(), integer],
+            )
+            .unwrap();
+        }
+        let ty = KernelMatch::test_scrutinee(vec![AlgebraicValueType::Integer]).algebraic_type;
+        let algebraic = KernelConstructor {
+            algebraic_type: ty.clone(),
+            variant: "Arm".into(),
+            fields: vec![integer.clone()],
+        }
+        .into_term();
+        let schema = ResourceFieldSchema::new(vec![
+            ("count".into(), ResourceFieldType::Integer),
+            ("model".into(), ResourceFieldType::Algebraic(ty)),
+        ])
+        .unwrap();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let fields = ResourceFieldValues::from_stored([
+                StoredResourceField::Integer(integer.clone()),
+                StoredResourceField::Algebraic(algebraic.clone()),
+            ]);
+            let instance = ResourceInstance::new(
+                Variable(10993505),
+                "LogicalFields".into(),
+                vec![].into(),
+                schema,
+                fields,
+            )
+            .unwrap();
+            for _ in 0..32 {
+                let fields = instance.clone().fields;
+                let copy = ResourceFieldValues::from_stored([
+                    fields.stored_field(0).unwrap(),
+                    fields.stored_field(1).unwrap(),
+                ]);
+                assert_eq!(copy.retained_integer(0), Some(&integer));
+                assert_eq!(copy.retained_algebraic(1), Some(&algebraic));
+            }
+        });
+        assert!(!integer.has_cached_native_argument());
+        assert!(!algebraic.has_cached_native_argument());
+        assert_eq!(work, *baseline.get_or_insert(work), "size={size}");
+    }
+}

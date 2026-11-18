@@ -1290,45 +1290,6 @@ pub(in crate::surface) fn with_proof_local_value_names<R>(
     operation()
 }
 
-/// A source expression for a semantic C value, such as a resource witness
-/// inferred from memory: the proof local that names it, else a pointer or an
-/// `int32` as the proof would write it at `state`.
-fn synthesize_surface_pointer_address(
-    pointer: &Address,
-    parameter_binding: ParameterBinding<'_>,
-    state: &ExecutionState,
-    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
-) -> Option<ContractExpression> {
-    let operand =
-        synthesize_surface_pointer_expression(pointer, parameter_binding, state, bound_variables)?;
-    // The address is spelled over the operand's own C expression when it has
-    // one, such as a parameter name; only a Surface-only operand keeps the
-    // operand beside a cast of the value it denotes.
-    let (operand, expression) = match operand {
-        ContractExpression::ProgramExpression(expression) => (None, expression),
-        operand => (
-            Some(operand),
-            ProgramExpression::Value(ProgramValue::typed_pointer(
-                pointer.clone(),
-                ProgramType::VoidPointer,
-            )),
-        ),
-    };
-    let cast = ProgramExpression::Cast {
-        expression: Box::new(expression),
-        target_type: ProgramType::UInt64,
-        integer_mode: crate::kernel::IntegerCastMode::Standard,
-        pointee_struct: None,
-        pointee_volatile: false,
-        pointee_constant: false,
-        explicit_qualification: false,
-    };
-    Some(match operand {
-        None => ContractExpression::ProgramExpression(cast),
-        Some(operand) => crate::surface::lowering::contract_c_unary(operand, cast),
-    })
-}
-
 pub(in crate::surface) fn synthesize_surface_value(
     value: &ProgramValue,
     parameter_binding: ParameterBinding<'_>,
@@ -2892,12 +2853,11 @@ fn synthesize_surface_atomic_proposition(
             )?,
         });
     }
+    // A pointer equality raises as contract `p == q`, which lowers to it; the
+    // weaker `address(p) == address(q)` is the address-word equality a C
+    // comparison states (`design/pointer-subobject-bounds.md`, Phase B).
     if let ConditionTerm::PointerEqual(left, right) = condition {
-        let pointer = if **left == Address::null() || **right == Address::null() {
-            synthesize_surface_pointer_expression
-        } else {
-            synthesize_surface_pointer_address
-        };
+        let pointer = synthesize_surface_pointer_expression;
         return Some(ClickProposition::Comparison {
             left: pointer(left, parameter_binding, state, bound_variables)?,
             operator: if *value {
@@ -3497,7 +3457,7 @@ fn raise_pointer_comparison(
     use crate::kernel::{KernelAddressOffset, KernelTermNode as Node};
     let (left, right) = match term.node() {
         Node::PointerValueEqual(pair) => {
-            let operand = |value: &crate::kernel::SharedPointerValue| {
+            let operand = |value: &crate::kernel::SharedPointer| {
                 synthesize_pointer_equality_address(
                     &value.node().address.export().ok()?,
                     value.node().program_type,
@@ -3514,11 +3474,8 @@ fn raise_pointer_comparison(
         Node::PointerEqual { arguments } => {
             let left = arguments[0].export().ok()?;
             let right = arguments[1].export().ok()?;
-            let pointer = if left == Address::null() || right == Address::null() {
-                synthesize_surface_pointer_expression
-            } else {
-                synthesize_surface_pointer_address
-            };
+            // As the condition form above: a pointer equality is `p == q`.
+            let pointer = synthesize_surface_pointer_expression;
             (
                 pointer(&left, parameter_binding, state, bound_variables)?,
                 pointer(&right, parameter_binding, state, bound_variables)?,
@@ -3953,19 +3910,42 @@ fn raise_kernel_term_dispatch(
         } => {
             // Wide equality reads unsigned literals as the same words. Keep
             // their payloads even beside a variable: signed casts change literals.
-            let unsigned_literal = *relation == CompareRelation::Equal
-                && format.format().bits() == 64
+            use crate::kernel::MachineOperandView as V;
+            let wide_equality = *relation == CompareRelation::Equal && format.format().bits() == 64;
+            let unsigned_literal = wide_equality
                 && arguments.iter().any(|term| {
-                    crate::kernel::MachineOperandView::Shared(term)
+                    V::Shared(term)
                         .literal()
                         .is_some_and(|value| value.uint64_as_const().is_some())
                 });
+            let unsigned_widening = |operand: V<'_>| {
+                operand.cast().is_some_and(|(spelling, _, _, child)| {
+                    matches!(
+                        spelling,
+                        MachineCastSpelling::UInt64FromInt32 | MachineCastSpelling::UInt64From32
+                    ) && (child.variable().is_some() || child.literal().is_some())
+                })
+            };
+            let operands = arguments.each_ref().map(V::Shared);
+            // Equality compares bits. Casting an unsigned widening to the
+            // Int64 filing type would rebuild it as a signed widening.
+            let unsigned_word = wide_equality
+                && operands.iter().copied().any(unsigned_widening)
+                && operands
+                    .iter()
+                    .copied()
+                    .all(|operand| unsigned_widening(operand) || operand.variable().is_some());
             let operand = |term| {
                 let expression = spell_wrapping_uint64_operand(term, recurse(term)?)?;
-                if unsigned_literal {
+                if unsigned_literal || (unsigned_word && unsigned_widening(V::Shared(term))) {
                     Some(expression)
                 } else {
-                    synthesize_observation_operand(expression, format.program_type())
+                    let ty = if unsigned_word {
+                        ProgramType::UInt64
+                    } else {
+                        format.program_type()
+                    };
+                    synthesize_observation_operand(expression, ty)
                 }
             };
             proposition_bool_value(ClickProposition::Comparison {

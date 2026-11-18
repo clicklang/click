@@ -77,6 +77,119 @@ fn returned_borrows_keep_checked_entry_arguments_when_clauses_are_reordered() {
     );
 }
 
+#[test]
+fn composite_entry_and_return_publish_definedness_at_their_selected_points() {
+    use crate::kernel::program_expression::{int32_literal, pointer_value, variable};
+
+    let _session = crate::kernel::VerificationSession::enter();
+    let pointer = Address::symbolic(Variable(8_806_000));
+    let held = ResourceFact::own_composite(
+        "initialized_cell".into(),
+        vec![ProgramValue::typed_pointer(
+            pointer.clone(),
+            ProgramType::Int32Pointer,
+        )],
+    );
+    let memory = SymbolicMemory::new()
+        .with_block(pointer.base.clone(), 4)
+        .store(pointer.clone(), int32(7));
+    let resources = ResourceContext::new().unchecked_with_fact(held);
+    let caller = ExecutionState::new()
+        .with_population_creation_tracking()
+        .with_memory(memory)
+        .with_resource_context(resources.clone());
+    let borrowed = ResourceSpec::declared(
+        ResourceFamily::Composite,
+        ResourceAccessMode::Own,
+        "initialized_cell".into(),
+        vec![variable("p")],
+        vec![ProgramType::Int32Pointer],
+        ResourceTransferRole::Borrow,
+        ResourceStateSource::Entry,
+    )
+    .unwrap();
+    let function = program_function(
+        ProgramType::Void,
+        "keep_initialized",
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
+        program_skip(),
+    )
+    .with_resource_summary(vec![borrowed.clone()], vec![borrowed])
+    .with_composite_resource_definitions(vec![CompositeResourceDefinition::new(
+        "initialized_cell",
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
+        None,
+        false,
+        vec![ResourceSpec::owned_memory(MemorySegment::new(
+            variable("p"),
+            int32_literal(0),
+            int32_literal(1),
+        ))],
+        vec![SpecProposition::Defined(SpecExpression::MemoryLoad {
+            point: SpecPoint::Current,
+            pointer: Box::new(SpecExpression::ProgramExpression(variable("p"))),
+            value_type: ProgramType::Int32,
+        })],
+    )]);
+    let defined_at = |state: &ExecutionState| Proposition::MemoryReadDefined {
+        at: Some(state.observation_point_id().unwrap()),
+        memory: state.memory().clone(),
+        pointer: pointer.clone(),
+        value_type: ProgramType::Int32,
+    };
+    let assumptions = PureFactContext::new();
+    let (_, entry_facts) = expand_all_composite_resource_facts_and_propositions_at_state(
+        &resources,
+        function.composite_resource_definitions(),
+        &caller,
+        &assumptions,
+    )
+    .unwrap();
+    assert!(entry_facts.contains(&defined_at(&caller)));
+
+    let environment =
+        ExecutionEnvironment::new().with_external_function_rule(ExternalFunctionRule {
+            function: function.clone(),
+            scoped_unselected: false,
+            representation_copy: None,
+        });
+    let paths = execute_program_function_call_paths(
+        &caller,
+        &function,
+        &[pointer_value(pointer.clone())],
+        &assumptions,
+        ExecutionContext::apply_verified_rules(&environment),
+        &mut ExecutionBudget::new(),
+    )
+    .unwrap();
+    let [
+        FunctionPath {
+            outcome: FunctionOutcome::Return {
+                state: returned, ..
+            },
+            facts,
+            obligations,
+            ..
+        },
+    ] = paths.as_slice()
+    else {
+        panic!("expected one checked return, got {paths:?}");
+    };
+    assert!(obligations.is_empty());
+    assert_eq!(returned.memory(), caller.memory());
+    assert_ne!(
+        returned.observation_point_id(),
+        caller.observation_point_id()
+    );
+    let expected = defined_at(returned);
+    assert!(
+        facts
+            .iter()
+            .any(|fact| fact.is_certified() && fact.proposition() == &expected),
+        "missing return-point fact {expected:?} in {facts:?}"
+    );
+}
+
 fn mixed_memory_contract(composite: bool, produced_first: bool) -> ProgramFunction {
     use crate::kernel::program_expression::{int32_literal, variable};
     let segment = |name| MemorySegment::new(variable(name), int32_literal(0), int32_literal(1));
