@@ -677,7 +677,17 @@ impl ImportedFunction {
         parameters: impl IntoIterator<Item = ImportedParameter>,
     ) -> Self {
         let mut function = self.clone();
+        let first = function.parameters.len();
         function.parameters.extend(parameters);
+        if let Some(lowered) = function.prelowered_kernel_function.as_mut() {
+            // Contract lowering moves these parameters back out of the
+            // executable signature. Give it the same suffix as the import.
+            lowered.extend_parameters(
+                function.parameters[first..]
+                    .iter()
+                    .map(ImportedParameter::to_kernel_parameter),
+            );
+        }
         function
     }
 

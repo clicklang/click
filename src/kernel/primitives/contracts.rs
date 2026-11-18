@@ -1632,6 +1632,15 @@ impl ProgramFunction {
         self.contract_interface.parameters()
     }
 
+    pub(crate) fn extend_parameters(
+        &mut self,
+        parameters: impl IntoIterator<Item = ProgramParameter>,
+    ) {
+        let interface = Arc::make_mut(&mut self.contract_interface);
+        interface.parameters.extend(parameters);
+        interface.refresh_object_types();
+    }
+
     pub(crate) fn pop_parameter(&mut self) -> Option<ProgramParameter> {
         Arc::make_mut(&mut self.contract_interface).parameters.pop()
     }
