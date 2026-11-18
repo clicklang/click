@@ -400,9 +400,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         };
         let lower = left.as_const().is_some();
         let (result, written_result, limit) = if lower {
-            (right, written_right, i64::from(i32::MIN))
+            (right, written_right, left)
         } else {
-            (left, written_left, i64::from(i32::MAX))
+            (left, written_left, right)
+        };
+        let Some(limit) = limit.as_const().and_then(ToPrimitive::to_i64) else {
+            return Ok(None);
         };
         let (subtract, operands, written_a, written_b) = match (result.as_ref(), &written_result) {
             (IntegerTerm::Add(a, b), ContractExpression::Add(written_a, written_b)) => {
@@ -1317,7 +1320,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     )),
                     _ => None,
                 };
-                if let Some(exact) = exact {
+                let result_identity = if let Some(exact) = exact {
                     let bounds = [
                         le(number(i64::from(i32::MIN)), exact.clone()),
                         le(exact.clone(), number(i64::from(i32::MAX))),
@@ -1338,8 +1341,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     };
                     proof = next;
                     inputs.push(identity.clone());
-                    identities.push(identity);
-                }
+                    identities.push(identity.clone());
+                    Some(identity)
+                } else {
+                    None
+                };
                 // The final operation can close the original goal directly
                 // from its children's bounds. Avoid publishing an unused
                 // pair of native endpoints and then restating that same goal.
@@ -1350,7 +1356,34 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 }
                 let lower = le(number(lo), observed(&term));
                 let upper = le(observed(&term), number(hi));
+                let add_sub_identity = result_identity.filter(|_| {
+                    matches!(
+                        term,
+                        ContractExpression::Add(..) | ContractExpression::Subtract(..)
+                    ) && inputs.iter().any(has_retained_read_source)
+                });
                 for bound in [&lower, &upper] {
+                    if let Some(identity) = &add_sub_identity {
+                        // Keep the native value's spelling in the fact we publish.
+                        // The already-established equality turns its bound into
+                        // an ordinary Integer addition or subtraction bound.
+                        let candidate = (|| {
+                            let scope = proof.driver().open_have(bound.clone())?;
+                            let rewritten = scope
+                                .driver()
+                                .apply_step(ProofStep::Rewrite(identity.clone()))?;
+                            let Some(closed) =
+                                rewritten.driver().try_int32_add_sub_using(&inputs)?
+                            else {
+                                return Ok(None);
+                            };
+                            closed.is_complete().then(|| closed.join()).transpose()
+                        })();
+                        if let Some(next) = attempt::candidate_outcome(candidate)?.flatten() {
+                            proof = next;
+                            continue;
+                        }
+                    }
                     let Some(next) = Self::ordinary_integer_fact(&proof, bound.clone(), &inputs)?
                     else {
                         return Ok(None);
