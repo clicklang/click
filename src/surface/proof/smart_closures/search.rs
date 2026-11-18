@@ -387,10 +387,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         }
         let kernels = pairs.iter().map(|(k, _)| k.clone()).collect::<Vec<_>>();
         let retained = signed_intervals::has_retained_read_source(surface_goal);
-        let addition = retained && signed_intervals::is_int32_addition_obligation(goal);
-        if addition
+        let add_sub = retained && signed_intervals::is_int32_add_sub_obligation(goal);
+        if add_sub
             && let Some(closed) =
-                attempt::candidate_outcome(Self::try_int32_addition_using(search_input, premises))?
+                attempt::candidate_outcome(Self::try_int32_add_sub_using(search_input, premises))?
                     .flatten()
         {
             return Ok(Some(closed));
