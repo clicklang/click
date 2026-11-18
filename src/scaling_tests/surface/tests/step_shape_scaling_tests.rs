@@ -742,6 +742,7 @@ fn straight_line_assignments_cost_the_same_at_every_position() {
 }
 
 #[test]
+#[ignore = "nightly: compares four complete source proofs"]
 fn successful_steps_do_not_read_the_held_resource_list_for_diagnostics() {
     use crate::surface::proof::take_step_diagnostic_resource_reads;
 
