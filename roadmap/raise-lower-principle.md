@@ -1047,7 +1047,7 @@ not a change to proof rules or snapshot architecture.
 
 | Subslice | Owning stores | Status |
 | --- | --- | --- |
-| 10p1 | `SequenceTermNode::Literal` evaluated elements and their evaluator/substitution handoffs. | Inventoried; pending. |
+| 10p1 | `SequenceTermNode::Literal` evaluated elements and their evaluator/substitution handoffs. | Implemented; 437 focused checks, all 1,909 regular scaling cases, selected sequence proofs, fact stability and quality passed. PR follows 10o. |
 | 10p2 | Composite/token/instance `ResourceArguments`, `ResourceDescription` arguments and remaining Integer/algebraic resource fields. Preserve argument order, native identity classes and nominal resource identities. | Inventoried; pending. |
 | 10p3 | `MemoryRange` bounds and `AllocationSize` byte counts. Preserve signed/wide reading, bound provenance and existing identity/hash contracts. | Inventoried; pending. |
 | 10p4 | `IteratedMemory` endpoints, guard comparison value and selected holes. Preserve checked ownership transitions and opaque owner/address identities. | Inventoried; pending. |
@@ -1061,6 +1061,29 @@ strides and layout widths remain descriptor identities/metadata. Explicit native
 input/output schemas and live compatibility readers must be recorded rather
 than silently counted as eliminated. No new numeric observation equality may
 replace native structural identity in these stores.
+
+### 10p1 Evaluated sequence elements
+
+Evaluated literal elements now retain `ExecutionValue` producers in immutable
+`SequenceValues`; concatenation keeps its existing shared rope nodes. Explicit
+native input arrays retain their input contract. Selected compatibility reads,
+native identity/ordering/hash and debug output remain exact, without a second
+cached native list. Shared machine substitution and variable collection operate
+on the selected common producers. Other existing native consumers (elementwise
+proposition production, carrier/memory queries and Surface output) remain
+explicit selected compatibility readers; this slice does not remove those APIs.
+
+The actual evaluator regression failed with three machine exports before the
+change and passes with zero exports after it. Tests cover exact native input
+carriers and constant work for evaluation and repeated handoffs of growing
+shared DAGs. A native-versus-retained substitution test reproduced the typed
+literal carrier mismatch fixed in 10o; both paths now agree.
+
+All 437 focused checks passed, including the 10o field fix; all 1,909 regular
+scaling cases passed (two isolated and 1,907 remaining), as did the sequence
+proof selection and quality. The selected fact-stability recording reported
+zero changed terms/paths (no refusals). Validation script exit is zero. Full
+nightly was not run. PR delivery follows 10o.
 
 ## Chunk 3: machine-valued pure-function results
 

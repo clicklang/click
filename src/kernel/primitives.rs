@@ -156,6 +156,8 @@ pub use iterated::{IteratedGuard, IteratedMemory};
 pub(in crate::kernel) mod canonical_fact_set;
 mod composition_member_index;
 mod memory_equality_index;
+mod sequence_values;
+pub use sequence_values::{SequenceValues, SequenceValuesIter};
 mod resource_fields;
 pub(crate) use resource_fields::StoredResourceField;
 pub use resource_fields::{ResourceFieldValue, ResourceFieldValues};
@@ -5529,7 +5531,7 @@ pub struct SequenceTerm {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum SequenceTermNode {
-    Literal(std::sync::Arc<[ProgramValue]>),
+    Literal(SequenceValues),
     Concat(SequenceTerm, SequenceTerm),
 }
 

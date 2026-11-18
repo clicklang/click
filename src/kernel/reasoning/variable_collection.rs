@@ -860,8 +860,15 @@ fn collect_sequence_bitvector_variables(
 ) {
     match sequence.node.as_ref() {
         SequenceTermNode::Literal(values) => {
-            for value in values.iter() {
-                collect_program_value_bitvector_variables(value, variables);
+            for index in 0..values.len() {
+                if let Some(value) = values.retained_value_ref(index) {
+                    collect_expression_value_bitvector_variables(value, variables);
+                } else {
+                    collect_program_value_bitvector_variables(
+                        values.get(index).unwrap(),
+                        variables,
+                    );
+                }
             }
         }
         SequenceTermNode::Concat(left, right) => {

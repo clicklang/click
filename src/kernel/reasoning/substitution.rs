@@ -1689,13 +1689,10 @@ fn walk_resource_term<S: VariableSubstitution + ?Sized>(
 
 fn walk_sequence<S: VariableSubstitution + ?Sized>(sequence: &SequenceTerm, s: &S) -> SequenceTerm {
     let node = match sequence.node.as_ref() {
-        SequenceTermNode::Literal(values) => SequenceTermNode::Literal(
-            values
-                .iter()
-                .map(|value| s.program_value(value))
-                .collect::<Vec<_>>()
-                .into(),
-        ),
+        SequenceTermNode::Literal(values) => SequenceTermNode::Literal(values.map_values(
+            |value| s.program_value(value),
+            |value| s.stored_program_value(value),
+        )),
         SequenceTermNode::Concat(left, right) => {
             SequenceTermNode::Concat(walk_sequence(left, s), walk_sequence(right, s))
         }
@@ -2555,8 +2552,12 @@ fn collect_term_bound_variables(term: &Term, variables: &mut BTreeSet<Variable>)
 fn collect_sequence_bound_variables(sequence: &SequenceTerm, variables: &mut BTreeSet<Variable>) {
     match sequence.node.as_ref() {
         SequenceTermNode::Literal(values) => {
-            for value in values.iter() {
-                collect_program_value_bound_variables(value, variables);
+            for index in 0..values.len() {
+                if let Some(value) = values.retained_value_ref(index) {
+                    collect_expression_value_bound_variables(value, variables);
+                } else {
+                    collect_program_value_bound_variables(values.get(index).unwrap(), variables);
+                }
             }
         }
         SequenceTermNode::Concat(left, right) => {
