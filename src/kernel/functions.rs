@@ -4580,8 +4580,7 @@ fn execute_verified_function_applications_with_suspension(
                     &obligations,
                 );
                 apply_verified_heap_allocation_delta(
-                    post_state.memory.clone(),
-                    &entry_state.memory,
+                    &entry_state,
                     &transfer.callee_resources,
                     &caller_resources_after_requirements,
                     &output_resources,
@@ -9929,8 +9928,7 @@ fn lent_owned_memory_covers_allocation(
 }
 
 fn apply_verified_heap_allocation_delta(
-    mut memory: SymbolicMemory,
-    entry_memory: &SymbolicMemory,
+    entry_state: &ExecutionState,
     input_resources: &ResourceContext,
     preserved_caller_resources: &ResourceContext,
     output_resources: &ResourceContext,
@@ -9940,6 +9938,7 @@ fn apply_verified_heap_allocation_delta(
     mutex_state: &ExecutionState,
     output_state: &ExecutionState,
 ) -> Result<VerifiedAllocationDelta, VerifiedAllocationDeltaError> {
+    let mut memory = output_state.memory.clone();
     let mut effects = Vec::new();
     let mut retired_allocations = Vec::new();
     let mut continued_tokens = Vec::new();
@@ -9948,10 +9947,11 @@ fn apply_verified_heap_allocation_delta(
     // resources owned, so an allocation named through it at the post state
     // is not the allocation the caller handed over.
     let expand_allocations =
-        |resources: &ResourceContext, state: &ExecutionState, memory: &SymbolicMemory| {
+        |resources: &ResourceContext, state: &ExecutionState, memory_of: &ExecutionState| {
+            // Read at the point the memory belongs to, with `state`'s ledgers.
             let projection_state = state
                 .clone()
-                .with_memory(memory.clone())
+                .with_memory_of(memory_of)
                 .with_resource_context(resources.clone());
             expand_all_composite_resource_facts_at_state(
                 resources,
@@ -9960,17 +9960,17 @@ fn apply_verified_heap_allocation_delta(
                 assumptions,
             )
         };
-    let input =
-        expand_allocations(input_resources, mutex_state, entry_memory).ok_or_else(|| {
-            VerifiedAllocationDeltaError::Runtime(RuntimeError::FunctionContract(
-                "could not inspect input allocation effects at call".to_string(),
-            ))
-        })?;
-    let output = expand_allocations(output_resources, output_state, &memory).ok_or_else(|| {
+    let input = expand_allocations(input_resources, mutex_state, entry_state).ok_or_else(|| {
         VerifiedAllocationDeltaError::Runtime(RuntimeError::FunctionContract(
-            "could not inspect output allocation effects at call".to_string(),
+            "could not inspect input allocation effects at call".to_string(),
         ))
     })?;
+    let output =
+        expand_allocations(output_resources, output_state, output_state).ok_or_else(|| {
+            VerifiedAllocationDeltaError::Runtime(RuntimeError::FunctionContract(
+                "could not inspect output allocation effects at call".to_string(),
+            ))
+        })?;
     let allocation_assumptions = input
         .observable_facts_assuming_valid(assumptions)
         .into_iter()
@@ -9999,11 +9999,13 @@ fn apply_verified_heap_allocation_delta(
     let preserved = if input_allocations.is_empty() {
         ResourceContext::new()
     } else {
-        expand_allocations(preserved_caller_resources, mutex_state, &memory).ok_or_else(|| {
-            VerifiedAllocationDeltaError::Runtime(RuntimeError::FunctionContract(
-                "could not inspect preserved caller allocation effects at call".to_string(),
-            ))
-        })?
+        expand_allocations(preserved_caller_resources, mutex_state, output_state).ok_or_else(
+            || {
+                VerifiedAllocationDeltaError::Runtime(RuntimeError::FunctionContract(
+                    "could not inspect preserved caller allocation effects at call".to_string(),
+                ))
+            },
+        )?
     };
     // Every allocation this call returns or keeps is a continuity candidate
     // unless its block is proven distinct: a different block spelling is not
