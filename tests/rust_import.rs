@@ -1812,6 +1812,30 @@ fn charon_slice_iter_sums_bytes_by_its_library_contract() {
     }
 }
 
+#[test]
+#[ignore = "nightly: expand and replay the slice-iterator proof"]
+fn charon_slice_iterator_fields_expand_and_replay() {
+    let p = Project::from_fixture("design/charon-trial/slice-iter");
+    fs::write(p.root.join("borrow.click"), SLICE_ITER_PROOF).unwrap();
+    let prepared = p.prepared().unwrap();
+    let claim = "sum.contract";
+    let expanded = click::surface::expand_program_prepared_claim_source_by_label(
+        SLICE_ITER_PROOF,
+        &prepared,
+        claim,
+    )
+    .unwrap();
+    assert_ne!(expanded, SLICE_ITER_PROOF);
+    assert!(!expanded.contains("<slice iterator "), "{expanded}");
+    assert!(!expanded.contains("__rust_mir"), "{expanded}");
+    click::surface::without_implicit_solve_for_claim(claim, || {
+        ProgramVerificationSession::new_program_prepared(&expanded, &prepared)
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
 #[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: slice-iterator library model proof-tool agreement"]
