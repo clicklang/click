@@ -246,34 +246,64 @@ fn const_array_construction_scales_with_written_elements_and_keeps_omitted_cells
         for index in 0..unrelated {
             state = execute_declaration(
                 &state,
-                &crate::kernel::program_declare(
-                    format!("unrelated_{index}"),
-                    ProgramType::Int32,
-                ),
+                &crate::kernel::program_declare(format!("unrelated_{index}"), ProgramType::Int32),
             );
         }
-        let fill = ZeroFill::new(4, length, vec![ZeroCell::new(0, ProgramType::Int32, false, int32(0))])
-            .with_written_elements((0..written).map(|index| {
-                (index, crate::kernel::program_expression::int32_literal(index + 1))
-            }).collect());
+        let fill = ZeroFill::new(
+            4,
+            length,
+            vec![ZeroCell::new(0, ProgramType::Int32, false, int32(0))],
+        )
+        .with_written_elements(
+            (0..written)
+                .map(|index| {
+                    (
+                        index,
+                        crate::kernel::program_expression::int32_literal(index + 1),
+                    )
+                })
+                .collect(),
+        );
         let declaration = program_declare_with_zero_fill(
-            "values", ProgramType::Int32Array(length), false, false, true, false, Some(fill),
+            "values",
+            ProgramType::Int32Array(length),
+            false,
+            false,
+            true,
+            false,
+            Some(fill),
         );
         let (state, work) = crate::instrumentation::measure_deterministic_work(|| {
             execute_declaration(&state, &declaration)
         });
         let slot = state.locals.slot("values").unwrap();
         assert!(state.memory().is_read_only_block(&slot.base));
-        assert_eq!(state.memory().load(&slot.offset_by_bytes(4 * (written - 1))), ExpressionOutcome::Value(int32(written)));
-        assert_eq!(state.memory().load(&slot.offset_by_bytes(4 * (length - 1))), ExpressionOutcome::Value(int32(0)));
-        assert_eq!(state.memory().cells.runs_in_block(&slot.base).count(), written as usize + 1);
+        assert_eq!(
+            state
+                .memory()
+                .load(&slot.offset_by_bytes(4 * (written - 1))),
+            ExpressionOutcome::Value(int32(written))
+        );
+        assert_eq!(
+            state.memory().load(&slot.offset_by_bytes(4 * (length - 1))),
+            ExpressionOutcome::Value(int32(0))
+        );
+        assert_eq!(
+            state.memory().cells.runs_in_block(&slot.base).count(),
+            written as usize + 1
+        );
         work
     };
     let small = [4, 1024, 1_000_000].map(|length| measure(length, 2, 0));
     assert!(small.iter().all(|work| *work <= small[0] + 16), "{small:?}");
     let unrelated = [0, 32, 128].map(|count| measure(1000, 2, count));
-    assert!(unrelated.iter().all(|work| *work <= unrelated[0] + 32), "{unrelated:?}");
+    assert!(
+        unrelated.iter().all(|work| *work <= unrelated[0] + 32),
+        "{unrelated:?}"
+    );
     let written = [4, 16, 64].map(|count| measure(1000, count, 0));
     assert!(written[2] <= 4 * written[1] + 32, "{written:?}");
-    eprintln!("const-array declaration work (bounds, unrelated, written): {small:?}, {unrelated:?}, {written:?}");
+    eprintln!(
+        "const-array declaration work (bounds, unrelated, written): {small:?}, {unrelated:?}, {written:?}"
+    );
 }
