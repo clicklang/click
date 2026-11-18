@@ -551,16 +551,13 @@ fn wide_offset_branches_publish_full_width_index_facts() {
                         == &Proposition::ConditionIs(condition.clone(), value)));
                     // Even a constant whose low word is -1 must not produce
                     // a 32-bit comparison of this wide index.
-                    assert!(!facts.iter().any(|fact| matches!(
-                        fact.proposition(),
-                        Proposition::ConditionIs(
-                            ConditionTerm::Compare {
+                    assert!(!facts.iter().any(|fact| matches!(&fact.proposition(), condition_source_0 @ Proposition::ConditionIs(
+                            _,
+                            _
+                        ) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare {
                                 format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                                 ..
-                            },
-                            _
-                        )
-                    )));
+                            }, _))))));
                 }
             }
         }
@@ -579,10 +576,7 @@ fn wide_offset_branches_publish_full_width_index_facts() {
             AddressOffset::Constant(target),
             false,
         );
-        assert!(!facts.iter().any(|fact| matches!(
-            fact.proposition(),
-            Proposition::ConditionIs(ConditionTerm::Compare { .. }, _)
-        )));
+        assert!(!facts.iter().any(|fact| matches!(&fact.proposition(), condition_source_0 @ Proposition::ConditionIs(_, _) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare { .. }, _))))));
     }
 }
 

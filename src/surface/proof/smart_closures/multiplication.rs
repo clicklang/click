@@ -9,10 +9,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_multiply_order_using");
         use crate::kernel::IntegerTerm as I;
-        let Some(Proposition::ConditionIs(
+        let Some((
             ConditionTerm::IntegerLessEqual(gl, gr) | ConditionTerm::IntegerGreaterEqual(gl, gr),
             _,
-        )) = input.goal()
+        )) = input.goal().and_then(Proposition::condition_native)
         else {
             return Ok(None);
         };
@@ -49,10 +49,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             };
             let kernel =
                 input.lower_integer_surface_proposition(&canonical, "multiplication premise")?;
-            let readings = if matches!(
-                kernel,
-                Proposition::ConditionIs(ConditionTerm::Compare { .. }, _)
-            ) {
+            let readings = if matches!(&kernel, condition_source_0 @ Proposition::ConditionIs(_, _) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare { .. }, _))))
+            {
                 crate::kernel::machine_integer::comparison::integer_readings_with_promotions(
                     &kernel,
                 )

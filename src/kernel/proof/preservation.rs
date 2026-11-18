@@ -659,12 +659,17 @@ mod tests {
                 let separation = preservation.separation.clone();
                 assert_eq!(preservation.apply(|p| p == &separation).unwrap(), goal);
                 assert!(preservation.apply(|_| false).is_err());
-                let Proposition::ConditionIs(ConditionTerm::Compare { left, .. }, _) =
-                    &mut preservation.result
-                else {
-                    panic!("wide equality");
+                let (condition, truth) = preservation
+                    .result
+                    .condition_native()
+                    .expect("wide equality");
+                let mut condition = condition.clone();
+                let truth = *truth;
+                let ConditionTerm::Compare { left, .. } = &mut condition else {
+                    panic!("wide equality")
                 };
                 **left = MachineTerm::Variable(Variable(8_390_999));
+                preservation.result = Proposition::ConditionIs(condition, truth);
                 assert!(preservation.apply(|p| p == &separation).is_err());
             }
         }

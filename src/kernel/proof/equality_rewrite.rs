@@ -175,24 +175,34 @@ impl PureFactStore {
                     _ => return Err(original_error),
                 };
                 let (left, right) = match goal {
-                    Proposition::ConditionIs(
-                        ConditionTerm::Compare {
-                            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                            relation: CompareRelation::Equal,
-                            left: a,
-                            right: b,
-                        },
-                        _,
-                    ) if !wide => (a, b),
-                    Proposition::ConditionIs(
-                        ConditionTerm::Compare {
-                            format: MachineIntegerType::Int64,
-                            relation: CompareRelation::Equal,
-                            left: a,
-                            right: b,
-                        },
-                        _,
-                    ) if wide => (a, b),
+                    condition_source_0 @ Proposition::ConditionIs(_, _)
+                        if let Some((
+                            ConditionTerm::Compare {
+                                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+                                relation: CompareRelation::Equal,
+                                left: a,
+                                right: b,
+                            },
+                            _,
+                        )) = condition_source_0.condition_native()
+                            && (!wide) =>
+                    {
+                        (a, b)
+                    }
+                    condition_source_0 @ Proposition::ConditionIs(_, _)
+                        if let Some((
+                            ConditionTerm::Compare {
+                                format: MachineIntegerType::Int64,
+                                relation: CompareRelation::Equal,
+                                left: a,
+                                right: b,
+                            },
+                            _,
+                        )) = condition_source_0.condition_native()
+                            && (wide) =>
+                    {
+                        (a, b)
+                    }
                     _ => return Err(original_error),
                 };
                 for selected in [left, right] {
@@ -550,13 +560,10 @@ fn rewrite_with_admitted_equality_reading(
                         )
                         .into_iter()
                         .find(|reading| {
-                            matches!(
-                                reading,
-                                Proposition::ConditionIs(
-                                    crate::kernel::integer_comparison_condition!(left, right),
+                            matches!(&reading, condition_source_0 @ Proposition::ConditionIs(
                                     _,
-                                ) if left == source || right == source
-                            )
+                                    _,
+                                ) if matches!(condition_source_0.condition_native(), Some((crate::kernel::integer_comparison_condition!(left, right), _)) if left == source || right == source))
                         })
                     });
                     let selected = reading.as_ref().unwrap_or(atomic);
@@ -1324,27 +1331,25 @@ fn rewrite_atomic_proposition_by_exact_equality(
             ),
         );
     }
-    if matches!(
-        goal,
-        Proposition::ConditionIs(
-            ConditionTerm::PointerEqual(..) | ConditionTerm::AddressEqual(..),
+    if matches!(&goal, condition_source_0 @ Proposition::ConditionIs(
+            _,
             _
-        )
-    ) && let Some((
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-            relation: CompareRelation::Equal,
-            left,
-            right,
-        }
-        | ConditionTerm::Compare {
-            format: MachineIntegerType::Int64,
-            relation: CompareRelation::Equal,
-            left,
-            right,
-        },
-        true,
-    )) = (equality).condition_native()
+        ) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::PointerEqual(..) | ConditionTerm::AddressEqual(..), _))))
+        && let Some((
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+                relation: CompareRelation::Equal,
+                left,
+                right,
+            }
+            | ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::Equal,
+                left,
+                right,
+            },
+            true,
+        )) = (equality).condition_native()
     {
         let mut rewrite = super::term_rewrite::TermRewrite::for_bits(left, right);
         let rewritten = rewrite.proposition(goal);

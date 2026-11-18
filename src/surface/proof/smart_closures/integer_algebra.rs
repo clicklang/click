@@ -804,10 +804,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         while let Proposition::Not(body) = goal {
             goal = body;
         }
-        if !matches!(
-            goal,
-            Proposition::ConditionIs(crate::kernel::integer_comparison_condition!(_, _), _)
-        ) {
+        if !matches!(&goal, condition_source_0 @ Proposition::ConditionIs(_, _) if matches!(condition_source_0.condition_native(), Some((crate::kernel::integer_comparison_condition!(_, _), _))))
+        {
             return Ok(None);
         }
         if input
@@ -819,7 +817,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // Only inspect the written mathematical arithmetic spine; opaque values
         // keep their meaning and domain. Exact additive leaves need no planner;
         // value-preserving widenings first need their explicit known equations.
-        let Proposition::ConditionIs(crate::kernel::integer_comparison_condition!(a, b), _) = goal
+        let Some((crate::kernel::integer_comparison_condition!(a, b), _)) = goal.condition_native()
         else {
             return Ok(None);
         };

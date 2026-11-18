@@ -81,7 +81,10 @@ pub(in crate::surface::proof) fn check_fixed_state_theorem_application_using_fac
             // premise lowered to a constant or to an internal term says
             // neither which `using` entry was refused nor why.
             let constant_note = match &premise {
-                Proposition::ConditionIs(ConditionTerm::Constant(_), _) => {
+                condition_source_0 @ Proposition::ConditionIs(_, _)
+                    if let Some((ConditionTerm::Constant(_), _)) =
+                        condition_source_0.condition_native() =>
+                {
                     " (it is false at this instance)"
                 }
                 condition_source_0 @ Proposition::ConditionIs(_, expected)

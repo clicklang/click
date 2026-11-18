@@ -1753,10 +1753,7 @@ fn verified_function_rule_does_not_publish_one_spec_alias_path() {
         path.obligations()
     );
     assert!(!path.facts().iter().any(|fact| {
-        matches!(
-            fact.proposition(),
-            Proposition::ConditionIs(ConditionTerm::AddressOffsetEqual(_, _), _)
-        )
+        matches!(&fact.proposition(), condition_source_0 @ Proposition::ConditionIs(_, _) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::AddressOffsetEqual(_, _), _))))
     }));
 }
 

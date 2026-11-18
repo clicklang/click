@@ -8995,34 +8995,34 @@ fn evaluate_spec_if_paths_in(
                     true
                 }
 
-                Proposition::ConditionIs(
-                    ConditionTerm::Compare {
+                condition_source_0 @ Proposition::ConditionIs(
+                    _,
+                    _,
+                ) if let Some((ConditionTerm::Compare {
                         format,
                         left,
                         right,
                         ..
-                    },
-                    _,
-                ) if matches!(
+                    }, _)) = condition_source_0.condition_native() && (matches!(
                     format,
                     MachineIntegerType::Int32
                         | MachineIntegerType::UInt32
                         | MachineIntegerType::Int64
                         | MachineIntegerType::UInt64
-                ) && matches!((left.as_ref(), right.as_ref()), (MachineTerm::Variable(left), MachineTerm::Variable(right)) if left == right) =>
+                ) && matches!((left.as_ref(), right.as_ref()), (MachineTerm::Variable(left), MachineTerm::Variable(right)) if left == right)) =>
                 {
                     true
                 }
 
-                Proposition::ConditionIs(
-                    ConditionTerm::Compare {
+                condition_source_0 @ Proposition::ConditionIs(
+                    _,
+                    _,
+                ) if let Some((ConditionTerm::Compare {
                         format,
                         relation: CompareRelation::Equal,
                         left,
                         right,
-                    },
-                    _,
-                ) => {
+                    }, _)) = condition_source_0.condition_native() => {
                     // Wide equality reads words, including unsigned literal
                     // payloads filed under the native Int64 equality format.
                     matches!(
@@ -9031,15 +9031,15 @@ fn evaluate_spec_if_paths_in(
                     ) && left.bitvector64_as_const().is_some()
                         && right.bitvector64_as_const().is_some()
                 }
-                Proposition::ConditionIs(
-                    ConditionTerm::Compare {
+                condition_source_0 @ Proposition::ConditionIs(
+                    _,
+                    _,
+                ) if let Some((ConditionTerm::Compare {
                         format,
                         left,
                         right,
                         ..
-                    },
-                    _,
-                ) => {
+                    }, _)) = condition_source_0.condition_native() => {
                     matches!(
                         format,
                         MachineIntegerType::Int32

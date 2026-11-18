@@ -3838,15 +3838,17 @@ fn quantified_external_range_goal(goal: &Proposition) -> bool {
             {
                 saw_range = true;
             }
-            Proposition::ConditionIs(
-                ConditionTerm::Overflows {
-                    format: MachineIntegerType::Int32,
-                    op: OverflowOperation::Add,
-                    left: _,
-                    right: _,
-                },
-                _,
-            ) => {
+            condition_source_0 @ Proposition::ConditionIs(_, _)
+                if let Some((
+                    ConditionTerm::Overflows {
+                        format: MachineIntegerType::Int32,
+                        op: OverflowOperation::Add,
+                        left: _,
+                        right: _,
+                    },
+                    _,
+                )) = condition_source_0.condition_native() =>
+            {
                 return false;
             }
             Proposition::And(left, right)

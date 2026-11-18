@@ -704,15 +704,12 @@ pub(super) fn non_numeric_conditional_goal(goal: &Proposition) -> bool {
         Proposition::Not(body) => body.as_ref(),
         _ => goal,
     };
-    matches!(
-        goal,
-        Proposition::ConditionIs(
-            ConditionTerm::BoolEqual(..)
-                | ConditionTerm::BoolIf { .. }
-                | ConditionTerm::AlgebraicEqual(..),
-            _
-        ) | Proposition::Equal(Term::Algebraic(_), Term::Algebraic(_))
-    )
+    matches!(&goal, condition_source @ Proposition::ConditionIs(_, _)
+        if matches!(condition_source.condition_native(), Some((ConditionTerm::BoolEqual(..) | ConditionTerm::BoolIf { .. } | ConditionTerm::AlgebraicEqual(..), _))))
+        || matches!(
+            goal,
+            Proposition::Equal(Term::Algebraic(_), Term::Algebraic(_))
+        )
 }
 
 // Branch selection emits local equations and rewrites. Arithmetic after

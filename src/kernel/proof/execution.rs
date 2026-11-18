@@ -3359,7 +3359,10 @@ impl OpenedContractEntry {
             // keep the entry producer's form, avoiding extra read-over-write
             // equations being admitted as independent premises.
             let selected = match fact {
-                Proposition::ConditionIs(crate::kernel::ConditionTerm::PointerEqual(..), _) => {
+                condition_source_0 @ Proposition::ConditionIs(_, _)
+                    if let Some((crate::kernel::ConditionTerm::PointerEqual(..), _)) =
+                        condition_source_0.condition_native() =>
+                {
                     contract.explicitly_states(fact)
                 }
                 _ => contract.states(fact),
@@ -6780,8 +6783,7 @@ pub(crate) fn checked_branch_fact_is_available(facts: &PureFactStore, fact: &Pro
         // does not derive a weaker bound or search for a missing premise.
         || matches!(fact, Proposition::ConditionIs(condition, truth)
             if facts.assumptions().selected_comparison_source(condition, *truth).is_some())
-        || matches!(fact, Proposition::ConditionIs(crate::kernel::ConditionTerm::Compare { .. }, _)
-            if crate::kernel::proposition_holds_without_facts(fact))
+        || matches!(&fact, condition_source_0 @ Proposition::ConditionIs(_, _) if matches!(condition_source_0.condition_native(), Some((crate::kernel::ConditionTerm::Compare { .. }, _)) if crate::kernel::proposition_holds_without_facts(fact)))
         || matches!(fact, Proposition::And(left, right)
             if checked_branch_fact_is_available(facts, left)
                 && checked_branch_fact_is_available(facts, right))

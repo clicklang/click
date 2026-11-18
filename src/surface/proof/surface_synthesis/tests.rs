@@ -253,7 +253,7 @@ fn recorded_qualified_cells(
                 .expect("the comparison lowers to matching logical structure");
             // The load term as lowering produced it: a registered load
             // variable, one of the two forms an emitted requirement carries.
-            let Proposition::ConditionIs(
+            let Some((
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
@@ -261,11 +261,11 @@ fn recorded_qualified_cells(
                     right: _,
                 },
                 _,
-            ) = lowered
+            )) = lowered.condition_native()
             else {
                 panic!("a qualified cell comparison lowers to one load equality");
             };
-            *load
+            load.as_ref().clone()
         })
         .collect();
     (state, sources, loads)
@@ -6729,7 +6729,7 @@ fn assert_narrow_comparison_round_trip(
     state: &ExecutionState,
     lower: impl Fn(&ClickProposition) -> Proposition,
 ) {
-    let Proposition::ConditionIs(ConditionTerm::Compare { format: actual, .. }, _) = proposition
+    let Some((ConditionTerm::Compare { format: actual, .. }, _)) = proposition.condition_native()
     else {
         panic!("expected a retained {format:?} comparison: {proposition:?}")
     };

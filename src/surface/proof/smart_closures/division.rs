@@ -331,18 +331,22 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         fn has_division(p: &Proposition) -> bool {
             match p {
                 Proposition::Not(p) => has_division(p),
-                Proposition::ConditionIs(
-                    ConditionTerm::IntegerLessEqual(a, b)
-                    | ConditionTerm::IntegerGreaterEqual(a, b)
-                    | ConditionTerm::IntegerLessThan(a, b)
-                    | ConditionTerm::IntegerGreaterThan(a, b),
-                    _,
-                ) => [a, b].iter().any(|x| {
-                    matches!(
-                        x.as_ref(),
-                        I::TruncatingQuotient(..) | I::TruncatingRemainder(..)
-                    )
-                }),
+                condition_source_0 @ Proposition::ConditionIs(_, _)
+                    if let Some((
+                        ConditionTerm::IntegerLessEqual(a, b)
+                        | ConditionTerm::IntegerGreaterEqual(a, b)
+                        | ConditionTerm::IntegerLessThan(a, b)
+                        | ConditionTerm::IntegerGreaterThan(a, b),
+                        _,
+                    )) = condition_source_0.condition_native() =>
+                {
+                    [a, b].iter().any(|x| {
+                        matches!(
+                            x.as_ref(),
+                            I::TruncatingQuotient(..) | I::TruncatingRemainder(..)
+                        )
+                    })
+                }
                 _ => false,
             }
         }
@@ -388,10 +392,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 continue;
             };
             let p = input.lower_integer_surface_proposition(&written, "division premise")?;
-            let readings = if matches!(
-                p,
-                Proposition::ConditionIs(ConditionTerm::Compare { .. }, _)
-            ) {
+            let readings = if matches!(&p, condition_source_0 @ Proposition::ConditionIs(_, _) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare { .. }, _))))
+            {
                 crate::kernel::machine_integer::comparison::integer_readings_with_promotions(&p)
             } else {
                 vec![p]

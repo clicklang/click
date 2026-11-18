@@ -540,10 +540,7 @@ impl super::ProofSearch<PureFactContext> {
         // connected through its operands. A positive answer still needs the
         // ordinary selected-premise derivation below.
         if extended_rules
-            && matches!(
-                proposition,
-                Proposition::ConditionIs(ConditionTerm::IntegerEqual(..), _)
-            )
+            && matches!(&proposition, condition_source_0 @ Proposition::ConditionIs(_, _) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::IntegerEqual(..), _))))
             && crate::kernel::SelectedFacts::for_search(context, SearchPermission::new())
                 .proves_atomic_for_derivation_with_id(proposition, extended_rules)
                 .0
@@ -782,10 +779,10 @@ impl super::ProofSearch<PureFactContext> {
             // a positive answer still needs selected premises and a fresh
             // restricted kernel query before it can become evidence.
             if extended_rules
-                && matches!(
-                    proposition,
-                    Proposition::ConditionIs(
-                        ConditionTerm::Compare {
+                && matches!(&proposition, condition_source_0 @ Proposition::ConditionIs(
+                        _,
+                        _
+                    ) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare {
                             format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                             relation: CompareRelation::Equal,
                             ..
@@ -793,10 +790,7 @@ impl super::ProofSearch<PureFactContext> {
                             format: MachineIntegerType::Int64,
                             relation: CompareRelation::Equal,
                             ..
-                        } | ConditionTerm::AddressOffsetEqual(..),
-                        _
-                    )
-                )
+                        } | ConditionTerm::AddressOffsetEqual(..), _))))
                 && crate::kernel::SelectedFacts::for_search(context, SearchPermission::new())
                     .proves_atomic_for_derivation_with_id(proposition, extended_rules)
                     .0

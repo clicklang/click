@@ -256,10 +256,7 @@ fn wide_scalar_truthiness_uses_all_bits_and_retains_symbolic_guards() {
             path.outcome,
             ExpressionOutcome::Value(ProgramValue::Int32(_))
         ));
-        assert!(path.facts.iter().any(|fact| matches!(
-            fact.proposition(),
-            Proposition::ConditionIs(ConditionTerm::IntegerEqual(_, _), _)
-        )));
+        assert!(path.facts.iter().any(|fact| matches!(&fact.proposition(), condition_source_0 @ Proposition::ConditionIs(_, _) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::IntegerEqual(_, _), _))))));
     }
 }
 
@@ -492,16 +489,13 @@ fn wide_cast_specification_signed_narrowing_keeps_both_range_obligations() {
     assert_eq!(result.program_type(), ProgramType::Int64);
     assert_eq!(obligations.len(), 2);
     for kind in [true, false] {
-        assert!(
-            obligations
-                .iter()
-                .any(|obligation| match obligation.proposition() {
-                    Proposition::ConditionIs(ConditionTerm::IntegerGreaterEqual(_, _), true) =>
-                        kind,
-                    Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(_, _), true) => !kind,
-                    _ => false,
-                })
-        );
+        assert!(obligations.iter().any(|obligation| {
+            match obligation.proposition().condition_native() {
+                Some((ConditionTerm::IntegerGreaterEqual(_, _), true)) => kind,
+                Some((ConditionTerm::IntegerLessEqual(_, _), true)) => !kind,
+                _ => false,
+            }
+        }));
     }
     let bounds: Vec<_> = obligations
         .iter()

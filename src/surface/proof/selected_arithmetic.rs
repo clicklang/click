@@ -94,29 +94,33 @@ impl MachineOrder {
             return Some(Self::Wide(carrier));
         }
         match proposition {
-            Proposition::ConditionIs(
-                ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
-                    relation: CompareRelation::LessThan,
-                    ..
-                }
-                | ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
-                    relation: CompareRelation::LessEqual,
-                    ..
-                }
-                | ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
-                    relation: CompareRelation::GreaterThan,
-                    ..
-                }
-                | ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
-                    relation: CompareRelation::GreaterEqual,
-                    ..
-                },
-                _,
-            ) => Some(Self::Int32),
+            condition_source_0 @ Proposition::ConditionIs(_, _)
+                if let Some((
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::LessThan,
+                        ..
+                    }
+                    | ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::LessEqual,
+                        ..
+                    }
+                    | ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::GreaterThan,
+                        ..
+                    }
+                    | ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::GreaterEqual,
+                        ..
+                    },
+                    _,
+                )) = condition_source_0.condition_native() =>
+            {
+                Some(Self::Int32)
+            }
             // An `int32` equality; a `uint32` one is refused by the `int32`
             // bridges and left out.
             condition_source_0 @ Proposition::ConditionIs(_, true)
@@ -372,7 +376,7 @@ fn explicit_native_rewrite_equality(
     kernel: &Proposition,
     surface: &ClickProposition,
 ) -> Option<ClickProposition> {
-    let Proposition::ConditionIs(ConditionTerm::Compare { format, .. }, _) = kernel else {
+    let Some((ConditionTerm::Compare { format, .. }, _)) = kernel.condition_native() else {
         return None;
     };
     fn cast(
