@@ -276,8 +276,8 @@ impl Words<'_, '_> {
             }
             let Some(bytes) =
                 crate::kernel::proof::arithmetic_special::constant_pointer_byte_difference(
-                    target.pointer(),
-                    p.pointer(),
+                    target.address(),
+                    p.address(),
                 )
             else {
                 continue;

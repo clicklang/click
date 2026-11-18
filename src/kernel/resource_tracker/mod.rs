@@ -1594,7 +1594,7 @@ fn collect_condition_reads(condition: &ConditionTerm, reads: &mut Vec<ResourceRe
                 pointer: pointer.as_ref().clone(),
                 bytes: 1,
             },
-            ProgramPoint::at(memory),
+            memory.clone(),
         ),
     }
 }
@@ -1679,7 +1679,7 @@ fn collect_operand_reads(
 
 fn collect_value_reads(value: &ProgramValue, reads: &mut Vec<ResourceRead>) {
     match value {
-        ProgramValue::Pointer(pointer) => collect_pointer_reads(pointer.pointer(), reads),
+        ProgramValue::Pointer(pointer) => collect_pointer_reads(pointer.address(), reads),
         _ => {
             if let Some(term) = crate::kernel::spec::program_value_bitvector_term(value) {
                 collect_bitvector_reads(&term, reads);
@@ -1758,7 +1758,7 @@ fn collect_argument_reads(argument: &PureFunctionArgument, reads: &mut Vec<Resou
             if let ProgramValue::Pointer(pointer) = pointer {
                 push_read(
                     reads,
-                    OwnedResource::Block(pointer.pointer().base.clone()),
+                    OwnedResource::Block(pointer.address().base.clone()),
                     ProgramPoint::of_memory(memory),
                 );
             }

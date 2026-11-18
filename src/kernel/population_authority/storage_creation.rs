@@ -915,7 +915,7 @@ impl CreationEvents {
             return Err(CreationRefusal::InvalidMember);
         };
         if (description.population_arity().is_none() && wildcard_member.is_some())
-            || !is_external_population_anchor(pointer.pointer())
+            || !is_external_population_anchor(pointer.address())
             || !description.schema().is_fieldless() && !named_authority
             || !description.resource_arguments().is_empty()
             || owned_members > i32::MAX as u32
@@ -960,7 +960,7 @@ impl CreationEvents {
                 *variable,
                 crate::kernel::model_fields::PopulationEntryCount {
                     family: Arc::from(description.family()),
-                    anchor: pointer.pointer().clone(),
+                    anchor: pointer.address().clone(),
                     wildcards: description.population_arity().map_or(0, |arity| arity - 1),
                     member: None,
                 },
@@ -1035,7 +1035,7 @@ impl CreationEvents {
         else {
             return false;
         };
-        let Ok(block) = self.exact_member_block(&pointer.pointer().base, description) else {
+        let Ok(block) = self.exact_member_block(&pointer.address().base, description) else {
             return false;
         };
         self.0
@@ -1157,7 +1157,7 @@ impl CreationEvents {
         else {
             return false;
         };
-        let Ok(block) = self.exact_member_block(&pointer.pointer().base, description) else {
+        let Ok(block) = self.exact_member_block(&pointer.address().base, description) else {
             return false;
         };
         self.0
@@ -1661,7 +1661,7 @@ impl CreationEvents {
         else {
             return false;
         };
-        let block = &pointer.pointer().base;
+        let block = &pointer.address().base;
         if self.exact_member_block(block, description).is_err() {
             return false;
         }
@@ -1687,7 +1687,7 @@ impl CreationEvents {
         };
         self.0
             .scopes
-            .get(&(pointer.pointer().base.clone(), pattern.family().to_owned()))
+            .get(&(pointer.address().base.clone(), pattern.family().to_owned()))
             .filter(|scope| {
                 scope.arguments() == pattern.arguments()
                     && scope.population_arity() == pattern.population_arity()
@@ -1739,7 +1739,7 @@ impl CreationEvents {
         match self
             .0
             .scopes
-            .get(&(pointer.pointer().base.clone(), description.family().into()))
+            .get(&(pointer.address().base.clone(), description.family().into()))
         {
             Some(scope) if description == scope => Some(scope.clone()),
             Some(scope)
@@ -1770,8 +1770,8 @@ impl CreationEvents {
         else {
             return Err(CreationRefusal::InvalidMember);
         };
-        if pointer.pointer().offset != AddressOffset::Constant(0)
-            || &pointer.pointer().base != block
+        if pointer.address().offset != AddressOffset::Constant(0)
+            || &pointer.address().base != block
             || self.governing_authority(description).is_none()
         {
             return Err(CreationRefusal::InvalidMember);
@@ -1817,7 +1817,7 @@ impl CreationEvents {
                 variable,
                 crate::kernel::model_fields::PopulationEntryCount {
                     family: Arc::from(member.family()),
-                    anchor: anchor.pointer().clone(),
+                    anchor: anchor.address().clone(),
                     wildcards: 0,
                     member: Some(member.arguments().to_vec().into()),
                 },
@@ -1946,7 +1946,7 @@ impl CreationEvents {
             return Err(CreationRefusal::InvalidMember);
         };
         if self
-            .observed_symbolic_batch(&anchor.pointer().base, scope.family())
+            .observed_symbolic_batch(&anchor.address().base, scope.family())
             .is_some()
         {
             return Err(CreationRefusal::UnknownTotal);
@@ -1959,7 +1959,7 @@ impl CreationEvents {
             .unwrap_or(0)
             != 0;
         let empty = self
-            .observe_term(&anchor.pointer().base, scope.family())?
+            .observe_term(&anchor.address().base, scope.family())?
             .as_const()
             == Some(0);
         if (!Self::has_concrete_indices(description) || unresolved) && !empty {
@@ -1987,7 +1987,7 @@ impl CreationEvents {
         // resource index identity. The key never includes C pointee metadata.
         description.map_values(|value| match value {
             AlgebraicValue::Program(ProgramValue::Pointer(pointer)) => {
-                let mut address = pointer.pointer().clone();
+                let mut address = pointer.address().clone();
                 if let Some(offset) = address.offset.as_const() {
                     address.offset = AddressOffset::Constant(offset);
                 }
@@ -2009,8 +2009,8 @@ impl CreationEvents {
     fn has_concrete_indices(description: &ResourceDescription) -> bool {
         description.arguments().iter().all(|value| match value {
             crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(pointer)) => {
-                matches!(pointer.pointer().base, AddressBase::Heap(_))
-                    || pointer.pointer().base.is_local_block()
+                matches!(pointer.address().base, AddressBase::Heap(_))
+                    || pointer.address().base.is_local_block()
             }
             crate::kernel::ResourceFieldValue::Program(ProgramValue::Int32(value)) => {
                 value.as_const().is_some()
@@ -2018,7 +2018,7 @@ impl CreationEvents {
             _ => false,
         }) && description.arguments().iter().all(|value| match value {
             crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(pointer)) => {
-                pointer.pointer().offset.as_const().is_some()
+                pointer.address().offset.as_const().is_some()
             }
             _ => true,
         })
@@ -2383,7 +2383,7 @@ impl CreationEvents {
         else {
             return Err(CreationRefusal::InvalidMember);
         };
-        if &pointer.pointer().base != block {
+        if &pointer.address().base != block {
             return Err(CreationRefusal::InvalidMember);
         }
         if produce {
@@ -2646,7 +2646,7 @@ impl CreationEvents {
             return Ok(existing.clone());
         }
         let (next, _) = self.checked_member_exchange_with_context(
-            &pointer.pointer().base,
+            &pointer.address().base,
             description,
             produce,
             None,
@@ -2787,7 +2787,7 @@ impl CreationEvents {
             else {
                 return Err(CreationRefusal::InvalidMember);
             };
-            if &pointer.pointer().base != block {
+            if &pointer.address().base != block {
                 return Err(CreationRefusal::InvalidMember);
             }
             if import.retired_authority || import.authority_holder != self.0.opaque_actor {
@@ -3101,7 +3101,7 @@ impl CreationEvents {
         else {
             return Err(CreationRefusal::InvalidMember);
         };
-        let block = self.exact_member_block(&pointer.pointer().base, description)?;
+        let block = self.exact_member_block(&pointer.address().base, description)?;
         let anchor = *self
             .0
             .anchors
@@ -3236,7 +3236,7 @@ impl CreationEvents {
         }
         self.0
             .anchors
-            .get(&pointer.pointer().base)
+            .get(&pointer.address().base)
             .and_then(|anchor| {
                 self.0
                     .authority
@@ -3512,8 +3512,8 @@ impl CreationEvents {
         else {
             return Err(CreationRefusal::InvalidMember);
         };
-        if &pointer.pointer().base != block
-            || pointer.pointer().offset != AddressOffset::Constant(0)
+        if &pointer.address().base != block
+            || pointer.address().offset != AddressOffset::Constant(0)
             || !description.resource_arguments().is_empty()
         {
             return Err(CreationRefusal::InvalidMember);

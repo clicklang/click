@@ -20,7 +20,7 @@ fn shape_pointer(fact: &ResourceFact) -> Option<(Shape, &Address)> {
     };
     Some((
         (fact.family(), name.clone(), arguments.len()),
-        pointer.pointer(),
+        pointer.address(),
     ))
 }
 

@@ -187,7 +187,7 @@ fn aggregate_return_copy_permission_ignores_unrelated_storage() {
             memory = memory.with_block(AddressBase::Heap(880_000 + index), 16);
         }
         let state = ExecutionState::new().with_memory(memory);
-        let source = PointerValue::new(temporary, ProgramType::UInt8Pointer);
+        let source = Pointer::new(temporary, ProgramType::UInt8Pointer);
         let layout = node_layout();
         let assumptions = PureFactContext::new();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {

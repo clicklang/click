@@ -1,9 +1,9 @@
 # Contradictory region ownership is still refused by raw contract validation
 
-The contract owns `*s` both inside `pool_slot(s)` and beside it. Instance
-unfold now exposes the already-held body without searching the frame for
-overlap. The later raw contract-ownership validation still rejects the duplicated
-flat descriptor. Keep this refusal distinct from the framed unfold rule; the
+The contract owns `*s` both inside `pool_slot(s)` and beside it. Raw entry
+admission rejects that duplicate before execution. Instance unfold exposes an
+already-held body without searching its frame for overlap, and observation
+does not repeat entry admission. Keep this refusal distinct from the unfold rule; the
 positive control is `unfold_region_then_write_a_descriptor_of_its_type.md`.
 
 ```c filename=unfold_region_owned_again_as_an_object_is_refused.c

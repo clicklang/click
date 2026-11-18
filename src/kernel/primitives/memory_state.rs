@@ -2087,7 +2087,7 @@ fn held_address_base(binding: &LocalBinding) -> Option<&AddressBase> {
     let LocalBinding::Object { value, .. } = binding else {
         return None;
     };
-    Some(&value.pointer()?.pointer().base)
+    Some(&value.pointer()?.address().base)
 }
 
 /// The numeric value of a scalar of integer or truth type.
@@ -2373,7 +2373,7 @@ impl LocalEnvironment {
     pub(crate) fn pointer_objects_in_block<'a>(
         &'a self,
         block: &AddressBase,
-    ) -> impl Iterator<Item = (&'a BindingName, &'a PointerValue)> {
+    ) -> impl Iterator<Item = (&'a BindingName, &'a Pointer)> {
         self.pointer_objects_by_block
             .get(block)
             .into_iter()
@@ -4577,8 +4577,8 @@ impl SymbolicMemory {
     /// Name the success identity already reserved by this allocation producer.
     /// This is a value observation, not evidence that allocation succeeded or
     /// that the object is still live. No facts or memory history are consulted.
-    pub(crate) fn fresh_allocation_identity(&self, result: &PointerValue) -> Option<PointerValue> {
-        let base = result.pointer();
+    pub(crate) fn fresh_allocation_identity(&self, result: &Pointer) -> Option<Pointer> {
+        let base = result.address();
         match base.base {
             AddressBase::Heap(_) => Some(result.clone()),
             AddressBase::Symbolic(variable) if self.heap.pending_allocations.contains_key(base) => {
@@ -6013,8 +6013,8 @@ impl SymbolicMemory {
             .ok_or(RuntimeError::TypeMismatch)?;
         let state_copy = copy
             && matches!(&value, ProgramValue::Pointer(source) if
-            !source.pointer().base.is_local_block()
-            || self.cells.runs_in_block(&source.pointer().base)
+            !source.address().base.is_local_block()
+            || self.cells.runs_in_block(&source.address().base)
                 .any(|run| !matches!(run.value_mode(), RunValueMode::Constant(_))));
         if !base.base.is_local_block() || state_copy {
             return self.write_scalar_array_state(
@@ -6069,7 +6069,7 @@ impl SymbolicMemory {
             let ProgramValue::Pointer(pointer) = &value else {
                 return Err(RuntimeError::TypeMismatch);
             };
-            let pointer = pointer.pointer();
+            let pointer = pointer.address();
             if !valid_region(pointer)
                 || !self.run_can_stand_for_cells_at(pointer)
                 || (bytes != 0 && !self.has_initialized_bytes_under(pointer, bytes, assumptions))
@@ -6311,7 +6311,7 @@ impl SymbolicMemory {
             let ProgramValue::Pointer(pointer) = value else {
                 return Err(RuntimeError::TypeMismatch);
             };
-            let pointer = pointer.pointer();
+            let pointer = pointer.address();
             if !valid(pointer)
                 || (pointer.base.is_local_block()
                     && !self.has_initialized_bytes_under(pointer, bytes, assumptions))
@@ -8299,7 +8299,7 @@ impl SymbolicMemory {
         // cell, either of which already carries its definition.
         match Address::version_read_value(&retained_state, pointer) {
             Ok(held) => ProgramValue::Pointer(held.with_type(value_type)),
-            Err(value) => ProgramValue::Pointer(PointerValue::from_read(
+            Err(value) => ProgramValue::Pointer(Pointer::from_read(
                 value,
                 value_type,
                 &retained_state,
@@ -8328,7 +8328,7 @@ impl SymbolicMemory {
             &retained_state,
             pointer,
         );
-        ProgramValue::Pointer(PointerValue::from_read(
+        ProgramValue::Pointer(Pointer::from_read(
             value,
             value_type,
             &retained_state,
@@ -9073,7 +9073,7 @@ impl ExecutionState {
             else {
                 return Err("control authority needs one pointer anchor".into());
             };
-            let anchor = pointer.pointer();
+            let anchor = pointer.address();
             let events = self
                 .population_effects
                 .creation
@@ -9244,7 +9244,7 @@ impl ExecutionState {
             else {
                 return Err("control authority needs one pointer anchor".into());
             };
-            let anchor = anchor_value.pointer().clone();
+            let anchor = anchor_value.address().clone();
             let ResourceFact::Own(Resource::Composite { arguments, .. }, _) = selected else {
                 return Err("Requires owns control resource".into());
             };
@@ -9524,7 +9524,7 @@ impl ExecutionState {
         else {
             return Err("authority requires one pointer anchor".into());
         };
-        let anchor = pointer.pointer();
+        let anchor = pointer.address();
         let events = self
             .population_effects
             .creation
@@ -9646,7 +9646,7 @@ impl ExecutionState {
         else {
             return Err("Requires an exact pointer-anchored authorized resource R(p)".into());
         };
-        let anchor = pointer.pointer();
+        let anchor = pointer.address();
         let imported_member_exchange =
             self.population_effects
                 .creation
@@ -9890,7 +9890,7 @@ impl ExecutionState {
             else {
                 return Ok(());
             };
-            events.member_created(&pointer.pointer().base, description.family())
+            events.member_created(&pointer.address().base, description.family())
         } else {
             return Ok(());
         };
@@ -11524,7 +11524,7 @@ mod local_variable_spelling_tests {
                 let scanned = locals
                     .object_values()
                     .filter_map(|(name, value)| {
-                        let pointer = value.pointer()?.pointer();
+                        let pointer = value.pointer()?.address();
                         (&pointer.base == block).then(|| (name, pointer.clone()))
                     })
                     .collect::<Vec<_>>();
@@ -11532,7 +11532,7 @@ mod local_variable_spelling_tests {
                     assert_eq!(
                         indexed
                             .pointer_objects_in_block(block)
-                            .map(|(name, pointer)| (name, pointer.pointer().clone()))
+                            .map(|(name, pointer)| (name, pointer.address().clone()))
                             .collect::<Vec<_>>(),
                         scanned
                     );

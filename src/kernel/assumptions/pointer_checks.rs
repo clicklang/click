@@ -15,7 +15,7 @@ pub(super) struct Origins<'a, A, W> {
     pub(super) known: bool,
 }
 impl<'a> Origins<'a, Address, MachineTerm> {
-    pub(super) fn native(value: &'a PointerValue) -> Self {
+    pub(super) fn native(value: &'a Pointer) -> Self {
         Self {
             provenance: value.provenance(),
             opaque: value.bounds_owner(),
@@ -227,10 +227,7 @@ mod tests {
         widths: HashMap<KernelTerm, MachineTerm>,
     }
     impl<'a> Selected<'a> {
-        fn new(
-            facts: &'a PureFactContext,
-            values: &[(&PointerValue, &SharedPointerValue)],
-        ) -> Self {
+        fn new(facts: &'a PureFactContext, values: &[(&Pointer, &SharedPointerValue)]) -> Self {
             let mut result = Self {
                 facts,
                 addresses: HashMap::new(),
@@ -374,7 +371,7 @@ mod tests {
         let b = Address::symbolic(Variable(1012001));
         let provenance = std::sync::Arc::new(Address::symbolic(Variable(1012002)));
         let make = |start, width| {
-            PointerValue::new(a.clone(), ProgramType::Int32Pointer)
+            Pointer::new(a.clone(), ProgramType::Int32Pointer)
                 .with_provenance(provenance.clone())
                 .with_bounds(Some(SubobjectBounds {
                     start,
@@ -413,7 +410,7 @@ mod tests {
         let _session = VerificationSession::enter();
         let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let cell = Address::symbolic(Variable(1012100));
-        let read = PointerValue::from_read(
+        let read = Pointer::from_read(
             Address::loaded_value(&memory, &cell),
             ProgramType::Int32Pointer,
             &memory,
@@ -423,14 +420,14 @@ mod tests {
             base: AddressBase::Heap(1012101),
             offset: AddressOffset::Constant(0),
         };
-        let stored = PointerValue::new(base.clone(), ProgramType::Int32Pointer);
+        let stored = Pointer::new(base.clone(), ProgramType::Int32Pointer);
         let bounded = stored.clone().with_bounds(Some(SubobjectBounds {
             start: base.clone(),
             width: MachineTerm::constant(4),
         }));
         let held = MemoryRange::new(base.clone(), 0u32.into(), 8u32.into());
         let before = PureFactContext::new().assume_condition(
-            ConditionTerm::pointer_equal(read.pointer().clone(), base),
+            ConditionTerm::pointer_equal(read.address().clone(), base),
             true,
         );
         let after = before.clone().assume_condition(

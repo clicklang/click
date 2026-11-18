@@ -2378,7 +2378,7 @@ impl MemoryRange {
         element_width: u32,
     ) -> Self {
         assert!(element_width > 0, "memory element width must be positive");
-        let carrier = PointerValue::new(base.clone(), ProgramType::VoidPointer);
+        let carrier = Pointer::new(base.clone(), ProgramType::VoidPointer);
         Self {
             bounds_owner: carrier.bounds_owner.clone(),
             carrier_bounds_known: carrier.bounds_are_known(),
@@ -2396,31 +2396,31 @@ impl MemoryRange {
     /// A typed clause carries the complete pointer's origin, independently of
     /// whichever address spelling the resource algebra subsequently selects.
     pub(crate) fn from_pointer_value(
-        value: &PointerValue,
+        value: &Pointer,
         start: MachineTerm,
         end: MachineTerm,
         element_width: u32,
     ) -> Self {
-        Self::new_with_element_width(value.pointer().clone(), start, end, element_width)
+        Self::new_with_element_width(value.address().clone(), start, end, element_width)
             .with_pointer_carrier(value)
     }
 
     pub(crate) fn from_pointer_value_wide(
-        value: &PointerValue,
+        value: &Pointer,
         start: MachineTerm,
         end: MachineTerm,
         element_width: u32,
     ) -> Self {
-        Self::new_wide(value.pointer().clone(), start, end, element_width)
+        Self::new_wide(value.address().clone(), start, end, element_width)
             .with_pointer_carrier(value)
     }
 
     /// The origin and bounds ancestry retained by this admitted footprint.
     /// Its own bounds describe the authorized bytes; this carrier is not a
     /// new pointer access and does not infer a selected subobject bounds.
-    pub(in crate::kernel) fn pointer_carrier(&self) -> PointerValue {
-        PointerValue {
-            pointer: self.base.clone(),
+    pub(in crate::kernel) fn pointer_carrier(&self) -> Pointer {
+        Pointer {
+            address: self.base.clone(),
             provenance: self.provenance.clone(),
             bounds_owner: self.bounds_owner.clone(),
             program_type: ProgramType::VoidPointer,
@@ -2433,7 +2433,7 @@ impl MemoryRange {
         }
     }
 
-    pub(in crate::kernel) fn with_pointer_carrier(mut self, value: &PointerValue) -> Self {
+    pub(in crate::kernel) fn with_pointer_carrier(mut self, value: &Pointer) -> Self {
         self.provenance = value.provenance.clone();
         self.bounds_owner = value.bounds_owner.clone();
         self.carrier_bounds_known = value.bounds_are_known();

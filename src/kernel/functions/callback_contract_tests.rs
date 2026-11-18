@@ -944,7 +944,7 @@ fn check_executed_refinement_shape(return_type: ProgramType, alter_result: bool)
         name: target.predicate_name(),
         arguments: vec![
             Term::ExecutionState(Box::new(ExecutionState::new())),
-            Term::ProgramValue(ProgramValue::Pointer(PointerValue::new(
+            Term::ProgramValue(ProgramValue::Pointer(Pointer::new(
                 Address {
                     base: AddressBase::FunctionSymbolic(Variable(0)),
                     offset: AddressOffset::Constant(0),

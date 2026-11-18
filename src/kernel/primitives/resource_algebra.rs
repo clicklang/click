@@ -6840,6 +6840,8 @@ impl ResourceContext {
             let owned_entries = entries
                 .iter()
                 .filter_map(|entry| {
+                    #[cfg(test)]
+                    crate::instrumentation::record_deterministic_work(1);
                     let fact = self.fact(*entry);
                     fact.memory_own_range().map(|range| (*entry, range))
                 })
@@ -9388,7 +9390,7 @@ fn instance_pointer_arguments(instance: &ResourceInstance) -> impl Iterator<Item
 /// The C pointer arguments among `arguments`, in order.
 fn algebraic_pointer_arguments(arguments: &ResourceArguments) -> impl Iterator<Item = &Address> {
     arguments.iter().filter_map(|argument| match argument {
-        ResourceFieldValue::Program(ProgramValue::Pointer(pointer)) => Some(pointer.pointer()),
+        ResourceFieldValue::Program(ProgramValue::Pointer(pointer)) => Some(pointer.address()),
         _ => None,
     })
 }
@@ -9466,11 +9468,11 @@ fn normalization_anchor(arguments: &ResourceArguments) -> Option<&AddressBase> {
     match arguments.first() {
         Some(ResourceFieldValue::Program(ProgramValue::Pointer(pointer)))
             if matches!(
-                pointer.pointer().base,
+                pointer.address().base,
                 AddressBase::Heap(_) | AddressBase::Temporary(_)
             ) =>
         {
-            Some(&pointer.pointer().base)
+            Some(&pointer.address().base)
         }
         _ => None,
     }
@@ -9590,7 +9592,7 @@ impl OwnedMemberKey {
 fn normalization_root_pointer(arguments: &ResourceArguments) -> Option<&Address> {
     match arguments.first() {
         Some(ResourceFieldValue::Program(ProgramValue::Pointer(pointer))) => {
-            Some(pointer.pointer())
+            Some(pointer.address())
         }
         _ => None,
     }
@@ -12950,11 +12952,11 @@ impl ResourceFact {
 
     /// `allocation(base, bytes)` with the byte count in the size's format.
     pub(in crate::kernel) fn own_heap_allocation(base: Address, size: &AllocationSize) -> Self {
-        Self::own_designated_allocation(PointerValue::new(base, ProgramType::Int32Pointer), size)
+        Self::own_designated_allocation(Pointer::new(base, ProgramType::Int32Pointer), size)
     }
 
     pub(in crate::kernel) fn own_designated_allocation(
-        base: PointerValue,
+        base: Pointer,
         size: &AllocationSize,
     ) -> Self {
         Self::own_token(
@@ -12995,10 +12997,10 @@ impl ResourceFact {
     /// size kind; [`Self::allocation_size`] also gives the kind.
     pub fn allocation(&self) -> Option<(&Address, &MachineTerm)> {
         self.allocation_value()
-            .map(|(base, bytes)| (base.pointer(), bytes))
+            .map(|(base, bytes)| (base.address(), bytes))
     }
 
-    pub(in crate::kernel) fn allocation_value(&self) -> Option<(&PointerValue, &MachineTerm)> {
+    pub(in crate::kernel) fn allocation_value(&self) -> Option<(&Pointer, &MachineTerm)> {
         let (base, bytes) = self.allocation_arguments()?;
         let (ProgramValue::Int32(bytes) | ProgramValue::UInt64(bytes)) = bytes else {
             return None;
@@ -13007,12 +13009,12 @@ impl ResourceFact {
     }
 
     /// The base and tagged size of an owned `allocation` token.
-    pub(in crate::kernel) fn allocation_size(&self) -> Option<(&PointerValue, AllocationSize)> {
+    pub(in crate::kernel) fn allocation_size(&self) -> Option<(&Pointer, AllocationSize)> {
         let (base, bytes) = self.allocation_arguments()?;
         Some((base, AllocationSize::from_token_value(bytes)?))
     }
 
-    fn allocation_arguments(&self) -> Option<(&PointerValue, &ProgramValue)> {
+    fn allocation_arguments(&self) -> Option<(&Pointer, &ProgramValue)> {
         let Self::Own(Resource::Token { name, arguments }, _) = self else {
             return None;
         };

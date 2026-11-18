@@ -70,6 +70,33 @@ fn check_ranked_search_without_transport(source: &str, c_sources: &[(String, Str
 }
 
 #[test]
+#[ignore = "nightly: explicit frame refusal after expanding its execution prefix"]
+fn explicit_frame_refusal_replays_without_transport() {
+    let (source, c_sources) = mdtest_sources("mdtests/explicit_preserve_failure_is_prompt.md");
+    let sources = c_sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    // Expand these sites individually so capture stops before the expected refusal.
+    let mut expanded = source;
+    for prefix_step in [
+        "have to_integer(s + 1) <= to_integer(e);",
+        "step_until(statement(2));",
+    ] {
+        let at = expansion::position_at_offset(&expanded, expanded.find(prefix_step).unwrap());
+        expanded = expand_c_tactic_source_at(&expanded, &sources, at.line, at.column)
+            .unwrap_or_else(|error| panic!("{prefix_step}: {}", error.report()));
+    }
+    assert!(!expanded.contains("transport("), "{expanded}");
+    let report =
+        without_implicit_solve(|| verify_c_sources(&expanded, &sources).unwrap_err().report());
+    assert!(
+        report.contains("preserve separation is not exactly available"),
+        "{report}"
+    );
+}
+
+#[test]
 #[ignore = "nightly: iterated owner stable-view refusal and cold replay"]
 fn iterated_owner_borrow_still_refuses_without_transport() {
     let (source, sources) =

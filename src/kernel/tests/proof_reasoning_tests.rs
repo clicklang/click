@@ -4512,8 +4512,7 @@ fn forall_integer_instantiation_refuses_after_work_exhaustion() {
 #[test]
 fn forall_pointer_instantiation_takes_a_pointer_of_the_binder_type() {
     let binder = Variable(640);
-    let pointer =
-        |variable, program_type| PointerValue::new(Address::symbolic(variable), program_type);
+    let pointer = |variable, program_type| Pointer::new(Address::symbolic(variable), program_type);
     let pointer_term = |variable| {
         Term::ProgramValue(ProgramValue::Pointer(pointer(
             variable,
@@ -8122,15 +8121,15 @@ fn pointer_predicate_matching_preserves_types_arguments_states_and_scope() {
     let goal = fact("Selected", state.clone(), &[b.clone(), d.clone()], ty, 7);
     let ab = Proposition::ConditionIs(
         ConditionTerm::PointerValueEqual(
-            Box::new(PointerValue::new(a.clone(), ty)),
-            Box::new(PointerValue::new(b.clone(), ty)),
+            Box::new(Pointer::new(a.clone(), ty)),
+            Box::new(Pointer::new(b.clone(), ty)),
         ),
         true,
     );
     let cd = Proposition::ConditionIs(
         ConditionTerm::PointerValueEqual(
-            Box::new(PointerValue::new(c.clone(), ty)),
-            Box::new(PointerValue::new(d.clone(), ty)),
+            Box::new(Pointer::new(c.clone(), ty)),
+            Box::new(Pointer::new(d.clone(), ty)),
         ),
         true,
     );
@@ -8605,10 +8604,9 @@ fn complete_pointer_read_source_retains_the_domain_version() {
             .clone()
             .store(unrelated, ProgramValue::Int32(MachineTerm::constant(1))),
     );
-    let old_value =
-        PointerValue::from_read(address.clone(), ProgramType::Int32Pointer, &before, &cell);
-    let value = PointerValue::from_read(address, ProgramType::Int32Pointer, &after, &cell);
-    assert_eq!(old_value.pointer(), value.pointer());
+    let old_value = Pointer::from_read(address.clone(), ProgramType::Int32Pointer, &before, &cell);
+    let value = Pointer::from_read(address, ProgramType::Int32Pointer, &after, &cell);
+    assert_eq!(old_value.address(), value.address());
     assert_ne!(
         old_value, value,
         "an address alone does not identify a complete pointer"

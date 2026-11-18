@@ -10,11 +10,11 @@ fn full_pointer_alias_keeps_typed_constructor_fields_in_linear_work() {
     let class = crate::kernel::effective_type::CAccessClass::Struct(
         crate::kernel::effective_type::CStructClass::opaque("node"),
     );
-    let from = PointerValue::new(
+    let from = Pointer::new(
         Address::symbolic(Variable(970_001)),
         ProgramType::Int32Pointer,
     );
-    let to = PointerValue::new(
+    let to = Pointer::new(
         Address::symbolic(Variable(970_002)),
         ProgramType::Int32Pointer,
     );
@@ -61,7 +61,7 @@ fn full_pointer_alias_keeps_typed_constructor_fields_in_linear_work() {
             let AlgebraicValue::Program(ProgramValue::Pointer(pointer)) = field else {
                 panic!("pointer field expected")
             };
-            assert_eq!(pointer.pointer(), to.pointer());
+            assert_eq!(pointer.address(), to.address());
             assert_eq!(pointer.provenance(), to.provenance());
             assert!(pointer.supports_object_class(&class));
         }
@@ -85,7 +85,7 @@ fn full_pointer_alias_keeps_typed_constructor_fields_in_linear_work() {
 
     // Numeric equality cannot replace the original object's provenance.
     let ProgramValue::Pointer(actual) =
-        TermRewrite::for_pointer_exact(from.pointer(), to.pointer())
+        TermRewrite::for_pointer_exact(from.address(), to.address())
             .value(&ProgramValue::Pointer(typed.clone()))
     else {
         panic!("pointer expected")
@@ -1114,14 +1114,14 @@ fn generic_read_alias_rewrite_work(count: u64, unrelated: u64, warm: bool) -> us
         );
     }
     let memory = crate::kernel::intern_memory(memory);
-    let from = PointerValue::new(
+    let from = Pointer::new(
         Address {
             base: AddressBase::ExternalArgument,
             offset: AddressOffset::Constant(0),
         },
         ProgramType::Int32Pointer,
     );
-    let read = AlgebraicTermNode::parameter_load(memory.clone(), from.pointer().clone(), parameter);
+    let read = AlgebraicTermNode::parameter_load(memory.clone(), from.address().clone(), parameter);
     // Catch up the input's pointer-reachable index once for the warm-query
     // axis. Every measured alias is still fresh. The cold axis below charges
     // this initial delta as well and grows cells and queries together.
@@ -1134,13 +1134,13 @@ fn generic_read_alias_rewrite_work(count: u64, unrelated: u64, warm: bool) -> us
     }
     let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
         for index in 0..count {
-            let to = PointerValue::new(
+            let to = Pointer::new(
                 Address::symbolic(Variable(997_000 + index)),
                 ProgramType::Int32Pointer,
             );
             let rewritten = TermRewrite::for_pointer_value_exact(&from, &to).value(&read);
             let expected =
-                AlgebraicTermNode::parameter_load(memory.clone(), to.pointer().clone(), parameter);
+                AlgebraicTermNode::parameter_load(memory.clone(), to.address().clone(), parameter);
             assert_eq!(rewritten, expected);
             assert_ne!(rewritten, stored);
         }
@@ -1181,7 +1181,7 @@ fn generic_read_alias_rewrites_keep_cold_total_work_linear() {
 
 fn full_pointer_read_version_rewrite_work(count: u64, unrelated: u64) -> usize {
     let _session = crate::kernel::VerificationSession::enter();
-    let to = PointerValue::new(
+    let to = Pointer::new(
         Address::symbolic(Variable(997_500)),
         ProgramType::Int32PointerPointer,
     );
@@ -1193,15 +1193,15 @@ fn full_pointer_read_version_rewrite_work(count: u64, unrelated: u64) -> usize {
             ProgramValue::Int32(7u32.into()),
         );
     }
-    let memory = memory.store(to.pointer().clone(), stored.clone());
+    let memory = memory.store(to.address().clone(), stored.clone());
     let inputs = (0..count)
         .map(|index| {
-            let from = PointerValue::new(
+            let from = Pointer::new(
                 Address::symbolic(Variable(999_500 + index)),
                 ProgramType::Int32PointerPointer,
             );
             let read =
-                memory.symbolic_pointer_version_load(from.pointer(), ProgramType::Int32Pointer);
+                memory.symbolic_pointer_version_load(from.address(), ProgramType::Int32Pointer);
             (from, read)
         })
         .collect::<Vec<_>>();
@@ -1211,7 +1211,7 @@ fn full_pointer_read_version_rewrite_work(count: u64, unrelated: u64) -> usize {
             .map(|(from, read)| TermRewrite::for_pointer_value_exact(from, &to).value(read))
             .collect::<Vec<_>>()
     });
-    let expected = memory.symbolic_pointer_version_load(to.pointer(), ProgramType::Int32Pointer);
+    let expected = memory.symbolic_pointer_version_load(to.address(), ProgramType::Int32Pointer);
     assert_ne!(expected, stored);
     assert!(rewritten.iter().all(|value| *value == expected));
     work

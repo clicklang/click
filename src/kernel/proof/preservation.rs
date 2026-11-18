@@ -282,7 +282,7 @@ fn observation_equality(
             ConditionTerm::pointer_value_equal(a, b)
         }
         (ReadType::PointerAddress, ProgramValue::Pointer(a), ProgramValue::Pointer(b)) => {
-            ConditionTerm::pointer_equal(a.pointer().clone(), b.pointer().clone())
+            ConditionTerm::pointer_equal(a.address().clone(), b.address().clone())
         }
         (ReadType::Abstract, ProgramValue::Parameter(a), ProgramValue::Parameter(b))
             if a.algebraic_type == b.algebraic_type =>

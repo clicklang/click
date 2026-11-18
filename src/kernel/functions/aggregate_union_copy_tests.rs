@@ -142,7 +142,7 @@ fn aggregate_and_union_copies_keep_retained_pointer_producers() {
     let _session = crate::kernel::VerificationSession::enter();
     let source = SymbolicMemory::local_pointer("retained_copy_source");
     let target = SymbolicMemory::local_pointer("retained_copy_target");
-    let pointer = PointerValue::new(
+    let pointer = Pointer::new(
         Address::symbolic(Variable(1027800)),
         ProgramType::Int32Pointer,
     )

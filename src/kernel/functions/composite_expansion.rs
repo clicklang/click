@@ -14,9 +14,9 @@ pub(super) fn composite_names_pointer_base(composite: &ResourceFact, pointer: &A
         else {
             return false;
         };
-        argument.pointer() == pointer
+        argument.address() == pointer
             || pointer
-                .shared_element_index_from_base_with_width(argument.pointer(), 1)
+                .shared_element_index_from_base_with_width(argument.address(), 1)
                 .is_some()
     })
 }

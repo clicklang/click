@@ -73,7 +73,7 @@ impl Proof<'_> {
                 .find_map(|(name, expression)| match expression {
                     ContractExpression::ProgramExpression(ProgramExpression::Value(
                         ProgramValue::Pointer(value),
-                    )) if value.pointer() == pointer => Some(name.clone()),
+                    )) if value.address() == pointer => Some(name.clone()),
                     _ => None,
                 });
             if let Some(text) = immutable_name {
@@ -218,7 +218,7 @@ fn immutable_field_hint(
         }
         _ => return None,
     };
-    let expected = base.pointer().offset_by_bytes(*offset_bytes);
+    let expected = base.address().offset_by_bytes(*offset_bytes);
     (expected.base == address.base
         && crate::kernel::offsets_have_same_canonical_form(&expected.offset, &address.offset))
     .then(|| crate::surface::diagnostics::describe_field_place(&name.to_string(), field))

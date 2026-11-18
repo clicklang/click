@@ -287,7 +287,7 @@ impl Drop for LocalStructLayoutScope {
 /// written, the pointer's value here, and the struct layout at that value.
 struct StructOwner {
     base: ProgramExpression,
-    pointer: crate::kernel::PointerValue,
+    pointer: crate::kernel::Pointer,
     layout: crate::languages::interface::RecordLayout,
 }
 
@@ -377,7 +377,7 @@ fn owner_field_pointer(base: &ProgramExpression, offset_bytes: u32) -> ProgramEx
 struct NamedRangeBase {
     lowered: ProgramExpression,
     surface: ContractExpression,
-    pointer: crate::kernel::PointerValue,
+    pointer: crate::kernel::Pointer,
     width: u32,
 }
 
@@ -729,7 +729,7 @@ fn synthesize_recorded_held_value_local(
     pointer: &Address,
 ) -> Option<ContractExpression> {
     let crate::kernel::AlgebraicTermNode::MemoryLoad {
-        memory,
+        point: memory,
         pointer: address,
     } = &term.node
     else {
@@ -737,7 +737,9 @@ fn synthesize_recorded_held_value_local(
     };
     SYNTHESIS_RECORDED_POINTS.with(|slot| {
         let slot = slot.borrow();
-        let (selector, recorded) = slot.as_ref()?.point_reading_load(memory, address)?;
+        let (selector, recorded) = slot
+            .as_ref()?
+            .point_reading_load(memory.shared_memory(), address)?;
         Some(ContractExpression::At {
             selector: selector.clone(),
             expression: Box::new(synthesize_held_value_local(term, pointer, recorded)?),
@@ -1332,7 +1334,7 @@ pub(in crate::surface) fn synthesize_surface_value(
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
 ) -> Option<ContractExpression> {
-    if matches!(value, ProgramValue::Pointer(pointer) if matches!(pointer.pointer().base, AddressBase::ContractResult | AddressBase::ContractException | AddressBase::AggregateReturn { .. } | AddressBase::StringLiteral { .. } | AddressBase::AutomaticLocal { .. } | AddressBase::ReferenceCarrier { .. } | AddressBase::StaticObject { .. }))
+    if matches!(value, ProgramValue::Pointer(pointer) if matches!(pointer.address().base, AddressBase::ContractResult | AddressBase::ContractException | AddressBase::AggregateReturn { .. } | AddressBase::StringLiteral { .. } | AddressBase::AutomaticLocal { .. } | AddressBase::ReferenceCarrier { .. } | AddressBase::StaticObject { .. }))
     {
         return Some(ContractExpression::ProgramExpression(
             ProgramExpression::Value(value.clone()),
@@ -1356,7 +1358,7 @@ pub(in crate::surface) fn synthesize_surface_value(
     }
     match value {
         ProgramValue::Pointer(pointer) => synthesize_surface_pointer_expression(
-            pointer.pointer(),
+            pointer.address(),
             parameter_binding,
             state,
             &BTreeMap::new(),
@@ -1848,7 +1850,7 @@ fn synthesize_exact_external_zero_based_byte_range(
                 ProgramExpression::Variable(name) => state.locals().get(name)?.pointer()?,
                 _ => return None,
             };
-            (pointer.pointer() == base && pointer.program_type().pointee_type()?.byte_width() == 1)
+            (pointer.address() == base && pointer.program_type().pointee_type()?.byte_width() == 1)
                 .then(|| crate::surface::surface_parameter_binding(parameter.binding_name()))
         });
     let Some(name) = matches.next() else {
@@ -2054,25 +2056,25 @@ fn synthesize_external_symbolic_element_range(
                 .byte_width()
                 != 1
                 || named_base.program_type().pointee_type()?.byte_width() != 1
-                || named_base.pointer().base != AddressBase::ExternalArgument
+                || named_base.address().base != AddressBase::ExternalArgument
                 || base.base != AddressBase::ExternalArgument
             {
                 return None;
             }
             let index = match &base.offset {
                 AddressOffset::Add(left, right)
-                    if left.as_ref() == &named_base.pointer().offset =>
+                    if left.as_ref() == &named_base.address().offset =>
                 {
                     int32_scaled_value(right, 1)?
                 }
                 AddressOffset::Add(left, right)
-                    if right.as_ref() == &named_base.pointer().offset =>
+                    if right.as_ref() == &named_base.address().offset =>
                 {
                     int32_scaled_value(left, 1)?
                 }
                 // `bytes` itself can be at offset zero, in which case the
                 // canonical pointer offset drops the zero-valued add.
-                _ if named_base.pointer().offset == AddressOffset::Constant(0) => {
+                _ if named_base.address().offset == AddressOffset::Constant(0) => {
                     int32_scaled_value(&base.offset, 1)?
                 }
                 _ => return None,
@@ -2171,7 +2173,7 @@ fn int32_scaled_value(offset: &AddressOffset, width: i64) -> Option<MachineTerm>
 fn named_pointer_bases<'a>(
     parameter_binding: ParameterBinding<'a>,
     state: Option<&'a ExecutionState>,
-) -> impl Iterator<Item = (crate::kernel::BindingName, crate::kernel::PointerValue, u32)> + 'a {
+) -> impl Iterator<Item = (crate::kernel::BindingName, crate::kernel::Pointer, u32)> + 'a {
     parameter_binding
         .parameters
         .iter()
@@ -3335,7 +3337,7 @@ fn raise_call_argument(
 ) -> Option<SurfaceTerm> {
     use crate::kernel::KernelTermNode as Node;
     match term.node() {
-        Node::PointerValue(value)
+        Node::Pointer(value)
         | Node::PointerRead { value, .. }
         | Node::PointerArithmetic { value, .. }
         | Node::PointerCall { value, .. } => Some(SurfaceTerm::ProgramExpression(
@@ -3610,7 +3612,7 @@ fn raise_algebraic_read(
         .zip(parameter_binding.arguments)
         .find(|(_, argument)| {
             matches!(argument, ProgramExpression::Value(ProgramValue::Pointer(value))
-                if same_address(value.pointer()))
+                if same_address(value.address()))
         })
     {
         return Some(SurfaceTerm::ProgramExpression(ProgramExpression::Load(
@@ -3628,14 +3630,16 @@ fn raise_algebraic_read(
             return None;
         };
         let AlgebraicTermNode::MemoryLoad {
-            memory: held_memory,
+            point: held_memory,
             pointer,
         } = &held.node
         else {
             return None;
         };
-        (ty == &held.algebraic_type && memory == held_memory && same_address(pointer))
-            .then(|| SurfaceTerm::ProgramExpression(ProgramExpression::Variable(name.clone())))
+        (ty == &held.algebraic_type
+            && memory == held_memory.shared_memory()
+            && same_address(pointer))
+        .then(|| SurfaceTerm::ProgramExpression(ProgramExpression::Variable(name.clone())))
     };
     held_at(state).or_else(|| {
         SYNTHESIS_RECORDED_POINTS.with(|slot| {
@@ -3715,7 +3719,7 @@ fn raise_constructor_field(
 }
 
 fn raise_constructor_pointer(
-    pointer: &crate::kernel::PointerValue,
+    pointer: &crate::kernel::Pointer,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
@@ -4062,7 +4066,7 @@ fn raise_kernel_term_dispatch(
 
         Node::PointerRead { value, .. }
         | Node::PointerArithmetic { value, .. }
-        | Node::PointerValue(value) => {
+        | Node::Pointer(value) => {
             if let Some(name) = pointer_names::shared_name(value) {
                 SurfaceTerm::ProgramExpression(ProgramExpression::Variable((name).into()))
             } else {
@@ -4805,7 +4809,7 @@ fn synthesize_population_entry_count(
         return None;
     };
     let anchor = synthesize_surface_pointer_expression(
-        anchor.pointer(),
+        anchor.address(),
         parameter_binding,
         state,
         &BTreeMap::new(),
@@ -6110,7 +6114,7 @@ fn synthesize_local_indexed_load(
     let _frame = SurfaceSynthesisFrame::enter("local-index")?;
     state.locals().object_values().find_map(|(name, value)| {
         let view = value.pointer()?;
-        let base = view.pointer();
+        let base = view.address();
         // `local[index]` is the C spelling only when the local is the base
         // the address was formed from: the address is the local's own offset
         // plus an index. Two unrelated pointers into one symbolic block (a
@@ -6806,7 +6810,7 @@ fn state_call_result(
 /// Keep this at the value-comparison boundary: resource addresses retain
 /// their existing source places and frontend layout information.
 fn synthesize_pointer_equality_operand(
-    value: &crate::kernel::PointerValue,
+    value: &crate::kernel::Pointer,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
@@ -6880,7 +6884,7 @@ fn synthesize_pointer_equality_operand(
         });
     }
     synthesize_pointer_equality_address(
-        value.pointer(),
+        value.address(),
         value.program_type(),
         parameter_binding,
         state,
@@ -6960,7 +6964,7 @@ fn synthesize_surface_pointer_expression(
     }
     if let Some(result) = state_call_result(
         state,
-        |value| matches!(value, ProgramValue::Pointer(held) if held.pointer() == pointer),
+        |value| matches!(value, ProgramValue::Pointer(held) if held.address() == pointer),
     ) {
         return Some(result);
     }
@@ -7056,12 +7060,12 @@ fn synthesize_entry_pointer_expression(
 /// state, or failing that the state state as `at(<selector>, ..)`,
 /// registers that read.
 fn synthesize_loaded_pointer_value(
-    pointer: &crate::kernel::PointerValue,
+    pointer: &crate::kernel::Pointer,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
 ) -> Option<ContractExpression> {
     let at_state = |state: &ExecutionState| {
-        let address = pointer_read_address_in_state(pointer.pointer(), state)?;
+        let address = pointer_read_address_in_state(pointer.address(), state)?;
         synthesize_struct_field_load(&address, pointer.program_type(), parameter_binding, state)
     };
     at_state(state)
@@ -7075,7 +7079,7 @@ fn synthesize_loaded_pointer_value(
             })
         })
         .or_else(|| {
-            let (selector, recorded) = recorded_point_of_pointer_read(pointer.pointer(), state)?;
+            let (selector, recorded) = recorded_point_of_pointer_read(pointer.address(), state)?;
             Some(ContractExpression::At {
                 selector,
                 expression: Box::new(at_state(&recorded)?),
@@ -7423,7 +7427,7 @@ fn synthesize_surface_algebraic(
             .zip(parameter_binding.arguments)
             .find(|(_, argument)| {
                 matches!(argument, ProgramExpression::Value(ProgramValue::Pointer(value))
-                    if value.pointer() == pointer.as_ref())
+                    if value.address() == pointer.as_ref())
             })
             .map(|(parameter, _)| {
                 ContractExpression::ProgramExpression(ProgramExpression::Load(Box::new(
