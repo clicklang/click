@@ -611,7 +611,7 @@ sequence below. These rows record planned scope, not completed implementation.
 | 10m | Migrate algebraic field and match-result storage. | Fields and match results retain shared values with existing constructor/arm identity and producer metadata. | Landed in [PR #3169](https://github.com/clicklang/click/pull/3169); all four pushed commits verified on upstream. |
 | 10n | Migrate theorem argument and recorded-state value storage. | Stored arguments and recorded values retain shared operands with unchanged substitution and state selection. | Landed in [PR #3181](https://github.com/clicklang/click/pull/3181); all six pushed commits verified on upstream. Validation and program-point integration evidence below. |
 | 10o | Migrate program-valued resource-field storage. | Program-valued fields retain shared operands while preserving resource identity and substitution. | Landed in [PR #3213](https://github.com/clicklang/click/pull/3213); all pushed commits verified on upstream. Local validation and final 648-check upstream integration passed. |
-| 10p | Migrate remaining expression payloads in sequence/resource descriptors. | Inventory and subdivide independent families before implementation; preserve legitimate opaque descriptor identities. | In progress: 10p1–10p5 landed with all pushed commits verified; 10p6 passed complete local validation and is ready for publication. |
+| 10p | Migrate remaining expression payloads in sequence/resource descriptors. | Inventory and subdivide independent families before implementation; preserve legitimate opaque descriptor identities. | Complete: 10p1–10p6 landed, with every pushed commit verified upstream. |
 | 10q | Migrate remaining native expression payloads in proposition outputs. | Proposition outputs retain shared operands with unchanged fact identity, raising/lowering and proof admission. | In progress: 10q1 implemented and validating; the sequential family inventory below is authoritative. |
 | 10r | Remove obsolete machine compatibility caches and reverse bridges. | Remove only after their live readers migrate; account for any retained reader and reason. | Planned; after affected consumers. |
 | 10s | Remove obsolete Boolean, float and algebraic compatibility caches. | Remove only after their live readers migrate; preserve explicit native input/output boundaries. | Planned; after affected consumers. |
@@ -1341,6 +1341,11 @@ evaluator helper is removed. After parent integration, all 470 selected checks
 passed; all 1,936 regular scaling cases and all 5,621 regular proof fixtures then
 passed. Fact stability recorded 121 refusals and zero changed terms/paths;
 quality passed. Full nightly was not run.
+
+After integrating upstream `9c6b250ee`, including its memory-load changes,
+all 793 affected expression/wide-value/memory/collection checks and quality
+passed again. All twelve quantity-parent commits were verified upstream
+before the clean primary advanced through Git.
 
 The native load-result-to-`Term::ProgramValue` reader in surface resource proofs
 is explicit and remains assigned to 10q4. Numeric memory cells retain their
