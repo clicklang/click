@@ -1968,8 +1968,8 @@ one fixed-arity function for that format, `__click_snprintf_` followed by the
 format's bytes in hexadecimal, and the C front end writes that function's
 `extern` contract from the format. `click verify` lists it among the
 `assumptions:` as `snprintf: "<format>"`. The contract is generated text, and
-trusted as every library model is
-([trust](../../concepts/trust.md#library-models)).
+trusted as every library interface is
+([trust](../../concepts/trust.md#library-interfaces)).
 
 The modeled conversions are `%u` with an optional `0` flag and field width,
 `%d` and `%i`, `%s`, and `%%`; ordinary characters are copied. Each argument

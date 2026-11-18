@@ -367,7 +367,7 @@ The constructor model returns a fresh opaque value, with no observable memory
 effects. Exception storage and destruction belong to the C++ runtime.
 **This profile assumes allocation failure terminates**, as with Bitcoin's
 installed new-handler; it does not model propagation of `std::bad_alloc`
-([trust](../../concepts/trust.md#library-models)). Direct `throws` contracts
+([trust](../../concepts/trust.md#library-interfaces)). Direct `throws` contracts
 may borrow memory with `owns` and `views`, and must establish their footprint
 and exceptional guarantees after a throw. The pinned `SpanReader::ignore`
 fixture verifies the real `streams.h` through this boundary. Nontrivial
@@ -2480,18 +2480,17 @@ overload, then checks the caller against that contract. Click assumes the
 library contract and reports it as a standard-library assumption. The same
 contract applies across standard-library implementations.
 
-New standard-library models describe observable state and effects in Click
-contracts. For example, a span describes a borrowed range, and a vector
-describes an owned allocation and its live elements. The model should derive
-bounds, ownership transfers, and invalidation from those contracts. Private
-fields, representation invariants, and the library implementation's method
-bodies are outside this proof boundary.
+Each C++ standard-library interface follows
+[library interfaces](../../concepts/library-interfaces.md): it describes
+observable state and effects, such as a span's borrowed range, never the
+library's private fields or method bodies.
 
 ### Current catalog and layout-backed accessors
 
-The existing `std::span` and `std::array` models still use layout-backed state
-accessors, as described below. This is an implementation dependency of the
-current models. The contract boundary above is the target for replacing it.
+The existing `std::span` and `std::array` interfaces still use layout-backed
+state accessors, as described below. This is an implementation dependency, listed
+among the [departures](../../concepts/library-interfaces.md#where-the-implementation-departs-from-this);
+the contract boundary above is the target for replacing it.
 
 The pinned libc++ test `libcxx_span_empty_checks_abstract_state` exercises the
 contract boundary with an explicit `extern` for `std::span<int>::empty()`.
@@ -2517,7 +2516,7 @@ contract:
   as `template<class T> extern unsigned long std::span<T>::size() const { ... }`
   and the static-extent ones as `template<class T, std::size_t N> extern
   unsigned long std::span<T, N>::size() const { ensures result == N; }`.
-  The dynamic pointer/count constructor is also a library model,
+  The dynamic pointer/count constructor is also a library interface,
   `template<class T> extern std::span<T>::span<T *>(T* first, unsigned long count)`.
   It consumes unwritten descriptor storage, produces it initialized and
   establishes the data pointer and count, without granting backing authority.
@@ -2536,7 +2535,7 @@ contract:
   call is refused.
   Each called instance is written out from its template, and a library
   template no call instantiates is dropped. A sidecar does not restate a
-  library model: an `extern` for `std::span<int>::size` is refused, naming
+  library interface: an `extern` for `std::span<int>::size` is refused, naming
   the library. `library/cpp/as_writable_bytes.click` states the function
   template `std::as_writable_bytes<T, N>`, named in its own segment by its
   element and extent as Clang names the instance,

@@ -305,7 +305,7 @@ static STANDARD_LIBRARY_PARSES: std::sync::atomic::AtomicUsize =
     std::sync::atomic::AtomicUsize::new(0);
 
 /// The Click library modules every file sees without an import. A C
-/// program's declarations bring the library models they name, such as
+/// program's declarations bring the library interfaces they name, such as
 /// `click::c::string`; see `ProgramLayouts::library_modules`.
 const IMPLICIT_LIBRARY_MODULES: &[&str] = &[
     "library/primitives.click",

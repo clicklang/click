@@ -120,7 +120,7 @@ target with the `target` directive described in
 separates incremental verification markers.
 
 Successful file or location verification reports every
-[library model](../../concepts/trust.md#library-models) the result relied on
+[library interface](../../concepts/trust.md#library-interfaces) the result relied on
 in one place: one `assumptions:` line for each verified function whose
 transitive call closure uses one, listing the models by family:
 

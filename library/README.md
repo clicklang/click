@@ -35,14 +35,11 @@ Each declaration is in one layer, which sets its trust:
   written here only so the parser declares them. The language reference
   documents them (`docs/reference/language/index.md#verifier-primitives`), with
   `primitive.` inventory IDs.
-- **Language library models** are assumed `extern` contracts for the C, C++ or
-  Rust library the verified code calls, listed in
-  [trust](../docs/concepts/trust.md#the-click-library). `c/string.click`
-  and the `cpp/` files are written here; the allocator family is a
-  built-in primitive of the C front end and the kernel, and the `snprintf`
-  contracts are written by the C front end per format. The Rust core-method
-  contracts are written in `rust/core.click` and, for the integer methods,
-  `rust/integers.click`; the importer keeps only a name table.
+- **Language library interfaces** are assumed `extern` contracts for the C,
+  C++ or Rust library the verified code calls: `c/`, `cpp/`, `rust/core.click`
+  and `rust/integers.click`. How they are designed and added is in
+  [library interfaces](../docs/concepts/library-interfaces.md); each is listed
+  in [trust](../docs/concepts/trust.md#library-interfaces).
 - **The specification library** is every other module: checked types, pure
   functions, predicates and theorems, plus the trusted `rust/vec.click` axioms.
 
