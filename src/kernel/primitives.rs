@@ -8594,6 +8594,8 @@ pub(super) enum LocalBinding {
         layout: AggregateLayout,
         slot: Address,
         constant: bool,
+        /// Set only on the parameter object materialized for a standalone proof.
+        proof_input_for: Option<std::sync::Arc<str>>,
     },
 }
 

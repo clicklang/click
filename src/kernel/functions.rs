@@ -11619,11 +11619,17 @@ fn with_private_aggregate_parameter_owners(
     for parameter in interface.parameters() {
         crate::instrumentation::record_deterministic_work(1);
         if let Some(layout) = parameter.aggregate_layout()
-            && let Some(slot) = callee.locals.slot(parameter.binding_name().clone())
+            && let Some(LocalBinding::AggregateObject {
+                slot,
+                proof_input_for,
+                ..
+            }) = callee.locals.binding(parameter.binding_name())
             && slot.base.prepared_argument_binding().is_none()
         {
-            resources = resources
-                .unchecked_with_fact(private_aggregate_storage_owner(slot.clone(), layout));
+            let owner = private_aggregate_storage_owner(slot.clone(), layout);
+            if proof_input_for.is_none() || resources.exact_count(&owner) == 0 {
+                resources = resources.unchecked_with_fact(owner);
+            }
         }
     }
     resources
@@ -20857,7 +20863,7 @@ fn end_function_body_automatic_lifetimes(
         if slot.base.is_local_block()
             && !(function.return_aggregate_layout().is_some()
                 && matches!(returned, Some(ProgramValue::Pointer(pointer)) if pointer.address().base == slot.base))
-            && !caller.has_block(&slot.base)
+            && (!caller.has_block(&slot.base) || state.locals.is_proof_input_slot(slot))
             && memory.has_block(&slot.base)
         {
             if !selected.insert(slot.base.clone()) {
@@ -20926,7 +20932,11 @@ pub(in crate::kernel) fn function_exit_memory(
     match value.pointer() {
         Some(pointer)
             if pointer.address().base.is_local_block()
-                && !caller_state.memory.has_block(&pointer.address().base) =>
+                && (!caller_state.memory.has_block(&pointer.address().base)
+                    || callee_state.locals.is_proof_input_slot(&Address {
+                        base: pointer.address().base.clone(),
+                        offset: AddressOffset::Constant(0),
+                    })) =>
         {
             let block = &pointer.address().base;
             if let Some(error) = callee_state.automatic_storage_loan_refusal(block) {

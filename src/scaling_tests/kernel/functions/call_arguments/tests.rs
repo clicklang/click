@@ -242,3 +242,94 @@ fn prepared_argument_checks_lookup_only_the_live_destination_and_its_resources()
     }
     assert_eq!(samples, [samples[0]; 3]);
 }
+
+#[test]
+fn proof_input_rebinding_retains_storage_without_reusing_it_for_calls() {
+    let layout = AggregateLayout::new(4, 4, Vec::new());
+    let parameter = ProgramParameter::new("parameter", ProgramType::UInt8Pointer)
+        .with_aggregate_layout(layout.clone());
+    let function = program_function(
+        ProgramType::UInt8Pointer,
+        "by_value",
+        vec![parameter.clone()],
+        crate::kernel::program_skip(),
+    );
+    let other_function = program_function(
+        ProgramType::UInt8Pointer,
+        "other",
+        vec![parameter],
+        crate::kernel::program_skip(),
+    );
+    let schema = ResourceFieldSchema::new(vec![(
+        "count".into(),
+        ResourceFieldType::Program(ProgramType::Int32),
+    )])
+    .unwrap();
+    let model = |id: u64, address: Address| {
+        ResourceFact::own(Resource::Instance(
+            ResourceInstance::new(
+                Variable(id),
+                "model".into(),
+                vec![ProgramValue::typed_pointer(address, ProgramType::UInt8Pointer).into()].into(),
+                schema.clone(),
+                vec![int32(0u32).into()].into(),
+            )
+            .unwrap(),
+        ))
+    };
+    let mut samples = Vec::new();
+    for count in [16u32, 128, 512] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let placeholder =
+            ProgramValue::typed_pointer(Address::symbolic(Variable(1)), ProgramType::UInt8Pointer);
+        let mut caller = bind_program_function_arguments_with(
+            &ExecutionState::new(),
+            &function,
+            &[placeholder],
+            true,
+        )
+        .unwrap();
+        let address = caller.locals.slot("parameter").unwrap().clone();
+        for index in 0..count {
+            caller.locals.set(format!("other_{index}"), int32(index));
+            let other = model(u64::from(index) + 1, address.offset_by_bytes(index + 1));
+            caller.resources = caller.resources.clone().unchecked_with_fact(other);
+        }
+        let argument = ProgramValue::typed_pointer(address.clone(), ProgramType::UInt8Pointer);
+        let values = std::slice::from_ref(&argument);
+        let unkeyed =
+            crate::kernel::with_resource_keyed_aggregate_proof_inputs(caller.clone(), &function);
+        let unkeyed = bind_program_function_arguments(&unkeyed, &function, values).unwrap();
+        assert_ne!(unkeyed.locals.slot("parameter"), Some(&address));
+
+        caller.resources = caller
+            .resources
+            .clone()
+            .unchecked_with_fact(model(0, address.clone()));
+        let ((caller, entry), work) = crate::instrumentation::measure_deterministic_work(|| {
+            let caller =
+                crate::kernel::with_resource_keyed_aggregate_proof_inputs(caller, &function);
+            let entry = bind_program_function_arguments(&caller, &function, values).unwrap();
+            (caller, entry)
+        });
+        assert_eq!(entry.locals.slot("parameter"), Some(&address));
+        assert_eq!(
+            entry
+                .resources
+                .exact_count(&private_aggregate_storage_owner(address.clone(), &layout)),
+            1
+        );
+
+        let ordinary =
+            bind_program_function_arguments_retained(&caller, &function, values, &[]).unwrap();
+        assert_ne!(ordinary.locals.slot("parameter"), Some(&address));
+        let other_entry =
+            bind_program_function_arguments(&caller, &other_function, values).unwrap();
+        assert_ne!(other_entry.locals.slot("parameter"), Some(&address));
+
+        let exit = function_exit_memory(&caller, &entry, &argument.into(), &function).unwrap();
+        assert!(!exit.has_block(&address.base));
+        samples.push(work);
+    }
+    assert_eq!(samples, [samples[0]; 3]);
+}

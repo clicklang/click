@@ -9149,6 +9149,7 @@ fn loop_written_automatic_objects(
                     layout,
                     slot,
                     constant: false,
+                    ..
                 } => (slot, layout.size_bytes()),
                 LocalBinding::ArrayObject {
                     element_type,

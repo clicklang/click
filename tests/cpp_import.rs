@@ -168,19 +168,8 @@ fn trivial_record_parameter_copy_refuses_nontrivial_move_and_prvalue_arguments()
     }
 }
 
-#[test]
-#[ignore = "nightly: opaque by-value parameter proof, replay, and refusal controls"]
-fn opaque_record_copy_constructs_the_actual_by_value_parameter() {
-    let mut project = Project::with_fixture(
-        "opaque_copy.cpp",
-        "probe",
-        r#"#include <view.hpp>
-unsigned long take_count(View parameter) noexcept;
-unsigned long probe(const View& source) noexcept {
-    return take_count(source);
-}
-"#,
-    );
+fn opaque_record_copy_fixture(source: &str) -> (Project, click::languages::cpp::PreparedCppImport) {
+    let mut project = Project::with_fixture("opaque_copy.cpp", "probe", source);
     fs::write(
         project.directory.join("view.hpp"),
         "struct View { private: unsigned long hidden; public: View(const View&) noexcept = default; };",
@@ -195,7 +184,10 @@ unsigned long probe(const View& source) noexcept {
     fs::remove_file(&project.exporter).unwrap();
     let import = load_import(&project.config()).unwrap();
 
-    let proof = r#"verifying "opaque_copy.cpp";
+    (project, import)
+}
+
+const OPAQUE_VIEW_COPY_CONTRACT: &str = r#"verifying "opaque_copy.cpp";
 abstract resource view_state(p: uint8*) {
     field data: int32*;
     field count: uint64;
@@ -207,11 +199,9 @@ extern View::View(const struct View& source) {
     ensures original.count == old(original.count);
     ensures copied.data == original.data;
     ensures copied.count == original.count;
-}
-extern uint64 take_count(struct View parameter) {
-    consumes copied: view_state(&parameter as (uint8*));
-    ensures result == old(copied.count);
-}
+}"#;
+
+const OPAQUE_VIEW_COPY_CALLER: &str = r#"
 uint64 probe(const struct View& source) {
     owns original: view_state(&source as (uint8*));
     ensures original.data == old(original.data);
@@ -224,9 +214,30 @@ uint64 probe(const struct View& source) {
     step(take_count, { copied: parameter_state });
 }
 "#;
+
+#[test]
+#[ignore = "nightly: opaque by-value parameter proof, replay, and refusal controls"]
+fn opaque_record_copy_constructs_the_actual_by_value_parameter() {
+    let (project, import) = opaque_record_copy_fixture(
+        r#"#include <view.hpp>
+unsigned long take_count(View parameter) noexcept;
+unsigned long probe(const View& source) noexcept {
+    return take_count(source);
+}
+"#,
+    );
+    let proof = format!(
+        r#"{OPAQUE_VIEW_COPY_CONTRACT}
+extern uint64 take_count(struct View parameter) {{
+    consumes copied: view_state(&parameter as (uint8*));
+    ensures result == old(copied.count);
+}}
+{OPAQUE_VIEW_COPY_CALLER}"#
+    );
+
     let path = project.directory.join("opaque_copy.click");
-    fs::write(&path, proof).unwrap();
-    let parsed = read_click_project(&path, proof).unwrap();
+    fs::write(&path, &proof).unwrap();
+    let parsed = read_click_project(&path, &proof).unwrap();
     let expanded = expand_project_claim_source_by_label(
         &parsed,
         &ProgramInputs::program(&import),
@@ -259,6 +270,48 @@ uint64 probe(const struct View& source) {
             .expect_err("the unchecked opaque copy must fail");
         assert!(error.message().contains(refusal), "{}", error.report());
     }
+}
+
+#[test]
+#[ignore = "nightly: verified callee and opaque record copy proof replay"]
+fn opaque_by_value_parameter_keeps_its_contract_resource_in_the_body() {
+    let (project, import) = opaque_record_copy_fixture(
+        r#"#include <view.hpp>
+unsigned long read_count(const View& view) noexcept;
+unsigned long take_count(View parameter) noexcept {
+    return read_count(parameter);
+}
+unsigned long probe(const View& source) noexcept {
+    return take_count(source);
+}
+"#,
+    );
+    let callee = r#"
+extern uint64 read_count(const struct View& view) {
+    consumes copied: view_state(&view as (uint8*));
+    ensures result == old(copied.count);
+}
+uint64 take_count(struct View parameter) {
+    consumes copied: view_state(&parameter as (uint8*));
+    ensures result == old(copied.count);
+} by {
+    step(read_count, { copied: copied });
+}
+"#;
+    let proof = format!("{OPAQUE_VIEW_COPY_CONTRACT}{callee}{OPAQUE_VIEW_COPY_CALLER}");
+    let path = project.directory.join("opaque_copy.click");
+    fs::write(&path, &proof).unwrap();
+    let parsed = read_click_project(&path, &proof).unwrap();
+    let inputs = ProgramInputs::program(&import);
+    let expanded = expand_project_claim_source_by_label(&parsed, &inputs, "take_count.contract")
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    let parsed = parsed.with_entry_source(expanded);
+    let expanded = expand_project_claim_source_by_label(&parsed, &inputs, "probe.contract")
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    click::surface::without_implicit_solve(|| {
+        verify_program_prepared_project(&parsed.with_entry_source(expanded), &import)
+    })
+    .unwrap_or_else(|error| panic!("{}", error.report()));
 }
 
 fn check_trivial_record_parameter_copy(tools: bool) {

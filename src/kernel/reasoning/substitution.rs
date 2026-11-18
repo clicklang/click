@@ -877,10 +877,12 @@ fn walk_execution_state<S: VariableSubstitution + ?Sized>(
                     layout,
                     slot,
                     constant,
+                    proof_input_for,
                 } => LocalBinding::AggregateObject {
                     layout: layout.clone(),
                     slot: s.local_slot(slot),
                     constant: *constant,
+                    proof_input_for: proof_input_for.clone(),
                 },
             };
             (name.clone(), binding)
