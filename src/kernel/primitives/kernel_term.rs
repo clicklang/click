@@ -773,6 +773,34 @@ impl KernelTerm {
         Some(value)
     }
 
+    /// Borrow the selected native Integer output from the existing root slot.
+    /// Storage and producer handoffs never request this compatibility reading.
+    pub(crate) fn integer_native_compat(&self) -> Option<&IntegerTerm> {
+        if self.ty() != &KernelType::Integer {
+            return None;
+        }
+        if let KernelTermNode::Legacy(legacy) = self.node()
+            && let PureFunctionArgument::Integer(value) = legacy.value()
+        {
+            return Some(value);
+        }
+        let PureFunctionArgument::Integer(value) = self
+            .0
+            .argument_leaf
+            .get_or_init(|| {
+                Box::new(PureFunctionArgument::Integer(
+                    KernelTermExport::default()
+                        .integer(self)
+                        .expect("Integer field output"),
+                ))
+            })
+            .as_ref()
+        else {
+            unreachable!("Integer output cache")
+        };
+        Some(value)
+    }
+
     #[cfg(test)]
     pub(crate) fn has_cached_native_argument(&self) -> bool {
         self.0.argument_leaf.get().is_some()

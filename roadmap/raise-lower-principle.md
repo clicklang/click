@@ -1065,7 +1065,7 @@ not a change to proof rules or snapshot architecture.
 | Subslice | Owning stores | Status |
 | --- | --- | --- |
 | 10p1 | `SequenceTermNode::Literal` evaluated elements and their evaluator/substitution handoffs. | Implemented; 437 focused checks, all 1,909 regular scaling cases, selected sequence proofs, fact stability and quality passed. PR follows 10o. |
-| 10p2 | Composite/token/instance `ResourceArguments`, `ResourceDescription` arguments and remaining Integer/algebraic resource fields. Preserve argument order, native identity classes and nominal resource identities. | Split: 10p2a covers Integer/algebraic fields; 10p2b covers argument stores. Pending. |
+| 10p2 | Composite/token/instance `ResourceArguments`, `ResourceDescription` arguments and remaining Integer/algebraic resource fields. Preserve argument order, native identity classes and nominal resource identities. | Split: 10p2a implements Integer/algebraic fields (413 focused checks passed; scaling/proof validation running); 10p2b covers argument stores. |
 | 10p3 | `MemoryRange` bounds and `AllocationSize` byte counts. Preserve signed/wide reading, bound provenance and existing identity/hash contracts. | Inventoried; pending. |
 | 10p4 | `IteratedMemory` endpoints, guard comparison value and selected holes. Preserve checked ownership transitions and opaque owner/address identities. | Inventoried; pending. |
 | 10p5 | `PublicationRight::observed` and `ConditionalMutexGuard::held`. Preserve channel/acquisition identities and protocol rules. | Inventoried; pending. |
@@ -1102,6 +1102,27 @@ proof selection and quality. The selected fact-stability recording reported
 zero changed terms/paths (no refusals). Validation script exit is zero. Full
 nightly was not run. After integrating upstream `306a1fec0`, all 437 affected
 checks passed again. PR delivery follows 10o.
+
+### 10p2a Integer and algebraic resource fields
+
+Minted Integer/algebraic fields now retain common roots alongside program-valued
+fields. Parent/child handoffs clone the retained roots, and evaluator projections
+return those roots directly with the existing algebraic result-mode tags. The
+existing typed producer and schema own admission; explicit native input arrays
+keep their previous well-formedness checks. A negative native constructor test
+pins that input boundary. No resource identity or ownership rule changes.
+
+Selected native field views use the existing root compatibility slot; no new
+native field list or cache field is added. Native substitution and other existing
+view-based consumers remain selected compatibility boundaries. This slice does
+not claim those consumers have migrated to common operations.
+
+A native-child lifetime regression failed before the change and passed after
+it. All 413 focused checks passed, including exact identity/hash/debug, malformed
+native input refusal, direct Integer/algebraic projection, result-mode parity,
+and constant-work handoffs of growing Integer DAGs and algebraic children.
+Full regular scaling and affected proof validation are running; PR delivery
+follows 10p1. Full nightly was not run.
 
 ## Chunk 3: machine-valued pure-function results
 

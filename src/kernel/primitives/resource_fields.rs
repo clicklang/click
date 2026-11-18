@@ -1,4 +1,4 @@
-//! Immutable resource fields. Program producers keep their execution carrier;
+//! Immutable resource fields. Producers keep their common roots;
 //! native input lists and selected compatibility readers stay explicit.
 use super::*;
 use crate::kernel::{ExecutionValue, RetainedProgramValue};
@@ -35,6 +35,8 @@ impl ResourceFieldValue<'_> {
 pub(crate) enum StoredResourceField {
     Input(AlgebraicValue),
     Program(RetainedProgramValue),
+    Integer(KernelTerm),
+    Algebraic(KernelTerm),
 }
 impl StoredResourceField {
     pub(crate) fn from_minted(value: AlgebraicValue) -> Self {
@@ -44,7 +46,12 @@ impl StoredResourceField {
                     KernelTermImport::default().argument(&PureFunctionArgument::Value(value));
                 Self::from_program(ExecutionValue::Shared(root))
             }
-            value => Self::Input(value),
+            AlgebraicValue::Integer(value) => {
+                Self::Integer(KernelTermImport::for_exact_field_inputs().integer(&value.into()))
+            }
+            AlgebraicValue::Algebraic(value) => {
+                Self::Algebraic(KernelTermImport::for_exact_field_inputs().algebraic(&value))
+            }
         }
     }
     pub(crate) fn from_program(value: ExecutionValue) -> Self {
@@ -57,6 +64,17 @@ impl StoredResourceField {
         match self {
             Self::Input(value) => value.into(),
             Self::Program(value) => ResourceFieldValue::Program(value.native_compat()),
+            Self::Integer(root) => {
+                ResourceFieldValue::Integer(root.integer_native_compat().expect("Integer field"))
+            }
+            Self::Algebraic(root) => {
+                let ProgramValue::Parameter(value) =
+                    root.algebraic_native_value().expect("algebraic field")
+                else {
+                    unreachable!()
+                };
+                ResourceFieldValue::Algebraic(value)
+            }
         }
     }
 }
@@ -117,8 +135,8 @@ impl ResourceFieldValues {
             values.into_iter().collect(),
         )))
     }
-    /// Fresh fields are typed symbolic leaves minted by the existing factory.
-    /// Native public inputs use `From<ResourceArguments>` instead.
+    /// Values minted by the existing typed field producers. Native public
+    /// inputs use `From<ResourceArguments>` and retain their admission checks.
     pub(crate) fn from_minted(values: Vec<AlgebraicValue>) -> Self {
         Self::from_stored(values.into_iter().map(StoredResourceField::from_minted))
     }
@@ -126,6 +144,24 @@ impl ResourceFieldValues {
         match self.0.as_ref() {
             FieldStorage::Retained(values) => match values.get(index)? {
                 StoredResourceField::Program(value) => Some(value.value()),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+    pub(crate) fn retained_integer(&self, index: usize) -> Option<&KernelTerm> {
+        match self.0.as_ref() {
+            FieldStorage::Retained(values) => match values.get(index)? {
+                StoredResourceField::Integer(root) => Some(root),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+    pub(crate) fn retained_algebraic(&self, index: usize) -> Option<&KernelTerm> {
+        match self.0.as_ref() {
+            FieldStorage::Retained(values) => match values.get(index)? {
+                StoredResourceField::Algebraic(root) => Some(root),
                 _ => None,
             },
             _ => None,
@@ -147,10 +183,15 @@ impl ResourceFieldValues {
             return false;
         }
         schema.fields().iter().enumerate().all(|(index, (_, ty))| {
-            if let FieldStorage::Retained(values) = self.0.as_ref()
-                && let StoredResourceField::Program(value) = &values[index]
-            {
-                return matches!(ty, ResourceFieldType::Program(expected) if *expected == value.program_type());
+            if let FieldStorage::Retained(values) = self.0.as_ref() {
+                // Retained values come from the existing typed producers. Raw
+                // public inputs still take the native admission checks below.
+                match &values[index] {
+                    StoredResourceField::Program(value) => return matches!(ty, ResourceFieldType::Program(expected) if *expected == value.program_type()),
+                    StoredResourceField::Integer(root) => return *ty == ResourceFieldType::Integer && root.ty() == &KernelType::Integer,
+                    StoredResourceField::Algebraic(root) => return matches!((ty,root.ty()), (ResourceFieldType::Algebraic(expected),KernelType::Algebraic(actual)) if expected==actual),
+                    StoredResourceField::Input(_) => {},
+                }
             }
             match (ty, self.get(index).expect("field index")) {
                 (ResourceFieldType::Integer, ResourceFieldValue::Integer(_)) => true,
@@ -446,6 +487,78 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn logical_field_storage_releases_native_integer_children() {
+        for algebraic in [false, true] {
+            let _session = VerificationSession::enter();
+            let child: SharedIntegerTerm = IntegerTerm::Add(
+                IntegerTerm::var(Variable(10993501)).into(),
+                IntegerTerm::constant_i64(7).into(),
+            )
+            .into();
+            let weak = child.downgrade();
+            let expression = IntegerTerm::Multiply(child.clone(), child);
+            let (value, ty) = if algebraic {
+                let ty =
+                    KernelMatch::test_scrutinee(vec![AlgebraicValueType::Integer]).algebraic_type;
+                (
+                    AlgebraicValue::Algebraic(AlgebraicTerm {
+                        algebraic_type: ty.clone(),
+                        node: AlgebraicTermNode::Constructor {
+                            variant: "Arm".into(),
+                            fields: vec![AlgebraicValue::Integer(expression)],
+                        },
+                    }),
+                    ResourceFieldType::Algebraic(ty),
+                )
+            } else {
+                (
+                    AlgebraicValue::Integer(expression),
+                    ResourceFieldType::Integer,
+                )
+            };
+            let fields = ResourceFieldValues::from_minted(vec![value]);
+            let schema = ResourceFieldSchema::new(vec![("value".into(), ty)]).unwrap();
+            assert!(fields.matches_schema(&schema));
+            assert!(weak.upgrade().is_none(), "algebraic={algebraic}");
+        }
+    }
+
+    #[test]
+    fn native_logical_field_inputs_keep_their_admission_and_identity() {
+        let _session = VerificationSession::enter();
+        let ty = KernelMatch::test_scrutinee(vec![AlgebraicValueType::Integer]).algebraic_type;
+        let invalid = AlgebraicValue::Algebraic(AlgebraicTerm {
+            algebraic_type: ty.clone(),
+            node: AlgebraicTermNode::Constructor {
+                variant: "Missing".into(),
+                fields: vec![],
+            },
+        });
+        let schema = ResourceFieldSchema::new(vec![(
+            "value".into(),
+            ResourceFieldType::Algebraic(ty.clone()),
+        )])
+        .unwrap();
+        let fields = ResourceFieldValues::from(vec![invalid]);
+        assert!(!fields.matches_schema(&schema));
+        let values = vec![
+            AlgebraicValue::Integer(IntegerTerm::Add(
+                IntegerTerm::var(Variable(10993502)).into(),
+                IntegerTerm::constant_i64(7).into(),
+            )),
+            AlgebraicValue::Algebraic(AlgebraicTerm {
+                algebraic_type: ty,
+                node: AlgebraicTermNode::Variable(Variable(10993503)),
+            }),
+        ];
+        let native: ResourceArguments = values.clone().into();
+        let retained = ResourceFieldValues::from_minted(values);
+        assert_eq!(retained, ResourceFieldValues::from(native.clone()));
+        assert_eq!(hash(&retained), hash(&native));
+        assert_eq!(format!("{retained:?}"), format!("{native:?}"));
     }
 
     mod scaling_tests {
