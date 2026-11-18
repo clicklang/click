@@ -29,6 +29,18 @@ fn comparison_output_producers_keep_growing_logical_and_integer_roots() {
                 )
                 .unwrap()
                 .unwrap();
+            let literal_output = SpecValue::Shared(logical.clone())
+                .comparison(
+                    ComparisonOperator::Equal,
+                    &SpecValue::Native(ProgramValue::Bool(MachineTerm::bool_constant(true))),
+                )
+                .unwrap()
+                .unwrap();
+            let Proposition::ConditionIs(literal_condition, literal_truth) = literal_output else {
+                unreachable!();
+            };
+            assert_eq!(literal_condition.root(), Some(&logical));
+            assert!(literal_truth);
             let integer_output = retained_integer_comparison(
                 &IntegerResult::from_kernel(integer.clone()),
                 IntegerComparisonOperator::LessThan,

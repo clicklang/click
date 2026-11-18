@@ -1530,7 +1530,9 @@ does not close either boundary.
 
 ### 10q3d Evaluated condition producer handoffs (in progress)
 
-Logical Boolean equality forwards its already-produced root directly. Integer
+Logical Boolean equality forwards its already-produced root directly. Literal
+comparisons retain the logical operand and apply the existing truth polarity and
+outer-negation rule without exporting its body. Integer
 comparisons retain their evaluated Integer operands; the existing native
 observation-spelling rule runs only on atomic observation/literal inputs.
 Machine comparison outputs retain the comparison just minted by the existing

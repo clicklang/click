@@ -228,6 +228,46 @@ impl SpecValue {
                 op != ComparisonOperator::NotEqual,
             )));
         }
+        if matches!(op, ComparisonOperator::Equal | ComparisonOperator::NotEqual) {
+            let literal = |value: &Self| match value {
+                Self::Shared(root) if root.ty() == &KernelType::Bool => match root.node() {
+                    KernelTermNode::BoolLiteral(value) => Some(*value),
+                    _ => None,
+                },
+                Self::Native(ProgramValue::Bool(word)) => word.bool_constant_value(),
+                _ => None,
+            };
+            let logical_root = |value: &Self| {
+                value
+                    .shared()
+                    .filter(|root| {
+                        root.ty() == &KernelType::Bool
+                            && !matches!(root.node(), KernelTermNode::BoolLiteral(_))
+                    })
+                    .cloned()
+            };
+            if let Some((mut root, literal)) = logical_root(self)
+                .zip(literal(right))
+                .or_else(|| logical_root(right).zip(literal(self)))
+            {
+                let mut truth = literal == (op == ComparisonOperator::Equal);
+                // The existing truth-claim rule removes outer logical
+                // negations only; it does not evaluate a compound guard.
+                while let KernelTermNode::BoolIf { arguments } = root.node() {
+                    if !matches!(arguments[1].node(), KernelTermNode::BoolLiteral(false))
+                        || !matches!(arguments[2].node(), KernelTermNode::BoolLiteral(true))
+                    {
+                        break;
+                    }
+                    root = arguments[0].clone();
+                    truth = !truth;
+                }
+                return Ok(Some(Proposition::condition_is(
+                    StoredConditionTerm::from_root(root).expect("logical truth claim"),
+                    truth,
+                )));
+            }
+        }
         // Logical Bool equality builds its common operands before the explicit
         // proposition output boundary. Raw C words retain their nonzero policy.
         let logical = |value: &Self| match value {
@@ -785,6 +825,58 @@ mod condition_output_tests {
                 assert_eq!(condition.root(), Some(&expected));
                 assert!(*truth);
                 assert_eq!(KernelTermExport::float_export_count(), exports);
+            }
+        }
+    }
+
+    #[test]
+    fn logical_literal_comparisons_keep_roots_polarity_and_outer_negation_rules() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let base = KernelTerm::variable(KernelType::Bool, Variable(10993736));
+        for depth in [0, 1, 2, 3] {
+            let mut root = base.clone();
+            for _ in 0..depth {
+                root = KernelTerm::boolean_if_raw([
+                    root,
+                    KernelTermImport::default().condition(&ConditionTerm::Constant(false)),
+                    KernelTermImport::default().condition(&ConditionTerm::Constant(true)),
+                ]);
+            }
+            for literal in [false, true] {
+                for shared_literal in [false, true] {
+                    let value = if shared_literal {
+                        SpecValue::Shared(
+                            KernelTermImport::default()
+                                .condition(&ConditionTerm::Constant(literal)),
+                        )
+                    } else {
+                        SpecValue::Native(ProgramValue::Bool(MachineTerm::bool_constant(literal)))
+                    };
+                    for operator in [ComparisonOperator::Equal, ComparisonOperator::NotEqual] {
+                        for reverse in [false, true] {
+                            let exports = KernelTermExport::machine_export_count();
+                            let logical = SpecValue::Shared(root.clone());
+                            let output = if reverse {
+                                value.comparison(operator, &logical)
+                            } else {
+                                logical.comparison(operator, &value)
+                            }
+                            .unwrap()
+                            .unwrap();
+                            let Proposition::ConditionIs(condition, truth) = output else {
+                                unreachable!();
+                            };
+                            assert_eq!(condition.root(), Some(&base));
+                            assert_eq!(
+                                truth,
+                                (literal == (operator == ComparisonOperator::Equal))
+                                    ^ (depth % 2 == 1)
+                            );
+                            assert_eq!(KernelTermExport::machine_export_count(), exports);
+                            assert!(!root.has_cached_native_argument());
+                        }
+                    }
+                }
             }
         }
     }
