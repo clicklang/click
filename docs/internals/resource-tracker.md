@@ -2049,6 +2049,13 @@ a fresh projection. Each consumer builds its own claim state from the
 projection, and closing still checks allocation escape and computes the
 observation facts for its claims.
 
+Deferred contract returns resume the boundary transition from the checked
+body outcome. The boundary consumes all selected return clauses jointly
+from that partition under the closing entry case. Individual resource
+claim receipts carry the checked clauses for closing and allocation checks.
+They do not replace body occurrences or supply a second source of ownership
+to the deferred boundary.
+
 The source tests in `tests/search_boundary.rs` pin the perimeter, including
 new/hidden references and duplicate caller edges. Runtime probes exercise
 raw-output admission and pending-return admission; the broader legacy routes

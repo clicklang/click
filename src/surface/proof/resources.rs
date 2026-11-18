@@ -1878,7 +1878,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
     })?;
     let fact_state = observation_pre_state
         .clone()
-        .with_memory_continuing(&observation_pre_state, memory.clone());
+        .with_materialized_memory_at_current_point(memory.clone());
     let instantiated = if body_projected {
         Some(crate::kernel::instantiate_composite_resource_facts_at(
             &abstract_resource,

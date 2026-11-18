@@ -254,13 +254,10 @@ impl<'a> Proof<'a> {
                 .collect::<BTreeSet<_>>()
                 .into_iter()
                 .filter_map(|name| {
-                    self.local_algebraic_values()
-                        .get(&name)
+                    self.known_algebraic_value(&name)
                         .cloned()
                         .or_else(|| {
-                            context
-                                .structural_induction_setup
-                                .as_ref()?
+                            self.structural_induction_setup()?
                                 .algebraic_values
                                 .get(&name)
                                 .cloned()

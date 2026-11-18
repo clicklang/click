@@ -19,3 +19,35 @@ fn scalar_induction_prefix_work_scales_with_explicit_helpers() {
         );
     }
 }
+
+#[test]
+#[ignore = "nightly: structural induction scope scaling at four prefix sizes"]
+fn structural_induction_prefix_work_scales_with_explicit_helpers() {
+    let fixture =
+        include_str!("../../../../../mdtests/structural_induction_surrounding_helpers.md");
+    let source = fixture
+        .split_once("```click\n")
+        .unwrap()
+        .1
+        .split_once("\n```")
+        .unwrap()
+        .0;
+    let samples = [8, 16, 32, 64].map(|size| {
+        let helpers = "have n == n by known();\n".repeat(size);
+        let source = source.replace(
+            "have before: n >= 0 by known();",
+            &format!("{helpers}have before: n >= 0 by known();"),
+        );
+        let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+            crate::surface::verify_c_sources(&source, &[])
+        });
+        result.unwrap();
+        work
+    });
+    for pair in samples.windows(2) {
+        assert!(
+            pair[1] <= pair[0] * 3,
+            "structural prefix work scales with explicit helpers: {samples:?}"
+        );
+    }
+}

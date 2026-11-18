@@ -68,6 +68,18 @@ pub(crate) struct CheckedEqualityRewrite {
 }
 
 impl CheckedEqualityRewrite {
+    /// The rewritten goal, stated in the one form the kernel gives a
+    /// comparison of exact observations
+    /// (`docs/internals/mathematical-integers.md#one-form-for-comparisons-of-observations`):
+    /// substituting into `to_integer(x) == to_integer(y)` can leave
+    /// `to_integer(old(n[0])) == 0`, which is the native `old(n[0]) == 0`.
+    fn constructed(proposition: Proposition, facts: PureFactStore) -> Self {
+        Self {
+            proposition: crate::kernel::assumptions::canonical_observation_form(&proposition),
+            facts,
+        }
+    }
+
     pub(crate) fn proposition(&self) -> &Proposition {
         &self.proposition
     }
@@ -75,6 +87,9 @@ impl CheckedEqualityRewrite {
     /// A proposed surface spelling may use different load names. Accept it
     /// only through the kernel's checked, corresponding-leaf transport rule.
     pub(crate) fn try_present_as(&mut self, proposed: &Proposition) -> bool {
+        // The result holds the one form of an observation comparison; a
+        // presentation written the other way states the same goal.
+        let proposed = &crate::kernel::assumptions::canonical_observation_form(proposed);
         if proposed == &self.proposition {
             return true;
         }
@@ -100,6 +115,23 @@ impl CheckedEqualityRewrite {
         self.facts = facts;
         self.proposition = proposed.clone();
         true
+    }
+
+    /// Lowering a reflexive constructor comparison in an induction case
+    /// yields true. Keep that spelling instead of an unraisable raw equality.
+    pub(crate) fn try_present_induction_case_as(&mut self, proposed: &Proposition) -> bool {
+        if matches!(
+            &self.proposition,
+            Proposition::Equal(Term::Algebraic(_), Term::Algebraic(_))
+        ) && matches!(
+            proposed.condition_native(),
+            Some((ConditionTerm::Constant(true), true))
+        ) && super::fact_reasoning::computes_leaf(&self.proposition)
+        {
+            self.proposition = proposed.clone();
+            return true;
+        }
+        self.try_present_as(proposed)
     }
 
     pub(crate) fn into_obligation<P, O>(
@@ -137,10 +169,10 @@ impl PureFactStore {
             );
         }
         match rewrite_with_admitted_equality(goal, equality) {
-            Ok(proposition) => Ok(CheckedEqualityRewrite {
+            Ok(proposition) => Ok(CheckedEqualityRewrite::constructed(
                 proposition,
-                facts: self.clone(),
-            }),
+                self.clone(),
+            )),
             Err(original_error) => {
                 // Compare only the cited expression with the two operands of
                 // this atomic goal. Corresponding operators stay exact; the
@@ -224,7 +256,7 @@ impl PureFactStore {
                         continue;
                     };
                     if let Ok(proposition) = rewrite_with_admitted_equality(goal, &adapted) {
-                        return Ok(CheckedEqualityRewrite { proposition, facts });
+                        return Ok(CheckedEqualityRewrite::constructed(proposition, facts));
                     }
                 }
                 Err(original_error)
@@ -3338,7 +3370,11 @@ mod tests {
             assert_eq!(rewrite.proposition(), &raw);
         }
         assert!(rewrite.try_present_as(&folded));
-        assert_eq!(rewrite.proposition(), &folded);
+        // An observation compared with a constant takes its one form.
+        assert_eq!(
+            rewrite.proposition(),
+            &crate::kernel::assumptions::canonical_observation_form(&folded)
+        );
     }
 
     #[test]

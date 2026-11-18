@@ -312,14 +312,14 @@ fn owned_outcome_completion_is_indexed_and_does_not_copy_sibling_facts() {
 }
 
 #[test]
-fn resource_projection_visits_selected_claims_not_the_ambient_fact_frame() {
-    for fact_count in [1usize, 16, 64, 256, 1024] {
-        let mut assumptions = crate::kernel::PureFactContext::new();
+fn checked_resource_keys_do_not_copy_receipt_resources() {
+    for fact_count in [1usize, 16, 64] {
+        let mut returns = ResourceContext::new();
         for index in 0..fact_count {
-            assumptions = assumptions.assume_proposition(Proposition::Predicate {
-                name: format!("frame{index}"),
-                arguments: vec![],
-            });
+            returns = returns.unchecked_with_fact(crate::kernel::ResourceFact::own_token(
+                format!("returned_{index}"),
+                Vec::new(),
+            ));
         }
         for claim_count in [1, 8, 64] {
             let outcome = outcome();
@@ -336,21 +336,20 @@ fn resource_projection_visits_selected_claims_not_the_ambient_fact_frame() {
                 claims = claims
                     .close(
                         &FunctionContractClaimKey::Ensure(index),
-                        receipt(),
+                        ClaimGoalEvidence::Resource(ClaimResourceReceipt {
+                            returned_resources: returns.clone(),
+                            contributes_returned_resources: true,
+                            defers_resource_transition: false,
+                        }),
                         &outcome.identity,
                     )
                     .unwrap();
             }
-            let ((keys, resources), work) =
-                crate::instrumentation::measure_deterministic_work(|| {
-                    claims.resource_projection(&assumptions)
-                });
+            let (keys, work) = crate::instrumentation::measure_deterministic_work(|| {
+                claims.checked_resource_keys()
+            });
             assert_eq!(keys.len(), claim_count);
-            assert!(resources.facts().is_empty());
-            assert!(
-                work <= 4 * claim_count + 8,
-                "{fact_count} frame facts, {claim_count} claims: {work}"
-            );
+            assert_eq!(work, claim_count, "{fact_count} resources per receipt");
         }
     }
 }

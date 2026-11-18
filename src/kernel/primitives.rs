@@ -15276,10 +15276,6 @@ pub struct CheckedFunctionExecution {
     /// is valid only when this records the conditional-effect selection error
     /// that caused the deferral.
     pub(super) deferred_contract_exit_errors: Vec<Option<RuntimeError>>,
-    /// Resource facts projected from native outcome completions for each
-    /// path. Deferred exit resolution composes these facts into the body
-    /// outcome before applying the remaining conditional boundary effect.
-    pub(super) checked_returned_resources: Vec<ResourceContext>,
     /// Original contract caller state when a kernel-checked proof entered C
     /// execution through a definitionally equal resource representation.
     pub(super) entry_representation_origin: Option<ExecutionState>,
