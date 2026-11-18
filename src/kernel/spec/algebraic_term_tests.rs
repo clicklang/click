@@ -1138,7 +1138,7 @@ fn algebraic_read_result_preserves_native_state_and_type() {
     let native = AlgebraicTerm {
         algebraic_type: ty.clone(),
         node: AlgebraicTermNode::MemoryLoad {
-            memory: intern_memory(SymbolicMemory::new()),
+            point: crate::kernel::ProgramPoint::at(&intern_memory(SymbolicMemory::new())),
             pointer: Box::new(Address::symbolic(Variable(999749))),
         },
     };

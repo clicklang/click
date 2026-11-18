@@ -1594,7 +1594,7 @@ fn collect_condition_reads(condition: &ConditionTerm, reads: &mut Vec<ResourceRe
                 pointer: pointer.as_ref().clone(),
                 bytes: 1,
             },
-            ProgramPoint::at(memory),
+            memory.clone(),
         ),
     }
 }

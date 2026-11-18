@@ -1306,7 +1306,7 @@ pub enum ConditionTerm {
     /// `byte != 0` (the byte rule of Stage 5 bounds the byte to 0 or 1
     /// where a front end produces the read). Two reads of one cell in one
     /// state are one value.
-    BoolLoad(SharedMemory, Box<Address>),
+    BoolLoad(ProgramPoint, Box<Address>),
 }
 
 /// A condition's identity: the condition itself, with a 32-bit equality's
@@ -1348,7 +1348,7 @@ enum ConditionIdentity<'a> {
         else_condition: &'a ConditionTerm,
     },
     BoolEqual(&'a ConditionTerm, &'a ConditionTerm),
-    BoolLoad(&'a SharedMemory, &'a Address),
+    BoolLoad(&'a ProgramPoint, &'a Address),
 }
 
 /// A comparison side as its fact identity reads it
@@ -4817,7 +4817,7 @@ pub enum AlgebraicTermNode {
     /// `pointer`, a generic struct's field: the algebraic counterpart of a
     /// [`MachineTerm::MemoryLoad`].
     MemoryLoad {
-        memory: SharedMemory,
+        point: ProgramPoint,
         pointer: Box<Address>,
     },
 }
@@ -4826,12 +4826,8 @@ impl AlgebraicTermNode {
     /// The scalar load term at the same memory and address as a
     /// [`AlgebraicTermNode::MemoryLoad`]: a walker reaches its memory and
     /// address as it reaches a scalar load's.
-    pub(crate) fn memory_load_carrier(memory: &SharedMemory, pointer: &Address) -> MachineTerm {
-        MachineTerm::MemoryLoad(
-            ProgramPoint::at(memory),
-            Box::new(pointer.clone()),
-            LoadKind::Bits64,
-        )
+    pub(crate) fn memory_load_carrier(point: &ProgramPoint, pointer: &Address) -> MachineTerm {
+        MachineTerm::MemoryLoad(point.clone(), Box::new(pointer.clone()), LoadKind::Bits64)
     }
 
     /// The [`AlgebraicTermNode::MemoryLoad`] whose carrier a rewrite of
@@ -4839,9 +4835,9 @@ impl AlgebraicTermNode {
     /// address. `None` when the rewrite replaced the load.
     pub(crate) fn memory_load_from_carrier(carrier: &ProgramValue) -> Option<Self> {
         match carrier {
-            ProgramValue::UInt64(MachineTerm::MemoryLoad(memory, pointer, LoadKind::Bits64)) => {
+            ProgramValue::UInt64(MachineTerm::MemoryLoad(point, pointer, LoadKind::Bits64)) => {
                 Some(Self::MemoryLoad {
-                    memory: memory.shared_memory().clone(),
+                    point: point.clone(),
                     pointer: pointer.clone(),
                 })
             }
@@ -4866,7 +4862,7 @@ impl AlgebraicTermNode {
         ProgramValue::Parameter(Box::new(AlgebraicTerm {
             algebraic_type: parameter.algebraic_type(),
             node: Self::MemoryLoad {
-                memory,
+                point: crate::kernel::ProgramPoint::at(&memory),
                 pointer: Box::new(pointer),
             },
         }))
@@ -4878,7 +4874,8 @@ impl AlgebraicTermNode {
         pointer: &Address,
     ) -> AlgebraicValue {
         AlgebraicValue::Program(ProgramValue::UInt64(Self::memory_load_carrier(
-            memory, pointer,
+            &crate::kernel::ProgramPoint::at(memory),
+            pointer,
         )))
     }
 }
@@ -5004,7 +5001,10 @@ impl AlgebraicTerm {
                             });
                         }
                     }
-                    AlgebraicTermNode::MemoryLoad { memory, pointer } => {
+                    AlgebraicTermNode::MemoryLoad {
+                        point: memory,
+                        pointer,
+                    } => {
                         visit(MachineOperandView::Legacy(
                             &AlgebraicTermNode::memory_load_carrier(memory, pointer),
                         ));

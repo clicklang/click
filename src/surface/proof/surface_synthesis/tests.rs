@@ -6315,7 +6315,9 @@ fn shared_algebraic_reads_and_variables_raise_without_tree_exports() {
     for node in [
         AlgebraicTermNode::Variable(variable),
         AlgebraicTermNode::MemoryLoad {
-            memory: crate::kernel::intern_memory_ref(state.memory()),
+            point: crate::kernel::ProgramPoint::at(&crate::kernel::intern_memory_ref(
+                state.memory(),
+            )),
             pointer: Box::new(pointer.clone()),
         },
     ] {

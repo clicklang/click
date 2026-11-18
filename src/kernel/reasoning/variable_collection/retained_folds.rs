@@ -939,14 +939,14 @@ mod tests {
             algebraic_type: crate::kernel::TypeParameterName::intern("AlgebraicReaderT")
                 .algebraic_type(),
             node: AlgebraicTermNode::MemoryLoad {
-                memory: crate::kernel::intern_memory(
+                point: crate::kernel::ProgramPoint::at(&crate::kernel::intern_memory(
                     SymbolicMemory::new()
                         .with_block("algebraic-reader", 8)
                         .store(
                             SymbolicMemory::global_pointer("algebraic-reader"),
                             ProgramValue::UInt64(MachineTerm::Variable(Variable(999741))),
                         ),
-                ),
+                )),
                 pointer: Box::new(Address {
                     base: AddressBase::Symbolic(Variable(999742)),
                     offset: AddressOffset::scaled_int32_node(
@@ -1014,7 +1014,9 @@ mod tests {
                 IntegerTerm::Variable(Variable(999562)).into(),
             )),
             else_condition: Box::new(ConditionTerm::BoolLoad(
-                crate::kernel::intern_memory(SymbolicMemory::new()),
+                crate::kernel::ProgramPoint::at(&crate::kernel::intern_memory(
+                    SymbolicMemory::new(),
+                )),
                 Box::new(Address::symbolic(Variable(999563))),
             )),
         });
@@ -1058,14 +1060,14 @@ mod tests {
         );
         for source in [
             ConditionTerm::BoolLoad(
-                crate::kernel::intern_memory(
+                crate::kernel::ProgramPoint::at(&crate::kernel::intern_memory(
                     crate::kernel::SymbolicMemory::new()
                         .with_block("bool-dependencies", 4)
                         .store(
                             crate::kernel::SymbolicMemory::global_pointer("bool-dependencies"),
                             ProgramValue::Int32(MachineTerm::Variable(Variable(970_030))),
                         ),
-                ),
+                )),
                 Box::new(Address {
                     base: AddressBase::Symbolic(Variable(970_031)),
                     offset: AddressOffset::scaled_int32_node(
