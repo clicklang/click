@@ -497,6 +497,24 @@ fn listed_context_pure_facts(
     facts
 }
 
+#[cfg(test)]
+thread_local! {
+    static STEP_DIAGNOSTIC_RESOURCE_READS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+pub(in crate::surface) fn take_step_diagnostic_resource_reads() -> usize {
+    STEP_DIAGNOSTIC_RESOURCE_READS.with(|count| count.replace(0))
+}
+
+/// The full pre-step resource context is for diagnostic rendering.
+fn step_diagnostic_resources(state: &ExecutionState) -> &[ResourceFact] {
+    let resources = state.resources().facts();
+    #[cfg(test)]
+    STEP_DIAGNOSTIC_RESOURCE_READS.with(|count| count.set(count.get() + resources.len()));
+    resources
+}
+
 fn describe_step_proof_context(
     delta: &(impl PropositionSource + ?Sized),
     context: Option<&PureFactContext>,
@@ -610,7 +628,6 @@ pub(super) fn execute_branch_step_from_frontier_position(
         ProgramPointKind::Entry,
         current_state.clone(),
     );
-    let current_resources = current_state.resources().facts().to_vec();
     let transition_label = format!("`{claim_label}` tactic {tactic_index}: `{tactic_name}`");
     let condition_transitions = certified_condition_transitions(
         &current_state,
@@ -645,7 +662,7 @@ pub(super) fn execute_branch_step_from_frontier_position(
             describe_step_proof_context(
                 available_pure_facts,
                 context,
-                &current_resources,
+                step_diagnostic_resources(&current_state),
                 parameter_binding,
                 &[]
             )
@@ -2269,7 +2286,6 @@ fn execute_step_from_frontier_position_selecting_path(
             current_state.clone(),
         );
     }
-    let current_resources = current_state.resources().facts().to_vec();
     let transition_label = format!("`{claim_label}` tactic {tactic_index}: `{tactic_name}`");
     let next_opaque_call_before_step = execution.core.next_opaque_call;
     let next_kernel_variable_before_step = execution.core.kernel_variable_mark();
@@ -2819,7 +2835,7 @@ fn execute_step_from_frontier_position_selecting_path(
                         describe_step_proof_context(
                             available_pure_facts,
                             context,
-                            &current_resources,
+                            step_diagnostic_resources(&current_state),
                             parameter_binding,
                             &[],
                         )
@@ -2857,10 +2873,11 @@ fn execute_step_from_frontier_position_selecting_path(
                 } else {
                     "could not verify C operation"
                 };
+                let resources = step_diagnostic_resources(&current_state);
                 let detail = crate::surface::diagnostics::describe_unestablished_assembly_fact(
                     error,
                     &listed_context_pure_facts(available_pure_facts, context),
-                    &current_resources,
+                    resources,
                     parameter_binding,
                     &[],
                 )
@@ -2873,11 +2890,7 @@ fn execute_step_from_frontier_position_selecting_path(
                             proof_context.parsed_function,
                             parameter_binding,
                         ),
-                        describe_missing_range_end_note(
-                            error,
-                            &current_resources,
-                            parameter_binding
-                        )
+                        describe_missing_range_end_note(error, resources, parameter_binding)
                     )
                 });
                 if matches!(
@@ -2895,7 +2908,7 @@ fn execute_step_from_frontier_position_selecting_path(
                 crate::surface::diagnostics::describe_execution_statement_site(),
                 describe_step_proof_context(
                 available_pure_facts, context,
-                    &current_resources,
+                    resources,
                     parameter_binding,
                     &[]
                 )
@@ -2945,7 +2958,7 @@ fn execute_step_from_frontier_position_selecting_path(
                 describe_step_proof_context(
                     available_pure_facts,
                     context,
-                    &current_resources,
+                    step_diagnostic_resources(&current_state),
                     parameter_binding,
                     &[]
                 )
@@ -3635,7 +3648,7 @@ fn execute_step_from_frontier_position_selecting_path(
                     describe_step_proof_context(
                         available_pure_facts,
                         context,
-                        &current_resources,
+                        step_diagnostic_resources(&current_state),
                         parameter_binding,
                         &execution_pure_facts,
                     )
@@ -3651,10 +3664,11 @@ fn execute_step_from_frontier_position_selecting_path(
             } else {
                 "could not verify C operation"
             };
+            let resources = step_diagnostic_resources(&current_state);
             let detail = crate::surface::diagnostics::describe_unestablished_assembly_fact(
                 &error,
                 &listed_context_pure_facts(available_pure_facts, context),
-                &current_resources,
+                resources,
                 parameter_binding,
                 &execution_pure_facts,
             )
@@ -3667,7 +3681,7 @@ fn execute_step_from_frontier_position_selecting_path(
                         proof_context.parsed_function,
                         parameter_binding,
                     ),
-                    describe_missing_range_end_note(&error, &current_resources, parameter_binding)
+                    describe_missing_range_end_note(&error, resources, parameter_binding)
                 )
             });
             if matches!(
@@ -3685,7 +3699,7 @@ fn execute_step_from_frontier_position_selecting_path(
                 crate::surface::diagnostics::describe_execution_statement_site(),
                 describe_step_proof_context(
                 available_pure_facts, context,
-                    &current_resources,
+                    resources,
                     parameter_binding,
                     &execution_pure_facts
                 )

@@ -742,6 +742,35 @@ fn straight_line_assignments_cost_the_same_at_every_position() {
 }
 
 #[test]
+fn successful_steps_do_not_read_the_held_resource_list_for_diagnostics() {
+    use crate::surface::proof::take_step_diagnostic_resource_reads;
+
+    let samples = [1, 2, 4, 8].map(|n| {
+        let params = (0..n)
+            .map(|i| format!("int32* p{i}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let owns = lines(n, |i| format!("    owns *p{i};"));
+        // Each repetition adds a decided branch and one scalar assignment,
+        // both checked with all n unrelated resources held.
+        let body = lines(n, |_| "    if (x == 0) x = 0;".into());
+        let c = format!("int32 caller({params}) {{ int32 x; x = 0;\n{body}\nreturn x; }}");
+        let steps = steps(3 + n * 2);
+        let click = format!(
+            "verifying \"hunt.c\";\nint32 caller({params}) {{\n{owns}\n}} by {{\n{steps}\n}}"
+        );
+        take_step_diagnostic_resource_reads();
+        verify_c_sources(&click, &[("hunt.c", c.as_str())])
+            .unwrap_or_else(|error| panic!("size {n}: {}", error.message()));
+        take_step_diagnostic_resource_reads()
+    });
+    assert!(
+        samples == [0; 4],
+        "resource entries read for step diagnostics: {samples:?}"
+    );
+}
+
+#[test]
 fn constant_index_stores_cost_the_same_at_every_position() {
     assert_no_drift("const_array", const_array, 12);
 }
