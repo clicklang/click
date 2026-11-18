@@ -538,7 +538,7 @@ fn normalize_condition_selection(
     // An offset match only proves numeric equality. A complete pointer goal
     // also needs its provenance and bounds, including any opaque bounds owner.
     if let Some((
-        condition @ (ConditionTerm::PointerEqual(..) | ConditionTerm::PointerOffsetEqual(..)),
+        condition @ (ConditionTerm::AddressEqual(..) | ConditionTerm::AddressOffsetEqual(..)),
         true,
     )) = crate::kernel::spec::proposition_as_single_condition(goal)
         && let Some((left, right)) = condition.pointer_offset_sides()
