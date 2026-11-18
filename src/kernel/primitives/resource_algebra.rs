@@ -510,6 +510,14 @@ impl ResourceContextIndex {
         if fact.allocation().is_some() {
             result.owned_allocation_tokens = result.owned_allocation_tokens.with_value(entry);
         }
+        if let Some(key) = heap_anchored_composite_key(fact) {
+            let count = result
+                .heap_anchored_composite_counts
+                .get(&key)
+                .copied()
+                .unwrap_or(0);
+            result.heap_anchored_composite_counts.insert(key, count + 1);
+        }
         result.written_normalization.insert(entry, fact);
         if fact.is_own()
             && !fact
@@ -882,6 +890,17 @@ impl ResourceContextIndex {
         let mut result = self.clone();
         if fact.allocation().is_some() {
             result.owned_allocation_tokens = result.owned_allocation_tokens.without_value(&entry);
+        }
+        if let Some(key) = heap_anchored_composite_key(fact) {
+            let count = *result
+                .heap_anchored_composite_counts
+                .get(&key)
+                .expect("heap-anchored composite count exists");
+            if count == 1 {
+                result.heap_anchored_composite_counts.remove(&key);
+            } else {
+                result.heap_anchored_composite_counts.insert(key, count - 1);
+            }
         }
         result.written_normalization.remove(entry, fact);
         if fact.is_own()
@@ -3326,6 +3345,59 @@ impl ResourceContext {
                 crate::instrumentation::record_deterministic_work(1);
                 self.fact(*entry)
             })
+    }
+
+    /// Identify a uniform folded frame eligible for projecting retirement by
+    /// nominal heap block. The caller must also check the family's body.
+    pub(in crate::kernel) fn heap_anchored_retirement_family(&self) -> Option<(&str, ProgramType)> {
+        crate::instrumentation::record_deterministic_work(1);
+        if self.has_owned_allocation_tokens()
+            || !self.storage.expansions_by_support_occurrence.is_empty()
+        {
+            return None;
+        }
+        let index = &self.storage.index;
+        let mut shapes = index.exact_shapes.iter();
+        let ((family, name, arity), entries) = shapes.next()?;
+        if *family != ResourceFamily::Composite
+            || *arity != 1
+            || shapes
+                .next()
+                .is_some_and(|((family, _, _), _)| *family == ResourceFamily::Composite)
+        {
+            return None;
+        }
+        let ((eligible_name, argument_type), count) =
+            index.heap_anchored_composite_counts.iter().next()?;
+        (eligible_name == name && *count == entries.len())
+            .then_some((name.as_str(), *argument_type))
+    }
+
+    /// Select at most one held body per consumed block. A block with flat
+    /// or iterated custody, or several folded bodies, needs the existing
+    /// frame check, even when its other blocks are all heap-anchored.
+    pub(in crate::kernel) fn heap_retirement_frontier(
+        &self,
+        blocks: BTreeSet<&AddressBase>,
+    ) -> Option<Self> {
+        let index = &self.storage.index;
+        let mut frontier = Self::new();
+        for block in blocks {
+            crate::instrumentation::record_deterministic_work(1);
+            if index.memory_by_block.contains_key(block)
+                || index.iterated_by_block.contains_key(block)
+            {
+                return None;
+            }
+            if let Some(entries) = index.owned_composites_by_argument_block.get(block) {
+                if entries.len() != 1 {
+                    return None;
+                }
+                let entry = *entries.iter().next().expect("one folded occurrence");
+                frontier = frontier.unchecked_with_fact(self.fact(entry).clone());
+            }
+        }
+        Some(frontier)
     }
 
     /// The owned folded composites with their multiplicity, as one
@@ -9651,6 +9723,19 @@ fn normalization_anchor(arguments: &ResourceArguments) -> Option<&AddressBase> {
         }
         _ => None,
     }
+}
+
+fn heap_anchored_composite_key(fact: &ResourceFact) -> Option<(String, ProgramType)> {
+    let Resource::Composite { name, arguments } = fact.resource() else {
+        return None;
+    };
+    let [ResourceFieldValue::Program(ProgramValue::Pointer(pointer))] =
+        arguments.fixed_values::<1>()?
+    else {
+        return None;
+    };
+    (fact.owned_quantity() == Some(1) && matches!(pointer.address().base, AddressBase::Heap(_)))
+        .then(|| (name.clone(), pointer.program_type()))
 }
 
 /// The `exact_shapes_by_root` key of a token or composite.

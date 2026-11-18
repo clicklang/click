@@ -88,6 +88,111 @@ fn allocating_call_does_not_expand_the_callers_kept_objects() {
     );
 }
 
+/// A verified free visits only the consumed allocation's block, even
+/// when each retained folded object contains another allocation token.
+#[test]
+fn consuming_call_does_not_expand_unrelated_folded_allocations() {
+    use crate::kernel::program_expression::{int32_literal, variable};
+
+    let function = program_function(
+        ProgramType::Void,
+        "unused",
+        vec![],
+        program_return(program_void_value()),
+    )
+    .with_composite_resource_definitions(vec![CompositeResourceDefinition::new(
+        "boxed_allocation",
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
+        None,
+        false,
+        vec![
+            ResourceSpec::owned_memory(MemorySegment::new(
+                variable("p"),
+                int32_literal(0),
+                int32_literal(1),
+            )),
+            ResourceSpec::token(
+                ResourceAccessMode::Own,
+                ResourceFact::ALLOCATION_RESOURCE_NAME.into(),
+                vec![variable("p"), int32_literal(4)],
+                vec![ProgramType::Int32Pointer, ProgramType::Int32],
+            ),
+        ],
+        vec![],
+    )]);
+    let interface = function.contract_interface();
+    let heap = |id| Address {
+        base: AddressBase::Heap(id),
+        offset: AddressOffset::Constant(0),
+    };
+    let consumed = heap(933_000);
+    let bytes = MachineTerm::constant(4);
+    let input = ResourceContext::new().unchecked_with_fact(ResourceFact::own_allocation(
+        consumed.clone(),
+        bytes.clone(),
+    ));
+    let output = ResourceContext::new();
+    let assumptions = PureFactContext::new();
+    let allocation = |pointer| {
+        ResourceFact::own_composite(
+            "boxed_allocation".into(),
+            vec![ProgramValue::pointer(pointer)],
+        )
+    };
+    let mut samples = Vec::new();
+    for size in [16, 64, 256] {
+        let mut memory = SymbolicMemory::new();
+        let mut kept = ResourceContext::new();
+        for id in 0..=size {
+            let object = heap(933_000 + id);
+            memory = memory
+                .with_heap_allocation_claim(object.clone(), AllocationSize::int32(bytes.clone()))
+                .expect("a fresh live object");
+            if id != 0 {
+                kept = kept.unchecked_with_fact(allocation(object));
+            }
+        }
+        let state = ExecutionState::new().with_memory(memory.clone());
+        let apply = |kept: &ResourceContext| {
+            apply_verified_heap_allocation_delta(
+                memory.clone(),
+                &memory,
+                &input,
+                kept,
+                &output,
+                interface,
+                &assumptions,
+                None,
+                &state,
+                &state,
+            )
+        };
+        let (retired, work) = crate::instrumentation::measure_deterministic_work(|| apply(&kept));
+        let retired = retired.expect("the caller kept only other allocations");
+        assert_eq!(retired.retired_allocations.len(), 1);
+        assert!(retired.memory.live_heap_block_size(&consumed).is_none());
+        assert!(
+            retired
+                .memory
+                .live_heap_block_size(&heap(933_001))
+                .is_some()
+        );
+        samples.push((size, work));
+
+        if size == 16 {
+            let kept_with_continuation = kept.unchecked_with_fact(allocation(consumed.clone()));
+            let continued =
+                apply(&kept_with_continuation).expect("a kept token continues the input");
+            assert!(continued.retired_allocations.is_empty());
+            assert!(continued.memory.live_heap_block_size(&consumed).is_some());
+        }
+    }
+    assert!(
+        samples.windows(2).all(|pair| pair[1].1 <= 2 * pair[0].1),
+        "retirement grows with unrelated folded allocations: {samples:?}"
+    );
+}
+
 #[test]
 fn allocation_size_graph_queries_scale_without_fact_index() {
     for size in [16u64, 64, 256, 512] {

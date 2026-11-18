@@ -9834,6 +9834,33 @@ fn lent_owned_memory_covers_allocation(
         .is_some()
 }
 
+/// Project only the preserved facts that can affect retirement of these
+/// nominal heap blocks. A fully held direct body supplies its own partition,
+/// and its typed pointer determines the block of every exposed ingredient.
+/// The mixed, indirect and cached cases still need the stateful projection.
+fn preserved_heap_retirement_frontier<'a>(
+    preserved: &ResourceContext,
+    interface: &FunctionContractInterface,
+    consumed: impl Iterator<Item = &'a AddressBase>,
+) -> Option<ResourceContext> {
+    let (name, argument_type) = preserved.heap_anchored_retirement_family()?;
+    if !interface
+        .composite_resource_definition(name)?
+        .confines_retirement_to_argument_block(argument_type)
+    {
+        return None;
+    }
+    let blocks = consumed.collect::<BTreeSet<_>>();
+    if !blocks
+        .iter()
+        .all(|block| matches!(block, AddressBase::Heap(_)))
+    {
+        return None;
+    }
+
+    preserved.heap_retirement_frontier(blocks)
+}
+
 fn apply_verified_heap_allocation_delta(
     mut memory: SymbolicMemory,
     entry_memory: &SymbolicMemory,
@@ -9893,21 +9920,25 @@ fn apply_verified_heap_allocation_delta(
                 .map(|(pointer, bytes)| (fact, pointer, bytes))
         })
         .collect::<Vec<_>>();
-    // The caller's untouched resources are expanded only when the callee
-    // consumed an allocation: they are what may still expose it, continue
-    // it, or be left stale by its retirement. A call that consumes none
-    // (an allocator, or a call on unrelated memory) never asks them, so it
-    // costs nothing in the live objects the caller keeps; expanding them
-    // anyway made every call linear in them.
-    //
-    // Returned projections describe the successor allocation. They decide
-    // whether an input allocation continues, but they are not resources that
-    // survived from the caller and therefore cannot be stale after the old
-    // allocation is freed.
+    // A call may retire a consumed allocation, so inspect the frame for
+    // resources it would leave stale or tokens that continue it. Returned
+    // projections affect continuity, but cannot be stale caller resources.
     let preserved = if input_allocations.is_empty() {
         ResourceContext::new()
     } else {
-        expand_allocations(preserved_caller_resources, mutex_state, &memory).ok_or_else(|| {
+        let frontier = preserved_heap_retirement_frontier(
+            preserved_caller_resources,
+            interface,
+            input_allocations
+                .iter()
+                .map(|(_, pointer, _)| &pointer.address().base),
+        );
+        expand_allocations(
+            frontier.as_ref().unwrap_or(preserved_caller_resources),
+            mutex_state,
+            &memory,
+        )
+        .ok_or_else(|| {
             VerifiedAllocationDeltaError::Runtime(RuntimeError::FunctionContract(
                 "could not inspect preserved caller allocation effects at call".to_string(),
             ))
