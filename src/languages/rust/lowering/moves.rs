@@ -669,7 +669,19 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                     cx.enumerate_initialize(target, source)?
                 }
                 S::EnumerateMove { target, source } => cx.enumerate_move(target, source)?,
-                S::EnumerateNext { iterator, option } => cx.enumerate_next(iterator, option)?,
+                S::EnumerateNext {
+                    iterator,
+                    option,
+                    index,
+                    element,
+                    taken,
+                } => cx.enumerate_next(
+                    iterator,
+                    option.as_deref(),
+                    index.as_deref(),
+                    element.as_deref(),
+                    *taken,
+                )?,
                 S::RangeInitialize { target, start, end } => {
                     cx.range_initialize(target, start, end)?
                 }
@@ -687,7 +699,12 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                     payload.as_deref(),
                     *taken,
                 )?,
-                S::ChunkNext { iterator, option } => cx.chunk_next(iterator, option)?,
+                S::ChunkNext {
+                    iterator,
+                    option,
+                    payload,
+                    taken,
+                } => cx.chunk_next(iterator, option.as_deref(), payload.as_deref(), *taken)?,
                 S::Assign {
                     target: E::Local { name },
                     value,

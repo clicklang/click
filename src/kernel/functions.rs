@@ -16196,45 +16196,6 @@ fn construct_composite_resource_body_with_source(
     })
 }
 
-fn resource_context_contains_exact_owned_fact(
-    context: &ResourceContext,
-    required: &ResourceFact,
-    assumptions: &PureFactContext,
-) -> bool {
-    if !required.is_own() {
-        return false;
-    }
-    if let ResourceFact::Own(Resource::Memory(required_range), _) = required {
-        // The pieces lying inside the required range start inside it, so
-        // the address index's candidates for that range include them all.
-        let exact_parts = context
-            .owned_memory_candidates_for(required_range, assumptions)
-            .into_iter()
-            .filter(|available| {
-                available.memory_own_range().is_some_and(|available_range| {
-                    memory_range_covers(required_range, available_range, assumptions)
-                })
-            })
-            .collect::<Vec<_>>();
-        let exact_parts =
-            ResourceContext::new_with_equalities(assumptions).unchecked_with_facts(exact_parts);
-        return exact_parts.validity_error(assumptions).is_none()
-            && exact_parts.satisfies_fact(required, assumptions);
-    }
-    context
-        .direct_match_candidates_for(required, assumptions)
-        .into_iter()
-        .any(|available| {
-            if !available.is_own() || available.family() != required.family() {
-                return false;
-            }
-            ResourceContext::new_with_equalities(assumptions)
-                .unchecked_with_fact(available.clone())
-                .without_fact_delaying_normalization(required, assumptions)
-                .is_some_and(|remaining| remaining.is_empty())
-        })
-}
-
 /// The proposition asserting the opposite of `proposition`, without adding a
 /// logical rule: a bare condition flips its value, a negation drops, and
 /// anything else is wrapped in one `Not`.
@@ -16432,8 +16393,8 @@ pub(super) fn expand_all_composite_resource_facts_with_composites(
         let missing = expansion
             .into_iter()
             .filter(|fact| {
-                !cached.facts().contains(fact)
-                    && !resource_context_contains_exact_owned_fact(&cached, fact, assumptions)
+                !cached.contains_exact_representation(fact)
+                    && !cached.covers_exact_owned_piece(fact, assumptions)
             })
             .collect::<Vec<_>>();
         // This is the selected held head's already established partition.
@@ -16482,8 +16443,8 @@ fn expand_checked_authority_controls(
         let children = children
             .into_iter()
             .filter(|child| {
-                !expanded.facts().contains(child)
-                    && !resource_context_contains_exact_owned_fact(&expanded, child, assumptions)
+                !expanded.contains_exact_representation(child)
+                    && !expanded.covers_exact_owned_piece(child, assumptions)
             })
             .collect::<Vec<_>>();
         expanded = expanded

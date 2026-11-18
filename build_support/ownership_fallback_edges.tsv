@@ -27,7 +27,6 @@ src/kernel/functions.rs	legacy-caller	::prepare_contract_resource_transfer_unexp
 src/kernel/functions.rs	legacy-caller	::prepare_contract_resource_transfer_unexplained	try_compose_with_facts_delaying_normalization	3
 src/kernel/functions.rs	legacy-caller	::prepare_verified_function_call	expand_all_composite_resource_facts_at_state	1
 src/kernel/functions.rs	legacy-caller	::resource_clause_supply_with_fact	expand_composite_resource_fact_with_children	1
-src/kernel/functions.rs	legacy-caller	::resource_context_contains_exact_owned_fact	validity_error	1
 src/kernel/functions.rs	legacy-caller	::rewrite_resource_instance_selecting_children_unspelled	try_compose_into_valid_context_delaying_normalization	3
 src/kernel/functions.rs	legacy-caller	::unreturned_allocation_at_function_exit	expand_all_composite_resource_facts_at_state	1
 src/kernel/functions.rs	legacy-caller	::unreturned_allocation_obligation	expand_all_composite_resource_facts_at_state	2
