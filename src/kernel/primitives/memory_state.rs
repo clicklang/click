@@ -1774,6 +1774,22 @@ impl LocalEnvironment {
         }
     }
 
+    pub(crate) fn nonvolatile_scalar(
+        &self,
+        name: &BindingName,
+        expected_type: ProgramType,
+    ) -> Option<&StoredExecutionValue> {
+        match self.binding(name)? {
+            LocalBinding::Object {
+                value,
+                program_type,
+                volatile: false,
+                ..
+            } if *program_type == expected_type => Some(value),
+            _ => None,
+        }
+    }
+
     /// Explicit legacy output: reconstruct one selected native value, without caching it.
     pub fn get_native(
         &self,

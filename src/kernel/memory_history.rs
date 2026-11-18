@@ -6261,7 +6261,10 @@ pub(crate) fn certified_store_equations(
 ) -> Vec<Proposition> {
     facts
         .fact_iter()
-        .filter_map(|fact| fact.certified_store_data()?.value_equation.clone())
+        .filter_map(|fact| {
+            fact.certified_store_equation()
+                .map(|equation| equation.as_ref().clone())
+        })
         .collect()
 }
 
