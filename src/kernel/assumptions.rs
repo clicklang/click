@@ -5493,13 +5493,13 @@ impl PureFactContext {
     }
 
     fn adjust_pointer_class_fact(&mut self, proposition: &Proposition) {
-        if !matches!(
+        if !(matches!(
             proposition,
             Proposition::Equal(..)
                 | Proposition::Predicate { .. }
                 | Proposition::ResourceSeparate { .. }
         ) || matches!(&proposition, condition_source @ Proposition::ConditionIs(_, true)
-                if matches!(condition_source.condition_native(), Some((ConditionTerm::AlgebraicEqual(..) | ConditionTerm::PointerEqual(..), _))))
+                if matches!(condition_source.condition_native(), Some((ConditionTerm::AlgebraicEqual(..) | ConditionTerm::PointerEqual(..), _)))))
         {
             return;
         }
