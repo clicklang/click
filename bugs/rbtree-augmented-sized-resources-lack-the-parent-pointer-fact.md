@@ -458,3 +458,10 @@ retains the parent and child observations through initialization and the
 black-uncle test, then records each updated link after its store. The middle
 subtree is reparented while the original uncle is carried into the rotated
 tree. The original contracts keep the subtrees and cached sizes arbitrary.
+
+## Insertion exit at a black parent
+
+The proof in `rbtree_size_insert_black_parent.click` binds the packed parent
+tag at each unfold, then retains the ancestor's word and black bit in an
+owned resource across the reads. Refolding uses the saved tags and the
+proof executes the remaining local declaration before entering the loop.
