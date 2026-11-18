@@ -363,7 +363,7 @@ pub(in crate::kernel) fn memory_write_permission_outcome(
     memory_write_ownership_outcome(state, range, assumptions)
 }
 
-/// Pointee stores report loan separation as an obligation. The driver chooses
+/// Scalar writes report loan separation as an obligation. The driver chooses
 /// its explicit proof or ordinary solve; this operation never searches loans.
 fn memory_write_obligation_outcome(
     state: &ExecutionState,
@@ -659,19 +659,36 @@ fn write_program_lvalue_paths_for_initialization(
                     obligations,
                 )]);
             }
-            if let Some(pointer) = state.locals.slot(&name).cloned()
-                && let Some(outcome) = memory_write_permission_outcome(
-                    state,
-                    &pointer,
-                    value.program_type().byte_width(),
-                    &effective_assumptions,
-                )
-            {
-                return Ok(vec![StatementExecutionPath::new(
-                    outcome,
-                    facts,
-                    obligations,
-                )]);
+            if let Some(pointer) = state.locals.slot(&name) {
+                let bytes = value.program_type().byte_width();
+                let outcome = if initialization
+                    || crate::kernel::block_is_never_address_taken_local(&pointer.base)
+                    || !state.memory.has_block(&pointer.base)
+                {
+                    memory_write_permission_outcome(state, pointer, bytes, &effective_assumptions)
+                } else {
+                    // Name the declared slot with the same carrier as `&name`.
+                    let range = MemoryRange::from_pointer_value(
+                        &Pointer::new(pointer.clone(), ProgramType::VoidPointer),
+                        0u32.into(),
+                        1u32.into(),
+                        bytes,
+                    );
+                    memory_write_obligation_outcome(
+                        state,
+                        range,
+                        pointer,
+                        &effective_assumptions,
+                        &mut obligations,
+                    )
+                };
+                if let Some(outcome) = outcome {
+                    return Ok(vec![StatementExecutionPath::new(
+                        outcome,
+                        facts,
+                        obligations,
+                    )]);
+                }
             }
             let mut state = state.clone();
             sync_retained_stack_local(&mut state, &name, &value);

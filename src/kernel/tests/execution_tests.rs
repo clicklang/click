@@ -187,101 +187,87 @@ fn assert_loan_write_rejected(outcome: &StatementOutcome) {
     assert!(diagnostic.subject().conflicting_resource_fact().is_some());
 }
 
-fn assert_loan_write_obligation_is_unprovable(path: &StatementExecutionPath) {
+fn loan_write_separation(path: &StatementExecutionPath) -> (&Resource, &Resource) {
     assert!(matches!(path.outcome, StatementOutcome::Normal(_)));
-    let separation = path
-        .obligations
-        .iter()
-        .find_map(|obligation| match obligation.proposition() {
-            Proposition::ResourceSeparate { left, right } => Some((left, right)),
-            _ => None,
-        })
-        .expect("the scalar write must retain its loan separation obligation");
-    assert!(!PureFactContext::new().proves_resource_separate(separation.0, separation.1));
+    let [obligation] = path.obligations.as_slice() else {
+        panic!(
+            "expected one scalar write obligation, got {:?}",
+            path.obligations
+        );
+    };
+    let Proposition::ResourceSeparate { left, right } = obligation.proposition() else {
+        panic!(
+            "expected loan separation, got {:?}",
+            obligation.proposition()
+        );
+    };
+    (left, right)
 }
 
 #[test]
 fn active_stable_loan_requires_separation_for_local_assignment_and_alias_store() {
     let _session = crate::kernel::VerificationSession::enter();
-    crate::kernel::set_never_address_taken_locals(BTreeSet::from(["x".into()]));
-    let declared = execute_execution_statement_paths(
-        &ExecutionState::new(),
-        &ProgramStatement::Declare {
-            name: ("x".to_string()).into(),
-            program_type: ProgramType::Int32,
-            volatile: false,
-            pointee_volatile: false,
-            constant: false,
-            pointee_constant: false,
-            initializer: None,
-            zero_fill: None,
-            declared_class: None,
-        },
-        &PureFactContext::new(),
-        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
-        &mut ExecutionBudget::default(),
-    )
-    .expect("local declaration should execute");
-    let state = normal_state(&declared);
-    let pointer = state.locals().slot("x").cloned().expect("local pointer");
-    let loan = active_memory_loan(MemoryRange::new(
+    let declaration = program_declare("x", ProgramType::Int32);
+    let execute = |state: &ExecutionState, statement: &ProgramStatement| {
+        execute_execution_statement_paths(
+            state,
+            statement,
+            &PureFactContext::new(),
+            ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
+            &mut ExecutionBudget::default(),
+        )
+        .unwrap()
+    };
+    let state = normal_state(&execute(&ExecutionState::new(), &declaration));
+    let state = normal_state(&execute(&state, &program_declare("y", ProgramType::Int32)));
+    let pointer = state.locals().slot("x").unwrap().clone();
+    let write = program_assign("x", crate::kernel::program_expression::int32_literal(1));
+    let store = program_store(
+        crate::kernel::program_expression::addr_of("x"),
+        crate::kernel::program_expression::int32_literal(1),
+    );
+    assert!(execute(&state, &write)[0].obligations.is_empty());
+
+    let overlapping = active_memory_loan(MemoryRange::new(
         pointer.clone(),
         MachineTerm::constant(0),
         MachineTerm::constant(1),
     ));
-    let state = state.with_loan_ledger(Some(loan));
-
-    let direct = execute_execution_statement_paths(
-        &state,
-        &ProgramStatement::Assign {
-            source: Default::default(),
-            name: ("x".to_string()).into(),
-            expression: crate::kernel::program_expression::int32_literal(1),
-            prior_result: None,
-        },
-        &PureFactContext::new(),
-        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
-        &mut ExecutionBudget::default(),
-    )
-    .expect("direct assignment should return a checked refusal");
-    assert_loan_write_rejected(&direct[0].outcome);
-
-    let reused = execute_execution_statement_paths(
-        &state,
-        &ProgramStatement::Declare {
-            name: ("x".to_string()).into(),
-            program_type: ProgramType::Int32,
-            volatile: false,
-            pointee_volatile: false,
-            constant: false,
-            pointee_constant: false,
-            initializer: None,
-            zero_fill: None,
-            declared_class: None,
-        },
-        &PureFactContext::new(),
-        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
-        &mut ExecutionBudget::default(),
-    )
-    .expect("name reuse should return a checked refusal");
-    assert_loan_write_rejected(&reused[0].outcome);
-
-    let alias_state = state.with_local(
-        "p",
-        ProgramValue::typed_pointer(pointer, ProgramType::Int32Pointer),
+    let loaned = state.clone().with_loan_ledger(Some(overlapping));
+    let direct = execute(&loaned, &write);
+    let indirect = execute(&loaned, &store);
+    let (written, protected) = loan_write_separation(&direct[0]);
+    assert_eq!((written, protected), loan_write_separation(&indirect[0]));
+    assert_eq!(
+        written,
+        &Resource::Memory(MemoryRange::from_pointer_value(
+            &Pointer::new(pointer, ProgramType::Int32Pointer),
+            0u32.into(),
+            1u32.into(),
+            4,
+        )),
     );
-    let indirect = execute_execution_statement_paths(
-        &alias_state,
-        &program_store(
-            crate::kernel::program_expression::variable("p"),
-            crate::kernel::program_expression::int32_literal(2),
-        ),
-        &PureFactContext::new(),
-        ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
-        &mut ExecutionBudget::default(),
-    )
-    .expect("alias store should return its loan obligation");
-    assert_loan_write_obligation_is_unprovable(&indirect[0]);
+    assert!(!PureFactContext::new().proves_resource_separate(written, protected));
+    assert_loan_write_rejected(&execute(&loaned, &declaration)[0].outcome);
+
+    let disjoint = active_memory_loan(MemoryRange::new(
+        state.locals().slot("y").unwrap().clone(),
+        MachineTerm::constant(0),
+        MachineTerm::constant(1),
+    ));
+    let loaned = state.with_loan_ledger(Some(disjoint));
+    let unowned = loaned.clone().with_resource_context(ResourceContext::new());
+    assert!(matches!(
+        execute(&unowned, &write)[0].outcome,
+        StatementOutcome::RuntimeError(RuntimeError::MissingResource { .. })
+    ));
+    let direct = execute(&loaned, &write);
+    let (written, protected) = loan_write_separation(&direct[0]);
+    assert!(PureFactContext::new().proves_resource_separate(written, protected));
+    assert_eq!(
+        normal_state(&direct).locals().get_native("x").as_deref(),
+        Some(&int32(1))
+    );
 }
 
 #[test]
