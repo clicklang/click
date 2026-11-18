@@ -2890,9 +2890,11 @@ fn synthesize_surface_atomic_proposition(
             ClickProposition::Not(Box::new(comparison))
         });
     }
-    // Arithmetic-producing comparisons keep machine Surface operands. Atomic
-    // observations and casts still need explicit `to_integer`: re-lowering a
-    // native atomic comparison would otherwise change its condition family.
+    // An Integer comparison of observations keeps machine Surface operands
+    // exactly when the machine spelling lowers back to it: lowering keeps a
+    // comparison over a retained compound operand (an operation, a
+    // conditional, a cast) Integer. Over atomic operands the machine
+    // spelling lowers native, so those keep explicit `to_integer`.
     if !matches!(condition.native_compat(), ConditionTerm::Compare { .. })
         && let Some(view) = crate::kernel::machine_integer::comparison::structural_comparison_view(
             condition.native_compat(),
@@ -2904,22 +2906,16 @@ fn synthesize_surface_atomic_proposition(
                 | MachineIntegerType::Int64
                 | MachineIntegerType::UInt64
         )
-        && view.operands.iter().any(|operand| {
-            matches!(
-                operand.operand_view().binary(),
-                Some((
-                    _,
-                    MachineBinaryOp::Add
-                        | MachineBinaryOp::Subtract
-                        | MachineBinaryOp::Multiply
-                        | MachineBinaryOp::Divide
-                        | MachineBinaryOp::Remainder
-                        | MachineBinaryOp::ShiftLeft
-                        | MachineBinaryOp::ShiftRight,
-                    _
-                ))
-            )
-        })
+        && machine_spelling_lowers_to_integer(
+            view.format,
+            view.relation,
+            view.operands.each_ref().map(|operand| {
+                crate::kernel::KernelTerm::retained_machine_operand(
+                    view.format,
+                    operand.operand_view(),
+                )
+            }),
+        )
     {
         let operator = match view.relation {
             CompareRelation::Equal => ComparisonOperator::Equal,
@@ -2970,23 +2966,15 @@ fn synthesize_surface_atomic_proposition(
         _ => None,
     };
     if let Some((left, operator, right)) = integer_comparison {
-        let comparison = ClickProposition::Comparison {
-            // A rewrite may have removed the last typed operand. Retain
-            // mathematical context without relying on an ambient binding.
-            left: integer_typed_expression(synthesize_surface_integer(
-                left,
-                parameter_binding,
-                state,
-                bound_variables,
-            )?),
+        return integer_observation_comparison(
+            left,
             operator,
-            right: synthesize_surface_integer(right, parameter_binding, state, bound_variables)?,
-        };
-        return Some(if *value {
-            comparison
-        } else {
-            ClickProposition::Not(Box::new(comparison))
-        });
+            right,
+            *value,
+            parameter_binding,
+            state,
+            bound_variables,
+        );
     }
     // Keep the narrow interpretation even when rewriting removed the last
     // symbolic operand. Observing a literal as Integer would discard its type.
@@ -3320,6 +3308,61 @@ pub(super) fn integer_typed_expression(value: ContractExpression) -> ContractExp
 /// An Integer arithmetic term over machine observations, spelled with
 /// `to_integer` around each observation and named truncating operations.
 /// Opaque specification applications retain their source boundary.
+/// Whether a comparison written over these machine operands lowers to the
+/// Integer comparison of their observations rather than the native
+/// comparison: logical lowering keeps a comparison over a retained compound
+/// operand Integer (`comparison::condition_for_operand_views`). This is the
+/// lowering's own operand-root test, so the raiser picks the spelling that
+/// lowers back to the term it raises.
+fn machine_spelling_lowers_to_integer(
+    format: MachineIntegerType,
+    relation: CompareRelation,
+    operands: [crate::kernel::KernelTerm; 2],
+) -> bool {
+    let [left, right] = &operands;
+    !matches!(
+        crate::kernel::machine_integer::comparison::logical_condition_for_operand_views(
+            format,
+            relation,
+            [
+                crate::kernel::MachineOperandView::Shared(left),
+                crate::kernel::MachineOperandView::Shared(right),
+            ],
+        ),
+        ConditionTerm::Compare { .. } | ConditionTerm::Constant(_)
+    )
+}
+
+/// `to_integer(left) OP to_integer(right)` with an explicit Integer context:
+/// a rewrite may have removed the last typed operand, so the left side keeps
+/// mathematical context without relying on an ambient binding.
+#[allow(clippy::too_many_arguments)]
+fn integer_observation_comparison(
+    left: &crate::kernel::SharedIntegerTerm,
+    operator: ComparisonOperator,
+    right: &crate::kernel::SharedIntegerTerm,
+    value: bool,
+    parameter_binding: ParameterBinding<'_>,
+    state: &ExecutionState,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
+) -> Option<ClickProposition> {
+    let comparison = ClickProposition::Comparison {
+        left: integer_typed_expression(synthesize_surface_integer(
+            left,
+            parameter_binding,
+            state,
+            bound_variables,
+        )?),
+        operator,
+        right: synthesize_surface_integer(right, parameter_binding, state, bound_variables)?,
+    };
+    Some(if value {
+        comparison
+    } else {
+        ClickProposition::Not(Box::new(comparison))
+    })
+}
+
 fn synthesize_surface_integer(
     term: &crate::kernel::SharedIntegerTerm,
     parameter_binding: ParameterBinding<'_>,
