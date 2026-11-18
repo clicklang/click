@@ -77,8 +77,10 @@ unsigned long peek(struct node* p) {
         Tree::Node(id, color, left_model) => {
             let { left: l } = unfold(t);
             step();
-            let u = fold(tree_at(p), { model: Tree::Node(id, color, left_model) },
-                { left: l });
+            let u = fold(tree_at(p), {
+                model: Tree::Node(id, color, left_model),
+                left: l
+            });
             solve();
         },
     }

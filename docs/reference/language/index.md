@@ -2282,7 +2282,7 @@ let { prefix: p } = unfold(before);
 ```
 
 `p` is a plain proof value for the rest of the function. Later `have`s, loop
-invariants and `decreases` measures, fold field maps such as
+invariants and `decreases` measures, fold input maps such as
 `fold(claimed_prefix(data, occupied, capacity), { prefix: p + 1 })`, and the
 closing contract claims may all name it. One pattern may mix child slots and
 fields, `let { marks: m, prefix: p, free: f, live: n } = unfold(state)`
@@ -2428,7 +2428,7 @@ let { left: l, right: r } = unfold(root);
 unfold(l);
 step_until(function.exit);
 let l = fold(tree(left), { model: Tree::Leaf(2) });
-let root = fold(tree(p), { model: old(root.model) }, { left: l, right: r });
+let root = fold(tree(p), { model: old(root.model), left: l, right: r });
 ```
 
 `let { ... } = unfold(root)` consumes `root`, exposes its immediate memory,
@@ -2451,31 +2451,23 @@ returning an algebraic or mathematical value cannot serve as a C index.
 See `mdtests/resource_child_pure_arguments.md` and
 `mdtests/resource_child_pure_arguments_recursive.md`.
 
-The third fold argument maps child slots to owned resource names. Folding
-consumes those children and the parent's immediate memory, checking each
-child's family, arguments, and fields against the proposed model. Replacements
-and reordered children are allowed when those checks hold. Missing, duplicate,
-unfolded, or mismatched children are rejected. A leaf omits the empty child map.
+The fold input map accepts field initializers and child bindings in either order.
+A field key takes a value expression. A child slot takes the name of a held
+resource. Folding consumes the selected children and the parent's immediate
+memory, checking each child's family, arguments, and fields against the proposed
+model. Missing, duplicate, unfolded, or mismatched children are rejected.
 
-A child whose owned resource has the slot's own name may be left out of the
-map: `{ left: left, right: r }` is written `{ right: r }`, and a map whose
-every child is taken this way is left out. The fold keeps the children of
-the arm its model selects, so a leaf folded beside an owned `left` leaves
-`left` alone, and the kernel checks the completed map exactly as a written
-one. A slot is taken by name only from a resource binding of that name in
-scope, never the fold's own result, a name the map already uses, or a pure
-binding; one of another resource family is not taken. The taken resource
-must still be owned in folded form: otherwise the fold names the missing
-child and why the in-scope one does not fill it
-(`mdtests/a_fold_does_not_take_an_unfolded_child_by_name.md`).
+Supply each named child of the selected arm in the input map, even if its
+held instance has the same name as the slot. Omit the map when it has no
+entries.
 
-<!-- verified-example: mdtests/a_fold_takes_children_by_name.md -->
+<!-- verified-example: mdtests/a_fold_binds_same_named_children_explicitly.md -->
 ```click
 let { left: left, right: right } = unfold(root);
 unfold(left);
 step_until(function.exit);
 let left = fold(tree(lp), { model: Tree::Leaf(2) });
-let root = fold(tree(p), { model: old(root.model) });
+let root = fold(tree(p), { model: old(root.model), left: left, right: right });
 ```
 
 A resource that declares no `field` may still name a child that has fields,
@@ -2496,8 +2488,9 @@ It keeps the child's fields in a record the author does not write, so their
 values survive a fold as a declared field's do. The child must be declared
 before it. It may be held without an instance name, `owns pair(p);`, unfolded with `let { first: c } = unfold(pair(p));`,
 and folded with `fold(pair(p), { first: c });`, which takes only the child
-map; with the child bound to `first`, `fold(pair(p));` takes it by name
-(`mdtests/a_hidden_record_folds_its_child_by_name.md`). Holding it by name, `owns x: pair(p);`, is also accepted.
+input. With the child bound to `first`, write `fold(pair(p), { first: first });`
+(`mdtests/a_hidden_record_folds_an_explicit_same_named_child.md`). The parent
+may also be held by name, `owns x: pair(p);`.
 
 The retained child fields have structural paths. `pair(p).first.v` selects
 `first.v` in the one in-scope instance with the exact written target `pair(p)`.
@@ -2548,8 +2541,8 @@ an input child without promising to return it separately.
 
 Parent-qualified resource handles such as `root.left` are not supported.
 Unfolding a recursive body requires `let { ... } = unfold(...)` to name its
-selected children; refolding requires the child map, less the children taken
-by name. Unfold consumes the parent, so it
+selected children. Refolding supplies the selected child slots in the input
+map. Unfold consumes the parent, so it
 cannot be projected or unfolded again unless a new owned parent is constructed.
 
 A child names one declared field-bearing resource: the parent's own definition
@@ -2580,7 +2573,7 @@ resource ctx_at(node: struct tree_node*) {
 Here `ctx_at` owns a `tree_at`, and `tree_at` never owns a `ctx_at`; two
 definitions that own each other are still rejected as a composite resource
 cycle. `Context::Top => {}` shows that an arm may own nothing at all, and
-`fold(ctx_at(node), { model: Context::Top }, {})` constructs it.
+`fold(ctx_at(node), { model: Context::Top })` constructs it.
 
 An arm need not own only cells of the resource's own parameters. The frame
 below is keyed by the focused child and owns the cells of the `parent` the
@@ -2642,7 +2635,7 @@ resource arena_prefix_state(arena: struct arena*) {
 ```
 
 `let { marks: m, free: f } = unfold(state)` and
-`fold(arena_prefix_state(arena), { ... }, { marks: m, free: f })` expose and
+`fold(arena_prefix_state(arena), { ..., marks: m, free: f })` expose and
 consume them as for an arm. A body or arm may also own a field-free declared
 resource without a name, `owns cell_value(cell);`; it stays folded while the
 parent is unfolded (`mdtests/resource_match_arm_unnamed_child.md`). A

@@ -405,7 +405,8 @@ int32 arena_init(struct arena* arena, int32 capacity) {
         known();
     }
     let outcome = fold(arena_init_outcome(arena), {
-        model: ArenaInitOutcome::Success(0, capacity)
+        model: ArenaInitOutcome::Success(0, capacity),
+        state: state
     });
     solve();
 }
@@ -2143,7 +2144,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
         fold(arena_cells(arena->data, arena->occupied, arena->capacity));
         let allocated = fold(arena_region(region), { start: start, end: end });
         let st = fold(arena_state(arena), { live: (n + 1), capacity: arena->capacity });
-        let outcome = fold(arena_alloc_result(region), { model: ArenaAllocOutcome::Success(start, end) });
+        let outcome = fold(arena_alloc_result(region), { model: ArenaAllocOutcome::Success(start, end), allocated: allocated });
         step();
         have result == 1 by {
             normalize();

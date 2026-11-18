@@ -42,7 +42,7 @@ void roundtrip(struct node* p, struct node* q) {
         Tree::Node(id, lm, rm) => {
             let { left: l, right: r } = unfold(t);
             step();
-            let t = fold(tree(id), { model: Tree::Node(id, lm, rm) }, { left: l, right: r });
+            let t = fold(tree(id), { model: Tree::Node(id, lm, rm), left: l, right: r });
         },
     }
 }

@@ -147,9 +147,9 @@ void inspect(struct node* parent) {
                                 normalize() using { sibling == model; };
                             }
                             let l = fold(leaf_at(leaf), { model: Identity::At(leaf) });
-                            let c = fold(cell(model), { model: Pair::At(model, Identity::At(leaf)) }, { l: l });
+                            let c = fold(cell(model), { model: Pair::At(model, Identity::At(leaf)), l: l });
                             have nf.model == fm;
-                            let tree_context = fold(parent_at(root), { model: Parent::At(pid, Pair::At(model, Identity::At(leaf)), fm) }, { c: c, f: nf });
+                            let tree_context = fold(parent_at(root), { model: Parent::At(pid, Pair::At(model, Identity::At(leaf)), fm), c: c, f: nf });
                             step(); step();
                         },
                     }

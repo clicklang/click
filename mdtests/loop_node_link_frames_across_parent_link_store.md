@@ -212,10 +212,10 @@ void rotate(struct node* parent) {
                                     // Only the parent's store lies between the retained_state and
                                     // this read of a different node's field.
                                     have sid->right == at(inner_inputs, sid->right) by known();
-                                    let s = fold(tree(iid->right), { model: Tree::Node(sid, irm, srm) }, { left: ir, right: sr });
+                                    let s = fold(tree(iid->right), { model: Tree::Node(sid, irm, srm), left: ir, right: sr });
                                     have iid->left == at(inner_inputs, iid->left) by known();
-                                    let i = fold(tree(parent->right), { model: Tree::Node(iid, ilm, Tree::Node(sid, irm, srm)) }, { left: il, right: s });
-                                    let t = fold(tree(parent), { model: Tree::Node(id, lm, Tree::Node(iid, ilm, Tree::Node(sid, irm, srm))) }, { left: l, right: i });
+                                    let i = fold(tree(parent->right), { model: Tree::Node(iid, ilm, Tree::Node(sid, irm, srm)), left: il, right: s });
+                                    let t = fold(tree(parent), { model: Tree::Node(id, lm, Tree::Node(iid, ilm, Tree::Node(sid, irm, srm))), left: l, right: i });
                                     step(); // Leave the loop.
                                 },
                             }

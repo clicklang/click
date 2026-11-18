@@ -71,7 +71,7 @@ int32 tree_depth_ok(struct node* root) {
             branch {
                 true => {
                     step();
-                    let t = fold(tree_at(root), { model: old(t.model) }, { left: l, right: r });
+                    let t = fold(tree_at(root), { model: old(t.model), left: l, right: r });
                     solve();
                 }
                 false => {}
@@ -80,7 +80,7 @@ int32 tree_depth_ok(struct node* root) {
             step();
             have root->left == old(root->left) by { solve(); }
             have root->right == old(root->right) by { solve(); }
-            let t = fold(tree_at(root), { model: old(t.model) }, { left: l, right: r });
+            let t = fold(tree_at(root), { model: old(t.model), left: l, right: r });
             solve();
         },
     }

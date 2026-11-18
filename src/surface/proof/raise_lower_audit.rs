@@ -323,6 +323,27 @@ mod tests {
         );
     }
 
+    /// An Integer comparison over a C conditional raises with machine
+    /// operands, `(if old(n[0]) == 0 { 0 } else { 1 }) == 1`: lowering keeps
+    /// that comparison Integer, as the fact is. Explicit `to_integer`
+    /// observations would lower to the native comparison instead.
+    #[test]
+    fn an_integer_comparison_over_a_conditional_round_trips() {
+        let lines = round_trips(
+            "a_loop_condition_s_call_and_test_are_the_loop_s_own.md",
+            include_str!("../../../mdtests/a_loop_condition_s_call_and_test_are_the_loop_s_own.md"),
+        );
+        let fact = "to_integer(if old(n[0]) == 0 { 0 } else { 1 }) == 1";
+        assert!(
+            lines.contains(&("same".to_string(), fact.to_string())),
+            "{lines:#?}"
+        );
+        assert!(
+            !lines.contains(&("differs".to_string(), fact.to_string())),
+            "{lines:#?}"
+        );
+    }
+
     #[test]
     fn a_checked_step_records_how_each_added_fact_round_trips() {
         let fixture = crate::cli::parse_mdtest(

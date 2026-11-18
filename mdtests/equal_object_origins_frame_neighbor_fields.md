@@ -144,8 +144,8 @@ void inner(struct rb_node* node) {
                     let { ps: ps } = unfold(parent_tree);
             step(); step(); step(); step(); step();
             have parent == p by { solve(); }
-            let parent_tree = fold(inner_node(g->rb_left), { model: InnerNode::At(p, g, old(state.pvalue)) }, { ps: ps });
-            let state = fold(inner_state(node), { phase: InnerPhase::Before(g, p), gvalue: old(state.gvalue), pvalue: old(state.pvalue), nvalue: old(state.nvalue), parent_model: old(state.parent_model) }, { gs: gs, parent_tree: parent_tree, ns: ns });
+            let parent_tree = fold(inner_node(g->rb_left), { model: InnerNode::At(p, g, old(state.pvalue)), ps: ps });
+            let state = fold(inner_state(node), { phase: InnerPhase::Before(g, p), gvalue: old(state.gvalue), pvalue: old(state.pvalue), nvalue: old(state.nvalue), parent_model: old(state.parent_model), gs: gs, parent_tree: parent_tree, ns: ns });
             loop {
                 owns state: inner_state(node);
                 invariant node == old(node);
@@ -173,7 +173,7 @@ void inner(struct rb_node* node) {
                     have separate(memory(parent->rb_right), memory(p->__rb_parent_color)) by { known(); }
                     have parent->rb_right == 0 by { known(); }
                     have p->rb_right == 0 by { known(); }
-                    let state = fold(inner_state(node), { phase: InnerPhase::After(g, p), gvalue: old(state.gvalue), pvalue: old(state.pvalue), nvalue: old(state.nvalue), parent_model: old(state.parent_model) }, { gs: gs, ps: ps, ns: ns });
+                    let state = fold(inner_state(node), { phase: InnerPhase::After(g, p), gvalue: old(state.gvalue), pvalue: old(state.pvalue), nvalue: old(state.nvalue), parent_model: old(state.parent_model), gs: gs, ps: ps, ns: ns });
                     have state.phase == inner_finish(old(state.phase)) by {
                         rewrite(old(state.phase), InnerPhase::Before(g, p));
                         unfold(inner_finish(InnerPhase::Before(g, p))); known();

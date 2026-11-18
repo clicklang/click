@@ -142,7 +142,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
             let initial_grandparent = fold(mirrored_context_focus_node_frame(g, above), { color: Color::Black, word: g->__rb_parent_color, left: g->rb_left, right: g->rb_right });
             step(); step(); step(); step();
             unfold(initial_grandparent); unfold(initial_parent); unfold(initial_focus);
-            let focus = fold(sized_at(node), { model: SizedTree::Node(node, p, Color::Red, nv, left, right) }, { metadata: n_size, right: n_left, left: n_right });
+            let focus = fold(sized_at(node), { model: SizedTree::Node(node, p, Color::Red, nv, left, right), metadata: n_size, right: n_left, left: n_right });
             have p->rb_right == node by { known(); }
             have p->rb_right != p by {
                 known();
@@ -150,11 +150,11 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
             have p->rb_left != p by {
                 known();
             }
-            let parent_tree = fold(sized_at(p), { model: SizedTree::Node(p, g, Color::Red, pv, SizedTree::Empty, SizedTree::Node(node, p, Color::Red, nv, left, right)) }, { metadata: p_size, right: focus, left: p_left });
+            let parent_tree = fold(sized_at(p), { model: SizedTree::Node(p, g, Color::Red, pv, SizedTree::Empty, SizedTree::Node(node, p, Color::Red, nv, left, right)), metadata: p_size, right: focus, left: p_left });
             have ((g->__rb_parent_color & ~3) as (struct rb_node*)) == above by known();
-            let tree = fold(sized_at(g), { model: SizedTree::Node(g, above, Color::Black, gv, SizedTree::Empty, SizedTree::Node(p, g, Color::Red, pv, SizedTree::Empty, SizedTree::Node(node, p, Color::Red, nv, left, right))) }, { metadata: g_size, right: parent_tree, left: g_left });
+            let tree = fold(sized_at(g), { model: SizedTree::Node(g, above, Color::Black, gv, SizedTree::Empty, SizedTree::Node(p, g, Color::Red, pv, SizedTree::Empty, SizedTree::Node(node, p, Color::Red, nv, left, right))), metadata: g_size, right: parent_tree, left: g_left });
             have tree.model == old(state.model) by known();
-            let state = fold(sized_insert_mirrored_context_focus_at(node, root), { phase: SizedInsertMirroredContextFocusPhase::Before(g, p, above, nv, pv, gv, left, right), model: old(state.model), context: old(state.context), whole_model: old(state.whole_model) }, { tree: tree, link: link });
+            let state = fold(sized_insert_mirrored_context_focus_at(node, root), { phase: SizedInsertMirroredContextFocusPhase::Before(g, p, above, nv, pv, gv, left, right), model: old(state.model), context: old(state.context), whole_model: old(state.whole_model), tree: tree, link: link });
             step(); // Declare tmp before the C loop.
             loop {
                 owns state: sized_insert_mirrored_context_focus_at(node, root);
@@ -178,7 +178,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     let { metadata: p_size, right: focus, left: p_left } = unfold(parent_tree);
                     unfold(g_left); unfold(p_left);
                     let { metadata: n_size, right: n_left, left: n_right } = unfold(focus);
-                    let focus = fold(sized_at(node), { model: SizedTree::Node(node, p, Color::Red, nv, left, right) }, { metadata: n_size, right: n_left, left: n_right });
+                    let focus = fold(sized_at(node), { model: SizedTree::Node(node, p, Color::Red, nv, left, right), metadata: n_size, right: n_left, left: n_right });
                     let { checked: focus } = certify_size(node, { tree: focus });
                     unfold(sized_value(SizedTree::Node(node, p, Color::Red, nv, left, right)));
                     unfold(sized_value(SizedTree::Node(p, g, Color::Red, pv, SizedTree::Empty, SizedTree::Node(node, p, Color::Red, nv, left, right))));
@@ -255,8 +255,9 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     let p_left = fold(sized_at(0), { model: SizedTree::Empty });
                     let g_left = fold(sized_at(0), { model: SizedTree::Empty });
                     let demoted = fold(sized_recompute_at(g), {
-                        model: SizedTree::Node(g, p, Color::Red, gv, SizedTree::Empty, SizedTree::Empty)
-                    }, { metadata: g_size, right: p_left, left: g_left });
+                        model: SizedTree::Node(g, p, Color::Red, gv, SizedTree::Empty, SizedTree::Empty),
+                        metadata: g_size, right: p_left, left: g_left
+                    });
                     have p->rb_right == node by known();
                     have p->rb_left == g by known();
                     have parent == p by known();
@@ -284,8 +285,9 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         normalize() using { to_integer(gv) == 2 + to_integer(nv); };
                     }
                     let rotated = fold(sized_rotation_left_at(g, p), {
-                        model: SizedTree::Node(p, above, Color::Black, pv, SizedTree::Node(g, p, Color::Red, gv, SizedTree::Empty, SizedTree::Empty), SizedTree::Node(node, p, Color::Red, nv, left, right))
-                    }, { metadata: p_size, other: focus, demoted: demoted });
+                        model: SizedTree::Node(p, above, Color::Black, pv, SizedTree::Node(g, p, Color::Red, gv, SizedTree::Empty, SizedTree::Empty), SizedTree::Node(node, p, Color::Red, nv, left, right)),
+                        metadata: p_size, other: focus, demoted: demoted
+                    });
                     unfold(sized_left(SizedTree::Node(p, above, Color::Black, pv, SizedTree::Node(g, p, Color::Red, gv, SizedTree::Empty, SizedTree::Empty), SizedTree::Node(node, p, Color::Red, nv, left, right))));
                     unfold(sized_right(SizedTree::Node(g, p, Color::Red, gv, SizedTree::Empty, SizedTree::Empty)));
                     unfold(sized_left(SizedTree::Node(g, p, Color::Red, gv, SizedTree::Empty, SizedTree::Empty)));
@@ -358,8 +360,9 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     let { whole: whole } = restore_sized_context(p, root->rb_node, 0, gv, { path: path, sub: checked });
                     have whole.model == sized_plug(old(state.context), at(before_restore, checked.model)) by { known(); }
                     let state = fold(sized_insert_mirrored_context_focus_at(node, root), {
-                        phase: SizedInsertMirroredContextFocusPhase::After(g, p, above, nv, pv, gv, left, right), model: at(before_restore, checked.model), context: old(state.context), whole_model: whole.model
-                    }, { whole: whole });
+                        phase: SizedInsertMirroredContextFocusPhase::After(g, p, above, nv, pv, gv, left, right), model: at(before_restore, checked.model), context: old(state.context), whole_model: whole.model,
+                        whole: whole
+                    });
                     have state.context == old(state.context) by { known(); }
                     have state.whole_model == sized_plug(old(state.context), state.model) by { known(); }
                     have state.phase == sized_mirrored_context_focus_finish(old(state.phase)) by {

@@ -110,7 +110,7 @@ impl<T> generic_stack::Stack<T> {
         ensures to_integer(result.len) == length(after.values);
     } by {
         step_until(function.exit);
-        let after = fold(nodes<T>(result.head), { values: List<T>::Nil }, {});
+        let after = fold(nodes<T>(result.head), { values: List<T>::Nil });
         unfold(length(List<T>::Nil));
     }
 
@@ -125,7 +125,7 @@ impl<T> generic_stack::Stack<T> {
         ensures to_integer(self.len) == length(after.values);
     } by {
         step_until(function.exit);
-        let after = fold(nodes<T>(self.head), { values: List::Cons(value, old(before.values)) }, { tail: before });
+        let after = fold(nodes<T>(self.head), { values: List::Cons(value, old(before.values)), tail: before });
         unfold(length(List::Cons(value, old(before.values))));
         have to_integer(old(self.len) + 1u64) == to_integer(old(self.len)) + to_integer(1u64);
         solve();
@@ -145,7 +145,7 @@ impl<T> generic_stack::Stack<T> {
             List::Nil => {
                 let {} = unfold(before);
                 step_until(function.exit);
-                let after = fold(nodes<T>(self.head), { values: List<T>::Nil }, {});
+                let after = fold(nodes<T>(self.head), { values: List<T>::Nil });
                 unfold(first(List<T>::Nil));
                 unfold(rest(List<T>::Nil));
             }
@@ -292,7 +292,7 @@ impl<T> generic_stack::Stack<T> {
                 match tail_values {
                     List::Nil => {
                         let {} = unfold(tail);
-                        let after = fold(nodes<T>(self.head), { values: List<T>::Nil }, {});
+                        let after = fold(nodes<T>(self.head), { values: List<T>::Nil });
                         have to_integer(old(self.len) - 1u64) == to_integer(old(self.len)) - to_integer(1u64);
                         unfold(length(List<T>::Nil));
                         have to_integer(old(self.len) - 1u64) == 0 by solve() using {
@@ -312,7 +312,7 @@ impl<T> generic_stack::Stack<T> {
                             rewrite(self.head, old(self.head.next));
                             known();
                         }
-                        let after = fold(nodes<T>(self.head), { values: List::Cons(w, more) }, { tail: next });
+                        let after = fold(nodes<T>(self.head), { values: List::Cons(w, more), tail: next });
                         have to_integer(old(self.len) - 1u64) == to_integer(old(self.len)) - to_integer(1u64);
                         have to_integer(old(self.len) - 1u64) == length(List::Cons(w, more)) by solve() using {
                             to_integer(old(self.len) - 1u64) == to_integer(old(self.len)) - 1;

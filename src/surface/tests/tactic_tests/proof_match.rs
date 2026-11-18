@@ -125,8 +125,8 @@ fn modeled_tree_rotate_left_checks_model_and_ownership() {
         ),
         // Fold the lower node with a wrong right child: the pivot's right
         // child, or the root's own left child.
-        source.replace("}, { right: m });", "}, { right: right });"),
-        source.replace("}, { right: m });", "}, { right: left });"),
+        source.replace("right: m,", "right: right,"),
+        source.replace("right: m,", "right: left,"),
         source.replace(
             "let rotated = fold(tree_at(result)",
             "let rotated = fold(tree_at(root)",
@@ -234,7 +234,7 @@ fn proof_match_closes_impossible_constructor_without_executing_c() {
         ),
         source.replace(
             "            fold(c);",
-            "            let c = fold(cell(p), { model: Maybe::None }, {});",
+            "            let c = fold(cell(p), { model: Maybe::None });",
         ),
         source.replace("have result == value", "have result == value + 1"),
     ] {
@@ -328,7 +328,7 @@ fn proof_match_checks_arbitrary_payload_and_rejects_invalid_arms() {
             "wrong fold model",
             SOURCE.replace(
                 "            fold(c);",
-                "            let c = fold(cell(p), { model: Maybe::None }, {});",
+                "            let c = fold(cell(p), { model: Maybe::None });",
             ),
         ),
         (

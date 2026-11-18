@@ -19,7 +19,7 @@ void remember(int32* p) {
     owns target: cell(p);
     ensures target.revision == old(target.revision);
 } by {
-    let record = fold(revision_record(p, target), { revision: target.revision }, { target: target });
+    let record = fold(revision_record(p, target), { revision: target.revision, target: target });
     let { target: target } = unfold(record);
 }
 ```

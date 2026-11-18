@@ -3656,7 +3656,9 @@ fn execute_verified_function_applications_with_suspension(
                 }),
                 _ => unreachable!("checked helper use"),
             };
-            let protocol_input = caller_state.clone().with_memory(post_state.memory.clone());
+            // The helper reads the post-call memory where it was made: at the
+            // post state's point, with the caller's ledgers.
+            let protocol_input = caller_state.clone().with_memory_of(&post_state);
             match super::mutexes::helper_contracts::apply_call_effect(
                 &protocol_input,
                 &helper.source,
@@ -4578,8 +4580,7 @@ fn execute_verified_function_applications_with_suspension(
                     &obligations,
                 );
                 apply_verified_heap_allocation_delta(
-                    post_state.memory.clone(),
-                    &entry_state.memory,
+                    &entry_state,
                     &transfer.callee_resources,
                     &caller_resources_after_requirements,
                     &output_resources,
@@ -9953,8 +9954,7 @@ fn preserved_heap_retirement_frontier<'a>(
 }
 
 fn apply_verified_heap_allocation_delta(
-    mut memory: SymbolicMemory,
-    entry_memory: &SymbolicMemory,
+    entry_state: &ExecutionState,
     input_resources: &ResourceContext,
     preserved_caller_resources: &ResourceContext,
     output_resources: &ResourceContext,
@@ -9964,6 +9964,7 @@ fn apply_verified_heap_allocation_delta(
     mutex_state: &ExecutionState,
     output_state: &ExecutionState,
 ) -> Result<VerifiedAllocationDelta, VerifiedAllocationDeltaError> {
+    let mut memory = output_state.memory.clone();
     let mut effects = Vec::new();
     let mut retired_allocations = Vec::new();
     let mut continued_tokens = Vec::new();
@@ -9972,13 +9973,14 @@ fn apply_verified_heap_allocation_delta(
     // resources owned, so an allocation named through it at the post state
     // is not the allocation the caller handed over.
     let expand_allocations =
-        |resources: &ResourceContext, state: &ExecutionState, memory: &SymbolicMemory| {
+        |resources: &ResourceContext, state: &ExecutionState, memory_of: &ExecutionState| {
             if !resources.has_folded_composites() {
                 return Some(resources.clone());
             }
+            // Read at the point the memory belongs to, with `state`'s ledgers.
             let projection_state = state
                 .clone()
-                .with_memory(memory.clone())
+                .with_memory_of(memory_of)
                 .with_resource_context(resources.clone());
             expand_all_composite_resource_facts_at_state(
                 resources,
@@ -9987,17 +9989,17 @@ fn apply_verified_heap_allocation_delta(
                 assumptions,
             )
         };
-    let input =
-        expand_allocations(input_resources, mutex_state, entry_memory).ok_or_else(|| {
-            VerifiedAllocationDeltaError::Runtime(RuntimeError::FunctionContract(
-                "could not inspect input allocation effects at call".to_string(),
-            ))
-        })?;
-    let output = expand_allocations(output_resources, output_state, &memory).ok_or_else(|| {
+    let input = expand_allocations(input_resources, mutex_state, entry_state).ok_or_else(|| {
         VerifiedAllocationDeltaError::Runtime(RuntimeError::FunctionContract(
-            "could not inspect output allocation effects at call".to_string(),
+            "could not inspect input allocation effects at call".to_string(),
         ))
     })?;
+    let output =
+        expand_allocations(output_resources, output_state, output_state).ok_or_else(|| {
+            VerifiedAllocationDeltaError::Runtime(RuntimeError::FunctionContract(
+                "could not inspect output allocation effects at call".to_string(),
+            ))
+        })?;
     let allocation_assumptions = input
         .observable_facts_assuming_valid(assumptions)
         .into_iter()
@@ -10027,7 +10029,7 @@ fn apply_verified_heap_allocation_delta(
         expand_allocations(
             frontier.as_ref().unwrap_or(preserved_caller_resources),
             mutex_state,
-            &memory,
+            output_state,
         )
         .ok_or_else(|| {
             VerifiedAllocationDeltaError::Runtime(RuntimeError::FunctionContract(
@@ -15043,51 +15045,6 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
     })
 }
 
-/// The named children of the body `instance` folds or unfolds into, as
-/// the arm the premises select for its model names them, without the
-/// children a resource argument supplies. This is a read-only query for
-/// the Surface, which completes a fold's child map with it; it selects the
-/// arm the way [`rewrite_resource_instance_selecting_children`] does and
-/// checks nothing. `None` when no arm is selected.
-pub(crate) fn selected_instance_child_names(
-    state: &ExecutionState,
-    instance: &ResourceInstance,
-    definition: &CompositeResourceDefinition,
-    definitions: &[CompositeResourceDefinition],
-    assumptions: &PureFactContext,
-) -> Option<Vec<String>> {
-    let children = if definition.matched.is_some() {
-        let arm = match selected_instance_match_arm(instance, definition, definitions, assumptions)
-        {
-            Ok((arm, _)) => arm,
-            Err(_) => {
-                let assumptions =
-                    instance_arm_model_facts(instance, definitions, state, assumptions)
-                        .into_iter()
-                        .fold(assumptions.clone(), PureFactContext::assume_proposition);
-                selected_instance_match_arm(instance, definition, definitions, &assumptions)
-                    .ok()?
-                    .0
-            }
-        };
-        arm.children.as_slice()
-    } else {
-        definition.children.as_slice()
-    };
-    let references = definition
-        .resource_parameters()
-        .iter()
-        .filter_map(|formal| formal.instance_identity())
-        .collect::<BTreeSet<_>>();
-    Some(
-        children
-            .iter()
-            .filter(|child| !references.contains(&child.binding))
-            .map(|child| child.name.clone())
-            .collect(),
-    )
-}
-
 fn rewrite_resource_instance_selecting_children_unspelled(
     state: &ExecutionState,
     instance: &ResourceInstance,
@@ -15278,7 +15235,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
             )
         } else {
             format!(
-                "fold of `{}` must supply its named child `{}` in its child map: `{{ {}: name }}`",
+                "fold of `{}` must supply its named child `{}` in its input map: `{{ {}: name }}`",
                 definition.name(),
                 child.name,
                 child.name

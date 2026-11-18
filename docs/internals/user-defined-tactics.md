@@ -50,7 +50,7 @@ tactic refold_to_root(focus: struct rb_node*, root: struct rb_root*) {
         Context::Left(identity, grandparent, color, sibling_model, up_model) => {
             ... derive rb_parent_is(t.model, identity) from parent consistency ...
             let { sibling: s, up: u } = unfold(c);
-            let sub = fold(rb_at(identity), { ... }, { left: t, right: s });
+            let sub = fold(rb_at(identity), { ..., left: t, right: s });
             ... establish the measure's descent ...
             let { whole: whole } = refold_to_root(identity, root, { c: u, t: sub });
         },
