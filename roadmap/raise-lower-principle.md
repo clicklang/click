@@ -1426,7 +1426,7 @@ terms/paths; quality passed. Full nightly was not run. This is
 [PR #3275](https://github.com/clicklang/click/pull/3275); all three pushed
 commits were verified upstream before the clean primary advanced through Git.
 
-### 10q2b2 Retained loadability-count production (in progress)
+### 10q2b2 Retained loadability-count production (landed)
 
 Range-to-loadability production retains machine bounds directly when either
 endpoint already has a common root. Native-only ranges retain the original
@@ -1440,7 +1440,14 @@ A native-constructor oracle checks both widths, four element widths, all
 native/shared input combinations, literal-format distinctions and additive
 base cancellation. The actual loadability producer is measured against growing
 shared endpoint DAGs without native export. All 45 focused checks and quality
-passed; the regular scaling and proof/fact-stability suites are running.
+passed. All 1,939 regular scaling cases and all 5,623 regular proof fixtures
+passed. Fact stability recorded 121 refusals and zero changed terms/paths;
+quality passed. Full nightly was not run.
+
+After integrating upstream `2ada6bd35`, all 1,143 affected function, execution,
+loadability and memory-reasoning checks passed, followed by quality. This landed
+in [PR #3276](https://github.com/clicklang/click/pull/3276); all four pushed
+commits were verified upstream before the clean primary advanced through Git.
 
 ### 10q3a Explicit native condition destructuring (in progress)
 
