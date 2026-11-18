@@ -1483,8 +1483,10 @@ the surrounding parentheses, so pointer-equality type evidence was discarded.
 The existing historical struct-pointer constructor test was red on this slice.
 Restoring the original Boolean grouping made it and all 62 selected pointer/field
 checks pass. The other split predicates were audited for the same issue.
-Broader regular unit, scaling, proof/fact-stability and quality validation is
-running again before publication. No proof rules or source proofs changed.
+All 6,735 regular unit/library checks then passed, including the full execution
+batches. All 1,939 regular scaling cases passed after the correction as well.
+Regular proof/fact-stability and quality validation is running again before
+publication. No proof rules or source proofs changed.
 
 The initial inventory considered named syntax children and missed anonymous
 wildcard truth markers. The corrected inventory records 47 further patterns
