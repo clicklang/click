@@ -281,7 +281,7 @@ impl TermRewrite<'_> {
         });
         let selected = |address: &A| matches!(address.node().base.native_atom(),AddressBase::Symbolic(v)|AddressBase::FunctionSymbolic(v) if *v == from);
         let replacement = (selected(&p.address) && p.provenance.syntax_equal(&base))
-            .then(|| V::import(&PointerValue::new(to.clone(), p.program_type)));
+            .then(|| V::import(&Pointer::new(to.clone(), p.program_type)));
         let target_identity = A::import(&to.object_identity());
         let provenance = if let Some(target) = &replacement {
             target.node().provenance.clone()

@@ -1490,7 +1490,7 @@ fn abstract_read_congruence_scales_with_selected_reads() {
     let read = |pointer: Address| AlgebraicTerm {
         algebraic_type: parameter.algebraic_type(),
         node: AlgebraicTermNode::MemoryLoad {
-            memory: memory.clone(),
+            point: crate::kernel::ProgramPoint::at(&memory.clone()),
             pointer: Box::new(pointer),
         },
     };
@@ -1564,7 +1564,7 @@ fn abstract_read_origin_lookup_ignores_unrelated_definitions() {
         let observed = AlgebraicTerm {
             algebraic_type: parameter.algebraic_type(),
             node: AlgebraicTermNode::MemoryLoad {
-                memory: source,
+                point: crate::kernel::ProgramPoint::at(&source),
                 pointer: Box::new(address),
             },
         };

@@ -1,7 +1,7 @@
 use super::*;
 
-fn opaque(id: u64) -> PointerValue {
-    PointerValue::new(Address::symbolic(Variable(id)), ProgramType::Int32Pointer)
+fn opaque(id: u64) -> Pointer {
+    Pointer::new(Address::symbolic(Variable(id)), ProgramType::Int32Pointer)
 }
 
 /// The witness arrives after the entire related class has been built. Each
@@ -14,7 +14,7 @@ fn pointer_domain_queries_read_cached_classes_without_alias_discovery() {
             let _session = crate::kernel::VerificationSession::enter();
             let root = opaque(998_000);
             let selected = root.clone().with_bounds(Some(SubobjectBounds {
-                start: root.pointer().clone(),
+                start: root.address().clone(),
                 width: 4u32.into(),
             }));
             let mut facts = PureFactContext::new();
@@ -81,7 +81,7 @@ fn pointer_domain_queries_read_cached_classes_without_alias_discovery() {
                 ExpressionOutcome::Value(ProgramValue::Pointer(
                     first
                         .clone()
-                        .with_address(first.pointer().offset_by_bytes(4))
+                        .with_address(first.address().offset_by_bytes(4))
                 ))
             );
             assert!(
@@ -114,7 +114,7 @@ fn an_unregistered_pointer_domain_does_not_recover_memory_history() {
         }
         let memory = crate::kernel::intern_memory(memory);
         let cell = Address::symbolic(Variable(1_001_000));
-        let read = PointerValue::from_read(
+        let read = Pointer::from_read(
             Address::loaded_value(&memory, &cell),
             ProgramType::Int32Pointer,
             &memory,

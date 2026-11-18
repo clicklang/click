@@ -812,7 +812,7 @@ pub(in crate::kernel) fn cast_tagged_address_to_pointer(
     assumptions: &PureFactContext,
     obligations: &mut Vec<ProofObligation>,
     target_type: ProgramType,
-) -> Result<Option<PointerValue>, String> {
+) -> Result<Option<Pointer>, String> {
     let mut used = UsedFacts::new();
     let form = match form_of(
         MachineOperandView::Legacy(term),
@@ -832,8 +832,7 @@ pub(in crate::kernel) fn cast_tagged_address_to_pointer(
     );
     match assumptions.decide(&tag_is_zero) {
         Some(true) => Ok(Some(
-            PointerValue::new(form.pointer, target_type)
-                .with_declared_object_class(form.object_class),
+            Pointer::new(form.pointer, target_type).with_declared_object_class(form.object_class),
         )),
         Some(false) => Err(
             "integer-to-pointer cast of a tagged address requires the tag bits proven zero; \
@@ -854,7 +853,7 @@ pub(in crate::kernel) fn cast_tagged_address_to_pointer(
                 return Err(format!("{context}; they are refuted"));
             }
             Ok(Some(
-                PointerValue::new(form.pointer, target_type)
+                Pointer::new(form.pointer, target_type)
                     .with_declared_object_class(form.object_class),
             ))
         }
@@ -1137,7 +1136,7 @@ mod exact_word_address_tests {
         let mut obligations = Vec::new();
         let encoded = cast_program_value_to_type(
             ProgramValue::Pointer(
-                PointerValue::new(pointer.clone(), ProgramType::Int32Pointer)
+                Pointer::new(pointer.clone(), ProgramType::Int32Pointer)
                     .with_object_class(Some(class.clone())),
             ),
             ProgramType::UInt64,
@@ -1180,7 +1179,7 @@ mod exact_word_address_tests {
             )
             .unwrap()
             .unwrap();
-            assert_eq!(decoded.pointer(), &pointer);
+            assert_eq!(decoded.address(), &pointer);
             assert_eq!(decoded.object_class(), Some(class.clone()));
             assert_eq!(decoded.program_type(), ProgramType::Float64Pointer);
         }
@@ -1228,7 +1227,7 @@ mod exact_word_address_tests {
         )
         .unwrap()
         .unwrap();
-        assert_eq!(decoded.pointer(), &pointer);
+        assert_eq!(decoded.address(), &pointer);
         assert_eq!(decoded.object_class(), Some(class));
         for context in [parent, branch.restricted_to_facts(&[], &[])] {
             assert!(

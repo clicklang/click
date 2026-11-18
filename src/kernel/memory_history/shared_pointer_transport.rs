@@ -318,7 +318,7 @@ mod tests {
             .memory()
             .clone()
             .store(other, ProgramValue::Int32(MachineTerm::constant(3)));
-        let source = PointerValue::new(
+        let source = Pointer::new(
             Address::symbolic(Variable(1007010)),
             ProgramType::VoidPointer,
         )
@@ -363,7 +363,7 @@ mod tests {
                 Box::new(AddressOffset::Constant(0)),
             ),
         ] {
-            let source = PointerValue::new(
+            let source = Pointer::new(
                 Address {
                     base: base.base.clone(),
                     offset,
@@ -372,7 +372,7 @@ mod tests {
             )
             .with_provenance(loaded.clone())
             .with_bounds_owner(Some(loaded.clone()));
-            assert!(source.pointer().integer_address_bits().is_none());
+            assert!(source.address().integer_address_bits().is_none());
             let shared = SharedPointerValue::import(&source);
             let expected = transport_framed_atomic_pointer_value(&source, &after, None)
                 .expect("ordinary origin requires no new complete-word evidence");
@@ -391,7 +391,7 @@ mod tests {
             .clone()
             .store(other, ProgramValue::Int32(MachineTerm::constant(3)));
         let loaded = Arc::new(Address::loaded_value(&before, &field));
-        let source = PointerValue::new(
+        let source = Pointer::new(
             Address::integer_address(MachineTerm::MemoryLoad(
                 ProgramPoint::at(&before),
                 Box::new(field.clone()),

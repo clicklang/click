@@ -734,7 +734,7 @@ fn checked_member_events_exchange_private_memory_and_reject_duplicate_birth() {
         unreachable!()
     };
     let memory = ResourceFact::own_memory(MemoryRange::new(
-        pointer.pointer().clone(),
+        pointer.address().clone(),
         MachineTerm::constant(0),
         MachineTerm::constant(1),
     ));

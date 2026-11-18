@@ -129,7 +129,7 @@ fn sample(unrelated: usize, quantities: usize) -> usize {
 fn composite_read_projection_requires_positive_ownership() {
     let (state, _, definitions) = fixture(0, 1);
     let pointer = match state.locals.get_native("pool").as_deref().unwrap() {
-        ProgramValue::Pointer(value) => value.pointer().clone(),
+        ProgramValue::Pointer(value) => value.address().clone(),
         _ => unreachable!(),
     };
     let target = ResourceFact::view_memory(MemoryRange::new(

@@ -152,7 +152,7 @@ fn pointer_read_rewrite_preserves_value_state_and_scales() {
             else {
                 panic!("typed pointer read");
             };
-            value.pointer().clone()
+            value.address().clone()
         };
         let original = read(&memory, &address);
         let leaf = Address::symbolic(Variable(211_003));
@@ -612,8 +612,8 @@ fn pointer_rewrite_enters_scalar_calls_and_preserves_scope_and_states() {
     let target = Address::symbolic(Variable(921));
     let cited = Proposition::ConditionIs(
         ConditionTerm::PointerValueEqual(
-            Box::new(PointerValue::new(source.clone(), ProgramType::Int32Pointer)),
-            Box::new(PointerValue::new(target.clone(), ProgramType::Int32Pointer)),
+            Box::new(Pointer::new(source.clone(), ProgramType::Int32Pointer)),
+            Box::new(Pointer::new(target.clone(), ProgramType::Int32Pointer)),
         ),
         true,
     );

@@ -4090,7 +4090,7 @@ impl RecordedStates {
                     ProgramValue::Pointer(pointer) => {
                         Self::remove_read_event_name(
                             &mut self.read_event_pointer_names,
-                            pointer.pointer(),
+                            pointer.address(),
                             key,
                         );
                     }
@@ -4111,7 +4111,7 @@ impl RecordedStates {
                 ProgramValue::Pointer(pointer) => {
                     Self::add_read_event_name(
                         &mut self.read_event_pointer_names,
-                        pointer.pointer(),
+                        pointer.address(),
                         key,
                     );
                 }
@@ -4386,9 +4386,9 @@ impl RecordedStates {
             .call_results
             .get(&index)
             .map(RetainedProgramValue::native_compat)
-            && self.pointer_call_results.get(pointer.pointer()) == Some(&index)
+            && self.pointer_call_results.get(pointer.address()) == Some(&index)
         {
-            self.pointer_call_results.remove(pointer.pointer());
+            self.pointer_call_results.remove(pointer.address());
         }
         self.call_results.remove(&index);
         if let Some(value) = value.filter(|value| value.native_compat() != &ProgramValue::Void) {
@@ -4408,10 +4408,10 @@ impl RecordedStates {
             }
             // So does the first call to return a pointer.
             if let ProgramValue::Pointer(pointer) = native
-                && self.pointer_call_results.get(pointer.pointer()).is_none()
+                && self.pointer_call_results.get(pointer.address()).is_none()
             {
                 self.pointer_call_results
-                    .insert(pointer.pointer().clone(), index);
+                    .insert(pointer.address().clone(), index);
             }
             self.call_results.insert(index, value);
         }
@@ -4545,7 +4545,7 @@ impl RecordedStates {
     ) -> Option<CodeRegionRef> {
         crate::instrumentation::record_deterministic_work(1);
         let index = *self.pointer_call_results.get(pointer)?;
-        matches!(self.call_result_native(&index), Some(ProgramValue::Pointer(held)) if held.pointer() == pointer)
+        matches!(self.call_result_native(&index), Some(ProgramValue::Pointer(held)) if held.address() == pointer)
             .then_some(CodeRegionRef::Region(index))
     }
 
@@ -4869,7 +4869,7 @@ impl RecordedStates {
             state
                 .memory()
                 .fresh_allocation_identity(value)
-                .map(|value| value.pointer().clone())
+                .map(|value| value.address().clone())
         };
         let region = CodeRegionRef::Region(*index);
         if let Some(old) = prior.and_then(result)
@@ -7607,7 +7607,7 @@ impl ParameterNaming {
                 BTreeMap::new(),
                 |mut sources, (index, argument)| {
                     if let ProgramExpression::Value(ProgramValue::Pointer(pointer)) = argument {
-                        sources.entry(pointer.pointer().clone()).or_insert(index);
+                        sources.entry(pointer.address().clone()).or_insert(index);
                     }
                     sources
                 },
@@ -7694,7 +7694,7 @@ impl<'a> SpecDefinitions<'a> {
         self
     }
 
-    fn pointer_element_width(&self, pointer: &crate::kernel::PointerValue) -> Result<u32, String> {
+    fn pointer_element_width(&self, pointer: &crate::kernel::Pointer) -> Result<u32, String> {
         if let Some(crate::kernel::effective_type::CAccessClass::Struct(class)) =
             pointer.object_class()
         {

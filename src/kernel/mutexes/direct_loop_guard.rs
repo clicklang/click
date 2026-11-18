@@ -154,7 +154,7 @@ fn source_mutex(
         Ok(_) => return Err("conditional loop guard requires a mutex pointer".into()),
         Err(message) => return Err(message.into()),
     };
-    Ok(pointer.pointer().clone())
+    Ok(pointer.address().clone())
 }
 
 fn missing_guard(spec: &ResourceSpec) -> String {

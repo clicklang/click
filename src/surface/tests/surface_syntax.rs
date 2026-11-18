@@ -4347,7 +4347,7 @@ fn a_missing_memory_fact_is_reported_as_a_place() {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_30")]
 fn memory_ranges_use_fields_or_correctly_scaled_source_elements() {
     use crate::kernel::{
-        Address, AddressBase, AddressOffset, MachineTerm, MemoryRange, PointerValue, ProgramType,
+        Address, AddressBase, AddressOffset, MachineTerm, MemoryRange, Pointer, ProgramType,
     };
     let c_source = "struct cell { int32 a; int32 b; int32 c; }; struct outer { int32 head; struct cell inner; int32 tail; }; int32 read(struct outer* p) { return p->tail; }";
     let functions = syntax::parse_functions(c_source).unwrap();
@@ -4357,7 +4357,7 @@ fn memory_ranges_use_fields_or_correctly_scaled_source_elements() {
         offset: AddressOffset::Constant(0),
     };
     let arguments = [ProgramExpression::Value(ProgramValue::Pointer(
-        PointerValue::new(base.clone(), ProgramType::Int32Pointer),
+        Pointer::new(base.clone(), ProgramType::Int32Pointer),
     ))];
     for (low, high, width, expected) in [
         (0, 2, 4, "{p->head, p->inner.a}"),

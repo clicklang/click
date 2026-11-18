@@ -812,7 +812,7 @@ pub(super) fn aggregate_argument_read_refusal(
             continue;
         };
         if let Some(refusal) = crate::kernel::eval::subobject_access_refusal(
-            source.pointer(),
+            source.address(),
             source,
             layout.size_bytes(),
             &ExecutionFacts::new(),
@@ -835,7 +835,7 @@ pub(super) fn aggregate_argument_read_refusal(
                 },
             ));
         }
-        if aggregate_copy_reads_uninitialized(&state.memory, source.pointer(), layout) {
+        if aggregate_copy_reads_uninitialized(&state.memory, source.address(), layout) {
             return Some(FunctionOutcome::UndefinedBehavior(
                 UndefinedBehavior::UninitializedRead,
             ));
