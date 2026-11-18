@@ -10465,6 +10465,7 @@ impl ExecutionPureFact {
                 value,
                 authorized_range,
                 source: Default::default(),
+                source_address: None,
             })),
             transport: None,
             generated_load_binding: None,
@@ -10498,6 +10499,7 @@ impl ExecutionPureFact {
             self.reference_observation = Default::default();
             if let Some(store) = &mut self.certified_store {
                 store.source = Default::default();
+                store.source_address = None;
             }
         }
         self.proposition = std::sync::Arc::new(proposition);
@@ -10579,6 +10581,10 @@ impl ExecutionPureFact {
 
     pub(crate) fn certified_store_equation(&self) -> Option<&std::sync::Arc<Proposition>> {
         self.certified_store_data()?.value_equation.as_ref()
+    }
+
+    pub(crate) fn certified_store_source_address(&self) -> Option<&Address> {
+        self.certified_store_data()?.source_address.as_ref()
     }
 
     pub(super) fn certified_store_data(&self) -> Option<&CertifiedMemoryStore> {

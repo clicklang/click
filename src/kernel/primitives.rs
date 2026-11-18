@@ -1059,6 +1059,17 @@ pub enum AddressOffset {
 }
 
 impl AddressOffset {
+    /// A small address index can carry arbitrarily deep *retained* operands.
+    /// Its offset structure itself must stay bounded for source publication.
+    pub(crate) fn is_shallow(&self) -> bool {
+        match self {
+            Self::Add(left, right) => {
+                !matches!(**left, Self::Add(..)) && !matches!(**right, Self::Add(..))
+            }
+            _ => true,
+        }
+    }
+
     /// Preserve the written index node, including a zero scale; the smart
     /// `scale_int32` constructor may separately fold literal displacements.
     pub(crate) fn scaled_int32_node(value: MachineTerm, byte_width: i64) -> Self {
@@ -15163,6 +15174,8 @@ pub(super) struct CertifiedMemoryStore {
     pub(super) authorized_range: Option<MemoryRange>,
     pub(super) source: super::StatementStoreSource,
     pub(super) value_equation: Option<Arc<Proposition>>,
+    /// Evaluated lvalue coordinates, before ownership may rebase the write.
+    pub(super) source_address: Option<Address>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
