@@ -13077,7 +13077,7 @@ fn evaluate_contract_return_resource_context(
         let mut views = opened_composite_read_views(
             entry_state.resources(),
             interface.composite_resource_definitions(),
-            entry_state.memory(),
+            &entry_state.program_point(),
             assumptions,
         );
         // A folded field-bearing instance the contract's own clauses checked
@@ -13490,14 +13490,14 @@ fn evaluate_contract_return_resource_context(
 }
 
 /// The memory a context's owned composites hold, opened through their
-/// definitions over `memory`, as read views: the authority a clause set
+/// definitions at `at`, as read views: the authority a clause set
 /// gives to the addresses its own dependent clauses load, offered to an
 /// evaluation that reads the entry the way the entry itself did. Nothing is
 /// owned twice; a view grants a read and no more.
 fn opened_composite_read_views(
     resources: &ResourceContext,
     definitions: &[CompositeResourceDefinition],
-    memory: &SymbolicMemory,
+    at: &ProgramPoint,
     assumptions: &PureFactContext,
 ) -> Vec<ResourceFact> {
     if !resources
@@ -13507,12 +13507,8 @@ fn opened_composite_read_views(
     {
         return Vec::new();
     }
-    let Some(opened) = expand_all_composite_resource_facts(
-        resources,
-        definitions,
-        &crate::kernel::ProgramPoint::of_memory(memory),
-        assumptions,
-    ) else {
+    let Some(opened) = expand_all_composite_resource_facts(resources, definitions, at, assumptions)
+    else {
         return Vec::new();
     };
     opened
@@ -17127,12 +17123,11 @@ fn consume_resource_fact_definitionally(
     at: &ProgramPoint,
     assumptions: &PureFactContext,
 ) -> Option<ResourceContext> {
-    let memory = at.memory();
     fn consume(
         available: &ResourceContext,
         required: &ResourceFact,
         definitions: &[CompositeResourceDefinition],
-        memory: &SymbolicMemory,
+        at: &ProgramPoint,
         assumptions: &PureFactContext,
         seen: &mut BTreeSet<(ResourceContext, ResourceFact)>,
     ) -> Option<ResourceContext> {
@@ -17143,7 +17138,7 @@ fn consume_resource_fact_definitionally(
         // satisfiable: read access is represented by the materialized cells,
         // mirroring the local-block view rule at call transfer.
         if let ResourceFact::View(Resource::Memory(range)) = required
-            && view_range_concretely_loadable(memory, range)
+            && view_range_concretely_loadable(at.memory(), range)
         {
             return Some(available.clone());
         }
@@ -17184,7 +17179,7 @@ fn consume_resource_fact_definitionally(
                     &required_context,
                     required,
                     definitions,
-                    &crate::kernel::ProgramPoint::of_memory(memory),
+                    at,
                     assumptions,
                 )
             },
@@ -17195,7 +17190,7 @@ fn consume_resource_fact_definitionally(
             if !assembled_composite_body_facts_hold(
                 required,
                 definitions,
-                &crate::kernel::ProgramPoint::of_memory(memory),
+                at,
                 available,
                 assumptions,
             ) {
@@ -17203,7 +17198,7 @@ fn consume_resource_fact_definitionally(
             }
             let mut remaining = available.clone();
             for child in expanded_required.facts() {
-                remaining = consume(&remaining, child, definitions, memory, assumptions, seen)?;
+                remaining = consume(&remaining, child, definitions, at, assumptions, seen)?;
             }
             return Some(remaining);
         }
@@ -17222,7 +17217,7 @@ fn consume_resource_fact_definitionally(
                         available,
                         composite,
                         definitions,
-                        &crate::kernel::ProgramPoint::of_memory(memory),
+                        at,
                         assumptions,
                     )
                 },
@@ -17233,7 +17228,7 @@ fn consume_resource_fact_definitionally(
                 &expanded_available,
                 required,
                 definitions,
-                memory,
+                at,
                 assumptions,
                 seen,
             ) {
@@ -17247,7 +17242,7 @@ fn consume_resource_fact_definitionally(
         available,
         required,
         definitions,
-        memory,
+        at,
         assumptions,
         &mut BTreeSet::new(),
     )
