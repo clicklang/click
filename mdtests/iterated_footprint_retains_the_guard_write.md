@@ -21,7 +21,7 @@ void claim(int32 *data, int32 *occupied, int32 **kept) {
 } by {
     unfold(available(data, occupied));
     have separate(memory(occupied[0]), memory(kept[0]));
-    take(data[0..1]);
+    unfold(available(data, occupied)[0]);
     mark before;
     step();
     have separate(statement(0).footprint, memory(occupied[0])) by {

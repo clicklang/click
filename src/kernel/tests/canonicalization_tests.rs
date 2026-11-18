@@ -85,7 +85,7 @@ fn collect_offset_load_variables_from_term(
     match term {
         MachineTerm::ThreadHandle(_) => {}
         MachineTerm::Constant { .. } | MachineTerm::Variable(_) => {}
-        MachineTerm::MemoryLoad(_, pointer, _) | MachineTerm::PointerAddress(pointer, _) => {
+        MachineTerm::MemoryLoad(_, pointer, _) | MachineTerm::IntegerAddress(pointer, _) => {
             collect_offset_load_variables_from_offset(&pointer.offset, load_variables);
         }
         crate::kernel::binary_bitvector32_term!(left, right) => {
@@ -168,7 +168,7 @@ fn assert_scaled_index_free_of_raw_loads(
         MachineTerm::MemoryLoad(_, _, _) => {
             panic!("production pointer offset contains a raw memory load: {term:?}")
         }
-        MachineTerm::PointerAddress(pointer, _) => {
+        MachineTerm::IntegerAddress(pointer, _) => {
             for value in pointer.offset.native_scaled_values_for_output() {
                 assert_scaled_index_free_of_raw_loads(value, load_variables);
             }
@@ -229,11 +229,7 @@ fn assert_load_variables_have_defining_facts(
     for load_variable in load_variables {
         let defined = facts.fact_iter().any(|fact| {
             crate::kernel::is_load_variable_defining_fact(&fact.proposition)
-                && matches!(
-                    fact.proposition(),
-                    Proposition::ConditionIs(ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::Equal, left, right: _ }, true)
-                        if matches!(left.as_ref(), MachineTerm::Variable(variable) if variable == load_variable)
-                )
+                && matches!(&fact.proposition(), condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::Equal, left, right: _ }, _)) if (matches!(left.as_ref(), MachineTerm::Variable(variable) if variable == load_variable))))
         });
         assert!(
             defined,
@@ -337,7 +333,7 @@ fn pointer_loaded_from_an_opaque_cell_is_named_by_its_read() {
         collect_offset_load_variables_from_value(&value.native(), &mut load_variables);
         assert_load_variables_have_defining_facts(&load_variables, &path.execution_facts());
         if let ProgramValue::Pointer(pointer) = value.clone().into_native()
-            && let Some(read) = pointer.pointer().as_loaded_value()
+            && let Some(read) = pointer.address().as_loaded_value()
         {
             assert_eq!(read.defining_address, cell);
             assert_eq!(read.displacement, AddressOffset::Constant(0));
@@ -543,7 +539,7 @@ fn canonical_term_is_independent_of_contextual_equalities() {
     );
 
     let equals = |value| {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::equal(term.clone(), MachineTerm::constant(value)),
             true,
         )
@@ -635,7 +631,7 @@ fn atomic_canonicalization_reaches_loads_in_every_condition_region() {
         else_term: Box::new(MachineTerm::constant(3)),
     };
     let pointer_offset = MachineTerm::If {
-        condition: Box::new(ConditionTerm::PointerOffsetEqual(
+        condition: Box::new(ConditionTerm::AddressOffsetEqual(
             Box::new(AddressOffset::scaled_int32_node(load.clone(), 4)),
             Box::new(AddressOffset::Constant(28)),
         )),
@@ -659,7 +655,7 @@ fn atomic_canonicalization_reaches_loads_in_every_condition_region() {
     };
     assert!(matches!(
         condition.as_ref(),
-        ConditionTerm::PointerOffsetEqual(left, _)
+        ConditionTerm::AddressOffsetEqual(left, _)
             if left.as_ref() == &AddressOffset::scaled_int32_node(load.clone(), 4)
     ));
 }
@@ -703,7 +699,7 @@ fn representational_load_equality_holds_beyond_the_former_depth_preflight() {
     );
     assert!(crate::kernel::search::ProofSearch::proves(
         &(PureFactContext::new()),
-        &Proposition::ConditionIs(
+        &Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -842,7 +838,7 @@ fn load_variables_are_congruent_through_ground_index_equalities() {
     assert!(
         !with_index_fact.int32_values_known_equal(&indexed_load_variable, &first_load_variable)
     );
-    let goal = Proposition::ConditionIs(
+    let goal = Proposition::condition_is(
         ConditionTerm::equal(indexed_load_variable.clone(), first_load_variable.clone()),
         true,
     );
@@ -879,7 +875,7 @@ fn load_variables_are_congruent_through_ground_index_equalities() {
         }),
         crate::kernel::LoadKind::Int32,
     ));
-    let other_epoch_goal = Proposition::ConditionIs(
+    let other_epoch_goal = Proposition::condition_is(
         ConditionTerm::equal(indexed_load_variable.clone(), other_epoch_load),
         true,
     );
@@ -899,7 +895,7 @@ fn load_variables_are_congruent_through_ground_index_equalities() {
         }),
         crate::kernel::LoadKind::Int32,
     ));
-    let other_block_goal = Proposition::ConditionIs(
+    let other_block_goal = Proposition::condition_is(
         ConditionTerm::equal(indexed_load_variable, other_block_load),
         true,
     );
@@ -1190,7 +1186,7 @@ fn variable_substitution_visits_each_state_once_per_rewrite() {
     let mut rewrites = Vec::new();
     let mut totals = Vec::new();
     for depth in [2, 4, 8, 16] {
-        let goal = Proposition::ConditionIs(
+        let goal = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,

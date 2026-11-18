@@ -9,7 +9,7 @@ impl KernelTerm {
     ) -> Self {
         Self::intern(
             KernelType::Program(format.program_type()),
-            KernelTermNode::PointerAddress {
+            KernelTermNode::IntegerAddress {
                 address,
                 object_class: object_class.class(),
             },
@@ -28,12 +28,12 @@ mod tests {
         let mut roots = Vec::new();
         for class in [CScalarClass::Int, CScalarClass::Char] {
             let expected = Some(CAccessClass::Scalar(class));
-            let native = MachineTerm::PointerAddress(
+            let native = MachineTerm::IntegerAddress(
                 Box::new(address.clone()),
                 AddressObjectClass::new(expected.clone()),
             );
             let root = KernelTermImport::default().machine(MachineIntegerType::UInt64, &native);
-            let MachineTerm::PointerAddress(_, actual) = KernelTermExport::machine(&root).unwrap()
+            let MachineTerm::IntegerAddress(_, actual) = KernelTermExport::machine(&root).unwrap()
             else {
                 panic!("address");
             };

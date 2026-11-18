@@ -61,7 +61,7 @@ Address { base, offset }
 ```
 
 These coordinates describe the raw address. A complete C pointer separately
-carries its provenance and selected subobject bounds. Numeric address equality
+carries its provenance and selected subobject bounds. Integer address equality
 does not equate those bounds. C pointer arithmetic is scaled by the pointee
 type: `int32*` adds four bytes per element, while `uint8*` adds one byte per
 element.
@@ -83,7 +83,7 @@ including its bounds. An explicit conversion from a non-character pointer to
 a character pointer, or any explicit cast to `void*`, selects the enclosing
 object's view.
 
-C pointer comparisons state only numeric address equality. Equal addresses do
+C pointer comparisons state only integer address equality. Equal addresses do
 not make equal pointer values or transfer bounds: one object's one-past address
 can coincide with another object's first element. Comparison with null is exact;
 null converts to integer zero, and a 64-bit word proven zero converts to the
@@ -381,7 +381,7 @@ resources' arguments, and the body a later `fold` requires then all name the
 one address as the program writes it. Only an assumed pointer equality
 between two blocks does this, read from the index those facts are filed in: a
 disequality or a disjunction is not an alias, an equality inside one block is a
-`PointerOffsetEqual` that cannot exchange a block at all, and the exchange
+`AddressOffsetEqual` that cannot exchange a block at all, and the exchange
 never moves an offset. See
 [resources](resources.md) for the rule as it appears at `unfold` and `fold`,
 `mdtests/binding_cell_read_through_equal_local.md` for the reduction with its

@@ -14,7 +14,7 @@ fn native_observation_queries_use_the_selected_fact_index() {
             );
         }
         let (known, work) = crate::persistent::measure_persistent_work(|| {
-            context.contains_known(&Proposition::ConditionIs(condition, false))
+            context.contains_known(&Proposition::condition_is(condition, false))
         });
         assert!(known);
         work
@@ -93,10 +93,10 @@ fn filing_a_quantified_integer_antecedent_visits_only_its_own_bounds() {
         let context =
             context.assume_condition(ConditionTerm::IntegerLessEqual(sum, uint64_max()), true);
         let (context, work) = crate::persistent::measure_persistent_work(|| {
-            context.assume_proposition(quantified_over_k(Proposition::ConditionIs(reading, true)))
+            context.assume_proposition(quantified_over_k(Proposition::condition_is(reading, true)))
         });
         assert!(
-            context.contains_known(&quantified_over_k(Proposition::ConditionIs(native, truth)))
+            context.contains_known(&quantified_over_k(Proposition::condition_is(native, truth)))
         );
         work
     });
@@ -245,7 +245,7 @@ fn ordinary_comparison_admission_retains_shared_operands(ty: MachineIntegerType)
             } else {
                 ConditionTerm::IntegerLessEqual(observed, constant)
             };
-            let source = Proposition::ConditionIs(condition, true);
+            let source = Proposition::condition_is(condition, true);
             let facts = PureFactContext::new().assume_proposition(source.clone());
             assert!(
                 !operand.has_boxed_operand(),
@@ -436,10 +436,10 @@ fn operation_and_quantified_bridges_retain_shared_operands() {
         let bounded = PureFactContext::new()
             .assume_condition(ConditionTerm::IntegerLessEqual(sum, uint64_max()), true);
         let facts = bounded.clone().assume_condition(source.clone(), true);
-        assert!(facts.contains_known(&Proposition::ConditionIs(reading.clone(), true)));
+        assert!(facts.contains_known(&Proposition::condition_is(reading.clone(), true)));
         let facts =
-            bounded.assume_proposition(quantified_over_k(Proposition::ConditionIs(source, true)));
-        assert!(facts.contains_known(&quantified_over_k(Proposition::ConditionIs(reading, true))));
+            bounded.assume_proposition(quantified_over_k(Proposition::condition_is(source, true)));
+        assert!(facts.contains_known(&quantified_over_k(Proposition::condition_is(reading, true))));
         // Key both the original Integer source and its shared consequence.
         facts.build_stated_proposition_index();
         assert!(!operand.has_boxed_operand(), "size={size}");
@@ -490,7 +490,7 @@ fn shared_bound_source_selection_uses_existing_index_across_branches() {
         let _session = crate::kernel::VerificationSession::enter();
         let term = MachineTerm::add(word(189141), word(189142));
         let zero = MachineTerm::constant(0);
-        let source = Proposition::ConditionIs(
+        let source = Proposition::condition_is(
             ConditionTerm::signed_less_equal(zero.clone(), term.clone()),
             true,
         );
@@ -534,7 +534,7 @@ fn shared_bound_source_selection_uses_existing_index_across_branches() {
                 None
             );
             let (_, used) = collect_consulted_premises(|| {
-                record_consulted_premises(&parent, &Proposition::ConditionIs(goal.clone(), true));
+                record_consulted_premises(&parent, &Proposition::condition_is(goal.clone(), true));
             });
             assert_eq!(used, vec![source.clone()]);
         });

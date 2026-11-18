@@ -133,10 +133,10 @@ fn fixture() -> (
             ),
             true,
         )
-        .assume_condition(ConditionTerm::pointer_equal(slot, middle.clone()), true);
+        .assume_condition(ConditionTerm::address_equal(slot, middle.clone()), true);
     let branch = sibling
         .clone()
-        .assume_condition(ConditionTerm::pointer_equal(middle, alias), true);
+        .assume_condition(ConditionTerm::address_equal(middle, alias), true);
     (head, definition, memory, branch, sibling)
 }
 

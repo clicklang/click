@@ -153,7 +153,7 @@ fn integer_existential_scopes_definedness_with_its_witness() {
     assert!(
         contains(
             body,
-            &Proposition::ConditionIs(
+            &Proposition::condition_is(
                 ConditionTerm::IntegerEqual(
                     IntegerTerm::var(witness).into(),
                     IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
@@ -208,7 +208,7 @@ fn from_machine_keeps_signed_and_unsigned_values_distinct() {
 #[test]
 fn bitvector_substitution_reaches_machine_integer_proposition() {
     let variable = Variable(47);
-    let proposition = Proposition::ConditionIs(
+    let proposition = Proposition::condition_is(
         ConditionTerm::integer_equal(
             IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                 MachineIntegerType::Int32,
@@ -230,7 +230,7 @@ fn bitvector_substitution_reaches_machine_integer_proposition() {
     // too, by the Integer equality's own smart constructor.
     assert_eq!(
         substituted,
-        Proposition::ConditionIs(ConditionTerm::Constant(true), true)
+        Proposition::condition_is(ConditionTerm::Constant(true), true)
     );
 
     let expression = SpecIntegerExpression::FromMachine(Box::new(SpecExpression::Value(
@@ -267,7 +267,7 @@ fn integer_fold_loadable_obligation_keeps_carriers_separate() {
             base: AddressBase::Concrete("array".into()),
             offset: AddressOffset::scaled_int32_node(integer_address, 4),
         },
-        bytes: MachineTerm::constant(4),
+        bytes: (MachineTerm::constant(4)).into(),
         wide: false,
     };
     let wrapped = integer_range_fold_body_obligation(
@@ -301,7 +301,7 @@ fn integer_fold_loadable_obligation_keeps_carriers_separate() {
             base: AddressBase::Concrete("array".into()),
             offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(shared_id), 4),
         },
-        bytes: MachineTerm::constant(4),
+        bytes: (MachineTerm::constant(4)).into(),
         wide: false,
     };
     let wrapped =
@@ -343,7 +343,7 @@ fn integer_fold_loadable_obligation_sees_integer_in_registered_pointer() {
             base: AddressBase::Concrete("array".into()),
             offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(load), 4),
         },
-        bytes: MachineTerm::constant(4),
+        bytes: (MachineTerm::constant(4)).into(),
         wide: false,
     };
     let index: IntegerFoldIndexResult = IntegerRangeFoldIndex::Int32 {
@@ -367,7 +367,7 @@ fn integer_fold_loadable_obligation_sees_integer_in_registered_pointer() {
             base: AddressBase::Concrete("array".into()),
             offset: AddressOffset::Variable(load),
         },
-        bytes: MachineTerm::constant(4),
+        bytes: (MachineTerm::constant(4)).into(),
         wide: false,
     };
     let direct_wrapped =
@@ -418,7 +418,7 @@ fn integer_fold_loadable_obligation_keeps_accumulator_for_two_hop_direct_offset(
             base: AddressBase::Concrete("array".into()),
             offset: AddressOffset::Variable(outer),
         },
-        bytes: MachineTerm::constant(4),
+        bytes: (MachineTerm::constant(4)).into(),
         wide: false,
     };
     let index: IntegerFoldIndexResult = IntegerRangeFoldIndex::Int32 {
@@ -452,7 +452,7 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
     let (registered_memory, registered_pointer) =
         crate::kernel::eval::registered_load_for_variable(&load)
             .expect("the load variable must retain its exact descriptor");
-    let defining = Proposition::ConditionIs(
+    let defining = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -468,7 +468,7 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
     let loadable = Proposition::MemoryLoadable {
         memory: registered_memory.as_ref().clone(),
         base: registered_pointer.clone(),
-        bytes: MachineTerm::constant(4),
+        bytes: (MachineTerm::constant(4)).into(),
         wide: false,
     };
     let exact = drop_verified_load_definition_conjuncts(Proposition::And(
@@ -483,7 +483,7 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
         .expect("a guarded definition must remain a guarded obligation");
     assert_eq!(retained_guard, guarded);
 
-    let tampered_pointer = Proposition::ConditionIs(
+    let tampered_pointer = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -508,7 +508,7 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
 
     let tampered_memory =
         crate::kernel::intern_memory(SymbolicMemory::new().with_block("other", 16));
-    let tampered_state = Proposition::ConditionIs(
+    let tampered_state = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -526,7 +526,7 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
         Box::new(Proposition::MemoryLoadable {
             memory: registered_memory.as_ref().clone(),
             base: registered_pointer.clone(),
-            bytes: MachineTerm::constant(4),
+            bytes: (MachineTerm::constant(4)).into(),
             wide: false,
         }),
     ))
@@ -534,7 +534,7 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
     assert!(matches!(retained_state, Proposition::And(_, _)));
 
     let unknown = Variable((1u64 << 40) + 123_456_789);
-    let unknown_definition = Proposition::ConditionIs(
+    let unknown_definition = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -552,7 +552,7 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
         Box::new(Proposition::MemoryLoadable {
             memory: memory.as_ref().clone(),
             base: pointer,
-            bytes: MachineTerm::constant(4),
+            bytes: (MachineTerm::constant(4)).into(),
             wide: false,
         }),
     ))
@@ -568,9 +568,10 @@ fn defined_memory_load_retains_typed_validity_after_dropping_registry_metadata()
     };
     let proposition = SpecProposition::Defined(SpecExpression::MemoryLoad {
         point: SpecPoint::At(ProgramPoint::of_memory(&SymbolicMemory::new())),
-        pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(
-            PointerValue::new(pointer, ProgramType::Int32Pointer),
-        ))),
+        pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(Pointer::new(
+            pointer,
+            ProgramType::Int32Pointer,
+        )))),
         value_type: ProgramType::Int32,
     });
 
@@ -591,9 +592,7 @@ fn defined_memory_load_retains_typed_validity_after_dropping_registry_metadata()
         }
     ));
     assert!(!matches!(
-        &paths[0].proposition,
-        Proposition::ConditionIs(ConditionTerm::Constant(true), true)
-    ));
+        &paths[0].proposition, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Constant(true), _)))));
 }
 
 #[test]
@@ -607,9 +606,10 @@ fn defined_memory_load_retains_typed_validity_for_an_already_known_cell() {
             pointer.clone(),
             ProgramValue::Int32(MachineTerm::constant(7)),
         ))),
-        pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(
-            PointerValue::new(pointer, ProgramType::Int32Pointer),
-        ))),
+        pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(Pointer::new(
+            pointer,
+            ProgramType::Int32Pointer,
+        )))),
         value_type: ProgramType::Int32,
     });
 
@@ -630,9 +630,7 @@ fn defined_memory_load_retains_typed_validity_for_an_already_known_cell() {
         }
     ));
     assert!(!matches!(
-        &paths[0].proposition,
-        Proposition::ConditionIs(ConditionTerm::Constant(true), true)
-    ));
+        &paths[0].proposition, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Constant(true), _)))));
 }
 
 #[test]
@@ -669,7 +667,7 @@ fn integer_existential_branch_filters_exact_load_definitions_only() {
         crate::kernel::eval::registered_load_for_variable(&load)
             .expect("the exact load must have a registry descriptor");
     let defining = |memory: SharedMemory, pointer: Address, variable: Variable| {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -687,10 +685,10 @@ fn integer_existential_branch_filters_exact_load_definitions_only() {
     let loadable = Proposition::MemoryLoadable {
         memory: registered_memory.as_ref().clone(),
         base: registered_pointer.clone(),
-        bytes: MachineTerm::constant(4),
+        bytes: (MachineTerm::constant(4)).into(),
         wide: false,
     };
-    let marker = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
+    let marker = Proposition::condition_is(ConditionTerm::Constant(true), true);
     let exact_path = SpecPropositionPath {
         proposition: marker.clone(),
         facts: vec![ExecutionPureFact::certified(exact.clone())].into(),
@@ -781,9 +779,10 @@ fn empty_integer_fold_preserves_shape_without_live_load_obligation() {
     };
     let body = SpecIntegerExpression::FromMachine(Box::new(SpecExpression::MemoryLoad {
         point: SpecPoint::At(ProgramPoint::of_memory(&SymbolicMemory::new())),
-        pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(
-            PointerValue::new(missing_pointer.clone(), ProgramType::Int32Pointer),
-        ))),
+        pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(Pointer::new(
+            missing_pointer.clone(),
+            ProgramType::Int32Pointer,
+        )))),
         value_type: ProgramType::Int32,
     }));
     let expression = SpecIntegerExpression::RangeFold {
@@ -830,15 +829,13 @@ fn empty_integer_fold_preserves_shape_without_live_load_obligation() {
 fn nonempty_integer_fold_is_logical_but_checked_reads_remain_scoped() {
     let item = Variable(71_103);
     let pointer = SpecExpression::PointerOffset {
-        pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(
-            PointerValue::new(
-                Address {
-                    base: AddressBase::Symbolic(Variable(71_104)),
-                    offset: AddressOffset::Constant(0),
-                },
-                ProgramType::Int32Pointer,
-            ),
-        ))),
+        pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(Pointer::new(
+            Address {
+                base: AddressBase::Symbolic(Variable(71_104)),
+                offset: AddressOffset::Constant(0),
+            },
+            ProgramType::Int32Pointer,
+        )))),
         elements: Box::new(SpecExpression::Value(ProgramValue::Int32(
             MachineTerm::Variable(item),
         ))),
@@ -1061,14 +1058,14 @@ fn integer_to_machine_symbolic_values_keep_carrier_and_range_obligations() {
         let upper = IntegerTerm::constant(expected_upper);
         assert!(paths[0].obligations.iter().any(|obligation| {
             *obligation.proposition()
-                == Proposition::ConditionIs(
+                == Proposition::condition_is(
                     ConditionTerm::integer_greater_equal(value.clone(), lower.clone()),
                     true,
                 )
         }));
         assert!(paths[0].obligations.iter().any(|obligation| {
             *obligation.proposition()
-                == Proposition::ConditionIs(
+                == Proposition::condition_is(
                     ConditionTerm::integer_less_equal(value.clone(), upper.clone()),
                     true,
                 )

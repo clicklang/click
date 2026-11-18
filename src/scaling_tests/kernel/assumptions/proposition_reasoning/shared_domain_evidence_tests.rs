@@ -15,7 +15,7 @@ fn domain_source_selection_ignores_unrelated_prefix_and_preserves_branches() {
         );
         let operand = SharedMachineIntegerTerm::from_shared(ty, root).unwrap();
         let value = operand.operand_view().observe(ty).unwrap();
-        let premise = Proposition::ConditionIs(
+        let premise = Proposition::condition_is(
             ConditionTerm::integer_greater_than(
                 IntegerTerm::constant((i32::MAX).into()),
                 value.clone(),

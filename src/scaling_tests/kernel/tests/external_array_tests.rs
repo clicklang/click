@@ -65,7 +65,7 @@ fn external_array_execution_requires_full_authority_and_mutability() {
                         own_memory_fact(target.clone(), 0, write),
                     ]),
                 );
-                let target_value = PointerValue::new(target.clone(), ProgramType::UInt32Pointer)
+                let target_value = Pointer::new(target.clone(), ProgramType::UInt32Pointer)
                     .with_pointee_constant(!mutable);
                 let (theorem, work) = crate::instrumentation::measure_deterministic_work(|| {
                     prove_execution_statement_execution(

@@ -18,7 +18,7 @@ fn unsupported_admission_never_discovers_related_owners_or_aliases() {
             for index in 1..count {
                 if aliases {
                     facts = facts.assume_condition(
-                        ConditionTerm::pointer_equal(pointer(0), pointer(index)),
+                        ConditionTerm::address_equal(pointer(0), pointer(index)),
                         true,
                     );
                 } else {
@@ -151,7 +151,7 @@ fn certified_group_and_loop_exchange_keep_fixed_memory_boundaries_as_aliases_gro
             for index in 0..count {
                 if aliases {
                     assumptions = assumptions.assume_condition(
-                        ConditionTerm::pointer_equal(
+                        ConditionTerm::address_equal(
                             base.clone(),
                             Address::symbolic(Variable(8_798_000 + u64::from(index))),
                         ),
@@ -281,7 +281,7 @@ fn symbolic_boundaries_are_bounded_as_owners_aliases_and_explicit_frames_grow() 
                             }
                         };
                         facts = facts.assume_condition(
-                            ConditionTerm::pointer_equal(base.clone(), other),
+                            ConditionTerm::address_equal(base.clone(), other),
                             true,
                         );
                     }
@@ -422,7 +422,7 @@ fn entry_argument_and_automatic_storage_boundaries_do_not_visit_owner_blocks() {
                 let _fast = crate::kernel::search::FastOperationScope::enter(
                     "allocation-class boundary scaling",
                 );
-                frame.returned_boundary_conflict(&[output], &facts)
+                frame.checked_frontier_boundary_conflict(&[output], &facts)
             });
             assert!(matches!(result, Ok(None)));
             samples.push(work);
@@ -550,7 +550,7 @@ fn cold_automatic_return_boundaries_do_not_visit_other_allocations() {
             let mut facts = PureFactContext::new();
             for index in 0..count {
                 facts = facts.assume_condition(
-                    ConditionTerm::pointer_equal(
+                    ConditionTerm::address_equal(
                         local(0),
                         Address::symbolic(Variable(8_920_000 + u64::from(index))),
                     ),
@@ -610,7 +610,7 @@ fn legacy_composition_cost_tracks_the_delta_and_written_neighbors() {
                 match axis {
                     "aliases" => {
                         facts = facts.assume_condition(
-                            ConditionTerm::pointer_equal(pointer.clone(), other),
+                            ConditionTerm::address_equal(pointer.clone(), other),
                             true,
                         )
                     }

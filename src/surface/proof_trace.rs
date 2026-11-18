@@ -182,7 +182,7 @@ impl TraceLoad {
         let identity =
             |value: &crate::kernel::ProgramValue, labels: &mut MemoryStateLabels| match value {
                 crate::kernel::ProgramValue::Pointer(pointer) => {
-                    labels.pointer_value_name(pointer.pointer())
+                    labels.pointer_value_name(pointer.address())
                 }
                 _ => render::render_program_value_labeled(value, labels),
             };
@@ -266,10 +266,10 @@ impl ChildArgumentTrace {
             views: HashMap::new(),
             child: child.clone(),
             index: *index,
-            actual: actual.pointer().clone(),
-            required: required.pointer().clone(),
+            actual: actual.address().clone(),
+            required: required.address().clone(),
             related: assumptions
-                .exact_pointer_aliases(actual.pointer())
+                .exact_pointer_aliases(actual.address())
                 .take(4)
                 .cloned()
                 .collect(),
@@ -325,8 +325,8 @@ impl ChildArgumentTrace {
                 "\n    potentially relevant known equalities (selected by shared supplied value):",
             );
             for pointer in &self.related {
-                let fact = Proposition::ConditionIs(
-                    ConditionTerm::pointer_equal(self.actual.clone(), pointer.clone()),
+                let fact = Proposition::condition_is(
+                    ConditionTerm::address_equal(self.actual.clone(), pointer.clone()),
                     true,
                 );
                 output.push_str(&format!(
@@ -1307,7 +1307,7 @@ mod tests {
         let read = Address::loaded_value(&memory, &address);
         let target = Address::function("callback");
         let fact = TraceFact {
-            kernel: Proposition::ConditionIs(ConditionTerm::pointer_equal(read, target), true),
+            kernel: Proposition::condition_is(ConditionTerm::address_equal(read, target), true),
         };
         let mut labels = MemoryStateLabels::default();
         let mut ordinary = String::new();
@@ -1357,8 +1357,8 @@ mod tests {
         let b = Address::loaded_value(&second, &address);
         let rid = Address::symbolic(crate::kernel::Variable(700_002));
         let facts = [a.clone(), b.clone()].map(|value| TraceFact {
-            kernel: Proposition::ConditionIs(
-                ConditionTerm::pointer_equal(value, rid.clone()),
+            kernel: Proposition::condition_is(
+                ConditionTerm::address_equal(value, rid.clone()),
                 true,
             ),
         });
@@ -1461,7 +1461,7 @@ mod tests {
             ProgramValue::UInt64(MachineTerm::uint64_constant(9)),
         );
         let fact = |memory| {
-            Proposition::ConditionIs(
+            Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int64,
                     relation: CompareRelation::Equal,
@@ -1540,7 +1540,7 @@ mod tests {
                 base: AddressBase::ExternalArgument,
                 offset: AddressOffset::Constant(0),
             },
-            bytes: MachineTerm::constant(1),
+            bytes: (MachineTerm::constant(1)).into(),
             wide: false,
         }
     }
@@ -1620,7 +1620,7 @@ mod tests {
     fn trace_integer_observations_do_not_hide_unspelled_theorem_facts() {
         use crate::kernel::{IntegerTerm, MachineIntegerType, Variable};
         let fact = TraceFact {
-            kernel: Proposition::ConditionIs(
+            kernel: Proposition::condition_is(
                 ConditionTerm::integer_equal(
                     IntegerTerm::from_machine(
                         MachineIntegerType::UInt32,
@@ -1716,7 +1716,7 @@ mod tests {
         ))
         .unwrap()
         .0;
-        let defining = Proposition::ConditionIs(
+        let defining = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -1734,7 +1734,7 @@ mod tests {
             &mut output,
             &[
                 TraceFact {
-                    kernel: Proposition::ConditionIs(ConditionTerm::Constant(true), true),
+                    kernel: Proposition::condition_is(ConditionTerm::Constant(true), true),
                 },
                 TraceFact { kernel: defining },
             ],
@@ -1778,7 +1778,7 @@ mod tests {
                         (
                             BranchId::ROOT,
                             vec![TraceFact {
-                                kernel: Proposition::ConditionIs(
+                                kernel: Proposition::condition_is(
                                     ConditionTerm::Constant(true),
                                     true,
                                 ),
@@ -1787,7 +1787,7 @@ mod tests {
                         (
                             BranchId::ROOT,
                             vec![TraceFact {
-                                kernel: Proposition::ConditionIs(
+                                kernel: Proposition::condition_is(
                                     ConditionTerm::Constant(false),
                                     true,
                                 ),
@@ -1811,7 +1811,7 @@ mod tests {
                         }],
                     ],
                     facts: vec![TraceFact {
-                        kernel: Proposition::ConditionIs(ConditionTerm::Constant(true), true),
+                        kernel: Proposition::condition_is(ConditionTerm::Constant(true), true),
                     }],
                     more_facts: 0,
                     continuation_arm: None,
@@ -1862,7 +1862,7 @@ mod tests {
     #[test]
     fn completed_have_shows_only_its_exported_fact_unless_target_is_inside() {
         with_proof_trace("f", || {
-            let fact = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
+            let fact = Proposition::condition_is(ConditionTerm::Constant(true), true);
             record(
                 1,
                 TraceStep {
@@ -1983,8 +1983,8 @@ mod tests {
                 TraceStep {
                     source_tactic_path: Some(vec![0]),
                     facts: vec![TraceFact {
-                        kernel: Proposition::ConditionIs(
-                            ConditionTerm::pointer_equal(
+                        kernel: Proposition::condition_is(
+                            ConditionTerm::address_equal(
                                 Address::loaded_value(
                                     &crate::kernel::intern_memory(SymbolicMemory::new()),
                                     &Address::null(),

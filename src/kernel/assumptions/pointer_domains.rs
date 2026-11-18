@@ -10,7 +10,7 @@ pub(in crate::kernel) enum PointerDomain {
 }
 
 impl PointerDomain {
-    pub(in crate::kernel) fn intrinsic(value: &PointerValue) -> Self {
+    pub(in crate::kernel) fn intrinsic(value: &Pointer) -> Self {
         match value.bounds() {
             Some(bounds) => Self::Selected(bounds.clone()),
             None if value.bounds_are_known() => Self::Root,
@@ -31,8 +31,8 @@ pub(in crate::kernel) enum PointerDomainSource<'a> {
     BoundsOwner(&'a Address),
 }
 
-impl<'a> From<&'a PointerValue> for PointerDomainSource<'a> {
-    fn from(value: &'a PointerValue) -> Self {
+impl<'a> From<&'a Pointer> for PointerDomainSource<'a> {
+    fn from(value: &'a Pointer) -> Self {
         Self::Retained {
             bounds: value.bounds(),
             known: value.bounds_are_known(),
@@ -177,21 +177,18 @@ impl PureFactContext {
 mod tests {
     use super::*;
 
-    fn pointer(id: u64) -> PointerValue {
-        PointerValue::new(Address::symbolic(Variable(id)), ProgramType::Int32Pointer)
+    fn pointer(id: u64) -> Pointer {
+        Pointer::new(Address::symbolic(Variable(id)), ProgramType::Int32Pointer)
     }
-    fn equal(facts: PureFactContext, a: &PointerValue, b: &PointerValue) -> PureFactContext {
-        facts.assume_condition(
-            ConditionTerm::pointer_value_equal(a.clone(), b.clone()),
-            true,
-        )
+    fn equal(facts: PureFactContext, a: &Pointer, b: &Pointer) -> PureFactContext {
+        facts.assume_condition(ConditionTerm::pointer_equal(a.clone(), b.clone()), true)
     }
-    fn member(parent: &PointerValue) -> PointerValue {
+    fn member(parent: &Pointer) -> Pointer {
         parent
             .clone()
-            .with_address(parent.pointer().offset_by_bytes(4))
+            .with_address(parent.address().offset_by_bytes(4))
             .with_bounds(Some(SubobjectBounds {
-                start: parent.pointer().offset_by_bytes(4),
+                start: parent.address().offset_by_bytes(4),
                 width: 4u32.into(),
             }))
     }
@@ -251,7 +248,7 @@ mod tests {
         let selected = member(&parent);
         let returned = pointer(997_012);
         let numeric = PureFactContext::new().assume_condition(
-            ConditionTerm::pointer_equal(returned.pointer().clone(), selected.pointer().clone()),
+            ConditionTerm::address_equal(returned.address().clone(), selected.address().clone()),
             true,
         );
         assert_eq!(numeric.pointer_domain(&returned), PointerDomain::Unknown);
@@ -273,7 +270,7 @@ mod tests {
         let memory = crate::kernel::intern_memory(
             SymbolicMemory::new().store(cell.clone(), ProgramValue::Pointer(selected.clone())),
         );
-        let read = PointerValue::from_read(
+        let read = Pointer::from_read(
             Address::loaded_value(&memory, &cell),
             ProgramType::Int32Pointer,
             &memory,
@@ -309,7 +306,7 @@ mod tests {
         let resources =
             ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(held.clone()));
         assert!(resources.permits_designated_memory_read(
-            returned.pointer(),
+            returned.address(),
             Some(returned.access_provenance()),
             4,
             &facts
@@ -317,7 +314,7 @@ mod tests {
         assert!(
             resources
                 .designated_memory_write_range(
-                    returned.pointer(),
+                    returned.address(),
                     Some(returned.access_provenance()),
                     4,
                     &facts
@@ -325,18 +322,18 @@ mod tests {
                 .is_some()
         );
         assert!(!ResourceContext::new().permits_designated_memory_read(
-            returned.pointer(),
+            returned.address(),
             Some(returned.access_provenance()),
             4,
             &facts
         ));
         assert!(!resources.permits_designated_memory_read(
-            &returned.pointer().offset_by_bytes(4),
+            &returned.address().offset_by_bytes(4),
             Some(returned.access_provenance()),
             4,
             &facts
         ));
-        let sibling = held.with_bounds(parent.pointer().clone(), 0u32.into(), 1u32.into());
+        let sibling = held.with_bounds(parent.address().clone(), 0u32.into(), 1u32.into());
         assert!(!facts.access_provenance_match(returned.access_provenance(), &sibling));
         let oversized = held.with_bounds(held.base().clone(), 0u32.into(), 2u32.into());
         assert!(!facts.access_provenance_match(returned.access_provenance(), &oversized));
@@ -349,13 +346,13 @@ mod tests {
             .unchecked_with_fact(ResourceFact::own_memory(parent_range.clone()));
         let required = returned.access_provenance();
         assert!(resources.permits_designated_memory_read(
-            returned.pointer(),
+            returned.address(),
             Some(required),
             4,
             &facts
         ));
         assert!(!resources.permits_designated_memory_read(
-            parent.pointer(),
+            parent.address(),
             Some(required),
             4,
             &facts,

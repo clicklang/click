@@ -425,7 +425,7 @@ queried footprint and read addresses. `BorrowPartitionRangeEvidence` retains
 the selected composition and both members. Its checker requires that exact
 authority to remain available, verifies the entire mutable range is contained
 by its member, checks both endpoints of the full read, and rejects overlap
-under current address equalities. Unbound views and view-only compositions
+under current integer address equalities. Unbound views and view-only compositions
 provide no such frame. Candidate indexes alone grant no separation, read
 permission, or native-object validity. The selected-member query avoids walking
 unrelated holdings or constructing pairwise separation facts.

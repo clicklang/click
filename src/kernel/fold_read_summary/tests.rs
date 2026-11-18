@@ -414,7 +414,7 @@ fn application(
         vec![
             PureFunctionArgument::ArrayRef {
                 memory: memory.clone(),
-                pointer: ProgramValue::Pointer(PointerValue::new(
+                pointer: ProgramValue::Pointer(Pointer::new(
                     base.clone(),
                     ProgramType::Int32Pointer,
                 )),
@@ -427,7 +427,7 @@ fn application(
 }
 
 fn fact(condition: ConditionTerm) -> Proposition {
-    Proposition::ConditionIs(condition, true)
+    Proposition::condition_is(condition, true)
 }
 
 fn le(left: MachineTerm, right: MachineTerm) -> Proposition {
@@ -1141,7 +1141,7 @@ fn shared_fold_indices_require_exact_bounds_without_export() {
         end: SharedMachineIntegerTerm::index(MachineIntegerType::Int32, MachineTerm::constant(4)),
         element_width: 4,
     };
-    let bound = Proposition::ConditionIs(
+    let bound = Proposition::condition_is(
         ConditionTerm::signed_less_equal(MachineTerm::constant(4), native),
         true,
     );

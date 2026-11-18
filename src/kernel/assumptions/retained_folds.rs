@@ -139,7 +139,7 @@ pub(super) fn collect_common_memory_loads(
                         .map(|child| (child, Some(format.carrier_bytes()))),
                 );
             }
-            KernelTermNode::PointerOffsetEqual { arguments } => {
+            KernelTermNode::AddressOffsetEqual { arguments } => {
                 push_offset_memory_loads(arguments.iter(), &mut pending)?;
             }
             KernelTermNode::BoolRead(read) => {
@@ -156,7 +156,7 @@ pub(super) fn collect_common_memory_loads(
                 }
                 push_offset_memory_loads(std::iter::once(&address.node().offset), &mut pending)?;
             }
-            KernelTermNode::PointerValueEqual(pair) => {
+            KernelTermNode::PointerEqual(pair) => {
                 push_offset_memory_loads(
                     pair.arguments()
                         .iter()
@@ -165,7 +165,7 @@ pub(super) fn collect_common_memory_loads(
                     &mut pending,
                 )?;
             }
-            KernelTermNode::PointerEqual { arguments } => {
+            KernelTermNode::AddressEqual { arguments } => {
                 push_offset_memory_loads(
                     arguments.iter().map(|address| &address.node().offset),
                     &mut pending,
@@ -452,7 +452,7 @@ mod offset_condition_tests {
                 kind,
             )
         };
-        let source = ConditionTerm::PointerOffsetEqual(
+        let source = ConditionTerm::AddressOffsetEqual(
             Box::new(AddressOffset::scaled_int32_node(
                 read(998500, LoadKind::Int32),
                 4,
@@ -492,7 +492,7 @@ mod boolean_read_tests {
         let current = SymbolicMemory::new().with_block("bool-index", 4);
         let memory = crate::kernel::intern_memory(current.clone());
         let source = ConditionTerm::BoolLoad(
-            memory.clone(),
+            crate::kernel::ProgramPoint::at(&memory.clone()),
             Box::new(Address {
                 base: AddressBase::Symbolic(Variable(999360)),
                 offset: AddressOffset::scaled_int32_node(

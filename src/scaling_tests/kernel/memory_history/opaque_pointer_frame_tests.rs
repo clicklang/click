@@ -29,7 +29,7 @@ fn bounded_pointer_value_skips_unrelated_facts_cells_and_history() {
                 ProgramValue::Int32(MachineTerm::constant(1)),
             );
             context = context.assume_condition(
-                ConditionTerm::pointer_equal(
+                ConditionTerm::address_equal(
                     Address::symbolic(Variable(9_881_000 + 2 * index)),
                     Address::symbolic(Variable(9_881_001 + 2 * index)),
                 ),
@@ -59,18 +59,18 @@ fn bounded_pointer_value_skips_unrelated_facts_cells_and_history() {
             offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(9_880_303)), 4),
         };
         context = context.assume_condition(
-            ConditionTerm::pointer_equal(write_alias.clone(), wide_address.clone()),
+            ConditionTerm::address_equal(write_alias.clone(), wide_address.clone()),
             true,
         );
         let parent = Address::symbolic(Variable(9_880_304));
         let parent_alias = Address::symbolic(Variable(9_880_305));
         context = context.assume_condition(
-            ConditionTerm::pointer_equal(parent.clone(), parent_alias.clone()),
+            ConditionTerm::address_equal(parent.clone(), parent_alias.clone()),
             true,
         );
         let value =
-            MachineTerm::PointerAddress(Box::new(parent), crate::kernel::AddressObjectClass::NONE);
-        let wanted = MachineTerm::PointerAddress(
+            MachineTerm::IntegerAddress(Box::new(parent), crate::kernel::AddressObjectClass::NONE);
+        let wanted = MachineTerm::IntegerAddress(
             Box::new(parent_alias),
             crate::kernel::AddressObjectClass::NONE,
         );
@@ -110,8 +110,8 @@ fn complete_read_domains_use_numeric_storage_classes_without_scanning_other_clas
         let mut facts = PureFactContext::new();
         let equal = |a: Address, b: Address| {
             ConditionTerm::uint64_equal(
-                MachineTerm::pointer_address(a),
-                MachineTerm::pointer_address(b),
+                MachineTerm::integer_address(a),
+                MachineTerm::integer_address(b),
             )
         };
         for index in 0..size {
@@ -171,12 +171,12 @@ fn copied_pointer_frames_ignore_unrelated_separations() {
         let field = header.clone().offset_by_bytes(8);
         let buffer = Address::symbolic(Variable(9_909_001));
         let target = Address::symbolic(Variable(9_909_002));
-        let stored = PointerValue::new(target.clone(), ProgramType::Int32Pointer).with_bounds(
-            Some(SubobjectBounds {
+        let stored = Pointer::new(target.clone(), ProgramType::Int32Pointer).with_bounds(Some(
+            SubobjectBounds {
                 start: target,
                 width: 4u32.into(),
-            }),
-        );
+            },
+        ));
         let before =
             SymbolicMemory::new().store(field.clone(), ProgramValue::Pointer(stored.clone()));
         let write = buffer.clone().offset_by_bytes(4);
@@ -292,7 +292,7 @@ fn packed_word_transport_visits_only_the_selected_word_and_delta() {
                 ProgramValue::Int32(MachineTerm::constant(index)),
             );
             context = context.assume_condition(
-                ConditionTerm::pointer_equal(
+                ConditionTerm::address_equal(
                     Address::symbolic(Variable(9_892_000 + 2 * u64::from(index))),
                     Address::symbolic(Variable(9_892_001 + 2 * u64::from(index))),
                 ),
@@ -305,18 +305,18 @@ fn packed_word_transport_visits_only_the_selected_word_and_delta() {
             Box::new(field.clone()),
             LoadKind::Bits64,
         );
-        let value = PointerValue::from_read(
-            Address::integer_address(bits),
+        let value = Pointer::from_read(
+            Address::from_integer_address(bits),
             ProgramType::VoidPointer,
             &before,
             &field,
         );
-        let parent = PointerValue::new(
+        let parent = Pointer::new(
             Address::symbolic(Variable(9_891_000)),
             ProgramType::VoidPointer,
         );
-        let source = Proposition::ConditionIs(
-            ConditionTerm::PointerValueEqual(Box::new(value), Box::new(parent)),
+        let source = Proposition::condition_is(
+            ConditionTerm::PointerEqual(Box::new(value), Box::new(parent)),
             true,
         );
         context = context.assume_proposition(source.clone());
@@ -464,10 +464,10 @@ fn complete_word_record_at_bounded_stop_has_flat_lookup_work() {
         }
         let target = Address::symbolic(Variable(9_887_001));
         let value = ProgramValue::PointerInteger(PointerIntegerValue {
-            numeric: Box::new(ProgramValue::UInt64(MachineTerm::pointer_address(
+            numeric: Box::new(ProgramValue::UInt64(MachineTerm::integer_address(
                 target.clone(),
             ))),
-            pointer: Box::new(PointerValue::new(target, ProgramType::Int32Pointer)),
+            pointer: Box::new(Pointer::new(target, ProgramType::Int32Pointer)),
             kind: PointerIntegerKind::Exact,
         });
         let memory = memory
@@ -506,8 +506,8 @@ fn complete_word_frame_reuses_named_versions_across_observations() {
         let before = intern_memory(observed);
         // This is the actual read producer, not a warm-up of the query:
         // its provenance names the pre-observation version of the word.
-        let value = PointerValue::from_read(
-            Address::integer_address(MachineTerm::uint64_constant(8)),
+        let value = Pointer::from_read(
+            Address::from_integer_address(MachineTerm::uint64_constant(8)),
             ProgramType::Int32Pointer,
             &before,
             &field,
@@ -516,8 +516,8 @@ fn complete_word_frame_reuses_named_versions_across_observations() {
             write.clone(),
             ProgramValue::UInt64(MachineTerm::uint64_constant(1)),
         ));
-        let target = PointerValue::from_read(
-            Address::integer_address(MachineTerm::uint64_constant(8)),
+        let target = Pointer::from_read(
+            Address::from_integer_address(MachineTerm::uint64_constant(8)),
             ProgramType::Int32Pointer,
             &after,
             &field,

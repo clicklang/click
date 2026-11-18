@@ -79,7 +79,7 @@ mod tests {
         IntegerTerm::var(Variable(n))
     }
     fn le(a: IntegerTerm, b: IntegerTerm) -> Proposition {
-        Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(a.into(), b.into()), true)
+        Proposition::condition_is(ConditionTerm::IntegerLessEqual(a.into(), b.into()), true)
     }
     fn case(bound: IntegerTerm, d: IntegerTerm, lower: bool) -> (Vec<Proposition>, Proposition) {
         let n = v(198001);

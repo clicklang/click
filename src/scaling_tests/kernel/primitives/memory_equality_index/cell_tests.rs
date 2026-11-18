@@ -26,7 +26,7 @@ fn checked_attachment_is_flat_beside_unrelated_equality_history() {
                 );
             }
             facts = facts.assume_condition(
-                ConditionTerm::pointer_equal(base.clone(), alias.clone()),
+                ConditionTerm::address_equal(base.clone(), alias.clone()),
                 true,
             );
             let owner = ResourceFact::own_memory(MemoryRange::new_with_element_width(
@@ -138,7 +138,7 @@ fn forks_before_publication_keep_indexed_candidates_without_input_rescans() {
         // Both forks precede resource publication. Their term registrations
         // cannot be assumed to extend the published graph's local node IDs.
         let branch = empty.clone().assume_condition(
-            ConditionTerm::pointer_offset_equal(at(0).offset, at(size).offset),
+            ConditionTerm::address_offset_equal(at(0).offset, at(size).offset),
             true,
         );
         let sibling = empty.clone();
@@ -208,11 +208,11 @@ fn normalization_keeps_fork_pairing_without_deferred_input_scans() {
         };
         let parent = PureFactContext::new();
         let first = parent.clone().assume_condition(
-            ConditionTerm::pointer_offset_equal(at(0).offset, at(size).offset),
+            ConditionTerm::address_offset_equal(at(0).offset, at(size).offset),
             true,
         );
         let sibling = parent.clone().assume_condition(
-            ConditionTerm::pointer_offset_equal(at(0).offset, at(size + 1).offset),
+            ConditionTerm::address_offset_equal(at(0).offset, at(size + 1).offset),
             true,
         );
         // Removing a zero owner forces a real normalization replacement and
@@ -224,7 +224,7 @@ fn normalization_keeps_fork_pairing_without_deferred_input_scans() {
                 4u32.into(),
                 1,
             )),
-            Box::new(MachineTerm::constant(0)),
+            Box::new(MachineTerm::constant(0).into()),
         ));
         for i in (0..size).rev() {
             resources = resources.unchecked_with_fact(ResourceFact::own_memory(
@@ -307,7 +307,7 @@ fn first_memory_occurrence_on_a_sibling_uses_closed_equality_state() {
             }
         }
         sibling = sibling.assume_condition(
-            ConditionTerm::pointer_offset_equal(at(0).offset, at(1).offset),
+            ConditionTerm::address_offset_equal(at(0).offset, at(1).offset),
             true,
         );
         let resources = ResourceContext::new();
@@ -366,7 +366,7 @@ fn whole_cell_write_merges_and_queries_do_not_scan_other_payloads() {
             crate::persistent::measure_persistent_work(|| {
                 crate::instrumentation::measure_deterministic_work(|| {
                     let facts = empty.assume_condition(
-                        ConditionTerm::pointer_offset_equal(at(0).offset, at(1).offset),
+                        ConditionTerm::address_offset_equal(at(0).offset, at(1).offset),
                         true,
                     );
                     resources.synchronize_memory_equalities(&facts);
@@ -419,7 +419,7 @@ fn late_offset_cell_hits_scale_with_affected_entries() {
             crate::persistent::measure_persistent_work(|| {
                 crate::instrumentation::measure_deterministic_work(|| {
                     let facts = empty.assume_condition(
-                        ConditionTerm::pointer_offset_equal(at(0).offset, at(size).offset),
+                        ConditionTerm::address_offset_equal(at(0).offset, at(size).offset),
                         true,
                     );
                     resources.synchronize_memory_equalities(&facts);
@@ -474,7 +474,7 @@ fn cell_publication_and_forks_do_not_repeat_input_registration() {
                     resources = resources.unchecked_with_fact(view(&at(i), 0, 4));
                     resources.synchronize_memory_equalities(&facts);
                     facts = facts.assume_condition(
-                        ConditionTerm::pointer_offset_equal(at(i).offset, at(size + i).offset),
+                        ConditionTerm::address_offset_equal(at(i).offset, at(size + i).offset),
                         true,
                     );
                     resources.synchronize_memory_equalities(&facts);
@@ -483,7 +483,7 @@ fn cell_publication_and_forks_do_not_repeat_input_registration() {
                 for i in 0..size {
                     let branch_resources = resources.clone();
                     let branch_facts = facts.clone().assume_condition(
-                        ConditionTerm::pointer_offset_equal(at(0).offset, at(3 * size + i).offset),
+                        ConditionTerm::address_offset_equal(at(0).offset, at(3 * size + i).offset),
                         true,
                     );
                     branch_resources.synchronize_memory_equalities(&branch_facts);
@@ -566,7 +566,7 @@ fn cell_footprint_merges_and_queries_do_not_scan_other_sizes() {
         let (((), work), map_work) = crate::persistent::measure_persistent_work(|| {
             crate::instrumentation::measure_deterministic_work(|| {
                 let facts = empty.assume_condition(
-                    ConditionTerm::pointer_offset_equal(owner.offset, alias.offset.clone()),
+                    ConditionTerm::address_offset_equal(owner.offset, alias.offset.clone()),
                     true,
                 );
                 resources.synchronize_memory_equalities(&facts);
@@ -603,7 +603,7 @@ fn interval_selection_is_indexed_beside_same_class_non_suppliers() {
             true,
         )
         .assume_condition(
-            ConditionTerm::pointer_equal(base.clone(), alias.clone()),
+            ConditionTerm::address_equal(base.clone(), alias.clone()),
             true,
         );
     let mut samples = Vec::new();
@@ -714,7 +714,7 @@ fn symbolic_write_permission_does_not_search_views() {
     let n = MachineTerm::Variable(Variable(961_003));
     let facts = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::pointer_equal(base.clone(), alias.clone()),
+            ConditionTerm::address_equal(base.clone(), alias.clone()),
             true,
         )
         .assume_condition(
@@ -818,7 +818,7 @@ fn indexed_memory_support_and_fragment_consumption_ignore_unrelated_spans() {
     let empty = PureFactContext::new();
     let facts = empty
         .clone()
-        .assume_condition(ConditionTerm::pointer_equal(p.clone(), q.clone()), true);
+        .assume_condition(ConditionTerm::address_equal(p.clone(), q.clone()), true);
     let own = |base: &Address, start: u32, end: u32| {
         ResourceFact::own_memory(MemoryRange::new_with_element_width(
             base.clone(),
@@ -941,7 +941,7 @@ fn direct_memory_support_does_not_enumerate_overlapping_views() {
     let p = Address::symbolic(Variable(976_000));
     let q = Address::symbolic(Variable(976_001));
     let facts = PureFactContext::new()
-        .assume_condition(ConditionTerm::pointer_equal(p.clone(), q.clone()), true);
+        .assume_condition(ConditionTerm::address_equal(p.clone(), q.clone()), true);
     for late_owner in [false, true] {
         for bytes in [4u32, 4096] {
             let owner = ResourceFact::own_memory(MemoryRange::new_with_element_width(
@@ -1313,7 +1313,7 @@ fn captured_interior_pointer_reads_keep_owned_bounds_and_opaque_base_identity() 
         let ExpressionOutcome::Value(ProgramValue::Pointer(value)) = &paths[0].outcome else {
             panic!("pointer read")
         };
-        value.pointer().clone()
+        value.address().clone()
     };
     let base = read(972_100);
     let unrelated = read(972_101);
@@ -1328,7 +1328,7 @@ fn captured_interior_pointer_reads_keep_owned_bounds_and_opaque_base_identity() 
         )
         .assume_condition(ConditionTerm::signed_less_than(i.clone(), n.clone()), true);
     let relation =
-        ConditionTerm::pointer_equal(captured.clone(), base.offset_by_elements(i.clone(), 4));
+        ConditionTerm::address_equal(captured.clone(), base.offset_by_elements(i.clone(), 4));
     let facts = bounds.clone().assume_condition(relation.clone(), true);
     let range = MemoryRange::new(base.clone(), 0u32.into(), n.clone());
     let owner = ResourceFact::own_memory(range.clone());
@@ -1359,7 +1359,7 @@ fn captured_interior_pointer_reads_keep_owned_bounds_and_opaque_base_identity() 
     );
     // A separate, noncontradictory context says only that the capture is at n.
     let end_only = bounds.clone().assume_condition(
-        ConditionTerm::pointer_equal(captured.clone(), base.offset_by_elements(n, 4)),
+        ConditionTerm::address_equal(captured.clone(), base.offset_by_elements(n, 4)),
         true,
     );
     assert!(
@@ -1378,7 +1378,7 @@ fn captured_interior_pointer_reads_keep_owned_bounds_and_opaque_base_identity() 
         for k in 0..size {
             let p = Address::symbolic(Variable(980_000 + k * 2));
             let q = Address::symbolic(Variable(980_001 + k * 2));
-            context = context.assume_condition(ConditionTerm::pointer_equal(p.clone(), q), true);
+            context = context.assume_condition(ConditionTerm::address_equal(p.clone(), q), true);
             frame = frame.unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
                 p,
                 0u32.into(),
@@ -1417,7 +1417,7 @@ fn captured_interior_address_selects_its_base_beside_same_block_owners() {
     let facts = empty
         .clone()
         .assume_condition(
-            ConditionTerm::pointer_equal(captured.clone(), base.offset_by_elements(i.clone(), 4)),
+            ConditionTerm::address_equal(captured.clone(), base.offset_by_elements(i.clone(), 4)),
             true,
         )
         .assume_condition(
@@ -1511,17 +1511,17 @@ fn framed_pointer_fragments_rejoin_through_their_checked_read_endpoint() {
             );
             let pointer = Address::loaded(&MachineTerm::Variable(variable)).unwrap();
             context.register_pointer_read(&pointer, &retained_state, &field);
-            PointerValue::from_read(pointer, ProgramType::Int32Pointer, &retained_state, &field)
+            Pointer::from_read(pointer, ProgramType::Int32Pointer, &retained_state, &field)
         };
         let source = read(&PureFactContext::new(), &SymbolicMemory::new());
         let before =
             SymbolicMemory::new().store(field.clone(), ProgramValue::Pointer(source.clone()));
-        let range = |base: PointerValue, start: u32, end: u32| {
+        let range = |base: Pointer, start: u32, end: u32| {
             MemoryRange::from_pointer_value(&base, start.into(), end.into(), 4)
         };
         let separation = Proposition::ResourceSeparate {
             left: Box::new(Resource::Memory(range(
-                PointerValue::new(field.clone(), ProgramType::Int32Pointer),
+                Pointer::new(field.clone(), ProgramType::Int32Pointer),
                 0,
                 2,
             ))),
@@ -1537,10 +1537,10 @@ fn framed_pointer_fragments_rejoin_through_their_checked_read_endpoint() {
         let current = read(&context, &after);
         assert_eq!(
             crate::kernel::memory_history::checked_pointer_read_endpoint(
-                current.pointer(),
+                current.address(),
                 &context
             ),
-            Some(source.pointer().clone())
+            Some(source.address().clone())
         );
         let tail = ResourceFact::own_memory(range(source.clone(), 1, 8));
         let mut resources = ResourceContext::new()
@@ -1548,7 +1548,7 @@ fn framed_pointer_fragments_rejoin_through_their_checked_read_endpoint() {
             .unchecked_with_fact(ResourceFact::own_memory(range(current.clone(), 0, 1)));
         for index in 0..size {
             resources = resources.unchecked_with_fact(ResourceFact::own_memory(range(
-                PointerValue::new(
+                Pointer::new(
                     Address::symbolic(Variable(9_911_000 + index)),
                     ProgramType::Int32Pointer,
                 ),
@@ -1569,7 +1569,7 @@ fn framed_pointer_fragments_rejoin_through_their_checked_read_endpoint() {
         assert!(
             !context
                 .equality_graph
-                .are_equal(source.pointer(), current.pointer())
+                .are_equal(source.address(), current.address())
         );
         let unseparated = PureFactContext::new();
         assert!(
@@ -1642,7 +1642,7 @@ fn framed_pointer_read_selects_interior_writes_under_live_authority() {
         let source = read(&PureFactContext::new(), &SymbolicMemory::new());
         let before = SymbolicMemory::new().store(
             field.clone(),
-            ProgramValue::Pointer(PointerValue::new(source.clone(), ProgramType::Int32Pointer)),
+            ProgramValue::Pointer(Pointer::new(source.clone(), ProgramType::Int32Pointer)),
         );
         let range = |base: Address, start: u32, end: u32| {
             MemoryRange::new_with_element_width(base, start.into(), end.into(), 4)
@@ -1725,7 +1725,7 @@ fn cold_read_queries_ignore_unrelated_classes_and_resource_ranges() {
         for index in 0..size {
             let a = pointer(990_000 + index * 2);
             let b = pointer(990_001 + index * 2);
-            context = context.assume_condition(ConditionTerm::pointer_equal(a, b.clone()), true);
+            context = context.assume_condition(ConditionTerm::address_equal(a, b.clone()), true);
             resources = resources.unchecked_with_fact(ResourceFact::view_memory(MemoryRange::new(
                 b,
                 0u32.into(),
@@ -1801,7 +1801,7 @@ fn opening_checkpoint_work(steps: u64, unrelated: u64) -> usize {
     let mut base = PureFactContext::new();
     for i in 0..unrelated {
         base = base.assume_condition(
-            ConditionTerm::pointer_equal(at(1000 + 2 * i), at(1001 + 2 * i)),
+            ConditionTerm::address_equal(at(1000 + 2 * i), at(1001 + 2 * i)),
             true,
         );
     }

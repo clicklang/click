@@ -15,12 +15,12 @@ fn private_member_facts_cannot_use_ambient_cell_ownership() {
         name: "reference".into(),
         arguments: description.arguments().to_vec().into(),
     });
-    let [crate::kernel::AlgebraicValue::Program(ProgramValue::Pointer(pointer))] =
-        description.arguments()
+    let Some([crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(pointer))]) =
+        (description.arguments()).fixed_values::<1>()
     else {
         unreachable!()
     };
-    let pointer = pointer.pointer();
+    let pointer = pointer.address();
     let memory = SymbolicMemory::new()
         .with_block(pointer.base.clone(), 8)
         .store(

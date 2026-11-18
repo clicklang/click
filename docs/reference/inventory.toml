@@ -715,15 +715,7 @@ id = "language.word.gather"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
-id = "language.word.give"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
 id = "language.word.scatter"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
-id = "language.word.take"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
@@ -1419,14 +1411,6 @@ id = "tactic.construct"
 path = "reference/tactics/index.md#resources-and-transport"
 
 [[item]]
-id = "tactic.take"
-path = "reference/tactics/index.md#resources-and-transport"
-
-[[item]]
-id = "tactic.give"
-path = "reference/tactics/index.md#resources-and-transport"
-
-[[item]]
 id = "tactic.gather"
 path = "reference/tactics/index.md#resources-and-transport"
 
@@ -1487,10 +1471,10 @@ path = "reference/tactics/index.md#resources-and-transport"
 id = "tactic-form.fold-resource"
 path = "reference/tactics/index.md#resources-and-transport"
 [[item]]
-id = "tactic-form.take-element"
+id = "tactic-form.unfold-slot"
 path = "reference/tactics/index.md#resources-and-transport"
 [[item]]
-id = "tactic-form.give-element"
+id = "tactic-form.fold-slot"
 path = "reference/tactics/index.md#resources-and-transport"
 [[item]]
 id = "tactic-form.gather-resource"

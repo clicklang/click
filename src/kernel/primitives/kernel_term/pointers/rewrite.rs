@@ -164,8 +164,8 @@ impl<'a, R: PointerRewrite> Rewrite<'a, R> {
     }
     fn pointer(
         &mut self,
-        value: &SharedPointerValue,
-    ) -> Result<SharedPointerValue, PointerRewriteError<R::Error>> {
+        value: &SharedPointer,
+    ) -> Result<SharedPointer, PointerRewriteError<R::Error>> {
         let source = value.node();
         let address = self.address(&source.address)?;
         let provenance = self.address(&source.provenance)?;
@@ -192,7 +192,7 @@ impl<'a, R: PointerRewrite> Rewrite<'a, R> {
         {
             return Ok(value.clone());
         }
-        Ok(SharedPointerValue::new(KernelPointerValue {
+        Ok(SharedPointer::new(KernelPointer {
             address,
             provenance,
             bounds_owner,
@@ -201,7 +201,7 @@ impl<'a, R: PointerRewrite> Rewrite<'a, R> {
         }))
     }
 }
-impl SharedPointerValue {
+impl SharedPointer {
     /// Memos belong to this call's fixed scope, never to a global substitution.
     pub(crate) fn try_rewrite<R: PointerRewrite>(
         &self,
@@ -231,12 +231,12 @@ mod tests {
     }
     #[test]
     fn unchanged_rewrite_preserves_exact_complete_payload_handle() {
-        let source = SharedPointerValue::import(&super::super::tests::complete_source());
+        let source = SharedPointer::import(&super::super::tests::complete_source());
         assert_eq!(source.try_rewrite(&mut Identity).unwrap(), source);
     }
     #[test]
     fn selected_address_replacements_are_simultaneous_and_keep_metadata() {
-        let source = SharedPointerValue::import(&super::super::tests::complete_source());
+        let source = SharedPointer::import(&super::super::tests::complete_source());
         let replacement = SharedAddress::import(&Address::symbolic(Variable(1004000)));
         struct Selected {
             from: SharedAddress,
@@ -331,7 +331,7 @@ mod tests {
     }
     #[test]
     fn callback_refusal_and_wrong_numeric_carrier_leave_source_unchanged() {
-        let source = SharedPointerValue::import(&super::super::tests::complete_source());
+        let source = SharedPointer::import(&super::super::tests::complete_source());
         struct Refuse(bool);
         impl PointerRewrite for Refuse {
             type Error = &'static str;

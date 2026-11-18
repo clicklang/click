@@ -138,7 +138,7 @@ fn invariant_body_evidence_requires_exact_complete_root_and_context() {
             .body
             .as_mut()
             .unwrap()
-            .goal = Proposition::ConditionIs(crate::kernel::ConditionTerm::Constant(false), true);
+            .goal = Proposition::condition_is(crate::kernel::ConditionTerm::Constant(false), true);
         assert!(
             root(facts, wrong)
                 .validate_checked_invariant_lowerings(&checks, &[])
@@ -317,7 +317,7 @@ fn invariant_bundle_closure_checks_retained_evidence_and_context_locally() {
             .body
             .as_mut()
             .unwrap()
-            .goal = Proposition::ConditionIs(crate::kernel::ConditionTerm::Constant(false), true);
+            .goal = Proposition::condition_is(crate::kernel::ConditionTerm::Constant(false), true);
         assert!(
             root(facts.clone(), incomplete)
                 .validate_checked_invariant_lowerings(&checks, &[])
@@ -383,7 +383,7 @@ fn pure_match_and_payload_freshening_ignore_unrelated_facts() {
             (),
             ProofBranch::new(
                 ProofObligation::Proposition(PropositionObligation::new(
-                    Proposition::ConditionIs(
+                    Proposition::condition_is(
                         crate::kernel::ConditionTerm::equal(
                             MachineTerm::Variable(Variable(1)),
                             MachineTerm::Variable(Variable(1)),
@@ -427,7 +427,7 @@ fn pure_match_constructor_obligation_work_is_linear_in_the_family() {
             (),
             ProofBranch::new(
                 ProofObligation::Proposition(PropositionObligation::new(
-                    Proposition::ConditionIs(crate::kernel::ConditionTerm::Constant(true), true),
+                    Proposition::condition_is(crate::kernel::ConditionTerm::Constant(true), true),
                     (),
                 )),
                 ProofBranchState {
@@ -465,7 +465,7 @@ fn typed_universal_intro_adds_fresh_bounds_without_scanning_ambient_facts() {
     let sample = |size: u64, related: bool| {
         let ambient = (0..size)
             .map(|index| {
-                Proposition::ConditionIs(
+                Proposition::condition_is(
                     ConditionTerm::signed_less_than(
                         MachineTerm::Variable(if related {
                             binder
@@ -530,14 +530,14 @@ fn known_computation_work_ignores_related_and_unrelated_facts() {
             &(0..size)
                 .flat_map(|i| {
                     [
-                        Proposition::ConditionIs(
+                        Proposition::condition_is(
                             ConditionTerm::integer_equal(
                                 variable.clone(),
                                 IntegerTerm::var(Variable(883_000 + i)),
                             ),
                             true,
                         ),
-                        Proposition::ConditionIs(
+                        Proposition::condition_is(
                             ConditionTerm::integer_equal(
                                 IntegerTerm::var(Variable(884_000 + i)),
                                 IntegerTerm::var(Variable(885_000 + i)),
@@ -565,7 +565,7 @@ fn known_computation_work_ignores_related_and_unrelated_facts() {
             ),
         ] {
             let proof =
-                known_computation_proof(Proposition::ConditionIs(condition, true), facts.clone());
+                known_computation_proof(Proposition::condition_is(condition, true), facts.clone());
             let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
                 proof.apply_known(PropositionKnownContext::Exact)
             });
@@ -593,7 +593,7 @@ fn known_computation_work_is_linear_in_shared_integer_terms() {
         }
         let successor = IntegerTerm::add(term.as_ref().clone(), IntegerTerm::constant_i64(1));
         let proof = known_computation_proof(
-            Proposition::ConditionIs(
+            Proposition::condition_is(
                 ConditionTerm::IntegerGreaterThan(successor.into(), term),
                 true,
             ),
@@ -871,7 +871,7 @@ fn known_compound_comparison_work_is_linear_in_selected_clauses() {
                     },
                     MachineTerm::constant(bound),
                 );
-                Proposition::ConditionIs(
+                Proposition::condition_is(
                     if shared {
                         retained_arithmetic_comparison(&native).unwrap()
                     } else {

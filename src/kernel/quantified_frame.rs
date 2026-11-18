@@ -313,9 +313,11 @@ impl Framer<'_> {
                 Proposition::ConditionIs(left, left_value),
                 Proposition::ConditionIs(right, right_value),
             ) if left_value == right_value => {
-                let carried = conditions_equal_with_load_atoms(left, right, &|left, right| {
-                    loads_unchanged(left, right, &contexts.reads)
-                }) || (self.leaf)(from, to, &contexts.leaf);
+                let carried = conditions_equal_with_load_atoms(
+                    left.native_compat(),
+                    right.native_compat(),
+                    &|left, right| loads_unchanged(left, right, &contexts.reads),
+                ) || (self.leaf)(from, to, &contexts.leaf);
                 if carried {
                     self.framed_leaves.set(self.framed_leaves.get() + 1);
                     Ok(())
@@ -455,7 +457,7 @@ mod conjunct_elimination_tests {
     fn a_conjunct_is_eliminated_only_when_the_other_is_carried() {
         let _session = crate::kernel::VerificationSession::enter();
         let leaf =
-            |name: u64| Proposition::ConditionIs(ConditionTerm::Variable(Variable(name)), true);
+            |name: u64| Proposition::condition_is(ConditionTerm::Variable(Variable(name)), true);
         // The stand-in single-fact route carries leaf 1 to leaf 2 and nothing else.
         let carries = |from: &Proposition, to: &Proposition, _: &PureFactContext| {
             *from == leaf(1) && *to == leaf(2)

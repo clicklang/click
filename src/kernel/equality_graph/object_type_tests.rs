@@ -23,7 +23,7 @@ fn source(name: &str, pointer: &Address) -> Proposition {
     }
 }
 fn equal(a: &Address, b: &Address) -> Proposition {
-    Proposition::ConditionIs(ConditionTerm::pointer_equal(a.clone(), b.clone()), true)
+    Proposition::condition_is(ConditionTerm::address_equal(a.clone(), b.clone()), true)
 }
 fn can_type(context: &PureFactContext, pointer: &Address) -> bool {
     crate::kernel::spec::refine_object_pointer_argument(
@@ -47,7 +47,7 @@ fn model_source(pointer: &Address, condition: bool) -> Proposition {
         },
     };
     if condition {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::AlgebraicEqual(Box::new(variable), Box::new(constructor)),
             true,
         )
@@ -61,15 +61,15 @@ fn integer_address_word_aliases_do_not_supply_an_object_type() {
     let _session = VerificationSession::enter();
     let a = MachineTerm::Variable(Variable(880_010));
     let b = MachineTerm::Variable(Variable(880_011));
-    let p = Address::integer_address(a.clone());
-    let q = Address::integer_address(b.clone());
+    let p = Address::from_integer_address(a.clone());
+    let q = Address::from_integer_address(b.clone());
     let context = PureFactContext::new()
         .assume_proposition(source("typed", &p))
         .assume_condition(ConditionTerm::uint64_equal(a, b), true);
     assert!(can_type(&context, &p));
     assert!(context.equality_graph.are_uint64_equal(
-        &MachineTerm::PointerAddress(Box::new(p), AddressObjectClass::NONE),
-        &MachineTerm::PointerAddress(Box::new(q.clone()), AddressObjectClass::NONE),
+        &MachineTerm::IntegerAddress(Box::new(p), AddressObjectClass::NONE),
+        &MachineTerm::IntegerAddress(Box::new(q.clone()), AddressObjectClass::NONE),
     ));
     assert!(!can_type(&context, &q));
 }
@@ -143,7 +143,7 @@ fn model_type_support_needs_its_model_source() {
         let unmodeled = PureFactContext::new().assume_proposition(equal(&p, &q));
         assert!(!can_type(&unmodeled, &q));
         if let Proposition::ConditionIs(condition, _) = model {
-            context = context.assume_proposition(Proposition::ConditionIs(condition, false));
+            context = context.assume_proposition(Proposition::condition_is(condition, false));
             assert!(context.is_inconsistent());
             assert!(can_type(&context, &q));
         }
@@ -238,8 +238,8 @@ fn checked_pointer_value_equalities_retain_their_scoped_type_receipts() {
     else {
         unreachable!()
     };
-    let equality = Proposition::ConditionIs(
-        ConditionTerm::PointerValueEqual(Box::new(p_value), Box::new(q_value)),
+    let equality = Proposition::condition_is(
+        ConditionTerm::PointerEqual(Box::new(p_value), Box::new(q_value)),
         true,
     );
     let parent = PureFactContext::new();

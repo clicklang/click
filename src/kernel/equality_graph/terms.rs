@@ -410,8 +410,8 @@ impl Application {
                 let (mut left, mut right) = (classes.root(left), classes.root(right));
                 if matches!(
                     kind,
-                    congruence::ConditionKind::PointerEq
-                        | congruence::ConditionKind::PointerValueEq
+                    congruence::ConditionKind::AddressEq
+                        | congruence::ConditionKind::PointerEq
                         | congruence::ConditionKind::OffsetEq
                 ) && left > right
                 {
@@ -663,8 +663,8 @@ pub(super) struct TermClasses {
     // One zero-offset pointer read or pure-call value per class. Congruence emits only
     // newly identified pairs for the legacy affine/index projection.
     pointer_value_witnesses: PersistentMap<u64, AddressBase>,
-    pointer_values: PersistentMap<u64, crate::kernel::PointerValue>,
-    bounds_values: PersistentMap<u64, crate::kernel::PointerValue>,
+    pointer_values: PersistentMap<u64, crate::kernel::Pointer>,
+    bounds_values: PersistentMap<u64, crate::kernel::Pointer>,
     read_domains: crate::kernel::pointer_provenance::ValueClasses<Address>,
     read_provenance_nodes: PersistentMap<Address, u64>,
     // Every registered opaque origin, including symbols and complete reads.
@@ -2682,7 +2682,7 @@ impl TermClasses {
         {
             use congruence::ConditionKind::*;
             let truth = match kind {
-                Int32Eq | UInt64Eq | PointerEq | OffsetEq | AlgebraicEq | IntegerEq | BoolEq => {
+                Int32Eq | UInt64Eq | AddressEq | OffsetEq | AlgebraicEq | IntegerEq | BoolEq => {
                     Some(1)
                 }
                 IntegerNe => Some(2),
@@ -3214,7 +3214,7 @@ mod tests {
         AddressOffset::Variable(Variable(id))
     }
     fn equality(left: &AddressOffset, right: &AddressOffset) -> ConditionTerm {
-        ConditionTerm::pointer_offset_equal(left.clone(), right.clone())
+        ConditionTerm::address_offset_equal(left.clone(), right.clone())
     }
 
     fn add(left: AddressOffset, right: AddressOffset) -> AddressOffset {
@@ -3524,7 +3524,7 @@ mod tests {
         let bc = equality(&b, &c);
         let p = Address::symbolic(Variable(23));
         let q = Address::symbolic(Variable(24));
-        let pq = ConditionTerm::pointer_equal(p.clone(), q.clone());
+        let pq = ConditionTerm::address_equal(p.clone(), q.clone());
         let context = PureFactContext::new()
             .assume_condition(ab.clone(), true)
             .assume_condition(bc.clone(), true)
@@ -3548,12 +3548,12 @@ mod tests {
 
     #[test]
     fn complete_pointer_identity_tracks_symbolic_bounds_widths() {
-        use crate::kernel::{PointerValue, ProgramType, SubobjectBounds};
+        use crate::kernel::{Pointer, ProgramType, SubobjectBounds};
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = Address::symbolic(Variable(942_001));
         let width = MachineTerm::Variable(Variable(942_002));
         let bounded = |width| {
-            PointerValue::new(pointer.clone(), ProgramType::Int32Pointer).with_bounds(Some(
+            Pointer::new(pointer.clone(), ProgramType::Int32Pointer).with_bounds(Some(
                 SubobjectBounds {
                     start: pointer.clone(),
                     width,

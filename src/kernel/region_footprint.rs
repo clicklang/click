@@ -21,6 +21,7 @@ pub struct RegionFootprint {
     pub(crate) members: imbl::Vector<Resource>,
     pub(crate) complete: bool,
     pub(crate) resource_bound: Option<Resource>,
+    pub(crate) uninitialized_local_declaration: bool,
     is_sequence: bool,
 }
 impl std::fmt::Debug for RegionFootprint {
@@ -56,6 +57,44 @@ impl RegionFootprint {
         before: &ExecutionState,
         after: &ExecutionState,
         effects: &(impl ExecutionFactSource + ?Sized),
+    ) -> Arc<Self> {
+        Self::from_transition(source, before, after, effects, false)
+    }
+
+    pub(crate) fn statement_transition(
+        source: String,
+        statement: &ProgramStatement,
+        before: &ExecutionState,
+        after: &ExecutionState,
+        effects: &(impl ExecutionFactSource + ?Sized),
+    ) -> Arc<Self> {
+        // Only a fresh uninitialized declaration creates storage without also
+        // being able to retire an existing object. Re-entering a declaration
+        // can retire the binding's previous local block.
+        let uninitialized_local_declaration = matches!(
+            statement,
+            ProgramStatement::Declare {
+                name,
+                initializer: None,
+                zero_fill: None,
+                ..
+            } if before.locals().slot(name).is_none_or(|slot| !slot.base.is_local_block())
+        );
+        Self::from_transition(
+            source,
+            before,
+            after,
+            effects,
+            uninitialized_local_declaration,
+        )
+    }
+
+    fn from_transition(
+        source: String,
+        before: &ExecutionState,
+        after: &ExecutionState,
+        effects: &(impl ExecutionFactSource + ?Sized),
+        uninitialized_local_declaration: bool,
     ) -> Arc<Self> {
         let mut members = imbl::Vector::new();
         let mut resource_bound = None;
@@ -176,6 +215,7 @@ impl RegionFootprint {
             after_resources: after.resources().clone(),
             members,
             complete,
+            uninitialized_local_declaration,
             is_sequence: false,
         })
     }
@@ -198,6 +238,7 @@ impl RegionFootprint {
             members,
             complete: statement.complete && cleanup.complete,
             resource_bound: None,
+            uninitialized_local_declaration: false,
             is_sequence: false,
         })
     }
@@ -221,6 +262,7 @@ impl RegionFootprint {
             after_resources: after.resources().clone(),
             members,
             complete,
+            uninitialized_local_declaration: false,
             is_sequence: true,
         })
     }

@@ -355,7 +355,7 @@ impl CheckedFoldReadSummary {
         };
         Some(FoldReadInterval {
             memory: memory.clone(),
-            base: pointer.pointer().clone(),
+            base: pointer.address().clone(),
             start: endpoint(self.start)?,
             end: endpoint(self.end)?,
             element_width: self.element_width,
@@ -803,7 +803,12 @@ fn zip_proposition(
         (
             Proposition::ConditionIs(left, left_value),
             Proposition::ConditionIs(right, right_value),
-        ) if left_value == right_value => zip_condition(left, right, assumptions, checked),
+        ) if left_value == right_value => zip_condition(
+            left.native_compat(),
+            right.native_compat(),
+            assumptions,
+            checked,
+        ),
         (Proposition::And(a, b), Proposition::And(c, d))
         | (Proposition::Or(a, b), Proposition::Or(c, d))
         | (Proposition::Implies(a, b), Proposition::Implies(c, d)) => {

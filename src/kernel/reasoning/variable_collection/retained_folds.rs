@@ -318,7 +318,7 @@ pub(super) fn common_variables(
                     _ => {}
                 }
             }
-            KernelTermNode::PointerValueEqual(pair) => {
+            KernelTermNode::PointerEqual(pair) => {
                 for value in pair.arguments() {
                     for address in value.addresses() {
                         super::retained_pointers::collect_address_variables_with_summaries(
@@ -330,7 +330,7 @@ pub(super) fn common_variables(
                     }
                 }
             }
-            KernelTermNode::PointerEqual { arguments } => {
+            KernelTermNode::AddressEqual { arguments } => {
                 for address in arguments {
                     super::retained_pointers::collect_address_variables_with_summaries(
                         address,
@@ -340,7 +340,7 @@ pub(super) fn common_variables(
                     );
                 }
             }
-            KernelTermNode::PointerOffsetEqual { arguments } => {
+            KernelTermNode::AddressOffsetEqual { arguments } => {
                 super::retained_pointers::collect_offset_variables_with_summaries(
                     arguments,
                     mode,
@@ -359,14 +359,14 @@ pub(super) fn common_variables(
             KernelTermNode::PointerRead { value, .. }
             | KernelTermNode::PointerArithmetic { value, .. }
             | KernelTermNode::PointerCall { value, .. }
-            | KernelTermNode::PointerValue(value) => {
+            | KernelTermNode::Pointer(value) => {
                 super::retained_pointers::collect_pointer_variables(
                     value,
                     mode,
                     &mut leaf_variables,
                 );
             }
-            KernelTermNode::PointerAddress { address, .. } => {
+            KernelTermNode::IntegerAddress { address, .. } => {
                 if !matches!(
                     mode,
                     FoldVariableRead::IntegerBinders | FoldVariableRead::MachineBinders
@@ -939,14 +939,14 @@ mod tests {
             algebraic_type: crate::kernel::TypeParameterName::intern("AlgebraicReaderT")
                 .algebraic_type(),
             node: AlgebraicTermNode::MemoryLoad {
-                memory: crate::kernel::intern_memory(
+                point: crate::kernel::ProgramPoint::at(&crate::kernel::intern_memory(
                     SymbolicMemory::new()
                         .with_block("algebraic-reader", 8)
                         .store(
                             SymbolicMemory::global_pointer("algebraic-reader"),
                             ProgramValue::UInt64(MachineTerm::Variable(Variable(999741))),
                         ),
-                ),
+                )),
                 pointer: Box::new(Address {
                     base: AddressBase::Symbolic(Variable(999742)),
                     offset: AddressOffset::scaled_int32_node(
@@ -1014,7 +1014,9 @@ mod tests {
                 IntegerTerm::Variable(Variable(999562)).into(),
             )),
             else_condition: Box::new(ConditionTerm::BoolLoad(
-                crate::kernel::intern_memory(SymbolicMemory::new()),
+                crate::kernel::ProgramPoint::at(&crate::kernel::intern_memory(
+                    SymbolicMemory::new(),
+                )),
                 Box::new(Address::symbolic(Variable(999563))),
             )),
         });
@@ -1058,14 +1060,14 @@ mod tests {
         );
         for source in [
             ConditionTerm::BoolLoad(
-                crate::kernel::intern_memory(
+                crate::kernel::ProgramPoint::at(&crate::kernel::intern_memory(
                     crate::kernel::SymbolicMemory::new()
                         .with_block("bool-dependencies", 4)
                         .store(
                             crate::kernel::SymbolicMemory::global_pointer("bool-dependencies"),
                             ProgramValue::Int32(MachineTerm::Variable(Variable(970_030))),
                         ),
-                ),
+                )),
                 Box::new(Address {
                     base: AddressBase::Symbolic(Variable(970_031)),
                     offset: AddressOffset::scaled_int32_node(
@@ -1083,9 +1085,9 @@ mod tests {
                 }),
                 right: Box::new(MachineTerm::Variable(Variable(970_021))),
             },
-            ConditionTerm::PointerValueEqual(
+            ConditionTerm::PointerEqual(
                 Box::new(
-                    PointerValue::new(
+                    Pointer::new(
                         Address::symbolic(Variable(970_010)),
                         ProgramType::Int32Pointer,
                     )
@@ -1094,12 +1096,9 @@ mod tests {
                         width: MachineTerm::Variable(Variable(970_012)),
                     })),
                 ),
-                Box::new(PointerValue::new(
-                    Address::null(),
-                    ProgramType::Int32Pointer,
-                )),
+                Box::new(Pointer::new(Address::null(), ProgramType::Int32Pointer)),
             ),
-            ConditionTerm::PointerOffsetEqual(
+            ConditionTerm::AddressOffsetEqual(
                 Box::new(AddressOffset::Add(
                     Box::new(AddressOffset::Variable(Variable(970_005))),
                     Box::new(AddressOffset::scaled_int32_node(
@@ -1116,7 +1115,7 @@ mod tests {
                     true,
                 )),
             ),
-            ConditionTerm::PointerEqual(
+            ConditionTerm::AddressEqual(
                 Box::new(Address {
                     base: AddressBase::PureFunctionApplication(SharedPureApplication::intern(
                         "raw_pointer_dependency".into(),
@@ -1505,7 +1504,7 @@ mod mixed_argument_tests {
                 ],
             },
         };
-        let pointer = ProgramValue::Pointer(PointerValue::new(
+        let pointer = ProgramValue::Pointer(Pointer::new(
             Address::symbolic(Variable(1008512)),
             ProgramType::Int32Pointer,
         ));

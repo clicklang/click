@@ -2,11 +2,11 @@
 use super::*;
 
 impl KernelTerm {
-    pub(crate) fn pointer_equal_raw(arguments: [SharedAddress; 2]) -> Self {
-        Self::intern(KernelType::Bool, KernelTermNode::PointerEqual { arguments })
+    pub(crate) fn address_equal_raw(arguments: [SharedAddress; 2]) -> Self {
+        Self::intern(KernelType::Bool, KernelTermNode::AddressEqual { arguments })
     }
 
-    pub(crate) fn pointer_equal(arguments: [SharedAddress; 2]) -> Self {
+    pub(crate) fn address_equal(arguments: [SharedAddress; 2]) -> Self {
         let [a, b] = arguments.each_ref().map(|address| address.node());
         let left = a.base.native_atom();
         let right = b.base.native_atom();
@@ -14,14 +14,14 @@ impl KernelTerm {
             return Self::intern(KernelType::Bool, KernelTermNode::BoolLiteral(false));
         }
         if left == right {
-            let comparison = Self::pointer_offset_equal([a.offset.clone(), b.offset.clone()]);
+            let comparison = Self::address_offset_equal([a.offset.clone(), b.offset.clone()]);
             if let KernelTermNode::BoolLiteral(value) = comparison.node()
                 && !(*value && matches!(left, AddressBase::LoadedPointer(_)))
             {
                 return comparison;
             }
         }
-        Self::pointer_equal_raw(arguments)
+        Self::address_equal_raw(arguments)
     }
 }
 
@@ -48,7 +48,7 @@ mod tests {
                 &memory,
                 &crate::kernel::SymbolicMemory::global_pointer("raw-pointer"),
             ),
-            Address::integer_address(MachineTerm::Variable(Variable(999002))),
+            Address::from_integer_address(MachineTerm::Variable(Variable(999002))),
             Address {
                 base: AddressBase::PureFunctionApplication(SharedPureApplication::intern(
                     "raw_pointer_call".into(),
@@ -82,12 +82,12 @@ mod tests {
         for a in &values {
             for b in &values {
                 let shared = [SharedAddress::import(a), SharedAddress::import(b)];
-                let expected = ConditionTerm::pointer_equal(a.clone(), b.clone());
-                let actual = KernelTerm::pointer_equal(shared);
+                let expected = ConditionTerm::address_equal(a.clone(), b.clone());
+                let actual = KernelTerm::address_equal(shared);
                 assert_eq!(KernelTermExport::condition(&actual).unwrap(), expected);
-                let raw = ConditionTerm::PointerEqual(Box::new(a.clone()), Box::new(b.clone()));
+                let raw = ConditionTerm::AddressEqual(Box::new(a.clone()), Box::new(b.clone()));
                 let root = KernelTermImport::default().condition(&raw);
-                assert!(matches!(root.node(), KernelTermNode::PointerEqual { .. }));
+                assert!(matches!(root.node(), KernelTermNode::AddressEqual { .. }));
                 assert_eq!(
                     format!("{:?}", KernelTermExport::condition(&root).unwrap()),
                     format!("{raw:?}")
@@ -111,7 +111,7 @@ mod tests {
             ),
         };
         for pointer in pointers() {
-            let source = ConditionTerm::PointerEqual(Box::new(pointer), Box::new(Address::null()));
+            let source = ConditionTerm::AddressEqual(Box::new(pointer), Box::new(Address::null()));
             for source in [
                 source.clone(),
                 ConditionTerm::BoolEqual(
@@ -139,7 +139,7 @@ mod tests {
                     "{source:?}"
                 );
                 let expected = crate::kernel::reasoning::substitute_pointer_variable_in_proposition(
-                    &Proposition::ConditionIs(source.clone(), true),
+                    &Proposition::condition_is(source.clone(), true),
                     Variable(999001),
                     &target,
                 );
@@ -170,13 +170,13 @@ mod tests {
             let block = AddressBase::PureFunctionApplication(SharedPureApplication::intern(
                 "raw_pointer_metadata".into(),
                 vec![PureFunctionArgument::Value(ProgramValue::UInt64(
-                    MachineTerm::PointerAddress(
+                    MachineTerm::IntegerAddress(
                         Box::new(Address::symbolic(Variable(999020))),
                         AddressObjectClass::new(Some(CAccessClass::Scalar(class))),
                     ),
                 ))],
             ));
-            let source = ConditionTerm::PointerEqual(
+            let source = ConditionTerm::AddressEqual(
                 Box::new(Address {
                     base: block,
                     offset: AddressOffset::Constant(0),
@@ -236,7 +236,7 @@ mod tests {
                 } else {
                     AddressOffset::scaled_int32_node(value, 4)
                 };
-                ConditionTerm::PointerEqual(
+                ConditionTerm::AddressEqual(
                     Box::new(Address {
                         base: AddressBase::Symbolic(Variable(999030)),
                         offset,

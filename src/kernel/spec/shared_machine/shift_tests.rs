@@ -30,14 +30,16 @@ fn native_domain(value: &Proposition) -> Proposition {
             Proposition::And(Box::new(native_domain(a)), Box::new(native_domain(b)))
         }
         Proposition::ConditionIs(condition, truth) => {
-            if matches!(condition, C::Compare { .. }) {
-                let lifted =
-                    crate::kernel::machine_integer::comparison::comparison_view(condition, *truth)
-                        .unwrap()
-                        .integer_proposition();
+            if matches!(condition.native_compat(), C::Compare { .. }) {
+                let lifted = crate::kernel::machine_integer::comparison::comparison_view(
+                    condition.native_compat(),
+                    *truth,
+                )
+                .unwrap()
+                .integer_proposition();
                 return native_domain(&lifted);
             }
-            let (a, b, less, negated) = match condition {
+            let (a, b, less, negated) = match condition.native_compat() {
                 C::IntegerLessThan(a, b) => (a, b, true, !truth),
                 C::IntegerGreaterThan(a, b) => (b, a, true, !truth),
                 C::IntegerLessEqual(a, b) => (a, b, false, !truth),
@@ -46,7 +48,7 @@ fn native_domain(value: &Proposition) -> Proposition {
             };
             let (a, b) = (native_integer(a), native_integer(b));
             let (a, b, less) = if negated { (b, a, !less) } else { (a, b, less) };
-            Proposition::ConditionIs(
+            Proposition::condition_is(
                 if less {
                     C::integer_less_than(a, b)
                 } else {
@@ -143,8 +145,10 @@ fn check_shift_parity(rust: bool) {
                             else {
                                 panic!()
                             };
-                            let result_format =
-                                MachineIntegerType::from_program_type(expected_value.program_type()).unwrap();
+                            let result_format = MachineIntegerType::from_program_type(
+                                expected_value.program_type(),
+                            )
+                            .unwrap();
                             if let Some(imported) = KernelTermImport::default()
                                 .machine_arithmetic(result_format, expected_word)
                             {
@@ -176,9 +180,9 @@ fn check_shift_parity(rust: bool) {
 #[test]
 fn program_shift_evaluator_retains_wide_count_refusals() {
     for op in OPS {
-        let left = Box::new(SpecExpression::Value(ProgramValue::Int32(MachineTerm::Variable(
-            Variable(995475),
-        ))));
+        let left = Box::new(SpecExpression::Value(ProgramValue::Int32(
+            MachineTerm::Variable(Variable(995475)),
+        )));
         let right = Box::new(SpecExpression::Value(ProgramValue::UInt64(
             MachineTerm::uint64_constant(1 << 32),
         )));

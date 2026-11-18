@@ -10,11 +10,11 @@ fn full_pointer_alias_keeps_typed_constructor_fields_in_linear_work() {
     let class = crate::kernel::effective_type::CAccessClass::Struct(
         crate::kernel::effective_type::CStructClass::opaque("node"),
     );
-    let from = PointerValue::new(
+    let from = Pointer::new(
         Address::symbolic(Variable(970_001)),
         ProgramType::Int32Pointer,
     );
-    let to = PointerValue::new(
+    let to = Pointer::new(
         Address::symbolic(Variable(970_002)),
         ProgramType::Int32Pointer,
     );
@@ -61,7 +61,7 @@ fn full_pointer_alias_keeps_typed_constructor_fields_in_linear_work() {
             let AlgebraicValue::Program(ProgramValue::Pointer(pointer)) = field else {
                 panic!("pointer field expected")
             };
-            assert_eq!(pointer.pointer(), to.pointer());
+            assert_eq!(pointer.address(), to.address());
             assert_eq!(pointer.provenance(), to.provenance());
             assert!(pointer.supports_object_class(&class));
         }
@@ -85,7 +85,7 @@ fn full_pointer_alias_keeps_typed_constructor_fields_in_linear_work() {
 
     // Numeric equality cannot replace the original object's provenance.
     let ProgramValue::Pointer(actual) =
-        TermRewrite::for_pointer_exact(from.pointer(), to.pointer())
+        TermRewrite::for_pointer_exact(from.address(), to.address())
             .value(&ProgramValue::Pointer(typed.clone()))
     else {
         panic!("pointer expected")
@@ -904,7 +904,7 @@ fn checked_substitution_collector_reuses_registered_load_dag() {
                 base: AddressBase::Concrete("array".into()),
                 offset: AddressOffset::Variable(load),
             },
-            bytes: MachineTerm::constant(4),
+            bytes: (MachineTerm::constant(4)).into(),
             wide: false,
         };
         let mut proposition = atom.clone();
@@ -1028,18 +1028,18 @@ fn native_unsigned_offset_projection_checks_full_width_bounds_and_scopes() {
         name: Default::default(),
         var: Variable(989_100),
         sort: Sort::ProgramInteger(MachineIntegerType::UInt64),
-        body: Box::new(Proposition::ConditionIs(
-            ConditionTerm::pointer_offset_equal(native.clone(), narrow.clone()),
+        body: Box::new(Proposition::condition_is(
+            ConditionTerm::address_offset_equal(native.clone(), narrow.clone()),
             true,
         )),
     };
     assert_eq!(rewrite.proposition(&binder), binder);
     assert!(rewrite.refusal().is_none());
-    let goal = Proposition::ConditionIs(
-        ConditionTerm::pointer_offset_equal(native.clone(), narrow),
+    let goal = Proposition::condition_is(
+        ConditionTerm::address_offset_equal(native.clone(), narrow),
         true,
     );
-    let premise = Proposition::ConditionIs(bound, true);
+    let premise = Proposition::condition_is(bound, true);
     let facts = crate::kernel::proof::PureFactStore::from_ordered(std::slice::from_ref(&premise));
     assert!(
         crate::kernel::proof::fact_reasoning::normalize_using_conditions(
@@ -1114,14 +1114,14 @@ fn generic_read_alias_rewrite_work(count: u64, unrelated: u64, warm: bool) -> us
         );
     }
     let memory = crate::kernel::intern_memory(memory);
-    let from = PointerValue::new(
+    let from = Pointer::new(
         Address {
             base: AddressBase::ExternalArgument,
             offset: AddressOffset::Constant(0),
         },
         ProgramType::Int32Pointer,
     );
-    let read = AlgebraicTermNode::parameter_load(memory.clone(), from.pointer().clone(), parameter);
+    let read = AlgebraicTermNode::parameter_load(memory.clone(), from.address().clone(), parameter);
     // Catch up the input's pointer-reachable index once for the warm-query
     // axis. Every measured alias is still fresh. The cold axis below charges
     // this initial delta as well and grows cells and queries together.
@@ -1134,13 +1134,13 @@ fn generic_read_alias_rewrite_work(count: u64, unrelated: u64, warm: bool) -> us
     }
     let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
         for index in 0..count {
-            let to = PointerValue::new(
+            let to = Pointer::new(
                 Address::symbolic(Variable(997_000 + index)),
                 ProgramType::Int32Pointer,
             );
             let rewritten = TermRewrite::for_pointer_value_exact(&from, &to).value(&read);
             let expected =
-                AlgebraicTermNode::parameter_load(memory.clone(), to.pointer().clone(), parameter);
+                AlgebraicTermNode::parameter_load(memory.clone(), to.address().clone(), parameter);
             assert_eq!(rewritten, expected);
             assert_ne!(rewritten, stored);
         }
@@ -1181,7 +1181,7 @@ fn generic_read_alias_rewrites_keep_cold_total_work_linear() {
 
 fn full_pointer_read_version_rewrite_work(count: u64, unrelated: u64) -> usize {
     let _session = crate::kernel::VerificationSession::enter();
-    let to = PointerValue::new(
+    let to = Pointer::new(
         Address::symbolic(Variable(997_500)),
         ProgramType::Int32PointerPointer,
     );
@@ -1193,15 +1193,15 @@ fn full_pointer_read_version_rewrite_work(count: u64, unrelated: u64) -> usize {
             ProgramValue::Int32(7u32.into()),
         );
     }
-    let memory = memory.store(to.pointer().clone(), stored.clone());
+    let memory = memory.store(to.address().clone(), stored.clone());
     let inputs = (0..count)
         .map(|index| {
-            let from = PointerValue::new(
+            let from = Pointer::new(
                 Address::symbolic(Variable(999_500 + index)),
                 ProgramType::Int32PointerPointer,
             );
             let read =
-                memory.symbolic_pointer_version_load(from.pointer(), ProgramType::Int32Pointer);
+                memory.symbolic_pointer_version_load(from.address(), ProgramType::Int32Pointer);
             (from, read)
         })
         .collect::<Vec<_>>();
@@ -1211,7 +1211,7 @@ fn full_pointer_read_version_rewrite_work(count: u64, unrelated: u64) -> usize {
             .map(|(from, read)| TermRewrite::for_pointer_value_exact(from, &to).value(read))
             .collect::<Vec<_>>()
     });
-    let expected = memory.symbolic_pointer_version_load(to.pointer(), ProgramType::Int32Pointer);
+    let expected = memory.symbolic_pointer_version_load(to.address(), ProgramType::Int32Pointer);
     assert_ne!(expected, stored);
     assert!(rewritten.iter().all(|value| *value == expected));
     work
@@ -1347,7 +1347,7 @@ fn arithmetic_comparison_memos_are_bounded_and_session_local() {
                 MachineTerm::constant(0),
             );
         }
-        let goal = Proposition::ConditionIs(ConditionTerm::equal(expression, variable), true);
+        let goal = Proposition::condition_is(ConditionTerm::equal(expression, variable), true);
         let measure = || {
             crate::instrumentation::measure_deterministic_work(|| {
                 crate::kernel::arithmetic_comparison_form(&goal)
@@ -1397,7 +1397,7 @@ fn shared_carrier_collection_reuses_growing_prefixes_without_exporting() {
                     [root.clone(), root.clone()],
                 );
                 let machine = SharedMachineIntegerTerm::from_shared(format, root.clone()).unwrap();
-                let proposition = Proposition::ConditionIs(
+                let proposition = Proposition::condition_is(
                     ConditionTerm::IntegerEqual(
                         IntegerTerm::Machine(machine.clone()).into(),
                         IntegerTerm::constant_i64(0).into(),

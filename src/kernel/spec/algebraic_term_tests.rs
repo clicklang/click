@@ -1138,7 +1138,7 @@ fn algebraic_read_result_preserves_native_state_and_type() {
     let native = AlgebraicTerm {
         algebraic_type: ty.clone(),
         node: AlgebraicTermNode::MemoryLoad {
-            memory: intern_memory(SymbolicMemory::new()),
+            point: crate::kernel::ProgramPoint::at(&intern_memory(SymbolicMemory::new())),
             pointer: Box::new(Address::symbolic(Variable(999749))),
         },
     };
@@ -1330,7 +1330,7 @@ fn algebraic_program_conditionals_preserve_existing_refusals() {
         KernelType::Algebraic(ty),
         Variable(999767),
     ));
-    let guard = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
+    let guard = Proposition::condition_is(ConditionTerm::Constant(true), true);
     // Program-carried algebraic values only join when equal. The separate
     // logical algebraic evaluator owns algebraic If construction.
     for retain in [true, false] {

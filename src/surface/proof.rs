@@ -248,7 +248,7 @@ mod certificate_tests {
                 Box::new(MachineTerm::constant(1))
             );
         }
-        let proposition = Proposition::ConditionIs(
+        let proposition = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -308,7 +308,7 @@ mod certificate_tests {
             name: Default::default(),
             var: Variable(7),
             sort: Sort::Bitvector32,
-            body: Box::new(Proposition::ConditionIs(
+            body: Box::new(Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
@@ -357,7 +357,7 @@ mod certificate_tests {
             base: "target".into(),
             offset: AddressOffset::Constant(0),
         };
-        let kernel = Proposition::ConditionIs(
+        let kernel = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -2469,10 +2469,11 @@ pub(super) fn initial_claim_context_with_caller_owner(
     {
         if !requirement_pure_facts.contains(&fact) {
             requirement_pure_facts.push(fact);
-            entry_fact_origins.push(EntryFactOrigin::Derived);
         }
     }
-    debug_assert_eq!(requirement_pure_facts.len(), entry_fact_origins.len());
+    // Publishing an arm fact can also materialize consequences of entry
+    // requirements. Both the published facts and their consequences are derived.
+    entry_fact_origins.resize(requirement_pure_facts.len(), EntryFactOrigin::Derived);
     // Export the selected function-entry input in the final execution lineage.
     // Clause evaluation used a separate context with projection-derived read
     // facts excluded; its prepared index cannot stand in for this one. Entry
@@ -2770,7 +2771,7 @@ fn evaluate_entry_resource_context(
             let Proposition::MemoryLoadable { base, bytes, .. } = fact else {
                 return None;
             };
-            let range = match bytes {
+            let range = match bytes.native_compat() {
                 binary_term!(Int32, Multiply, left, right)
                     if **right == MachineTerm::constant(ProgramType::Int32.byte_width()) =>
                 {
@@ -2803,7 +2804,7 @@ fn evaluate_entry_resource_context(
                 _ => MemoryRange::new_with_element_width(
                     base.clone(),
                     MachineTerm::constant(0),
-                    bytes.clone(),
+                    bytes.native_compat().clone(),
                     1,
                 ),
             };
@@ -2889,6 +2890,19 @@ fn evaluate_entry_resource_context(
                 )));
             }
         };
+    let evaluated = crate::kernel::admit_declared_entry_resources(
+        evaluated,
+        &entry_clauses,
+        &evaluation_state,
+        &definitions,
+        &assumptions,
+    )
+    .map_err(|error| {
+        ClickError::new(format!(
+            "`{claim_label}` setup failed: {}",
+            crate::surface::diagnostics::describe_runtime_error(&error, parameter_binding)
+        ))
+    })?;
     let state = state.with_resource_context(evaluated);
     // The entry partition (`kernel::contract_entry_partition_facts`): this
     // contract's transferred memory clauses are separate from its borrowed

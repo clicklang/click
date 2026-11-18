@@ -128,10 +128,7 @@ fn opening_control_retains_loaded_pointer_facts() {
         .introduced_since(named.facts())
         .unwrap();
     assert!(
-        introduced.iter().any(|fact| matches!(
-            fact,
-            Proposition::ConditionIs(ConditionTerm::PointerValueEqual(..), true)
-        )),
+        introduced.iter().any(|fact| matches!(&fact, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::PointerEqual(..), _))))),
         "open must retain the newly constructed pointer identity: {introduced:?}"
     );
     assert!(root.certificate().steps().is_empty());

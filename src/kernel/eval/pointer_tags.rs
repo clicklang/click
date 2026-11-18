@@ -197,7 +197,7 @@ impl PureFactContext {
         }
         for stored in [condition.clone(), condition.flipped()] {
             if let Some(value) = self.condition_facts.get(&stored).copied() {
-                used.cite(Proposition::ConditionIs(stored, value));
+                used.cite(Proposition::condition_is(stored, value));
                 return Some(value);
             }
         }
@@ -210,7 +210,7 @@ impl PureFactContext {
             }
             return Some(aligned);
         }
-        if let ConditionTerm::PointerEqual(left, right) = condition {
+        if let ConditionTerm::AddressEqual(left, right) = condition {
             if left == right {
                 return Some(true);
             }
@@ -350,7 +350,7 @@ fn require(
                     if add_proof_obligation_with_context(
                         obligations,
                         assumptions,
-                        Proposition::ConditionIs(condition, true),
+                        Proposition::condition_is(condition, true),
                         Some(&context),
                     )
                     .is_none()
@@ -458,7 +458,7 @@ fn form_of_uncached(
                 used,
                 false,
             )? {
-                used.cite(Proposition::ConditionIs(fact, true));
+                used.cite(Proposition::condition_is(fact, true));
                 return Ok(Some(form));
             }
         }
@@ -497,7 +497,7 @@ fn form_of_uncached(
                 used,
                 false,
             )? {
-                used.cite(Proposition::ConditionIs(fact, true));
+                used.cite(Proposition::condition_is(fact, true));
                 used.complete = false;
                 return Ok(Some(form));
             }
@@ -520,7 +520,7 @@ fn structural_form_of(
             .unwrap_or(term),
         _ => term,
     };
-    if let MachineOperandView::Legacy(MachineTerm::PointerAddress(pointer, class)) = leaf {
+    if let MachineOperandView::Legacy(MachineTerm::IntegerAddress(pointer, class)) = leaf {
         return Ok(Some(TaggedAddress {
             pointer: pointer.as_ref().clone(),
             object_class: class.class(),
@@ -812,7 +812,7 @@ pub(in crate::kernel) fn cast_tagged_address_to_pointer(
     assumptions: &PureFactContext,
     obligations: &mut Vec<ProofObligation>,
     target_type: ProgramType,
-) -> Result<Option<PointerValue>, String> {
+) -> Result<Option<Pointer>, String> {
     let mut used = UsedFacts::new();
     let form = match form_of(
         MachineOperandView::Legacy(term),
@@ -832,8 +832,7 @@ pub(in crate::kernel) fn cast_tagged_address_to_pointer(
     );
     match assumptions.decide(&tag_is_zero) {
         Some(true) => Ok(Some(
-            PointerValue::new(form.pointer, target_type)
-                .with_declared_object_class(form.object_class),
+            Pointer::new(form.pointer, target_type).with_declared_object_class(form.object_class),
         )),
         Some(false) => Err(
             "integer-to-pointer cast of a tagged address requires the tag bits proven zero; \
@@ -846,7 +845,7 @@ pub(in crate::kernel) fn cast_tagged_address_to_pointer(
             if add_proof_obligation_with_context(
                 obligations,
                 assumptions,
-                Proposition::ConditionIs(tag_is_zero, true),
+                Proposition::condition_is(tag_is_zero, true),
                 Some(context),
             )
             .is_none()
@@ -854,7 +853,7 @@ pub(in crate::kernel) fn cast_tagged_address_to_pointer(
                 return Err(format!("{context}; they are refuted"));
             }
             Ok(Some(
-                PointerValue::new(form.pointer, target_type)
+                Pointer::new(form.pointer, target_type)
                     .with_declared_object_class(form.object_class),
             ))
         }
@@ -898,7 +897,7 @@ mod exact_word_address_tests {
             assert_eq!(tag_bound_citing(value, &context, &mut used), Some(3));
             assert!(
                 used.premises
-                    .contains(&Proposition::ConditionIs(bound.clone(), true))
+                    .contains(&Proposition::condition_is(bound.clone(), true))
             );
             assert_eq!(
                 tag_bound_citing(value, &PureFactContext::new(), &mut UsedFacts::new()),
@@ -1022,7 +1021,7 @@ mod exact_word_address_tests {
             .assume_condition(ConditionTerm::pointer_aligned(q.clone(), 8), true);
         let word = |pointer: Address, tag| {
             MachineTerm::uint64_add(
-                MachineTerm::pointer_address(pointer),
+                MachineTerm::integer_address(pointer),
                 MachineTerm::uint64_constant(tag),
             )
         };
@@ -1065,7 +1064,7 @@ mod exact_word_address_tests {
         let other = Address::symbolic(Variable(980121));
         let class = CAccessClass::Struct(CStructClass::opaque("node"));
         let classed = MachineTerm::object_pointer_address(pointer.clone(), Some(class.clone()));
-        let bare = MachineTerm::pointer_address(pointer.clone());
+        let bare = MachineTerm::integer_address(pointer.clone());
         assert_eq!(classed, bare);
         assert_eq!(classed.cmp(&bare), std::cmp::Ordering::Equal);
         let hash = |term: &MachineTerm| {
@@ -1078,18 +1077,18 @@ mod exact_word_address_tests {
         // query over the bare spelling asks for, in either polarity.
         let stated = ConditionTerm::uint64_equal(
             classed.clone(),
-            MachineTerm::pointer_address(other.clone()),
+            MachineTerm::integer_address(other.clone()),
         );
-        let asked = ConditionTerm::uint64_equal(bare.clone(), MachineTerm::pointer_address(other));
+        let asked = ConditionTerm::uint64_equal(bare.clone(), MachineTerm::integer_address(other));
         let assumptions = PureFactContext::new().assume_condition(stated, false);
         assert!(
             crate::kernel::reasoning::path_facts::required_obligation_is_exactly_discharged(
                 &assumptions,
-                &Proposition::ConditionIs(asked, false),
+                &Proposition::condition_is(asked, false),
             )
         );
         // The class is evidence for decoding, and identity never erases it.
-        let MachineTerm::PointerAddress(_, retained) = &classed else {
+        let MachineTerm::IntegerAddress(_, retained) = &classed else {
             panic!("an address term");
         };
         assert_eq!(retained.class(), Some(class));
@@ -1113,9 +1112,9 @@ mod exact_word_address_tests {
             .pointer_alignment_certificate_decision(&pointer, 8)
             .unwrap();
         assert!(aligned);
-        assert_eq!(cited, Some(Proposition::ConditionIs(premise, true)));
+        assert_eq!(cited, Some(Proposition::condition_is(premise, true)));
         for address in [
-            MachineTerm::pointer_address(pointer.clone()),
+            MachineTerm::integer_address(pointer.clone()),
             MachineTerm::object_pointer_address(pointer.clone(), Some(class.clone())),
         ] {
             let tagged = ConditionTerm::uint64_equal(
@@ -1137,7 +1136,7 @@ mod exact_word_address_tests {
         let mut obligations = Vec::new();
         let encoded = cast_program_value_to_type(
             ProgramValue::Pointer(
-                PointerValue::new(pointer.clone(), ProgramType::Int32Pointer)
+                Pointer::new(pointer.clone(), ProgramType::Int32Pointer)
                     .with_object_class(Some(class.clone())),
             ),
             ProgramType::UInt64,
@@ -1180,7 +1179,7 @@ mod exact_word_address_tests {
             )
             .unwrap()
             .unwrap();
-            assert_eq!(decoded.pointer(), &pointer);
+            assert_eq!(decoded.address(), &pointer);
             assert_eq!(decoded.object_class(), Some(class.clone()));
             assert_eq!(decoded.program_type(), ProgramType::Float64Pointer);
         }
@@ -1197,7 +1196,7 @@ mod exact_word_address_tests {
         assert_eq!(
             assumptions.decide(&ConditionTerm::uint64_equal(
                 address,
-                MachineTerm::pointer_address(pointer)
+                MachineTerm::integer_address(pointer)
             )),
             Some(true)
         );
@@ -1210,7 +1209,7 @@ mod exact_word_address_tests {
         let pointer = Address::symbolic(Variable(980020));
         let class = CAccessClass::Scalar(CScalarClass::Int);
         let word = MachineTerm::Variable(Variable(980021));
-        let premise = Proposition::ConditionIs(
+        let premise = Proposition::condition_is(
             ConditionTerm::uint64_equal(
                 word.clone(),
                 MachineTerm::object_pointer_address(pointer.clone(), Some(class.clone())),
@@ -1228,7 +1227,7 @@ mod exact_word_address_tests {
         )
         .unwrap()
         .unwrap();
-        assert_eq!(decoded.pointer(), &pointer);
+        assert_eq!(decoded.address(), &pointer);
         assert_eq!(decoded.object_class(), Some(class));
         for context in [parent, branch.restricted_to_facts(&[], &[])] {
             assert!(
@@ -1243,7 +1242,7 @@ mod exact_word_address_tests {
             );
         }
         let bare = cast_tagged_address_to_pointer(
-            &MachineTerm::pointer_address(pointer),
+            &MachineTerm::integer_address(pointer),
             &PureFactContext::new(),
             &mut obligations,
             ProgramType::Float64Pointer,
@@ -1361,11 +1360,11 @@ mod exact_word_address_tests {
                             if expected.is_some() {
                                 assert!(
                                     used.premises
-                                        .contains(&Proposition::ConditionIs(upper.clone(), true))
+                                        .contains(&Proposition::condition_is(upper.clone(), true))
                                 );
                                 if signed {
                                     assert!(
-                                        used.premises.contains(&Proposition::ConditionIs(
+                                        used.premises.contains(&Proposition::condition_is(
                                             lower.clone(),
                                             true
                                         ))
@@ -1419,7 +1418,7 @@ mod exact_word_address_tests {
             .assume_condition(upper.clone(), true)
             .assume_condition(ConditionTerm::pointer_aligned(pointer.clone(), 8), true);
         let tagged = MachineTerm::uint64_bitwise_or(
-            MachineTerm::pointer_address(pointer.clone()),
+            MachineTerm::integer_address(pointer.clone()),
             converted,
         );
         let cleared = MachineTerm::uint64_bitwise_and(tagged, MachineTerm::uint64_constant(!3));
@@ -1431,7 +1430,7 @@ mod exact_word_address_tests {
         for condition in [lower, upper] {
             assert!(
                 used.premises
-                    .contains(&Proposition::ConditionIs(condition, true))
+                    .contains(&Proposition::condition_is(condition, true))
             );
         }
     }
@@ -1455,18 +1454,18 @@ mod retained_tag_tests {
         let q = Address::symbolic(Variable(986002));
         let x = MachineTerm::Variable(Variable(986003));
         let y = MachineTerm::Variable(Variable(986004));
-        let opaque = MachineTerm::pointer_address(q);
-        let source = Proposition::ConditionIs(
+        let opaque = MachineTerm::integer_address(q);
+        let source = Proposition::condition_is(
             ConditionTerm::uint64_equal(
                 x.clone(),
-                MachineTerm::uint64_add(MachineTerm::pointer_address(p.clone()), opaque.clone()),
+                MachineTerm::uint64_add(MachineTerm::integer_address(p.clone()), opaque.clone()),
             ),
             true,
         );
         let parent = PureFactContext::new().assume_condition(
             ConditionTerm::uint64_equal(
                 MachineTerm::Variable(Variable(986005)),
-                MachineTerm::pointer_address(Address::symbolic(Variable(986006))),
+                MachineTerm::integer_address(Address::symbolic(Variable(986006))),
             ),
             true,
         );
@@ -1514,17 +1513,17 @@ mod retained_tag_tests {
         let ty = MachineIntegerType::UInt64;
         let p = Address::symbolic(Variable(986040));
         let q = Address::symbolic(Variable(986041));
-        let opaque = MachineTerm::pointer_address(Address::symbolic(Variable(986042)));
+        let opaque = MachineTerm::integer_address(Address::symbolic(Variable(986042)));
         let x = MachineTerm::Variable(Variable(986043));
         let y = MachineTerm::Variable(Variable(986044));
         let suffix = MachineTerm::Variable(Variable(986045));
         let source = |word, pointer| {
             ConditionTerm::uint64_equal(
                 word,
-                MachineTerm::uint64_add(MachineTerm::pointer_address(pointer), opaque.clone()),
+                MachineTerm::uint64_add(MachineTerm::integer_address(pointer), opaque.clone()),
             )
         };
-        let equality = ConditionTerm::pointer_equal(p.clone(), q.clone());
+        let equality = ConditionTerm::address_equal(p.clone(), q.clone());
         let context = PureFactContext::new()
             .assume_condition(source(x.clone(), p), true)
             .assume_condition(source(y.clone(), q), true)
@@ -1554,7 +1553,7 @@ mod retained_tag_tests {
             assert!(used.complete);
             assert!(
                 used.premises
-                    .contains(&Proposition::ConditionIs(equality.clone(), true))
+                    .contains(&Proposition::condition_is(equality.clone(), true))
             );
             assert_eq!(KernelTermExport::machine_export_count(), exports);
         }
@@ -1567,13 +1566,13 @@ mod retained_tag_tests {
         let word = MachineTerm::Variable(Variable(992580));
         let pointer = Address::symbolic(Variable(992581));
         let tagged = MachineTerm::uint64_add(
-            MachineTerm::pointer_address(pointer.clone()),
+            MachineTerm::integer_address(pointer.clone()),
             MachineTerm::uint64_constant(1),
         );
         let roots = [&word, &tagged].map(|value| {
             KernelTerm::retained_machine_operand(ty, MachineOperandView::Legacy(value))
         });
-        let source = Proposition::ConditionIs(
+        let source = Proposition::condition_is(
             crate::kernel::machine_integer::comparison::condition_for_operand_views(
                 ty,
                 CompareRelation::Equal,
@@ -1618,11 +1617,11 @@ mod retained_tag_tests {
         };
         let raw = read(memory.clone());
         let other = read(memory.with_block("other-tag-cell", 8));
-        let source = Proposition::ConditionIs(
+        let source = Proposition::condition_is(
             ConditionTerm::uint64_equal(
                 raw,
                 MachineTerm::uint64_add(
-                    MachineTerm::pointer_address(pointer.clone()),
+                    MachineTerm::integer_address(pointer.clone()),
                     MachineTerm::uint64_constant(1),
                 ),
             ),
@@ -1659,7 +1658,7 @@ mod retained_tag_tests {
             .assume_condition(ConditionTerm::pointer_aligned(p.clone(), 8), true);
         let bare = KernelTerm::retained_machine_operand(
             ty,
-            MachineOperandView::Legacy(&MachineTerm::pointer_address(p.clone())),
+            MachineOperandView::Legacy(&MachineTerm::integer_address(p.clone())),
         );
         let root = KernelTerm::retained_machine_operand(ty, MachineOperandView::Legacy(&address));
         assert_ne!(

@@ -4,10 +4,8 @@ src/kernel/api.rs	legacy-caller	::execution_state_with_borrowed_contract_inputs	
 src/kernel/api.rs	legacy-caller	::install_borrowed_contract_inputs	expand_composite_resource_fact_with_children	1
 src/kernel/api/contract_certification.rs	legacy-caller	::prepare_function_contract_entry_cases	expand_all_composite_resource_facts_at_state	1
 src/kernel/api/contract_certification.rs	legacy-caller	::program_function_contract_entry_facts	expand_all_composite_resource_facts_at_state	2
-src/kernel/api/contract_certification/contract_claims.rs	legacy-caller	::prepare_closing_path	expand_all_composite_resource_facts_at_state	1
 src/kernel/api/contract_certification/contract_claims.rs	legacy-caller	::prepare_closing_path	try_compose_with_facts	1
 src/kernel/api/contract_certification/contract_claims.rs	legacy-caller	::prepare_function_claim_path	expand_all_composite_resource_facts_at_state	1
-src/kernel/api/contract_certification/contract_claims.rs	legacy-caller	FunctionEnsureGoalContext::at_entry	expand_all_composite_resource_facts_at_state	1
 src/kernel/api/contract_certification/contract_claims.rs	legacy-caller	FunctionEnsureGoalContext::new	expand_all_composite_resource_facts_at_state	1
 src/kernel/functions.rs	legacy-caller	::add_verified_function_ensure_facts_selected_with_interface	expand_all_composite_resource_facts_at_state	1
 src/kernel/functions.rs	legacy-caller	::apply_verified_heap_allocation_delta	expand_all_composite_resource_facts_at_state	1
@@ -27,7 +25,6 @@ src/kernel/functions.rs	legacy-caller	::prepare_contract_resource_transfer_unexp
 src/kernel/functions.rs	legacy-caller	::prepare_contract_resource_transfer_unexplained	try_compose_with_facts_delaying_normalization	3
 src/kernel/functions.rs	legacy-caller	::prepare_verified_function_call	expand_all_composite_resource_facts_at_state	1
 src/kernel/functions.rs	legacy-caller	::resource_clause_supply_with_fact	expand_composite_resource_fact_with_children	1
-src/kernel/functions.rs	legacy-caller	::resource_context_contains_exact_owned_fact	validity_error	1
 src/kernel/functions.rs	legacy-caller	::rewrite_resource_instance_selecting_children_unspelled	try_compose_into_valid_context_delaying_normalization	3
 src/kernel/functions.rs	legacy-caller	::unreturned_allocation_at_function_exit	expand_all_composite_resource_facts_at_state	1
 src/kernel/functions.rs	legacy-caller	::unreturned_allocation_obligation	expand_all_composite_resource_facts_at_state	2
@@ -37,7 +34,6 @@ src/kernel/functions/contract_refinement.rs	legacy-caller	::framed_resource_tran
 src/kernel/functions/named_contract_refinement.rs	legacy-caller	::state_with_refinement_instances	try_compose_into_valid_context_delaying_normalization	1
 src/kernel/loans.rs	legacy-caller	::lend_owned_view_to_suspended_worker	try_compose_with_fact_with_occurrence	1
 src/kernel/loans.rs	legacy-caller	::plan_stable_view_transfer_with_protocol_effect	try_compose_with_fact_with_occurrence	3
-src/kernel/loans.rs	legacy-caller	::plan_stable_view_transfer_with_protocol_effect	validity_error	1
 src/kernel/loans.rs	legacy-caller	StableViewTransferPlan::lend_local_views_with_worker_shares	try_compose_with_fact_with_occurrence	1
 src/kernel/loans/mutex_calls.rs	legacy-caller	MutexUseCallTransfer::finish_checked_ledger	try_compose_with_facts_delaying_normalization	1
 src/kernel/loans/mutex_calls.rs	legacy-caller	MutexUseCallTransfer::finish_suspended_checked_ledger	try_compose_with_facts_delaying_normalization	1
@@ -62,7 +58,7 @@ src/kernel/primitives/resource_algebra.rs	legacy-caller	ResourceContext::try_com
 src/kernel/primitives/resource_algebra.rs	legacy-caller	ResourceContext::try_compose_with_facts_delaying_normalization	try_compose_with_facts_delaying_normalization_with_occurrences	1
 src/kernel/proof/execution.rs	legacy-caller	::checks_population_authority_exchange	try_compose_with_fact	1
 src/kernel/proof/execution.rs	legacy-caller	::trace_completion_from_entry	try_compose_with_facts	1
-src/kernel/proof/execution.rs	legacy-caller	CheckedResourceObservation::check	expand_composite_resource_fact_with_children	1
+src/kernel/proof/execution.rs	legacy-caller	CheckedResourceObservation::certify	expand_composite_resource_fact_with_children	1
 src/kernel/publication.rs	legacy-caller	::acquire_load	try_compose_with_facts_delaying_normalization	1
 src/kernel/publication.rs	legacy-caller	::initialize	try_compose_with_facts_delaying_normalization	1
 src/kernel/publication.rs	legacy-caller	::resolve_observed_publications	try_compose_with_facts_delaying_normalization	1
@@ -72,5 +68,9 @@ src/surface/proof/resources.rs	mixed	::fold_composite_resources_on_outcome_with_
 src/surface/proof/resources.rs	mixed	::project_initial_composite_resource_cores	try_compose_with_facts_delaying_normalization	1
 src/surface/proof/resources.rs	mixed	::project_selected_instance_arm_cells	try_compose_with_facts_delaying_normalization	1
 src/kernel/primitives/resource_algebra.rs	legacy-caller	ResourceContext::try_compose_with_facts	try_compose_with_facts_delaying_normalization_with_occurrences	1
-src/surface/proof/resources.rs	mixed	::append_state_resource_context_observable_facts_with_store	observable_facts	1
+src/kernel/functions.rs	import	::	admit_declared_entry_resources	1
+src/kernel/api.rs	import	::	admit_declared_entry_resources	1
+src/kernel/api/contract_certification.rs	legacy-caller	::program_function_contract_entry_facts	admit_declared_entry_resources	1
+src/surface/proof.rs	mixed	::evaluate_entry_resource_context	admit_declared_entry_resources	1
 src/kernel/functions.rs	legacy-caller	::consume_returned_resource_unit	expand_composite_resource_fact_with_children	1
+src/kernel/api/contract_certification/contract_claims/retained_context.rs	legacy-caller	::expand_certification_exit	expand_all_composite_resource_facts_at_state	1

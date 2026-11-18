@@ -84,7 +84,7 @@ fn call_frame_retains_a_view_without_scanning_other_views() {
             });
         assert!(evidence.is_fully_typed());
         assert!(evidence.checks(
-            &Proposition::ConditionIs(ConditionTerm::equal(load(&after), load(&before)), true),
+            &Proposition::condition_is(ConditionTerm::equal(load(&after), load(&before)), true),
             &assumptions,
         ));
         assert!(

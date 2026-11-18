@@ -24,7 +24,7 @@ impl<'a> ScalarReadDescriptor<'a> {
         self.memory
     }
 
-    pub(super) fn pointer(&self) -> &'a Address {
+    pub(super) fn address(&self) -> &'a Address {
         self.pointer
     }
 

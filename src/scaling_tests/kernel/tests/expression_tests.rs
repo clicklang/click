@@ -52,7 +52,7 @@ fn loadable_object_provenance_lookup_ignores_unrelated_external_pointers() {
     let loadable = |base| Proposition::MemoryLoadable {
         memory: SymbolicMemory::new(),
         base,
-        bytes: MachineTerm::constant(4),
+        bytes: (MachineTerm::constant(4)).into(),
         wide: false,
     };
 
@@ -116,11 +116,11 @@ fn exact_signed_constant_bound_lookup_ignores_unrelated_facts() {
 #[test]
 fn exact_signed_mirror_normalization_ignores_unrelated_facts() {
     let value = MachineTerm::Variable(Variable(87_910));
-    let premise = Proposition::ConditionIs(
+    let premise = Proposition::condition_is(
         ConditionTerm::signed_less_than(MachineTerm::constant(1), value.clone()),
         true,
     );
-    let goal = Proposition::ConditionIs(
+    let goal = Proposition::condition_is(
         ConditionTerm::signed_greater_than(value, MachineTerm::constant(1)),
         true,
     );
@@ -128,7 +128,7 @@ fn exact_signed_mirror_normalization_ignores_unrelated_facts() {
     for size in [16, 64, 256] {
         let mut premises = vec![premise.clone()];
         for index in 0..size {
-            premises.push(Proposition::ConditionIs(
+            premises.push(Proposition::condition_is(
                 ConditionTerm::signed_greater_equal(
                     MachineTerm::Variable(Variable(91_000 + index)),
                     MachineTerm::constant(2),
@@ -220,8 +220,8 @@ fn stored_pointer_bounds_ignore_unrelated_numeric_classes() {
         let stored = subobject_pointer(0, 0, 4);
         let memory =
             SymbolicMemory::new().store(field.clone(), ProgramValue::Pointer(stored.clone()));
-        let read = PointerValue::from_read(
-            stored.pointer().clone(),
+        let read = Pointer::from_read(
+            stored.address().clone(),
             ProgramType::Int32Pointer,
             &crate::kernel::intern_memory_ref(&memory),
             &field,

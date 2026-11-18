@@ -69,6 +69,40 @@ theorem subtract_wraps_uint64() {
         normalize();
     }
 }
+theorem multiply_uint32(flag: Bool, x: uint32, z: uint32, y: uint32) {
+    requires x == (z * 3u32);
+    ensures flag implies (if flag { x } else { 3u32 }) == (z * 3u32) by {
+        intro();
+        rewrite(x, z * 3u32);
+        normalize() using { flag; };
+    }
+    ensures ((z * 3u32) < y) implies (if (z * 3u32) < y { z } else { 3u32 }) == z by {
+        intro();
+        normalize() using { (z * 3u32) < y; };
+    }
+}
+theorem multiply_wraps_uint32() {
+    ensures ((4294967295u32 * 3u32) as uint32) == 4294967293u32 by {
+        normalize();
+    }
+}
+theorem multiply_uint64(flag: Bool, x: uint64, z: uint64, y: uint64) {
+    requires x == (z * 3u64);
+    ensures flag implies (if flag { x } else { 3u64 }) == (z * 3u64) by {
+        intro();
+        rewrite(x, z * 3u64);
+        normalize() using { flag; };
+    }
+    ensures ((z * 3u64) < y) implies (if (z * 3u64) < y { z } else { 3u64 }) == z by {
+        intro();
+        normalize() using { (z * 3u64) < y; };
+    }
+}
+theorem multiply_wraps_uint64() {
+    ensures ((18446744073709551615u64 * 3u64) as uint64) == 18446744073709551613u64 by {
+        normalize();
+    }
+}
 ```
 
 ```expect

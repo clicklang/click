@@ -680,7 +680,7 @@ mod tests {
         let assumptions = PureFactContext::new();
         let child = ResourceFact::Own(
             fact("list", 1).resource().clone(),
-            Box::new(MachineTerm::constant(0)),
+            Box::new(MachineTerm::constant(0).into()),
         );
         let opening = state
             .resources()

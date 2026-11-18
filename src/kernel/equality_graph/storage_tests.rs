@@ -12,10 +12,10 @@ fn concrete_storage_coordinates_follow_transitive_aliases_and_forks() {
     let joined = empty
         .clone()
         .assume_condition(
-            ConditionTerm::pointer_equal(first.clone(), second.clone()),
+            ConditionTerm::address_equal(first.clone(), second.clone()),
             true,
         )
-        .assume_condition(ConditionTerm::pointer_equal(second, storage.clone()), true);
+        .assume_condition(ConditionTerm::address_equal(second, storage.clone()), true);
     assert_eq!(
         joined
             .equality_graph
@@ -29,7 +29,7 @@ fn concrete_storage_coordinates_follow_transitive_aliases_and_forks() {
     };
     let ambiguous = joined
         .clone()
-        .assume_condition(ConditionTerm::pointer_equal(first.clone(), other), true);
+        .assume_condition(ConditionTerm::address_equal(first.clone(), other), true);
     assert_eq!(ambiguous.equality_graph.storage_address(&first), first);
     assert_eq!(joined.equality_graph.storage_address(&first), storage);
 }
@@ -54,11 +54,11 @@ fn external_addresses_select_their_own_concrete_storage_anchor() {
     };
     let facts = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::pointer_equal(first.clone(), one.clone()),
+            ConditionTerm::address_equal(first.clone(), one.clone()),
             true,
         )
         .assume_condition(
-            ConditionTerm::pointer_equal(second.clone(), two.clone()),
+            ConditionTerm::address_equal(second.clone(), two.clone()),
             true,
         );
     assert!(facts.equality_graph.are_equal(&first, &one));
@@ -88,8 +88,8 @@ fn alignment_uses_the_checked_storage_anchor_through_transitive_equality() {
     let empty = PureFactContext::new();
     let facts = empty
         .clone()
-        .assume_condition(ConditionTerm::pointer_equal(first.clone(), storage), true)
-        .assume_condition(ConditionTerm::pointer_equal(last.clone(), first), true);
+        .assume_condition(ConditionTerm::address_equal(first.clone(), storage), true)
+        .assume_condition(ConditionTerm::address_equal(last.clone(), first), true);
     assert_eq!(
         facts.decide(&ConditionTerm::pointer_aligned(last.offset_by_bytes(8), 8)),
         Some(true)
@@ -110,8 +110,8 @@ fn declared_alignment_follows_late_transitive_address_equality() {
         .assume_condition(ConditionTerm::pointer_aligned(base.clone(), 8), true);
     let facts = original
         .clone()
-        .assume_condition(ConditionTerm::pointer_equal(base, middle.clone()), true)
-        .assume_condition(ConditionTerm::pointer_equal(middle, alias.clone()), true);
+        .assume_condition(ConditionTerm::address_equal(base, middle.clone()), true)
+        .assume_condition(ConditionTerm::address_equal(middle, alias.clone()), true);
     assert_eq!(
         facts.decide(&ConditionTerm::pointer_aligned(alias.clone(), 8)),
         Some(true)
@@ -151,7 +151,7 @@ fn automatic_declaration_storage_is_an_anchor_and_an_indexed_local_alias() {
     };
     let alias = Address::symbolic(Variable(896_999));
     let facts = PureFactContext::new().assume_condition(
-        ConditionTerm::pointer_equal(alias.clone(), storage.clone()),
+        ConditionTerm::address_equal(alias.clone(), storage.clone()),
         true,
     );
     assert_eq!(facts.equality_graph.storage_address(&alias), storage);

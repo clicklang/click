@@ -201,7 +201,7 @@ impl ParsedBlocks {
         children
     }
 
-    /// The two arm blocks of a proof `if` or `both`.
+    /// Two arm blocks in source order.
     pub(super) fn two_arms(
         &self,
         range: &Range<usize>,

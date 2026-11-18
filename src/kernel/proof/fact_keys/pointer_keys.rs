@@ -3,7 +3,7 @@
 use super::*;
 use crate::kernel::{
     KernelAddressOffset as O, MachineOperandView as V, SharedAddress, SharedAddressOffset,
-    SharedPointerValue,
+    SharedPointer,
 };
 use std::sync::{Mutex, OnceLock};
 
@@ -103,9 +103,9 @@ impl<N: KeyNode> Canonical<N> {
         self.0.checked
     }
 }
-impl KeyNode for MemoryErasedPointerOffsetNode {
+impl KeyNode for MemoryErasedAddressOffsetNode {
     fn table() -> &'static Table<Self> {
-        static TABLE: OnceLock<Table<MemoryErasedPointerOffsetNode>> = OnceLock::new();
+        static TABLE: OnceLock<Table<MemoryErasedAddressOffsetNode>> = OnceLock::new();
         TABLE.get_or_init(Default::default)
     }
     fn checked_match(&self) -> bool {
@@ -156,20 +156,20 @@ fn offsets<K: Clone>(
 }
 
 #[allow(dead_code)] // Prepared before the pointer-producing boundaries switch.
-pub(super) fn state_offset(root: &SharedAddressOffset) -> MemoryErasedPointerOffsetKey {
+pub(super) fn state_offset(root: &SharedAddressOffset) -> MemoryErasedAddressOffsetKey {
     offsets(root, |node, children| {
         Some(Canonical::new(match node {
             O::Constant(value) => {
-                MemoryErasedPointerOffsetNode::Exact(AddressOffset::Constant(*value))
+                MemoryErasedAddressOffsetNode::Exact(AddressOffset::Constant(*value))
             }
             O::Variable(value) => {
-                MemoryErasedPointerOffsetNode::Exact(AddressOffset::Variable(*value))
+                MemoryErasedAddressOffsetNode::Exact(AddressOffset::Variable(*value))
             }
             O::Add(_) => {
                 let [a, b] = children.unwrap();
-                MemoryErasedPointerOffsetNode::Add(a, b)
+                MemoryErasedAddressOffsetNode::Add(a, b)
             }
-            O::Int32Scaled { value, byte_width } => MemoryErasedPointerOffsetNode::Int32Scaled {
+            O::Int32Scaled { value, byte_width } => MemoryErasedAddressOffsetNode::Int32Scaled {
                 value: memory_operands::operand(V::Shared(value)),
                 byte_width: *byte_width,
             },
@@ -177,7 +177,7 @@ pub(super) fn state_offset(root: &SharedAddressOffset) -> MemoryErasedPointerOff
                 value,
                 byte_width,
                 unsigned,
-            } => MemoryErasedPointerOffsetNode::Int64Scaled {
+            } => MemoryErasedAddressOffsetNode::Int64Scaled {
                 value: memory_operands::operand(V::Shared(value)),
                 byte_width: *byte_width,
                 unsigned: *unsigned,
@@ -192,14 +192,14 @@ pub(super) fn alpha_offset<const ALLOW_LOADS: bool>(
     root: &SharedAddressOffset,
     bindings: &mut AlphaBindings,
     next: &mut usize,
-) -> Option<AlphaPointerOffsetKey> {
+) -> Option<AlphaAddressOffsetKey> {
     enum Frame {
         Visit(SharedAddressOffset),
         Add(SharedAddressOffset, usize),
     }
     // Registry definitions can contain local binders. Like the native load
     // memo, retain both the entry ordinal and the resulting ordinal.
-    let mut memo: HashMap<(SharedAddressOffset, usize), (AlphaPointerOffsetKey, usize)> =
+    let mut memo: HashMap<(SharedAddressOffset, usize), (AlphaAddressOffsetKey, usize)> =
         HashMap::new();
     let mut numeric: HashMap<(u64, usize), Canonical<AlphaMachineKey>> = HashMap::new();
     let mut pending = vec![Frame::Visit(root.clone())];
@@ -281,7 +281,7 @@ pub(super) fn alpha_offset<const ALLOW_LOADS: bool>(
 }
 
 #[allow(dead_code)]
-pub(super) fn state_address(pointer: &SharedAddress) -> MemoryErasedPointerKey {
+pub(super) fn state_address(pointer: &SharedAddress) -> MemoryErasedAddressKey {
     let depth = POINTER_READ_KEY_DEPTH.with(|depth| depth.replace(depth.get() + 1));
     let _restore = PointerReadKeyDepth(depth);
     let block = pointer.node().base.native_atom();
@@ -298,10 +298,10 @@ pub(super) fn state_address(pointer: &SharedAddress) -> MemoryErasedPointerKey {
         }
         _ => None,
     };
-    MemoryErasedPointerKey {
-        block: read
+    MemoryErasedAddressKey {
+        base: read
             .map(|source| {
-                MemoryErasedAddressBaseKey::Read(Box::new(memory_erased_pointer_key(&source)))
+                MemoryErasedAddressBaseKey::Read(Box::new(memory_erased_address_key(&source)))
             })
             .unwrap_or_else(|| MemoryErasedAddressBaseKey::Exact(block.clone())),
         offset: Box::new(state_offset(&pointer.node().offset)),
@@ -312,10 +312,10 @@ pub(super) fn alpha_address<const ALLOW_LOADS: bool>(
     pointer: &SharedAddress,
     bindings: &mut AlphaBindings,
     next: &mut usize,
-) -> Option<AlphaPointerKey> {
+) -> Option<AlphaAddressKey> {
     alpha_work_checkpoint(bindings, 1)?;
-    Some(AlphaPointerKey {
-        block: alpha_address_base_key::<ALLOW_LOADS>(
+    Some(AlphaAddressKey {
+        base: alpha_address_base_key::<ALLOW_LOADS>(
             pointer.node().base.native_atom(),
             bindings,
             next,
@@ -324,11 +324,11 @@ pub(super) fn alpha_address<const ALLOW_LOADS: bool>(
     })
 }
 #[allow(dead_code)]
-pub(super) fn recorded_value(pointer: &SharedPointerValue) -> MemoryErasedPointerValueKey {
+pub(super) fn recorded_value(pointer: &SharedPointer) -> MemoryErasedPointerKey {
     let p = pointer.node();
     let q = p.qualifiers.as_ref();
     let known = q.is_some_and(|q| q.bounds_known);
-    MemoryErasedPointerValueKey {
+    MemoryErasedPointerKey {
         program_type: p.program_type,
         address: state_address(&p.address),
         provenance: state_address(&p.provenance),
@@ -349,7 +349,7 @@ pub(super) fn recorded_value(pointer: &SharedPointerValue) -> MemoryErasedPointe
 
 #[allow(dead_code)]
 pub(super) fn alpha_value<const ALLOW_LOADS: bool>(
-    pointer: &SharedPointerValue,
+    pointer: &SharedPointer,
     bindings: &mut AlphaBindings,
     next: &mut usize,
 ) -> Option<AlphaProgramValueKey> {
@@ -389,12 +389,12 @@ mod tests {
         KernelTermExport, MachineBinaryOp, SharedMachineIntegerTerm, SubobjectBounds,
         VerificationSession,
     };
-    fn pointer(offset: AddressOffset) -> PointerValue {
+    fn pointer(offset: AddressOffset) -> Pointer {
         let address = Address {
             base: AddressBase::Concrete("shared-key".into()),
             offset,
         };
-        PointerValue::new(address.clone(), ProgramType::VoidPointer)
+        Pointer::new(address.clone(), ProgramType::VoidPointer)
             .with_provenance(Arc::new(address.clone()))
             .with_pointee_volatile(true)
             .with_pointee_constant(true)
@@ -437,8 +437,8 @@ mod tests {
                 Box::new(scaled),
                 Box::new(AddressOffset::Constant(3)),
             ));
-            let shared = SharedPointerValue::import(&source);
-            let expected = memory_erased_pointer_value_key(&source);
+            let shared = SharedPointer::import(&source);
+            let expected = memory_erased_pointer_key(&source);
             let alpha = alpha_program_value_key_with_bindings::<true>(
                 &ProgramValue::Pointer(source.clone()),
                 &mut fold_keys::bindings(),
@@ -453,7 +453,7 @@ mod tests {
             assert_eq!(KernelTermExport::machine_export_count(), exports);
             // Exact custody remains separate from selector identity.
             let changed = source.clone().with_pointee_constant(false);
-            let changed = SharedPointerValue::import(&changed);
+            let changed = SharedPointer::import(&changed);
             assert_ne!(shared, changed);
             assert_eq!(recorded_value(&shared), recorded_value(&changed));
             assert_ne!(
@@ -472,7 +472,7 @@ mod tests {
             ProgramValue::Int32(MachineTerm::constant(7)),
         );
         let make = |memory| {
-            SharedPointerValue::import(&pointer(AddressOffset::Int32Scaled {
+            SharedPointer::import(&pointer(AddressOffset::Int32Scaled {
                 value: SharedMachineIntegerTerm::index(
                     MachineIntegerType::Int32,
                     MachineTerm::MemoryLoad(
@@ -506,7 +506,7 @@ mod tests {
         for _ in 0..6 {
             source = Address::loaded_value(&memory, &source);
             let shared = SharedAddress::import(&source);
-            assert_eq!(state_address(&shared), memory_erased_pointer_key(&source));
+            assert_eq!(state_address(&shared), memory_erased_address_key(&source));
             assert_eq!(
                 alpha_address::<true>(&shared, &mut fold_keys::bindings(), &mut 0),
                 alpha_pointer_key_with_bindings::<true>(
@@ -536,7 +536,7 @@ mod tests {
     #[test]
     fn compact_key_fingerprints_survive_dropping_all_handles() {
         let fingerprint = || {
-            let key = memory_erased_pointer_offset_key(&AddressOffset::Constant(1010301));
+            let key = memory_erased_address_offset_key(&AddressOffset::Constant(1010301));
             let mut hasher = std::collections::hash_map::DefaultHasher::new();
             key.hash(&mut hasher);
             hasher.finish()

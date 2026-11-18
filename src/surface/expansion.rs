@@ -4866,7 +4866,7 @@ fn proof_tactic_entries(
                 if let FlatTactic::Written(ProofTactic::Both(both)) = item.tactic
                     && !smart
                 {
-                    let arms = tokens.two_arms(&item.tokens, "both")?;
+                    let arms = tokens.labeled_arms(&item.tokens, ["left", "right"])?;
                     for (arm, ((open, close), tactics)) in arms
                         .into_iter()
                         .zip([&both.left_tactics, &both.right_tactics])
@@ -5140,7 +5140,7 @@ fn smart_container_alias_entries(
             }
         }
         ProofTactic::Both(both) => {
-            if let Ok([left, right]) = tokens.two_arms(&tactic_tokens, "both") {
+            if let Ok([left, right]) = tokens.labeled_arms(&tactic_tokens, ["left", "right"]) {
                 blocks.push((left, &both.left_tactics));
                 blocks.push((right, &both.right_tactics));
             }
@@ -5629,7 +5629,7 @@ fn structured_tactic_arm_blocks(
 ) -> Result<Option<Vec<(usize, usize)>>, ClickError> {
     Ok(match tokens[range.start].text.as_str() {
         "if" => Some(tokens.two_arms(&range, "if")?.to_vec()),
-        "both" => Some(tokens.two_arms(&range, "both")?.to_vec()),
+        "both" => Some(tokens.labeled_arms(&range, ["left", "right"])?.to_vec()),
         "cases" => Some(tokens.cases_arms(&range)?),
         _ => None,
     })

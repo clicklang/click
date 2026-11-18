@@ -53,7 +53,7 @@ pub struct CheckedExecutedScalarReferenceEnd<'e> {
     path_index: usize,
 }
 impl CheckedExecutedScalarReferenceEnd<'_> {
-    pub fn pointer(&self) -> &crate::kernel::Address {
+    pub fn address(&self) -> &crate::kernel::Address {
         self.pointer
     }
     pub fn execution(&self) -> &crate::kernel::SymbolicExecution {
@@ -63,15 +63,15 @@ impl CheckedExecutedScalarReferenceEnd<'_> {
         self.path_index
     }
     pub fn ending_pointer(&self) -> &crate::kernel::Address {
-        self.ending.pointer()
+        self.ending.address()
     }
 }
 impl CheckedExecutedScalarReferenceAccess<'_, '_> {
     pub fn source_access(&self) -> &CheckedScalarReferenceAccess<'_> {
         self.access
     }
-    pub fn pointer(&self) -> &crate::kernel::Address {
-        self.event.pointer()
+    pub fn address(&self) -> &crate::kernel::Address {
+        self.event.address()
     }
     pub fn execution(&self) -> &crate::kernel::SymbolicExecution {
         self.execution
@@ -210,7 +210,7 @@ impl CheckedScalarReferenceEnd<'_> {
                 }
                 let (pointer, birth_order) = candidate.birth?;
                 let (ending, end_order) = candidate.ending?;
-                (birth_order < end_order && pointer == ending.pointer()).then_some(
+                (birth_order < end_order && pointer == ending.address()).then_some(
                     CheckedExecutedScalarReferenceEnd {
                         pointer,
                         ending,
@@ -834,6 +834,7 @@ mod tests {
             span: Span { line: 1, column: 1 },
             mir: Some(MirBody {
                 return_place: "__rust_mir_0".into(),
+                spellings: Default::default(),
                 locals: vec![
                     place("child", reference_type()),
                     place("alias", reference_type()),
@@ -1256,7 +1257,7 @@ mod tests {
         assert_eq!(bindings.len(), 2, "{execution:?}");
         let endings = certificate.bind_executed_endings(&execution);
         assert_eq!(endings.len(), 1, "{execution:?}");
-        assert_eq!(endings[0].pointer(), endings[0].ending_pointer());
+        assert_eq!(endings[0].address(), endings[0].ending_pointer());
         assert!(std::ptr::eq(endings[0].execution(), &execution));
         assert_eq!(endings[0].path_index(), 0);
         let mut kinds: Vec<_> = bindings
@@ -1273,7 +1274,7 @@ mod tests {
         );
         for binding in bindings {
             assert_eq!(
-                binding.pointer(),
+                binding.address(),
                 &crate::kernel::Address {
                     base: "executed-child".into(),
                     offset: crate::kernel::AddressOffset::Constant(0)

@@ -1,4 +1,4 @@
-# Alignment closes by an explicit `rules` arithmetic certificate
+# Alignment closes by `solve() using` its selected premises
 
 Arithmetic search expands to ordinary proof steps, with the selected premises
 stated explicitly in `solve() using { ... }`.

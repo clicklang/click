@@ -69,7 +69,7 @@ fn structural_read_comparison_forms_scale_with_selected_observations() {
                     LoadKind::Int32,
                 );
                 let observed = IntegerTerm::from_machine(MachineIntegerType::Int32, read).unwrap();
-                Proposition::ConditionIs(
+                Proposition::condition_is(
                     ConditionTerm::integer_equal(observed, IntegerTerm::constant_i64(37)),
                     true,
                 )
@@ -130,11 +130,11 @@ fn algebraic_read_comparison_forms_scale_with_selected_observations() {
                 let read = AlgebraicTerm {
                     algebraic_type: algebraic_type.clone(),
                     node: AlgebraicTermNode::MemoryLoad {
-                        memory: memory.clone(),
+                        point: crate::kernel::ProgramPoint::at(&memory.clone()),
                         pointer: Box::new(address(index)),
                     },
                 };
-                Proposition::ConditionIs(
+                Proposition::condition_is(
                     ConditionTerm::AlgebraicEqual(Box::new(read), Box::new(stored(index))),
                     true,
                 )
@@ -144,7 +144,7 @@ fn algebraic_read_comparison_forms_scale_with_selected_observations() {
             for (index, goal) in (0..).zip(&goals) {
                 assert_eq!(
                     comparison_form(goal),
-                    Some(Proposition::ConditionIs(
+                    Some(Proposition::condition_is(
                         ConditionTerm::AlgebraicEqual(
                             Box::new(stored(index)),
                             Box::new(stored(index))

@@ -55,7 +55,11 @@ fn sum(bytes: &[u8]) -> i32 {
                 }
                 have to_integer((bytes.len() - iter.len())) + 1 <= 18446744073709551615;
                 have to_integer((bytes.len() - iter.len()) + 1u64) == to_integer((bytes.len() - iter.len())) + 1;
+                // `next` binds `byte` to the element, then moves the slice on.
                 step_until(assignment(byte, 0));
+                step();
+                have byte == bytes + (bytes.len() - at(iteration, iter.len()));
+                step(); step();
                 have iter.len() == at(iteration, iter.len()) - 1u64;
                 have iter.as_slice() == (bytes + (bytes.len() - at(iteration, iter.len()))) + 1u64;
                 apply(pointer_association(bytes, bytes.len() - at(iteration, iter.len()), 1u64));
@@ -63,8 +67,6 @@ fn sum(bytes: &[u8]) -> i32 {
                     rewrite(bytes + ((bytes.len() - at(iteration, iter.len())) + 1u64), (bytes + (bytes.len() - at(iteration, iter.len()))) + 1u64);
                     known();
                 }
-                step();
-                have byte == bytes + (bytes.len() - at(iteration, iter.len()));
                 step_until(read(0));
                 let { result: loaded_byte } = step();
                 mark loaded;

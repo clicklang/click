@@ -26,7 +26,7 @@ fn token(quantity: u32) -> ResourceFact {
             name: "ticket".to_string(),
             arguments: Vec::new().into(),
         },
-        Box::new(MachineTerm::constant(quantity)),
+        Box::new(MachineTerm::constant(quantity).into()),
     )
 }
 

@@ -30,7 +30,7 @@ maintainability, not a known wrong verdict.
   (`OutcomeClaimGoals`), and an opened claim proof is refreshed from it
   before each closer.
 - `known` and the normalizing closers (`normalize`, `normalize using`,
-  an arithmetic certificate, `both`) close the main claim
+  `both`) close the main claim
   through one arm of `finish_ordered_proof`, and `solve` and `solve() using`
   through `close_post_execution_claims_with_solve`
   (`src/surface/proof/driver/claims.rs`). `finish_ordered_proof` is about

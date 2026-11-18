@@ -14,7 +14,7 @@ fn shared_comparison_growing_prefixes_scale_linearly() {
                     MachineBinaryOp::Multiply,
                     [root, variable(993001 + index)],
                 );
-                let condition = Proposition::ConditionIs(
+                let condition = Proposition::condition_is(
                     ConditionTerm::integer_less_equal(
                         IntegerTerm::Machine(
                             SharedMachineIntegerTerm::from_shared(format, root.clone()).unwrap(),
@@ -64,7 +64,7 @@ fn comparison_read_prefixes_retain_conversions_without_exports() {
                     [expected.clone(), expected.clone()],
                 );
                 let proposition = |value| {
-                    Proposition::ConditionIs(
+                    Proposition::condition_is(
                         ConditionTerm::integer_less_than(
                             IntegerTerm::Machine(
                                 SharedMachineIntegerTerm::from_shared(format, value).unwrap(),
