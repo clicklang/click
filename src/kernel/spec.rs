@@ -5598,23 +5598,71 @@ fn retained_integer_comparison(
     right: &IntegerResult,
 ) -> (StoredConditionTerm, bool) {
     let arguments = [left.clone().into_kernel(), right.clone().into_kernel()];
-    let may_spell_natively = arguments.iter().all(|root| {
+    let atomic_observations = arguments.iter().all(|root| {
         matches!(
             root.node(),
             KernelTermNode::MachineObservation { .. } | KernelTermNode::IntegerLiteral(_)
         )
-    });
-    let root = KernelTerm::integer_comparison(operator, arguments).expect("Integer operands");
-    let condition = StoredConditionTerm::from_root(root).expect("logical comparison");
-    if may_spell_natively {
-        match crate::kernel::machine_integer::comparison::structural_native_comparison_of_integer_observation(
-            condition.native_compat(), true,
-        ) {
-            Some((ConditionTerm::Constant(_), _)) | None => {},
-            Some((native, truth)) => return (StoredConditionTerm::from_minted(native), truth),
+    }) && arguments
+        .iter()
+        .any(|root| matches!(root.node(), KernelTermNode::MachineObservation { .. }));
+    let native = if atomic_observations {
+        let left = left.native_compat();
+        let right = right.native_compat();
+        let condition = match operator {
+            IntegerComparisonOperator::Equal => ConditionTerm::IntegerEqual(left, right),
+            IntegerComparisonOperator::NotEqual => ConditionTerm::IntegerNotEqual(left, right),
+            IntegerComparisonOperator::LessThan => ConditionTerm::IntegerLessThan(left, right),
+            IntegerComparisonOperator::LessEqual => ConditionTerm::IntegerLessEqual(left, right),
+            IntegerComparisonOperator::GreaterThan => {
+                ConditionTerm::IntegerGreaterThan(left, right)
+            }
+            IntegerComparisonOperator::GreaterEqual => {
+                ConditionTerm::IntegerGreaterEqual(left, right)
+            }
+        };
+        match crate::kernel::machine_integer::comparison::structural_native_comparison_of_integer_observation(&condition, true) {
+            Some((ConditionTerm::Constant(_), _)) | None => Some(condition),
+            Some((native, truth)) => {
+                let mut source = arguments.each_ref();
+                if matches!(operator, IntegerComparisonOperator::GreaterThan | IntegerComparisonOperator::GreaterEqual) {
+                    source.swap(0, 1);
+                }
+                // Only these source classes pass through the canonical native
+                // constructor without rewriting an arithmetic/alignment operand.
+                let simple = source.iter().all(|root| match root.node() {
+                    KernelTermNode::IntegerLiteral(_) => true,
+                    KernelTermNode::MachineObservation { operand, .. } => matches!(operand.node(), KernelTermNode::Variable(_)),
+                    _ => false,
+                });
+                if simple && let ConditionTerm::Compare { format, relation, left, right } = &native {
+                    let mut import = KernelTermImport::for_exact_field_inputs();
+                    let operands = source.into_iter().zip([left.as_ref(), right.as_ref()]).map(|(root, literal)| {
+                        match root.node() {
+                            KernelTermNode::MachineObservation { operand, .. } => operand.with_machine_observation_type(*format),
+                            KernelTermNode::IntegerLiteral(_) => import.machine(*format, literal),
+                            _ => unreachable!("simple comparison source"),
+                        }
+                    }).collect::<Vec<_>>();
+                    let root = KernelTerm::boolean_comparison_raw(*format, *relation,
+                        [operands[0].clone(), operands[1].clone()]);
+                    root.retain_native_condition_output(native);
+                    return (StoredConditionTerm::from_root(root).expect("canonical comparison"), truth);
+                }
+                return (StoredConditionTerm::from_minted(native), truth);
+            },
         }
+    } else {
+        None
+    };
+    let root = KernelTerm::integer_comparison(operator, arguments).expect("Integer operands");
+    if let Some(native) = native {
+        root.retain_native_condition_output(native);
     }
-    (condition, true)
+    (
+        StoredConditionTerm::from_root(root).expect("logical comparison"),
+        true,
+    )
 }
 
 fn lower_spec_comparison_proposition_at_state_in(

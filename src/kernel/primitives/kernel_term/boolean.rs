@@ -261,6 +261,11 @@ impl<'a> BooleanOperandView<'a> {
         {
             return std::borrow::Cow::Borrowed(read);
         }
+        if let Self::Shared(root) = self
+            && let Some(value) = root.cached_condition_output()
+        {
+            return std::borrow::Cow::Borrowed(value);
+        }
         if let Some(value) = self.native_leaf() {
             return std::borrow::Cow::Borrowed(value);
         }

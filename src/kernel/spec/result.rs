@@ -224,7 +224,7 @@ impl SpecValue {
                 comparison::logical_condition_for_operand_views(format, relation, [left, right])
             };
             return Ok(Some(Proposition::condition_is(
-                StoredConditionTerm::from_minted(condition),
+                condition,
                 op != ComparisonOperator::NotEqual,
             )));
         }
@@ -783,6 +783,9 @@ mod condition_output_tests {
                         (actual.0.native_compat(), actual.1),
                         (&expected.0, expected.1)
                     );
+                    let expected_root =
+                        KernelTermImport::for_exact_field_inputs().condition(&expected.0);
+                    assert_eq!(actual.0.root(), Some(&expected_root));
                 }
             }
         }
