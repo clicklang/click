@@ -3369,13 +3369,10 @@ fn execute_verified_function_applications_with_suspension(
                 caller_state.memory(),
             )
         };
-        let write_requirements = if suspended.is_some()
-            || application.representation_copy.is_some()
-            || !has_exact_write_ranges
-        {
-            // Worker admission and representation copies have their own
-            // effect rules. Folded or guarded projections can also widen an
-            // effect to a span containing bytes the callee cannot write.
+        let write_requirements = if suspended.is_some() || !has_exact_write_ranges {
+            // Worker admission has its own effect rules. Folded or guarded
+            // projections can widen an effect to a span containing bytes
+            // the callee cannot write.
             if let Some(diagnostic) = entry_state.loan_ledger().and_then(|ledger| {
                 transfer.memory_effects.iter().find_map(|range| {
                     ledger.memory_access_refusal(

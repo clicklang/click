@@ -4,6 +4,7 @@ The representation-copy rule transfers typed cells from the source. A raw byte
 source has no typed cells, so a byte-exact copy of an opaque buffer leaves the
 destination without a typed value and the `dst->x` load is refused. This is the
 guard against reading arbitrary bytes as an invented typed value.
+The copy's proof uses the fresh destination's separation from the source view.
 
 ```c filename=scalar_untyped_memcpy.c
 void *malloc(unsigned long size);
@@ -26,6 +27,17 @@ verifying "scalar_untyped_memcpy.c";
 int h(uint8 raw[]) {
     views raw[0..4];
     ensures result == 0 or result == -1;
+} by {
+    step();
+    step();
+    branch {
+        step();
+        normalize();
+    } else {
+    }
+    step() {
+        requires separate(memory((dst as (uint8 *))[0..4]), memory(raw[0..4])) by { normalize(); }
+    }
 }
 ```
 
