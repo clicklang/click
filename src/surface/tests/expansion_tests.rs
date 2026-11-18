@@ -4,12 +4,47 @@ use super::*;
 #[ignore = "nightly: ranked search proof, expansion, and cold replay"]
 fn ranked_search_preserves_its_reads_without_transport() {
     let (source, c_sources) = mdtest_sources("mdtests/search_terminates_by_unmarked_count.md");
-    assert!(!source.contains("transport("));
+    check_ranked_search_without_transport(&source, &c_sources);
+
+    // Writing zero leaves the counted cell unmarked and cannot prove descent.
+    let unmarked = c_sources[0]
+        .1
+        .replace("visited[cur] = 1;", "visited[cur] = 0;");
+    assert_ne!(unmarked, c_sources[0].1);
+    let source = inline_unmarked_count_lemmas(&source);
+    assert!(verify_c_sources(&source, &[(c_sources[0].0.as_str(), unmarked.as_str())]).is_err());
+}
+
+#[test]
+#[ignore = "nightly: saved-array application proof, expansion, and cold replay"]
+fn ranked_search_applies_point_update_with_a_saved_array() {
+    let (source, c_sources) =
+        mdtest_sources("mdtests/preserve_apply_names_its_missing_viewable.md");
+    check_ranked_search_without_transport(&source, &c_sources);
+
+    // Removing the observation makes the application prove the saved range's
+    // current viewability from ownership, as in the original fixture.
+    let without_observation = source.replace("observe(at(iter, visited)[0..n]);", "");
+    assert_ne!(without_observation, source);
+    let (name, c) = &c_sources[0];
+    verify_c_sources(
+        &inline_unmarked_count_lemmas(&without_observation),
+        &[(name, c)],
+    )
+    .unwrap_or_else(|error| panic!("{}", error.report()));
+}
+
+fn inline_unmarked_count_lemmas(source: &str) -> String {
     // The in-memory verifier needs the fixture's file import in the same unit.
-    let source = source.replace(
+    source.replace(
         r#"import "unmarked_count_lemmas.click";"#,
         include_str!("../../../mdtests/unmarked_count_lemmas.click"),
-    );
+    )
+}
+
+fn check_ranked_search_without_transport(source: &str, c_sources: &[(String, String)]) {
+    assert!(!source.contains("transport("));
+    let source = inline_unmarked_count_lemmas(source);
     let sources = c_sources
         .iter()
         .map(|(name, text)| (name.as_str(), text.as_str()))
@@ -32,13 +67,6 @@ fn ranked_search_preserves_its_reads_without_transport() {
         verify_c_sources(&expanded, &sources).map_err(|error| error.report())
     })
     .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
-
-    // Writing zero leaves the counted cell unmarked and cannot prove descent.
-    let unmarked = sources[0]
-        .1
-        .replace("visited[cur] = 1;", "visited[cur] = 0;");
-    assert_ne!(unmarked, sources[0].1);
-    assert!(verify_c_sources(&source, &[(sources[0].0, unmarked.as_str())]).is_err());
 }
 
 #[test]
