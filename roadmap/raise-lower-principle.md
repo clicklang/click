@@ -1171,7 +1171,9 @@ range/token/size handoffs passed. Final width-refusal checks ensure a query for
 the wrong format returns before requesting native output. All 1,918 regular
 scaling cases and all 524 focused checks passed on the final tree. All 14 selected
 wide-range/allocation proofs, fact stability (zero changed terms/paths), and
-quality passed. No syntax, proof-rule, search-budget or snapshot change.
+quality passed. After integrating upstream `f94b8b852` and the resource-argument
+slice, all 524 affected checks and quality passed again. No syntax, proof-rule,
+search-budget or snapshot change.
 
 ## Chunk 3: machine-valued pure-function results
 
