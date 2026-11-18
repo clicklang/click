@@ -386,7 +386,13 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(None);
         }
         let kernels = pairs.iter().map(|(k, _)| k.clone()).collect::<Vec<_>>();
-        if signed_intervals::has_retained_read_source(surface_goal) {
+        let retained = signed_intervals::has_retained_read_source(surface_goal);
+        let addition = retained && signed_intervals::is_int32_addition_obligation(goal);
+        let ordinary = || Self::try_interval_fact_using(search_input, premises);
+        if addition && let Some(closed) = attempt::candidate_outcome(ordinary())?.flatten() {
+            return Ok(Some(closed));
+        }
+        if retained {
             let step = if crate::surface::planning::solve::computes_with_known(goal) {
                 Some(ProofStep::Known)
             } else if crate::kernel::proof::fact_reasoning::normalize_using_conditions(
@@ -404,7 +410,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 return search_input.driver().apply_step(step).map(Some);
             }
         }
-        if let Some(closed) = Self::try_interval_fact_using(search_input, premises)? {
+        if !addition && let Some(closed) = ordinary()? {
             return Ok(Some(closed));
         }
         let Some(plan) =

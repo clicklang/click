@@ -111,6 +111,44 @@ pub(super) fn has_retained_read_source(proposition: &ClickProposition) -> bool {
     found
 }
 
+/// Result range and native observation bridge for one signed int32 sum.
+/// Retained operands keep their exact lowered identities in the ordinary proof.
+pub(super) fn is_int32_addition_obligation(goal: &Proposition) -> bool {
+    use crate::kernel::IntegerTerm;
+    let int32_sum = |term: &IntegerTerm| {
+        matches!(term, IntegerTerm::Add(a, b)
+        if [a, b].iter().all(|operand| match operand.as_ref() {
+            IntegerTerm::Machine(value) => value.ty() == MachineIntegerType::Int32,
+            IntegerTerm::Constant(_) => true,
+            _ => false,
+        }))
+    };
+    let native_add = |term: &IntegerTerm| {
+        matches!(term, IntegerTerm::Machine(value)
+            if value.ty() == MachineIntegerType::Int32
+                && matches!(value.operand_view().binary(),
+                    Some((MachineIntegerType::Int32, crate::kernel::MachineBinaryOp::Add, _))))
+    };
+    let Some((condition, true)) = goal.condition_native() else {
+        return false;
+    };
+    let at_limit = |endpoint: &IntegerTerm, limit: i32| {
+        endpoint
+            .as_const()
+            .is_some_and(|n| n == &BigInt::from(limit))
+    };
+    let (left, right) = match condition {
+        ConditionTerm::IntegerLessEqual(left, right) => (left, right),
+        ConditionTerm::IntegerGreaterEqual(left, right) => (right, left),
+        ConditionTerm::IntegerEqual(left, right) => {
+            return (native_add(left) && int32_sum(right))
+                || (native_add(right) && int32_sum(left));
+        }
+        _ => return false,
+    };
+    (at_limit(left, i32::MIN) && int32_sum(right)) || (int32_sum(left) && at_limit(right, i32::MAX))
+}
+
 /// The cast's destination and which written operand holds the original value.
 fn bounded_cast_shape(goal: &Proposition) -> Option<(crate::kernel::MachineIntegerFormat, bool)> {
     use crate::kernel::machine_integer::conversion;
@@ -338,7 +376,18 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         }
         let premises = atomic.as_slice();
         let scope = proof.driver().open_have(target.clone())?;
-        if (has_retained_read_source(&target) || premises.iter().any(has_retained_read_source))
+        let retained =
+            has_retained_read_source(&target) || premises.iter().any(has_retained_read_source);
+        let addition = retained
+            && scope
+                .body()
+                .goal()
+                .is_some_and(is_int32_addition_obligation);
+        let ordinary = || scope.driver().try_interval_fact_using(premises);
+        if addition && let Some(closed) = attempt::candidate_outcome(ordinary())?.flatten() {
+            return Ok(Some(closed.join()?));
+        }
+        if retained
             && let Some(closed) = {
                 // An exact type range can be computed even when its operand
                 // is written at a program point. Use the goal-local check
@@ -363,7 +412,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         {
             return Ok(Some(closed.join()?));
         }
-        if let Some(closed) = scope.driver().try_interval_fact_using(premises)? {
+        if !addition && let Some(closed) = ordinary()? {
             return Ok(Some(closed.join()?));
         }
         // A visible initialized read is not necessarily a stored pure fact.
