@@ -449,3 +449,12 @@ test. It executes the local declaration and both rotation stores, retains
 the new child links through the middle subtree's reparenting and the parent
 update, and carries the original uncle subtree into the rotated tree. The
 original contracts keep the subtrees and their valid cached sizes arbitrary.
+
+## Mirrored context rotation with nonempty black middle and uncle subtrees
+
+All three proofs in `rbtree_size_insert_mirrored_context_uncle_rotation.click`
+verify at default limits on master `4fc09e1aa` plus the proof repair. The proof
+retains the parent and child observations through initialization and the
+black-uncle test, then records each updated link after its store. The middle
+subtree is reparented while the original uncle is carried into the rotated
+tree. The original contracts keep the subtrees and cached sizes arbitrary.
