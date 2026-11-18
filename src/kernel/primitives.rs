@@ -9090,12 +9090,7 @@ impl AllocationSize {
 
     /// The same kind of size over rewritten bytes.
     pub(crate) fn map_bytes(&self, rewrite: impl FnOnce(&MachineTerm) -> MachineTerm) -> Self {
-        let bytes = rewrite(self.bytes.native_compat());
-        if &bytes == self.bytes.native_compat() {
-            self.clone()
-        } else {
-            Self::new(bytes, self.kind)
-        }
+        Self::new(rewrite(self.bytes.native_compat()), self.kind)
     }
 
     /// The `allocation` token's byte-count argument: an `int32` or a `uint64`.

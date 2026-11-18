@@ -203,7 +203,7 @@ pub(crate) fn iterated_holds_element(
         || iterated
             .holes()
             .iter()
-            .any(|hole| terms_equal(assumptions, hole, index))
+            .any(|hole| terms_equal(assumptions, hole.native_compat(), index))
     {
         return Some(false);
     }
@@ -215,7 +215,7 @@ pub(crate) fn iterated_holds_element(
                 && iterated
                     .holes()
                     .iter()
-                    .all(|hole| terms_distinct(assumptions, hole, index)) =>
+                    .all(|hole| terms_distinct(assumptions, hole.native_compat(), index)) =>
         {
             Some(true)
         }
@@ -378,7 +378,7 @@ pub(crate) fn apply_iterated_step(
             if let Some(hole) = iterated
                 .holes()
                 .iter()
-                .find(|hole| !terms_distinct(assumptions, hole, index))
+                .find(|hole| !terms_distinct(assumptions, hole.native_compat(), index))
             {
                 let _ = hole;
                 return Err(
@@ -434,7 +434,7 @@ pub(crate) fn apply_iterated_step(
             let Some(position) = iterated
                 .holes()
                 .iter()
-                .position(|hole| terms_equal(assumptions, hole, index))
+                .position(|hole| terms_equal(assumptions, hole.native_compat(), index))
             else {
                 return Err(
                     "this element was not taken out of the iterated ownership fact; only an element taken out, or whose guard a store just made true, can be given back"
@@ -766,7 +766,7 @@ pub(crate) fn plan_iterated_guard_store(
         let hole = iterated
             .holes()
             .iter()
-            .position(|hole| terms_equal(assumptions, hole, &index));
+            .position(|hole| terms_equal(assumptions, hole.native_compat(), &index));
         let during = match hole {
             // Respell the hole as the stored index so the write's own
             // derivation names it structurally.
@@ -829,7 +829,7 @@ mod wide_range_reader_tests {
                 cell_type: ProgramType::Int32,
                 cell_width: 4,
                 holds_when_equal: true,
-                value: 1u32.into(),
+                value: MachineTerm::constant(1).into(),
             },
         )
         .unwrap();

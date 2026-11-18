@@ -1,0 +1,52 @@
+#[test]
+fn iterated_descriptor_handoffs_and_holes_preserve_growing_shared_operands() {
+    let mut baseline = None;
+    for size in [4, 16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut root =
+            KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(10993624));
+        for _ in 0..size {
+            root = KernelTerm::machine_binary_shared(
+                MachineIntegerType::Int32,
+                MachineBinaryOp::Add,
+                [root.clone(), root],
+            );
+        }
+        let exports = KernelTermExport::machine_export_count();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let operand = StoredMachineTerm::from_value(root.clone().into()).unwrap();
+            let guard = IteratedGuard::new_stored(
+                Address::symbolic(Variable(10993625)),
+                ProgramType::Int32,
+                4,
+                true,
+                operand.clone(),
+            );
+            let fact = IteratedMemory::new_stored(
+                "CommonGuard",
+                Address::symbolic(Variable(10993626)),
+                4,
+                1,
+                0,
+                1,
+                operand.clone(),
+                operand.clone(),
+                guard,
+            )
+            .unwrap();
+            for _ in 0..32 {
+                let with_hole = fact.clone().with_stored_hole(operand.clone());
+                assert_eq!(with_hole.lower.root(), Some(&root));
+                assert_eq!(with_hole.upper.root(), Some(&root));
+                assert_eq!(with_hole.guard.value.root(), Some(&root));
+                assert_eq!(with_hole.holes()[0].root(), Some(&root));
+                let closed = with_hole.without_hole_at(0);
+                assert!(closed.holes().is_empty());
+                assert_eq!(closed.lower.root(), Some(&root));
+            }
+        });
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        assert!(!root.has_cached_native_argument());
+        assert_eq!(work, *baseline.get_or_insert(work), "size={size}");
+    }
+}

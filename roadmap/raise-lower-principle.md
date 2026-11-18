@@ -1067,7 +1067,7 @@ not a change to proof rules or snapshot architecture.
 | 10p1 | `SequenceTermNode::Literal` evaluated elements and their evaluator/substitution handoffs. | Landed in [PR #3217](https://github.com/clicklang/click/pull/3217); all pushed commits verified upstream; 437 focused checks, all 1,909 regular scaling cases, selected proofs, fact stability and quality passed. |
 | 10p2 | Composite/token/instance `ResourceArguments`, `ResourceDescription` arguments and remaining Integer/algebraic resource fields. Preserve argument order, native identity classes and nominal resource identities. | Split: 10p2a landed in [PR #3220](https://github.com/clicklang/click/pull/3220); all seven pushed commits verified upstream; it implements Integer/algebraic fields (413 focused checks, all 1,915 regular scaling cases, resource-field proofs, fact stability and quality passed); 10p2b implements argument stores (427 focused checks, all 1,917 regular scaling cases and quality passed; full regular proofs/fact stability passed). |
 | 10p3 | `MemoryRange` bounds and `AllocationSize` byte counts. Preserve signed/wide reading, bound provenance and existing identity/hash contracts. | Implemented locally; all 524 focused checks, all 1,918 regular scaling cases, selected wide-range/allocation proofs, fact stability and quality passed. |
-| 10p4 | `IteratedMemory` endpoints, guard comparison value and selected holes. Preserve checked ownership transitions and opaque owner/address identities. | Inventoried; pending. |
+| 10p4 | `IteratedMemory` endpoints, guard comparison value and selected holes. Preserve checked ownership transitions and opaque owner/address identities. | Common stores and selected-reader adapters implemented locally; evaluator regression and validation pending. |
 | 10p5 | `PublicationRight::observed` and `ConditionalMutexGuard::held`. Preserve channel/acquisition identities and protocol rules. | Inventoried; pending. |
 | 10p6 | `ResourceFact::Own` quantity. Preserve counting semantics and existing resource identity readers. | Inventoried; pending. |
 
@@ -1172,6 +1172,26 @@ the wrong format returns before requesting native output. All 1,918 regular
 scaling cases and all 524 focused checks passed on the final tree. All 14 selected
 wide-range/allocation proofs, fact stability (zero changed terms/paths), and
 quality passed. No syntax, proof-rule, search-budget or snapshot change.
+
+### 10p4 Iterated ownership operands (in progress)
+
+Bounds, guard comparison values and ordered selected holes use the existing
+common machine carrier. Explicit native constructors preserve exact input
+syntax; stored constructors accept existing shared producers. Descriptor clone,
+hole insertion and removal retain those carriers. Existing native arithmetic,
+resource comparison, traversal and diagnostic consumers select native output
+explicitly; the existing machine-view consumer reads a common hole directly.
+Native rewrite callbacks retain their exact returned producer payload, never
+reuse an equal previous payload merely because its observations agree.
+
+The declared guard evaluator is the direct common-producer handoff in this
+slice. Declared endpoint formation still supplies the native
+`EvaluatedMemorySegment` compatibility result, used by existing span/domain
+and formation checks; record this live input boundary rather than claiming it
+was erased. Native checked element-index APIs also remain explicit inputs.
+These are selected compatibility boundaries, not extra parallel payloads in
+`IteratedMemory`. Nominal owner/address identities, hole order and checked
+take/give/scatter/gather rules remain unchanged.
 
 ## Chunk 3: machine-valued pure-function results
 

@@ -22411,4 +22411,7 @@ mod wide_matched_range_reader_tests;
 #[cfg(test)]
 mod storage_summary_footprint_tests;
 
+#[cfg(test)]
+mod iterated_operand_storage_tests;
+
 mod legacy_search;
