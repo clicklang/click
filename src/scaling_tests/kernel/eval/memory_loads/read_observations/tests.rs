@@ -48,7 +48,7 @@ fn selected_read_metadata_stays_indexed_as_observations_and_branches_grow() {
         let address = Address::symbolic(Variable(998_703));
         let term = KernelTerm::scalar_read_descriptor(
             MachineIntegerType::Int32,
-            &memory,
+            &crate::kernel::ProgramPoint::at(&memory),
             &address,
             LoadKind::Int32,
         )

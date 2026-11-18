@@ -160,19 +160,19 @@ pub enum KernelTermNode {
         destination: MachineIntegerType,
         operand: KernelTerm,
     },
-    /// Exact scalar read descriptor. The state is an opaque shared value;
+    /// Exact scalar read descriptor. The read is made at `point`;
     /// observation origins and access evidence are not part of this node.
     /// Native addresses remain an explicit input boundary during migration.
     MemoryLoad {
-        memory: SharedMemory,
+        point: ProgramPoint,
         address: SharedAddress,
         kind: LoadKind,
     },
     /// Complete formed pointer value with prepared address and metadata children.
     PointerValue(SharedPointerValue),
-    /// A pointer argument with its selected memory state.
+    /// A pointer argument with the point its array is read at.
     ArrayReference {
-        memory: SharedMemory,
+        point: ProgramPoint,
         pointer: KernelTerm,
         element_type: ProgramType,
     },
@@ -193,7 +193,7 @@ pub enum KernelTermNode {
     /// Access authority and read-over-write evidence remain outside the term.
     PointerRead {
         value: SharedPointerValue,
-        memory: SharedMemory,
+        point: ProgramPoint,
         address: SharedAddress,
     },
     /// Address observation retains its exact prepared address and object annotation.
@@ -343,12 +343,12 @@ impl PartialEq for NodeKey {
                 && match (&self.0.node, &other.0.node) {
                     (
                         KernelTermNode::MemoryLoad {
-                            memory: a,
+                            point: a,
                             address: p,
                             kind: k,
                         },
                         KernelTermNode::MemoryLoad {
-                            memory: b,
+                            point: b,
                             address: q,
                             kind: l,
                         },
@@ -356,20 +356,26 @@ impl PartialEq for NodeKey {
                         // The interner is process-wide; states belong to arenas.
                         // Comparing their contents across arenas would walk unrelated
                         // memory while registering one selected read.
-                        a.arena_id() == b.arena_id() && p == q && k == l
+                        a.shared_memory().arena_id() == b.shared_memory().arena_id()
+                            && p == q
+                            && k == l
                     }
                     (
                         KernelTermNode::PointerRead {
                             value: a,
-                            memory: m,
+                            point: m,
                             address: p,
                         },
                         KernelTermNode::PointerRead {
                             value: b,
-                            memory: n,
+                            point: n,
                             address: q,
                         },
-                    ) => m.arena_id() == n.arena_id() && a == b && p == q,
+                    ) => {
+                        m.shared_memory().arena_id() == n.shared_memory().arena_id()
+                            && a == b
+                            && p == q
+                    }
                     (a, b) => a == b,
                 })
     }
@@ -384,10 +390,10 @@ impl NodeKey {
     fn new(ty: KernelType, node: KernelTermNode) -> Self {
         let mut hash = crate::id_hash::FingerprintHasher::default();
         ty.hash(&mut hash);
-        if let KernelTermNode::MemoryLoad { memory, .. }
-        | KernelTermNode::PointerRead { memory, .. } = &node
+        if let KernelTermNode::MemoryLoad { point, .. }
+        | KernelTermNode::PointerRead { point, .. } = &node
         {
-            memory.arena_id().hash(&mut hash);
+            point.shared_memory().arena_id().hash(&mut hash);
         }
         node.hash(&mut hash);
         // A fresh legacy identity belongs to its producer. Read observations
@@ -1220,7 +1226,7 @@ impl KernelTermImport {
                 element_type,
             } => match pointer {
                 ProgramValue::Pointer(pointer) => KernelTerm::shared_array_reference(
-                    intern_memory(memory.clone()),
+                    ProgramPoint::of_memory(memory),
                     KernelTerm::shared_pointer_value(SharedPointerValue::import(pointer)),
                     *element_type,
                 ),

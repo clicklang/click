@@ -6517,11 +6517,15 @@ impl AggregateInitializer {
     }
 }
 
+/// Sorted record-relative offsets and masks of the bytes occupied by named
+/// C bit-fields. A padding-only byte has no entry.
+pub(crate) type BitFieldBytes = Arc<[(u32, std::num::NonZeroU8)]>;
+
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct AggregateLayout {
     /// The declared bits copied by an assignment of a local C bit-field
     /// record. Padding is outside the assigned value.
-    pub(super) bit_field_bits: Option<std::num::NonZeroU32>,
+    pub(super) bit_field_bytes: Option<BitFieldBytes>,
     pub(super) size_bytes: u32,
     pub(super) alignment_bytes: u32,
     pub(super) fields: Vec<AggregateField>,
@@ -6541,19 +6545,13 @@ impl AggregateLayout {
             fields,
             unions: Vec::new(),
             value_type: None,
-            bit_field_bits: None,
+            bit_field_bytes: None,
         }
     }
 
-    pub(crate) fn bit_field_record(
-        size_bytes: u32,
-        alignment_bytes: u32,
-        field_bits: std::num::NonZeroU32,
-    ) -> Self {
-        Self {
-            bit_field_bits: Some(field_bits),
-            ..Self::new(size_bytes, alignment_bytes, Vec::new())
-        }
+    pub(crate) fn with_bit_field_bytes(mut self, field_bytes: Option<BitFieldBytes>) -> Self {
+        self.bit_field_bytes = field_bytes;
+        self
     }
 
     /// The layout of an object that holds one value of `value_type`, a type
@@ -6585,7 +6583,7 @@ impl AggregateLayout {
             fields,
             unions,
             value_type: None,
-            bit_field_bits: None,
+            bit_field_bytes: None,
         }
     }
 

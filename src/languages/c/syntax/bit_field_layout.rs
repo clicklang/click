@@ -26,14 +26,21 @@ impl IntBitField {
         Some(Self { start_bit, width })
     }
 
-    /// The shift and positioned mask for a field in the first word.
-    pub(crate) fn first_word_slice(self) -> Option<(u32, u32)> {
-        if self.end_bit() > 32 {
-            return None;
-        }
-        let shift = u32::try_from(self.start_bit).ok()?;
-        let mask = u32::MAX >> (32 - self.width);
-        Some((shift, mask << shift))
+    pub(super) fn start_bit(self) -> u64 {
+        self.start_bit
+    }
+
+    /// An unnamed zero-width int member advances placement to a unit boundary.
+    pub(super) fn next_word(cursor: u64) -> Option<u64> {
+        cursor.div_ceil(32).checked_mul(32)
+    }
+
+    pub(super) fn shift_in_word(self) -> u32 {
+        (self.start_bit % 32) as u32
+    }
+
+    pub(super) fn width(self) -> u8 {
+        self.width
     }
 
     pub(crate) fn end_bit(self) -> u64 {
@@ -42,7 +49,6 @@ impl IntBitField {
 
     /// Iterate just the intersected bytes. Masks use x86-64's least
     /// significant bit numbering within each byte.
-    #[cfg(test)]
     pub(crate) fn byte_masks(self) -> impl Iterator<Item = (u64, u8)> {
         let end = self.end_bit();
         (self.start_bit / 8..end.div_ceil(8)).map(move |offset| {

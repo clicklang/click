@@ -129,7 +129,7 @@ fn shared_read_capture_visits_address_dags_and_nested_read_prefixes_once() {
                     let address = SharedAddress::new(block.clone(), offset.clone());
                     KernelTerm::shared_scalar_read_descriptor(
                         MachineIntegerType::Int32,
-                        &memory,
+                        &crate::kernel::ProgramPoint::at(&memory),
                         &address,
                         LoadKind::Int32,
                     )

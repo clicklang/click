@@ -164,6 +164,7 @@ struct SpecEvaluation<'a> {
     /// well-formed logical calls' nominal argument requirements.
     recover_resource_call_types: bool,
     pointer_cast_operand: bool,
+    conditional_guard: bool,
     machine_preparation_disabled: bool,
     machine_result_production_disabled: bool,
     integer_bindings: BTreeMap<Variable, IntegerResult>,
@@ -223,6 +224,7 @@ impl<'a> SpecEvaluation<'a> {
             program_definedness: false,
             recover_resource_call_types: false,
             pointer_cast_operand: false,
+            conditional_guard: false,
             machine_preparation_disabled: false,
             machine_result_production_disabled: false,
             integer_bindings: initial_integer_bindings(),
@@ -235,6 +237,7 @@ impl<'a> SpecEvaluation<'a> {
             program_definedness: false,
             recover_resource_call_types: false,
             pointer_cast_operand: false,
+            conditional_guard: false,
             machine_preparation_disabled: false,
             machine_result_production_disabled: false,
             integer_bindings: initial_integer_bindings(),
@@ -5581,7 +5584,11 @@ fn lower_spec_comparison_proposition_at_state_in(
                 merge_failure_count = merge_failure_count.saturating_add(1);
                 continue;
             };
-            if let Some(proposition) = left_path.value.comparison(operator, &right_path.value)? {
+            if let Some(proposition) = left_path.value.comparison_in(
+                operator,
+                &right_path.value,
+                budget.conditional_guard,
+            )? {
                 paths.push(SpecPropositionPath {
                     introductions: Vec::new(),
                     proposition,
@@ -8232,7 +8239,7 @@ fn evaluate_spec_pure_function_argument_paths_in(
                     })
                 } else {
                     SpecCallArgument::Shared(KernelTerm::shared_array_reference(
-                        crate::kernel::intern_memory_ref(&memory),
+                        ProgramPoint::at(&crate::kernel::intern_memory_ref(&memory)),
                         path.value.common_operand(),
                         *element_type,
                     ))
@@ -8878,14 +8885,15 @@ fn evaluate_spec_if_paths_in(
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecExpressionPath>> {
     let mut paths = Vec::new();
-    let condition_paths = {
-        lower_spec_proposition_at_state_with_algebraic_bindings_in(
-            scope,
-            condition,
-            assumptions,
-            budget,
-        )
-    }?;
+    let previous_guard = std::mem::replace(&mut budget.conditional_guard, true);
+    let condition_paths = lower_spec_proposition_at_state_with_algebraic_bindings_in(
+        scope,
+        condition,
+        assumptions,
+        budget,
+    );
+    budget.conditional_guard = previous_guard;
+    let condition_paths = condition_paths?;
     for condition_path in condition_paths {
         let branch_assumptions = assumptions_with_path_context(
             assumptions,
@@ -8898,7 +8906,7 @@ fn evaluate_spec_if_paths_in(
         let retained_comparison = !budget.machine_result_production_disabled
             && match &condition_path.proposition {
                 Proposition::ConditionIs(condition, _)
-                    if crate::kernel::machine_integer::comparison::is_bounded_bit_comparison(
+                    if crate::kernel::machine_integer::comparison::is_bounded_machine_comparison(
                         condition,
                     ) =>
                 {

@@ -130,7 +130,58 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         else {
             return Ok(None);
         };
+        if matches!(node, PointerTranslation { .. }) {
+            return Self::try_pointer_translation_using(proof, &premises);
+        }
+        if matches!(node, UnsignedSumBound { .. }) {
+            return Self::try_widened_unsigned_sum_using(proof, &premises);
+        }
+        if matches!(node, IntegerCastIdentity { .. }) {
+            if proof
+                .goal()
+                .is_some_and(crate::surface::planning::solve::computes_with_known)
+                || Self::known_bridge_using(proof, &premises)?
+            {
+                return proof.driver().apply_step(ProofStep::Known).map(Some);
+            }
+            if let Some(closed) =
+                attempt::candidate_outcome(Self::try_bounded_cast_identity_using(proof, &premises))?
+                    .flatten()
+            {
+                return Ok(Some(closed));
+            }
+            // Read-over-write cast identities still use the read adapter.
+            if !super::signed_intervals::has_retained_read_source(result)
+                && !premises
+                    .iter()
+                    .any(super::signed_intervals::has_retained_read_source)
+            {
+                return Ok(None);
+            }
+        }
         let scope = proof.driver().open_have(result.clone())?;
+        if matches!(node, FloatReflexive { .. }) {
+            if !Self::known_bridge_using(scope.body(), &premises)? {
+                return Ok(None);
+            }
+            let closed = scope.driver().apply_step(ProofStep::Known)?;
+            return Ok(Some(closed.join()?.driver().apply_step(ProofStep::Known)?));
+        }
+        if matches!(
+            node,
+            PointerAlignment { .. } | PointerWordEquality { .. } | PointerWordFromAlignment { .. }
+        ) {
+            if let Some(closed) = scope.driver().try_address_words_using(&premises)? {
+                return Ok(Some(closed.join()?.driver().apply_step(ProofStep::Known)?));
+            }
+        }
+        if polynomial {
+            let Some(closed) = scope.driver().try_integer_algebra()? else {
+                return Ok(None);
+            };
+            return Ok(Some(closed.join()?.driver().apply_step(ProofStep::Known)?));
+        }
+
         if !polynomial {
             // Select a rule using only its explicit inputs. Ordinary normalize
             // may use the ambient equality graph; restricted solve must not
@@ -161,36 +212,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         {
             return Ok(Some(closed.join()?.driver().apply_step(ProofStep::Known)?));
         }
-        if !polynomial {
-            return Ok(None);
-        }
-        let mut body = scope;
-        // Each rewrite runs under the ordinary smart work budget and the
-        // explicit rewrite-count bound below. Each distribution is written
-        // and checked separately. Never
-        // put a cross product of monomials in a simple normalization check.
-        for _ in 0..4096 {
-            let Some(ClickProposition::Comparison { left, right, .. }) = body.body().surface_goal()
-            else {
-                return Ok(None);
-            };
-            let Some((from, to)) = distribution(left).or_else(|| distribution(right)) else {
-                let closed = body.driver().apply_step(ProofStep::Normalize)?;
-                return Ok(Some(closed.join()?.driver().apply_step(ProofStep::Known)?));
-            };
-            let equality = ClickProposition::Comparison {
-                left: from,
-                operator: ComparisonOperator::Equal,
-                right: to,
-            };
-            let nested = body.driver().open_have(equality.clone())?;
-            let checked = nested.driver().apply_step(ProofStep::Normalize)?;
-            body = body.join_nested(checked)?;
-            body = body.driver().apply_step(ProofStep::Rewrite(equality))?;
-            if body.is_complete() {
-                return Ok(Some(body.join()?.driver().apply_step(ProofStep::Known)?));
-            }
-        }
+
         Ok(None)
     }
 }
@@ -210,6 +232,197 @@ mod tests {
         assert!(!expanded.contains("solve("), "{expanded}");
         without_implicit_solve(|| verify_c_sources(&expanded, &[]))
             .unwrap_or_else(|e| panic!("{}\n{expanded}", e.message()));
+    }
+    #[test]
+    fn pointer_word_laws_have_explicit_applications() {
+        let source = r#"
+        theorem mask(p: int32*, word: uint64) {
+            requires aligned(p, 8);
+            ensures ((address(p) + word) & 7u64) == (word & 7u64) by {
+                apply(click::integer::uint64_mask_add_low(address(p), word, 7u64)) using {
+                    (7u64 & (7u64 + 1u64)) == 0u64;
+                    aligned(p, 8);
+                };
+            }
+        }
+        theorem offset(p: int32*, i: int32) {
+            ensures address(p + i) == ((address(p) + (i as uint64) * 4u64) as uint64) by {
+                apply(click::integer::int32_pointer_add_address_int32(p, i)) using {};
+            }
+        }
+        "#;
+        without_implicit_solve(|| verify_c_sources(source, &[]))
+            .unwrap_or_else(|e| panic!("{}", e.message()));
+    }
+    #[test]
+    fn pointer_alignment_and_tagged_words_expand_without_normalize() {
+        let mut failures = Vec::new();
+        for (requirements, goal, listed) in [
+            (
+                "requires aligned(p,8);",
+                "(address(p + 2) & 7u64) == 0u64",
+                "aligned(p,8);",
+            ),
+            (
+                "requires aligned(p,8);",
+                "(address(p + 1) & 7u64) != 0u64",
+                "aligned(p,8);",
+            ),
+            (
+                "requires aligned(p,8);",
+                "(address(p) & 3u64) == 0u64",
+                "aligned(p,8);",
+            ),
+            (
+                "requires aligned(p,8);",
+                "(((word & 7u64) | address(p)) & 3u64) == (word & 3u64)",
+                "aligned(p,8);",
+            ),
+            (
+                "requires aligned(p,8);",
+                "((address(p) | 3u64) & 18446744073709551612u64) == address(p)",
+                "aligned(p,8);",
+            ),
+            (
+                "requires aligned(p,8);",
+                "((address(p) + 5u64) & 7u64) == 5u64",
+                "aligned(p,8);",
+            ),
+            (
+                "requires aligned(p,8);",
+                "((address(p) + 5u64) & 18446744073709551612u64) == ((address(p) + 4u64) as uint64)",
+                "aligned(p,8);",
+            ),
+            (
+                "requires aligned(p,8);",
+                "(address(p) | 1u64) != (address(p) | 2u64)",
+                "aligned(p,8);",
+            ),
+            (
+                "requires aligned(p,8); requires word == (address(p) | 3u64);",
+                "(word & 18446744073709551608u64) == address(p)",
+                "aligned(p,8); word == (address(p) | 3u64);",
+            ),
+            (
+                "requires aligned(p,8);",
+                "(address(p + -2) & 7u64) == 0u64",
+                "aligned(p,8);",
+            ),
+        ] {
+            let source = format!(
+                "theorem tagged(p: int32*, word: uint64) {{ {requirements} ensures {goal} by {{ solve() using {{ {listed} }}; }} }}"
+            );
+            match expand_c_claim_source_by_label(&source, &[], "tagged.ensures_0") {
+                Ok(expanded) => {
+                    if expanded.contains("normalize(") || expanded.contains("solve(") {
+                        failures.push(expanded);
+                        continue;
+                    }
+                    if let Err(e) = without_implicit_solve(|| verify_c_sources(&expanded, &[])) {
+                        failures.push(format!("{}\n{expanded}", e.message()));
+                    }
+                }
+                Err(e) => failures.push(format!("{}\n{source}", e.message())),
+            }
+        }
+        assert!(failures.is_empty(), "{}", failures.join("\n\n"));
+    }
+    #[test]
+    fn returning_pointer_alignment_replays_without_normalize() {
+        let c = [("bump.c", "int32* bump(int32* p) { return p + 2; }")];
+        let source = "verifying \"bump.c\"; int32* bump(int32* p) { requires viewable(p[0..3]); views p[0..3]; requires aligned(p,8); ensures aligned(result,8) by { step_until(function.exit); solve() using { aligned(p,8); }; } }";
+        let expanded = expand_c_claim_source_by_label(source, &c, "bump.ensures_0")
+            .unwrap_or_else(|e| panic!("{}", e.message()));
+        assert!(!expanded.contains("normalize("), "{expanded}");
+        assert!(!expanded.contains("solve("), "{expanded}");
+        without_implicit_solve(|| verify_c_sources(&expanded, &c))
+            .unwrap_or_else(|e| panic!("{}\n{expanded}", e.message()));
+    }
+    #[test]
+    fn tagged_word_field_read_expands_without_normalize() {
+        let c = [(
+            "untag.c",
+            "struct node { unsigned long word; }; unsigned long untag(struct node* node, struct node* next) { return node->word & ~7UL; }",
+        )];
+        let source = r#"verifying "untag.c";
+        unsigned long untag(struct node* node, struct node* next) {
+            requires node != 0;
+            requires aligned(next,8);
+            requires node->word == address(next) + 3;
+            views node->word;
+            ensures result == address(next) by {
+                step_until(function.exit);
+                solve() using { node->word == address(next) + 3; aligned(next,8); };
+            }
+        }"#;
+        let expanded = expand_c_claim_source_by_label(source, &c, "untag.ensures_0")
+            .unwrap_or_else(|e| panic!("{}", e.message()));
+        assert!(!expanded.contains("normalize("), "{expanded}");
+        assert!(!expanded.contains("solve("), "{expanded}");
+        without_implicit_solve(|| verify_c_sources(&expanded, &c))
+            .unwrap_or_else(|e| panic!("{}\n{expanded}", e.message()));
+    }
+    #[test]
+    fn address_word_expansion_keeps_alignment_and_mask_guards() {
+        for (requires, goal, listed) in [
+            (
+                "requires aligned(p,8);",
+                "((address(p) + 5u64) & 7u64) == 5u64",
+                "",
+            ),
+            (
+                "requires aligned(q,8);",
+                "((address(p) + 5u64) & 7u64) == 5u64",
+                "aligned(q,8);",
+            ),
+            (
+                "requires aligned(p,4);",
+                "((address(p) + 5u64) & 7u64) == 5u64",
+                "aligned(p,4);",
+            ),
+            (
+                "requires aligned(p,8);",
+                "((address(p) + 5u64) & 7u64) == 6u64",
+                "aligned(p,8);",
+            ),
+        ] {
+            let source = format!(
+                "theorem bad(p: int32*,q: int32*) {{ {requires} ensures {goal} by {{ solve() using {{ {listed} }}; }} }}"
+            );
+            assert!(verify_c_sources(&source, &[]).is_err(), "{source}");
+        }
+        let source = "theorem bad(base: uint64,tag: uint64) { requires (base & 5u64) == 0u64; ensures ((base + tag) & 5u64) == (tag & 5u64) by { apply(click::integer::uint64_mask_add_low(base,tag,5u64)) using { (base & 5u64) == 0u64; }; } }";
+        assert!(verify_c_sources(source, &[]).is_err());
+    }
+    #[test]
+    #[ignore = "nightly: scalar pointer widths and native index formats with strict expansion replay"]
+    fn scalar_pointer_offset_laws_expand_across_supported_widths() {
+        for (ty, width) in [
+            ("uint8", 1),
+            ("int8", 1),
+            ("uint16", 2),
+            ("int16", 2),
+            ("uint32", 4),
+            ("int32", 4),
+            ("uint64", 8),
+            ("int64", 8),
+            ("float", 4),
+            ("double", 8),
+        ] {
+            for index in ["int32", "int64"] {
+                let alignment = width * 2;
+                let mask = width - 1;
+                let source = format!(
+                    "theorem offset(p: {ty}*,i: {index}) {{ requires aligned(p,{alignment}); ensures (address(p + i) & {mask}u64) == 0u64 by {{ solve() using {{ aligned(p,{alignment}); }}; }} }}"
+                );
+                let expanded = expand_c_claim_source_by_label(&source, &[], "offset.ensures_0")
+                    .unwrap_or_else(|e| panic!("{}\n{source}", e.message()));
+                assert!(!expanded.contains("normalize("), "{expanded}");
+                assert!(!expanded.contains("solve("), "{expanded}");
+                without_implicit_solve(|| verify_c_sources(&expanded, &[]))
+                    .unwrap_or_else(|e| panic!("{}\n{expanded}", e.message()));
+            }
+        }
     }
     #[test]
     fn polynomial_distribution_expands_into_ordinary_rewrites() {

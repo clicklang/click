@@ -23,17 +23,17 @@ case "$mode" in
         metadata="$(mktemp -d)"
         trap 'rm -rf "$metadata"' EXIT
         printf '%s\n' "$identity" > "$metadata/click-rust-runtime.identity"
-        tar -czf "$archive" -C "$CHARON_SYSROOT" lib bin/rustc \
+        tar --zstd -cf "$archive" -C "$CHARON_SYSROOT" lib bin/rustc \
             -C "$metadata" click-rust-runtime.identity
         ;;
     restore)
-        actual="$(tar -xOzf "$archive" click-rust-runtime.identity)"
+        actual="$(tar --zstd -xOf "$archive" click-rust-runtime.identity)"
         if [[ "$actual" != "$identity" ]]; then
             echo "error: Rust runtime archive does not match the pinned compiler, target, and toolchain" >&2
             exit 1
         fi
         mkdir -p "$CHARON_SYSROOT"
-        tar -xzf "$archive" -C "$CHARON_SYSROOT" lib bin/rustc
+        tar --zstd -xf "$archive" -C "$CHARON_SYSROOT" lib bin/rustc
         check_runtime
         ;;
     *) echo "error: expected pack or restore" >&2; exit 2 ;;

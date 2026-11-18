@@ -430,7 +430,8 @@ impl Comparison {
             (N::AlgebraicRead(a), N::AlgebraicRead(b)) => {
                 let (am, ap) = a.parts();
                 let (bm, bp) = b.parts();
-                am.arena_id() == bm.arena_id() && self.shared_addresses(ap, bp)
+                am.shared_memory().arena_id() == bm.shared_memory().arena_id()
+                    && self.shared_addresses(ap, bp)
             }
             _ => false,
         }
@@ -651,7 +652,7 @@ mod tests {
         let root = KernelTerm::shared_pointer_value(SharedPointerValue::import(&pointer));
         let shared = |memory: &SymbolicMemory| {
             KernelTerm::shared_array_reference(
-                crate::kernel::intern_memory_ref(memory),
+                crate::kernel::ProgramPoint::at(&crate::kernel::intern_memory_ref(memory)),
                 root.clone(),
                 ProgramType::Int32,
             )
@@ -691,8 +692,11 @@ mod tests {
         let pointer = Address::symbolic(Variable(999974));
         let other = Address::symbolic(Variable(999973));
         let ty = AlgebraicType::parameter("T".into());
-        let root =
-            KernelTerm::algebraic_read(ty.clone(), memory.clone(), SharedAddress::import(&pointer));
+        let root = KernelTerm::algebraic_read(
+            ty.clone(),
+            crate::kernel::ProgramPoint::at(&memory),
+            SharedAddress::import(&pointer),
+        );
         for (state, address, expected) in [
             (&memory, &pointer, true),
             (&changed, &pointer, false),
@@ -700,7 +704,7 @@ mod tests {
         ] {
             let right = KernelTerm::algebraic_read(
                 ty.clone(),
-                state.clone(),
+                crate::kernel::ProgramPoint::at(&state),
                 SharedAddress::import(address),
             );
             let native = AlgebraicTerm {
