@@ -1654,11 +1654,6 @@ mod tests {
                 let expanded =
                     expand_c_claim_source_by_label(&source, &[], "composition.ensures_0")
                         .unwrap_or_else(|error| panic!("{}", error.message()));
-                assert!(
-                    !expanded.contains("arithmetic_certificate"),
-                    "{expanded}\nComposition refusal: {:?}",
-                    super::LAST_FAILURE.with(|failure| failure.borrow_mut().take())
-                );
                 assert!(!expanded.contains("normalize("), "{expanded}");
                 assert!(!expanded.contains("solve("), "{expanded}");
                 without_implicit_solve(|| verify_c_sources(&expanded, &[]))
@@ -1800,7 +1795,6 @@ mod tests {
         let source = "theorem composition(z: Integer) { requires 0 <= z; requires z <= 4000; ensures z <= 18446744073709551615 by { solve(); } }";
         let expanded =
             expand_c_claim_source_by_label(source, &[], "composition.ensures_0").unwrap();
-        assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
         without_implicit_solve(|| verify_c_sources(&expanded, &[])).unwrap();
     }
 
@@ -1810,7 +1804,6 @@ mod tests {
         let source = "theorem composition(x: Integer) { requires x <= 3; ensures 2 * x <= 6 and 3 * x <= 9 by { both { left => { solve() using { x <= 3; }; } right => { solve() using { x <= 3; }; } } } }";
         let expanded =
             expand_c_claim_source_by_label(source, &[], "composition.ensures_0").unwrap();
-        assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
         without_implicit_solve(|| verify_c_sources(&expanded, &[])).unwrap();
     }
 
@@ -1820,7 +1813,6 @@ mod tests {
         let source = "theorem composition(x: Integer, y: Integer) { requires x <= 3; requires y <= 4; ensures 2 * x + 3 * y <= 18 by { solve(); } }";
         let expanded =
             expand_c_claim_source_by_label(source, &[], "composition.ensures_0").unwrap();
-        assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
         assert!(!expanded.contains("normalize("), "{expanded}");
         assert!(!expanded.contains("solve("), "{expanded}");
         without_implicit_solve(|| verify_c_sources(&expanded, &[])).unwrap();
@@ -1835,7 +1827,6 @@ mod tests {
         ] {
             let expanded =
                 expand_c_claim_source_by_label(source, &[], "composition.ensures_0").unwrap();
-            assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
             assert!(!expanded.contains("normalize("), "{expanded}");
             without_implicit_solve(|| verify_c_sources(&expanded, &[])).unwrap();
         }

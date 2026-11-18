@@ -21428,6 +21428,136 @@ fn cpp_record_reference_results_keep_nested_subobjects() {
     );
 }
 
+#[test]
+#[ignore = "nightly: direct access through a returned record reference and proof replay"]
+fn cpp_record_reference_results_read_and_write_direct_fields() {
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/cpp-verification/record-reference-results");
+    let cpp = fs::read_to_string(fixture.join("direct.cpp")).unwrap();
+    let project = Project::with_fixture("direct.cpp", "probe", &cpp);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let lowered = lower_import(&import).unwrap();
+    let mut pending = vec![lowered.kernel_function().body()];
+    let mut operations = Vec::new();
+    while let Some(statement) = pending.pop() {
+        match statement {
+            ProgramStatement::Seq(body) => pending.extend(body.iter().rev().map(AsRef::as_ref)),
+            ProgramStatement::Assign {
+                expression: ProgramExpression::TypedLoad { .. },
+                ..
+            } => operations.push("read right operand".to_owned()),
+            ProgramStatement::CallResult { function_name, .. } => operations.push(
+                click::surface::source_display_name(function_name)
+                    .unwrap_or_else(|| function_name.clone()),
+            ),
+            ProgramStatement::TypedStore { .. } => operations.push("store field".to_owned()),
+            _ => {}
+        }
+    }
+    assert_eq!(
+        operations,
+        [
+            "read right operand",
+            "Outer::get",
+            "store field",
+            "Outer::peek"
+        ]
+    );
+    let source = fs::read_to_string(fixture.join("direct.click")).unwrap();
+    click::surface::with_proof_trace("probe", || {
+        check_record_reference_claim_replay(
+            &project,
+            &import,
+            &source,
+            &[
+                "Outer::get.ensures_0",
+                "Outer::peek.ensures_0",
+                "probe.contract",
+            ],
+        )
+    });
+    let read_only = source.replace("owns outer.child.value;", "views outer.child.value;");
+    let path = project.directory.join("bad.click");
+    fs::write(&path, &read_only).unwrap();
+    assert!(
+        verify_program_prepared_project(&read_click_project(&path, &read_only).unwrap(), &import)
+            .is_err()
+    );
+
+    let const_store = Project::with_fixture(
+        "direct.cpp",
+        "probe",
+        &cpp.replace("outer.get().value =", "outer.peek().value ="),
+    );
+    assert!(refresh_import(&const_store.config()).is_err());
+}
+
+#[test]
+#[ignore = "nightly: compound field assignment through returned references and proof replay"]
+fn cpp_record_reference_results_compound_field_updates() {
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/cpp-verification/record-reference-results");
+    let cpp = fs::read_to_string(fixture.join("compound.cpp")).unwrap();
+
+    for (function, getter, negative_clause, replacement, expected_error) in [
+        (
+            "add",
+            "active",
+            "requires state.delta == 2;",
+            "",
+            "signed overflow",
+        ),
+        (
+            "subtract",
+            "current",
+            "owns state.counter.value;",
+            "views state.counter.value;",
+            "missing resource fact `owns",
+        ),
+    ] {
+        let project = Project::with_fixture("compound.cpp", function, &cpp);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let lowered = lower_import(&import).unwrap();
+        let mut pending = vec![lowered.kernel_function().body()];
+        let mut calls = Vec::new();
+        while let Some(statement) = pending.pop() {
+            match statement {
+                ProgramStatement::Seq(body) => pending.extend(body.iter().rev().map(AsRef::as_ref)),
+                ProgramStatement::CallResult { function_name, .. } => {
+                    calls.push(click::surface::source_display_name(function_name).unwrap());
+                }
+                _ => {}
+            }
+        }
+        assert_eq!(calls, [format!("State::{getter}")]);
+        let source =
+            fs::read_to_string(fixture.join(format!("compound-{function}.click"))).unwrap();
+        let getter_claim = if getter == "active" {
+            "State::active.contract"
+        } else {
+            "State::current.ensures_0"
+        };
+        let claim = format!("{function}.contract");
+        click::surface::with_proof_trace(function, || {
+            check_record_reference_claim_replay(&project, &import, &source, &[getter_claim, &claim])
+        });
+
+        let bad = source.replace(negative_clause, replacement);
+        let path = project.directory.join("bad.click");
+        fs::write(&path, &bad).unwrap();
+        let error =
+            verify_program_prepared_project(&read_click_project(&path, &bad).unwrap(), &import)
+                .expect_err("the weakened contract must be rejected");
+        assert!(
+            error.report().contains(expected_error),
+            "{}",
+            error.report()
+        );
+    }
+}
+
 fn check_record_reference_claim_replay(
     project: &Project,
     import: &click::languages::cpp::PreparedCppImport,

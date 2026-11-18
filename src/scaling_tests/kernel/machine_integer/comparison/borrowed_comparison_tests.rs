@@ -299,7 +299,7 @@ fn machine_comparison_and_guard_reads_are_bounded_on_hits_and_misses() {
                         .is_none()
                 );
             }
-            let wrapping_cases = [O::Add, O::Subtract].map(|op| {
+            let wrapping_cases = [O::Add, O::Subtract, O::Multiply].map(|op| {
                 let encoding = if format == MachineIntegerType::UInt32 {
                     MachineIntegerType::Int32
                 } else {

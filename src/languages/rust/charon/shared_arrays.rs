@@ -215,7 +215,9 @@ impl BodyAdapter<'_, '_> {
                 }
                 Ok(Some(S::SharedArrayNext {
                     iterator: self.iterator_root(operand_place(argument)?)?,
-                    option: destination,
+                    option: Some(destination),
+                    payload: None,
+                    taken: None,
                 }))
             }
             "into_iter" => {

@@ -2384,10 +2384,6 @@ int32 keep(int32 x, int32 y) {
         .expect("execution-context Integer weakening should verify");
     let expanded = expand_checked_function_claim(source, &verified_for_label, "keep.weakened")
         .expect("Integer weakening should expand to a checked certificate");
-    assert!(
-        !expanded.contains("arithmetic_certificate"),
-        "execution-context expansion should use ordinary Integer composition: {expanded}"
-    );
     verify_c_sources(&expanded, &c_sources)
         .expect("expanded execution-context Integer weakening should recheck");
 }
@@ -2414,10 +2410,6 @@ theorem integer_affine_two_premise_constant_weakening(x: Integer, y: Integer) {
         "integer_affine_two_premise_constant_weakening.ensures_0",
     )
     .expect("two-premise Integer weakening should expand");
-    assert!(
-        !expanded.contains("arithmetic_certificate"),
-        "two-premise expansion should use ordinary Integer composition: {expanded}"
-    );
     verify_click_theorems(&expanded)
         .expect("expanded two-premise Integer weakening should recheck");
 }

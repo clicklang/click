@@ -16579,7 +16579,10 @@ pub(super) fn function_return_resources_definitionally_established(
     let exit_memory = if exceptional {
         return_state.memory().clone()
     } else {
-        function_exit_memory(caller_state, return_state, value, function)
+        let Ok(memory) = function_exit_memory(caller_state, return_state, value, function) else {
+            return false;
+        };
+        memory
     };
     let mut claim_return_state = return_state.clone();
     claim_return_state.set_memory(exit_memory.clone());
@@ -20595,6 +20598,9 @@ fn end_inline_frame_automatic_lifetimes(
         if let Some(error) = state.population_storage_retirement_refusal(&slot.base) {
             return Err(error);
         }
+        if let Some(error) = state.automatic_storage_loan_refusal(&slot.base) {
+            return Err(error);
+        }
         blocks.push(slot.base.clone());
     }
     Ok(retire_automatic_lifetime_blocks(memory, &blocks))
@@ -20638,6 +20644,9 @@ fn end_function_body_automatic_lifetimes(
             if let Some(error) = state.population_storage_retirement_refusal(&slot.base) {
                 return Err(error);
             }
+            if let Some(error) = state.automatic_storage_loan_refusal(&slot.base) {
+                return Err(error);
+            }
             blocks.push(slot.base.clone());
         }
     }
@@ -20655,6 +20664,9 @@ fn end_function_body_automatic_lifetimes(
                 "aggregate expression result",
                 &pointer.base,
             ) {
+                return Err(error);
+            }
+            if let Some(error) = state.automatic_storage_loan_refusal(&pointer.base) {
                 return Err(error);
             }
             blocks.push(pointer.base.clone());
@@ -20675,20 +20687,22 @@ pub(in crate::kernel) fn function_exit_memory(
     callee_state: &ExecutionState,
     value: &ExecutionValue,
     function: &ProgramFunction,
-) -> SymbolicMemory {
+) -> Result<SymbolicMemory, RuntimeError> {
     if function.return_aggregate_layout().is_some() {
-        return callee_state.memory.clone();
+        return Ok(callee_state.memory.clone());
     }
     match value.pointer() {
         Some(pointer)
             if pointer.pointer().base.is_local_block()
                 && !caller_state.memory.has_block(&pointer.pointer().base) =>
         {
-            callee_state
-                .memory
-                .without_local_block(&pointer.pointer().base)
+            let block = &pointer.pointer().base;
+            if let Some(error) = callee_state.automatic_storage_loan_refusal(block) {
+                return Err(error);
+            }
+            Ok(callee_state.memory.without_local_block(block))
         }
-        _ => callee_state.memory.clone(),
+        _ => Ok(callee_state.memory.clone()),
     }
 }
 
@@ -22301,6 +22315,9 @@ impl From<bool> for ConditionTerm {
         Self::Constant(value)
     }
 }
+
+#[cfg(test)]
+mod automatic_frame_loan_tests;
 
 #[cfg(test)]
 mod mutex_automatic_frame_tests;
