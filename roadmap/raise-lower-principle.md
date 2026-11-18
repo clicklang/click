@@ -584,6 +584,9 @@ history and temporary session notes are not the plan's durable record.
 
 Checkpoint: 10a–10g have landed; 10f is [PR #3075](https://github.com/clicklang/click/pull/3075)
 and 10g is [PR #3080](https://github.com/clicklang/click/pull/3080).
+10n landed in [PR #3181](https://github.com/clicklang/click/pull/3181); all six
+pushed commits were verified on upstream and the clean primary was advanced
+through Git.
 10m landed in [PR #3169](https://github.com/clicklang/click/pull/3169); all four
 pushed commits were verified on upstream and the clean primary was advanced
 through Git.
@@ -606,8 +609,8 @@ sequence below. These rows record planned scope, not completed implementation.
 | 10k | Migrate native Integer result storage. | Integer results retain shared roots through result handoffs; exact native output is an explicit boundary. | Landed in [PR #3151](https://github.com/clicklang/click/pull/3151); all eight pushed commits verified on upstream. Evidence below. |
 | 10l | Migrate deferred Integer bindings and fold endpoints. | Deferred bindings and endpoints retain shared operands through substitution and evaluation with unchanged fold behavior. | Landed in [PR #3160](https://github.com/clicklang/click/pull/3160); all five pushed commits verified on upstream. |
 | 10m | Migrate algebraic field and match-result storage. | Fields and match results retain shared values with existing constructor/arm identity and producer metadata. | Landed in [PR #3169](https://github.com/clicklang/click/pull/3169); all four pushed commits verified on upstream. |
-| 10n | Migrate theorem argument and recorded-state value storage. | Stored arguments and recorded values retain shared operands with unchanged substitution and state selection. | Implemented; [PR #3181](https://github.com/clicklang/click/pull/3181) has auto-merge requested. 287 focused checks, all 1,890 scaling cases, the regular proof corpus, fact stability and quality passed on integrated upstream. Integration pending. |
-| 10o | Migrate program-valued resource-field storage. | Program-valued fields retain shared operands while preserving resource identity and substitution. | Planned. |
+| 10n | Migrate theorem argument and recorded-state value storage. | Stored arguments and recorded values retain shared operands with unchanged substitution and state selection. | Landed in [PR #3181](https://github.com/clicklang/click/pull/3181); all six pushed commits verified on upstream. Validation and program-point integration evidence below. |
+| 10o | Migrate program-valued resource-field storage. | Program-valued fields retain shared operands while preserving resource identity and substitution. | Published as [PR #3213](https://github.com/clicklang/click/pull/3213), with auto-merge requested. Local validation and final 648-check upstream integration passed; merge pending. |
 | 10p | Migrate remaining expression payloads in sequence/resource descriptors. | Inventory and subdivide independent families before implementation; preserve legitimate opaque descriptor identities. | Planned; family split may be needed. |
 | 10q | Migrate remaining native expression payloads in proposition outputs. | Proposition outputs retain shared operands with unchanged fact identity, raising/lowering and proof admission. | Planned. |
 | 10r | Remove obsolete machine compatibility caches and reverse bridges. | Remove only after their live readers migrate; account for any retained reader and reason. | Planned; after affected consumers. |
@@ -1000,6 +1003,81 @@ including C++ captures and snapshot scaling, passed with the current exporter;
 quality passed. The first focused command omitted the exporter environment
 variable; its fixture setup failure was corrected in the passing rerun.
 Full nightly was not run.
+
+### 10o Program-valued resource fields
+
+The inventory has two owning stores: kernel `ResourceInstance::fields` and the
+Surface `ResourceInstanceBinding::fields` counterpart. Both now use immutable
+`ResourceFieldValues`. Explicit native input lists keep their original input
+contract; program fields minted by the kernel retain existing execution-value
+carriers under the same family-admission policy as stored execution values.
+Integer and algebraic input fields remain explicit input DTOs in this slice.
+Resource arguments are a separate store assigned to 10p.
+
+Borrowed `ResourceFieldValue` views expose selected native readings without a
+second cached native field list. Program projection can read the retained
+producer directly. Parent/child field handoffs and unchanged loop-join fields
+copy their existing producer handles; substitutions and variable collection use
+the existing execution-value operations. Whole-list native diagnostics and
+other slice APIs request an explicit borrowed/owned native output. Resource
+identity, schema, source names, type/qualifier policy and native field equality,
+ordering and hash contracts are preserved.
+
+A new input-boundary regression reproduced an earlier imported-field mismatch:
+boxed and shared word arguments in a native machine call collapsed to one root,
+although native `ProgramValue` equality distinguishes their carrier forms.
+Imported field inputs now preserve the shared-word argument envelope through the
+existing exact application-argument descriptor. Numeric checking and retained
+producer imports keep their previous argument policy. The reproduction failed
+before the fix; it and 326 related checks passed afterward. Nested input forms
+and constructor round trips are included in the broader validation.
+
+The store/reader migration type-checks. All 383 focused storage, projection,
+substitution, identity/hash, growing-DAG and related resource/API checks passed,
+as did quality checks. On upstream `66ff4dedd`, the two isolated regular
+scaling cases and all 2,344 combined scaling/affected checks passed. Regular
+proof-corpus/fact-stability validation passed (778 seconds, 121 refused
+lowerings and zero changed terms or paths); quality passed again. The aggregate
+validation script exited zero. [PR #3213](https://github.com/clicklang/click/pull/3213)
+has auto-merge requested; full nightly was not run. Live native views, whole-list outputs and identity readers remain
+compatibility consumers for 10r–10t, not proof or search changes.
+
+The subsequent 10p1 parity regression exposed a literal-carrier difference in
+retained program-value substitution (`uint32` wrapping keeps a typed root
+constant). Stored-value substitution now applies the existing native typed
+constructor to that selected literal only, then retains its common root. It
+never exports the surrounding expression. The same helper covers fields and
+sequence elements. All 437 focused checks on the combined 10o/10p1 tree passed,
+including six signed/unsigned 8/16/32-bit field carriers. All 1,909 regular
+scaling cases and the sequence proof selection on that combined tree also passed.
+The full regular corpus
+above predates this final selected-literal fix; CI gates the published tree.
+After integrating upstream `306a1fec0`, all 648 Spec/API/resource/preservation
+and affected Surface checks passed, including the final literal-carrier fix.
+
+### 10p Inventory and sequential descriptor families
+
+The owning native expression stores divide into the following independent PRs.
+Complete them in order after 10o; update this table with actual consumer and
+validation evidence. This is a subdivision of the authorized descriptor slice,
+not a change to proof rules or snapshot architecture.
+
+| Subslice | Owning stores | Status |
+| --- | --- | --- |
+| 10p1 | `SequenceTermNode::Literal` evaluated elements and their evaluator/substitution handoffs. | Inventoried; pending. |
+| 10p2 | Composite/token/instance `ResourceArguments`, `ResourceDescription` arguments and remaining Integer/algebraic resource fields. Preserve argument order, native identity classes and nominal resource identities. | Inventoried; pending. |
+| 10p3 | `MemoryRange` bounds and `AllocationSize` byte counts. Preserve signed/wide reading, bound provenance and existing identity/hash contracts. | Inventoried; pending. |
+| 10p4 | `IteratedMemory` endpoints, guard comparison value and selected holes. Preserve checked ownership transitions and opaque owner/address identities. | Inventoried; pending. |
+| 10p5 | `PublicationRight::observed` and `ConditionalMutexGuard::held`. Preserve channel/acquisition identities and protocol rules. | Inventoried; pending. |
+| 10p6 | `ResourceFact::Own` quantity. Preserve counting semantics and existing resource identity readers. | Inventoried; pending. |
+
+`MemorySegment` source expressions and declared `ResourceQuantity` expressions
+are source input ASTs, not evaluated term storage to erase. Addresses, allocation
+and program-point identities, resource names, binder names, acquisition epochs,
+strides and layout widths remain descriptor identities/metadata. Explicit native
+input/output schemas and live compatibility readers must be recorded rather
+than silently counted as eliminated. No new numeric observation equality may
+replace native structural identity in these stores.
 
 ## Chunk 3: machine-valued pure-function results
 

@@ -2376,7 +2376,10 @@ impl Printer<'_> {
             }
             Resource::Instance(instance) => {
                 let application = self.resource_arguments(instance.name(), instance.arguments());
-                match self.hidden_record(instance.schema().fields(), instance.fields()) {
+                match self.hidden_record(
+                    instance.schema().fields(),
+                    &instance.fields().native_values(),
+                ) {
                     Some(record) => format!("{application} {record}"),
                     None => application,
                 }

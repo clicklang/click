@@ -702,7 +702,8 @@ pub(in crate::surface) fn selected_resource_instance_arm(
         .fields()
         .iter()
         .position(|field| field.name() == matched.field)?;
-    let AlgebraicValue::Algebraic(model) = instance.fields().get(field_index)? else {
+    let crate::kernel::ResourceFieldValue::Algebraic(model) = instance.fields().get(field_index)?
+    else {
         return None;
     };
     let scopes = crate::surface::validation::resource_match_arm_scopes(

@@ -355,7 +355,7 @@ pub(crate) fn render_failed_requirement(
                 instance.name(),
                 instance.arguments(),
                 instance.schema().fields(),
-                instance.fields(),
+                &instance.fields().native_values(),
                 labels,
             )
         {

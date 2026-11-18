@@ -839,16 +839,16 @@ fn collect_algebraic_term_bitvector_variables(
     }
 }
 
-fn collect_algebraic_value_bitvector_variables(
-    value: &AlgebraicValue,
+fn collect_algebraic_value_bitvector_variables<'a>(
+    value: impl Into<ResourceFieldValue<'a>>,
     variables: &mut BTreeSet<Variable>,
 ) {
-    match value {
-        AlgebraicValue::Program(value) => {
+    match value.into() {
+        ResourceFieldValue::Program(value) => {
             collect_program_value_bitvector_variables(value, variables)
         }
-        AlgebraicValue::Integer(value) => collect_integer_variables(value, variables),
-        AlgebraicValue::Algebraic(value) => {
+        ResourceFieldValue::Integer(value) => collect_integer_variables(value, variables),
+        ResourceFieldValue::Algebraic(value) => {
             collect_algebraic_term_bitvector_variables(value, variables)
         }
     }
@@ -1672,8 +1672,18 @@ pub(in crate::kernel) fn collect_resource_bitvector_variables(
             }
         }
         Resource::Instance(instance) => {
-            for value in instance.arguments.iter().chain(instance.fields.iter()) {
+            for value in instance.arguments.iter() {
                 collect_algebraic_value_bitvector_variables(value, variables);
+            }
+            for index in 0..instance.fields.len() {
+                if let Some(value) = instance.fields.retained_program(index) {
+                    collect_expression_value_bitvector_variables(value, variables);
+                } else {
+                    collect_algebraic_value_bitvector_variables(
+                        instance.fields.get(index).expect("field index"),
+                        variables,
+                    );
+                }
             }
             crate::kernel::ResourceReference::visit_captured_values(
                 instance.resource_arguments(),
@@ -1991,8 +2001,18 @@ fn collect_execution_environment_variables_uncached(
         // steps compare against, so its names are reserved like a measure's.
         if let Some(entry) = anchor.structural_entry() {
             variables.insert(entry.identity);
-            for value in entry.arguments.iter().chain(entry.fields.iter()) {
+            for value in entry.arguments.iter() {
                 collect_algebraic_value_bitvector_variables(value, variables);
+            }
+            for index in 0..entry.fields.len() {
+                if let Some(value) = entry.fields.retained_program(index) {
+                    collect_expression_value_bitvector_variables(value, variables);
+                } else {
+                    collect_algebraic_value_bitvector_variables(
+                        entry.fields.get(index).expect("field index"),
+                        variables,
+                    );
+                }
             }
         }
         for obligation in anchor.entry_obligations() {

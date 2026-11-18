@@ -7122,7 +7122,7 @@ fn synthesize_scalar_model_field(
         let instance = state.resource_instance_at_path(origin.identity, &[])?;
         matches!(
             instance.fields().get(origin.field_index),
-            Some(AlgebraicValue::Program(crate::kernel::integer_c_value!(MachineTerm::Variable(held)))) if *held == variable
+            Some(crate::kernel::ResourceFieldValue::Program(crate::kernel::integer_c_value!(MachineTerm::Variable(held)))) if *held == variable
         )
         .then_some(())?;
         // The field's declared C type, as the parser's elaboration records it.
@@ -7375,8 +7375,8 @@ fn synthesize_surface_algebraic(
                 let instance = state.resource_instance_at_path(origin.identity, &[])?;
                 let held = instance.fields().get(origin.field_index)?;
                 let exact = match held {
-                    crate::kernel::AlgebraicValue::Algebraic(value) => value == term,
-                    crate::kernel::AlgebraicValue::Program(ProgramValue::Parameter(value)) => {
+                    crate::kernel::ResourceFieldValue::Algebraic(value) => value == term,
+                    crate::kernel::ResourceFieldValue::Program(ProgramValue::Parameter(value)) => {
                         value.as_ref() == term
                     }
                     _ => false,

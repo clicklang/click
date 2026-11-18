@@ -2239,7 +2239,7 @@ pub struct ResourceInstanceBinding {
     identity: Variable,
     children: Vec<String>,
     schema: Option<crate::kernel::ResourceFieldSchema>,
-    fields: Option<crate::kernel::ResourceArguments>,
+    fields: Option<crate::kernel::ResourceFieldValues>,
     /// Present only on an explicit proof-side resource construction.
     fold_fields: Option<Vec<(String, ContractExpression)>>,
     /// Explicit child slot, surface name, and instance identity. Shared to
@@ -3524,18 +3524,22 @@ fn surface_parameter_binding(binding: &crate::kernel::BindingName) -> crate::ker
 }
 
 /// The identity of a symbolic model-field value, independent of its carrier.
-fn model_field_variable(value: &crate::kernel::AlgebraicValue) -> Option<crate::kernel::Variable> {
-    use crate::kernel::{AlgebraicTermNode, AlgebraicValue, MachineTerm};
-    match value {
-        AlgebraicValue::Algebraic(term) => match term.node {
+fn model_field_variable<'a>(
+    value: impl Into<crate::kernel::ResourceFieldValue<'a>>,
+) -> Option<crate::kernel::Variable> {
+    use crate::kernel::{AlgebraicTermNode, MachineTerm};
+    match value.into() {
+        crate::kernel::ResourceFieldValue::Algebraic(term) => match term.node {
             AlgebraicTermNode::Variable(variable) => Some(variable),
             _ => None,
         },
-        AlgebraicValue::Program(ProgramValue::Parameter(term)) => match term.node {
-            AlgebraicTermNode::Variable(variable) => Some(variable),
-            _ => None,
-        },
-        AlgebraicValue::Program(
+        crate::kernel::ResourceFieldValue::Program(ProgramValue::Parameter(term)) => {
+            match term.node {
+                AlgebraicTermNode::Variable(variable) => Some(variable),
+                _ => None,
+            }
+        }
+        crate::kernel::ResourceFieldValue::Program(
             crate::kernel::integer_c_value!(MachineTerm::Variable(variable)),
         ) => Some(*variable),
         _ => None,

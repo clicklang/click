@@ -2730,8 +2730,8 @@ fn a_rebound_binder_field_never_reuses_a_havocked_local_variable() {
             &mut budget,
         )
         .expect("the execution's counter is nowhere near its ceiling");
-        let [AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(field)))] =
-            fields.as_ref()
+        let Some(ResourceFieldValue::Program(ProgramValue::Int32(MachineTerm::Variable(field)))) =
+            fields.get(0)
         else {
             panic!("an int32 model field is one symbolic int32: {fields:?}");
         };

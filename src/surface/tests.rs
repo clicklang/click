@@ -1897,10 +1897,13 @@ fn named_resource_bindings_are_scoped_and_have_distinct_state() {
         panic!("missing returned instance")
     };
     assert_eq!(first.identity, returned.identity);
-    assert!(std::sync::Arc::ptr_eq(
-        first.fields.as_ref().unwrap(),
-        returned.fields.as_ref().unwrap()
-    ));
+    assert!(
+        first
+            .fields
+            .as_ref()
+            .unwrap()
+            .shares_storage_with(returned.fields.as_ref().unwrap())
+    );
 }
 
 #[test]
@@ -1928,10 +1931,13 @@ fn named_resource_field_metadata_is_shared_at_multiple_sizes() {
             panic!("missing returned instance")
         };
         assert_eq!(binding.fields.as_ref().unwrap().len(), size);
-        assert!(std::sync::Arc::ptr_eq(
-            binding.fields.as_ref().unwrap(),
-            returned.fields.as_ref().unwrap()
-        ));
+        assert!(
+            binding
+                .fields
+                .as_ref()
+                .unwrap()
+                .shares_storage_with(returned.fields.as_ref().unwrap())
+        );
         assert_eq!(function.ensures().len(), size + 1);
         for (i, ensure) in function.ensures()[1..].iter().enumerate() {
             let Ensure::Proposition(ClickProposition::Comparison {

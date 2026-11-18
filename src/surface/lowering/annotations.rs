@@ -377,7 +377,7 @@ pub(in crate::surface) fn check_resource_field_schemas(
                         }
                     }
                 })
-                .collect::<crate::kernel::ResourceArguments>();
+                .collect::<crate::kernel::ResourceFieldValues>();
             binding.schema = Some(schema.clone());
             binding.fields = Some(fields);
             bindings.insert(binding.identity, binding.clone());
@@ -5680,7 +5680,7 @@ impl AnnotationLowerer<'_> {
                     crate::kernel::record_transport_field(instance, access.field_index);
                     instance.fields().get(access.field_index)
                 })
-                .cloned()
+                .map(crate::kernel::ResourceFieldValue::into_native)
                 .map(Some)
                 .ok_or_else(|| {
                     format!(

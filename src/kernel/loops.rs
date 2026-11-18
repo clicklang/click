@@ -3130,10 +3130,9 @@ fn abstract_loop_exit_binders(
             variables,
             budget,
         )?;
-        let fields = joined_resource_values(
+        let fields = joined_resource_fields(
             &base.fields,
             instances.iter().map(|instance| &instance.fields),
-            &[],
             restatements,
             variables,
             budget,
@@ -3346,7 +3345,7 @@ fn joined_resource_values<'a>(
         }
         let fresh = match local {
             Some(local) => local.clone(),
-            None => fresh_resource_value_like(value, variables, budget)?,
+            None => fresh_resource_value_like(&*value, variables, budget)?,
         };
         for (restatement, held) in restatements.iter_mut().zip(held) {
             restatement.pin_resource_value(&fresh, &held);
@@ -3356,19 +3355,51 @@ fn joined_resource_values<'a>(
     Ok(joined.into())
 }
 
+/// Join the selected model fields while keeping every unchanged producer.
+fn joined_resource_fields<'a>(
+    base: &ResourceFieldValues,
+    exits: impl Iterator<Item = &'a ResourceFieldValues> + Clone,
+    restatements: &mut [LoopExitRestatement],
+    variables: &mut KernelVariableGenerator,
+    budget: &mut ExecutionBudget,
+) -> Result<ResourceFieldValues, String> {
+    let mut joined = Vec::with_capacity(base.len());
+    for position in 0..base.len() {
+        let value = base.get(position).expect("field index");
+        let held = exits
+            .clone()
+            .map(|exit| {
+                exit.get(position).ok_or_else(|| {
+                    "the exits hold resource instances of different widths".to_string()
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        if held.iter().all(|other| *other == value) {
+            joined.push(base.stored_field(position).expect("field index"));
+            continue;
+        }
+        let fresh = fresh_resource_value_like(value, variables, budget)?;
+        for (restatement, held) in restatements.iter_mut().zip(held) {
+            restatement.pin_resource_value(&fresh, &held.into_native());
+        }
+        joined.push(StoredResourceField::from_minted(fresh));
+    }
+    Ok(ResourceFieldValues::from_stored(joined))
+}
+
 /// A fresh symbolic value of the same sort as `value`.
-fn fresh_resource_value_like(
-    value: &AlgebraicValue,
+fn fresh_resource_value_like<'a>(
+    value: impl Into<ResourceFieldValue<'a>>,
     variables: &mut KernelVariableGenerator,
     budget: &mut ExecutionBudget,
 ) -> Result<AlgebraicValue, String> {
     let variable = variables.next_in(budget).map_err(exhausted_identities)?;
-    Ok(match value {
-        AlgebraicValue::Integer(_) => AlgebraicValue::Integer(IntegerTerm::Variable(variable)),
-        AlgebraicValue::Program(value) => {
+    Ok(match value.into() {
+        ResourceFieldValue::Integer(_) => AlgebraicValue::Integer(IntegerTerm::Variable(variable)),
+        ResourceFieldValue::Program(value) => {
             AlgebraicValue::Program(symbolic_call_result(value.program_type(), variable))
         }
-        AlgebraicValue::Algebraic(term) => AlgebraicValue::Algebraic(AlgebraicTerm {
+        ResourceFieldValue::Algebraic(term) => AlgebraicValue::Algebraic(AlgebraicTerm {
             algebraic_type: term.algebraic_type.clone(),
             node: AlgebraicTermNode::Variable(variable),
         }),
@@ -7180,7 +7211,9 @@ pub(crate) fn structural_instance_descent_failure(
             head.name
         ));
     };
-    let Some(AlgebraicValue::Algebraic(model)) = head.fields.get(body.field_index) else {
+    let Some(crate::kernel::ResourceFieldValue::Algebraic(model)) =
+        head.fields.get(body.field_index)
+    else {
         return Some(format!(
             "{measure} names an instance whose matched field is not algebraic"
         ));
@@ -7279,7 +7312,7 @@ fn structural_measure_reaches_instance(
         let Some(held) = next.fields.get(child_body.field_index) else {
             continue;
         };
-        if crate::kernel::resource_arguments_proven_equal(held, submodel, assumptions) {
+        if crate::kernel::resource_field_values_proven_equal(held, submodel.into(), assumptions) {
             return true;
         }
         let AlgebraicValue::Algebraic(submodel) = submodel else {

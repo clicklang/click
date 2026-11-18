@@ -59,7 +59,7 @@ pub(super) fn matched_resource_instance_case_read_projection(
     if projection.field_index != matched.field_index
         || !matches!(
             instance.fields().get(projection.field_index),
-            Some(AlgebraicValue::Algebraic(field_model)) if field_model == model
+            Some(crate::kernel::ResourceFieldValue::Algebraic(field_model)) if field_model == model
         )
     {
         return (Vec::new(), Vec::new());
@@ -251,7 +251,8 @@ pub(super) fn checked_returned_instance_body_facts(
         let Some(matched) = definition.matched.as_ref() else {
             continue;
         };
-        let Some(AlgebraicValue::Algebraic(model)) = instance.fields().get(matched.field_index)
+        let Some(crate::kernel::ResourceFieldValue::Algebraic(model)) =
+            instance.fields().get(matched.field_index)
         else {
             continue;
         };
@@ -319,7 +320,8 @@ pub(super) fn selected_resource_instance_case_facts(
                 .iter()
                 .find(|definition| definition.name() == instance.name())?;
             let matched = definition.matched.as_ref()?;
-            let AlgebraicValue::Algebraic(model) = instance.fields().get(matched.field_index)?
+            let crate::kernel::ResourceFieldValue::Algebraic(model) =
+                instance.fields().get(matched.field_index)?
             else {
                 return None;
             };
@@ -735,7 +737,9 @@ pub(in crate::kernel) fn selected_instance_match_arm<'a>(
             }
         }
     }
-    let Some(AlgebraicValue::Algebraic(model)) = instance.fields().get(body.field_index) else {
+    let Some(crate::kernel::ResourceFieldValue::Algebraic(model)) =
+        instance.fields().get(body.field_index)
+    else {
         return Err("resource match field is not algebraic");
     };
     // Fold and unfold bind the arm's fields, so they need the constructor
@@ -940,7 +944,7 @@ pub(in crate::kernel) fn instance_body_evaluation(
         .iter()
         .zip(instance.fields.iter())
     {
-        if let AlgebraicValue::Program(value) = value {
+        if let crate::kernel::ResourceFieldValue::Program(value) = value {
             evaluation
                 .locals
                 .bind_logical_typed(name.clone(), value.clone(), value.program_type());
