@@ -4825,13 +4825,19 @@ fn synthesis_states_share_program_point(entry: &ExecutionState, state: &Executio
 
 /// Spell a read whose version is indexed by its program point. A matching
 /// current or entry state can name it; otherwise use the version's selector.
-fn synthesize_indexed_int32_read(
+fn synthesize_indexed_word32_read(
     version: &crate::kernel::ProgramPoint,
     pointer: &Address,
+    kind: crate::kernel::LoadKind,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<ContractExpression> {
+    let value_type = match kind {
+        crate::kernel::LoadKind::Int32 => ProgramType::Int32,
+        crate::kernel::LoadKind::UInt32 => ProgramType::UInt32,
+        _ => return None,
+    };
     let expression = |state: &ExecutionState| {
         let address = synthesize_surface_pointer_expression(
             pointer,
@@ -4843,7 +4849,7 @@ fn synthesize_indexed_int32_read(
             operand: Box::new(address),
             lowered: ProgramExpression::TypedLoad {
                 pointer: Box::new(ProgramExpression::Value(int32(0))),
-                value_type: ProgramType::Int32,
+                value_type,
                 volatile: false,
                 pointee_constant: false,
                 access_class: None,
@@ -4854,7 +4860,7 @@ fn synthesize_indexed_int32_read(
     let selects_version = |state: &ExecutionState| {
         state
             .program_point()
-            .indexed_local_int32_version(pointer)
+            .indexed_local_word32_version(pointer, kind)
             .as_ref()
             == Some(version)
     };
@@ -5400,9 +5406,10 @@ fn synthesize_surface_bitvector(
         }
         MachineTerm::MemoryLoad(memory, kernel_pointer, kind) => {
             if memory.read_version_id().is_some() {
-                return synthesize_indexed_int32_read(
+                return synthesize_indexed_word32_read(
                     memory,
                     kernel_pointer,
+                    *kind,
                     parameter_binding,
                     state,
                     bound_variables,
