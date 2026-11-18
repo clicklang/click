@@ -507,6 +507,9 @@ impl ResourceContextIndex {
 
     fn with_inserted(&self, entry: ResourceEntryId, fact: &ResourceFact) -> Self {
         let mut result = self.clone();
+        if fact.allocation().is_some() {
+            result.owned_allocation_tokens = result.owned_allocation_tokens.with_value(entry);
+        }
         result.written_normalization.insert(entry, fact);
         if fact.is_own()
             && !fact
@@ -877,6 +880,9 @@ impl ResourceContextIndex {
 
     fn without_entry(&self, entry: ResourceEntryId, fact: &ResourceFact) -> Self {
         let mut result = self.clone();
+        if fact.allocation().is_some() {
+            result.owned_allocation_tokens = result.owned_allocation_tokens.without_value(&entry);
+        }
         result.written_normalization.remove(entry, fact);
         if fact.is_own()
             && !fact
@@ -6885,6 +6891,33 @@ impl ResourceContext {
         self.storage
             .materialized
             .get_or_init(|| self.iter().cloned().collect())
+    }
+
+    pub(in crate::kernel) fn has_owned_allocation_tokens(&self) -> bool {
+        !self.storage.index.owned_allocation_tokens.is_empty()
+    }
+
+    pub(in crate::kernel) fn owned_allocation_tokens(&self) -> impl Iterator<Item = &ResourceFact> {
+        self.storage
+            .index
+            .owned_allocation_tokens
+            .iter()
+            .map(|entry| self.fact(*entry))
+            .inspect(|_| crate::instrumentation::record_deterministic_work(1))
+    }
+
+    pub(in crate::kernel) fn has_owned_composites(&self) -> bool {
+        self.storage.index.owned_composite_count != 0
+    }
+
+    pub(in crate::kernel) fn has_folded_composites(&self) -> bool {
+        // This index contains only composites and tokens, with composites first.
+        self.storage
+            .index
+            .exact_shapes
+            .keys()
+            .next()
+            .is_some_and(|(family, _, _)| *family == ResourceFamily::Composite)
     }
 
     /// Select folded composites without materializing unrelated memory facts.

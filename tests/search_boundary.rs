@@ -1041,8 +1041,7 @@ fn frozen_proof_search_inventory_rejects_deleted_or_duplicated_references() {
         // Keep the file's independently frozen ownership callers present so
         // this mutation isolates the release_store discovery edge.
         let source = format!(
-            "fn acquire_load(c:C) {{ c.try_compose_with_facts_delaying_normalization(); }}
-             fn initialize(c:C) {{ c.try_compose_with_facts_delaying_normalization(); }}
+            "fn initialize(c:C) {{ c.try_compose_with_facts_delaying_normalization(); }}
              fn resolve_observed_publications(c:C) {{ c.try_compose_with_facts_delaying_normalization(); }}
              {source}"
         );

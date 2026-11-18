@@ -9855,6 +9855,9 @@ fn apply_verified_heap_allocation_delta(
     // is not the allocation the caller handed over.
     let expand_allocations =
         |resources: &ResourceContext, state: &ExecutionState, memory: &SymbolicMemory| {
+            if !resources.has_folded_composites() {
+                return Some(resources.clone());
+            }
             let projection_state = state
                 .clone()
                 .with_memory(memory.clone())
@@ -9884,8 +9887,7 @@ fn apply_verified_heap_allocation_delta(
             assumptions.assume_proposition(fact)
         });
     let input_allocations = input
-        .facts()
-        .iter()
+        .owned_allocation_tokens()
         .filter_map(|fact| {
             fact.allocation_size()
                 .map(|(pointer, bytes)| (fact, pointer, bytes))
@@ -9917,21 +9919,17 @@ fn apply_verified_heap_allocation_delta(
     // missed candidate would assert a free the contract never promised.
     // The call's own returned tokens, as the contract states them; a token
     // inside a returned composite is not one the caller holds directly.
-    let returned_tokens = output_resources
-        .facts()
-        .iter()
-        .filter(|fact| fact.allocation().is_some())
-        .collect::<Vec<_>>();
     let output_allocations = output
-        .facts()
-        .iter()
-        .chain(preserved.facts())
+        .owned_allocation_tokens()
+        .chain(preserved.owned_allocation_tokens())
         .filter_map(|fact| {
             fact.allocation_size().map(|(base, bytes)| {
                 (
                     base.address().clone(),
                     bytes,
-                    returned_tokens.contains(&fact).then_some(fact),
+                    output_resources
+                        .contains_exact_representation(fact)
+                        .then_some(fact),
                 )
             })
         })
@@ -10104,7 +10102,7 @@ fn apply_verified_heap_allocation_delta(
     // Only what the call returns can be a new allocation. An allocation one
     // of the caller's untouched resources exposes was the caller's before
     // the call, so this call has nothing to claim for it.
-    for fact in output.facts() {
+    for fact in output.owned_allocation_tokens() {
         if let Some(coverage) = fact.allocation_bounds_fact(&allocation_assumptions) {
             effects.push(ExecutionPureFact::new(coverage));
         }
@@ -20419,16 +20417,67 @@ fn unreturned_allocation_obligation(
     function: &ProgramFunction,
     assumptions: &PureFactContext,
 ) -> Result<Option<(ResourceFact, Option<ResourceFact>)>, RuntimeError> {
-    let Some(actual) = expand_all_composite_resource_facts_at_state(
-        actual_state.resources(),
-        function.composite_resource_definitions(),
-        actual_state,
-        assumptions,
-    ) else {
-        return Err(RuntimeError::FunctionContract(
-            "could not inspect allocation obligations at function return".to_string(),
-        ));
+    let Some(actual) = project_exit_allocations(actual_state, function, assumptions)? else {
+        return Ok(None);
     };
+    unreturned_allocation_from_projection(
+        actual_state,
+        &actual,
+        returned_resources,
+        function,
+        assumptions,
+    )
+}
+
+fn could_hold_packaged_allocation(state: &ExecutionState, function: &ProgramFunction) -> bool {
+    state.resources().has_owned_composites()
+        && function
+            .composite_resource_definitions()
+            .iter()
+            .any(|definition| {
+                definition.contains().iter().any(|resource| {
+                    resource.family() == ResourceFamily::Token
+                        && resource.declared_name() == Some(ResourceFact::ALLOCATION_RESOURCE_NAME)
+                })
+            })
+}
+
+/// Skip allocation projection when neither a token nor a folded owner can
+/// supply one. A caller that needs to inspect its declared outputs retains
+/// the resulting partition for the escape check.
+fn project_exit_allocations(
+    state: &ExecutionState,
+    function: &ProgramFunction,
+    assumptions: &PureFactContext,
+) -> Result<Option<ResourceContext>, RuntimeError> {
+    if !state.resources().has_owned_composites() && !state.resources().has_owned_allocation_tokens()
+    {
+        return Ok(None);
+    }
+    if !state.resources().has_folded_composites() {
+        return Ok(Some(state.resources().clone()));
+    }
+    let actual = expand_all_composite_resource_facts_at_state(
+        state.resources(),
+        function.composite_resource_definitions(),
+        state,
+        assumptions,
+    )
+    .ok_or_else(|| {
+        RuntimeError::FunctionContract(
+            "could not inspect allocation obligations at function return".to_string(),
+        )
+    })?;
+    Ok(actual.has_owned_allocation_tokens().then_some(actual))
+}
+
+fn unreturned_allocation_from_projection(
+    actual_state: &ExecutionState,
+    actual: &ResourceContext,
+    returned_resources: &ResourceContext,
+    function: &ProgramFunction,
+    assumptions: &PureFactContext,
+) -> Result<Option<(ResourceFact, Option<ResourceFact>)>, RuntimeError> {
     let mut checked_return_frontier = returned_resources.clone();
     {
         for fact in returned_resources.facts() {
@@ -20555,9 +20604,7 @@ fn unreturned_allocation_obligation(
         .clone()
         .unchecked_with_facts(population_bodies.facts().iter().cloned());
     let allocation = actual
-        .facts()
-        .iter()
-        .filter(|fact| fact.allocation().is_some())
+        .owned_allocation_tokens()
         .find(|allocation| {
             returned_resources
                 .cached_support_exposing_fact(allocation, assumptions)
@@ -20880,42 +20927,18 @@ pub(crate) fn unreturned_allocation_with_checked_returned_resources(
     if function.return_type() != ProgramType::Void {
         set_function_result(&mut output_state, function, value.clone());
     }
-    let function_can_package_allocation =
-        function
-            .composite_resource_definitions()
-            .iter()
-            .any(|definition| {
-                definition.contains().iter().any(|resource| {
-                    resource.family() == ResourceFamily::Token
-                        && resource.declared_name() == Some(ResourceFact::ALLOCATION_RESOURCE_NAME)
-                })
-            });
-    if !function_can_package_allocation
-        && !output_state
-            .resources()
-            .facts()
-            .iter()
-            .any(|fact| fact.allocation().is_some())
+    if output_state
+        .resources()
+        .owned_allocation_tokens()
+        .next()
+        .is_none()
+        && !could_hold_packaged_allocation(&output_state, function)
     {
         return Ok(None);
     }
-    let Some(actual_resources) = expand_all_composite_resource_facts_at_state(
-        output_state.resources(),
-        function.composite_resource_definitions(),
-        &output_state,
-        assumptions,
-    ) else {
-        return Err(RuntimeError::FunctionContract(
-            "could not inspect allocation obligations at function return".to_string(),
-        ));
+    let Some(actual) = project_exit_allocations(&output_state, function, assumptions)? else {
+        return Ok(None);
     };
-    if !actual_resources
-        .facts()
-        .iter()
-        .any(|fact| fact.allocation().is_some())
-    {
-        return Ok(None);
-    }
     // The checked resource result lists `produces` clauses. Owned borrowed
     // inputs are returned separately by the contract, and may contain the
     // allocation (for example inside an authority-backed control).
@@ -20945,8 +20968,13 @@ pub(crate) fn unreturned_allocation_with_checked_returned_resources(
                 .filter(|fact| !returned_resources.satisfies_fact(fact, assumptions)),
         )
     };
-    let Some((allocation, holder)) =
-        unreturned_allocation_obligation(&output_state, &returned, function, assumptions)?
+    let Some((allocation, holder)) = unreturned_allocation_from_projection(
+        &output_state,
+        &actual,
+        &returned,
+        function,
+        assumptions,
+    )?
     else {
         return Ok(None);
     };
@@ -20964,42 +20992,16 @@ pub(crate) fn unreturned_allocation_at_function_exit(
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<Option<crate::kernel::proof::LiveAllocationObligation>, RuntimeError>> {
-    let function_can_package_allocation =
-        function
-            .composite_resource_definitions()
-            .iter()
-            .any(|definition| {
-                definition.contains().iter().any(|resource| {
-                    resource.family() == ResourceFamily::Token
-                        && resource.declared_name() == Some(ResourceFact::ALLOCATION_RESOURCE_NAME)
-                })
-            });
-    if !function_can_package_allocation
-        && !state
-            .resources()
-            .facts()
-            .iter()
-            .any(|fact| fact.allocation().is_some())
+    if !state.resources().has_owned_allocation_tokens()
+        && !could_hold_packaged_allocation(state, function)
     {
         return Ok(Ok(None));
     }
-    let Some(actual_resources) = expand_all_composite_resource_facts_at_state(
-        state.resources(),
-        function.composite_resource_definitions(),
-        state,
-        assumptions,
-    ) else {
-        return Ok(Err(RuntimeError::FunctionContract(
-            "could not inspect allocation obligations at function exit".to_string(),
-        )));
+    let actual = match project_exit_allocations(state, function, assumptions) {
+        Ok(Some(actual)) => actual,
+        Ok(None) => return Ok(Ok(None)),
+        Err(error) => return Ok(Err(error)),
     };
-    if !actual_resources
-        .facts()
-        .iter()
-        .any(|fact| fact.allocation().is_some())
-    {
-        return Ok(Ok(None));
-    }
     let Some(argument_values) = arguments
         .iter()
         .map(|argument| match argument {
@@ -21042,8 +21044,9 @@ pub(crate) fn unreturned_allocation_at_function_exit(
         Ok(resources) => resources,
         Err(error) => return Ok(Err(error)),
     };
-    match unreturned_allocation_obligation(
+    match unreturned_allocation_from_projection(
         &output_state,
+        &actual,
         &returned_resources,
         function,
         assumptions,

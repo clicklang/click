@@ -427,16 +427,11 @@ fn acquire_load(
     observed.observed = Some(StoredProgramValue::from(ExecutionValue::Shared(
         KernelTerm::variable(KernelType::Program(ProgramType::Int32), variable),
     )));
-    let Ok(resources) = resources.try_compose_with_facts_delaying_normalization(
-        [ResourceFact::own(Resource::Publication(observed))],
-        assumptions,
-    ) else {
-        return Ok(Err(refusal(
-            "the observed subscriber right conflicts with current resources",
-        )));
-    };
     let mut next = state.clone();
-    next.resources = resources;
+    // The load changes only the selected subscriber's observation value.
+    // The flag, side, and custody were already established by that right.
+    next.resources =
+        resources.unchecked_with_fact(ResourceFact::own(Resource::Publication(observed)));
     Ok(Ok((next, value)))
 }
 
@@ -469,13 +464,6 @@ pub(crate) fn resolve_observed_publications(
         let Some(unpublished) = assumptions.decide(&zero) else {
             continue;
         };
-        let replacement = if unpublished {
-            let mut kept = right.clone();
-            kept.observed = None;
-            ResourceFact::own(Resource::Publication(kept))
-        } else {
-            payload_fact(right)
-        };
         let Some(resources) = next
             .resources
             .clone()
@@ -483,8 +471,13 @@ pub(crate) fn resolve_observed_publications(
         else {
             continue;
         };
-        if let Ok(resources) =
-            resources.try_compose_with_facts_delaying_normalization([replacement], assumptions)
+        if unpublished {
+            let mut kept = right.clone();
+            kept.observed = None;
+            next.resources =
+                resources.unchecked_with_fact(ResourceFact::own(Resource::Publication(kept)));
+        } else if let Ok(resources) = resources
+            .try_compose_with_facts_delaying_normalization([payload_fact(right)], assumptions)
         {
             next.resources = resources;
         }

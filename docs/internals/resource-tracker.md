@@ -2056,6 +2056,24 @@ claim receipts carry the checked clauses for closing and allocation checks.
 They do not replace body occurrences or supply a second source of ownership
 to the deferred boundary.
 
+Allocation escape checking retains the actual exit projection while
+checking the returned resources. A flat partition can answer from its
+owned allocation-token index. Call retirement reads the indexed tokens
+of the input, output and preserved partitions. A retiring call with folded
+resources in the preserved partition still projects that partition for the
+stale-resource check. Input allocations are read in entry memory and output
+allocations in successor memory.
+
+Mutex call transfers install ledger-issued authorities using the exact
+authority index. The publication load and its zero branch update the
+selected subscriber right directly. Releasing a publication's payload
+still crosses a resource boundary.
+
+For a two-arm branch interface, Surface retains the written resource
+descriptions in the provisional lowering state. The checked join
+consumes those resources in both arms and constructs the owning
+successor from their common residual and the selected interface.
+
 The source tests in `tests/search_boundary.rs` pin the perimeter, including
 new/hidden references and duplicate caller edges. Runtime probes exercise
 raw-output admission and pending-return admission; the broader legacy routes

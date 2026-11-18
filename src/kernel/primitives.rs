@@ -11159,6 +11159,8 @@ pub(super) struct ResourceContextIndex {
     /// non-memory members a composition is listed under
     /// (`CompositionMemberIndex`).
     pub(super) owned_non_memory_facts: HashedOrdMap<ResourceFact, ()>,
+    /// Exact occurrences of owning allocation tokens, in resource order.
+    pub(super) owned_allocation_tokens: ResourceEntryIds,
     pub(super) owned_memory_ranges: HashedOrdMap<MemoryRange, ()>,
     pub(super) owned_memory_range_counts: PersistentMap<MemoryRange, usize>,
     owned_count: usize,

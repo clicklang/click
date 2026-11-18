@@ -220,3 +220,37 @@ fn allocation_companion_alias_lookup_ignores_unrelated_storage_and_alias_stars()
         );
     }
 }
+
+#[test]
+fn exit_allocation_candidates_ignore_unrelated_token_owners() {
+    let function = program_function(
+        ProgramType::Void,
+        "allocation_candidates",
+        vec![],
+        program_return(program_void_value()),
+    );
+    let token = ResourceFact::own_allocation(external_pointer(930_900), 4);
+    let assumptions = PureFactContext::new();
+    let mut work_by_size = Vec::new();
+    for count in [4, 16, 64] {
+        let resources = ResourceContext::new().unchecked_with_facts(
+            (0..count).map(|id| ResourceFact::own_token(format!("unrelated_{id}"), vec![])),
+        );
+        let with_token = resources.clone().unchecked_with_fact(token.clone());
+        let (selected, work) = crate::instrumentation::measure_deterministic_work(|| {
+            with_token
+                .owned_allocation_tokens()
+                .cloned()
+                .collect::<Vec<_>>()
+        });
+        assert_eq!(selected, [token.clone()]);
+        let retired = with_token.without_exact_representation(&token).unwrap();
+        let state = ExecutionState::new().with_resource_context(retired);
+        let (result, absence_work) = crate::instrumentation::measure_deterministic_work(|| {
+            project_exit_allocations(&state, &function, &assumptions).unwrap()
+        });
+        assert!(result.is_none());
+        work_by_size.push((work, absence_work));
+    }
+    assert_eq!(work_by_size, [(1, 0); 3]);
+}
