@@ -1985,7 +1985,9 @@ Cached expansion and live authority control expansion check reuse against the
 retained ownership partition. Exact representations use the exact fact index.
 For a split memory child, the indexed write supplier at each successive
 address must start there, have positive quantity and compatible provenance,
-and end at or before the child's end. The walk stops at an exact cover and
+and end at or before the child's end. Symbolic bounds follow the same
+indexed endpoint chain used in owned-resource consumption. The walk stops
+at an exact cover and
 retains the existing occurrences and their lineage. No scratch context or
 ownership validation is needed to establish coverage.
 Generic expansion also serves contract entry/certification, folding and

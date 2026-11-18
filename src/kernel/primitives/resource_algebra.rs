@@ -3979,6 +3979,14 @@ impl ResourceContext {
         if !required.is_own() {
             return false;
         }
+        if let Some(range) = required.memory_own_range()
+            && (memory_range_is_proven_empty(range, assumptions)
+                || required.owned_quantity_term().is_some_and(|quantity| {
+                    resource_quantity_resolves_to_zero(quantity, assumptions)
+                }))
+        {
+            return true;
+        }
         if let Some((_, available)) = self.directly_supporting_owned_entry(required, assumptions) {
             return match (required.memory_own_range(), available.memory_own_range()) {
                 (Some(required), Some(available)) => {
@@ -3988,8 +3996,19 @@ impl ResourceContext {
                 _ => false,
             };
         }
-        self.exact_owned_fragment_cover(required, assumptions)
-            .is_some()
+        required
+            .owned_quantity_term()
+            .and_then(MachineTerm::as_const)
+            == Some(1)
+            && (self
+                .exact_owned_fragment_cover(required, assumptions)
+                .is_some()
+                || required.memory_own_range().is_some_and(|range| {
+                    (range.has_symbolic_bounds() || range.wide_bounds().is_some())
+                        && self
+                            .walk_symbolic_owned_partition(required, assumptions, |_, _| Some(()))
+                            .is_some()
+                }))
     }
 
     fn exact_owned_fragment_cover(
@@ -7778,6 +7797,27 @@ impl ResourceContext {
         assumptions: &PureFactContext,
         mut origins: Option<&mut MemorySplitOrigins>,
     ) -> Option<Self> {
+        let source = self.clone();
+        source.walk_symbolic_owned_partition(required, assumptions, |entry, available| {
+            self.consume_fact_from_candidates_with_origins(
+                available,
+                assumptions,
+                [entry],
+                origins.as_deref_mut(),
+            )
+            .then_some(())
+        })?;
+        Some(self)
+    }
+
+    /// Follow the indexed endpoint chain on the original partition. The
+    /// consumer can remove each selected occurrence or just retain coverage.
+    fn walk_symbolic_owned_partition(
+        &self,
+        required: &ResourceFact,
+        assumptions: &PureFactContext,
+        mut visit: impl FnMut(ResourceEntryId, &ResourceFact) -> Option<()>,
+    ) -> Option<()> {
         let range = required.memory_own_range().expect("unit ownership query");
         let candidates = self.memory_fact_candidates(range, true, assumptions);
         let first = candidates.entries.single_supplier()?;
@@ -7788,7 +7828,7 @@ impl ResourceContext {
             if !visited.insert(next) {
                 return None;
             }
-            let available = self.fact(next).clone();
+            let available = self.fact(next);
             if available.owned_quantity_term().and_then(|q| q.as_const()) != Some(1) {
                 return None;
             }
@@ -7830,19 +7870,9 @@ impl ResourceContext {
             if !memory_range_covers(range, combined_range, assumptions) {
                 return None;
             }
-            // Apply each exact selected consumption to this persistent branch.
-            // Combined coverage is restricted to the request, so success leaves
-            // no residual from these pieces and preserves all unrelated entries.
-            if !self.consume_fact_from_candidates_with_origins(
-                &available,
-                assumptions,
-                [next],
-                origins.as_deref_mut(),
-            ) {
-                return None;
-            }
+            visit(next, available)?;
             if resource_fact_entails(&combined, required, assumptions) {
-                return Some(self);
+                return Some(());
             }
             let successor = candidates.sole_owned_start(&combined_range.end_pointer())?;
             joined = Some(combined);

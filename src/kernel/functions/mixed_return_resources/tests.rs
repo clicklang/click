@@ -2541,3 +2541,40 @@ fn fact_only_view_expansion_keeps_ambient_child_identity_and_binding() {
         assert!(body.expanded.view_fact_for_occurrence(source).is_none());
     }
 }
+
+#[test]
+fn cached_composite_expansion_reuses_symbolic_endpoint_fragments() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let pointer = Address::symbolic(Variable(9_831_200));
+    let end = MachineTerm::Variable(Variable(9_831_201));
+    let facts = PureFactContext::new().assume_condition(
+        ConditionTerm::signed_less_than(2u32.into(), end.clone()),
+        true,
+    );
+    let owned = |start, end| {
+        ResourceFact::own_memory(MemoryRange::new_with_element_width(
+            pointer.clone(),
+            start,
+            end,
+            1,
+        ))
+    };
+    let left = owned(0u32.into(), 2u32.into());
+    let right = owned(2u32.into(), end.clone());
+    let whole = owned(0u32.into(), end);
+    let head = ResourceFact::own(Resource::Composite {
+        name: "cached_symbolic_cell".into(),
+        arguments: Vec::new().into(),
+    });
+    let (context, kept) = ResourceContext::new_with_equalities(&facts)
+        .unchecked_with_facts_and_occurrences([left.clone(), right.clone()]);
+    let context = context
+        .unchecked_with_fact(head.clone())
+        .with_cached_supported_expansion(&head, vec![whole.clone()]);
+    context.synchronize_memory_equalities(&facts);
+    let at = ExecutionState::new().program_point();
+    let expanded = expand_all_composite_resource_facts(&context, &[], &at, &facts).unwrap();
+    assert_eq!(expanded.owned_fact_for_occurrence(kept[0].1), Some(&left));
+    assert_eq!(expanded.owned_fact_for_occurrence(kept[1].1), Some(&right));
+    assert!(!expanded.contains_exact_representation(&whole));
+}
