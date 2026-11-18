@@ -1770,10 +1770,11 @@ fn charon_slice_iter_sums_bytes_by_its_library_contract() {
     ProgramVerificationSession::new_program_prepared(SLICE_ITER_PROOF, &prepared)
         .unwrap_or_else(|error| panic!("{}", error.message()));
     for (before, after) in [
-        // The reads need the slice's views.
+        // An omitted view defaults to the shared slice's coverage.
+        // An explicitly empty view leaves the reads without authority.
         (
             "    views bytes[0..bytes.len()];\n    ensures",
-            "    ensures",
+            "    views bytes[0..0];\n    ensures",
         ),
         // The result is the whole sum.
         (
