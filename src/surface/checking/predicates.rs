@@ -179,7 +179,7 @@ fn instantiate_lowered_predicate_definition(
                 )),
                 Some(Term::Algebraic(value)) => {
                     Some(generics::click_type_from_algebraic_value_type(
-                        &value.algebraic_type.value_type(),
+                        &value.native_compat().algebraic_type.value_type(),
                     ))
                 }
                 _ => None,

@@ -453,7 +453,9 @@ fn algebraic_sides(
         {
             Some((left, right))
         }
-        Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) => Some((left, right)),
+        Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) => {
+            Some((left.native_compat(), right.native_compat()))
+        }
         _ => None,
     }
 }

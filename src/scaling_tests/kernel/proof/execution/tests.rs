@@ -249,8 +249,8 @@ fn concrete_constructor_payload_spelling_is_checked_and_indexed() {
                 .all(|(variable, _)| variable.0 > 4_131_072)
         );
         let spelled = Proposition::Equal(
-            Term::Algebraic(value.clone()),
-            Term::Algebraic(value.clone()),
+            Term::Algebraic(value.clone().into()),
+            Term::Algebraic(value.clone().into()),
         );
         assert!(partition.facts_for_case(0).unwrap().contains(&spelled));
         samples.push(work);

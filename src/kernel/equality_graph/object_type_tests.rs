@@ -52,7 +52,10 @@ fn model_source(pointer: &Address, condition: bool) -> Proposition {
             true,
         )
     } else {
-        Proposition::Equal(Term::Algebraic(variable), Term::Algebraic(constructor))
+        Proposition::Equal(
+            Term::Algebraic(variable.into()),
+            Term::Algebraic(constructor.into()),
+        )
     }
 }
 
@@ -159,7 +162,9 @@ fn goals_alternatives_and_weak_cast_metadata_do_not_admit_type_evidence() {
         unreachable!()
     };
     let context = PureFactContext::new();
-    context.equality_graph.are_algebraic_equal(a, b);
+    context
+        .equality_graph
+        .are_algebraic_equal(a.native_compat(), b.native_compat());
     assert!(!can_type(&context, &p));
     let alternatives = context.clone().assume_proposition(Proposition::Or(
         Box::new(model),
@@ -219,8 +224,8 @@ fn opaque_call_interning_cannot_supply_another_scopes_type_annotations() {
         },
     };
     let context = context.assume_proposition(Proposition::Equal(
-        Term::Algebraic(model.clone()),
-        Term::Algebraic(model),
+        Term::Algebraic(model.clone().into()),
+        Term::Algebraic(model.into()),
     ));
     assert!(!can_type(&context, &p));
 }

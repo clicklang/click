@@ -1420,7 +1420,8 @@ fn collect_term_reads(term: &Term, reads: &mut Vec<ResourceRead>) {
         Term::Integer(term) => collect_integer_term_reads(term, reads),
         Term::PointerOffset(offset) => collect_offset_reads(offset, reads),
         Term::Algebraic(term) => {
-            term.for_each_machine_operand(|term| collect_operand_reads(term, reads));
+            term.native_compat()
+                .for_each_machine_operand(|term| collect_operand_reads(term, reads));
         }
         Term::ProgramValue(value) => collect_value_reads(value.native_compat(), reads),
         _ => {}

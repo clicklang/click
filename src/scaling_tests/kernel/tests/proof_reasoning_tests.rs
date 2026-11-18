@@ -88,16 +88,12 @@ fn algebraic_constructor_injectivity_ignores_unrelated_facts() {
     let right = MachineTerm::Variable(Variable(89_101));
     let goal = Proposition::condition_is(ConditionTerm::equal(left.clone(), right.clone()), true);
     let source = Proposition::Equal(
-        Term::Algebraic(maybe_constructor(
-            &algebraic_type,
-            "Some",
-            vec![ProgramValue::Int32(left)],
-        )),
-        Term::Algebraic(maybe_constructor(
-            &algebraic_type,
-            "Some",
-            vec![ProgramValue::Int32(right)],
-        )),
+        Term::Algebraic(
+            maybe_constructor(&algebraic_type, "Some", vec![ProgramValue::Int32(left)]).into(),
+        ),
+        Term::Algebraic(
+            maybe_constructor(&algebraic_type, "Some", vec![ProgramValue::Int32(right)]).into(),
+        ),
     );
     let samples = [16, 64, 256]
         .into_iter()
@@ -1697,8 +1693,10 @@ fn restricting_model_support_ignores_unselected_scalar_graph_edges() {
             algebraic_type: ty.clone(),
             node: AlgebraicTermNode::Variable(Variable(id)),
         };
-        let equality =
-            Proposition::Equal(Term::Algebraic(model(97600)), Term::Algebraic(model(97601)));
+        let equality = Proposition::Equal(
+            Term::Algebraic(model(97600).into()),
+            Term::Algebraic(model(97601).into()),
+        );
         let mut context = PureFactContext::new().assume_proposition(equality.clone());
         for i in 0..size {
             context = context.assume_condition(
@@ -2177,14 +2175,19 @@ fn integer_match_rewrite_lookup_scales_with_its_selected_sources() {
             let sources = (0..size)
                 .map(|index| {
                     Proposition::Equal(
-                        Term::Algebraic(model(if related { 90_000 } else { 90_000 + index })),
-                        Term::Algebraic(maybe_constructor(
-                            &ty,
-                            "Some",
-                            vec![ProgramValue::Int32(MachineTerm::Variable(Variable(
-                                100_000 + index,
-                            )))],
-                        )),
+                        Term::Algebraic(
+                            model(if related { 90_000 } else { 90_000 + index }).into(),
+                        ),
+                        Term::Algebraic(
+                            maybe_constructor(
+                                &ty,
+                                "Some",
+                                vec![ProgramValue::Int32(MachineTerm::Variable(Variable(
+                                    100_000 + index,
+                                )))],
+                            )
+                            .into(),
+                        ),
                     )
                 })
                 .collect::<Vec<_>>();

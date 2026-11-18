@@ -6568,16 +6568,16 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 .map(|index| (variant.clone(), index)),
             _ => None,
         };
-        let Some((value, (variant, index))) = split(right)
+        let Some((value, (variant, index))) = split(right.native_compat())
             .map(|found| (left, found))
-            .or_else(|| split(left).map(|found| (right, found)))
+            .or_else(|| split(left.native_compat()).map(|found| (right, found)))
         else {
             return Ok(None);
         };
         let Some(known) = search_input
             .facts()
             .assumptions()
-            .known_algebraic_constructor(value)
+            .known_algebraic_constructor(value.native_compat())
         else {
             return Ok(None);
         };

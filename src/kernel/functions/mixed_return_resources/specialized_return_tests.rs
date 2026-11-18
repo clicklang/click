@@ -496,8 +496,8 @@ fn matched_returns_carry_one_selected_constructor_and_keep_unknown_models_opaque
     assert_eq!(bodies.get(source).unwrap().folded.len(), 1);
     assert!(bodies.get(source).unwrap().boundary.is_empty());
     let branch = parent.clone().assume_proposition(Proposition::Equal(
-        Term::Algebraic(model),
-        Term::Algebraic(selected.clone()),
+        Term::Algebraic(model.into()),
+        Term::Algebraic(selected.clone().into()),
     ));
     let bodies = ConstructedReturnBodies::construct(
         &outputs,

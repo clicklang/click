@@ -1521,14 +1521,17 @@ fn return_instance_guard_and_body_cannot_use_sibling_assumptions() {
             .with_resource_context(ResourceContext::new().unchecked_with_fact(selected.clone()));
         let case_fact = |variant: &str| {
             Proposition::Equal(
-                Term::Algebraic(model.clone()),
-                Term::Algebraic(AlgebraicTerm {
-                    algebraic_type: ty.clone(),
-                    node: AlgebraicTermNode::Constructor {
-                        variant: variant.into(),
-                        fields: vec![],
-                    },
-                }),
+                Term::Algebraic(model.clone().into()),
+                Term::Algebraic(
+                    AlgebraicTerm {
+                        algebraic_type: ty.clone(),
+                        node: AlgebraicTermNode::Constructor {
+                            variant: variant.into(),
+                            fields: vec![],
+                        },
+                    }
+                    .into(),
+                ),
             )
         };
         let left = PureFactStore::default().with_fact(if matched {

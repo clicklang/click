@@ -33,21 +33,27 @@ fn full_pointer_alias_keeps_typed_constructor_fields_in_linear_work() {
             name: "TypedPointers".into(),
             arguments: vec![],
         };
-        let input = Term::Algebraic(AlgebraicTerm {
-            algebraic_type: AlgebraicType {
-                rigid: false,
-                name: "TypedPointers".into(),
-                arguments: vec![],
-                variants: variants.clone(),
-                schemas: std::sync::Arc::new(AlgebraicSchemas::new(BTreeMap::from([(
-                    value_type, variants,
-                )]))),
-            },
-            node: AlgebraicTermNode::Constructor {
-                variant: "Node".into(),
-                fields: vec![AlgebraicValue::Program(ProgramValue::Pointer(typed.clone())); size],
-            },
-        });
+        let input = Term::Algebraic(
+            AlgebraicTerm {
+                algebraic_type: AlgebraicType {
+                    rigid: false,
+                    name: "TypedPointers".into(),
+                    arguments: vec![],
+                    variants: variants.clone(),
+                    schemas: std::sync::Arc::new(AlgebraicSchemas::new(BTreeMap::from([(
+                        value_type, variants,
+                    )]))),
+                },
+                node: AlgebraicTermNode::Constructor {
+                    variant: "Node".into(),
+                    fields: vec![
+                        AlgebraicValue::Program(ProgramValue::Pointer(typed.clone()));
+                        size
+                    ],
+                },
+            }
+            .into(),
+        );
         let (actual, units) = crate::instrumentation::measure_deterministic_work(|| {
             TermRewrite::for_pointer_value_exact(&from, &to).term(&input)
         });
@@ -55,6 +61,7 @@ fn full_pointer_alias_keeps_typed_constructor_fields_in_linear_work() {
             panic!("constructor expected")
         };
         let fields = actual
+            .native_compat()
             .checked_constructor_fields()
             .expect("rewriting preserves the typed constructor");
         for field in fields {

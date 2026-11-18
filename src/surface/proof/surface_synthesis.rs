@@ -2413,9 +2413,19 @@ fn synthesize_surface_atomic_proposition(
     }
     if let Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) = proposition {
         return Some(ClickProposition::Comparison {
-            left: synthesize_surface_algebraic(left, parameter_binding, state, bound_variables)?,
+            left: synthesize_surface_algebraic(
+                left.native_compat(),
+                parameter_binding,
+                state,
+                bound_variables,
+            )?,
             operator: ComparisonOperator::Equal,
-            right: synthesize_surface_algebraic(right, parameter_binding, state, bound_variables)?,
+            right: synthesize_surface_algebraic(
+                right.native_compat(),
+                parameter_binding,
+                state,
+                bound_variables,
+            )?,
         });
     }
     if let Proposition::Equal(Term::Sequence(left), Term::Sequence(right)) = proposition {

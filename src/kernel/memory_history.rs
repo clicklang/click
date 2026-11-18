@@ -215,12 +215,12 @@ pub(crate) fn resource_field_values_proven_equal(
             left.algebraic_type == right.algebraic_type
                 && (left == right
                     || assumptions.proves_exact(&Proposition::Equal(
-                        Term::Algebraic(left.clone()),
-                        Term::Algebraic(right.clone()),
+                        Term::Algebraic(left.clone().into()),
+                        Term::Algebraic(right.clone().into()),
                     ))
                     || assumptions.proves_exact(&Proposition::Equal(
-                        Term::Algebraic(right.clone()),
-                        Term::Algebraic(left.clone()),
+                        Term::Algebraic(right.clone().into()),
+                        Term::Algebraic(left.clone().into()),
                     ))
                     || assumptions.decide(&ConditionTerm::AlgebraicEqual(
                         Box::new(left.clone()),

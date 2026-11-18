@@ -13235,7 +13235,7 @@ pub enum Term {
     PointerOffset(AddressOffset),
     ProgramValue(StoredProgramValue),
     Sequence(SequenceTerm),
-    Algebraic(AlgebraicTerm),
+    Algebraic(StoredAlgebraicTerm),
     // Outcomes carry ExecutionState. Keep them out of Term's inline size so cloning
     // a deep pure proposition does not spend stack on unused C variants.
     Memory(SymbolicMemory),
@@ -13281,7 +13281,7 @@ impl Term {
     }
     pub(crate) fn algebraic_native(&self) -> Option<&AlgebraicTerm> {
         match self {
-            Self::Algebraic(value) => Some(value),
+            Self::Algebraic(value) => Some(value.native_compat()),
             _ => None,
         }
     }

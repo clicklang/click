@@ -9,8 +9,8 @@ use super::*;
 /// Payloads currently support signed 32/64-bit integers, pointers, and ADTs.
 pub fn algebraic_constructor_cases(value: &AlgebraicTerm) -> Option<Theorem> {
     let equality = Proposition::Equal(
-        Term::Algebraic(value.clone()),
-        Term::Algebraic(value.clone()),
+        Term::Algebraic(value.clone().into()),
+        Term::Algebraic(value.clone().into()),
     );
     let mut variables = KernelVariableGenerator::fresh_for(0, proposition_variables(&equality));
     let cases = algebraic_constructor_case_equations(value, &mut || variables.next())?;
@@ -44,8 +44,11 @@ pub(in crate::kernel) fn algebraic_constructor_case_equations(
     if value.algebraic_type.rigid || !value.is_well_formed() {
         return None;
     }
-    let equality = |constructor| {
-        Proposition::Equal(Term::Algebraic(value.clone()), Term::Algebraic(constructor))
+    let equality = |constructor: AlgebraicTerm| {
+        Proposition::Equal(
+            Term::Algebraic(value.clone().into()),
+            Term::Algebraic(constructor.into()),
+        )
     };
     let mut alternatives = Vec::with_capacity(value.algebraic_type.variants.len());
     let mut seen = BTreeSet::new();
@@ -219,10 +222,18 @@ mod tests {
         else {
             panic!("constructor equation")
         };
-        assert_eq!(scrutinee, &value);
-        assert!(constructor.checked_constructor_fields().is_some());
+        assert_eq!(scrutinee.native_compat(), &value);
+        assert!(
+            constructor
+                .native_compat()
+                .checked_constructor_fields()
+                .is_some()
+        );
         assert_eq!(
-            constructor.checked_constructor_fields().unwrap(),
+            constructor
+                .native_compat()
+                .checked_constructor_fields()
+                .unwrap(),
             &[
                 AlgebraicValue::Program(symbolic_call_result(
                     ProgramType::Int32Pointer,
@@ -314,8 +325,8 @@ mod tests {
             },
         };
         let equality = Proposition::Equal(
-            Term::Algebraic(value.clone()),
-            Term::Algebraic(value.clone()),
+            Term::Algebraic(value.clone().into()),
+            Term::Algebraic(value.clone().into()),
         );
         assert_eq!(
             proposition_variables(&equality),
@@ -333,7 +344,7 @@ mod tests {
             panic!("equation")
         };
         // Exhaustion preserves the expression, including its unknown match.
-        assert_eq!(original, &value);
+        assert_eq!(original.native_compat(), &value);
         let mut incomplete_match = value.clone();
         let AlgebraicTermNode::Match { arms, .. } = &mut incomplete_match.node else {
             unreachable!()
@@ -558,7 +569,12 @@ mod tests {
             let Proposition::Equal(_, Term::Algebraic(constructor)) = body.as_ref() else {
                 panic!("constructor")
             };
-            assert!(constructor.checked_constructor_fields().is_some());
+            assert!(
+                constructor
+                    .native_compat()
+                    .checked_constructor_fields()
+                    .is_some()
+            );
         }
     }
 }
