@@ -284,6 +284,34 @@ pub(super) fn common_variables(
                     &mut leaf_variables,
                 );
             }
+            KernelTermNode::BoolCompare { .. }
+                if term.cached_condition_output().is_some_and(|condition| {
+                    let ConditionTerm::Compare { left, right, .. } = condition else {
+                        return false;
+                    };
+                    [left.as_ref(), right.as_ref()].into_iter().all(|operand| {
+                        matches!(
+                            operand,
+                            MachineTerm::Variable(_)
+                                | MachineTerm::Constant { .. }
+                                | MachineTerm::MemoryLoad(..)
+                        )
+                    })
+                }) =>
+            {
+                // These native scalar descriptors already carry the selected
+                // read's identity and query-dependent registry connections.
+                // Importing a named load as a structural read must not discard
+                // that name. Arithmetic and logical DAGs keep the common walk.
+                collect_boolean_variables(
+                    crate::kernel::BooleanOperandView::Native(
+                        term.cached_condition_output()
+                            .expect("retained scalar comparison output"),
+                    ),
+                    mode,
+                    &mut leaf_variables,
+                );
+            }
             KernelTermNode::Legacy(value) | KernelTermNode::LegacyBool(value) => {
                 // Each opaque leaf gets its complete intrinsic answer. A seen
                 // set belonging to another leaf would discard shared payload
@@ -616,6 +644,171 @@ pub(super) fn collect_argument(
 mod tests {
     use super::*;
     use crate::kernel::KernelTermImport;
+
+    // Each answer owns its query-local frame seen set, just like the public
+    // connection/frame entry points. Never share it between the two readers.
+    fn condition_variables_in_scope(
+        condition: crate::kernel::BooleanOperandView<'_>,
+        mode: FoldVariableRead,
+        connections: bool,
+        frame: bool,
+    ) -> BTreeSet<Variable> {
+        struct Scope(bool, bool, std::collections::HashSet<(u32, u32)>);
+        impl Drop for Scope {
+            fn drop(&mut self) {
+                CONNECTION_VARIABLES.with(|flag| flag.set(self.0));
+                COLLECTING_HAVOC_RANGES.with(|flag| flag.set(self.1));
+                FRAME_STATES.with(|seen| *seen.borrow_mut() = std::mem::take(&mut self.2));
+            }
+        }
+        let _scope = Scope(
+            CONNECTION_VARIABLES.with(|flag| flag.replace(connections)),
+            COLLECTING_HAVOC_RANGES.with(|flag| flag.replace(frame)),
+            FRAME_STATES.with(|seen| std::mem::take(&mut *seen.borrow_mut())),
+        );
+        let mut variables = BTreeSet::new();
+        collect_boolean_variables(condition, mode, &mut variables);
+        variables
+    }
+
+    #[test]
+    fn minted_scalar_comparisons_preserve_registered_load_reader_scope() {
+        use crate::kernel::{
+            BooleanOperandView, CompareRelation, KernelTermExport, StoredConditionTerm,
+        };
+        let _session = crate::kernel::VerificationSession::enter();
+        let state = Variable(999951);
+        let base = Variable(999952);
+        let index = Variable(999953);
+        let connection = Variable(999957);
+        let stored_connection = Variable(999958);
+        let frame_base = Variable(999954);
+        let frame_index = Variable(999955);
+        let pointer = Address {
+            base: AddressBase::Symbolic(base),
+            offset: AddressOffset::Add(
+                Box::new(AddressOffset::scaled_int32_node(
+                    MachineTerm::Variable(index),
+                    4,
+                )),
+                Box::new(AddressOffset::Variable(connection)),
+            ),
+        };
+        let memory = intern_memory(
+            SymbolicMemory::new()
+                .store(
+                    SymbolicMemory::global_pointer("comparison-reader-history"),
+                    ProgramValue::Int32(MachineTerm::Variable(state)),
+                )
+                .store(
+                    pointer.clone(),
+                    ProgramValue::Int32(MachineTerm::Variable(stored_connection)),
+                ),
+        );
+        let writes = crate::kernel::MemoryRange::new(
+            Address::symbolic(frame_base),
+            MachineTerm::Variable(frame_index),
+            MachineTerm::Binary {
+                format: crate::kernel::MachineIntegerType::Int32,
+                op: crate::kernel::MachineBinaryOp::Add,
+                left: Box::new(MachineTerm::Variable(frame_index)),
+                right: Box::new(1.into()),
+            },
+        );
+        let origin = intern_memory(memory.memory().clone().with_call_memory_havoc(
+            Variable(999956),
+            &[writes],
+            &crate::kernel::PureFactContext::new(),
+            None,
+        ));
+        let load = crate::kernel::eval::load_variable_for_cell_with_origin(
+            &memory,
+            &pointer,
+            LoadKind::Int32,
+            4,
+            &origin,
+        );
+        let native = [
+            MachineTerm::Variable(load),
+            MachineTerm::MemoryLoad(
+                ProgramPoint::at(&memory),
+                Box::new(pointer.clone()),
+                LoadKind::Int32,
+            ),
+        ]
+        .map(|left| ConditionTerm::Compare {
+            format: crate::kernel::MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(left),
+            right: Box::new(0.into()),
+        });
+        let stored = native
+            .each_ref()
+            .map(|native| StoredConditionTerm::from_minted(native.clone()));
+        assert_ne!(native[0], native[1]);
+        assert_ne!(
+            stored[0].root(),
+            stored[1].root(),
+            "distinct native scalar spellings keep distinct output slots"
+        );
+        for (registered, (native, stored)) in
+            [true, false].into_iter().zip(native.iter().zip(&stored))
+        {
+            let root = stored.root().expect("minted comparison root");
+            assert!(matches!(root.node(), KernelTermNode::BoolCompare { .. }));
+            let exports = KernelTermExport::machine_export_count();
+            for (connections, frame) in [(false, false), (true, false), (true, true)] {
+                for mode in [
+                    FoldVariableRead::IntegerFree,
+                    FoldVariableRead::ExpressionFree,
+                    FoldVariableRead::MachineCapture,
+                    FoldVariableRead::IntegerBinders,
+                    FoldVariableRead::MachineBinders,
+                ] {
+                    let expected = condition_variables_in_scope(
+                        BooleanOperandView::Native(native),
+                        mode,
+                        connections,
+                        frame,
+                    );
+                    if mode == FoldVariableRead::ExpressionFree {
+                        assert!(expected.contains(&base));
+                        assert!(expected.contains(&index));
+                        assert_eq!(
+                            expected.contains(&state),
+                            !connections,
+                            "registered={registered}, connections={connections}, frame={frame}, expected={expected:?}"
+                        );
+                        assert!(expected.contains(&stored_connection));
+                        assert_eq!(expected.contains(&connection), connections);
+                        assert_eq!(expected.contains(&load), registered);
+                        if frame {
+                            assert!(expected.contains(&frame_base));
+                            assert!(expected.contains(&frame_index));
+                        }
+                    } else if mode == FoldVariableRead::MachineCapture {
+                        assert!(expected.contains(&base));
+                        assert!(expected.contains(&index));
+                        assert_eq!(expected.contains(&load), registered);
+                        assert!(!expected.contains(&state));
+                    } else {
+                        assert!(expected.is_empty());
+                    }
+                    let actual = condition_variables_in_scope(
+                        BooleanOperandView::Shared(root),
+                        mode,
+                        connections,
+                        frame,
+                    );
+                    assert_eq!(
+                        actual, expected,
+                        "registered={registered}, mode={mode:?}, connections={connections}, frame={frame}"
+                    );
+                }
+            }
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+        }
+    }
 
     fn native_variables(term: &IntegerTerm, mode: FoldVariableRead) -> BTreeSet<Variable> {
         let mut result = BTreeSet::new();
