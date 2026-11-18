@@ -1,11 +1,9 @@
-# A hidden record folds its child by name
+# A hidden record folds an explicit same-named child
 
-`pair` declares no field, so its fold's one brace is the child map. When the
-child it owns is bound to the slot's own name, `first`, the map is left out
-and `fold(pair(p));` takes `first` by name; the hidden field `first.v` is
-read from that child as it is from a written map.
+A fieldless parent still supplies its child in the fold input map. The
+explicit binding supplies the hidden field `first.v`.
 
-```c filename=a_hidden_record_folds_its_child_by_name.c
+```c filename=a_hidden_record_folds_an_explicit_same_named_child.c
 struct cell { int32 value; };
 struct pair { struct cell* a; int32 n; };
 
@@ -29,7 +27,7 @@ resource pair(p: struct pair*) {
     fact first.v >= 0;
 }
 
-verifying "a_hidden_record_folds_its_child_by_name.c";
+verifying "a_hidden_record_folds_an_explicit_same_named_child.c";
 
 int32 get(struct pair* p) {
     owns pair(p);
@@ -38,7 +36,7 @@ int32 get(struct pair* p) {
     let { first: first } = unfold(pair(p));
     step_until(function.exit);
     have result == first.v;
-    fold(pair(p));
+    fold(pair(p), { first: first });
     solve();
 }
 ```

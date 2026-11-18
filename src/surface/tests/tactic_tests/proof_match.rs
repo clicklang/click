@@ -125,8 +125,8 @@ fn modeled_tree_rotate_left_checks_model_and_ownership() {
         ),
         // Fold the lower node with a wrong right child: the pivot's right
         // child, or the root's own left child.
-        source.replace("}, { right: m });", "}, { right: right });"),
-        source.replace("}, { right: m });", "}, { right: left });"),
+        source.replace("right: m\n                    });", "right: right\n                    });"),
+        source.replace("right: m\n                    });", "right: left\n                    });"),
         source.replace(
             "let rotated = fold(tree_at(result)",
             "let rotated = fold(tree_at(root)",

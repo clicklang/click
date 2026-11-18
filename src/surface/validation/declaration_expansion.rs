@@ -2407,28 +2407,6 @@ fn expand_declared_resource_clause(
                     }
                 }
             }
-            // A child a fold's map left out defaults to the in-scope
-            // resource of the slot's name only when that resource is of the
-            // family the slot owns; any other candidate is dropped, and the
-            // fold then reports the slot as missing.
-            if let Some(defaults) = binding.default_child_bindings.take() {
-                let slots = resource_definitions
-                    .get(&parent)
-                    .map(|info| info.child_slots.clone())
-                    .unwrap_or_default();
-                let kept = defaults
-                    .iter()
-                    .filter(|(slot, _, identity)| match slots.get(slot) {
-                        Some(Some(declared)) => resource_definitions
-                            .instance_resource(*identity)
-                            .is_none_or(|actual| actual == *declared),
-                        Some(None) => true,
-                        None => false,
-                    })
-                    .cloned()
-                    .collect::<Vec<_>>();
-                binding.default_child_bindings = (!kept.is_empty()).then(|| kept.into());
-            }
             if let Some(fields) = binding.fold_fields.take() {
                 binding.fold_fields = Some(
                     fields

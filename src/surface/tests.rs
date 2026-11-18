@@ -451,8 +451,8 @@ fn tree_node_init_rejects_invalid_models_and_ownership() {
             "model: HeapTree::Node(node, value, l.model, r.model)",
             "model: HeapTree::Node(node, value, r.model, l.model)",
         ),
-        ("{ left: l, right: r });", "{ left: r, right: l });"),
-        ("{ left: l, right: r });", "{ left: l, right: l });"),
+        ("left: l, right: r\n    });", "left: r, right: l\n    });"),
+        ("left: l, right: r\n    });", "left: l, right: l\n    });"),
         ("consumes node->left;", ""),
         ("consumes r: tree_at(right);", ""),
         ("requires p == 0;", ""),
@@ -461,8 +461,8 @@ fn tree_node_init_rejects_invalid_models_and_ownership() {
         ("owns p->right;", ""),
         // Child ownership has been consumed into root, so it cannot be reused.
         (
-            "}, { left: l, right: r });\n    solve();",
-            "}, { left: l, right: r });\n    unfold(l);\n    solve();",
+            "left: l, right: r\n    });\n    solve();",
+            "left: l, right: r\n    });\n    unfold(l);\n    solve();",
         ),
     ] {
         assert!(source.contains(from));
@@ -522,8 +522,8 @@ fn independent_children_may_change_roles_in_a_new_model() {
             "ensures root.model == Tree::Branch(1, right, Tree::Leaf(3), left, Tree::Leaf(2));",
         )
         .replace(
-            "{ model: old(root.model) }, { left: l, right: r }",
-            "{ model: Tree::Branch(1, right, r.model, left, l.model) }, { left: r, right: l }",
+            "{ model: old(root.model), left: l, right: r }",
+            "{ model: Tree::Branch(1, right, r.model, left, l.model), left: r, right: l }",
         );
     let verified_for_expansion = verify_c_sources(&source, INDEPENDENT_CHILDREN_C).unwrap();
     let expanded =
@@ -552,10 +552,10 @@ fn independent_children_reject_bad_selection_and_consumed_names() {
             "let { left: l, right: r } = unfold(root)",
             "let { left: root, right: r } = unfold(root)",
         ),
-        ("{ model: old(root.model) }", "{ model: root.model }"),
-        ("}, { left: l, right: r });", "}, { left: l });"),
-        ("}, { left: l, right: r });", "}, { left: l, right: l });"),
-        ("}, { left: l, right: r });", "}, { left: r, right: l });"),
+        ("model: old(root.model),", "model: root.model,"),
+        ("left: l, right: r });", "left: l });"),
+        ("left: l, right: r });", "left: l, right: l });"),
+        ("left: l, right: r });", "left: r, right: l });"),
         ("let l = fold(tree(left), { model: Tree::Leaf(2) });", ""),
         (
             "let l = fold(tree(left), { model: Tree::Leaf(2) });",
@@ -565,6 +565,7 @@ fn independent_children_reject_bad_selection_and_consumed_names() {
         ("unfold(l);", "unfold(l); unfold(l);"),
         ("consumes r: tree(right);", ""),
     ] {
+        assert!(source.contains(from), "missing mutation target {from}");
         assert!(
             verify_c_sources(&source.replace(from, to), INDEPENDENT_CHILDREN_C).is_err(),
             "accepted {from} -> {to}"
@@ -579,7 +580,7 @@ fn independent_children_reject_bad_selection_and_consumed_names() {
     .unwrap();
     assert!(
         verify_c_sources(
-            &expanded.replace("}, { left: l, right: r });", "}, { left: r, right: l });"),
+            &expanded.replace("left: l, right: r });", "left: r, right: l });"),
             INDEPENDENT_CHILDREN_C
         )
         .is_err()

@@ -147,7 +147,7 @@ theorem sized_table_rotate_left()
 executes sized_rotate_from_table(struct rb_node* old, struct rb_node* new,
                                  const struct rb_augment_callbacks* augment) {
     ensures RotateTableLeft(&sized_rotate_from_table) as { tree: tree, checked: checked } by {
-        let input = fold(sized_rotation_input_at(old, new), { model: SizedRotationInput::Left(tree.model) });
+        let input = fold(sized_rotation_input_at(old, new), { model: SizedRotationInput::Left(tree.model), tree: tree });
         let { checked: checked } = step(sized_rotate_from_table, { input: input });
         have sized_rotation_input_tree(SizedRotationInput::Left(old(tree.model))) == old(tree.model) by {
             unfold(sized_rotation_input_tree(SizedRotationInput::Left(old(tree.model))));
@@ -177,7 +177,7 @@ theorem sized_table_rotate_right()
 executes sized_rotate_from_table(struct rb_node* old, struct rb_node* new,
                                  const struct rb_augment_callbacks* augment) {
     ensures RotateTableRight(&sized_rotate_from_table) as { tree: tree, checked: checked } by {
-        let input = fold(sized_rotation_input_at(old, new), { model: SizedRotationInput::Right(tree.model) });
+        let input = fold(sized_rotation_input_at(old, new), { model: SizedRotationInput::Right(tree.model), tree: tree });
         let { checked: checked } = step(sized_rotate_from_table, { input: input });
         have sized_rotation_input_tree(SizedRotationInput::Right(old(tree.model))) == old(tree.model) by {
             unfold(sized_rotation_input_tree(SizedRotationInput::Right(old(tree.model))));

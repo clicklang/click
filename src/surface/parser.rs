@@ -7809,7 +7809,6 @@ impl Parser {
                         fields: None,
                         fold_fields: None,
                         child_bindings: None,
-                        default_child_bindings: None,
                     },
                     resource: Box::new(protected),
                 });
@@ -8005,7 +8004,6 @@ impl Parser {
                     fields: binding.fields,
                     fold_fields: None,
                     child_bindings: binding.child_bindings,
-                    default_child_bindings: None,
                 },
                 resource,
             },
@@ -8055,7 +8053,6 @@ impl Parser {
                         fields: None,
                         fold_fields: None,
                         child_bindings: None,
-                        default_child_bindings: None,
                     },
                     resource: Box::new(ResourceClause::Declared {
                         type_schema: None,
@@ -8304,7 +8301,6 @@ impl Parser {
                 fields: None,
                 fold_fields: None,
                 child_bindings: None,
-                default_child_bindings: None,
             },
             resource: Box::new(resource),
         };
@@ -8359,7 +8355,6 @@ impl Parser {
                 fields: None,
                 fold_fields: None,
                 child_bindings: None,
-                default_child_bindings: None,
             },
             resource: Box::new(target),
         };
@@ -10043,7 +10038,6 @@ impl Parser {
                             fields: None,
                             fold_fields: None,
                             child_bindings: Some(Vec::new().into()),
-                            default_child_bindings: None,
                         },
                         resource: Box::new(parent.clone()),
                     },
@@ -10334,11 +10328,18 @@ impl Parser {
                     return Err(self.error(format!("duplicate fold entry `{key}`")));
                 }
                 self.expect(Token::Colon)?;
-                if self
-                    .declared_resource_child_slots
-                    .get(resource_name)
-                    .is_some_and(|slots| slots.contains_key(&key))
-                {
+                let is_child = match self.declared_resource_child_slots.get(resource_name) {
+                    Some(slots) => slots.contains_key(&key),
+                    // For a later declaration, read a bare resource binding
+                    // as a child selection. Declaration expansion checks
+                    // that the key names a child of the declared family.
+                    None => self.peek_ident().is_some_and(|name| {
+                        matches!(self.peek_next(), Some(Token::Comma | Token::RBrace))
+                            && self.names.resource_bindings.contains_key(name)
+                            && !self.names.is_program_variable(name)
+                    }),
+                };
+                if is_child {
                     children.push((key, self.expect_ident("child resource name")?));
                 } else {
                     let value = self.parse_contract_expression()?;
@@ -10361,11 +10362,7 @@ impl Parser {
             return Err(self.error("expected a single fold input map or `)`"));
         }
         let child_bindings = self.bind_resource_child_names(&resource, None, children, false)?;
-        let default_child_bindings =
-            self.default_fold_child_bindings(resource_name, &name, &child_bindings);
-        let mut hidden_sources = child_bindings.clone();
-        hidden_sources.extend(default_child_bindings.iter().cloned());
-        self.fill_hidden_fold_fields(&declared, &hidden_sources, &mut fields);
+        self.fill_hidden_fold_fields(&declared, &child_bindings, &mut fields);
         if self.peek() == Some(&Token::Comma) {
             return Err(self.error("fold takes one map containing both fields and child slots"));
         }
@@ -10378,7 +10375,6 @@ impl Parser {
             fields: None,
             fold_fields: None,
             child_bindings: Some(Vec::new().into()),
-            default_child_bindings: None,
         };
         self.names
             .bind_instance(name.clone(), (identity, resource_name.clone()));
@@ -10395,46 +10391,10 @@ impl Parser {
             binding: ResourceInstanceBinding {
                 fold_fields: Some(fields),
                 child_bindings: Some(child_bindings.into()),
-                default_child_bindings: (!default_child_bindings.is_empty())
-                    .then(|| default_child_bindings.into()),
                 ..binding
             },
             resource: Box::new(resource),
         }))
-    }
-
-    /// The child slots of `family` that a fold's map left out and that an
-    /// in-scope resource of the same name could fill: `{ left: left }` is
-    /// written `{}` or not at all. A name the map already uses, the fold's
-    /// own result, or a name that is also a pure binding fills nothing.
-    /// Which of these the fold keeps is decided by the arm it selects.
-    #[inline(never)]
-    fn default_fold_child_bindings(
-        &self,
-        family: &str,
-        result: &str,
-        explicit: &[(String, String, Variable)],
-    ) -> Vec<(String, String, Variable)> {
-        let Some(slots) = self.declared_resource_child_slots.get(family) else {
-            return Vec::new();
-        };
-        slots
-            .keys()
-            .filter(|slot| {
-                slot.as_str() != result
-                    && !explicit
-                        .iter()
-                        .any(|(bound, name, _)| bound == *slot || name == *slot)
-                    && !self.names.contains(NameKind::ContractBinding, slot)
-                    && !self.names.contains(NameKind::IntegerParameter, slot)
-                    && !self.names.contains(NameKind::IntegerLet, slot)
-                    && !self.names.contains(NameKind::ProofBinder, slot)
-            })
-            .filter_map(|slot| {
-                let (identity, _) = self.names.resource_bindings.get(slot)?;
-                Some((slot.clone(), slot.clone(), *identity))
-            })
-            .collect()
     }
 
     /// A hidden field `slot.field` is the field of the child bound to
@@ -11588,7 +11548,6 @@ impl Parser {
                 fields: None,
                 fold_fields: None,
                 child_bindings: None,
-                default_child_bindings: None,
             },
             resource: Box::new(resource),
         };

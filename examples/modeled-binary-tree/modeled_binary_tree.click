@@ -395,12 +395,14 @@ struct tree_node* tree_rotate_left(struct tree_node* root) {
                     step_until(function.exit);
                     let lower = fold(tree_at(root), {
                         model: HeapTree::Node(node, value, left_model, middle_model),
-                        right: m
+                        right: m,
+                        left: left
                     });
                     let rotated = fold(tree_at(result), {
                         model: HeapTree::Node(pivot_node, pivot_value,
                             HeapTree::Node(node, value, left_model, middle_model), far_right_model),
-                        left: lower
+                        left: lower,
+                        right: right
                     });
                     apply(heap_rotate_left_preserves_inorder(old(t.model)));
                 },
@@ -430,12 +432,14 @@ struct tree_node* tree_rotate_right(struct tree_node* root) {
                     step_until(function.exit);
                     let lower = fold(tree_at(root), {
                         model: HeapTree::Node(node, value, middle_model, right_model),
-                        left: m
+                        left: m,
+                        right: right
                     });
                     let rotated = fold(tree_at(result), {
                         model: HeapTree::Node(pivot_node, pivot_value, far_left_model,
                             HeapTree::Node(node, value, middle_model, right_model)),
-                        right: lower
+                        right: lower,
+                        left: left
                     });
                     apply(heap_rotate_right_preserves_inorder(old(t.model)));
                 },

@@ -84,7 +84,8 @@ void __rb_change_child(struct rb_node* old, struct rb_node* new,
             }
             let after = fold(ctx_at(new, root), {
                     model: Context::Left(identity, grandparent, color, sibling_model, outer_model),
-                    up: outer
+                    up: outer,
+                    sibling: sibling
                 });
             solve();
         },
@@ -120,7 +121,8 @@ void __rb_change_child(struct rb_node* old, struct rb_node* new,
                     let sibling = fold(rb_at(0), { model: RbTree::Empty });
                     let after = fold(ctx_at(new, root), {
                             model: Context::Right(identity, grandparent, color, sibling_model, outer_model),
-                            up: outer
+                            up: outer,
+                            sibling: sibling
                         });
                     solve();
                 },
@@ -137,7 +139,8 @@ void __rb_change_child(struct rb_node* old, struct rb_node* new,
                     step();
                     step();
                     let sibling = fold(rb_at(sid), {
-                            model: RbTree::Node(sid, sp, sc, sl, sr)
+                            model: RbTree::Node(sid, sp, sc, sl, sr),
+                            left: left, right: right
                         });
                     mark before_child_change;
                     have separate(memory(parent->rb_right), memory(identity->__rb_parent_color)) by {
@@ -164,7 +167,8 @@ void __rb_change_child(struct rb_node* old, struct rb_node* new,
                     have identity->rb_left == at(before_child_change, identity->rb_left) by { preserve(memory(identity->rb_left), statement(0).statement(0).statement(1)); }
                     let after = fold(ctx_at(new, root), {
                             model: Context::Right(identity, grandparent, color, sibling_model, outer_model),
-                            up: outer
+                            up: outer,
+                            sibling: sibling
                         });
                     solve();
                 },

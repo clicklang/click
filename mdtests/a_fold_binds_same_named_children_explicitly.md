@@ -1,18 +1,16 @@
-# A fold takes its children by name
+# A fold binds same-named children explicitly
 
-A `fold` whose input map leaves out a child slot takes the in-scope resource
-of the slot's own name. For example, `{ model: m, left: left, right: r }` can
-be written `{ model: m, right: r }`. Only the children of the arm the
-model selects are taken, so folding a leaf beside an owned `right` leaves
-`right` alone. The kernel checks the completed map as a written one.
+A fold names each child of the selected arm in its input map, even when
+the held resource has the same name as the slot. A fold of a leaf supplies
+no children.
 
-```c filename=a_fold_takes_children_by_name.c
+```c filename=a_fold_binds_same_named_children_explicitly.c
 int32 read_left(int32* p, int32* lp, int32* rp) { return *lp; }
 void init(int32* p, int32* lp, int32* rp, int32 value) { *p = value; }
 ```
 
 ```click
-verifying "a_fold_takes_children_by_name.c";
+verifying "a_fold_binds_same_named_children_explicitly.c";
 
 spec enum Tree { Leaf(int32), Branch(int32, int32*, Tree, int32*, Tree) }
 resource tree(p: int32*) {
@@ -40,7 +38,7 @@ int32 read_left(int32* p, int32* lp, int32* rp) {
     unfold(left);
     step_until(function.exit);
     let left = fold(tree(lp), { model: Tree::Leaf(2) });
-    let root = fold(tree(p), { model: old(root.model) });
+    let root = fold(tree(p), { model: old(root.model), left: left, right: right });
     solve();
 }
 
@@ -52,7 +50,7 @@ void init(int32* p, int32* lp, int32* rp, int32 value) {
     ensures root.model == Tree::Branch(value, lp, old(left.model), rp, old(r.model));
 } by {
     step_until(function.exit);
-    let root = fold(tree(p), { model: Tree::Branch(value, lp, left.model, rp, r.model), right: r });
+    let root = fold(tree(p), { model: Tree::Branch(value, lp, left.model, rp, r.model), left: left, right: r });
     solve();
 }
 ```
