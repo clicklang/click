@@ -1064,7 +1064,7 @@ not a change to proof rules or snapshot architecture.
 
 | Subslice | Owning stores | Status |
 | --- | --- | --- |
-| 10p1 | `SequenceTermNode::Literal` evaluated elements and their evaluator/substitution handoffs. | Implemented; 437 focused checks, all 1,909 regular scaling cases, selected sequence proofs, fact stability and quality passed. PR follows 10o. |
+| 10p1 | `SequenceTermNode::Literal` evaluated elements and their evaluator/substitution handoffs. | Published as [PR #3217](https://github.com/clicklang/click/pull/3217), with auto-merge requested; 437 focused checks, all 1,909 regular scaling cases, selected proofs, fact stability and quality passed. |
 | 10p2 | Composite/token/instance `ResourceArguments`, `ResourceDescription` arguments and remaining Integer/algebraic resource fields. Preserve argument order, native identity classes and nominal resource identities. | Split: 10p2a covers Integer/algebraic fields; 10p2b covers argument stores. Pending. |
 | 10p3 | `MemoryRange` bounds and `AllocationSize` byte counts. Preserve signed/wide reading, bound provenance and existing identity/hash contracts. | Inventoried; pending. |
 | 10p4 | `IteratedMemory` endpoints, guard comparison value and selected holes. Preserve checked ownership transitions and opaque owner/address identities. | Inventoried; pending. |
@@ -1101,7 +1101,8 @@ scaling cases passed (two isolated and 1,907 remaining), as did the sequence
 proof selection and quality. The selected fact-stability recording reported
 zero changed terms/paths (no refusals). Validation script exit is zero. Full
 nightly was not run. After integrating upstream `306a1fec0`, all 437 affected
-checks passed again. PR delivery follows 10o.
+checks passed again. [PR #3217](https://github.com/clicklang/click/pull/3217)
+has auto-merge requested.
 
 ## Chunk 3: machine-valued pure-function results
 
