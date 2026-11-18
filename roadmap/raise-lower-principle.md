@@ -1545,9 +1545,12 @@ nonconstant results, so duplicate children are not expanded into a tree. It
 uses the existing bit operations and adds no persistent cache or search index.
 Native float inputs keep their exact native-input policy.
 
-Validation is pending. Existing native numeric-coercion/compatibility readers
-remain explicit adapters for the later 10r–10t audit; this slice does not change
-mixed-format conversion rules. Expression-bearing equality and predicate Term
+All seven focused root-retention, native-spelling parity, literal-polarity,
+actual-classification and growing-DAG checks passed, along with latest quality.
+The 615 selected regular checks, all scaling checks and regular proof/fact-
+stability audit are running. Existing native numeric-coercion/compatibility
+readers remain explicit adapters for the later 10r–10t audit; this slice does
+not change mixed-format conversion rules. Expression-bearing equality and predicate Term
 payloads remain assigned to 10q4.
 
 ## Chunk 3: machine-valued pure-function results
