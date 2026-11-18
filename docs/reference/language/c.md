@@ -1372,8 +1372,9 @@ compilers Click is targeting.
 ### Local integer bit-fields
 
 On x86-64, a standalone file-scope struct definition can contain named,
-unqualified `int`, `signed int`, and `unsigned int` bit-fields that fit in one
-32-bit allocation word. Widths are decimal literals between 1 and 32. Local
+unqualified `int`, `signed int`, and `unsigned int` bit-fields. A field
+that does not fit in the current 32-bit allocation word starts at the next
+word. Widths are decimal literals between 1 and 32. Local
 records support positional and designated integer-literal initialization,
 including zero initialization of omitted fields, or can start unwritten.
 Reads promote narrow signed and unsigned fields to `int`. A 32-bit unsigned
@@ -1419,6 +1420,8 @@ zero-width fields, and multiword records are unsupported.
 <!-- verified-example: mdtests/c_bit_field_byte_interop.md -->
 <!-- verified-example: mdtests/c_bit_field_memcpy_partial.md -->
 <!-- verified-example: mdtests/c_bit_field_memcpy_roundtrip.md -->
+<!-- verified-example: mdtests/c_bit_field_multiword_update_and_copy.md -->
+<!-- verified-example: mdtests/c_bit_field_multiword_memcpy.md -->
 
 ### Block-scope struct compound literals
 

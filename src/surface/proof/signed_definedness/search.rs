@@ -308,9 +308,39 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_restricted_signed_definedness_closure");
+        // Negation shares subtraction-from-zero's domain. Keep the selected
+        // premises when proving that ordinary subtraction domain.
+        if let Some(ClickProposition::Defined {
+            expression: ContractExpression::Negate(operand),
+        }) = search_input.surface_goal()
+        {
+            let domain = ClickProposition::Defined {
+                expression: ContractExpression::Subtract(
+                    Box::new(signed_literal(0)),
+                    operand.clone(),
+                ),
+            };
+            let scope = search_input.driver().open_have(domain)?;
+            let Some(closed) = scope
+                .driver()
+                .try_restricted_signed_definedness_closure(premise_pairs)?
+            else {
+                return Ok(None);
+            };
+            return Ok(Some(closed.join()?.driver().apply_step(ProofStep::Known)?));
+        }
         let Some(goal) = search_input.goal() else {
             return Ok(None);
         };
+        if matches!(search_input.context.as_ref(), ProofContext::Pure(_))
+            && let Some(tactics) = plan_int32_increment_definedness_theorem(goal, premise_pairs)
+            && let Some(closed) = attempt::candidate_outcome(
+                search_input.driver().try_generated_linear_script(&tactics),
+            )?
+            .flatten()
+        {
+            return Ok(Some(closed));
+        }
         use crate::kernel::proof::arithmetic_special::{
             signed_constant_bound_on_view, signed_definedness_query,
         };

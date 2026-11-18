@@ -498,7 +498,7 @@ impl Parser {
             .insert(
                 name.clone(),
                 RecordLayout {
-                    bit_field_bits: None,
+                    bit_field_bytes: None,
                     embedded_structs: RecordLayout::index_embedded_structs(&fields),
                     fields,
                     aggregate_fields,

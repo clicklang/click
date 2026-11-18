@@ -64,6 +64,73 @@ The modeled-runtime resource `mutex_use` is verified in
 The modeled-runtime resources `publisher` and `subscriber` are verified in
 [`publication_one_shot_handoff.md`](publication_one_shot_handoff.md).
 
+The unsigned address-word laws are checked in
+[`aligned_address_word_library.md`](aligned_address_word_library.md):
+`integer::uint64_and_commute`, `integer::uint64_and_associate`,
+`integer::uint64_or_commute`, `integer::uint64_and_or`, `integer::uint64_and_zero`,
+`integer::uint64_or_zero`, `integer::uint64_or_disjoint`, `integer::uint64_mask_add_low`,
+`integer::uint64_mask_add_high`, `integer::uint64_mask_multiple`,
+`integer::uint64_mask_keep`, `integer::uint64_mask_add_clear`,
+`integer::uint64_add_distinct`, `integer::uint64_or_add_low`, `integer::uint64_mask_subset`,
+`integer::uint64_or_masked`, `integer::uint8_pointer_add_address_int32`,
+`integer::uint8_pointer_add_address_int64`, `integer::int8_pointer_add_address_int32`,
+`integer::int8_pointer_add_address_int64`, `integer::uint16_pointer_add_address_int32`,
+`integer::uint16_pointer_add_address_int64`, `integer::int16_pointer_add_address_int32`,
+`integer::int16_pointer_add_address_int64`, `integer::uint32_pointer_add_address_int32`,
+`integer::uint32_pointer_add_address_int64`, `integer::int32_pointer_add_address_int32`,
+`integer::int32_pointer_add_address_int64`, `integer::uint64_pointer_add_address_int32`,
+`integer::uint64_pointer_add_address_int64`, `integer::int64_pointer_add_address_int32`,
+`integer::int64_pointer_add_address_int64`, `integer::float32_pointer_add_address_int32`,
+`integer::float32_pointer_add_address_int64`, `integer::float64_pointer_add_address_int32`,
+`integer::float64_pointer_add_address_int64`.
+
+The scalar-pointer translation and association families are checked by the
+strict scalar-width replay matrix and
+[`pointer_offset_explicit_bridge.md`](pointer_offset_explicit_bridge.md):
+`integer::uint8_pointer_translate_int32`,
+`integer::uint8_pointer_add_associate_int32`,
+`integer::uint8_pointer_translate_uint64`,
+`integer::uint8_pointer_add_associate_uint64`,
+`integer::int8_pointer_translate_int32`,
+`integer::int8_pointer_add_associate_int32`,
+`integer::int8_pointer_translate_uint64`,
+`integer::int8_pointer_add_associate_uint64`,
+`integer::uint16_pointer_translate_int32`,
+`integer::uint16_pointer_add_associate_int32`,
+`integer::uint16_pointer_translate_uint64`,
+`integer::uint16_pointer_add_associate_uint64`,
+`integer::int16_pointer_translate_int32`,
+`integer::int16_pointer_add_associate_int32`,
+`integer::int16_pointer_translate_uint64`,
+`integer::int16_pointer_add_associate_uint64`,
+`integer::uint32_pointer_translate_int32`,
+`integer::uint32_pointer_add_associate_int32`,
+`integer::uint32_pointer_translate_uint64`,
+`integer::uint32_pointer_add_associate_uint64`,
+`integer::int32_pointer_translate_int32`,
+`integer::int32_pointer_add_associate_int32`,
+`integer::int32_pointer_translate_uint64`,
+`integer::int32_pointer_add_associate_uint64`,
+`integer::uint64_pointer_translate_int32`,
+`integer::uint64_pointer_add_associate_int32`,
+`integer::uint64_pointer_translate_uint64`,
+`integer::uint64_pointer_add_associate_uint64`,
+`integer::int64_pointer_translate_int32`,
+`integer::int64_pointer_add_associate_int32`,
+`integer::int64_pointer_translate_uint64`,
+`integer::int64_pointer_add_associate_uint64`,
+`integer::float32_pointer_translate_int32`,
+`integer::float32_pointer_add_associate_int32`,
+`integer::float32_pointer_translate_uint64`,
+`integer::float32_pointer_add_associate_uint64`,
+`integer::float64_pointer_translate_int32`,
+`integer::float64_pointer_add_associate_int32`,
+`integer::float64_pointer_translate_uint64`,
+`integer::float64_pointer_add_associate_uint64`.
+
+The derived `integer::nonnegative_remainder_from_reconstruction` law is checked
+in [`signed_interval_remainder_reconstruction.md`](signed_interval_remainder_reconstruction.md).
+
 ```c filename=stdlib_every_symbol.c
 int32 docs_identity(int32 value) {
     return value;
@@ -2246,6 +2313,18 @@ theorem check_remainder_negate_divisor(n: Integer, d: Integer) {
 }
 
 
+theorem use_multiply_associative(a:Integer,b:Integer,c:Integer) { ensures (a*b)*c==a*(b*c) by {apply(integer::multiply_associative(a,b,c));} }
+theorem use_multiply_add_left(a:Integer,b:Integer,c:Integer) { ensures a*(b+c)==a*b+a*c by {apply(integer::multiply_add_left(a,b,c));} }
+theorem use_negate_as_product(a:Integer) { ensures -a == -1*a by {apply(integer::negate_as_product(a));} }
+theorem use_multiply_swap_front(a:Integer,b:Integer,c:Integer) { ensures a*(b*c)==b*(a*c) by {apply(integer::multiply_swap_front(a,b,c));} }
+theorem use_nonnegative_quotient_from_remainder(n:Integer,d:Integer,q:Integer,r:Integer) {
+ requires d!=0;requires 1<=d;requires 0<=n;requires 0<=r;requires r<=d-1;requires n==q*d+r;
+ ensures truncating_quotient(n,d)==q by {apply(integer::nonnegative_quotient_from_remainder(n,d,q,r)) using {d!=0;1<=d;0<=n;0<=r;r<=d-1;n==q*d+r;};}
+}
+theorem use_nonnegative_quotient_shift(x:Integer,d:Integer,k:Integer) {
+ requires d!=0;requires 1<=d;requires 0<=x;requires 0<=k;
+ ensures truncating_quotient(x+d*k,d)==truncating_quotient(x,d)+k by {apply(integer::nonnegative_quotient_shift(x,d,k)) using {d!=0;1<=d;0<=x;0<=k;};}
+}
 theorem use_bytes_comparison_negative(left: uint8[], right: uint8[], length: uint64, first: uint64, cmp: int32) {
     requires bytes::comparison(left, right, length, cmp);
     requires first < length;

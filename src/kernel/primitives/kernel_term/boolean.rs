@@ -270,17 +270,17 @@ impl<'a> BooleanOperandView<'a> {
         std::borrow::Cow::Owned(KernelTermExport::condition(root).expect("Boolean operand"))
     }
 
-    pub(crate) fn read(self) -> Option<(SharedMemory, SharedAddress)> {
+    pub(crate) fn read(self) -> Option<(ProgramPoint, SharedAddress)> {
         if let Self::Shared(root) = self
             && let KernelTermNode::BoolRead(read) = root.node()
         {
-            let (memory, address) = read.parts();
-            return Some((memory.clone(), address.clone()));
+            let (point, address) = read.parts();
+            return Some((point.clone(), address.clone()));
         }
         let ConditionTerm::BoolLoad(memory, address) = self.native_leaf()? else {
             return None;
         };
-        Some((memory.clone(), SharedAddress::import(address)))
+        Some((ProgramPoint::at(memory), SharedAddress::import(address)))
     }
 
     pub(crate) fn pointer_values(self) -> Option<[SharedPointerValue; 2]> {
@@ -586,7 +586,10 @@ impl KernelTermImport {
         crate::instrumentation::record_deterministic_work(1);
         let node = match condition {
             Old::BoolLoad(memory, address) => {
-                return KernelTerm::boolean_read(memory.clone(), SharedAddress::import(address));
+                return KernelTerm::boolean_read(
+                    ProgramPoint::at(memory),
+                    SharedAddress::import(address),
+                );
             }
             Old::Overflows {
                 format,
@@ -681,8 +684,8 @@ impl KernelTermExport {
         crate::instrumentation::record_deterministic_work(1);
         Ok(match term.node() {
             Node::BoolRead(read) => {
-                let (memory, address) = read.parts();
-                Old::BoolLoad(memory.clone(), Box::new(address.export()?))
+                let (point, address) = read.parts();
+                Old::BoolLoad(point.shared_memory().clone(), Box::new(address.export()?))
             }
             Node::BoolOverflow {
                 format,

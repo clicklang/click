@@ -4609,14 +4609,17 @@ theorem unsigned_compound(n: int32) {
     }
     let expanded = expand_c_claim_source_by_label(source, &[], "unsigned_compound.ensures_0")
         .expect("compound unsigned arithmetic should expand to a source certificate");
-    // `solve() using` tries arithmetic last, so a closer before it may
-    // prove the goal; either way the expansion is an explicit proof.
-    assert!(expanded.contains("normalize() using"), "{expanded}");
+    assert!(
+        expanded.contains("apply(click::integer::difference_le("),
+        "{expanded}"
+    );
+    assert!(!expanded.contains("normalize("), "{expanded}");
+    assert!(!expanded.contains("solve("), "{expanded}");
 
     let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
-        verify_c_sources(&expanded, &[])
+        without_implicit_solve(|| verify_c_sources(&expanded, &[]))
     });
-    result.expect("expanded vector_grow should independently recheck");
+    result.expect("expanded compound bound should independently recheck");
     assert_eq!(
         planning, 0,
         "explicit certificate recheck must not plan: {expanded}"
@@ -7742,7 +7745,7 @@ fn post_execution_restricted_solve_checks_grouped_ownership_and_value_claims() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_35")]
-fn restricted_solve_expands_to_graph_normalization() {
+fn restricted_solve_expands_to_graph_known() {
     let click_source = r#"
             theorem equality_transitive(x: int32, y: int32, z: int32) {
                 requires x == y;
@@ -7774,16 +7777,16 @@ fn restricted_solve_expands_to_graph_normalization() {
 
     let expanded = expand_c_tactic_source_at(click_source, &[], line, column)
         .expect("restricted solve should expand");
-    assert!(expanded.contains("normalize() using"), "{expanded}");
-    assert!(expanded.contains("x == y;"), "{expanded}");
-    assert!(expanded.contains("y == z;"), "{expanded}");
+    assert!(expanded.contains("known();"), "{expanded}");
+    assert!(!expanded.contains("normalize("), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
-    verify_c_sources(&expanded, &[]).expect("explicit equality certificate should check");
+    without_implicit_solve(|| verify_c_sources(&expanded, &[]))
+        .expect("expanded equality should check");
     for premise in ["requires x == y;", "requires y == z;"] {
         let missing = expanded.replace(premise, "");
         assert_ne!(missing, expanded);
-        assert!(verify_c_sources(&missing, &[]).is_err());
+        assert!(without_implicit_solve(|| verify_c_sources(&missing, &[])).is_err());
     }
 }
 
@@ -7924,17 +7927,18 @@ fn restricted_solve_after_unfold_expands_explicit_conjunction_extraction() {
         .expect("conjunction elimination should have an explicit expansion");
     assert!(expanded.contains("have x == y by"), "{expanded}");
     assert!(expanded.contains("have y == z by"), "{expanded}");
-    assert!(expanded.contains("normalize() using"), "{expanded}");
+    assert!(expanded.contains("known();"), "{expanded}");
+    assert!(!expanded.contains("normalize("), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
-    verify_c_sources(&expanded, &[])
+    without_implicit_solve(|| verify_c_sources(&expanded, &[]))
         .expect("explicit conjunction-elimination certificate should check");
     // Delete the supporting equality itself: removing an extract step alone
     // leaves the true conjunction available in the checked context.
     for retained in ["x == y", "y == z"] {
         let missing = expanded.replace("x == y and y == z", retained);
         assert_ne!(missing, expanded);
-        assert!(verify_c_sources(&missing, &[]).is_err());
+        assert!(without_implicit_solve(|| verify_c_sources(&missing, &[])).is_err());
     }
 }
 
@@ -9009,11 +9013,12 @@ fn restricted_solve_retains_equal_one_predecessor_path() {
     let expanded = expand_c_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("equal-one predecessor proof should expand");
     assert!(expanded.contains("1 == value"), "{expanded}");
-    assert!(expanded.contains("normalize()"), "{expanded}");
+    assert!(!expanded.contains("normalize("), "{expanded}");
     assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
-    verify_click_theorems(&expanded).expect("expanded equal-one predecessor proof should check");
+    without_implicit_solve(|| verify_click_theorems(&expanded))
+        .expect("expanded equal-one predecessor proof should check");
 }
 
 #[test]
@@ -9035,13 +9040,13 @@ fn restricted_solve_retains_equal_one_predecessor_zero_path() {
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("equal-one predecessor-zero proof should expand");
-    // Shared class folding closes this with the selected premise directly;
-    // an intermediate rewrite is no longer required.
-    assert!(expanded.contains("normalize() using"), "{expanded}");
-    assert!(expanded.contains("normalize()"), "{expanded}");
+    // The selected equality lets the graph close the goal directly.
+    assert!(expanded.contains("known();"), "{expanded}");
+    assert!(!expanded.contains("normalize("), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
-    verify_click_theorems(&expanded).expect("expanded predecessor-zero proof should check");
+    without_implicit_solve(|| verify_click_theorems(&expanded))
+        .expect("expanded predecessor-zero proof should check");
 }
 
 #[test]
@@ -9779,8 +9784,7 @@ fn restricted_solve_retains_one_plus_operand_specific_certificates() {
                     }
                 }
             "#,
-            "one_plus_is_defined.ensures_0",
-            "arithmetic_certificate",
+            Some("apply(click::integer::int32_increment_below_max_is_defined("),
         ),
         (
             r#"
@@ -9791,22 +9795,25 @@ fn restricted_solve_retains_one_plus_operand_specific_certificates() {
                     }
                 }
             "#,
-            "one_plus_increases.ensures_0",
-            "arithmetic_certificate",
+            None,
         ),
     ];
-    for (click_source, _, application) in cases {
+    for (click_source, application) in cases {
         let verified = verify_click_theorems(click_source);
         verified.expect("the operand-order-specific one-plus rule should verify through Proof");
         let offset = click_source.find("solve() using").unwrap();
         let position = expansion::position_at_offset(click_source, offset);
         let expanded = expand_c_tactic_source_at(click_source, &[], position.line, position.column)
             .expect("one-plus solve should expand");
-        assert!(!expanded.contains(application), "{expanded}");
-        assert!(expanded.contains("normalize()"), "{expanded}");
+        if let Some(application) = application {
+            assert!(expanded.contains(application), "{expanded}");
+        }
+        assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
+        assert!(!expanded.contains("normalize("), "{expanded}");
         assert!(expanded.contains("2147483647 > value;"), "{expanded}");
         assert!(!expanded.contains("solve() using"), "{expanded}");
-        verify_click_theorems(&expanded).expect("expanded one-plus proof should check");
+        without_implicit_solve(|| verify_click_theorems(&expanded))
+            .expect("expanded one-plus proof should check");
     }
 }
 
@@ -9858,7 +9865,7 @@ fn restricted_solve_composes_equalities_with_adjacent_order() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_48")]
-fn restricted_solve_inside_have_expands_to_graph_normalization() {
+fn restricted_solve_inside_have_expands_to_graph_known() {
     let c_source = r#"
             int32 identity(int32 x, int32 y, int32 z) {
                 return x;
@@ -9904,12 +9911,8 @@ fn restricted_solve_inside_have_expands_to_graph_normalization() {
             .expect("restricted solve have should expand");
     let expanded_have = &expanded[expanded.find("have x == z").unwrap()
         ..expanded.find("step_until(function.exit);").unwrap()];
-    assert!(expanded_have.contains("x == y;"), "{expanded_have}");
-    assert!(
-        expanded_have.contains("normalize() using"),
-        "{expanded_have}"
-    );
-    assert!(expanded_have.contains("y == z;"), "{expanded_have}");
+    assert!(expanded_have.contains("known();"), "{expanded_have}");
+    assert!(!expanded_have.contains("normalize("), "{expanded_have}");
     assert!(!expanded_have.contains("solve() using"), "{expanded_have}");
     assert!(!expanded_have.contains("derive using"), "{expanded_have}");
     verify_c_sources(&expanded, &[("identity.c", c_source)])
@@ -10146,13 +10149,10 @@ fn post_execution_restricted_solve_expands_without_derive() {
     let sources = [("identity.c", c_source)];
     verify_c_sources(click_source, &sources).expect("restricted solve should verify");
     let expanded = expand_c_tactic_source_at(click_source, &sources, line, column).unwrap();
-    let selected = &expanded[offset..];
-    assert!(selected.contains("normalize() using"), "{selected}");
-    assert!(
-        selected.contains("to_integer((x + 1)) == to_integer(y);"),
-        "{selected}"
-    );
-    assert!(selected.contains("y == z;"), "{selected}");
+    let selected = &expanded[offset..expanded.rfind("solve();").unwrap()];
+    assert!(selected.contains("known();"), "{selected}");
+    assert!(!selected.contains("normalize("), "{selected}");
+    assert!(!selected.contains("solve("), "{selected}");
     assert!(!selected.contains("derive using"), "{selected}");
     verify_c_sources(&expanded, &sources).expect("explicit post-execution proof should check");
     for premise in [
@@ -18803,44 +18803,57 @@ int64 identity(int64 x, int64 y) {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_75")]
-fn symbolic_upper_arithmetic_premises_expand_and_cold_recheck() {
-    for (name, premise, extra) in [
-        ("difference", "to_integer(a) <= to_integer(1000 - b)", ""),
-        ("equality", "to_integer(a) == to_integer(1000 - b)", ""),
-        (
-            "sum",
-            "to_integer(a + b) <= 1000",
-            "requires a >= 0; requires a <= 1000;",
-        ),
-        (
-            "both_roots",
-            "to_integer(a + b) <= to_integer(999 + b)",
-            "requires a >= 0; requires a <= 1000;",
-        ),
-    ] {
-        let extra_using = if extra.is_empty() {
-            ""
-        } else {
-            "a >= 0; a <= 1000;"
-        };
-        let source = format!("theorem {name}(a: int32, b: int32) {{
-            requires b >= 1; requires b <= 1000; {extra} requires {premise};
-            ensures a <= 999 by {{ solve() using {{ {premise}; b >= 1; b <= 1000; {extra_using} }} }}
-        }}");
-        // Expansion verifies this source's sole theorem and claim.
-        let expanded = expand_c_claim_source_by_label(&source, &[], &format!("{name}.ensures_0"))
-            .expect("symbolic upper bound should expand");
-        assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
-        let (result, planning) =
-            crate::surface::proof::count_planning_statement_transitions(|| {
-                verify_c_sources(&expanded, &[])
-            });
-        result.unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
-        assert_eq!(planning, 0, "explicit certificate recheck must not plan");
-        let forged = expanded.replace("a <= 999", "a <= 998");
-        verify_c_sources(&forged, &[]).expect_err("a false tighter bound must be refused");
-    }
+fn symbolic_upper_difference_expands_and_cold_rechecks() {
+    check_symbolic_upper_expansion("difference", "to_integer(a) <= to_integer(1000 - b)", "");
+}
+
+#[test]
+fn symbolic_upper_equality_expands_and_cold_rechecks() {
+    check_symbolic_upper_expansion("equality", "to_integer(a) == to_integer(1000 - b)", "");
+}
+
+#[test]
+fn symbolic_upper_sum_expands_and_cold_rechecks() {
+    check_symbolic_upper_expansion(
+        "sum",
+        "to_integer(a + b) <= 1000",
+        "requires a >= 0; requires a <= 1000;",
+    );
+}
+
+#[test]
+fn symbolic_upper_both_roots_expand_and_cold_recheck() {
+    check_symbolic_upper_expansion(
+        "both_roots",
+        "to_integer(a + b) <= to_integer(999 + b)",
+        "requires a >= 0; requires a <= 1000;",
+    );
+}
+
+fn check_symbolic_upper_expansion(name: &str, premise: &str, extra: &str) {
+    let extra_using = if extra.is_empty() {
+        ""
+    } else {
+        "a >= 0; a <= 1000;"
+    };
+    let source = format!(
+        "theorem {name}(a: int32, b: int32) {{
+        requires b >= 1; requires b <= 1000; {extra} requires {premise};
+        ensures a <= 999 by {{ solve() using {{ {premise}; b >= 1; b <= 1000; {extra_using} }} }}
+    }}"
+    );
+    // Expansion verifies this source's sole theorem and claim.
+    let expanded = expand_c_claim_source_by_label(&source, &[], &format!("{name}.ensures_0"))
+        .expect("symbolic upper bound should expand");
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
+    let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
+        without_implicit_solve(|| verify_c_sources(&expanded, &[]))
+    });
+    result.unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+    assert_eq!(planning, 0, "explicit certificate recheck must not plan");
+    let forged = expanded.replace("a <= 999", "a <= 998");
+    without_implicit_solve(|| verify_c_sources(&forged, &[]))
+        .expect_err("a false tighter bound must be refused");
 }
 
 fn check_counted_pthread_whole_claim_expansion(fixture: &str, claim: &str) {
@@ -22459,7 +22472,7 @@ test_batches! {
     expansion_batch_35: [
         post_execution_restricted_solve_continues_an_introduced_claim,
         post_execution_restricted_solve_checks_grouped_ownership_and_value_claims,
-        restricted_solve_expands_to_graph_normalization,
+        restricted_solve_expands_to_graph_known,
         uint64_bit_test_inequality_expands_to_rewrite_and_known,
     ],
     expansion_batch_36: [
@@ -22535,7 +22548,7 @@ test_batches! {
         restricted_solve_composes_equalities_with_adjacent_order,
     ],
     expansion_batch_48: [
-        restricted_solve_inside_have_expands_to_graph_normalization,
+        restricted_solve_inside_have_expands_to_graph_known,
         restricted_solve_expands_computed_subrange_to_ordinary_steps,
         restricted_solve_rewrites_pointer_aliases_inside_memory_loads,
         post_execution_restricted_solve_expands_without_derive,
@@ -22692,7 +22705,6 @@ test_batches! {
     expansion_batch_75: [
         the_implicit_grouped_proof_expands_after_the_contract_and_reverifies,
         integer_equality_rewrite_expands_rechecks_and_rejects_forged_claims,
-        symbolic_upper_arithmetic_premises_expand_and_cold_recheck,
     ],
     expansion_batch_76: [
         counted_pthread_whole_claim_expansion_retire,

@@ -130,8 +130,8 @@ fn have(claim: ClickProposition, steps: Vec<ProofStep>) -> ProofStep {
     super::super::wide_arithmetic::have(claim, steps)
 }
 fn computational_fact(claim: ClickProposition) -> ProofStep {
-    // The local emitter below chooses known for its narrow computations.
-    // General coefficient algebra keeps the existing compatibility rule.
+    // Let run_scope prefer known and explicit algebra for goal-local
+    // identities. Other identities still use the existing checked rule.
     have(claim, vec![ProofStep::Normalize])
 }
 
@@ -822,16 +822,19 @@ fn run_scope<'a>(
                 scope = scope.join_nested(closed)?;
             }
             ProofStep::Normalize => {
-                let step = if scope
+                if scope
                     .body()
                     .goal()
                     .is_some_and(crate::kernel::proof::fact_reasoning::computes_leaf)
                 {
-                    ProofStep::Known
+                    scope = scope.driver().apply_step(ProofStep::Known)?;
+                } else if let Some(closed) =
+                    attempt::candidate_outcome(scope.driver().try_integer_algebra())?.flatten()
+                {
+                    scope = closed;
                 } else {
-                    ProofStep::Normalize
-                };
-                scope = scope.driver().apply_step(step)?;
+                    scope = scope.driver().apply_step(ProofStep::Normalize)?;
+                }
             }
             step => scope = scope.driver().apply_step(step.clone())?,
         }
@@ -863,29 +866,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let Some(goal) = proof.goal() else {
             return Ok(None);
         };
-        // An explicitly selected computational contradiction needs no
-        // algebraic composition or theorem arguments. Keep its written fact
-        // and its computed negation as the ordinary contradiction proof.
+        // Contradiction checks a selected false fact directly. The written
+        // citation keeps premise selection visible in the expanded proof.
         for (kernel, surface) in pairs {
             if normalizes_context_free(&Proposition::Not(Box::new(kernel.clone()))) {
-                let negated = ClickProposition::Not(Box::new(surface.clone()));
-                let scope = proof.driver().open_have(negated)?;
-                let step = if scope
-                    .body()
-                    .goal()
-                    .is_some_and(crate::kernel::proof::fact_reasoning::computes_leaf)
-                {
-                    ProofStep::Known
-                } else {
-                    ProofStep::Normalize
-                };
-                let closed = scope.driver().apply_step(step)?;
-                return Ok(Some(
-                    closed
-                        .join()?
-                        .driver()
-                        .apply_step(ProofStep::Contradiction(surface.clone()))?,
-                ));
+                return proof
+                    .driver()
+                    .apply_step(ProofStep::Contradiction(surface.clone()))
+                    .map(Some);
             }
         }
         let observed_goal = observed_native_surface_comparison(goal, surface_goal);
@@ -1671,6 +1659,7 @@ mod tests {
                     "{expanded}\nComposition refusal: {:?}",
                     super::LAST_FAILURE.with(|failure| failure.borrow_mut().take())
                 );
+                assert!(!expanded.contains("normalize("), "{expanded}");
                 assert!(!expanded.contains("solve("), "{expanded}");
                 without_implicit_solve(|| verify_c_sources(&expanded, &[]))
                     .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
@@ -1832,6 +1821,7 @@ mod tests {
         let expanded =
             expand_c_claim_source_by_label(source, &[], "composition.ensures_0").unwrap();
         assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
+        assert!(!expanded.contains("normalize("), "{expanded}");
         assert!(!expanded.contains("solve("), "{expanded}");
         without_implicit_solve(|| verify_c_sources(&expanded, &[])).unwrap();
     }
@@ -1846,6 +1836,7 @@ mod tests {
             let expanded =
                 expand_c_claim_source_by_label(source, &[], "composition.ensures_0").unwrap();
             assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
+            assert!(!expanded.contains("normalize("), "{expanded}");
             without_implicit_solve(|| verify_c_sources(&expanded, &[])).unwrap();
         }
     }
