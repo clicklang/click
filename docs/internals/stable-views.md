@@ -202,10 +202,11 @@ partition invariant, while the same occurrence needs an arithmetic proof.
 An ordinary verified call with exact write ranges requires those ranges to
 be separate from the caller's pre-existing live loans. The proof uses the
 ranges selected at call entry.
-Every path that retires an allocation, definite or of undecided continuity,
-consults the ledger that carries the call's own loans. Scope exits, function
-returns and throws, and temporary cleanup check that ledger by automatic
-object identity. A live loan pins its backing object until the loan ends,
+Call retirement requires the full input allocation to be separate from the
+entry ledger, including loans opened by the call. This applies to a definite
+free and to an output that leaves the allocation's continuity undecided.
+Scope exits, function returns and throws, and temporary cleanup check the
+ledger by automatic object identity. A live loan pins its backing object until the loan ends,
 including when its protected bytes have symbolic bounds. Retained proof
 events repeat the same check.
 
@@ -429,7 +430,7 @@ between compiler-checked borrow legality and Click's functional claims.
 | Shares and scopes | `splitting_and_joining_require_exact_linear_siblings`, `shared_reader_recovery_rejects_wrong_sibling_reuse_and_stale_branch`, `nested_reborrow_must_rejoin_each_parent_before_scope_end`, `an_old_descriptor_is_refused_after_a_fresh_scope_over_the_same_resource`, `checked_call_evidence_rejects_stale_or_swapped_recovery` |
 | Aliased views and nested readers | `candidate_joint_planner_reuses_one_escrow_for_two_aliases`, `candidate_rejects_new_output_view`, `mdtests/stable_view_nested_reader.md` |
 | Partial borrows and widths | `mdtests/stable_view_partial_borrow.md`, `bytewise_overlap_is_decided_across_mismatched_element_widths`, `memory_entailment_relates_two_spellings_of_one_byte_footprint` |
-| Free and realloc under a loan | `heap_free_requires_separation_from_an_interior_loan_until_it_ends`, `realloc_failure_preserves_a_loan_and_success_requires_call_entry_separation`, `undecided_continuity_retire_refuses_a_lent_allocation` |
+| Free and realloc under a loan | `heap_free_requires_separation_from_an_interior_loan_until_it_ends`, `realloc_failure_preserves_a_loan_and_success_requires_call_entry_separation`, `call_retirement_requires_separation_from_its_own_loan` |
 | Local loans, bounds, and lifetime | `candidate_local_array_view_uses_a_checked_loan_and_recovers`, `thread_local_view_blocks_writes_and_all_scope_exits_until_join`, `automatic_lifetime_event_rejects_active_local_loan_and_forged_retirement`, `local_views_preserve_aliases_check_bounds_and_mint_no_owned_escrow`, `mdtests/stable_view_local_job.md`, `local_job_views_expand_and_reverify_without_ownership_annotations` |
 | Locals and empty views | `active_stable_loan_requires_separation_for_local_assignment_and_alias_store`, `mdtests/direct_local_write_separation.md`, `candidate_local_array_view_out_of_bounds_is_refused`, `mdtests/empty_view_authorizes_nothing.md` |
 | Entry footprint | `field_derived_view_does_not_retarget_after_a_pointer_write` |

@@ -72,7 +72,7 @@ fn allocating_call_does_not_expand_the_callers_kept_objects() {
             });
             let VerifiedAllocationDelta {
                 memory: after,
-                retired_creations: retired,
+                retired_allocations: retired,
                 ..
             } = result.expect("an allocating call");
             assert!(retired.is_empty());

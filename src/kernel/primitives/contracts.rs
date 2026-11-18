@@ -2451,6 +2451,10 @@ impl MemoryRange {
         self
     }
 
+    pub(crate) fn carrier_has_known_bounds(&self) -> bool {
+        self.carrier_bounds_known && self.bounds_owner.is_none()
+    }
+
     pub(in crate::kernel) fn with_bounds_owner(
         mut self,
         origin: Option<std::sync::Arc<Address>>,

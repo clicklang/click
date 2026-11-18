@@ -2,8 +2,8 @@
 
 `boxed(box)` owns every byte of the allocation that `box_destroy` frees.
 The caller's `views q[0..1]` is backed by a separate checked loan, so it cannot
-alias those owned bytes in a valid entry partition. Opening the composite
-carries that separation to the retirement check without a written premise.
+alias those owned bytes in a valid entry partition. The proof opens the
+composite to establish byte-range separation and supplies it to the call.
 `call_rejects_lending_the_allocation_it_transfers.md` rejects a caller that
 tries to supply the freed cell itself as this borrowed view.
 
@@ -42,6 +42,11 @@ void box_release(struct box* box, struct box* other, int32* q) {
     produces *box;
     owns *other;
     views q[0..1];
+} by {
+    unfold(boxed(box));
+    have separate(memory(((box->data as (void *)) as (uint8 *))[0..4]), memory(q[0..1])) by { solve(); }
+    fold(boxed(box));
+    step() by { known(); }
 }
 ```
 

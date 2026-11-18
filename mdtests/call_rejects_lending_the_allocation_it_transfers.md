@@ -43,6 +43,11 @@ void box_release(struct box* box, struct box* other, int32* q) {
     produces *box;
     owns *other;
     views q[0..1];
+} by {
+    unfold(boxed(box));
+    have separate(memory(((box->data as (void *)) as (uint8 *))[0..4]), memory(q[0..1])) by { solve(); }
+    fold(boxed(box));
+    step() by { known(); }
 }
 void aliased(struct box* box, struct box* other) {
     consumes boxed(box);
