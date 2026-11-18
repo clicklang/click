@@ -718,6 +718,9 @@ fn equality_is_vacuous(equality: &Proposition) -> bool {
             left == right
         }
         Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) => left == right,
+        Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, right), true) => {
+            left == right
+        }
         _ => false,
     }
 }
