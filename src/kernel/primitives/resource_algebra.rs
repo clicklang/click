@@ -1615,7 +1615,7 @@ fn collect_memory_load_work<'a>(
                         ));
                         work.push(MemoryLoadFootprintWork::Offset(&pointer.offset, depth + 1));
                     }
-                    MachineTerm::PointerAddress(pointer, _) => {
+                    MachineTerm::IntegerAddress(pointer, _) => {
                         work.push(MemoryLoadFootprintWork::Offset(&pointer.offset, depth + 1));
                     }
                     crate::kernel::binary_machine_term!(left, right)
@@ -3602,24 +3602,6 @@ impl ResourceContext {
         entries.into_iter().map(|entry| self.fact(entry)).collect()
     }
 
-    /// The owned memory facts the address index selects for `range`: those
-    /// at its footprint, covering its start, or starting inside it. Distinct
-    /// pointer parameters are distinct address classes here, so this never
-    /// visits every range in a shared block. Callers still check coverage.
-    pub(in crate::kernel) fn owned_memory_candidates_for(
-        &self,
-        range: &MemoryRange,
-        assumptions: &PureFactContext,
-    ) -> Vec<ResourceFact> {
-        let candidates = self.memory_fact_candidates(range, true, assumptions);
-        candidates
-            .entries
-            .iter()
-            .map(|entry| self.fact(entry).clone())
-            .filter(ResourceFact::is_own)
-            .collect()
-    }
-
     /// Select a deterministic owned candidate from the pointer index. Multiple
     /// returned sibling shares are legitimate. This lookup grants no authority:
     /// callers must still check the selected loan, initialization, and type.
@@ -4016,6 +3998,96 @@ impl ResourceContext {
         let entry = self.storage.entry_by_occurrence.get(&occurrence)?;
         let fact = self.storage.facts.get(entry)?;
         fact.is_view().then_some(fact)
+    }
+
+    /// An already exposed child may be represented by one live occurrence
+    /// or by exact adjacent fragments. Read that partition in place. A
+    /// covering owner that extends outside the child is not an exact match.
+    pub(in crate::kernel) fn covers_exact_owned_piece(
+        &self,
+        required: &ResourceFact,
+        assumptions: &PureFactContext,
+    ) -> bool {
+        if !required.is_own() {
+            return false;
+        }
+        if let Some(range) = required.memory_own_range()
+            && (memory_range_is_proven_empty(range, assumptions)
+                || required.owned_quantity_term().is_some_and(|quantity| {
+                    resource_quantity_resolves_to_zero(quantity, assumptions)
+                }))
+        {
+            return true;
+        }
+        if let Some((_, available)) = self.directly_supporting_owned_entry(required, assumptions) {
+            return match (required.memory_own_range(), available.memory_own_range()) {
+                (Some(required), Some(available)) => {
+                    memory_range_covers(required, available, assumptions)
+                }
+                (None, None) => resource_fact_entails(required, available, assumptions),
+                _ => false,
+            };
+        }
+        required
+            .owned_quantity_term()
+            .and_then(MachineTerm::as_const)
+            == Some(1)
+            && (self
+                .exact_owned_fragment_cover(required, assumptions)
+                .is_some()
+                || required.memory_own_range().is_some_and(|range| {
+                    (range.has_symbolic_bounds() || range.wide_bounds().is_some())
+                        && self
+                            .walk_symbolic_owned_partition(required, assumptions, |_, _| Some(()))
+                            .is_some()
+                }))
+    }
+
+    fn exact_owned_fragment_cover(
+        &self,
+        required: &ResourceFact,
+        assumptions: &PureFactContext,
+    ) -> Option<()> {
+        if required.owned_quantity_term()?.as_const()? != 1 {
+            return None;
+        }
+        let range = required.memory_own_range()?;
+        let (start, end) = constant_relative_byte_endpoints(range);
+        let length = i64::try_from(end?.checked_sub(start?)?).ok()?;
+        if length <= 0 {
+            return None;
+        }
+        let start = range.start_pointer();
+        let mut cursor = 0i64;
+        while cursor < length {
+            crate::instrumentation::record_deterministic_work(1);
+            let point = Address {
+                base: start.base.clone(),
+                offset: AddressOffset::add(start.offset.clone(), AddressOffset::Constant(cursor)),
+            };
+            let selected = self.write_access(&point, 1, assumptions)?;
+            let owner = self.fact(selected.entry());
+            let piece = owner.memory_own_range()?;
+            let address = selected.address()?;
+            if !owner.has_proven_positive_quantity(assumptions)
+                || !assumptions.pointers_known_equal(&address, &piece.start_pointer())
+                || (range.typed_carrier
+                    && !assumptions.access_provenance_matches_range(
+                        range.access_provenance(),
+                        range,
+                        piece,
+                    ))
+            {
+                return None;
+            }
+            let (lo, hi) = constant_relative_byte_endpoints(piece);
+            let bytes = i64::try_from(hi?.checked_sub(lo?)?).ok()?;
+            if bytes <= 0 {
+                return None;
+            }
+            cursor = cursor.checked_add(bytes)?;
+        }
+        (cursor == length).then_some(())
     }
 
     /// Reserve a constant-length owned footprint from its live byte fragments. Each
@@ -7757,6 +7829,27 @@ impl ResourceContext {
         assumptions: &PureFactContext,
         mut origins: Option<&mut MemorySplitOrigins>,
     ) -> Option<Self> {
+        let source = self.clone();
+        source.walk_symbolic_owned_partition(required, assumptions, |entry, available| {
+            self.consume_fact_from_candidates_with_origins(
+                available,
+                assumptions,
+                [entry],
+                origins.as_deref_mut(),
+            )
+            .then_some(())
+        })?;
+        Some(self)
+    }
+
+    /// Follow the indexed endpoint chain on the original partition. The
+    /// consumer can remove each selected occurrence or just retain coverage.
+    fn walk_symbolic_owned_partition(
+        &self,
+        required: &ResourceFact,
+        assumptions: &PureFactContext,
+        mut visit: impl FnMut(ResourceEntryId, &ResourceFact) -> Option<()>,
+    ) -> Option<()> {
         let range = required.memory_own_range().expect("unit ownership query");
         let candidates = self.memory_fact_candidates(range, true, assumptions);
         let first = candidates.entries.single_supplier()?;
@@ -7767,7 +7860,7 @@ impl ResourceContext {
             if !visited.insert(next) {
                 return None;
             }
-            let available = self.fact(next).clone();
+            let available = self.fact(next);
             if available.owned_quantity_term().and_then(|q| q.as_const()) != Some(1) {
                 return None;
             }
@@ -7809,19 +7902,9 @@ impl ResourceContext {
             if !memory_range_covers(range, combined_range, assumptions) {
                 return None;
             }
-            // Apply each exact selected consumption to this persistent branch.
-            // Combined coverage is restricted to the request, so success leaves
-            // no residual from these pieces and preserves all unrelated entries.
-            if !self.consume_fact_from_candidates_with_origins(
-                &available,
-                assumptions,
-                [next],
-                origins.as_deref_mut(),
-            ) {
-                return None;
-            }
+            visit(next, available)?;
             if resource_fact_entails(&combined, required, assumptions) {
-                return Some(self);
+                return Some(());
             }
             let successor = candidates.sole_owned_start(&combined_range.end_pointer())?;
             joined = Some(combined);
@@ -10951,7 +11034,7 @@ pub(in crate::kernel) fn iterated_memories_proven_equal(
                 right: Box::new(b.clone()),
             }) == Some(true)
     };
-    let pointer_equal = |a: &Address, b: &Address| {
+    let address_equal = |a: &Address, b: &Address| {
         crate::kernel::prelude::pointers_proven_equal_for_memory_resolution(a, b, assumptions)
     };
     left.element_width == right.element_width
@@ -10962,8 +11045,8 @@ pub(in crate::kernel) fn iterated_memories_proven_equal(
         && left.guard.cell_width == right.guard.cell_width
         && left.guard.holds_when_equal == right.guard.holds_when_equal
         && left.holes.len() == right.holes.len()
-        && pointer_equal(&left.element_base, &right.element_base)
-        && pointer_equal(&left.guard.base, &right.guard.base)
+        && address_equal(&left.element_base, &right.element_base)
+        && address_equal(&left.guard.base, &right.guard.base)
         && term_equal(left.lower.native_compat(), right.lower.native_compat())
         && term_equal(left.upper.native_compat(), right.upper.native_compat())
         && term_equal(
@@ -11077,12 +11160,12 @@ fn owned_cell_access_uses_transitive_graph_address_equality() {
         MemoryRange::new_with_element_width(a.clone(), 0u32.into(), 1u32.into(), 4),
     ));
     let facts = PureFactContext::new()
-        .assume_condition(ConditionTerm::pointer_equal(a.clone(), b.clone()), true)
-        .assume_condition(ConditionTerm::pointer_equal(c.clone(), d.clone()), true);
+        .assume_condition(ConditionTerm::address_equal(a.clone(), b.clone()), true)
+        .assume_condition(ConditionTerm::address_equal(c.clone(), d.clone()), true);
     assert!(!owner.permits_memory_read(&d, 4, &facts));
     let connected = facts
         .clone()
-        .assume_condition(ConditionTerm::pointer_equal(b, c), true);
+        .assume_condition(ConditionTerm::address_equal(b, c), true);
     assert!(connected.pointers_known_equal(&a, &d));
     assert!(owner.permits_memory_read(&d, 4, &connected));
     assert!(owner.memory_write_range(&d, 4, &connected).is_some());
@@ -14039,7 +14122,7 @@ mod related_pointer_root_tests {
         let base = external(0);
         let assumptions = (1..=count).fold(PureFactContext::new(), |assumptions, index| {
             assumptions.assume_condition(
-                ConditionTerm::pointer_equal(external(index), base.clone()),
+                ConditionTerm::address_equal(external(index), base.clone()),
                 true,
             )
         });
@@ -14223,7 +14306,7 @@ mod constructed_normalization_tests {
         let pointer = Address::symbolic(Variable(8_853_001));
         let alias = Address::symbolic(Variable(8_853_002));
         let facts = PureFactContext::new().assume_condition(
-            ConditionTerm::pointer_equal(pointer.clone(), alias.clone()),
+            ConditionTerm::address_equal(pointer.clone(), alias.clone()),
             true,
         );
         let pieces = [

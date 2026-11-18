@@ -291,7 +291,7 @@ Four repairs make these boundaries compose:
   address class's unique concrete storage anchor. An authenticated descriptor
   alias can therefore initialize the original word and identify a write to
   this function's local storage. The checked transfer still supplies bounds,
-  lifetime and authority; address equality grants none of them.
+  lifetime and authority; integer address equality grants none of them.
 
 - Native byte and halfword read observations retain their own widths when a
   word or pointer has also been read at that address. Previously the wider

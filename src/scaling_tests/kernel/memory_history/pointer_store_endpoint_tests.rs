@@ -16,7 +16,7 @@ fn selected_pointer_store_endpoint_preserves_width_history_and_scales() {
     let written = base(160_001).offset_by_bytes(8);
     let address = base(160_002).offset_by_bytes(8);
     let alias = Proposition::ConditionIs(
-        ConditionTerm::pointer_equal(base(160_001), base(160_002)),
+        ConditionTerm::address_equal(base(160_001), base(160_002)),
         true,
     );
     let endpoint = |memory: SymbolicMemory| MemoryDagCell::Unwritten {
@@ -30,7 +30,7 @@ fn selected_pointer_store_endpoint_preserves_width_history_and_scales() {
         let mut memory = SymbolicMemory::new();
         for index in 0..count {
             context = context.assume_condition(
-                ConditionTerm::pointer_equal(
+                ConditionTerm::address_equal(
                     Address::symbolic(Variable(170_000 + index * 2)),
                     Address::symbolic(Variable(170_001 + index * 2)),
                 ),

@@ -10702,14 +10702,10 @@ impl ClickError {
                 if !requirement.is_empty() {
                     context.push(requirement);
                 }
-                if let Some(goal) = state
-                    .kernel_goal()
-                    .filter(|_| !proof_diagnostics::requirement_is_goal(state.as_ref()))
+                if !proof_diagnostics::requirement_is_goal(state.as_ref())
+                    && let Some(goal) = diagnostic.render_goal(&mut labels)
                 {
-                    context.push(format!(
-                        "goal: {}",
-                        proof_diagnostics::render::render_proposition_labeled(goal, &mut labels)
-                    ));
+                    context.push(format!("goal: {goal}"));
                 }
                 if diagnostic.checks.is_some() {
                     let recent = state

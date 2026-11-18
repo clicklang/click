@@ -379,7 +379,7 @@ fn offset_premise_shallow_decision_and_forks_scale() {
             crate::instrumentation::measure_deterministic_work(|| {
                 for i in 0..size {
                     parent = parent.clone().assume_condition(
-                        ConditionTerm::pointer_offset_equal(
+                        ConditionTerm::address_offset_equal(
                             AddressOffset::scale_int32(var(i), 4),
                             AddressOffset::scale_int32(var(i + 1), 4),
                         ),
@@ -446,10 +446,10 @@ fn exact_alias_enumeration_ignores_unrelated_sources() {
         let a = Address::symbolic(Variable(960_000));
         let b = Address::symbolic(Variable(960_001));
         let mut context = PureFactContext::new()
-            .assume_condition(ConditionTerm::pointer_equal(a.clone(), b.clone()), true);
+            .assume_condition(ConditionTerm::address_equal(a.clone(), b.clone()), true);
         for i in 0..size {
             context = context.assume_condition(
-                ConditionTerm::pointer_equal(
+                ConditionTerm::address_equal(
                     Address::symbolic(Variable(970_000 + 2 * i)),
                     Address::symbolic(Variable(970_001 + 2 * i)),
                 ),
@@ -517,7 +517,7 @@ fn unrelated_offset_inputs_preserve_the_selected_parameter_partition() {
             PureFactContext::new().assume_proposition(Proposition::ResourceComposition(resources));
         for i in 0..size {
             context = context.assume_condition(
-                ConditionTerm::pointer_offset_equal(
+                ConditionTerm::address_offset_equal(
                     AddressOffset::scale_int32(var(i), 4),
                     AddressOffset::scale_int32(var(i + 10_000), 4),
                 ),
@@ -555,10 +555,8 @@ fn complete_pointer_scalar_evidence_ignores_unrelated_inputs() {
             )
         };
         for (a, b) in [(941_010, 941_011), (941_011, 941_012)] {
-            context = context.assume_condition(
-                ConditionTerm::pointer_value_equal(pointer(a), pointer(b)),
-                true,
-            );
+            context = context
+                .assume_condition(ConditionTerm::pointer_equal(pointer(a), pointer(b)), true);
         }
         let (class, work) = crate::instrumentation::measure_deterministic_work(|| {
             context.recorded_equality_class(&var(941_010))

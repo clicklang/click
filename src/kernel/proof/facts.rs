@@ -3059,7 +3059,7 @@ fn index_bitvector_equality_fact(
         // A pointer-offset equality between two scaled offsets (how a
         // pointer-valued field's preservation is recorded) is indexed by the
         // same atoms so the load-variable chain bridge can select it.
-        Proposition::ConditionIs(ConditionTerm::PointerOffsetEqual(left, right), true) => {
+        Proposition::ConditionIs(ConditionTerm::AddressOffsetEqual(left, right), true) => {
             match (left.as_ref(), right.as_ref()) {
                 (
                     AddressOffset::Int32Scaled { value: left, .. },
@@ -3083,8 +3083,8 @@ fn index_bitvector_equality_fact(
         // it observes, so a goal over those operands selects it as `solve`
         // selects their native equalities.
         Proposition::ConditionIs(
-            condition @ (ConditionTerm::PointerEqual(_, _)
-            | ConditionTerm::PointerValueEqual(_, _)
+            condition @ (ConditionTerm::AddressEqual(_, _)
+            | ConditionTerm::PointerEqual(_, _)
             | ConditionTerm::IntegerEqual(_, _)),
             true,
         ) => {
@@ -3488,7 +3488,7 @@ fn collect_condition_bitvector_atoms(
     atoms: &mut BTreeSet<BitvectorEqualityAtomKey>,
 ) {
     match condition {
-        ConditionTerm::PointerValueEqual(left, right) => {
+        ConditionTerm::PointerEqual(left, right) => {
             for pointer in left.pointers().chain(right.pointers()) {
                 collect_pointer_bitvector_atoms(pointer, atoms);
             }
@@ -3520,11 +3520,11 @@ fn collect_condition_bitvector_atoms(
         ConditionTerm::Float32(float_condition) | ConditionTerm::Float64(float_condition) => {
             float_condition.for_each_bitvector_term(|term| collect_bitvector_atoms(term, atoms));
         }
-        ConditionTerm::PointerOffsetEqual(left, right) => {
+        ConditionTerm::AddressOffsetEqual(left, right) => {
             collect_pointer_offset_bitvector_atoms(left, atoms);
             collect_pointer_offset_bitvector_atoms(right, atoms);
         }
-        ConditionTerm::PointerEqual(left, right) => {
+        ConditionTerm::AddressEqual(left, right) => {
             collect_pointer_bitvector_atoms(left, atoms);
             collect_pointer_bitvector_atoms(right, atoms);
         }
@@ -3628,7 +3628,7 @@ fn collect_bitvector_atoms(term: &MachineTerm, atoms: &mut BTreeSet<BitvectorEqu
             }
         }
         MachineTerm::MemoryLoad(_, pointer, _) => collect_pointer_bitvector_atoms(pointer, atoms),
-        MachineTerm::PointerAddress(pointer, _) => collect_pointer_bitvector_atoms(pointer, atoms),
+        MachineTerm::IntegerAddress(pointer, _) => collect_pointer_bitvector_atoms(pointer, atoms),
         // A load variable names one read; the atoms of the address it read
         // are the atoms an equality must rewrite to reach it (`p->q->x`
         // under `p->q == r`). Follow registered addresses a bounded number
@@ -4045,7 +4045,7 @@ mod integer_equality_fact_index_tests {
         let read = Address::symbolic(Variable(949_001));
         let target = Address::symbolic(Variable(949_002));
         let alias =
-            Proposition::ConditionIs(ConditionTerm::pointer_equal(read.clone(), target), true);
+            Proposition::ConditionIs(ConditionTerm::address_equal(read.clone(), target), true);
         let goal = Proposition::ConditionIs(
             ConditionTerm::equal(
                 MachineTerm::MemoryLoad(
@@ -4061,7 +4061,7 @@ mod integer_equality_fact_index_tests {
             let mut facts = PureFactStore::default();
             for index in 0..size {
                 facts = facts.with_kernel_checked_fact(Proposition::ConditionIs(
-                    ConditionTerm::pointer_equal(
+                    ConditionTerm::address_equal(
                         Address::symbolic(Variable(950_000 + 2 * u64::from(index))),
                         Address::symbolic(Variable(950_001 + 2 * u64::from(index))),
                     ),
@@ -5147,7 +5147,7 @@ mod held_separation_tests {
             range.base().clone()
         };
         let link = |a, b| {
-            Proposition::ConditionIs(ConditionTerm::pointer_equal(pointer(a), pointer(b)), true)
+            Proposition::ConditionIs(ConditionTerm::address_equal(pointer(a), pointer(b)), true)
         };
         let first = link(0, 2);
         let second = link(2, 3);
@@ -5204,7 +5204,7 @@ mod held_separation_tests {
             unreachable!()
         };
         let facts = PureFactStore::from_ordered(&[Proposition::ConditionIs(
-            ConditionTerm::PointerEqual(
+            ConditionTerm::AddressEqual(
                 Box::new(alias.base().clone()),
                 Box::new(owner.base().clone()),
             ),
@@ -5251,7 +5251,7 @@ mod held_separation_tests {
             unreachable!()
         };
         let facts = PureFactStore::from_ordered(&[Proposition::ConditionIs(
-            ConditionTerm::PointerEqual(
+            ConditionTerm::AddressEqual(
                 Box::new(left.base().clone()),
                 Box::new(right.base().clone()),
             ),
@@ -5302,7 +5302,7 @@ mod held_separation_tests {
             unreachable!()
         };
         let alias = Proposition::ConditionIs(
-            ConditionTerm::PointerEqual(
+            ConditionTerm::AddressEqual(
                 Box::new(left_range.base().clone()),
                 Box::new(right_range.base().clone()),
             ),

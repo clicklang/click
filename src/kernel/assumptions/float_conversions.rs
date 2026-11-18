@@ -237,7 +237,7 @@ pub(super) fn collect_load_keys(root: &KernelTerm, keys: &mut BTreeSet<(AddressB
                 root.machine_read_leaf().expect("scalar read"),
                 keys,
             ),
-            KernelTermNode::PointerAddress { .. } => collect_bitvector_memory_load_keys(
+            KernelTermNode::IntegerAddress { .. } => collect_bitvector_memory_load_keys(
                 root.machine_conversion_leaf().expect("address"),
                 keys,
             ),

@@ -281,7 +281,7 @@ fn fixed_state_failure_names_kernel_values_held_in_live_locals() {
     let state = ExecutionState::new()
         .with_local("len", ProgramValue::UInt64(len.clone()))
         .with_local("chunk_size", ProgramValue::UInt64(size.clone()))
-        .with_local("__rust_checked_94", ProgramValue::UInt64(size.clone()));
+        .with_local("__rust_mir_94", ProgramValue::UInt64(size.clone()));
     let remainder = MachineTerm::uint64_remainder(len, size.clone());
     let goal = Proposition::ConditionIs(
         ConditionTerm::Compare {
@@ -14343,7 +14343,7 @@ fn checked_callback_statement_publishes_its_typed_read_evidence() {
             PersistentSequence::default(),
         ),
         vec![Proposition::ConditionIs(
-            ConditionTerm::pointer_equal(argument, table),
+            ConditionTerm::address_equal(argument, table),
             true,
         )],
         ExecutionProofConstants {
@@ -14390,7 +14390,7 @@ fn checked_callback_statement_publishes_its_typed_read_evidence() {
             .facts()
             .assumptions()
             .contains_known(&Proposition::ConditionIs(
-                ConditionTerm::pointer_equal(read.address().clone(), target),
+                ConditionTerm::address_equal(read.address().clone(), target),
                 true
             )),
         "typed read did not reach proof facts: {:?}",
@@ -15110,7 +15110,7 @@ fn generated_pointer_requirement_retains_lexical_binder_without_capturing_a_shad
     locals.set_values(locals.values.with_inserted("identity", expression));
     let state = ExecutionState::new();
     let goal = Proposition::ConditionIs(
-        ConditionTerm::pointer_equal(pointer.address().clone(), Address::null()),
+        ConditionTerm::address_equal(pointer.address().clone(), Address::null()),
         false,
     );
     let synthesize = || {

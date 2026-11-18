@@ -567,7 +567,19 @@ pub enum MirStatement {
     },
     EnumerateNext {
         iterator: String,
-        option: String,
+        /// The local the `Option` is built in; `None` once the loop reads only
+        /// its index and element, which `index` and `element` bind.
+        option: Option<String>,
+        /// The local the yielded index is bound to.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        index: Option<String>,
+        /// The local the yielded element's reference is bound to.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        element: Option<String>,
+        /// Whether the iterator yields, when its `for` header's test already
+        /// decided it: the statement is then that arm alone.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        taken: Option<bool>,
     },
     /// `target = start..end`.
     RangeInitialize {
@@ -611,7 +623,16 @@ pub enum MirStatement {
     },
     ChunkNext {
         iterator: String,
-        option: String,
+        /// The local the `Option` is built in; `None` once the loop reads only
+        /// its chunk, which `payload` binds.
+        option: Option<String>,
+        /// The slice local the yielded chunk is bound to.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        payload: Option<String>,
+        /// Whether the iterator yields, when its `for` header's test already
+        /// decided it: the statement is then that arm alone.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        taken: Option<bool>,
     },
     Assign {
         target: Expression,

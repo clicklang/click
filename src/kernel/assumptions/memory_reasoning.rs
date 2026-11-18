@@ -2968,7 +2968,7 @@ impl PureFactContext {
         }
 
         let offsets_equal = |left: &AddressOffset, right: &AddressOffset| {
-            self.decide(&ConditionTerm::pointer_offset_equal(
+            self.decide(&ConditionTerm::address_offset_equal(
                 left.clone(),
                 right.clone(),
             )) == Some(true)
@@ -3308,8 +3308,8 @@ impl PureFactContext {
         // filed asks nothing.
         if self.equality_graph.has_wide_pointer_sources()
             && self.uint64_values_known_equal(
-                &MachineTerm::pointer_address(left.clone()),
-                &MachineTerm::pointer_address(right.clone()),
+                &MachineTerm::integer_address(left.clone()),
+                &MachineTerm::integer_address(right.clone()),
             )
         {
             return true;
@@ -5532,13 +5532,13 @@ impl PureFactContext {
         // decides only what the layers above could not name, and each
         // attempt costs two decisions.
         if let AddressOffset::Add(left, right) = &range.base.offset {
-            let forward_offset = if self.decide(&ConditionTerm::pointer_offset_equal(
+            let forward_offset = if self.decide(&ConditionTerm::address_offset_equal(
                 pointer.offset.clone(),
                 left.as_ref().clone(),
             )) == Some(true)
             {
                 shared_element_index_from_offset(right, range.element_width())
-            } else if self.decide(&ConditionTerm::pointer_offset_equal(
+            } else if self.decide(&ConditionTerm::address_offset_equal(
                 pointer.offset.clone(),
                 right.as_ref().clone(),
             )) == Some(true)
@@ -6660,7 +6660,7 @@ mod separation_pointer_copy_tests {
         let root = PureFactContext::new().assume_proposition(stated);
         let branch = root
             .clone()
-            .assume_condition(ConditionTerm::pointer_equal(copied.clone(), p), true);
+            .assume_condition(ConditionTerm::address_equal(copied.clone(), p), true);
         assert!(branch.proves_resource_separate(&bytes(copied.clone(), 1), &bytes(q.clone(), 4)));
         assert!(branch.contains_known(&Proposition::ResourceSeparate {
             left: Box::new(bytes(copied.clone(), 1)),
@@ -6678,14 +6678,14 @@ mod separation_pointer_copy_tests {
         let q = Address::symbolic(Variable(9_924_003));
         let context = PureFactContext::new()
             .assume_condition(
-                ConditionTerm::pointer_equal(early.clone(), Address::symbolic(Variable(9_924_004))),
+                ConditionTerm::address_equal(early.clone(), Address::symbolic(Variable(9_924_004))),
                 true,
             )
             .assume_proposition(Proposition::ResourceSeparate {
                 left: Box::new(bytes(p.clone(), 1)),
                 right: Box::new(bytes(q.clone(), 4)),
             });
-        let branch = context.assume_condition(ConditionTerm::pointer_equal(q, early.clone()), true);
+        let branch = context.assume_condition(ConditionTerm::address_equal(q, early.clone()), true);
         assert!(branch.proves_resource_separate(&bytes(p.clone(), 1), &bytes(early.clone(), 4)));
         assert!(branch.proves_resource_separate(&bytes(early, 4), &bytes(p, 1)));
     }
@@ -6711,13 +6711,13 @@ mod separation_pointer_copy_tests {
                 ))),
             })
             .assume_condition(
-                ConditionTerm::pointer_equal(copied.clone(), p.clone()),
+                ConditionTerm::address_equal(copied.clone(), p.clone()),
                 true,
             );
         assert!(context.proves_resource_separate(&bytes(copied.clone(), 4), &bytes(q.clone(), 8)));
         assert!(!context.proves_resource_separate(&bytes(copied, 5), &bytes(q.clone(), 8)));
         let conflicting =
-            context.assume_condition(ConditionTerm::pointer_equal(p.clone(), q.clone()), true);
+            context.assume_condition(ConditionTerm::address_equal(p.clone(), q.clone()), true);
         assert!(!conflicting.proves_resource_separate(&bytes(p, 4), &bytes(q, 8)));
     }
 }

@@ -311,9 +311,9 @@ fn is_rewrite_equality(kernel: &Proposition) -> bool {
             },
             true
         ) | Proposition::ConditionIs(
-            ConditionTerm::PointerEqual(_, _)
-                | ConditionTerm::PointerValueEqual(_, _)
-                | ConditionTerm::PointerOffsetEqual(_, _),
+            ConditionTerm::AddressEqual(_, _)
+                | ConditionTerm::PointerEqual(_, _)
+                | ConditionTerm::AddressOffsetEqual(_, _),
             true
         ) | Proposition::Equal(Term::Algebraic(_), Term::Algebraic(_))
     )

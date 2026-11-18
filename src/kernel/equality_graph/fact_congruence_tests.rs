@@ -129,12 +129,12 @@ fn pure_application_arguments_keep_states_types_and_argument_order() {
     let context = PureFactContext::new()
         .assume_proposition(held)
         .assume_condition(
-            ConditionTerm::PointerEqual(Box::new(pointer("p")), Box::new(pointer("q"))),
+            ConditionTerm::AddressEqual(Box::new(pointer("p")), Box::new(pointer("q"))),
             true,
         );
     assert!(!context.contains_known(&eq(f(&memory, pointer("q"), ProgramType::Int32), var(30))));
     let context = context.assume_condition(
-        ConditionTerm::PointerValueEqual(
+        ConditionTerm::PointerEqual(
             Box::new(Pointer::new(pointer("p"), ProgramType::Int32Pointer)),
             Box::new(Pointer::new(pointer("q"), ProgramType::Int32Pointer)),
         ),
@@ -188,7 +188,7 @@ fn fact_lookup_uses_pointer_read_congruence_after_a_late_address_alias() {
     let target = eq(f(&b), var(71));
     let context = PureFactContext::new().assume_proposition(source.clone());
     assert!(!context.contains_known(&target));
-    let alias = Proposition::ConditionIs(ConditionTerm::pointer_equal(a, b), true);
+    let alias = Proposition::ConditionIs(ConditionTerm::address_equal(a, b), true);
     let context = context.assume_proposition(alias.clone());
     assert!(context.contains_known(&target));
     assert!(
@@ -274,15 +274,15 @@ fn pointer_disequality_projects_only_through_a_witnessed_common_base() {
             let left = coordinate_pointer(block.clone(), 71000);
             let right = coordinate_pointer(block, 71001);
             let alias = Proposition::ConditionIs(
-                ConditionTerm::pointer_equal(source.clone(), left.clone()),
+                ConditionTerm::address_equal(source.clone(), left.clone()),
                 true,
             );
             let distinct = Proposition::ConditionIs(
-                ConditionTerm::pointer_equal(source.clone(), right.clone()),
+                ConditionTerm::address_equal(source.clone(), right.clone()),
                 false,
             );
             let goal = Proposition::ConditionIs(
-                ConditionTerm::pointer_offset_equal(left.offset.clone(), right.offset.clone()),
+                ConditionTerm::address_offset_equal(left.offset.clone(), right.offset.clone()),
                 false,
             );
             let parent = PureFactContext::new().assume_proposition(if alias_first {
@@ -298,18 +298,18 @@ fn pointer_disequality_projects_only_through_a_witnessed_common_base() {
             });
             assert!(child.contains_known(&goal));
             assert!(child.contains_known(&Proposition::ConditionIs(
-                ConditionTerm::pointer_offset_equal(right.offset.clone(), left.offset.clone()),
+                ConditionTerm::address_offset_equal(right.offset.clone(), left.offset.clone()),
                 false
             )));
             assert!(!parent.contains_known(&goal));
         }
     }
     let distinct = PureFactContext::new().assume_condition(
-        ConditionTerm::pointer_equal(pointer("allocation-a"), pointer("allocation-b")),
+        ConditionTerm::address_equal(pointer("allocation-a"), pointer("allocation-b")),
         false,
     );
     assert!(!distinct.contains_known(&Proposition::ConditionIs(
-        ConditionTerm::pointer_offset_equal(AddressOffset::Constant(0), AddressOffset::Constant(0)),
+        ConditionTerm::address_offset_equal(AddressOffset::Constant(0), AddressOffset::Constant(0)),
         false
     )));
 }
@@ -318,21 +318,21 @@ fn pointer_disequality_projects_only_through_a_witnessed_common_base() {
 fn pointer_disequality_follows_a_new_base_witness_on_the_kept_class() {
     let source = Address::symbolic(Variable(71999));
     let mut facts = PureFactContext::new().assume_condition(
-        ConditionTerm::pointer_equal(source.clone(), coordinate_pointer("storage".into(), 72000)),
+        ConditionTerm::address_equal(source.clone(), coordinate_pointer("storage".into(), 72000)),
         false,
     );
     for i in 0..8 {
         facts = facts.assume_condition(
-            ConditionTerm::pointer_equal(source.clone(), Address::symbolic(Variable(72100 + i))),
+            ConditionTerm::address_equal(source.clone(), Address::symbolic(Variable(72100 + i))),
             true,
         );
     }
     facts = facts.assume_condition(
-        ConditionTerm::pointer_equal(source, coordinate_pointer("storage".into(), 72001)),
+        ConditionTerm::address_equal(source, coordinate_pointer("storage".into(), 72001)),
         true,
     );
     assert!(facts.contains_known(&Proposition::ConditionIs(
-        ConditionTerm::pointer_offset_equal(
+        ConditionTerm::address_offset_equal(
             AddressOffset::Variable(Variable(72000)),
             AddressOffset::Variable(Variable(72001))
         ),
@@ -348,17 +348,17 @@ fn pointer_disequality_projection_follows_offset_class_merges() {
     let replacement = coordinate_pointer(AddressBase::ExternalArgument, 76003);
     let parent = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::pointer_equal(source.clone(), left.clone()),
+            ConditionTerm::address_equal(source.clone(), left.clone()),
             true,
         )
-        .assume_condition(ConditionTerm::pointer_equal(source, right.clone()), false);
+        .assume_condition(ConditionTerm::address_equal(source, right.clone()), false);
     let goal = Proposition::ConditionIs(
-        ConditionTerm::pointer_offset_equal(replacement.offset.clone(), right.offset),
+        ConditionTerm::address_offset_equal(replacement.offset.clone(), right.offset),
         false,
     );
     assert!(!parent.contains_known(&goal));
     let alias = Proposition::ConditionIs(
-        ConditionTerm::pointer_offset_equal(left.offset, replacement.offset),
+        ConditionTerm::address_offset_equal(left.offset, replacement.offset),
         true,
     );
     let child = parent.clone().assume_proposition(alias.clone());
@@ -379,19 +379,19 @@ fn pointer_comparison_preserves_base_evidence_through_aliases_and_scopes() {
             let right = coordinate_pointer(AddressBase::ExternalArgument, 77002);
             let alias_pointer = Address::symbolic(Variable(77003));
             let source = Proposition::ConditionIs(
-                ConditionTerm::pointer_equal(left.clone(), right.clone()),
+                ConditionTerm::address_equal(left.clone(), right.clone()),
                 false,
             );
             assert!(matches!(
                 &source,
-                Proposition::ConditionIs(ConditionTerm::PointerEqual(..), false)
+                Proposition::ConditionIs(ConditionTerm::AddressEqual(..), false)
             ));
             let alias = Proposition::ConditionIs(
-                ConditionTerm::pointer_equal(right.clone(), alias_pointer.clone()),
+                ConditionTerm::address_equal(right.clone(), alias_pointer.clone()),
                 true,
             );
             let goal = Proposition::ConditionIs(
-                ConditionTerm::pointer_equal(left.clone(), alias_pointer.clone()),
+                ConditionTerm::address_equal(left.clone(), alias_pointer.clone()),
                 false,
             );
             let parent = PureFactContext::new().assume_proposition(if alias_first {
@@ -409,11 +409,11 @@ fn pointer_comparison_preserves_base_evidence_through_aliases_and_scopes() {
             });
             assert!(child.contains_known(&goal));
             assert!(child.contains_known(&Proposition::ConditionIs(
-                ConditionTerm::pointer_equal(alias_pointer, left.clone()),
+                ConditionTerm::address_equal(alias_pointer, left.clone()),
                 false
             )));
             assert!(child.contains_known(&Proposition::ConditionIs(
-                ConditionTerm::pointer_offset_equal(left.offset.clone(), right.offset.clone()),
+                ConditionTerm::address_offset_equal(left.offset.clone(), right.offset.clone()),
                 false
             )));
             assert!(!parent.contains_known(&goal));
@@ -423,7 +423,7 @@ fn pointer_comparison_preserves_base_evidence_through_aliases_and_scopes() {
                     .contains_known(&goal)
             );
             assert!(!child.contains_known(&Proposition::ConditionIs(
-                ConditionTerm::pointer_equal(left, coordinate_pointer("other".into(), 77002)),
+                ConditionTerm::address_equal(left, coordinate_pointer("other".into(), 77002)),
                 false
             )));
         }
@@ -510,13 +510,13 @@ fn selected_cursor_chain() -> (Proposition, Vec<Proposition>) {
     });
     let full = |left: Pointer, right: Pointer| {
         Proposition::ConditionIs(
-            ConditionTerm::PointerValueEqual(Box::new(left), Box::new(right)),
+            ConditionTerm::PointerEqual(Box::new(left), Box::new(right)),
             true,
         )
     };
     let address = |left: Address, right: Address| {
         Proposition::ConditionIs(
-            ConditionTerm::PointerEqual(Box::new(left), Box::new(right)),
+            ConditionTerm::AddressEqual(Box::new(left), Box::new(right)),
             true,
         )
     };
@@ -574,12 +574,11 @@ fn selected_cursor_chain_needs_its_support_and_displacement() {
             "missing premise {missing}"
         );
     }
-    let Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, right), true) = &goal
-    else {
+    let Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) = &goal else {
         unreachable!()
     };
     let wrong = Proposition::ConditionIs(
-        ConditionTerm::PointerValueEqual(
+        ConditionTerm::PointerEqual(
             Box::new(
                 (**left)
                     .clone()
@@ -597,22 +596,20 @@ fn selected_cursor_chain_needs_its_support_and_displacement() {
 fn refreshed_address_aliases_do_not_establish_pointer_identity() {
     use crate::kernel::proof::{PureFactStore, fact_reasoning::normalize_using_conditions};
     let (goal, mut premises) = selected_cursor_chain();
-    let Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, right), true) =
-        &premises[0]
+    let Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) = &premises[0]
     else {
         unreachable!()
     };
     premises[0] = Proposition::ConditionIs(
-        ConditionTerm::pointer_equal(left.address().clone(), right.address().clone()),
+        ConditionTerm::address_equal(left.address().clone(), right.address().clone()),
         true,
     );
-    let Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, right), true) = &goal
-    else {
+    let Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) = &goal else {
         unreachable!()
     };
     // Establish the numeric result independently of value identity.
     premises.push(Proposition::ConditionIs(
-        ConditionTerm::pointer_equal(left.address().clone(), right.address().clone()),
+        ConditionTerm::address_equal(left.address().clone(), right.address().clone()),
         true,
     ));
     let facts = PureFactStore::from_ordered(&premises);
@@ -684,7 +681,7 @@ fn selected_native_cursor_normalization_is_stable_across_context_orders() {
     });
     let full = |left: Pointer, right: Pointer| {
         Proposition::ConditionIs(
-            ConditionTerm::PointerValueEqual(Box::new(left), Box::new(right)),
+            ConditionTerm::PointerEqual(Box::new(left), Box::new(right)),
             true,
         )
     };
@@ -692,7 +689,7 @@ fn selected_native_cursor_normalization_is_stable_across_context_orders() {
         full(cursor.clone(), at_second),
         full(batch, at_first),
         Proposition::ConditionIs(
-            ConditionTerm::pointer_equal(sequential, target.address().clone()),
+            ConditionTerm::address_equal(sequential, target.address().clone()),
             true,
         ),
     ];
@@ -732,7 +729,7 @@ fn checked_pointer_read_retention_keeps_a_simplified_address_equation() {
     let fact = crate::kernel::ExecutionPureFact::logical_read_equation(value, read.clone());
     assert!(matches!(
         fact.proposition(),
-        Proposition::ConditionIs(ConditionTerm::PointerEqual(..), true)
+        Proposition::ConditionIs(ConditionTerm::AddressEqual(..), true)
     ));
     let context = PureFactContext::new();
     let isolated = context.clone();
@@ -819,7 +816,7 @@ fn structural_pointer_read_definitions_keep_domains_and_reject_partial_writes() 
     );
     let context = PureFactContext::new();
     assert!(context.equality_graph.knows_condition(
-        &ConditionTerm::PointerValueEqual(Box::new(named.clone()), Box::new(original)),
+        &ConditionTerm::PointerEqual(Box::new(named.clone()), Box::new(original)),
         true,
     ));
     let changed = intern_memory(
@@ -835,7 +832,7 @@ fn structural_pointer_read_definitions_keep_domains_and_reject_partial_writes() 
         ProgramType::Int32Pointer,
     );
     assert!(!context.equality_graph.knows_condition(
-        &ConditionTerm::PointerValueEqual(Box::new(named), Box::new(changed)),
+        &ConditionTerm::PointerEqual(Box::new(named), Box::new(changed)),
         true,
     ));
 }
@@ -861,7 +858,7 @@ fn stored_pointer_read_definitions_preserve_bounds_and_reject_partial_overwrites
     assert_ne!(read, stored);
     let facts = PureFactContext::new();
     assert!(facts.equality_graph.knows_condition(
-        &ConditionTerm::PointerValueEqual(Box::new(read.clone()), Box::new(stored.clone())),
+        &ConditionTerm::PointerEqual(Box::new(read.clone()), Box::new(stored.clone())),
         true
     ));
     let larger = stored.clone().with_bounds(Some(SubobjectBounds {
@@ -869,7 +866,7 @@ fn stored_pointer_read_definitions_preserve_bounds_and_reject_partial_overwrites
         width: 8u32.into(),
     }));
     assert!(!facts.equality_graph.knows_condition(
-        &ConditionTerm::PointerValueEqual(Box::new(read), Box::new(larger)),
+        &ConditionTerm::PointerEqual(Box::new(read), Box::new(larger)),
         true
     ));
     let changed = intern_memory(
@@ -883,7 +880,7 @@ fn stored_pointer_read_definitions_preserve_bounds_and_reject_partial_overwrites
         ProgramType::Int32Pointer,
     );
     assert!(!facts.equality_graph.knows_condition(
-        &ConditionTerm::PointerValueEqual(Box::new(changed_read), Box::new(stored)),
+        &ConditionTerm::PointerEqual(Box::new(changed_read), Box::new(stored)),
         true
     ));
 }
@@ -917,7 +914,7 @@ fn a_fact_retained_pointer_cache_is_not_an_unconditional_read_definition() {
         ProgramType::Int32Pointer,
     );
     assert!(!PureFactContext::new().equality_graph.knows_condition(
-        &ConditionTerm::PointerValueEqual(Box::new(read), Box::new(stored)),
+        &ConditionTerm::PointerEqual(Box::new(read), Box::new(stored)),
         true
     ));
 }

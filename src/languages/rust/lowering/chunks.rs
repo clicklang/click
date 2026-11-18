@@ -147,16 +147,64 @@ impl Context<'_> {
 
     /// `next()`, as `core` runs it: `v.split_at(chunk_size)`, keeping the
     /// back as `v` and returning the front.
+    /// `next` of a chunk iterator: the `Option` built in `option`, or, once
+    /// the loop reads only its chunk, the chunk assigned to the slice local
+    /// `payload`. When the `for` header's test decided whether it yields
+    /// (`taken`), only that arm runs; the arm that does not yield is nothing.
     pub(super) fn chunk_next(
-        &self,
+        &mut self,
         iterator: &str,
-        option: &str,
+        option: Option<&str>,
+        payload: Option<&str>,
+        taken: Option<bool>,
     ) -> Result<ProgramStatement, String> {
+        use crate::kernel::program_expression::{add, int32_literal, subtract, variable};
+        let field = |suffix: &str| format!("{iterator}_{suffix}");
+        let Some(option) = option else {
+            if !self.mir_chunk_iterators.contains(iterator) {
+                return Err("unknown MIR chunk iterator".into());
+            }
+            if taken == Some(false) {
+                return Ok(program_skip());
+            }
+            let mut some = program_skip();
+            if let Some(payload) = payload {
+                let Some((length, constant)) = self.slices.get(payload).cloned() else {
+                    return Err("chunk payload requires a byte-slice local".into());
+                };
+                some = program_seq(
+                    program_assign(
+                        payload,
+                        reference_view(
+                            variable(field("v")),
+                            ProgramType::UInt8Pointer,
+                            false,
+                            constant,
+                        ),
+                    ),
+                    program_assign(length, variable(field("chunk_size"))),
+                );
+            }
+            for statement in [
+                program_assign(
+                    field("v"),
+                    add(variable(field("v")), variable(field("chunk_size"))),
+                ),
+                program_assign(
+                    field("v_len"),
+                    subtract(variable(field("v_len")), variable(field("chunk_size"))),
+                ),
+            ] {
+                some = program_seq(some, statement);
+            }
+            return Ok(match taken {
+                Some(_) => some,
+                None => program_if(self.chunk_has_next(iterator)?, some, program_skip()),
+            });
+        };
         if !self.chunk_options.contains(option) {
             return Err("unknown chunk Option".into());
         }
-        use crate::kernel::program_expression::{add, int32_literal, subtract, variable};
-        let field = |suffix: &str| format!("{iterator}_{suffix}");
         let mut some = program_assign(format!("{option}_some"), int32_literal(1));
         for statement in [
             program_assign(format!("{option}_pointer"), variable(field("v"))),

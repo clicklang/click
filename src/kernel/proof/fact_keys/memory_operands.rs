@@ -127,7 +127,7 @@ pub(super) fn written(term: &MachineTerm) -> MemoryErasedBitvectorKey {
         return operand(crate::kernel::MachineOperandView::Shared(&root));
     }
     let node = match term {
-        MachineTerm::PointerAddress(pointer, _) => {
+        MachineTerm::IntegerAddress(pointer, _) => {
             Node::Address(Box::new(memory_erased_address_key(pointer)))
         }
         MachineTerm::MemoryLoad(_, pointer, kind) => {

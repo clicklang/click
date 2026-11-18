@@ -1273,7 +1273,7 @@ fn branch_join_typed_agreement_checks_alias_premises_and_access_width() {
     let right = intern_memory(before.store(alias.clone(), one()));
     let bare = PureFactContext::new();
     let separated = bare.clone().assume_condition(
-        ConditionTerm::pointer_equal(alias, at(cell.base.clone(), 8)),
+        ConditionTerm::address_equal(alias, at(cell.base.clone(), 8)),
         true,
     );
     let query = |facts: &PureFactContext, bytes| {
@@ -1595,7 +1595,7 @@ fn shared_offset_condition_resource_reads_keep_native_right_first_order() {
             4,
         )
     };
-    let source = ConditionTerm::PointerOffsetEqual(
+    let source = ConditionTerm::AddressOffsetEqual(
         Box::new(AddressOffset::Add(
             Box::new(offset("global:g")),
             Box::new(offset("global:h")),
@@ -1629,7 +1629,7 @@ fn raw_pointer_condition_reads_keep_block_and_displacement_order() {
     left.offset = AddressOffset::Add(Box::new(offset("global:g")), Box::new(offset("global:h")));
     let mut right = Address::loaded_value(&memory, &at(block("local:f:pointer_right"), 0));
     right.offset = offset("local:f:i");
-    let source = ConditionTerm::PointerEqual(Box::new(left), Box::new(right));
+    let source = ConditionTerm::AddressEqual(Box::new(left), Box::new(right));
     let root = KernelTermImport::default().condition(&source);
     let mut expected = Vec::new();
     let mut actual = Vec::new();
@@ -1657,7 +1657,7 @@ fn complete_pointer_conditions_keep_read_order() {
     left.offset = AddressOffset::Add(Box::new(offset("global:g")), Box::new(offset("global:h")));
     let mut right = Address::loaded_value(&memory, &at(block("local:f:pointer_right"), 0));
     right.offset = offset("local:f:i");
-    let source = ConditionTerm::PointerValueEqual(
+    let source = ConditionTerm::PointerEqual(
         Box::new(Pointer::new(left, ProgramType::Int32Pointer)),
         Box::new(Pointer::new(right, ProgramType::Int32Pointer)),
     );

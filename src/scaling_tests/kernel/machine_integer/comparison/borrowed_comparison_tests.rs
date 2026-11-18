@@ -321,12 +321,13 @@ fn machine_comparison_and_guard_reads_are_bounded_on_hits_and_misses() {
             for (signed, ..) in wrapping_misses {
                 assert!(bounded_comparison_operand(format, V::Shared(signed), true).is_none());
             }
-            let mut widening_cases = Vec::new();
+            let mut cast_cases = Vec::new();
             for spelling in [
                 crate::kernel::MachineCastSpelling::Int64From32,
                 crate::kernel::MachineCastSpelling::Int64FromUInt32,
                 crate::kernel::MachineCastSpelling::UInt64FromInt32,
                 crate::kernel::MachineCastSpelling::UInt64From32,
+                crate::kernel::MachineCastSpelling::UInt32From64,
             ] {
                 let (source, destination) = spelling.legacy_formats().unwrap();
                 if destination != format {
@@ -336,7 +337,7 @@ fn machine_comparison_and_guard_reads_are_bounded_on_hits_and_misses() {
                 let cast = |operand| {
                     KernelTerm::machine_cast_shared(spelling, source, destination, operand)
                 };
-                widening_cases.push((
+                cast_cases.push((
                     cast(child.clone()),
                     cast(arithmetic.with_machine_observation_type(source)),
                     cast(KernelTerm::machine_unary_shared(
@@ -353,7 +354,7 @@ fn machine_comparison_and_guard_reads_are_bounded_on_hits_and_misses() {
                     .chain(std::iter::once(&unary_case))
                     .chain(&shift_cases)
                     .chain(wrapping_hits)
-                    .chain(&widening_cases)
+                    .chain(&cast_cases)
                 {
                     for operands in [
                         [V::Shared(hit), V::Shared(&other)],

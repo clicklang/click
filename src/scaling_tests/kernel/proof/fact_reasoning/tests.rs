@@ -285,7 +285,7 @@ fn check_footprint_normalization_scaling(sizes: [u64; 4]) {
         for i in 0..size {
             // Grow the selected address class and a related separation bucket.
             facts = facts.with_fact(Proposition::ConditionIs(
-                ConditionTerm::pointer_equal(pointer(96_140), pointer(97_000 + i)),
+                ConditionTerm::address_equal(pointer(96_140), pointer(97_000 + i)),
                 true,
             ));
             let range = |p, bytes: u32| {
@@ -301,7 +301,7 @@ fn check_footprint_normalization_scaling(sizes: [u64; 4]) {
                 right: Box::new(range(pointer(96_142), 16 + i as u32)),
             });
             facts = facts.with_fact(Proposition::ConditionIs(
-                ConditionTerm::pointer_equal(pointer(99_000 + i * 2), pointer(99_001 + i * 2)),
+                ConditionTerm::address_equal(pointer(99_000 + i * 2), pointer(99_001 + i * 2)),
                 true,
             ));
         }

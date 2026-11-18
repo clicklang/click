@@ -33,6 +33,8 @@ void arena_write(struct region* region, int32 index, int32 value) {
 ```
 
 ```click
+import click::integer;
+
 resource arena_initialized_storage(
     data: int32*,
     occupied: int32*,
@@ -135,31 +137,78 @@ void arena_write(struct region* region, int32 index, int32 value) {
             defined(s + index) and to_integer(s + index) < to_integer(e);
         };
     }
-    have to_integer(s) <= to_integer(s + index);
-    have to_integer(s + index + 1) <= to_integer(e);
+    have to_integer(s) <= to_integer(s + index) by {
+        solve() using { 0 <= index; defined(s + index); };
+    }
+    have 0 <= to_integer(s + index) by {
+        solve() using { 0 <= s; to_integer(s) <= to_integer(s + index); };
+    }
+    have to_integer(e) <= 2147483647 by { solve() using {}; }
+    have to_integer(s + index) + 1 >= -2147483648 by {
+        solve() using { 0 <= to_integer(s + index); };
+    }
+    have to_integer(s + index) + 1 <= to_integer(e) by {
+        solve() using { to_integer(s + index) < to_integer(e); };
+    }
+    have to_integer(s + index) + 1 <= 2147483647 by {
+        solve() using {
+            to_integer(s + index) + 1 <= to_integer(e);
+            to_integer(e) <= 2147483647;
+        };
+    }
+    have defined(s + index + 1) by { known(); }
+    have to_integer(s + index + 1) == to_integer(s + index) + 1 by {
+        apply(integer::int32_add_to_integer(s + index, 1));
+    }
+    have to_integer(s + index + 1) <= to_integer(e) by {
+        rewrite(to_integer(s + index + 1), to_integer(s + index) + 1);
+        known();
+    }
     have region->start == s;
-    have defined(region->start + index + 1);
+    have defined(region->start);
+    have defined(region->start + index + 1) by {
+        rewrite(region->start, s);
+        known();
+    }
     have to_integer(region->start + index + 1) <= to_integer(e) by {
         rewrite(region->start, s);
         known();
     }
     have 0 <= to_integer(region->start + index) by {
         rewrite(region->start, s);
-        solve() using {
-            0 <= s;
-            to_integer(s) <= to_integer(s + index);
-        };
+        known();
     }
     have region->arena->capacity == c by {
         solve();
     }
-    have to_integer(region->start + index) < to_integer(region->arena->capacity);
+    have to_integer(region->start + index) < to_integer(region->arena->capacity) by {
+        rewrite(region->start, s);
+        rewrite(region->arena->capacity, c);
+        solve() using {
+            to_integer(s + index) < to_integer(e);
+            e <= c;
+        };
+    }
     have separate(
         memory(*region),
         memory(*(region->arena->data + (region->start + index)))
     ) by { solve(); }
-    have 0 <= region->start + index;
-    have region->start + index < region->arena->capacity;
+    have 0 <= region->start + index by {
+        rewrite(region->start, s);
+        solve() using { 0 <= s; 0 <= index; };
+    }
+    have to_integer(s + index) == to_integer(s) + to_integer(index) by {
+        apply(integer::int32_add_to_integer(s, index));
+    }
+    have region->start + index < region->arena->capacity by {
+        rewrite(region->start, s);
+        rewrite(region->arena->capacity, c);
+        solve() using {
+            to_integer(s + index) == to_integer(s) + to_integer(index);
+            to_integer(s + index) < to_integer(e);
+            e <= c;
+        };
+    }
     mark w;
     step();
     have separate(statement(0).footprint, memory(region->arena)) by { normalize() using {}; }

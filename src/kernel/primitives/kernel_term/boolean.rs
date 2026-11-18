@@ -285,11 +285,11 @@ impl<'a> BooleanOperandView<'a> {
 
     pub(crate) fn pointer_values(self) -> Option<[SharedPointer; 2]> {
         if let Self::Shared(root) = self
-            && let KernelTermNode::PointerValueEqual(pair) = root.node()
+            && let KernelTermNode::PointerEqual(pair) = root.node()
         {
             return Some(pair.arguments().clone());
         }
-        let ConditionTerm::PointerValueEqual(a, b) = self.native_leaf()? else {
+        let ConditionTerm::PointerEqual(a, b) = self.native_leaf()? else {
             return None;
         };
         Some([SharedPointer::import(a), SharedPointer::import(b)])
@@ -297,11 +297,11 @@ impl<'a> BooleanOperandView<'a> {
 
     pub(crate) fn pointer_addresses(self) -> Option<[SharedAddress; 2]> {
         if let Self::Shared(root) = self
-            && let KernelTermNode::PointerEqual { arguments } = root.node()
+            && let KernelTermNode::AddressEqual { arguments } = root.node()
         {
             return Some(arguments.clone());
         }
-        let ConditionTerm::PointerEqual(a, b) = self.native_leaf()? else {
+        let ConditionTerm::AddressEqual(a, b) = self.native_leaf()? else {
             return None;
         };
         Some([SharedAddress::import(a), SharedAddress::import(b)])
@@ -309,11 +309,11 @@ impl<'a> BooleanOperandView<'a> {
 
     pub(crate) fn pointer_offsets(self) -> Option<[SharedAddressOffset; 2]> {
         if let Self::Shared(root) = self
-            && let KernelTermNode::PointerOffsetEqual { arguments } = root.node()
+            && let KernelTermNode::AddressOffsetEqual { arguments } = root.node()
         {
             return Some(arguments.clone());
         }
-        let ConditionTerm::PointerOffsetEqual(a, b) = self.native_leaf()? else {
+        let ConditionTerm::AddressOffsetEqual(a, b) = self.native_leaf()? else {
             return None;
         };
         Some([
@@ -598,16 +598,16 @@ impl KernelTermImport {
                 operation: *op,
                 arguments: [self.machine(*format, left), self.machine(*format, right)],
             },
-            Old::PointerValueEqual(a, b) => {
-                return KernelTerm::pointer_value_equal_raw([
+            Old::PointerEqual(a, b) => {
+                return KernelTerm::pointer_equal_raw([
                     SharedPointer::import(a),
                     SharedPointer::import(b),
                 ]);
             }
-            Old::PointerEqual(a, b) => Node::PointerEqual {
+            Old::AddressEqual(a, b) => Node::AddressEqual {
                 arguments: [SharedAddress::import(a), SharedAddress::import(b)],
             },
-            Old::PointerOffsetEqual(a, b) => Node::PointerOffsetEqual {
+            Old::AddressOffsetEqual(a, b) => Node::AddressOffsetEqual {
                 arguments: [
                     KernelAddressOffset::import(a),
                     KernelAddressOffset::import(b),
@@ -694,14 +694,14 @@ impl KernelTermExport {
                 left: Box::new(Self::machine(&arguments[0])?),
                 right: Box::new(Self::machine(&arguments[1])?),
             },
-            Node::PointerValueEqual(pair) => {
+            Node::PointerEqual(pair) => {
                 let [a, b] = pair.arguments();
-                Old::PointerValueEqual(Box::new(a.export()?), Box::new(b.export()?))
-            }
-            Node::PointerEqual { arguments: [a, b] } => {
                 Old::PointerEqual(Box::new(a.export()?), Box::new(b.export()?))
             }
-            Node::PointerOffsetEqual { arguments: [a, b] } => Old::PointerOffsetEqual(
+            Node::AddressEqual { arguments: [a, b] } => {
+                Old::AddressEqual(Box::new(a.export()?), Box::new(b.export()?))
+            }
+            Node::AddressOffsetEqual { arguments: [a, b] } => Old::AddressOffsetEqual(
                 Box::new(KernelAddressOffset::export(a)?),
                 Box::new(KernelAddressOffset::export(b)?),
             ),
@@ -899,7 +899,7 @@ mod tests {
         let atom = ConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::PointerAddress(
+            left: Box::new(MachineTerm::IntegerAddress(
                 Box::new(Address::symbolic(from)),
                 crate::kernel::AddressObjectClass::NONE,
             )),
@@ -1003,7 +1003,7 @@ mod tests {
 
     #[test]
     fn boolean_view_borrows_exact_legacy_payload() {
-        let source = ConditionTerm::PointerEqual(
+        let source = ConditionTerm::AddressEqual(
             Box::new(Address::symbolic(Variable(964_091))),
             Box::new(Address::symbolic(Variable(964_092))),
         );

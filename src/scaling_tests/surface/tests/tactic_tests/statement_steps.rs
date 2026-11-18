@@ -941,3 +941,62 @@ fn store_index_separation_search_scales(c_index: &str, click_index: &str, suffix
         }
     }
 }
+
+#[test]
+fn direct_store_source_publication_ignores_rhs_depth() {
+    use crate::instrumentation::VerificationEvent;
+
+    let mut publication_work = Vec::new();
+    for depth in [4, 16, 40] {
+        let updates = "    x = x * 3u + 1u;\n".repeat(depth);
+        let source =
+            format!("void set(uint32* p, uint32 x) {{\n{updates}    *p = x;\n    x = x + 1u;\n}}");
+        let steps = "    step();\n".repeat(depth + 2);
+        let equation =
+            format!("at(statement({depth}).exit, p[0]) == at(statement({depth}).entry, x)");
+        let click = format!(
+            "verifying \"store.c\";\nvoid set(uint32* p, uint32 x) {{ owns *p; }} by {{\n{steps}    have {equation} by {{ known(); }}\n}}"
+        );
+        let sources = [("store.c", source.as_str())];
+        let (result, events) =
+            crate::instrumentation::collect(|| verify_c_sources(&click, &sources));
+        result.unwrap_or_else(|error| panic!("depth {depth}: {}", error.report()));
+        let preparation = events
+            .iter()
+            .find_map(|event| match event {
+                VerificationEvent::OperationFinished { name, work, .. }
+                    if name == "verification statement: store" =>
+                {
+                    Some(*work)
+                }
+                _ => None,
+            })
+            .expect("the C store was executed");
+        let step = events
+            .iter()
+            .find_map(|event| match event {
+                VerificationEvent::TacticFinished { tactic, work, .. }
+                    if tactic.tactic_name == "step" && tactic.source_index == depth =>
+                {
+                    Some(*work)
+                }
+                _ => None,
+            })
+            .expect("an explicit step executed the store");
+        publication_work.push(step - preparation);
+
+        if depth == 40 {
+            let wrong = click.replace(
+                &equation,
+                &format!("at(statement({depth}).exit, p[0]) == x"),
+            );
+            assert!(verify_c_sources(&wrong, &sources).is_err());
+        }
+    }
+    assert!(
+        publication_work
+            .iter()
+            .all(|work| *work <= publication_work[0] + 36),
+        "store publication grew with RHS depth: {publication_work:?}"
+    );
+}

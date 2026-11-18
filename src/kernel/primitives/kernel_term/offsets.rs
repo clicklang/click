@@ -360,7 +360,7 @@ mod tests {
         for class in [CScalarClass::Int, CScalarClass::Char] {
             let expected = Some(CAccessClass::Scalar(class));
             let source = AddressOffset::scaled_int64_node(
-                MachineTerm::PointerAddress(
+                MachineTerm::IntegerAddress(
                     Box::new(Address::symbolic(Variable(994004))),
                     crate::kernel::AddressObjectClass::new(expected.clone()),
                 ),
@@ -373,7 +373,7 @@ mod tests {
             let AddressOffset::Int64Scaled { value, .. } = output else {
                 panic!("scaled index")
             };
-            let MachineTerm::PointerAddress(_, annotation) = value.structural_value() else {
+            let MachineTerm::IntegerAddress(_, annotation) = value.structural_value() else {
                 panic!("exact address input")
             };
             assert_eq!(annotation.class(), expected);

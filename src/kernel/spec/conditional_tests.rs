@@ -77,7 +77,7 @@ fn opaque_guard_observations_keep_identity_without_exporting_arms() {
     let _session = VerificationSession::enter();
     let format = MachineIntegerType::UInt64;
     let guard = |id| {
-        ConditionTerm::pointer_equal(
+        ConditionTerm::address_equal(
             Address::symbolic(Variable(id)),
             Address::symbolic(Variable(998110)),
         )
@@ -207,7 +207,7 @@ fn exact_rewrites_keep_opaque_conditional_observation_identity() {
     use crate::kernel::proof::term_rewrite::TermRewrite;
     let _session = VerificationSession::enter();
     let format = MachineIntegerType::Int32;
-    let guard = ConditionTerm::pointer_equal(
+    let guard = ConditionTerm::address_equal(
         Address::symbolic(Variable(998205)),
         Address::symbolic(Variable(998206)),
     );

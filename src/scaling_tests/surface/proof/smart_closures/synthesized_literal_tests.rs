@@ -69,7 +69,7 @@ fn reflexive_pointer_metadata_does_not_search_state_history() {
     let pointer = Address::symbolic(Variable(8_179_830));
     let state = ExecutionState::new().with_local("p", ProgramValue::pointer(pointer.clone()));
     let reflexive = Proposition::ConditionIs(
-        ConditionTerm::PointerEqual(Box::new(pointer.clone()), Box::new(pointer)),
+        ConditionTerm::AddressEqual(Box::new(pointer.clone()), Box::new(pointer)),
         true,
     );
     let equivalent = Proposition::Not(Box::new(match &reflexive {

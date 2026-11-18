@@ -801,7 +801,7 @@ pub(in crate::kernel) fn write_is_at_read_address(
                 assumptions,
             )
         || write.base == pointer.base
-            && assumptions.exact_condition_value(&ConditionTerm::pointer_offset_equal(
+            && assumptions.exact_condition_value(&ConditionTerm::address_offset_equal(
                 write.offset.clone(),
                 pointer.offset.clone(),
             )) == Some(true)

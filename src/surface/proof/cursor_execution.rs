@@ -3150,12 +3150,35 @@ fn execute_step_from_frontier_position_selecting_path(
         region: CodeRegionRef::Region(statement_index),
         kind: ProgramPointKind::Exit,
     };
-    for equation in crate::kernel::certified_store_equations(&transition.execution_facts) {
+    let direct_store_source = direct_word_store_source(
+        &step_statement,
+        &current_state,
+        &transition.outcome,
+        &store_exit_point,
+    )
+    .filter(|_| {
+        let layout = &proof_context.constants.source_layout;
+        layout.automatic_exits(statement_index, false).is_empty()
+            && layout.automatic_exits(statement_index, true).is_empty()
+    });
+    for equation in transition
+        .execution_facts
+        .fact_iter()
+        .filter_map(|fact| fact.certified_store_equation())
+    {
+        if let Some((surface, pointer)) = &direct_store_source
+            && execution
+                .presentation
+                .surface_propositions
+                .record_store_source(equation, surface, pointer)
+        {
+            continue;
+        }
         if let Some(ClickProposition::Comparison {
             left,
             operator,
             right,
-        }) = synthesize_surface_proposition(&equation, parameter_binding, &current_state)
+        }) = synthesize_surface_proposition(equation, parameter_binding, &current_state)
         {
             let store_entry_point = ProgramPointRef {
                 region: CodeRegionRef::Region(statement_index),
@@ -3190,7 +3213,7 @@ fn execute_step_from_frontier_position_selecting_path(
             execution
                 .presentation
                 .surface_propositions
-                .record_lowering(&surface, &equation)?;
+                .record_lowering(&surface, equation)?;
         }
     }
     let execution_pure_facts = transition.execution_facts;
@@ -3936,10 +3959,19 @@ fn enum_switch_proof_match(
     let ProgramExpression::EnumIs { value, .. } = test else {
         return None;
     };
-    let ProgramExpression::Variable(name) = value.as_ref() else {
-        return None;
+    let (scrutinee, name, native) = match value.as_ref() {
+        ProgramExpression::Variable(name) => (
+            ContractExpression::ProgramExpression(ProgramExpression::Variable(name.clone())),
+            name.to_string(),
+            state.locals().get_native(name)?,
+        ),
+        ProgramExpression::StepResult { step, .. } => (
+            crate::surface::diagnostics::step_result_expression(*step)?,
+            "field".into(),
+            state.step_result(*step)?.native(),
+        ),
+        _ => return None,
     };
-    let native = state.locals().get_native(name)?;
     let ProgramValue::Parameter(term) = native.as_ref() else {
         return None;
     };
@@ -3977,7 +4009,7 @@ fn enum_switch_proof_match(
         })
         .collect();
     Some(ProofMatch {
-        scrutinee: ContractExpression::ProgramExpression(ProgramExpression::Variable(name.clone())),
+        scrutinee,
         ensuring: None,
         arms,
     })
@@ -4594,4 +4626,71 @@ mod cursor_sequence_tests {
 mod refusal_scaling_tests {
     use super::*;
     include!("../../scaling_tests/surface/proof/cursor_refusals.rs");
+}
+
+/// A direct word store copies the entry value of its named local. The
+/// exit spelling reads the cell through the same unchanged pointer binding.
+fn direct_word_store_source<'a>(
+    statement: &ProgramStatement,
+    entry: &'a ExecutionState,
+    outcome: &StatementOutcome,
+    exit_point: &ProgramPointRef,
+) -> Option<(ClickProposition, &'a crate::kernel::ExecutionValue)> {
+    use crate::kernel::ProgramType;
+
+    let (pointer, value) = match statement {
+        ProgramStatement::Store { pointer, value }
+        | ProgramStatement::TypedStore {
+            pointer,
+            value,
+            value_type: ProgramType::UInt32,
+            volatile: false,
+            ..
+        } => (pointer, value),
+        _ => return None,
+    };
+    let (ProgramExpression::Variable(pointer), ProgramExpression::Variable(value)) =
+        (pointer, value)
+    else {
+        return None;
+    };
+    let StatementOutcome::Normal(exit) = outcome else {
+        return None;
+    };
+    let pointer_type = ProgramType::UInt32Pointer;
+    let pointer_value = entry.locals().nonvolatile_scalar(pointer, pointer_type)?;
+    if !pointer_value.same_retained_root(exit.locals().nonvolatile_scalar(pointer, pointer_type)?) {
+        return None;
+    }
+    entry
+        .locals()
+        .nonvolatile_scalar(value, ProgramType::UInt32)?;
+
+    let at = |point: &ProgramPointRef, expression| ContractExpression::At {
+        selector: ProgramPointSelector::ProgramPoint(point.clone()),
+        expression: Box::new(expression),
+    };
+    let entry_point = ProgramPointRef {
+        region: exit_point.region.clone(),
+        kind: ProgramPointKind::Entry,
+    };
+    let read = ContractExpression::Index(
+        Box::new(ContractExpression::Binding(
+            pointer.source_spelling()?.to_owned(),
+        )),
+        Box::new(ContractExpression::ProgramExpression(
+            ProgramExpression::Value(int32(0)),
+        )),
+    );
+    Some((
+        ClickProposition::Comparison {
+            left: at(exit_point, read),
+            operator: crate::surface::ComparisonOperator::Equal,
+            right: at(
+                &entry_point,
+                ContractExpression::Binding(value.source_spelling()?.to_owned()),
+            ),
+        },
+        pointer_value,
+    ))
 }

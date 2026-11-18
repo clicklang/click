@@ -791,7 +791,7 @@ impl super::ProofSearch<PureFactContext> {
                             format: MachineIntegerType::Int64,
                             relation: CompareRelation::Equal,
                             ..
-                        } | ConditionTerm::PointerOffsetEqual(..),
+                        } | ConditionTerm::AddressOffsetEqual(..),
                         _
                     )
                 )
@@ -2082,9 +2082,9 @@ pub(crate) fn connected_equalities(
                     format: MachineIntegerType::Int64,
                     relation: CompareRelation::Equal,
                     ..
-                } | ConditionTerm::PointerValueEqual(..)
-                    | ConditionTerm::PointerEqual(..)
-                    | ConditionTerm::PointerOffsetEqual(..)
+                } | ConditionTerm::PointerEqual(..)
+                    | ConditionTerm::AddressEqual(..)
+                    | ConditionTerm::AddressOffsetEqual(..)
                     | ConditionTerm::IntegerEqual(..)
                     | ConditionTerm::AlgebraicEqual(..)
                     | ConditionTerm::BoolEqual(..),

@@ -267,9 +267,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if !matches!(
             goal,
             Proposition::ConditionIs(
-                ConditionTerm::PointerEqual(..)
-                    | ConditionTerm::PointerValueEqual(..)
-                    | ConditionTerm::PointerOffsetEqual(..),
+                ConditionTerm::AddressEqual(..)
+                    | ConditionTerm::PointerEqual(..)
+                    | ConditionTerm::AddressOffsetEqual(..),
                 true
             )
         ) {
@@ -321,9 +321,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if !matches!(
             input.goal(),
             Some(Proposition::ConditionIs(
-                ConditionTerm::PointerEqual(..)
-                    | ConditionTerm::PointerValueEqual(..)
-                    | ConditionTerm::PointerOffsetEqual(..),
+                ConditionTerm::AddressEqual(..)
+                    | ConditionTerm::PointerEqual(..)
+                    | ConditionTerm::AddressOffsetEqual(..),
                 true
             ))
         ) {

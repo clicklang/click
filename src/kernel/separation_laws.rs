@@ -84,7 +84,7 @@ pub(crate) fn prove_separation_distinct_elements(
             false,
         )),
         Box::new(Proposition::ConditionIs(
-            ConditionTerm::pointer_equal(address(i), address(j)),
+            ConditionTerm::address_equal(address(i), address(j)),
             false,
         )),
     ))

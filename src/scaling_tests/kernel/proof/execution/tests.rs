@@ -113,7 +113,7 @@ fn constructor_partition_transports_pointer_payloads_without_scanning_ambient_fa
         )],
     };
     let alias = Proposition::ConditionIs(
-        crate::kernel::ConditionTerm::pointer_equal(payload.clone(), program.clone()),
+        crate::kernel::ConditionTerm::address_equal(payload.clone(), program.clone()),
         true,
     );
     let env = crate::kernel::ExecutionEnvironment::new();
@@ -133,7 +133,7 @@ fn constructor_partition_transports_pointer_payloads_without_scanning_ambient_fa
             });
         let witness = Address::symbolic(fields[0][0].0);
         let transported = Proposition::ConditionIs(
-            crate::kernel::ConditionTerm::pointer_equal(program.clone(), witness),
+            crate::kernel::ConditionTerm::address_equal(program.clone(), witness),
             true,
         );
         assert!(partition.facts_for_case(0).unwrap().available(&transported));
@@ -936,7 +936,7 @@ fn interface_aliased_wide_read_preserves_scope_history_and_scales() {
         memory = memory.store(owner.clone(), ProgramValue::UInt64(value.clone()));
         let state = ExecutionState::new().with_memory(memory.clone());
         let arm = parent.with_fact(Proposition::ConditionIs(
-            ConditionTerm::pointer_equal(alias.clone(), owner.clone()),
+            ConditionTerm::address_equal(alias.clone(), owner.clone()),
             true,
         ));
         let check = |state: &ExecutionState, facts: &PureFactStore, spec: &SpecProposition| {
@@ -1262,4 +1262,84 @@ fn taking_a_constructor_arm_reuses_its_constructed_fact_context() {
         samples.iter().all(|work| *work <= samples[0] + 16),
         "entering an already constructed arm rebuilt its payload facts: {samples:?}"
     );
+}
+
+#[test]
+fn constructed_composite_observation_preserves_the_owner_beside_growing_frames() {
+    let definition = CompositeResourceDefinition::new(
+        "bundle",
+        Vec::new(),
+        None,
+        false,
+        vec![ResourceSpec::token(
+            ResourceAccessMode::Own,
+            "child".to_string(),
+            Vec::new(),
+            Vec::new(),
+        )],
+        Vec::new(),
+    );
+    let function = program_function(
+        ProgramType::Void,
+        "observe_bundle",
+        vec![],
+        ProgramStatement::Skip,
+    )
+    .with_composite_resource_definitions(vec![definition]);
+    let selected = ResourceFact::own_composite("bundle".to_string(), Vec::new());
+    let child = ResourceFact::view_token("child".to_string(), Vec::new());
+    for related in [false, true] {
+        let mut samples = Vec::new();
+        for count in [4_u32, 16, 64] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let mut frame = ResourceContext::new().unchecked_with_fact(selected.clone());
+            for index in 0..count {
+                let base = crate::kernel::Address::symbolic(Variable(
+                    9_832_000 + if related { 0 } else { u64::from(index) },
+                ));
+                frame = frame.unchecked_with_fact(ResourceFact::own_memory(
+                    MemoryRange::new_with_element_width(
+                        base,
+                        (index * 4).into(),
+                        (index * 4 + 1).into(),
+                        1,
+                    ),
+                ));
+            }
+            let support = frame.unique_owned_occurrence_for_fact(&selected).unwrap().0;
+            let before = ExecutionState::new().with_resource_context(frame);
+            let facts = PureFactStore::default();
+            let (observed, work) = crate::instrumentation::measure_deterministic_work(|| {
+                CheckedResourceObservation::certify(
+                    &function,
+                    &before,
+                    &facts,
+                    &selected,
+                    ResourceObservationInput::NamedCells(before.memory()),
+                    &facts,
+                    &PersistentOrderedSet::default(),
+                    &CheckedCallEvents::default(),
+                )
+                .unwrap()
+            });
+            assert!(
+                observed
+                    .after_state
+                    .resources()
+                    .has_supported_projection(&child, support, &selected,)
+            );
+            assert_eq!(
+                observed
+                    .after_state
+                    .resources()
+                    .owned_fact_for_occurrence(support),
+                Some(&selected)
+            );
+            samples.push(work);
+        }
+        assert!(
+            samples.iter().all(|work| *work <= samples[0] + 32),
+            "{related}: {samples:?}"
+        );
+    }
 }

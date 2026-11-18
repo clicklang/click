@@ -201,13 +201,13 @@ pub(super) fn canonical_contradiction_condition(condition: &ConditionTerm) -> Co
             let (left, right) = ordered(left.as_ref(), right.as_ref());
             ConditionTerm::machine_compare(*format, CompareRelation::Equal, left, right)
         }
-        ConditionTerm::PointerOffsetEqual(left, right) => {
+        ConditionTerm::AddressOffsetEqual(left, right) => {
             let (left, right) = ordered(left.as_ref(), right.as_ref());
-            ConditionTerm::pointer_offset_equal(left, right)
+            ConditionTerm::address_offset_equal(left, right)
         }
-        ConditionTerm::PointerEqual(left, right) => {
+        ConditionTerm::AddressEqual(left, right) => {
             let (left, right) = ordered(left.as_ref(), right.as_ref());
-            ConditionTerm::pointer_equal(left, right)
+            ConditionTerm::address_equal(left, right)
         }
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
@@ -1162,8 +1162,8 @@ impl SelectedFacts<'_> {
                 .filter(AtomicMemoryLoadEqualityEvidence::is_fully_typed)
                 .map(Box::new)
                 .map(AtomicPropositionDerivationEvidence::MemoryDag),
-            Proposition::ConditionIs(ConditionTerm::PointerOffsetEqual(left, right), true) => {
-                crate::kernel::api::pointer_offset_equality_evidence(left, right, self)
+            Proposition::ConditionIs(ConditionTerm::AddressOffsetEqual(left, right), true) => {
+                crate::kernel::api::address_offset_equality_evidence(left, right, self)
                     .map(Box::new)
                     .map(AtomicPropositionDerivationEvidence::PointerOffsetMemoryDag)
             }
@@ -1980,7 +1980,7 @@ impl SelectedFacts<'_> {
             return evidence.checks(proposition, self);
         }
         if let AtomicPropositionDerivationEvidence::PointerOffsetMemoryDag(evidence) = evidence {
-            let Proposition::ConditionIs(ConditionTerm::PointerOffsetEqual(left, right), true) =
+            let Proposition::ConditionIs(ConditionTerm::AddressOffsetEqual(left, right), true) =
                 proposition
             else {
                 return false;
@@ -3968,8 +3968,8 @@ impl PureFactContext {
                     collect_term_candidates(pattern_right, target_left, bound, candidates);
                 }
                 (
-                    ConditionTerm::PointerOffsetEqual(pattern_left, pattern_right),
-                    ConditionTerm::PointerOffsetEqual(target_left, target_right),
+                    ConditionTerm::AddressOffsetEqual(pattern_left, pattern_right),
+                    ConditionTerm::AddressOffsetEqual(target_left, target_right),
                 ) => {
                     collect_offset_candidates(pattern_left, target_left, bound, candidates);
                     collect_offset_candidates(pattern_right, target_right, bound, candidates);
@@ -3977,8 +3977,8 @@ impl PureFactContext {
                     collect_offset_candidates(pattern_right, target_left, bound, candidates);
                 }
                 (
-                    ConditionTerm::PointerEqual(pattern_left, pattern_right),
-                    ConditionTerm::PointerEqual(target_left, target_right),
+                    ConditionTerm::AddressEqual(pattern_left, pattern_right),
+                    ConditionTerm::AddressEqual(target_left, target_right),
                 ) => {
                     collect_pointer_candidates(pattern_left, target_left, bound, candidates);
                     collect_pointer_candidates(pattern_right, target_right, bound, candidates);
@@ -4131,8 +4131,8 @@ impl PureFactContext {
             // across the frame (`n->right` before a call, `old(n)->right`
             // after it).
             (
-                ConditionTerm::PointerValueEqual(fact_left, fact_right),
-                ConditionTerm::PointerValueEqual(target_left, target_right),
+                ConditionTerm::PointerEqual(fact_left, fact_right),
+                ConditionTerm::PointerEqual(target_left, target_right),
             ) => {
                 let same = |fact: &crate::kernel::Pointer, target: &crate::kernel::Pointer| {
                     fact == target
@@ -4152,8 +4152,8 @@ impl PureFactContext {
                     || same(fact_left, target_right) && same(fact_right, target_left)
             }
             (
-                ConditionTerm::PointerOffsetEqual(fact_left, fact_right),
-                ConditionTerm::PointerOffsetEqual(target_left, target_right),
+                ConditionTerm::AddressOffsetEqual(fact_left, fact_right),
+                ConditionTerm::AddressOffsetEqual(target_left, target_right),
             ) => {
                 let fact_left = fact_left.as_ref();
                 let fact_right = fact_right.as_ref();
@@ -4737,8 +4737,8 @@ impl PureFactContext {
 
     /// Whether an exact positive offset-equality lookup can find a source.
     /// This index is maintained as those facts are inserted.
-    pub(in crate::kernel) fn has_recorded_pointer_offset_equalities(&self) -> bool {
-        !self.pointer_offset_equalities_by_shape.is_empty()
+    pub(in crate::kernel) fn has_recorded_address_offset_equalities(&self) -> bool {
+        !self.address_offset_equalities_by_shape.is_empty()
     }
 
     pub(in crate::kernel) fn has_pointer_offset_state_fact(
@@ -4750,7 +4750,7 @@ impl PureFactContext {
         // to move an already-certified address equality between framed memory
         // states, never to synthesize a new alias relationship.
         let matches = |condition: &ConditionTerm| {
-            let ConditionTerm::PointerOffsetEqual(fact_left, fact_right) = condition else {
+            let ConditionTerm::AddressOffsetEqual(fact_left, fact_right) = condition else {
                 return false;
             };
             self.address_offsets_state_equivalent(fact_left, left)
@@ -4761,7 +4761,7 @@ impl PureFactContext {
         // A matching fact has a side state-equivalent to `left`, so it is
         // filed under `left`'s shape.
         let indexed = self
-            .pointer_offset_equalities_by_shape
+            .address_offset_equalities_by_shape
             .get(&crate::kernel::assumptions::offset_state_shape(left))
             .into_iter()
             .flat_map(crate::persistent::PersistentSet::iter)
@@ -5045,11 +5045,11 @@ impl PureFactContext {
             }
             // Full pointer equality entails address equality, while its
             // negation makes no claim about addresses.
-            if let ConditionTerm::PointerValueEqual(left, right) = condition
+            if let ConditionTerm::PointerEqual(left, right) = condition
                 && *value
             {
                 let address =
-                    ConditionTerm::pointer_equal(left.address().clone(), right.address().clone());
+                    ConditionTerm::address_equal(left.address().clone(), right.address().clone());
                 if condition_polarities.insert(canonical_contradiction_condition(&address), true)
                     == Some(false)
                 {
@@ -5615,7 +5615,7 @@ mod congruent_condition_conflict_tests {
         let p = Address::symbolic(Variable(971_001));
         let q = Address::symbolic(Variable(971_002));
         let equality =
-            Proposition::ConditionIs(ConditionTerm::pointer_equal(p.clone(), q.clone()), true);
+            Proposition::ConditionIs(ConditionTerm::address_equal(p.clone(), q.clone()), true);
         let aligned = Proposition::ConditionIs(ConditionTerm::pointer_aligned(p, 8), true);
         let not_aligned = Proposition::ConditionIs(ConditionTerm::pointer_aligned(q, 8), false);
         for facts in [
@@ -5916,7 +5916,7 @@ mod shared_wide_order_evidence_tests {
         let format = MachineIntegerType::UInt64;
         let x = MachineTerm::Variable(Variable(992570));
         let tagged = MachineTerm::uint64_add(
-            MachineTerm::pointer_address(Address::symbolic(Variable(992571))),
+            MachineTerm::integer_address(Address::symbolic(Variable(992571))),
             MachineTerm::uint64_constant(1),
         );
         let source = Proposition::ConditionIs(ConditionTerm::uint64_equal(x.clone(), tagged), true);

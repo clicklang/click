@@ -1153,7 +1153,7 @@ fn synthesizes_loaded_pointer_equality_as_pointer_comparison() {
     };
     let read = Address::loaded_value(&crate::kernel::intern_memory(SymbolicMemory::new()), &owner);
     let proposition = Proposition::ConditionIs(
-        ConditionTerm::pointer_value_equal(
+        ConditionTerm::pointer_equal(
             crate::kernel::Pointer::new(read, ProgramType::Int32Pointer),
             crate::kernel::Pointer::new(data.clone(), ProgramType::Int32Pointer),
         ),
@@ -1208,7 +1208,7 @@ fn synthesizes_a_reassigned_pointer_parameter_at_entry() {
     };
     let current = Address::symbolic(Variable(44));
     let proposition = Proposition::ConditionIs(
-        ConditionTerm::pointer_value_equal(
+        ConditionTerm::pointer_equal(
             crate::kernel::Pointer::new(passed.clone(), ProgramType::Int32Pointer),
             crate::kernel::Pointer::new(current.clone(), ProgramType::Int32Pointer),
         ),
@@ -1246,7 +1246,7 @@ fn synthesizes_dynamically_indexed_pointer_offset_equality() {
     let data_offset = AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(42)), 4);
     let index = MachineTerm::Variable(Variable(43));
     let proposition = Proposition::ConditionIs(
-        ConditionTerm::PointerOffsetEqual(
+        ConditionTerm::AddressOffsetEqual(
             Box::new(AddressOffset::Add(
                 Box::new(data_offset.clone()),
                 Box::new(AddressOffset::scaled_int32_node(index.clone(), 4)),

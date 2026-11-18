@@ -22,12 +22,12 @@ fn automatic_storage_lookup_does_not_walk_alias_history() {
     let mut samples = Vec::new();
     for size in [16u64, 64, 256, 1024] {
         let mut facts = PureFactContext::new().assume_condition(
-            ConditionTerm::pointer_equal(root.clone(), storage.clone()),
+            ConditionTerm::address_equal(root.clone(), storage.clone()),
             true,
         );
         for id in 1..=size {
             facts = facts.assume_condition(
-                ConditionTerm::pointer_equal(
+                ConditionTerm::address_equal(
                     root.clone(),
                     Address::symbolic(Variable(897_000 + id)),
                 ),
@@ -61,7 +61,7 @@ fn declared_alignment_lookup_does_not_walk_alias_history() {
         let mut facts = PureFactContext::new();
         for id in 1..=size {
             facts = facts.assume_condition(
-                ConditionTerm::pointer_equal(
+                ConditionTerm::address_equal(
                     root.clone(),
                     Address::symbolic(Variable(900_000 + id)),
                 ),

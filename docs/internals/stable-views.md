@@ -199,6 +199,9 @@ A declared mutable effect is a consequence of the transferred authority.
 Each effect range is compared with the full checked view frontier; an effect
 and a view reserved from distinct caller occurrences are disjoint by the
 partition invariant, while the same occurrence needs an arithmetic proof.
+An ordinary verified call with exact write ranges requires those ranges to
+be separate from the caller's pre-existing live loans. The proof uses the
+ranges selected at call entry.
 Every path that retires an allocation, definite or of undecided continuity,
 consults the ledger that carries the call's own loans. Scope exits, function
 returns and throws, and temporary cleanup check that ledger by automatic

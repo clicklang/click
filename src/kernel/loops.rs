@@ -2872,7 +2872,7 @@ fn indexed_loop_exit_load_equality(
             };
             Some(constant(left)? == constant(right)?)
         }
-        ConditionTerm::PointerEqual(left, right) if expected => {
+        ConditionTerm::AddressEqual(left, right) if expected => {
             context.pointers_known_equal(left, right).then_some(true)
         }
         _ => None,
@@ -3251,7 +3251,7 @@ fn loop_exit_local_arguments(
                     let ProgramValue::Pointer(pointer) = value else {
                         return None;
                     };
-                    Some(ProgramValue::UInt64(MachineTerm::pointer_address(
+                    Some(ProgramValue::UInt64(MachineTerm::integer_address(
                         pointer.address().clone(),
                     )))
                 } else {
@@ -9711,10 +9711,8 @@ mod pointer_domain_clause_tests {
             start: base.address().clone(),
             width: 4u32.into(),
         }));
-        let context = PureFactContext::new().assume_condition(
-            ConditionTerm::pointer_value_equal(base.clone(), selected),
-            true,
-        );
+        let context = PureFactContext::new()
+            .assume_condition(ConditionTerm::pointer_equal(base.clone(), selected), true);
         for (end, refused) in [(0, false), (1, false), (2, true)] {
             for wide in [false, true] {
                 let (start, end, kind) = if wide {

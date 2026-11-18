@@ -425,8 +425,8 @@ fn term_mentions_pointer(term: &MachineTerm, target: &crate::kernel::Address) ->
     let mut pending = vec![term];
     while let Some(current) = pending.pop() {
         match current {
-            MachineTerm::PointerAddress(pointer, _) => {
-                if bounded_pointer_equal(pointer, target) {
+            MachineTerm::IntegerAddress(pointer, _) => {
+                if bounded_address_equal(pointer, target) {
                     return true;
                 }
             }
@@ -460,7 +460,7 @@ fn term_mentions_pointer(term: &MachineTerm, target: &crate::kernel::Address) ->
     false
 }
 
-fn bounded_pointer_equal(left: &crate::kernel::Address, right: &crate::kernel::Address) -> bool {
+fn bounded_address_equal(left: &crate::kernel::Address, right: &crate::kernel::Address) -> bool {
     if !bounded_pointer_work(left) || !bounded_pointer_work(right) || left.base != right.base {
         return false;
     }
@@ -532,9 +532,9 @@ fn is_pointer_relation(p: &Proposition) -> bool {
     matches!(
         p,
         Proposition::ConditionIs(
-            ConditionTerm::PointerValueEqual(..)
-                | ConditionTerm::PointerEqual(_, _)
-                | ConditionTerm::PointerOffsetEqual(_, _),
+            ConditionTerm::PointerEqual(..)
+                | ConditionTerm::AddressEqual(_, _)
+                | ConditionTerm::AddressOffsetEqual(_, _),
             true
         )
     )
@@ -721,10 +721,10 @@ fn charge_proposition(proposition: &Proposition) -> bool {
             left,
             right,
         } => bounded_term_work(left) && bounded_term_work(right),
-        ConditionTerm::PointerOffsetEqual(left, right) => {
+        ConditionTerm::AddressOffsetEqual(left, right) => {
             bounded_offset_work(left) && bounded_offset_work(right)
         }
-        ConditionTerm::PointerEqual(left, right) => {
+        ConditionTerm::AddressEqual(left, right) => {
             bounded_pointer_work(left) && bounded_pointer_work(right)
         }
         ConditionTerm::Float32(float) | ConditionTerm::Float64(float) => match float {
@@ -797,10 +797,10 @@ fn bounded_term_work_count(root: &MachineTerm, count: &mut usize) -> bool {
             MachineTerm::MemoryLoad(_, pointer, _) if !bounded_pointer_work(pointer) => {
                 return false;
             }
-            MachineTerm::PointerAddress(pointer, _) if !bounded_offset_work(&pointer.offset) => {
+            MachineTerm::IntegerAddress(pointer, _) if !bounded_offset_work(&pointer.offset) => {
                 return false;
             }
-            MachineTerm::PointerAddress(pointer, _)
+            MachineTerm::IntegerAddress(pointer, _)
                 if !bounded_address_base_work(&pointer.base) =>
             {
                 return false;
@@ -947,11 +947,11 @@ fn bounded_term_equal_count(left: &MachineTerm, right: &MachineTerm, count: &mut
             (uint64_constant!(a), uint64_constant!(b)) if constant_u64(*a) == constant_u64(*b) => {}
             (MachineTerm::Variable(a), MachineTerm::Variable(b)) if a == b => {}
             (MachineTerm::MemoryLoad(lm, lp, lk), MachineTerm::MemoryLoad(rm, rp, rk)) => {
-                if lm != rm || lk != rk || !bounded_pointer_equal(lp, rp) {
+                if lm != rm || lk != rk || !bounded_address_equal(lp, rp) {
                     return false;
                 }
             }
-            (MachineTerm::PointerAddress(_, _), MachineTerm::PointerAddress(_, _)) => {
+            (MachineTerm::IntegerAddress(_, _), MachineTerm::IntegerAddress(_, _)) => {
                 return false;
             }
             (

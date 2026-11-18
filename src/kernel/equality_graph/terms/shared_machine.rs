@@ -477,7 +477,7 @@ impl TermClasses {
                 N::ThreadHandle(_)
                 | N::IntegerToMachine { .. }
                 | N::BoolCast { .. }
-                | N::PointerAddress { .. }
+                | N::IntegerAddress { .. }
                 | N::Legacy(_)
                 | N::Call { .. } => self.intern_typed_machine(
                     term.machine_conversion_leaf().expect("conversion leaf"),
@@ -576,7 +576,7 @@ mod tests {
         let native = T::object_pointer_address(Address::symbolic(Variable(999460)), None);
         for format in [MachineIntegerType::Int64, MachineIntegerType::UInt64] {
             let root = KernelTermImport::default().machine(format, &native);
-            assert!(matches!(root.node(), N::PointerAddress { .. }));
+            assert!(matches!(root.node(), N::IntegerAddress { .. }));
             for width in [W::Bits8, W::Bits16, W::Bits32, W::Bits64, W::Bits128] {
                 let mut classes = TermClasses::default();
                 let exports = KernelTermExport::machine_export_count();

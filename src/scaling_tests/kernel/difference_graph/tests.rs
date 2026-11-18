@@ -104,13 +104,13 @@ fn unsigned_work_is_flat_beside_values_bounded_by_its_hub() {
                 true,
             );
             selected.assume_condition(
-                &ConditionTerm::pointer_offset_equal(
+                &ConditionTerm::address_offset_equal(
                     offset.clone(),
                     crate::kernel::AddressOffset::Constant(0),
                 ),
                 false,
             );
-            selected.decide(&ConditionTerm::pointer_offset_equal(
+            selected.decide(&ConditionTerm::address_offset_equal(
                 offset,
                 crate::kernel::AddressOffset::Constant(8),
             ))

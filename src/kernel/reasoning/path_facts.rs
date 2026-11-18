@@ -1338,7 +1338,7 @@ fn add_condition_path_fact_with_visibility(
     Some(())
 }
 
-pub(in crate::kernel) fn add_pointer_offset_equality_execution_pure_facts(
+pub(in crate::kernel) fn add_address_offset_equality_execution_pure_facts(
     facts: &mut ExecutionFacts,
     assumptions: &PureFactContext,
     left: AddressOffset,
@@ -1348,7 +1348,7 @@ pub(in crate::kernel) fn add_pointer_offset_equality_execution_pure_facts(
     add_condition_path_fact(
         facts,
         assumptions,
-        ConditionTerm::pointer_offset_equal(left.clone(), right.clone()),
+        ConditionTerm::address_offset_equal(left.clone(), right.clone()),
         value,
     )?;
 
@@ -1567,9 +1567,9 @@ pub(in crate::kernel) fn call_input_fact_is_already_known(
                     || !matches!(condition,
                         ConditionTerm::Compare { format: MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, .. }
                         | ConditionTerm::Compare { format: MachineIntegerType::Int64, relation: CompareRelation::Equal, .. }
-                        | ConditionTerm::PointerValueEqual(..)
-                    | ConditionTerm::PointerEqual(..)
-                        | ConditionTerm::PointerOffsetEqual(..))
+                        | ConditionTerm::PointerEqual(..)
+                    | ConditionTerm::AddressEqual(..)
+                        | ConditionTerm::AddressOffsetEqual(..))
                         && bare_condition_is_decided(assumptions, side))
     };
     crate::kernel::primitives::first_unavailable_connective_side(proposition, &available).is_none()
