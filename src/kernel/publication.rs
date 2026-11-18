@@ -435,6 +435,20 @@ fn acquire_load(
     Ok(Ok((next, value)))
 }
 
+/// The nonzero acquire selects the unique release of this right's payload.
+/// Spending its subscriber occurrence authorizes installing the folded
+/// payload beside that occurrence's residual frame.
+pub(in crate::kernel) struct PublishedPayloadReceipt {
+    residual: ResourceContext,
+    payload: ResourceFact,
+}
+
+impl PublishedPayloadReceipt {
+    pub(in crate::kernel) fn into_parts(self) -> (ResourceContext, ResourceFact) {
+        (self.residual, self.payload)
+    }
+}
+
 /// Settles each subscriber right read by an acquire load whose value the
 /// branch facts now decide: zero keeps the right, nonzero exchanges it for
 /// the published payload. Undecided rights stay observed. Only the flags of
@@ -476,10 +490,14 @@ pub(crate) fn resolve_observed_publications(
             kept.observed = None;
             next.resources =
                 resources.unchecked_with_fact(ResourceFact::own(Resource::Publication(kept)));
-        } else if let Ok(resources) = resources
-            .try_compose_with_facts_delaying_normalization([payload_fact(right)], assumptions)
-        {
-            next.resources = resources;
+        } else {
+            next.resources = ResourceContext::receive_published_payload(
+                PublishedPayloadReceipt {
+                    residual: resources,
+                    payload: payload_fact(right),
+                },
+                assumptions,
+            );
         }
     }
     next

@@ -1728,6 +1728,9 @@ impl MutexContext {
             resources
         };
         let resources = if ledger.storage_consumed(mutex) {
+            // The ledger identifies the storage that initialization consumed.
+            // Check its separation from the current frame, which may have
+            // acquired owners since initialization.
             let bytes = ledger
                 .get(mutex)
                 .expect("initialized mutex")

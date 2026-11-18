@@ -6429,6 +6429,19 @@ impl ResourceContext {
             .map(|(context, _)| context)
     }
 
+    pub(in crate::kernel) fn receive_published_payload(
+        receipt: crate::kernel::publication::PublishedPayloadReceipt,
+        assumptions: &PureFactContext,
+    ) -> Self {
+        let (mut residual, payload) = receipt.into_parts();
+        if residual.is_empty() {
+            residual.synchronize_memory_equalities(assumptions);
+        }
+        residual.insert_fact(payload);
+        residual.advance_prepared_memory_equalities(assumptions);
+        residual
+    }
+
     pub(in crate::kernel) fn restore_call_borrows(
         transfer: crate::kernel::functions::ReturnedCallBorrows,
         assumptions: &PureFactContext,
@@ -6957,6 +6970,37 @@ impl ResourceContext {
         fact_ceiling: fn(&ResourceFact) -> canonical_fact_set::SyntaxCeiling,
     ) -> canonical_fact_set::SyntaxCeiling {
         self.storage.index.canonical.syntax_ceiling(fact_ceiling)
+    }
+
+    #[cfg(test)]
+    pub(in crate::kernel) fn facts_are_materialized(&self) -> bool {
+        self.storage.materialized.get().is_some()
+    }
+
+    pub(in crate::kernel) fn fact_count(&self) -> usize {
+        self.storage.facts.len()
+    }
+
+    /// The call preparation producer checked intrinsic storage or an empty
+    /// body for this nonexclusive observation. Preserve written-neighbor
+    /// normalization of views without running owned admission.
+    pub(in crate::kernel) fn insert_prepared_call_view(
+        mut self,
+        fact: ResourceFact,
+        assumptions: &PureFactContext,
+    ) -> Self {
+        assert!(matches!(
+            fact,
+            ResourceFact::View(Resource::Memory(_) | Resource::Composite { .. })
+        ));
+        if self.is_empty() {
+            self.synchronize_memory_equalities(assumptions);
+        }
+        let entry = self.storage.next_entry_id;
+        self.insert_fact(fact.clone());
+        self.advance_prepared_memory_equalities(assumptions);
+        let occurrence = self.occurrence(entry);
+        self.normalized_delta(vec![(fact, occurrence)], assumptions)
     }
 
     pub fn facts(&self) -> &[ResourceFact] {

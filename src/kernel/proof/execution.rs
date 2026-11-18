@@ -10544,17 +10544,19 @@ impl ExecutionProofCore {
         selected: &ResourceFact,
         establish: bool,
     ) -> Result<ExecutionState, String> {
-        if self.evidence_completed
-            || (self.frontier.is_at_function_entry() && !self.frontier.entry_member_prefix)
-        {
-            return Err("population authority rewrite requires an active function body".into());
-        }
         let rewrite = CheckedPopulationAuthorityRewrite::construct(
             self.reached_state(),
             selected,
             establish,
             before_facts.assumptions(),
         )?;
+        // Preserve the exchange's storage and custody refusals at entry,
+        // before testing whether its successor can be recorded in the body.
+        if self.evidence_completed
+            || (self.frontier.is_at_function_entry() && !self.frontier.entry_member_prefix)
+        {
+            return Err("population authority rewrite requires an active function body".into());
+        }
         let successor = rewrite.after_state.clone();
         if self.evidence_state.is_some() {
             self.evidence_state = Some(successor.clone());

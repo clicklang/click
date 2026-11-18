@@ -12151,9 +12151,8 @@ fn prepare_contract_resource_transfer_unexplained(
     // planner's exclusive reservation asks for one owned entry that directly
     // entails the whole requirement, which no representative can supply for a
     // symbolic or non-unit constant quantity, so such a requirement takes the
-    // definitional route. A token population protects no memory, so the
-    // ledger has nothing to say about it; a population whose body owns memory
-    // is still checked against the active loans after planning.
+    // definitional route. Any body this route supplies still needs admission
+    // to the callee's partition, since these pieces were outside the reservation.
     let population_quantity_requirements = if purpose.lends() {
         checked_required_resources
             .iter()
@@ -12173,20 +12172,26 @@ fn prepare_contract_resource_transfer_unexplained(
     // the composite folded, so the expansion is not empty and the requirement
     // keeps its entry. The caller residual is still consumed definitionally
     // below.
+    let mut checked_owned_bodies = BTreeSet::new();
     let definitionally_empty_owned = if purpose.lends() {
         checked_required_resources
             .iter()
             .filter(|requirement| {
                 requirement.fact.is_own()
                     && matches!(requirement.fact.resource(), Resource::Composite { .. })
-                    && expand_all_composite_resource_facts(
-                        &ResourceContext::new_with_equalities(assumptions)
-                            .unchecked_with_fact(requirement.fact.clone()),
-                        interface.composite_resource_definitions(),
-                        &callee_state.program_point(),
-                        assumptions,
-                    )
-                    .is_some_and(|expanded| expanded.facts().is_empty())
+                    && {
+                        let body = expand_all_composite_resource_facts(
+                            &ResourceContext::new_with_equalities(assumptions)
+                                .unchecked_with_fact(requirement.fact.clone()),
+                            interface.composite_resource_definitions(),
+                            &callee_state.program_point(),
+                            assumptions,
+                        );
+                        if body.is_some() {
+                            checked_owned_bodies.insert(requirement.fact.clone());
+                        }
+                        body.is_some_and(|expanded| expanded.is_empty())
+                    }
             })
             .cloned()
             .collect::<Vec<_>>()
@@ -12533,113 +12538,70 @@ fn prepare_contract_resource_transfer_unexplained(
     } else {
         None
     };
-    // Excluding a counted-population requirement from the exclusive
-    // reservation costs nothing for a token population, whose units protect
-    // no bytes. A population whose body owns memory is a different matter:
-    // its units carry write authority over that storage into the callee, so
-    // it is checked against the loans this plan and the caller hold, exactly
-    // as a direct owned transfer of those bytes would be.
-    if let Some(plan) = &stable_view_plan {
-        for requirement in &population_quantity_requirements {
-            let singleton = ResourceContext::new_with_equalities(assumptions)
-                .unchecked_with_fact(requirement.fact.clone());
-            let body = match evaluate_resource_population_body_resources(
-                &singleton,
-                callee_state,
-                interface.composite_resource_definitions(),
-                assumptions,
-                budget,
-                false,
-            )? {
-                Ok(resources) => resources,
-                Err(error) => return Ok(Err(error)),
-            };
-            let body = expand_all_composite_resource_facts(
-                &body,
-                interface.composite_resource_definitions(),
-                &callee_state.program_point(),
-                assumptions,
-            )
-            .unwrap_or(body);
-            for fact in body.facts().iter().filter(|fact| fact.is_own()) {
-                let Some(range) = fact.memory_range() else {
-                    continue;
+    // Only a function's own certification can request the representation
+    // reached by a proof-only entry prefix. Compare its size before reading
+    // any heads, so a larger caller frame is never materialized for this.
+    let has_explicit_representation = preserve_explicit_representation
+        && (caller_state.resources().fact_count() != required_resources.fact_count()
+            || caller_state
+                .resources()
+                .composite_facts()
+                .filter_map(resource_fact_composite_head)
+                .ne(required_resources
+                    .composite_facts()
+                    .filter_map(resource_fact_composite_head)));
+
+    // An exact reservation of direct bodies already supplies the callee's
+    // partition. Keep canonical validation for requirements the plan did
+    // not reserve and for bodies that can depend on state or ledger evidence.
+    let reservation_supplies_partition = stable_view_plan.as_ref().is_some_and(|plan| {
+        plan.callee_resources
+            .contains_exact_facts_of(&required_resources)
+            && required_resources.composite_facts().all(|fact| {
+                let Resource::Composite { name, .. } = fact.resource() else {
+                    unreachable!("composite index")
                 };
-                if let Some(diagnostic) = plan.ledger.memory_access_refusal(
-                    range,
-                    assumptions,
-                    LoanRefusalOperation::Plan,
-                ) {
-                    return Ok(Err(RuntimeError::LoanRefusal(Box::new(diagnostic))));
-                }
-            }
-        }
-    }
-    let canonical_resources = {
+                checked_owned_bodies.contains(fact)
+                    && interface
+                        .composite_resource_definition(name)
+                        .is_some_and(CompositeResourceDefinition::has_argument_direct_body)
+            })
+    });
+    let canonical_resources = if reservation_supplies_partition {
+        None
+    } else {
         let canonical_state = caller_state
             .clone()
             .with_resource_context(required_resources.clone());
-        expand_all_composite_resource_facts_at_state(
+        let Some(canonical) = expand_all_composite_resource_facts_at_state(
             &required_resources,
             interface.composite_resource_definitions(),
             &canonical_state,
             assumptions,
-        )
+        ) else {
+            return Ok(Err(RuntimeError::FunctionContract(format!(
+                "could not expand required composite resources before call ({})",
+                bounded_contract_resource_frontier(&required_resources)
+            ))));
+        };
+        Some(canonical)
     };
-    let Some(canonical_resources) = canonical_resources else {
-        return Ok(Err(RuntimeError::FunctionContract(format!(
-            "could not expand required composite resources before call ({})",
-            bounded_contract_resource_frontier(&required_resources)
-        ))));
-    };
-    let population_body_resources = match evaluate_resource_population_body_resources(
-        &required_resources,
-        callee_state,
-        interface.composite_resource_definitions(),
-        assumptions,
-        budget,
-        false,
-    )? {
-        Ok(resources) => resources,
-        Err(error) => return Ok(Err(error)),
-    };
-    let required_composite_heads = required_resources
-        .facts()
-        .iter()
-        .filter_map(resource_fact_composite_head)
-        .collect::<Vec<_>>();
-    let caller_composite_heads = caller_state
-        .resources()
-        .facts()
-        .iter()
-        .filter_map(resource_fact_composite_head)
-        .collect::<Vec<_>>();
-    let has_explicit_representation = caller_state.resources().facts().len()
-        != required_resources.facts().len()
-        || caller_composite_heads != required_composite_heads;
     let mut callee_resources = if let Some(plan) = &stable_view_plan {
         plan.callee_resources.clone()
-    } else if preserve_explicit_representation && has_explicit_representation {
-        // Proof execution may have opened exactly the recursive branches needed
-        // by the body with `observe` or `unfold`. Independent certification
-        // must execute from that same definitionally equivalent form.
-        // The transfer checks below still consume every declared requirement,
-        // so this cannot weaken the function contract or affect ordinary
-        // calls, which always use the canonical boundary.
+    } else if has_explicit_representation {
+        // Independent certification executes with the same definitionally
+        // equivalent representation the proof reached. The transfer below
+        // still consumes every declared requirement.
         caller_state.resources().clone()
     } else {
-        canonical_resources
+        canonical_resources.expect("unreserved requirements were projected")
     };
     for empty_view in &empty_composite_views {
         // The head names a resource the callee may state; its checked body is
         // empty, so composing it adds a description and no authority.
         if !callee_resources.satisfies_fact(&empty_view.fact, assumptions) {
-            callee_resources = match callee_resources
-                .try_compose_with_fact(empty_view.fact.clone(), assumptions)
-            {
-                Ok(resources) => resources,
-                Err(error) => return Ok(Err(resource_context_runtime_error(error))),
-            };
+            callee_resources =
+                callee_resources.insert_prepared_call_view(empty_view.fact.clone(), assumptions);
         }
     }
     for requirement in &population_quantity_requirements {
@@ -12691,34 +12653,15 @@ fn prepare_contract_resource_transfer_unexplained(
             }));
         }
         if !callee_resources.satisfies_fact(&intrinsic_view.fact, assumptions) {
-            callee_resources = match callee_resources
-                .try_compose_with_fact(intrinsic_view.fact.clone(), assumptions)
-            {
-                Ok(resources) => resources,
-                Err(error) => return Ok(Err(resource_context_runtime_error(error))),
-            };
+            callee_resources = callee_resources
+                .insert_prepared_call_view(intrinsic_view.fact.clone(), assumptions);
         }
     }
-    for body_resource in population_body_resources.facts() {
-        // The population owns its body even while that body is absent from
-        // the caller's explicit proof context. Contract execution opens the
-        // body internally after the required population unit has established
-        // authority; surface proofs still need scoped `open` to use it.
-        if !callee_resources.satisfies_fact(body_resource, assumptions) {
-            callee_resources = match callee_resources
-                .try_compose_with_facts_delaying_normalization([body_resource.clone()], assumptions)
-            {
-                Ok(resources) => resources,
-                Err(error) => return Ok(Err(resource_context_runtime_error(error))),
-            };
-        }
-    }
-    if preserve_explicit_representation && has_explicit_representation {
+    if has_explicit_representation {
         let viewed_composites = caller_state
             .resources()
-            .facts()
-            .iter()
-            .filter(|fact| matches!(fact, ResourceFact::View(Resource::Composite { .. })))
+            .composite_facts()
+            .filter(|fact| fact.is_view())
             .cloned()
             .collect::<Vec<_>>();
         for composite in viewed_composites {
