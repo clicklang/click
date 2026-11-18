@@ -64,7 +64,6 @@ fn allocating_call_does_not_expand_the_callers_kept_objects() {
                     &output,
                     interface,
                     &PureFactContext::new(),
-                    None,
                     &state,
                     &state,
                 )
@@ -160,7 +159,6 @@ fn consuming_call_does_not_expand_unrelated_folded_allocations() {
                 &output,
                 interface,
                 &assumptions,
-                None,
                 &state,
                 &state,
             )
