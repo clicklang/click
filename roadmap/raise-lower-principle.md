@@ -1404,7 +1404,10 @@ selected volatile, substitution, collection and frontend checks passed again,
 followed by quality. The outcome parent's ten pushed commits were verified
 upstream before the clean primary advanced through Git.
 
-### 10q2b1 Loadability-count storage (in progress)
+The volatile-event slice landed in [PR #3273](https://github.com/clicklang/click/pull/3273);
+all six pushed commits were verified upstream.
+
+### 10q2b1 Loadability-count storage (landed)
 
 `MemoryLoadable::bytes` uses the existing machine carrier. Native constructor
 fields retain their prior structure and explicitly select Int32 or UInt64
@@ -1419,7 +1422,8 @@ format/hash and growing-root clone regressions cover the carrier boundary.
 All 409 affected checks, all 1,938 regular scaling cases and all 5,623 regular
 proof fixtures passed. Fact stability recorded 121 refusals and zero changed
 terms/paths; quality passed. Full nightly was not run. This is
-[PR #3275](https://github.com/clicklang/click/pull/3275), with auto-merge enabled.
+[PR #3275](https://github.com/clicklang/click/pull/3275); all three pushed
+commits were verified upstream before the clean primary advanced through Git.
 
 ### 10q2b2 Retained loadability-count production (in progress)
 
