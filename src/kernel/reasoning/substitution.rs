@@ -741,6 +741,21 @@ fn walk_resource<S: VariableSubstitution + ?Sized>(resource: &Resource, s: &S) -
                         StoredResourceField::Program(value) => {
                             StoredResourceField::from_program(s.stored_program_value(value.value()))
                         }
+                        StoredResourceField::Integer(root) => {
+                            StoredResourceField::from_minted(AlgebraicValue::Integer(
+                                s.integer(root.integer_native_compat().expect("Integer field")),
+                            ))
+                        }
+                        StoredResourceField::Algebraic(root) => {
+                            let ProgramValue::Parameter(value) =
+                                root.algebraic_native_value().expect("algebraic field")
+                            else {
+                                unreachable!()
+                            };
+                            StoredResourceField::from_minted(AlgebraicValue::Algebraic(
+                                s.algebraic_term(value),
+                            ))
+                        }
                     }
                 }));
             result.resource_arguments = crate::kernel::ResourceReference::map_captured_values(
