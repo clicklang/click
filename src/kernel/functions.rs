@@ -3658,7 +3658,9 @@ fn execute_verified_function_applications_with_suspension(
                 }),
                 _ => unreachable!("checked helper use"),
             };
-            let protocol_input = caller_state.clone().with_memory(post_state.memory.clone());
+            // The helper reads the post-call memory where it was made: at the
+            // post state's point, with the caller's ledgers.
+            let protocol_input = caller_state.clone().with_memory_of(&post_state);
             match super::mutexes::helper_contracts::apply_call_effect(
                 &protocol_input,
                 &helper.source,
