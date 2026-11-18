@@ -231,13 +231,13 @@ addresses require separation from the ledger's live memory footprint,
 including same-value writes. A nested reader reborrows the local loan through
 its exact resource binding.
 
-Modeled pthread mutex operations carry separation for their representation
-writes. Modular mutex protocol summaries use a conservative check for
-representation coordinates without a checked caller-side spelling. Modular
-construction checks the destination
-fields, or the complete result span for a construction return. Fresh
-aggregate result temporaries cannot have a prior loan. Initialization of
-automatic storage checks the active-loan index for the storage identity.
+Modeled pthread mutex operations on automatic storage carry representation
+separation obligations. External mutex operations and modular mutex summaries
+still use a conservative check when the representation range lacks a checked
+caller-side spelling. Modular construction checks the destination fields, or
+the complete result span for a construction return. Fresh aggregate result
+temporaries cannot have a prior loan. Automatic initialization checks the
+active-loan index for the storage identity.
 
 For a suspended modeled-pthread worker borrowing a parent view, the checked
 entry splits the parent's current share. The parent retains one sibling and

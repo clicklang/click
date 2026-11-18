@@ -20,5 +20,5 @@ void helper(struct holder *holder) {
 ```
 
 ```expect
-fail: pthread mutex storage write separation
+fail: stable-view memory access conflicts with an active loan
 ```

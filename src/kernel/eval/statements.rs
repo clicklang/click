@@ -740,9 +740,8 @@ fn write_program_lvalue_paths_for_initialization(
                 let bytes = value.program_type().byte_width();
                 let outcome = if !state.memory.has_block(&pointer.base)
                     || crate::kernel::block_is_never_address_taken_local(&pointer.base)
+                    || (initialization && pointer.base.is_local_block())
                 {
-                    memory_write_storage_outcome(state, pointer, bytes, &effective_assumptions)
-                } else if initialization && pointer.base.is_local_block() {
                     memory_write_storage_outcome(state, pointer, bytes, &effective_assumptions)
                         .or_else(|| {
                             state
