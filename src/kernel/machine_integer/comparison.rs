@@ -367,14 +367,17 @@ fn bounded_comparison_operand(
     if in_conditional
         && let Some((spelling, source, destination, child)) = operand.cast()
         && observation.format().bits() == destination.format().bits()
-        && matches!(
+        && (matches!(
             spelling,
             crate::kernel::MachineCastSpelling::Int64From32
                 | crate::kernel::MachineCastSpelling::Int64FromUInt32
                 | crate::kernel::MachineCastSpelling::UInt64FromInt32
                 | crate::kernel::MachineCastSpelling::UInt64From32
                 | crate::kernel::MachineCastSpelling::UInt32From64
-        )
+        ) || (child.variable().is_some()
+            && (spelling == crate::kernel::MachineCastSpelling::UInt64FromInt64
+                || (spelling == crate::kernel::MachineCastSpelling::Generic
+                    && crate::kernel::is_sign_cast32(source, destination)))))
     {
         crate::instrumentation::record_deterministic_work(1);
         return Some(MachineTerm::cast_node(
@@ -482,6 +485,17 @@ fn read_conditional_atom(
     crate::instrumentation::record_deterministic_work(1);
     let condition = match arguments[0].node() {
         N::Variable(variable) => ConditionTerm::Variable(*variable),
+        N::BoolEqual {
+            arguments: [left, right],
+        } => {
+            let (N::Variable(left), N::Variable(right)) = (left.node(), right.node()) else {
+                return None;
+            };
+            ConditionTerm::BoolEqual(
+                Box::new(ConditionTerm::Variable(*left)),
+                Box::new(ConditionTerm::Variable(*right)),
+            )
+        }
         N::BoolCompare {
             format,
             relation,

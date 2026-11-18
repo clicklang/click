@@ -3990,11 +3990,26 @@ fn raise_kernel_term_dispatch(
         }
         Node::BoolLiteral(value) => bool_literal(*value),
         Node::BoolIf { arguments } | Node::MachineIf { arguments } => {
-            let arm = |term| spell_bounded_uint64_operand(term, recurse(term)?);
+            let arm = |index: usize| {
+                let term = &arguments[index];
+                let expression = spell_bounded_uint64_operand(term, recurse(term)?)?;
+                // The signed 64-bit reading of an unsigned variable retains
+                // the word, so its name needs the arm's type on the surface.
+                if term.ty() == &KernelType::Program(ProgramType::Int64)
+                    && let Node::Variable(variable) = term.node()
+                    && !bound_variables.contains_key(variable)
+                    && folds::binder_name(false, *variable).is_none()
+                    && variable_spells_uint64(*variable, parameter_binding, state)
+                {
+                    synthesize_observation_operand(expression, ProgramType::Int64)
+                } else {
+                    Some(expression)
+                }
+            };
             SurfaceTerm::If {
                 condition: Box::new(bool_truth(recurse(&arguments[0])?)),
-                then_branch: Box::new(arm(&arguments[1])?),
-                else_branch: Box::new(arm(&arguments[2])?),
+                then_branch: Box::new(arm(1)?),
+                else_branch: Box::new(arm(2)?),
             }
         }
         Node::BoolEqual { arguments } => proposition_bool_value(ClickProposition::Comparison {
@@ -4037,26 +4052,28 @@ fn raise_kernel_term_dispatch(
                         .literal()
                         .is_some_and(|value| value.uint64_as_const().is_some())
                 });
-            let unsigned_widening = |operand: V<'_>| {
+            let unsigned_cast = |operand: V<'_>| {
                 operand.cast().is_some_and(|(spelling, _, _, child)| {
                     matches!(
                         spelling,
                         MachineCastSpelling::UInt64FromInt32 | MachineCastSpelling::UInt64From32
                     ) && (child.variable().is_some() || child.literal().is_some())
+                        || (spelling == MachineCastSpelling::UInt64FromInt64
+                            && child.variable().is_some())
                 })
             };
             let operands = arguments.each_ref().map(V::Shared);
-            // Equality compares bits. Casting an unsigned widening to the
-            // Int64 filing type would rebuild it as a signed widening.
+            // Equality compares bits. Casting to the Int64 filing type
+            // would change or erase the unsigned cast.
             let unsigned_word = wide_equality
-                && operands.iter().copied().any(unsigned_widening)
+                && operands.iter().copied().any(unsigned_cast)
                 && operands
                     .iter()
                     .copied()
-                    .all(|operand| unsigned_widening(operand) || operand.variable().is_some());
+                    .all(|operand| unsigned_cast(operand) || operand.variable().is_some());
             let operand = |term| {
                 let expression = spell_bounded_uint64_operand(term, recurse(term)?)?;
-                if unsigned_literal || (unsigned_word && unsigned_widening(V::Shared(term))) {
+                if unsigned_literal || (unsigned_word && unsigned_cast(V::Shared(term))) {
                     Some(expression)
                 } else {
                     let ty = if unsigned_word {
@@ -4889,6 +4906,26 @@ fn synthesize_uint32_operand(expression: ContractExpression) -> Option<ContractE
 /// signed counterpart of [`synthesize_uint32_operand`].
 fn synthesize_int32_operand(expression: ContractExpression) -> Option<ContractExpression> {
     synthesize_observation_operand(expression, ProgramType::Int32)
+}
+
+fn variable_spells_uint64(
+    variable: Variable,
+    parameter_binding: ParameterBinding<'_>,
+    state: &ExecutionState,
+) -> bool {
+    let term = MachineTerm::Variable(variable);
+    if let Some(name) = state.locals().names_holding_integer(&term).next() {
+        return state
+            .locals()
+            .get(name)
+            .is_some_and(|value| value.program_type() == ProgramType::UInt64);
+    }
+    describe_parameter_bitvector(&term, parameter_binding).is_some_and(|name| {
+        parameter_binding.parameters.iter().any(|parameter| {
+            parameter.name() == name
+                && parameter.interface_type().to_kernel_type() == ProgramType::UInt64
+        })
+    })
 }
 
 /// Whether [`synthesize_surface_bitvector`] spells `term` as a `uint32`
