@@ -1383,6 +1383,11 @@ all 316 selected checks, all 1,937 regular scaling cases and all 5,621 regular
 proof fixtures passed. Fact stability recorded 121 refusals and zero changed
 terms/paths; quality passed. Full nightly was not run.
 
+After integrating upstream `2d5b4c37a` and its Rust frontend changes, all 245
+selected volatile, substitution, collection and frontend checks passed again,
+followed by quality. The outcome parent's ten pushed commits were verified
+upstream before the clean primary advanced through Git.
+
 ## Chunk 3: machine-valued pure-function results
 
 Finish the remaining machine-valued call-result boundaries in six sequential
