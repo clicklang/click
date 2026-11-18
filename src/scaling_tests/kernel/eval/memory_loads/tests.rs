@@ -2255,7 +2255,7 @@ fn immediate_pointer_store_readability_does_not_walk_history() {
         let goal = |base: Address, bytes| Proposition::MemoryLoadable {
             memory: later.memory().clone(),
             base,
-            bytes: MachineTerm::constant(bytes),
+            bytes: (MachineTerm::constant(bytes)).into(),
             wide: false,
         };
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -2293,7 +2293,7 @@ fn immediate_pointer_store_readability_does_not_walk_history() {
                     &Proposition::MemoryLoadable {
                         memory: ended.clone(),
                         base: read.clone(),
-                        bytes: MachineTerm::constant(4),
+                        bytes: (MachineTerm::constant(4)).into(),
                         wide: false,
                     },
                 )

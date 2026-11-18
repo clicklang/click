@@ -881,7 +881,7 @@ mod tests {
     use crate::kernel::{MachineTerm, PureFactContext, Variable};
 
     fn guard(index: u32, value: bool) -> Proposition {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::equal(
                 MachineTerm::Variable(Variable(index as u64)),
                 MachineTerm::constant(0),

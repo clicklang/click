@@ -6,7 +6,7 @@ use crate::kernel::proof::fact_reasoning::normalize_using_conditions;
 fn specialized_normalization_uses_only_selected_inputs_as_related_and_unrelated_facts_grow() {
     let v = |n| IntegerTerm::var(crate::kernel::Variable(n));
     let le = |a: IntegerTerm, b: IntegerTerm| {
-        Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(a.into(), b.into()), true)
+        Proposition::condition_is(ConditionTerm::IntegerLessEqual(a.into(), b.into()), true)
     };
     let (a, b, f) = (v(877001), v(877002), v(877003));
     let selected = vec![

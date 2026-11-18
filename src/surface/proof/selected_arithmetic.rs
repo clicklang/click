@@ -94,47 +94,59 @@ impl MachineOrder {
             return Some(Self::Wide(carrier));
         }
         match proposition {
-            Proposition::ConditionIs(
-                ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
-                    relation: CompareRelation::LessThan,
-                    ..
-                }
-                | ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
-                    relation: CompareRelation::LessEqual,
-                    ..
-                }
-                | ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
-                    relation: CompareRelation::GreaterThan,
-                    ..
-                }
-                | ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
-                    relation: CompareRelation::GreaterEqual,
-                    ..
-                },
-                _,
-            ) => Some(Self::Int32),
+            condition_source_0 @ Proposition::ConditionIs(_, _)
+                if let Some((
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::LessThan,
+                        ..
+                    }
+                    | ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::LessEqual,
+                        ..
+                    }
+                    | ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::GreaterThan,
+                        ..
+                    }
+                    | ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::GreaterEqual,
+                        ..
+                    },
+                    _,
+                )) = condition_source_0.condition_native() =>
+            {
+                Some(Self::Int32)
+            }
             // An `int32` equality; a `uint32` one is refused by the `int32`
             // bridges and left out.
-            Proposition::ConditionIs(
-                ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                    relation: CompareRelation::Equal,
-                    ..
-                },
-                true,
-            ) => Some(Self::Int32),
-            Proposition::ConditionIs(
-                ConditionTerm::Compare {
-                    format: MachineIntegerType::Int64,
-                    relation: CompareRelation::Equal,
-                    ..
-                },
-                true,
-            ) => Some(Self::Equal64),
+            condition_source_0 @ Proposition::ConditionIs(_, true)
+                if let Some((
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+                        relation: CompareRelation::Equal,
+                        ..
+                    },
+                    _,
+                )) = condition_source_0.condition_native() =>
+            {
+                Some(Self::Int32)
+            }
+            condition_source_0 @ Proposition::ConditionIs(_, true)
+                if let Some((
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int64,
+                        relation: CompareRelation::Equal,
+                        ..
+                    },
+                    _,
+                )) = condition_source_0.condition_native() =>
+            {
+                Some(Self::Equal64)
+            }
             _ => None,
         }
     }
@@ -186,7 +198,7 @@ enum Establish {
 fn observed_operation_format(
     identity: &Proposition,
 ) -> Option<crate::kernel::MachineIntegerFormat> {
-    let Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true) = identity else {
+    let Some((ConditionTerm::IntegerEqual(left, right), true)) = identity.condition_native() else {
         return None;
     };
     [left, right].into_iter().find_map(|side| {
@@ -287,36 +299,24 @@ fn is_rewrite_equality(kernel: &Proposition) -> bool {
     // Retained machine comparisons use exact Integer observations. They are
     // the same machine equalities this strategy already accepts, not a new
     // class of mathematical Integer rewrite candidates.
-    if let Proposition::ConditionIs(condition @ ConditionTerm::IntegerEqual(..), true) = kernel
+    if let Some((condition @ ConditionTerm::IntegerEqual(..), true)) = (kernel).condition_native()
         && let Some(view) =
             crate::kernel::machine_integer::comparison::structural_comparison_view(condition)
         && view.format.format().bits() <= 64
     {
         return true;
     }
-    matches!(
-        kernel,
-        Proposition::ConditionIs(
-            ConditionTerm::Compare {
-                // An 8- or 16-bit equality rewrites at its own width.
-                format: MachineIntegerType::Int32
-                    | MachineIntegerType::UInt32
-                    | MachineIntegerType::Int64
-                    | MachineIntegerType::Int8
-                    | MachineIntegerType::UInt8
-                    | MachineIntegerType::Int16
-                    | MachineIntegerType::UInt16,
-                relation: CompareRelation::Equal,
-                ..
-            },
-            true
-        ) | Proposition::ConditionIs(
-            ConditionTerm::AddressEqual(_, _)
-                | ConditionTerm::PointerEqual(_, _)
-                | ConditionTerm::AddressOffsetEqual(_, _),
-            true
-        ) | Proposition::Equal(Term::Algebraic(_), Term::Algebraic(_))
-    )
+    matches!(&kernel, condition_source @ Proposition::ConditionIs(_, true)
+        if matches!(condition_source.condition_native(), Some((ConditionTerm::Compare {
+            // An 8- or 16-bit equality rewrites at its own width.
+            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32 | MachineIntegerType::Int64
+                | MachineIntegerType::Int8 | MachineIntegerType::UInt8 | MachineIntegerType::Int16 | MachineIntegerType::UInt16,
+            relation: CompareRelation::Equal, ..
+        } | ConditionTerm::AddressEqual(_, _) | ConditionTerm::PointerEqual(_, _) | ConditionTerm::AddressOffsetEqual(_, _), _))))
+        || matches!(
+            kernel,
+            Proposition::Equal(Term::Algebraic(_), Term::Algebraic(_))
+        )
 }
 
 /// An equality in both directions, each with its kernel form.
@@ -376,7 +376,7 @@ fn explicit_native_rewrite_equality(
     kernel: &Proposition,
     surface: &ClickProposition,
 ) -> Option<ClickProposition> {
-    let Proposition::ConditionIs(ConditionTerm::Compare { format, .. }, _) = kernel else {
+    let Some((ConditionTerm::Compare { format, .. }, _)) = kernel.condition_native() else {
         return None;
     };
     fn cast(
@@ -447,7 +447,10 @@ fn algebraic_sides(
     fact: &Proposition,
 ) -> Option<(&crate::kernel::AlgebraicTerm, &crate::kernel::AlgebraicTerm)> {
     match fact {
-        Proposition::ConditionIs(ConditionTerm::AlgebraicEqual(left, right), true) => {
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::AlgebraicEqual(left, right), _)) =
+                condition_source_0.condition_native() =>
+        {
             Some((left, right))
         }
         Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) => Some((left, right)),
@@ -631,18 +634,18 @@ mod tests {
             };
             let equality = ConditionTerm::IntegerEqual(side(995450), side(995451));
             assert_eq!(
-                is_rewrite_equality(&Proposition::ConditionIs(equality.clone(), true)),
+                is_rewrite_equality(&Proposition::condition_is(equality.clone(), true)),
                 format.format().bits() <= 64
             );
-            assert!(!is_rewrite_equality(&Proposition::ConditionIs(
+            assert!(!is_rewrite_equality(&Proposition::condition_is(
                 equality, false
             )));
-            assert!(!is_rewrite_equality(&Proposition::ConditionIs(
+            assert!(!is_rewrite_equality(&Proposition::condition_is(
                 ConditionTerm::IntegerNotEqual(side(995450), side(995451)),
                 true
             )));
         }
-        assert!(!is_rewrite_equality(&Proposition::ConditionIs(
+        assert!(!is_rewrite_equality(&Proposition::condition_is(
             ConditionTerm::IntegerEqual(
                 IntegerTerm::Variable(Variable(995452)).into(),
                 IntegerTerm::Variable(Variable(995453)).into()
@@ -961,7 +964,7 @@ theorem black_color_is_black(color: Color) {
         let used = MachineTerm::Variable(Variable(920_001));
         let capacity = MachineTerm::Variable(Variable(920_002));
         let slots = MachineTerm::Variable(Variable(920_003));
-        let kernel = Proposition::ConditionIs(
+        let kernel = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,

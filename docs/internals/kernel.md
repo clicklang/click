@@ -1385,7 +1385,10 @@ reads it, or with the condition that decides a branch.
 #### Where the implementation departs from this
 
 The Rust importer gives every MIR local the user did not name a local
-`__rust_mir_<N>` (`src/languages/rust/charon.rs`). MIR is three-address code,
+`__rust_mir_<N>` (`src/languages/rust/charon.rs`). A source name bound more
+than once keeps that key in the MIR only; `MirBody::spellings` gives its
+source name, and the lowering declares it as a `LocalBindingId` with that
+spelling, where its storage starts, as C declares a block's locals. MIR is three-address code,
 so most of these hold one operand of a larger source expression.
 
 `src/languages/rust/charon/temporaries.rs` puts a pure value back into the
@@ -1474,10 +1477,10 @@ parameter the body never writes, moves or borrows, or a reference borrowing a
 place rooted at a local, whose address rustc keeps for the borrow's life. A
 reborrow `&mut *t` of such a borrow is the borrow itself, and `*&p` is `p`;
 each value is resolved once, so a chain of reborrows costs its length. A
-shared borrow of a shared slice local is that slice, as `split_at` and
-`chunks_exact` read it; the length or a conversion of an unchanging value is
-unchanging; and a shared borrow of a reference or slice parameter does not
-change it.
+shared borrow of a shared slice local, or a shared slice of a local array
+(`&words[..]`), is that slice, as `split_at` and `chunks_exact` read it; the
+length or a conversion of an unchanging value is unchanging; and a shared
+borrow of a reference or slice parameter does not change it.
 
 `temporaries::remove_unused` removes a temporary the body never names apart
 from its storage markers and its writes of pure values, and a `()` temporary

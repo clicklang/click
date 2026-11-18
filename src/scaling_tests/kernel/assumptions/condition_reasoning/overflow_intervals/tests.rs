@@ -486,7 +486,7 @@ fn shared_widened_queries_and_evidence_do_not_export_operands() {
                     let (evidence, _) = context
                         .selected_for_test()
                         .proves_atomic_for_derivation_with_id(
-                            &Proposition::ConditionIs(condition, true),
+                            &Proposition::condition_is(condition, true),
                             true,
                         );
                     assert!(matches!(evidence, Some(crate::kernel::AtomicPropositionDerivationEvidence::WidenedUnsignedSumBound)));
@@ -737,7 +737,7 @@ fn retained_overflow_source_lookup_ignores_unrelated_guards() {
                 .unwrap(),
         )
         .unwrap();
-        let source = Proposition::ConditionIs(
+        let source = Proposition::condition_is(
             ConditionTerm::Overflows {
                 format,
                 op: OverflowOperation::Multiply,

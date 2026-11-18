@@ -127,7 +127,7 @@ fn pointer_disequality_projection_ignores_unrelated_pointer_predicates() {
                     ),
                     true,
                 );
-                assert!(facts.contains_known(&Proposition::ConditionIs(
+                assert!(facts.contains_known(&Proposition::condition_is(
                     ConditionTerm::address_offset_equal(
                         AddressOffset::Variable(Variable(73000)),
                         AddressOffset::Variable(Variable(73001))
@@ -165,7 +165,7 @@ fn pointer_comparison_evidence_work_ignores_unrelated_facts() {
                 let alias = Address::symbolic(Variable(78003));
                 // Registering the query before the premise must not choose a
                 // canonical base that later loses the admitted comparison.
-                let goal = Proposition::ConditionIs(
+                let goal = Proposition::condition_is(
                     ConditionTerm::address_equal(left.clone(), alias.clone()),
                     false,
                 );
@@ -206,7 +206,9 @@ fn full_pointer_alias_queries_do_not_walk_unrelated_conditions() {
             unreachable!()
         };
         let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
-            context.equality_graph.knows_condition(&condition, value)
+            context
+                .equality_graph
+                .knows_condition((&condition).native_compat(), value)
         });
         assert!(proved);
         costs.push(work);
@@ -221,7 +223,7 @@ fn cited_pointer_context_construction_scales_with_selected_conditions() {
     for size in [8_u64, 32, 128] {
         let (goal, mut selected) = selected_cursor_chain();
         for index in 0..size {
-            selected.push(Proposition::ConditionIs(
+            selected.push(Proposition::condition_is(
                 ConditionTerm::equal(
                     MachineTerm::Variable(Variable(9_100_000 + index)),
                     MachineTerm::constant(index as u32),

@@ -45,17 +45,15 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // the two share one equality. A listed order premise does, and so
         // does a typed literal; with neither, the unsigned reading is
         // tried and then the signed one.
-        if !matches!(
-            goal,
-            Some(Proposition::ConditionIs(
-                ConditionTerm::Compare {
+        if !matches!(&goal, Some(condition_source_0 @ Proposition::ConditionIs(
+                _,
+                true
+            )) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare {
                     format: MachineIntegerType::Int64,
                     relation: CompareRelation::Equal,
                     ..
-                },
-                true
-            ))
-        ) {
+                }, _))))
+        {
             return Err(None);
         }
         if !search_input
@@ -177,22 +175,19 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         error.raw_summary()
                     ))
                 })?;
-            let equality = matches!(
-                kernel,
-                Proposition::ConditionIs(
-                    ConditionTerm::Compare {
+            let equality = matches!(&kernel, condition_source_0 @ Proposition::ConditionIs(
+                    _,
+                    true
+                ) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare {
                         format: MachineIntegerType::Int64,
                         relation: CompareRelation::Equal,
                         ..
-                    },
-                    true
-                )
-            );
+                    }, _))));
             // An equality the kernel already holds by identity: a local
             // whose value is the other side, `next == i + 1u64` after
             // `next = i + 1`. It needs no bridge, since both observations
             // are one term, but the sum it names is still to be observed.
-            if kernel == Proposition::ConditionIs(ConditionTerm::Constant(true), true)
+            if kernel == Proposition::condition_is(ConditionTerm::Constant(true), true)
                 && let Some((left, right, Relation::Equal, _)) = relation_parts(premise)
             {
                 for side in [

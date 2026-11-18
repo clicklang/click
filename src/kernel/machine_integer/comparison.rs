@@ -346,7 +346,7 @@ fn comparison_leaf_operand(operand: crate::kernel::MachineOperandView<'_>) -> Op
         .or_else(|| operand.variable().copied().map(MachineTerm::Variable))
 }
 
-/// Read a bounded bitwise, shift, wrapping arithmetic, or word cast operand.
+/// Read a bounded bitwise, shift, unsigned arithmetic, or word cast operand.
 /// Inspect only immediate leaves. Use the established word encoding for
 /// unsigned 32-bit arithmetic.
 fn bounded_comparison_operand(
@@ -402,6 +402,14 @@ fn bounded_comparison_operand(
             if in_conditional
                 && (!format.format().is_signed() || word32_arithmetic)
                 && (arguments[0].variable().is_some() != arguments[1].variable().is_some()) => {}
+        O::Divide | O::Remainder
+            if in_conditional
+                && !format.format().is_signed()
+                && arguments[0].variable().is_some()
+                && arguments[1]
+                    .literal()
+                    .and_then(|literal| format.constant_from_term(&literal))
+                    .is_some_and(|constant| constant.bits() != 0) => {}
         O::ShiftRight | O::ShiftLeft
             if operator == O::ShiftRight || !format.format().is_signed() =>
         {
@@ -827,9 +835,12 @@ impl NativeComparisonView<'_> {
     pub(crate) fn integer_proposition(&self) -> crate::kernel::Proposition {
         let condition = self.integer_condition();
         if let ConditionTerm::IntegerNotEqual(left, right) = condition {
-            crate::kernel::Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), false)
+            crate::kernel::Proposition::condition_is(
+                ConditionTerm::IntegerEqual(left, right),
+                false,
+            )
         } else {
-            crate::kernel::Proposition::ConditionIs(condition, true)
+            crate::kernel::Proposition::condition_is(condition, true)
         }
     }
 
@@ -988,7 +999,7 @@ pub(crate) fn reads_wide_integer_observations(proposition: &Proposition) -> bool
     let Proposition::ConditionIs(condition, value) = proposition else {
         return false;
     };
-    comparison_view_at_format(condition, *value)
+    comparison_view_at_format(condition.native_compat(), *value)
         .is_some_and(|view| !representation::spells_comparison_natively(view.format))
 }
 
@@ -1150,9 +1161,11 @@ pub(crate) fn comparison_view_through_integer_operations(
 /// has that comparison's readings.
 pub(crate) fn integer_readings_with_promotions(proposition: &Proposition) -> Vec<Proposition> {
     if let Proposition::ConditionIs(condition, value) = proposition {
-        let promoted = narrow_comparison_as_int32(condition);
-        let widened =
-            integer_comparisons_of_widenings(promoted.as_ref().unwrap_or(condition), *value);
+        let promoted = narrow_comparison_as_int32(condition.native_compat());
+        let widened = integer_comparisons_of_widenings(
+            promoted.as_ref().unwrap_or(condition.native_compat()),
+            *value,
+        );
         if !widened.is_empty() {
             return widened;
         }
@@ -1232,7 +1245,8 @@ pub(crate) fn narrow_proposition_as_int32(proposition: &Proposition) -> Option<P
     let Proposition::ConditionIs(condition, value) = proposition else {
         return None;
     };
-    narrow_comparison_as_int32(condition).map(|widened| Proposition::ConditionIs(widened, *value))
+    narrow_comparison_as_int32(condition.native_compat())
+        .map(|widened| Proposition::condition_is(widened, *value))
 }
 
 /// C compares an 8- or 16-bit value through its widening to `int32`
@@ -1282,7 +1296,7 @@ fn integer_comparisons_of_widenings(condition: &ConditionTerm, value: bool) -> V
             (ConditionTerm::IntegerLessEqual(r, l), true)
         }
     };
-    vec![Proposition::ConditionIs(condition, truth)]
+    vec![Proposition::condition_is(condition, truth)]
 }
 
 /// The Integer comparisons of exact observations whose native comparison
@@ -1298,7 +1312,8 @@ pub(crate) fn integer_observations_of_native_comparison(
     let Proposition::ConditionIs(condition, value) = proposition else {
         return Vec::new();
     };
-    let Some((left, right, types)) = representation::comparison_readings(condition) else {
+    let Some((left, right, types)) = representation::comparison_readings(condition.native_compat())
+    else {
         return Vec::new();
     };
     // A native order has four spellings (`a >= 1` is `1 <= a`, and a false
@@ -1329,11 +1344,11 @@ pub(crate) fn integer_observations_of_native_comparison(
             };
             if native_comparison_at_format(&candidate, truth).is_some_and(
                 |(native, native_truth)| {
-                    let native = Proposition::ConditionIs(native, native_truth);
+                    let native = Proposition::condition_is(native, native_truth);
                     &native == proposition || spellings.contains(&native)
                 },
             ) {
-                lifted.push(Proposition::ConditionIs(candidate, truth));
+                lifted.push(Proposition::condition_is(candidate, truth));
                 break;
             }
         }
@@ -1388,7 +1403,7 @@ mod borrowed_comparison_tests {
                 };
                 assert_eq!(literal_native_comparison_value(&condition), Some(expected));
                 for truth in [true, false] {
-                    let proposition = Proposition::ConditionIs(condition.clone(), truth);
+                    let proposition = Proposition::condition_is(condition.clone(), truth);
                     assert_eq!(
                         crate::kernel::reasoning::path_facts::solve_builtin_prop(&proposition),
                         expected == truth

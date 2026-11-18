@@ -147,7 +147,7 @@ fn shared_tagged_word_certificates_preserve_bounds_without_exports() {
             CompareRelation::Equal,
             [View::Shared(&root), View::Shared(&root)],
         );
-        let goal = Proposition::ConditionIs(condition.clone(), true);
+        let goal = Proposition::condition_is(condition.clone(), true);
         let exports = KernelTermExport::machine_export_count();
         let (valid, work) = crate::instrumentation::measure_deterministic_work(|| {
             pointer_word_from_alignment(&[], &goal)
@@ -155,7 +155,7 @@ fn shared_tagged_word_certificates_preserve_bounds_without_exports() {
         assert!(valid, "size={size}");
         assert!(!pointer_word_from_alignment(
             &[],
-            &Proposition::ConditionIs(condition, false)
+            &Proposition::condition_is(condition, false)
         ));
         assert_eq!(KernelTermExport::machine_export_count(), exports);
         if let Some(previous) = previous {
@@ -180,7 +180,7 @@ fn intrinsic_alignment_known_work_ignores_other_blocks_and_related_facts() {
             let other: AddressBase = format!("intrinsic-alignment-other-{i}").as_str().into();
             crate::kernel::primitives::register_block_alignment(&other, 16);
             for related in [block.clone(), other] {
-                context = context.assume_proposition(Proposition::ConditionIs(
+                context = context.assume_proposition(Proposition::condition_is(
                     ConditionTerm::pointer_aligned(
                         Address {
                             base: related,
@@ -194,7 +194,7 @@ fn intrinsic_alignment_known_work_ignores_other_blocks_and_related_facts() {
         }
         let goals =
             [(0, 8, true), (4, 8, false), (0, 16, true)].map(|(offset, alignment, truth)| {
-                Proposition::ConditionIs(
+                Proposition::condition_is(
                     ConditionTerm::pointer_aligned(
                         Address {
                             base: block.clone(),

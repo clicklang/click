@@ -571,6 +571,10 @@ impl Metadata<'_> {
                     self.cleanups(cleanups)?;
                     span
                 }
+                CppStatement::ReturnVoid { cleanups, span } => {
+                    self.cleanups(cleanups)?;
+                    span
+                }
                 CppStatement::Unreachable { span } | CppStatement::ThrowIosFailure { span, .. } => {
                     span
                 }

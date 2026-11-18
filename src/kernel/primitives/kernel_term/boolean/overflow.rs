@@ -163,7 +163,7 @@ mod tests {
                     let target = Address::null();
                     let expected =
                         crate::kernel::reasoning::substitute_pointer_variable_in_proposition(
-                            &Proposition::ConditionIs(source.clone(), true),
+                            &Proposition::condition_is(source.clone(), true),
                             Variable(999201),
                             &target,
                         );
@@ -262,7 +262,7 @@ mod tests {
         ] {
             let root = KernelTermImport::default().condition(&source);
             let expected = crate::kernel::reasoning::substitute_pointer_variable_in_proposition(
-                &Proposition::ConditionIs(source.clone(), true),
+                &Proposition::condition_is(source.clone(), true),
                 Variable(999210),
                 &Address::null(),
             );

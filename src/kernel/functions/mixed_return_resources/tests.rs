@@ -1331,7 +1331,7 @@ fn nonunit_memory_returns_refuse_but_token_counts_keep_their_constructed_body() 
                 name: "many".into(),
                 arguments: vec![].into(),
             },
-            Box::new(MachineTerm::constant(2)),
+            Box::new(MachineTerm::constant(2).into()),
         );
         let evaluated = EvaluatedReturnResources::new(&facts)
             .admit(head.clone(), ReturnOwnershipOrigin::Description, &facts)

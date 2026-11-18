@@ -179,7 +179,7 @@ impl EqualityGraph {
                                 if value.is_some() {
                                     record_implicit_consulted_premises(
                                         context,
-                                        &Proposition::ConditionIs(fact.clone(), true),
+                                        &Proposition::condition_is(fact.clone(), true),
                                     );
                                     break;
                                 }
@@ -243,14 +243,14 @@ mod tests {
             KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [var(995871), var(995871)]);
         let operand = SharedMachineIntegerTerm::from_shared(ty, root.clone()).unwrap();
         let alias = SharedMachineIntegerTerm::from_shared(ty, var(995872)).unwrap();
-        let source = Proposition::ConditionIs(
+        let source = Proposition::condition_is(
             ConditionTerm::integer_equal(
                 IntegerTerm::Machine(operand.clone()),
                 IntegerTerm::Machine(alias.clone()),
             ),
             true,
         );
-        let literal = Proposition::ConditionIs(
+        let literal = Proposition::condition_is(
             ConditionTerm::integer_equal(
                 IntegerTerm::Machine(alias),
                 IntegerTerm::constant(7.into()),
@@ -305,7 +305,7 @@ mod tests {
                 .unwrap(),
         )
         .unwrap();
-        let source = Proposition::ConditionIs(
+        let source = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,

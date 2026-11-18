@@ -11,7 +11,12 @@ use crate::kernel::{ConditionTerm, Proposition, SharedIntegerTerm};
 
 fn order(proposition: &Proposition) -> Option<(&SharedIntegerTerm, &SharedIntegerTerm)> {
     match proposition {
-        Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(a, b), true) => Some((a, b)),
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::IntegerLessEqual(a, b), _)) =
+                condition_source_0.condition_native() =>
+        {
+            Some((a, b))
+        }
         _ => None,
     }
 }
@@ -29,7 +34,7 @@ pub(super) fn check(
     if bounds.len() != 2 {
         return Err(invalid());
     }
-    let Proposition::ConditionIs(ConditionTerm::IntegerEqual(a, b), true) = result else {
+    let Some((ConditionTerm::IntegerEqual(a, b), true)) = result.condition_native() else {
         return Err(invalid());
     };
     let (ty, value, stated) = if let Some((ty, value)) = mathematical(a) {
@@ -87,10 +92,10 @@ mod tests {
     use num_bigint::BigInt;
 
     fn le(a: IntegerTerm, b: IntegerTerm) -> Proposition {
-        Proposition::ConditionIs(ConditionTerm::integer_less_equal(a, b), true)
+        Proposition::condition_is(ConditionTerm::integer_less_equal(a, b), true)
     }
     fn equal(a: IntegerTerm, b: IntegerTerm) -> Proposition {
-        Proposition::ConditionIs(ConditionTerm::integer_equal(a, b), true)
+        Proposition::condition_is(ConditionTerm::integer_equal(a, b), true)
     }
 
     fn operation(ty: Ty, subtract: bool, left: MachineTerm, right: MachineTerm) -> MachineTerm {
@@ -147,7 +152,7 @@ mod tests {
             for subtract in [false, true] {
                 let (premises, goal, _) = inputs(ty, subtract, min.clone(), max.clone());
                 assert!(check_rule(vec![0, 1], &goal, &premises).is_ok());
-                let Proposition::ConditionIs(ConditionTerm::IntegerEqual(a, b), true) = &goal
+                let Some((ConditionTerm::IntegerEqual(a, b), true)) = (&goal).condition_native()
                 else {
                     unreachable!()
                 };
@@ -195,7 +200,7 @@ mod tests {
                     premises[1].clone(),
                 ],
                 vec![
-                    Proposition::ConditionIs(
+                    Proposition::condition_is(
                         ConditionTerm::integer_less_equal(
                             IntegerTerm::constant(min.clone()),
                             value.clone(),
@@ -260,7 +265,7 @@ mod tests {
         let Proposition::ConditionIs(condition, true) = goal.clone() else {
             unreachable!()
         };
-        let negated = Proposition::ConditionIs(condition, false);
+        let negated = Proposition::condition_is(condition, false);
         assert!(check_rule(vec![0, 1], &negated, &premises).is_err());
     }
 }

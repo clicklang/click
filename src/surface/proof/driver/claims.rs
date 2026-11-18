@@ -3617,7 +3617,8 @@ pub(super) fn finish_ordered_proof<'a>(
                                         continue;
                                     }
                                     if let Proposition::ConditionIs(condition, value) = proposition
-                                        && assumptions.decide(condition) == Some(!*value)
+                                        && assumptions.decide(condition.native_compat())
+                                            == Some(!*value)
                                     {
                                         refuted.push(obligation.clone());
                                         continue;
@@ -5999,7 +6000,7 @@ mod tests {
         let left = MachineTerm::Variable(Variable(1));
         let right = MachineTerm::Variable(Variable(2));
         let assumptions = PureFactContext::new()
-            .assume_proposition(Proposition::ConditionIs(
+            .assume_proposition(Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
@@ -6008,7 +6009,7 @@ mod tests {
                 },
                 true,
             ))
-            .assume_proposition(Proposition::ConditionIs(
+            .assume_proposition(Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
@@ -6021,7 +6022,7 @@ mod tests {
         // A fact whose negation is *exactly* available still registers as a
         // conflict, and the inconsistency guard is what stops that conflict
         // from being read as sibling-path evidence.
-        let exactly_refuted = Proposition::ConditionIs(
+        let exactly_refuted = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
@@ -6038,7 +6039,7 @@ mod tests {
         // An unrelated fact is not evidence either, but for a narrower
         // reason since the general prover left the kernel: the exact routes
         // report no conflict at all rather than deriving one by explosion.
-        let unrelated = Proposition::ConditionIs(
+        let unrelated = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
@@ -6062,8 +6063,8 @@ mod tests {
             right: Box::new(MachineTerm::constant(10)),
         };
         let assumptions = PureFactContext::new()
-            .assume_proposition(Proposition::ConditionIs(condition.clone(), false));
-        let fact = Proposition::ConditionIs(condition, true);
+            .assume_proposition(Proposition::condition_is(condition.clone(), false));
+        let fact = Proposition::condition_is(condition, true);
 
         assert_eq!(proof_case_fact_conflicts(&fact, &assumptions), Ok(true));
     }

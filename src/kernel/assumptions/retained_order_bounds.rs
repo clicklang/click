@@ -98,7 +98,6 @@ impl OrderBoundIndex {
             .next()
     }
 
-    #[cfg(test)]
     pub(in crate::kernel) fn shares_root_with(&self, other: &Self) -> bool {
         self.format == other.format && self.endpoints.shares_root_with(&other.endpoints)
     }
@@ -110,7 +109,7 @@ impl OrderBoundIndex {
             .map(|operand| operand.operand_view());
         let strict = view.relation == Relation::Less;
         let written_signed = matches!(source, Proposition::ConditionIs(condition, true)
-            if crate::kernel::machine_integer::comparison::structural_comparison_view(condition)
+            if crate::kernel::machine_integer::comparison::structural_comparison_view(condition.native_compat())
                 .is_some_and(|view| view.format == MachineIntegerType::Int32 && !view.negated
                     && matches!(view.relation, CompareRelation::LessThan | CompareRelation::LessEqual)));
         for (own, other, forward) in [(left, right, true), (right, left, false)] {

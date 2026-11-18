@@ -9,7 +9,7 @@ use crate::kernel::{CompareRelation, MachineIntegerType};
 // available bound must not search unrelated facts for a proof of false.
 #[test]
 fn false_disjunct_does_not_scan_unrelated_context_before_available_bound() {
-    let bound = Proposition::ConditionIs(
+    let bound = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessEqual,
@@ -19,7 +19,7 @@ fn false_disjunct_does_not_scan_unrelated_context_before_available_bound() {
         true,
     );
     let goal = Proposition::Or(
-        Box::new(Proposition::ConditionIs(
+        Box::new(Proposition::condition_is(
             ConditionTerm::Constant(false),
             true,
         )),

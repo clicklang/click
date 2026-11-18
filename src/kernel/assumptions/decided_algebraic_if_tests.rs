@@ -144,7 +144,7 @@ fn decided_native_guards_reduce_shared_remainders_without_export() {
             .unwrap(),
         )
     };
-    let proposition = Proposition::ConditionIs(
+    let proposition = Proposition::condition_is(
         ConditionTerm::integer_equal(
             observe(MachineTerm::uint64_remainder(
                 n.clone(),
@@ -154,7 +154,7 @@ fn decided_native_guards_reduce_shared_remainders_without_export() {
         ),
         true,
     );
-    let expected = Proposition::ConditionIs(
+    let expected = Proposition::condition_is(
         ConditionTerm::integer_equal(observe(n), IntegerTerm::constant_i64(0)),
         true,
     );

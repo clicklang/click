@@ -470,7 +470,7 @@ fn certification_uses_graph_int32_equality_with_state_scope() {
     let left = sum(load(&before, a.clone()));
     let right = sum(load(&before, b.clone()));
     let later = sum(load(&after, b.clone()));
-    let goal = |right| Proposition::ConditionIs(eq(&left, &right), true);
+    let goal = |right| Proposition::condition_is(eq(&left, &right), true);
     let certifies = |context: &PureFactContext, goal: &Proposition| {
         crate::kernel::PureFactContext::settles_exactly(context, goal)
     };

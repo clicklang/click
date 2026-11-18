@@ -165,7 +165,7 @@ mod tests {
     };
 
     fn compare(relation: CompareRelation, value: bool) -> Proposition {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation,

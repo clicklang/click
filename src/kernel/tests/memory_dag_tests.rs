@@ -84,7 +84,7 @@ fn rewritten_integer_word_observations_retain_checked_store_evidence() {
             )
         };
         let goal = |ty, bits| {
-            Proposition::ConditionIs(
+            Proposition::condition_is(
                 ConditionTerm::integer_equal(
                     IntegerTerm::from_machine(ty, bits).unwrap(),
                     IntegerTerm::constant_i64(17),
@@ -104,7 +104,7 @@ fn rewritten_integer_word_observations_retain_checked_store_evidence() {
             );
             let source = MachineTerm::Variable(Variable(989_003));
             let cited =
-                Proposition::ConditionIs(ConditionTerm::equal(source.clone(), read.clone()), true);
+                Proposition::condition_is(ConditionTerm::equal(source.clone(), read.clone()), true);
             let mut rewrite = facts
                 .clone()
                 .with_fact(cited.clone())
@@ -153,13 +153,13 @@ fn rewritten_goal_does_not_reuse_an_ambient_equality_for_a_bound_variable() {
     let variable = Variable(981);
     let term = MachineTerm::Variable(variable);
     let one = MachineTerm::constant(1);
-    let premise = Proposition::ConditionIs(ConditionTerm::equal(term.clone(), one.clone()), true);
+    let premise = Proposition::condition_is(ConditionTerm::equal(term.clone(), one.clone()), true);
     let facts = crate::kernel::proof::PureFactStore::from_ordered(&[premise]);
     let goal = |value| Proposition::ForAll {
         name: Default::default(),
         var: variable,
         sort: Sort::ProgramInt32,
-        body: Box::new(Proposition::ConditionIs(
+        body: Box::new(Proposition::condition_is(
             ConditionTerm::signed_less_equal(value, MachineTerm::constant(2)),
             true,
         )),
@@ -548,7 +548,7 @@ fn retained_store_hops_carry_locally_checkable_distinctness_proofs() {
     )
     .expect("the atomic query retains the same typed walk");
     assert!(constant_atomic.checks(
-        &Proposition::ConditionIs(ConditionTerm::equal(constant_left, constant_right), true,),
+        &Proposition::condition_is(ConditionTerm::equal(constant_left, constant_right), true,),
         &PureFactContext::new(),
     ));
 
@@ -613,7 +613,7 @@ fn retained_store_hops_carry_locally_checkable_distinctness_proofs() {
         atomic_memory_load_equality_evidence(&symbolic_left, &symbolic_right, &assumptions)
             .expect("the atomic query retains the exact inequality proof");
     let symbolic_goal =
-        Proposition::ConditionIs(ConditionTerm::equal(symbolic_left, symbolic_right), true);
+        Proposition::condition_is(ConditionTerm::equal(symbolic_left, symbolic_right), true);
     assert!(symbolic_atomic.checks(&symbolic_goal, &assumptions));
     assert!(
         !symbolic_atomic.checks(&symbolic_goal, &PureFactContext::new()),
@@ -698,8 +698,8 @@ fn retained_common_base_store_hop_uses_a_stated_endpoint_order() {
             .cloned()
             .collect::<Vec<_>>(),
         vec![
-            Proposition::ConditionIs(first, true),
-            Proposition::ConditionIs(second.clone(), true)
+            Proposition::condition_is(first, true),
+            Proposition::condition_is(second.clone(), true)
         ]
     );
     assert!(
@@ -1567,7 +1567,7 @@ fn sibling_states_resolve_one_cell_to_a_common_ancestor() {
     assert_eq!(cached, first);
     assert!(first.is_fully_typed());
     let goal =
-        Proposition::ConditionIs(ConditionTerm::equal(load_in(&left), load_in(&right)), true);
+        Proposition::condition_is(ConditionTerm::equal(load_in(&left), load_in(&right)), true);
     assert!(first.checks(&goal, &PureFactContext::new()));
     let derivation = with_extended_dag_bridging(|| {
         crate::kernel::search::ProofSearch::derive_atomic_proposition(
@@ -1664,7 +1664,7 @@ fn call_havoc_retains_exact_separation_and_positive_offset_steps() {
         }
     );
     assert!(evidence.is_fully_typed());
-    let goal = Proposition::ConditionIs(ConditionTerm::equal(load(&called), load(&base)), true);
+    let goal = Proposition::condition_is(ConditionTerm::equal(load(&called), load(&base)), true);
     assert!(evidence.checks(&goal, &assumptions));
     assert!(
         !evidence.checks(&goal, &PureFactContext::new()),
@@ -1672,7 +1672,7 @@ fn call_havoc_retains_exact_separation_and_positive_offset_steps() {
     );
     let left_offset = AddressOffset::scale_int32(load(&called), 4);
     let right_offset = AddressOffset::scale_int32(load(&base), 4);
-    let offset_goal = Proposition::ConditionIs(
+    let offset_goal = Proposition::condition_is(
         ConditionTerm::address_offset_equal(left_offset.clone(), right_offset.clone()),
         true,
     );
@@ -1726,25 +1726,25 @@ fn loadable_bound_check_bridges_len_forms_across_block_and_prune_edges() {
         .assume_proposition(Proposition::MemoryLoadable {
             memory: entry.clone(),
             base: arc_pointer(0),
-            bytes: MachineTerm::constant(4),
+            bytes: (MachineTerm::constant(4)).into(),
             wide: false,
         })
         .assume_proposition(Proposition::MemoryLoadable {
             memory: entry.clone(),
             base: arc_pointer(8),
-            bytes: MachineTerm::constant(4),
+            bytes: (MachineTerm::constant(4)).into(),
             wide: false,
         })
         .assume_proposition(Proposition::MemoryLoadable {
             memory: entry.clone(),
             base: arc_pointer(12),
-            bytes: MachineTerm::constant(4),
+            bytes: (MachineTerm::constant(4)).into(),
             wide: false,
         })
         .assume_proposition(Proposition::MemoryLoadable {
             memory: entry.clone(),
             base: arc_pointer(16),
-            bytes: MachineTerm::constant(32),
+            bytes: (MachineTerm::constant(32)).into(),
             wide: false,
         })
         .assume_condition(
@@ -1873,12 +1873,12 @@ fn conditions_equal_modulo_proven_states_needs_frame_evidence() {
         &PureFactContext::new(),
     )
     .expect("the selected call footprint is separate");
-    let source = Proposition::ConditionIs(condition(&before), true);
+    let source = Proposition::condition_is(condition(&before), true);
     let premises = vec![source, equality];
     let facts = crate::kernel::proof::PureFactStore::from_ordered(&premises);
     assert!(
         crate::kernel::proof::fact_reasoning::normalize_using_conditions(
-            &Proposition::ConditionIs(condition(&after), true),
+            &Proposition::condition_is(condition(&after), true),
             &premises,
             &facts,
         )
@@ -1901,7 +1901,7 @@ fn conditions_equal_modulo_proven_states_needs_frame_evidence() {
     );
     assert!(
         crate::kernel::proof::fact_reasoning::normalize_using_conditions(
-            &Proposition::ConditionIs(other, true),
+            &Proposition::condition_is(other, true),
             &premises,
             &facts,
         )
@@ -2139,7 +2139,7 @@ fn a_symbolic_store_requires_the_current_paths_separation_order() {
         atomic_memory_load_equality_evidence(&load(&separated), &load(&base), &ordered)
     })
     .expect("the current path's strict order proves preservation");
-    let goal = Proposition::ConditionIs(ConditionTerm::equal(load(&separated), load(&base)), true);
+    let goal = Proposition::condition_is(ConditionTerm::equal(load(&separated), load(&base)), true);
     assert!(evidence.checks(&goal, &ordered));
     assert!(!evidence.checks(&goal, &PureFactContext::new()));
 
@@ -2719,7 +2719,7 @@ fn a_store_inside_a_read_refutes_the_load_equality_at_every_offset() {
                 "the state comparison answers to that history"
             );
             assert!(
-                !bare.proves_atomic_without_search(&Proposition::ConditionIs(
+                !bare.proves_atomic_without_search(&Proposition::condition_is(
                     ConditionTerm::equal(load_in(&base), load_in(&after)),
                     true
                 )),
@@ -3809,7 +3809,7 @@ fn kept_constant_offset_fields_have_checkable_call_havoc_evidence() {
             crate::kernel::LoadKind::Int32,
         )
     };
-    let equality = Proposition::ConditionIs(ConditionTerm::equal(load(&after), load(&base)), true);
+    let equality = Proposition::condition_is(ConditionTerm::equal(load(&after), load(&base)), true);
     let evidence = with_extended_dag_bridging(|| {
         atomic_memory_load_equality_evidence(&load(&after), &load(&base), &assumptions)
     })
@@ -3829,7 +3829,7 @@ fn kept_constant_offset_fields_have_checkable_call_havoc_evidence() {
     );
     let overwritten = after.store(cell.clone(), ProgramValue::Int32(MachineTerm::constant(43)));
     assert!(!evidence.checks(
-        &Proposition::ConditionIs(ConditionTerm::equal(load(&overwritten), load(&base)), true),
+        &Proposition::condition_is(ConditionTerm::equal(load(&overwritten), load(&base)), true),
         &assumptions
     ));
 }
@@ -4273,7 +4273,7 @@ fn numeric_address_byte_gaps_preserve_cache_and_read_history() {
     let p = Address::symbolic(Variable(970_101));
     let q = Address::symbolic(Variable(970_102));
     for shift in [0, 4, 8, 16] {
-        let premise = Proposition::ConditionIs(
+        let premise = Proposition::condition_is(
             ConditionTerm::uint64_equal(
                 MachineTerm::integer_address(q.clone()),
                 MachineTerm::integer_address(p.offset_by_bytes(shift)),
@@ -4504,12 +4504,12 @@ fn equal_object_origins_frame_neighbor_fields_without_equating_index_atoms() {
     let left = origin(9_882_101);
     let right = origin(9_882_102);
     let parent = Address::symbolic(Variable(9_882_103));
-    let first = Proposition::ConditionIs(
+    let first = Proposition::condition_is(
         ConditionTerm::address_equal(left.clone(), parent.clone()),
         true,
     );
     let second =
-        Proposition::ConditionIs(ConditionTerm::address_equal(parent, right.clone()), true);
+        Proposition::condition_is(ConditionTerm::address_equal(parent, right.clone()), true);
     let context = PureFactContext::new()
         .assume_proposition(first.clone())
         .assume_proposition(second.clone());
@@ -4534,7 +4534,7 @@ fn equal_object_origins_frame_neighbor_fields_without_equating_index_atoms() {
     let proof =
         with_extended_dag_bridging(|| atomic_memory_load_equality_evidence(&new, &old, &context))
             .expect("equal object origins preserve the neighboring eight-byte field");
-    let goal = Proposition::ConditionIs(ConditionTerm::equal(new, old), true);
+    let goal = Proposition::condition_is(ConditionTerm::equal(new, old), true);
     assert!(proof.checks(&goal, &context));
     for remaining in [first, second] {
         let partial = PureFactContext::new().assume_proposition(remaining);
@@ -4565,12 +4565,12 @@ fn stated_separation_frames_equal_model_and_program_origins() {
     let parent = Address::symbolic(Variable(9_883_102));
     let bridge = Address::symbolic(Variable(9_883_103));
     let node = origin(9_883_104);
-    let first = Proposition::ConditionIs(
+    let first = Proposition::condition_is(
         ConditionTerm::address_equal(parent.clone(), bridge.clone()),
         true,
     );
     let second =
-        Proposition::ConditionIs(ConditionTerm::address_equal(bridge, entry.clone()), true);
+        Proposition::condition_is(ConditionTerm::address_equal(bridge, entry.clone()), true);
     let separation = Proposition::ResourceSeparate {
         left: Box::new(Resource::Memory(memory_range(
             parent.offset_by_bytes(8),
@@ -4615,7 +4615,7 @@ fn stated_separation_frames_equal_model_and_program_origins() {
         })
         .expect("stated separation follows checked origin equality");
         let goal =
-            Proposition::ConditionIs(ConditionTerm::equal(load(&after), load(&before)), true);
+            Proposition::condition_is(ConditionTerm::equal(load(&after), load(&before)), true);
         assert!(proof.checks(&goal, &context));
         assert!(typed_read_has_same_memory_source(
             before.memory(),
@@ -4764,11 +4764,11 @@ fn an_abstract_value_fact_carries_across_states_only_with_frame_evidence() {
         &PureFactContext::new(),
     )
     .expect("the explicit footprint preserves the abstract typed read");
-    let premises = vec![Proposition::ConditionIs(read(&before), true), equality];
+    let premises = vec![Proposition::condition_is(read(&before), true), equality];
     let facts = crate::kernel::proof::PureFactStore::from_ordered(&premises);
     for expected in [true, false] {
         let result = crate::kernel::proof::fact_reasoning::normalize_using_conditions(
-            &Proposition::ConditionIs(read(&after), expected),
+            &Proposition::condition_is(read(&after), expected),
             &premises,
             &facts,
         );

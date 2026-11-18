@@ -136,7 +136,7 @@ fn packed_word_contract_lookup_and_scope_ignore_unrelated_words() {
     let _session = VerificationSession::enter();
     let value = |id| Pointer::new(Address::symbolic(Variable(id)), ProgramType::Int32Pointer);
     let equality = |a: &Pointer, b: &Pointer| {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::PointerEqual(Box::new(a.clone()), Box::new(b.clone())),
             true,
         )
@@ -218,7 +218,7 @@ fn recent_pointer_read_origin_avoids_older_alias_histories() {
             ProgramType::Int32Pointer,
         );
         let fact = |pointer: &Address| {
-            Proposition::ConditionIs(
+            Proposition::condition_is(
                 ConditionTerm::PointerEqual(
                     Box::new(read(&before, pointer)),
                     Box::new(value.clone()),

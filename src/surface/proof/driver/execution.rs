@@ -2324,13 +2324,10 @@ pub(in crate::surface::proof) fn source_have_error(
             crate::surface::diagnostics::describe_click_proposition(&have.proposition)
         ));
     }
-    let pointer_equality = matches!(
-        goal,
-        Some(Proposition::ConditionIs(
-            ConditionTerm::AddressEqual(_, _),
+    let pointer_equality = matches!(&goal, Some(condition_source_0 @ Proposition::ConditionIs(
+            _,
             true
-        ))
-    );
+        )) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::AddressEqual(_, _), _))));
     let detail = if pointer_equality {
         "missing pure fact: pointer equality is true".to_string()
     } else {
@@ -5353,7 +5350,7 @@ pub(in crate::surface::proof) fn introduce_proof_case_assumption(
             } else {
                 match proposition {
                     Proposition::ConditionIs(condition, value) => {
-                        Proposition::ConditionIs(condition, !value)
+                        Proposition::condition_is(condition, !value)
                     }
                     Proposition::Not(body) => *body,
                     proposition => Proposition::Not(Box::new(proposition)),
@@ -5419,7 +5416,7 @@ pub(in crate::surface::proof) fn introduce_proof_case_assumption(
     } else {
         match proposition {
             Proposition::ConditionIs(condition, value) => {
-                Proposition::ConditionIs(condition, !value)
+                Proposition::condition_is(condition, !value)
             }
             Proposition::Not(body) => *body,
             proposition => Proposition::Not(Box::new(proposition)),
@@ -5453,7 +5450,7 @@ fn holds_exact_negation(available: &PureFactStore, fact: &Proposition) -> bool {
     let mut spellings = vec![negated];
     match fact {
         Proposition::ConditionIs(condition, value) => {
-            spellings.push(Proposition::ConditionIs(condition.clone(), !value));
+            spellings.push(Proposition::condition_is(condition.clone(), !value));
         }
         Proposition::Not(body) => {
             spellings.push(body.as_ref().clone());

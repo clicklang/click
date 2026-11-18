@@ -199,7 +199,7 @@ mod tests {
         );
         for load in [named, structural] {
             let one = MachineTerm::constant(1);
-            let facts = PureFactStore::from_ordered(&[Proposition::ConditionIs(
+            let facts = PureFactStore::from_ordered(&[Proposition::condition_is(
                 ConditionTerm::equal(load.clone(), one.clone()),
                 true,
             )]);
@@ -216,7 +216,7 @@ mod tests {
                 value: Box::new(value),
             };
             let native = |value| {
-                Proposition::ConditionIs(
+                Proposition::condition_is(
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
@@ -227,7 +227,7 @@ mod tests {
                 )
             };
             let shared = |value| {
-                Proposition::ConditionIs(
+                Proposition::condition_is(
                     ConditionTerm::IntegerEqual(
                         IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                             MachineIntegerType::Int32,
@@ -309,7 +309,7 @@ mod tests {
             LoadKind::Int32,
         );
         let equal = |value| {
-            Proposition::ConditionIs(ConditionTerm::equal(value, MachineTerm::constant(1)), true)
+            Proposition::condition_is(ConditionTerm::equal(value, MachineTerm::constant(1)), true)
         };
         let facts = PureFactStore::from_ordered(&[equal(read.clone())]);
         let bind = |body| Proposition::ForAll {
@@ -329,7 +329,7 @@ mod tests {
     }
 
     fn observed(value: SharedMachineIntegerTerm) -> Proposition {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::IntegerEqual(
                 IntegerTerm::Machine(value).into(),
                 IntegerTerm::constant_i64(0).into(),
@@ -382,7 +382,7 @@ mod tests {
         );
         let read = SharedMachineIntegerTerm::intern(ty, load.clone());
         let arithmetic = SharedMachineIntegerTerm::intern(ty, sum.clone());
-        let source = Proposition::ConditionIs(ConditionTerm::equal(load, sum), true);
+        let source = Proposition::condition_is(ConditionTerm::equal(load, sum), true);
         let facts = PureFactStore::from_ordered(&[source]);
         let (a, b) = (observed(read), observed(arithmetic));
         let before = KernelTermExport::machine_export_count();
@@ -428,7 +428,7 @@ mod tests {
         }
         let early = load(initial.clone());
         let later = load(initial.clone().with_block("unrelated", 4));
-        let facts = PureFactStore::from_ordered(&[Proposition::ConditionIs(
+        let facts = PureFactStore::from_ordered(&[Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,

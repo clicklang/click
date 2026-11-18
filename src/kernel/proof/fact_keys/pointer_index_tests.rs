@@ -29,7 +29,7 @@ fn offset(value: SharedMachineIntegerTerm, width: i64, unsigned: bool) -> Addres
     }
 }
 fn fact(offset: AddressOffset) -> Proposition {
-    Proposition::ConditionIs(
+    Proposition::condition_is(
         ConditionTerm::AddressOffsetEqual(Box::new(offset), Box::new(AddressOffset::Constant(0))),
         true,
     )

@@ -246,7 +246,7 @@ fn certified_int32_graph_queries_scale_without_fact_index() {
         PureFactContext::reset_bitvector_equality_index_fact_visits();
         let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
             for index in 1..=size {
-                let goal = Proposition::ConditionIs(eq(&left, &sum(var(index))), true);
+                let goal = Proposition::condition_is(eq(&left, &sum(var(index))), true);
                 assert!(crate::kernel::PureFactContext::settles_exactly(
                     &context, &goal,
                 ));

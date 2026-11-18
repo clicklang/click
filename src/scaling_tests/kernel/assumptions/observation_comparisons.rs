@@ -47,7 +47,7 @@ fn native_order_sources_do_not_add_native_query_work() {
         );
         assert_eq!(
             context.selected_comparison_source(&shared, true),
-            Some(&Proposition::ConditionIs(native, true))
+            Some(&Proposition::condition_is(native, true))
         );
         assert!(context.selected_comparison_source(&shared, false).is_none());
 
@@ -140,7 +140,7 @@ fn common_call_sources_preserve_identity_polarity_and_branch_authority() {
                     let exports = KernelTermExport::machine_export_count();
                     assert_eq!(
                         child.selected_comparison_source(query, truth),
-                        Some(&Proposition::ConditionIs(source.clone(), truth))
+                        Some(&Proposition::condition_is(source.clone(), truth))
                     );
                     assert!(child.selected_comparison_source(query, !truth).is_none());
                     assert!(parent.selected_comparison_source(query, truth).is_none());
@@ -208,7 +208,7 @@ fn cancelled_compound_lookup_ignores_unrelated_facts_without_exports() {
         };
         let leaf = |bound| {
             let native = ConditionTerm::equal(sum.clone(), MachineTerm::constant(bound));
-            Proposition::ConditionIs(
+            Proposition::condition_is(
                 if shared {
                     retained_arithmetic_comparison(&native).unwrap()
                 } else {
@@ -264,8 +264,8 @@ fn compound_native_sum_cancellation_reads_selected_operands_once() {
             })
         };
         let source =
-            Proposition::ConditionIs(ConditionTerm::equal(sum(996_000), sum(996_001)), true);
-        let reduced = Proposition::ConditionIs(
+            Proposition::condition_is(ConditionTerm::equal(sum(996_000), sum(996_001)), true);
+        let reduced = Proposition::condition_is(
             ConditionTerm::equal(
                 MachineTerm::Variable(Variable(996_000)),
                 MachineTerm::Variable(Variable(996_001)),

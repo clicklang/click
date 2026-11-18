@@ -159,7 +159,7 @@ pub(super) fn result_facts(
     if matches!(expression, SpecExpression::BitwiseAnd(..))
         && let Some(equation) = bitwise::tag_equation(value, assumptions)
     {
-        facts.push(ExecutionPureFact::new(Proposition::ConditionIs(
+        facts.push(ExecutionPureFact::new(Proposition::condition_is(
             equation, true,
         )));
     }
@@ -316,7 +316,7 @@ pub(super) fn apply(
         };
         let mut require_false = |condition| {
             if PureFactContext::decide_intrinsically(&condition) != Some(false) {
-                domain.push(Proposition::ConditionIs(condition, false));
+                domain.push(Proposition::condition_is(condition, false));
             }
         };
         if format.format().is_signed() {
@@ -329,7 +329,7 @@ pub(super) fn apply(
         ));
         if op == MachineBinaryOp::ShiftLeft && format.format().is_signed() {
             require_false(compare(left_view, CompareRelation::LessThan, 0));
-            domain.push(Proposition::ConditionIs(
+            domain.push(Proposition::condition_is(
                 ConditionTerm::signed_shift_result_fits_views(format, left_view, right_view),
                 true,
             ));
@@ -338,7 +338,7 @@ pub(super) fn apply(
         if SpecDivision::of(budget) == SpecDivision::CDefined {
             let zero =
                 crate::kernel::machine_integer::range::constant_word(format, &0.into()).unwrap();
-            domain.push(Proposition::ConditionIs(
+            domain.push(Proposition::condition_is(
                 crate::kernel::machine_integer::comparison::condition_for_operand_views(
                     format,
                     CompareRelation::Equal,
@@ -438,8 +438,8 @@ mod tests {
         match value {
             Proposition::And(a, b) => Proposition::And(Box::new(boxed_domain(a)), Box::new(boxed_domain(b))),
             Proposition::ConditionIs(condition, truth) => {
-                crate::kernel::machine_integer::comparison::structural_native_comparison_of_integer_observation(condition, *truth)
-                    .map(|(condition, truth)| Proposition::ConditionIs(condition, truth))
+                crate::kernel::machine_integer::comparison::structural_native_comparison_of_integer_observation(condition.native_compat(), *truth)
+                    .map(|(condition, truth)| Proposition::condition_is(condition, truth))
                     .unwrap_or_else(|| value.clone())
             }
             _ => value.clone(),
@@ -748,7 +748,7 @@ mod tests {
                 }
                 (Proposition::ConditionIs(a, av), Proposition::ConditionIs(b, bv)) => {
                     assert_eq!(av, bv);
-                    match (a, b) {
+                    match (a.native_compat(), b.native_compat()) {
                         (
                             ConditionTerm::IntegerLessEqual(a, b),
                             ConditionTerm::IntegerLessEqual(c, d),

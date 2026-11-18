@@ -109,10 +109,10 @@ fn iterated_exposure_preserves_the_frame_without_admission_or_normalization() {
                             sort: Sort::ProgramInt32,
                             body: Box::new(Proposition::Implies(
                                 Box::new(Proposition::And(
-                                    Box::new(Proposition::ConditionIs(lower, true)),
-                                    Box::new(Proposition::ConditionIs(upper, true)),
+                                    Box::new(Proposition::condition_is(lower, true)),
+                                    Box::new(Proposition::condition_is(upper, true)),
                                 )),
-                                Box::new(Proposition::ConditionIs(
+                                Box::new(Proposition::condition_is(
                                     ConditionTerm::equal(cell, 0u32.into()),
                                     true,
                                 )),
@@ -142,10 +142,10 @@ fn iterated_exposure_preserves_the_frame_without_admission_or_normalization() {
                         sort: Sort::ProgramInt32,
                         body: Box::new(Proposition::Implies(
                             Box::new(Proposition::And(
-                                Box::new(Proposition::ConditionIs(lower, true)),
-                                Box::new(Proposition::ConditionIs(upper, true)),
+                                Box::new(Proposition::condition_is(lower, true)),
+                                Box::new(Proposition::condition_is(upper, true)),
                             )),
-                            Box::new(Proposition::ConditionIs(
+                            Box::new(Proposition::condition_is(
                                 ConditionTerm::Compare {
                                     format: MachineIntegerType::Int32,
                                     relation: CompareRelation::Equal,

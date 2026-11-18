@@ -115,11 +115,11 @@ impl ConditionTerm {
         crate::instrumentation::record_deterministic_work(1);
         let arm = |selected: bool, branch: &ConditionTerm| {
             Proposition::And(
-                Box::new(Proposition::ConditionIs(
+                Box::new(Proposition::condition_is(
                     condition.as_ref().clone(),
                     selected,
                 )),
-                Box::new(Proposition::ConditionIs(branch.clone(), value)),
+                Box::new(Proposition::condition_is(branch.clone(), value)),
             )
         };
         Some(Proposition::Or(
@@ -137,7 +137,7 @@ impl ConditionTerm {
         application: SharedPureApplication,
         body: Self,
     ) -> Proposition {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             Self::BoolEqual(Box::new(Self::BoolApplication(application)), Box::new(body)),
             true,
         )
@@ -324,7 +324,7 @@ impl ConditionTerm {
             condition = operand;
             value = !value;
         }
-        Proposition::ConditionIs(condition.clone(), value)
+        Proposition::condition_is(condition.clone(), value)
     }
 
     /// Integer to `Bool` (Stage 5): C's conversion of a scalar to `bool`,

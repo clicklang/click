@@ -333,7 +333,7 @@ pub(crate) fn contract_resource_condition_cases(
 fn negate_contract_case_proposition(proposition: &Proposition) -> Proposition {
     match proposition {
         Proposition::ConditionIs(condition, value) => {
-            Proposition::ConditionIs(condition.clone(), !*value)
+            Proposition::condition_is(condition.clone(), !*value)
         }
         Proposition::Not(body) => body.as_ref().clone(),
         proposition => Proposition::Not(Box::new(proposition.clone())),
@@ -495,7 +495,7 @@ pub fn execution_state_justifies_loadability_obligation(
             let loadable = Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: pointer.clone(),
-                bytes: MachineTerm::constant(value_type.byte_width()),
+                bytes: (MachineTerm::constant(value_type.byte_width())).into(),
                 wide: false,
             };
             execution_state_justifies_loadability_obligation(state, &loadable, assumptions)
@@ -522,11 +522,15 @@ pub fn execution_state_justifies_loadability_obligation(
                     None => crate::kernel::resource_context_has_symbolic_range_read(
                         state.resources(),
                         base,
-                        bytes,
+                        bytes.native_compat(),
                         assumptions,
                     ),
                 }
-                || assumptions.proves_memory_loadable_for_memory_resolution(memory, base, bytes)
+                || assumptions.proves_memory_loadable_for_memory_resolution(
+                    memory,
+                    base,
+                    bytes.native_compat(),
+                )
                 || symbolic_base_aliases_a_held_cell(memory, base, assumptions)
         }
         _ => true,
@@ -649,11 +653,14 @@ pub fn loadable_covered_by_fact(assumptions: &PureFactContext, goal: &Propositio
                 // constant-size cell even when its symbolic byte offset is too wide
                 // for this rule's signed arithmetic.
                 if assumptions
-                    .simplify_bitvector_under_assumptions(bytes)
+                    .simplify_bitvector_under_assumptions(bytes.native_compat())
                     .as_const()
                     .is_some_and(|byte_width| {
                         assumptions.proves_loadable_cell_from_region_elements(
-                            fact_base, fact_bytes, base, byte_width,
+                            fact_base,
+                            fact_bytes.native_compat(),
+                            base,
+                            byte_width,
                         )
                     })
                 {
@@ -669,11 +676,11 @@ pub fn loadable_covered_by_fact(assumptions: &PureFactContext, goal: &Propositio
                     MachineIntegerType::Int32,
                 );
                 let width = assumptions.simplify_machine_operand_under_assumptions(
-                    Operand::Legacy(bytes),
+                    bytes.operand_view(),
                     MachineIntegerType::Int32,
                 );
                 let span = assumptions.simplify_machine_operand_under_assumptions(
-                    Operand::Legacy(fact_bytes),
+                    fact_bytes.operand_view(),
                     MachineIntegerType::Int32,
                 );
                 if let (Some(delta), Some(width), Some(span)) = (
@@ -743,7 +750,7 @@ fn certification_proves_signed_le_views(
         CompareRelation::LessEqual,
         [left, right],
     );
-    assumptions.proves_exact(&Proposition::ConditionIs(condition.clone(), true))
+    assumptions.proves_exact(&Proposition::condition_is(condition.clone(), true))
         || assumptions.proves_order_condition_for_memory_resolution(&condition, true)
 }
 
@@ -1602,7 +1609,7 @@ fn program_function_contract_entry_facts(
             assumptions = entry_facts.assume(
                 assumptions,
                 ContractEntryFactOrigin::Span,
-                Proposition::ConditionIs(
+                Proposition::condition_is(
                     ConditionTerm::uint64_less_equal(
                         length.clone(),
                         MachineTerm::uint64_constant(i64::MAX as u64 / u64::from(width)),
@@ -1835,7 +1842,7 @@ fn program_function_contract_entry_facts(
         for guard in crate::kernel::admitted_memory_range_span_facts(range) {
             let guard_is_false = match &guard {
                 Proposition::ConditionIs(condition, true) => {
-                    assumptions.decide(condition) == Some(false)
+                    assumptions.decide(condition.native_compat()) == Some(false)
                 }
                 _ => false,
             };
@@ -1887,10 +1894,11 @@ fn program_function_contract_entry_facts(
                 base: range
                     .base()
                     .offset_by_elements(range.start().clone(), width),
-                bytes: MachineTerm::multiply(
+                bytes: (MachineTerm::multiply(
                     MachineTerm::subtract(range.end().clone(), range.start().clone()),
                     MachineTerm::constant(width),
-                ),
+                ))
+                .into(),
                 wide: false,
             },
         );
@@ -1909,7 +1917,7 @@ fn program_function_contract_entry_facts(
         for guard in crate::kernel::admitted_memory_range_span_facts(range) {
             let guard_is_false = match &guard {
                 Proposition::ConditionIs(condition, true) => {
-                    assumptions.decide(condition) == Some(false)
+                    assumptions.decide(condition.native_compat()) == Some(false)
                 }
                 _ => false,
             };
@@ -1945,7 +1953,7 @@ fn program_function_contract_entry_facts(
         for guard in crate::kernel::admitted_memory_range_span_facts(range) {
             let guard_is_false = match &guard {
                 Proposition::ConditionIs(condition, true) => {
-                    assumptions.decide(condition) == Some(false)
+                    assumptions.decide(condition.native_compat()) == Some(false)
                 }
                 _ => false,
             };
@@ -3073,10 +3081,14 @@ pub(crate) fn propositions_alpha_equivalent(left: &Proposition, right: &Proposit
             Proposition::ConditionIs(right_condition, right_value),
         ) => {
             left_value == right_value
-                && (retained_syntax::conditions_equal(left_condition, right_condition)
-                    || condition_with_canonicalized_loads(left_condition)
-                        .zip(condition_with_canonicalized_loads(right_condition))
-                        .is_some_and(|(left, right)| left == right))
+                && (retained_syntax::conditions_equal(
+                    left_condition.native_compat(),
+                    right_condition.native_compat(),
+                ) || condition_with_canonicalized_loads(left_condition.native_compat())
+                    .zip(condition_with_canonicalized_loads(
+                        right_condition.native_compat(),
+                    ))
+                    .is_some_and(|(left, right)| left == right))
         }
         (
             Proposition::Equal(Term::Algebraic(al), Term::Algebraic(ar)),
@@ -3097,8 +3109,8 @@ pub(crate) fn propositions_alpha_equivalent(left: &Proposition, right: &Proposit
             },
         ) => {
             canonicalize_pointer_loads(left_base) == canonicalize_pointer_loads(right_base)
-                && canonicalize_atomic_loads(left_bytes)
-                    == canonicalize_atomic_loads(right_bytes)
+                && canonicalize_atomic_loads(left_bytes.native_compat())
+                    == canonicalize_atomic_loads(right_bytes.native_compat())
                 // Loadability depends on the state's blocks, not its
                 // cached cell values. Retired automatic blocks are part of
                 // the state marker too.
@@ -3241,7 +3253,7 @@ pub(crate) fn condition_holds_by_instantiated_fact(
                             *instance_value == value
                                 && program_condition_facts_equivalent_for_memory_resolution(
                                     body,
-                                    &Proposition::ConditionIs(condition.clone(), value),
+                                    &Proposition::condition_is(condition.clone(), value),
                                     assumptions,
                                 )
                                 && premises.into_iter().all(premise_holds)
@@ -3307,7 +3319,7 @@ pub(crate) fn condition_holds_by_memory_resolution(
         // its coordinate from its own base (`n + 8` and `old(n) + 8`), as the
         // state-modulo condition matchers already accept.
         (ConditionTerm::PointerEqual(left, right), true) => assumptions
-            .contains_known(&Proposition::ConditionIs(condition.clone(), true))
+            .contains_known(&Proposition::condition_is(condition.clone(), true))
             || (assumptions.pointer_provenance_match(left, right)
                 && (pointers_proven_equal_for_memory_resolution(
                     left.address(),
@@ -3422,7 +3434,7 @@ pub(super) fn resources_certify_loadability(
             || crate::kernel::resource_context_has_symbolic_range_read(
                 resources,
                 base,
-                bytes,
+                bytes.native_compat(),
                 assumptions,
             ))
 }

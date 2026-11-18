@@ -76,7 +76,7 @@ pub(in crate::kernel) fn wrap_proof_facts(
         proposition,
         |body, (condition, value)| {
             Proposition::Implies(
-                Box::new(Proposition::ConditionIs(condition.clone(), *value)),
+                Box::new(Proposition::condition_is(condition.clone(), *value)),
                 Box::new(body),
             )
         },
@@ -214,15 +214,22 @@ pub(crate) fn solve_builtin_prop(proposition: &Proposition) -> bool {
             sequence_terms_equal_by_elements(left, right)
         }
         Proposition::Equal(left, right) => left == right,
-        Proposition::ConditionIs(ConditionTerm::Constant(actual), expected) => actual == expected,
+        condition_source_0 @ Proposition::ConditionIs(_, expected)
+            if let Some((ConditionTerm::Constant(actual), _)) =
+                condition_source_0.condition_native() =>
+        {
+            actual == expected
+        }
         Proposition::ConditionIs(condition, expected) => {
-            crate::kernel::machine_integer::comparison::closed_condition_value(condition)
-                .or_else(|| {
-                    crate::kernel::proof::integer_arithmetic::literal_integer_comparison_value(
-                        condition,
-                    )
-                })
-                .is_some_and(|actual| actual == *expected)
+            crate::kernel::machine_integer::comparison::closed_condition_value(
+                condition.native_compat(),
+            )
+            .or_else(|| {
+                crate::kernel::proof::integer_arithmetic::literal_integer_comparison_value(
+                    condition.native_compat(),
+                )
+            })
+            .is_some_and(|actual| actual == *expected)
         }
         Proposition::And(left, right) => solve_builtin_prop(left) && solve_builtin_prop(right),
         Proposition::Or(left, right) => solve_builtin_prop(left) || solve_builtin_prop(right),
@@ -273,15 +280,22 @@ pub(in crate::kernel) fn conjunction_order_facts_are_inconsistent(
 
 pub(in crate::kernel) fn disprove_builtin_prop(proposition: &Proposition) -> bool {
     match proposition {
-        Proposition::ConditionIs(ConditionTerm::Constant(actual), expected) => actual != expected,
+        condition_source_0 @ Proposition::ConditionIs(_, expected)
+            if let Some((ConditionTerm::Constant(actual), _)) =
+                condition_source_0.condition_native() =>
+        {
+            actual != expected
+        }
         Proposition::ConditionIs(condition, expected) => {
-            crate::kernel::machine_integer::comparison::closed_condition_value(condition)
-                .or_else(|| {
-                    crate::kernel::proof::integer_arithmetic::literal_integer_comparison_value(
-                        condition,
-                    )
-                })
-                .is_some_and(|actual| actual != *expected)
+            crate::kernel::machine_integer::comparison::closed_condition_value(
+                condition.native_compat(),
+            )
+            .or_else(|| {
+                crate::kernel::proof::integer_arithmetic::literal_integer_comparison_value(
+                    condition.native_compat(),
+                )
+            })
+            .is_some_and(|actual| actual != *expected)
         }
         Proposition::Equal(Term::Sequence(left), Term::Sequence(right)) => {
             sequence_terms_definitely_distinct(left, right)
@@ -599,7 +613,7 @@ pub(in crate::kernel) fn shared_element_index_from_offset_with_facts(
                 if bounded(V::Legacy(alias)) {
                     crate::kernel::assumptions::record_implicit_consulted_premises(
                         assumptions,
-                        &Proposition::ConditionIs(fact.clone(), true),
+                        &Proposition::condition_is(fact.clone(), true),
                     );
                     return Some(low_word(V::Legacy(alias)));
                 }
@@ -626,7 +640,7 @@ pub(in crate::kernel) fn shared_element_index_from_offset_with_facts(
                     if bounded(V::Shared(&candidate)) {
                         crate::kernel::assumptions::record_implicit_consulted_premises(
                             assumptions,
-                            &Proposition::ConditionIs(fact.clone(), true),
+                            &Proposition::condition_is(fact.clone(), true),
                         );
                         return Some(low_word(V::Shared(&candidate)));
                     }
@@ -1219,7 +1233,7 @@ fn add_path_fact_with_visibility_after_effect(
         return add_condition_path_fact_with_visibility(
             facts,
             assumptions,
-            condition,
+            condition.native_compat().clone(),
             value,
             public,
             certified_after_effect,
@@ -1318,7 +1332,7 @@ fn add_condition_path_fact_with_visibility(
         .iter()
         .filter_map(|fact| match fact.proposition() {
             Proposition::ConditionIs(existing_condition, existing_value)
-                if existing_condition == &condition =>
+                if existing_condition.native_compat() == &condition =>
             {
                 Some(*existing_value)
             }
@@ -1329,7 +1343,7 @@ fn add_condition_path_fact_with_visibility(
         return (existing == value).then_some(());
     }
 
-    let proposition = Proposition::ConditionIs(condition, value);
+    let proposition = Proposition::condition_is(condition, value);
     facts.push(if public {
         ExecutionPureFact::new(proposition)
     } else {
@@ -1494,7 +1508,13 @@ pub(in crate::kernel) fn add_proof_obligation_with_context(
     context: Option<&str>,
 ) -> Option<()> {
     if let Proposition::ConditionIs(condition, value) = proposition {
-        return add_condition_obligation(obligations, assumptions, condition, value, context);
+        return add_condition_obligation(
+            obligations,
+            assumptions,
+            condition.native_compat().clone(),
+            value,
+            context,
+        );
     }
 
     // Obligation suppression keeps two routes: the exact fact index, and the
@@ -1536,18 +1556,18 @@ fn bare_condition_is_decided(assumptions: &PureFactContext, proposition: &Propos
         relation: CompareRelation::Equal,
         left,
         right,
-    } = condition
+    } = condition.native_compat()
         && *value
         && assumptions.uint64_values_known_equal(left, right)
     {
         crate::kernel::assumptions::record_implicit_consulted_premises(assumptions, proposition);
         return true;
     }
-    if PureFactContext::decide_intrinsically(condition) == Some(*value) {
+    if PureFactContext::decide_intrinsically(condition.native_compat()) == Some(*value) {
         return true;
     }
     !assumptions.should_defer_non_exact_condition_reasoning()
-        && assumptions.decide(condition) == Some(*value)
+        && assumptions.decide(condition.native_compat()) == Some(*value)
 }
 
 /// Retain logical input evidence from the incoming checked context only.
@@ -1563,8 +1583,8 @@ pub(in crate::kernel) fn call_input_fact_is_already_known(
             || assumptions.proves_exact(side)
             || assumptions.contains_known(side)
             || matches!(side, Proposition::ConditionIs(condition, value)
-                if PureFactContext::decide_intrinsically(condition) == Some(*value)
-                    || !matches!(condition,
+                if PureFactContext::decide_intrinsically(condition.native_compat()) == Some(*value)
+                    || !matches!(condition.native_compat(),
                         ConditionTerm::Compare { format: MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, .. }
                         | ConditionTerm::Compare { format: MachineIntegerType::Int64, relation: CompareRelation::Equal, .. }
                         | ConditionTerm::PointerEqual(..)
@@ -1711,7 +1731,9 @@ fn selected_obligation_is_stated(assumptions: &PureFactContext, proposition: &Pr
     }
     match proposition {
         Proposition::ConditionIs(condition, truth) => {
-            let Some(source) = assumptions.selected_comparison_source(condition, *truth) else {
+            let Some(source) =
+                assumptions.selected_comparison_source(condition.native_compat(), *truth)
+            else {
                 return false;
             };
             crate::kernel::assumptions::record_implicit_consulted_premises(assumptions, source);
@@ -1842,10 +1864,10 @@ pub(in crate::kernel) fn add_condition_obligation(
     value: bool,
     context: Option<&str>,
 ) -> Option<()> {
-    if assumptions.proves_exact(&Proposition::ConditionIs(condition.clone(), value)) {
+    if assumptions.proves_exact(&Proposition::condition_is(condition.clone(), value)) {
         return Some(());
     }
-    if assumptions.proves_exact(&Proposition::ConditionIs(condition.clone(), !value)) {
+    if assumptions.proves_exact(&Proposition::condition_is(condition.clone(), !value)) {
         return None;
     }
     if let Some(known) = PureFactContext::decide_intrinsically(&condition) {
@@ -1861,7 +1883,7 @@ pub(in crate::kernel) fn add_condition_obligation(
         .iter()
         .filter_map(|obligation| match obligation.proposition() {
             Proposition::ConditionIs(existing_condition, existing_value)
-                if existing_condition == &condition =>
+                if existing_condition.native_compat() == &condition =>
             {
                 Some(*existing_value)
             }
@@ -1932,8 +1954,9 @@ fn merge_obligations_with_changes(
                 }
             }
             if let Proposition::ConditionIs(condition, value) = obligation.proposition()
-                && (assumptions.proves_exact(&Proposition::ConditionIs(condition.clone(), !*value))
-                    || PureFactContext::decide_intrinsically(condition)
+                && (assumptions
+                    .proves_exact(&Proposition::condition_is(condition.clone(), !*value))
+                    || PureFactContext::decide_intrinsically(condition.native_compat())
                         .is_some_and(|known| known != *value)
                     || obligations.iter().any(|existing| {
                         matches!(
@@ -2156,7 +2179,7 @@ pub(in crate::kernel) fn decide_with_facts(
     [true, false]
         .into_iter()
         .find(|value| {
-            assumptions.proves_exact(&Proposition::ConditionIs(condition.clone(), *value))
+            assumptions.proves_exact(&Proposition::condition_is(condition.clone(), *value))
         })
         .or_else(|| {
             // Exact observations retain their operands while selecting the
@@ -2177,7 +2200,7 @@ pub(in crate::kernel) fn decide_with_facts(
             // the context's exact index. Select an existing source before
             // constructing a difference graph; no operand is materialized.
             facts.fact_iter().find_map(|fact| match fact.proposition() {
-                Proposition::ConditionIs(existing, value) if existing == condition => Some(*value),
+                Proposition::ConditionIs(existing, value) if existing.native_compat() == condition => Some(*value),
                 source => [true, false].into_iter().find(|truth| {
                     crate::kernel::assumptions::observation_comparisons::same_comparison(
                         condition, *truth, source,
@@ -2189,7 +2212,7 @@ pub(in crate::kernel) fn decide_with_facts(
             let extra = facts
                 .fact_iter()
                 .filter_map(|fact| match fact.proposition() {
-                    Proposition::ConditionIs(condition, value) => Some((condition.clone(), *value)),
+                    Proposition::ConditionIs(condition, value) => Some((condition.native_compat().clone(), *value)),
                     _ => None,
                 })
                 .collect::<Vec<_>>();
@@ -2493,7 +2516,7 @@ mod mandatory_integer_obligation_tests {
         let new_fact = ExecutionPureFact::new(predicate("new fact"));
         let left_facts = ExecutionFacts::from(vec![old_fact]);
         let right_facts = ExecutionFacts::from(vec![upgraded.clone(), new_fact.clone()]);
-        let mandatory = ProofObligation::verification_condition(Proposition::ConditionIs(
+        let mandatory = ProofObligation::verification_condition(Proposition::condition_is(
             ConditionTerm::Constant(false),
             true,
         ))
@@ -2571,7 +2594,7 @@ mod mandatory_integer_obligation_tests {
                 after: memory,
                 writes: vec![],
             }),
-            ExecutionPureFact::certified(Proposition::ConditionIs(condition, false)),
+            ExecutionPureFact::certified(Proposition::condition_is(condition, false)),
         ]);
         let merged = merge_prepared_execution_path(
             &ExecutionFacts::new(),
@@ -2608,7 +2631,7 @@ mod mandatory_integer_obligation_tests {
         let base = PureFactContext::new();
         let left = vec![ProofObligation::condition(condition.clone(), true)];
         let prepared = assumptions_with_path_context(&base, &[], &left);
-        let right = ExecutionFacts::from(vec![ExecutionPureFact::new(Proposition::ConditionIs(
+        let right = ExecutionFacts::from(vec![ExecutionPureFact::new(Proposition::condition_is(
             condition, false,
         ))]);
         assert!(
@@ -2627,7 +2650,7 @@ mod mandatory_integer_obligation_tests {
 
     #[test]
     fn integer_conversion_obligation_merge_preserves_kind_and_context() {
-        let proposition = Proposition::ConditionIs(ConditionTerm::Constant(false), true);
+        let proposition = Proposition::condition_is(ConditionTerm::Constant(false), true);
         let required = ProofObligation::verification_condition(proposition.clone())
             .with_context("Integer argument definedness");
         let base = PureFactContext::new();
@@ -2701,8 +2724,8 @@ mod native_observation_guard_tests {
                     ],
                 );
                 for truth in [false, true] {
-                    let source = Proposition::ConditionIs(native.clone(), truth);
-                    let query = Proposition::ConditionIs(observed.clone(), truth);
+                    let source = Proposition::condition_is(native.clone(), truth);
+                    let query = Proposition::condition_is(observed.clone(), truth);
                     let parent = PureFactContext::new();
                     let context = parent.clone().assume_proposition(source.clone());
                     let discharge = |context: &PureFactContext, query| {
@@ -2733,11 +2756,14 @@ mod native_observation_guard_tests {
                         1
                     );
                     assert_eq!(
-                        discharge(&context, Proposition::ConditionIs(observed.clone(), !truth))
-                            .len(),
+                        discharge(
+                            &context,
+                            Proposition::condition_is(observed.clone(), !truth)
+                        )
+                        .len(),
                         1
                     );
-                    let missing = Proposition::ConditionIs(
+                    let missing = Proposition::condition_is(
                         ConditionTerm::equal(variable(850_013), variable(850_014)),
                         true,
                     );
@@ -2817,7 +2843,7 @@ mod native_observation_guard_tests {
                 );
                 assert_eq!(decide_with_facts(&context, &no_path_facts, &other), None);
                 let path = ExecutionFacts::from(vec![ExecutionPureFact::new(
-                    Proposition::ConditionIs(native.clone(), truth),
+                    Proposition::condition_is(native.clone(), truth),
                 )]);
                 assert_eq!(decide_with_facts(&empty, &path, &observed), Some(truth));
                 assert_eq!(decide_with_facts(&empty, &path, &not_equal), Some(!truth));
@@ -2874,7 +2900,7 @@ mod native_observation_guard_tests {
             );
             if let Some(truth) = truth {
                 let path = ExecutionFacts::from(vec![ExecutionPureFact::new(
-                    Proposition::ConditionIs(source, truth),
+                    Proposition::condition_is(source, truth),
                 )]);
                 assert_eq!(decide_with_facts(&empty, &path, &goal), Some(truth));
                 assert_eq!(decide_with_facts(&empty, &path, &opposite), Some(!truth));
@@ -3096,7 +3122,7 @@ mod certified_merge_tests {
 
     #[test]
     fn certified_outputs_do_not_become_path_guards() {
-        let condition = |id| Proposition::ConditionIs(ConditionTerm::Variable(Variable(id)), true);
+        let condition = |id| Proposition::condition_is(ConditionTerm::Variable(Variable(id)), true);
         let branch = condition(991_010);
         let produced = condition(991_011);
         let required = condition(991_012);
@@ -3136,7 +3162,7 @@ mod certified_merge_tests {
             MachineTerm::Variable(Variable(1024000)),
             MachineTerm::constant(7),
         );
-        let proposition = Proposition::ConditionIs(condition.clone(), true);
+        let proposition = Proposition::condition_is(condition.clone(), true);
         let context = PureFactContext::new().assume_condition(condition, true);
         let prefix: ExecutionFacts = vec![ExecutionPureFact::new(proposition.clone())].into();
         let produced: ExecutionFacts = vec![ExecutionPureFact::certified(proposition)].into();

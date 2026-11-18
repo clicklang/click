@@ -151,7 +151,7 @@ fn forwarded_handle_lookup_ignores_equality_class_and_context_population() {
             let word = MachineTerm::ThreadHandle(handle);
             let variable = |index| MachineTerm::Variable(Variable(1009000 + index));
             let equality = |left, right| {
-                Proposition::ConditionIs(ConditionTerm::uint64_equal(left, right), true)
+                Proposition::condition_is(ConditionTerm::uint64_equal(left, right), true)
             };
             let mut facts =
                 PureFactContext::new().assume_proposition(equality(variable(0), word.clone()));

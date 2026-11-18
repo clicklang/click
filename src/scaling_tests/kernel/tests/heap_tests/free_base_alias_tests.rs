@@ -13,7 +13,7 @@ fn alias_free_work(selected: u32, unrelated: u32) -> usize {
         resources = resources.unchecked_with_fact(ResourceFact::own_allocation(base.clone(), 4));
         if index < selected {
             let alias = Address::symbolic(Variable(975_000 + u64::from(index)));
-            facts = facts.assume_proposition(Proposition::ConditionIs(
+            facts = facts.assume_proposition(Proposition::condition_is(
                 ConditionTerm::pointer_equal(
                     Pointer::new(alias.clone(), ProgramType::Int32Pointer),
                     Pointer::new(base.clone(), ProgramType::Int32Pointer),

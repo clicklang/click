@@ -159,7 +159,7 @@ mod memory_equality_index;
 mod sequence_values;
 pub use sequence_values::{SequenceValues, SequenceValuesIter};
 mod descriptor_values;
-pub use descriptor_values::StoredMachineTerm;
+pub use descriptor_values::{StoredConditionTerm, StoredMachineTerm, StoredProgramValue};
 mod resource_fields;
 pub(crate) use resource_fields::StoredResourceField;
 pub use resource_fields::{ResourceFieldValue, ResourceFieldValues};
@@ -1061,6 +1061,17 @@ pub enum AddressOffset {
 }
 
 impl AddressOffset {
+    /// A small address index can carry arbitrarily deep *retained* operands.
+    /// Its offset structure itself must stay bounded for source publication.
+    pub(crate) fn is_shallow(&self) -> bool {
+        match self {
+            Self::Add(left, right) => {
+                !matches!(**left, Self::Add(..)) && !matches!(**right, Self::Add(..))
+            }
+            _ => true,
+        }
+    }
+
     /// Preserve the written index node, including a zero scale; the smart
     /// `scale_int32` constructor may separately fold literal displacements.
     pub(crate) fn scaled_int32_node(value: MachineTerm, byte_width: i64) -> Self {
@@ -11576,7 +11587,7 @@ fn compare_support_graph(left: &ResourceContext, right: &ResourceContext) -> std
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum ResourceFact {
-    Own(Resource, Box<MachineTerm>),
+    Own(Resource, Box<StoredMachineTerm>),
     View(Resource),
 }
 
@@ -11659,7 +11670,7 @@ pub struct PublicationRight {
     pub(in crate::kernel) payload: super::ResourceDescription,
     /// A subscriber right an acquire load has read `observed` through, until
     /// a C branch decides whether that value is zero.
-    pub(in crate::kernel) observed: Option<ProgramValue>,
+    pub(in crate::kernel) observed: Option<StoredProgramValue>,
 }
 
 impl PublicationRight {
@@ -11676,7 +11687,9 @@ impl PublicationRight {
         }
     }
     pub(crate) fn observed(&self) -> Option<&ProgramValue> {
-        self.observed.as_ref()
+        self.observed
+            .as_ref()
+            .map(StoredProgramValue::native_compat)
     }
     pub(crate) fn side(&self) -> PublicationSide {
         self.side
@@ -11709,7 +11722,7 @@ pub struct ConditionalMutexGuard {
     pub(in crate::kernel) identity: Variable,
     pub(in crate::kernel) guard: MutexIdentity,
     pub(in crate::kernel) initialization: MutexIdentity,
-    pub(in crate::kernel) held: ConditionTerm,
+    pub(in crate::kernel) held: StoredConditionTerm,
 }
 
 impl ConditionalMutexGuard {
@@ -11717,7 +11730,7 @@ impl ConditionalMutexGuard {
         self.guard.mutex()
     }
     pub(crate) fn condition(&self) -> &ConditionTerm {
-        &self.held
+        self.held.native_compat()
     }
 }
 
@@ -13156,7 +13169,7 @@ mod population_authority_spec_tests {
                 .try_compose_with_fact(
                     ResourceFact::Own(
                         Resource::PopulationAuthority(description.clone()),
-                        Box::new(MachineTerm::constant(2)),
+                        Box::new(MachineTerm::constant(2).into()),
                     ),
                     &assumptions,
                 )
@@ -13307,14 +13320,14 @@ pub struct VolatileAccess {
     pub(crate) kind: VolatileAccessKind,
     pub(crate) pointer: Address,
     pub(crate) value_type: ProgramType,
-    pub(crate) value: ProgramValue,
+    pub(crate) value: StoredProgramValue,
 }
 
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum Proposition {
     VolatileAccess(Arc<VolatileAccess>),
     Equal(Term, Term),
-    ConditionIs(ConditionTerm, bool),
+    ConditionIs(StoredConditionTerm, bool),
     Predicate {
         name: String,
         arguments: Vec<Term>,
@@ -13322,7 +13335,7 @@ pub enum Proposition {
     ProgramExpressionEvaluates {
         state: Box<ExecutionState>,
         expression: ProgramExpression,
-        outcome: ExpressionOutcome,
+        outcome: ExpressionOutcome<StoredProgramValue>,
     },
     ProgramConditionEvaluates {
         state: Box<ExecutionState>,
@@ -13355,7 +13368,7 @@ pub enum Proposition {
     MemoryLoads {
         memory: SymbolicMemory,
         pointer: Address,
-        outcome: ExpressionOutcome,
+        outcome: ExpressionOutcome<StoredProgramValue>,
     },
     MemoryCanStore {
         memory: SymbolicMemory,
@@ -13368,7 +13381,7 @@ pub enum Proposition {
     MemoryLoadable {
         memory: SymbolicMemory,
         base: Address,
-        bytes: MachineTerm,
+        bytes: StoredMachineTerm,
         wide: bool,
     },
     /// A typed read is valid in this state, including initialization.
@@ -13442,6 +13455,20 @@ pub enum Proposition {
 }
 
 impl Proposition {
+    /// Store an exact native input or an already-retained logical condition.
+    pub fn condition_is(condition: impl Into<StoredConditionTerm>, truth: bool) -> Self {
+        Self::ConditionIs(condition.into(), truth)
+    }
+
+    /// Selected native condition-payload inspection. This view borrows the
+    /// original payload and truth marker without rebuilding a proposition.
+    pub(crate) fn condition_native(&self) -> Option<(&ConditionTerm, &bool)> {
+        match self {
+            Self::ConditionIs(condition, truth) => Some((condition.native_compat(), truth)),
+            _ => None,
+        }
+    }
+
     /// The two ranges of a separation between two memory resources.
     pub(crate) fn memory_separation(&self) -> Option<(&MemoryRange, &MemoryRange)> {
         match self {
@@ -13827,7 +13854,7 @@ fn clone_atomic_proposition(proposition: &Proposition) -> Proposition {
         Proposition::VolatileAccess(event) => Proposition::VolatileAccess(event.clone()),
         Proposition::Equal(left, right) => Proposition::Equal(left.clone(), right.clone()),
         Proposition::ConditionIs(condition, value) => {
-            Proposition::ConditionIs(condition.clone(), *value)
+            Proposition::condition_is(condition.clone(), *value)
         }
         Proposition::Predicate { name, arguments } => Proposition::Predicate {
             name: name.clone(),
@@ -14520,7 +14547,7 @@ impl AtomicConnectedFact<'_> {
     pub(crate) fn matches(&self, goal: &Proposition) -> bool {
         match self {
             Self::Condition(condition, value) => {
-                matches!(goal, Proposition::ConditionIs(c,v) if c == *condition && v == value)
+                matches!(goal, Proposition::ConditionIs(c,v) if c.native_compat() == *condition && v == value)
             }
             Self::Proposition(proposition) => *proposition == goal,
         }
@@ -14528,7 +14555,7 @@ impl AtomicConnectedFact<'_> {
     pub(crate) fn to_proposition(&self) -> Proposition {
         match self {
             Self::Condition(condition, value) => {
-                Proposition::ConditionIs((*condition).clone(), *value)
+                Proposition::condition_is((*condition).clone(), *value)
             }
             Self::Proposition(proposition) => (*proposition).clone(),
         }
@@ -15184,6 +15211,8 @@ pub(super) struct CertifiedMemoryStore {
     pub(super) authorized_range: Option<MemoryRange>,
     pub(super) source: super::StatementStoreSource,
     pub(super) value_equation: Option<Arc<Proposition>>,
+    /// Evaluated lvalue coordinates, before ownership may rebase the write.
+    pub(super) source_address: Option<Address>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

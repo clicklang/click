@@ -114,7 +114,7 @@ pub(super) fn has_retained_read_source(proposition: &ClickProposition) -> bool {
 /// The cast's destination and which written operand holds the original value.
 fn bounded_cast_shape(goal: &Proposition) -> Option<(crate::kernel::MachineIntegerFormat, bool)> {
     use crate::kernel::machine_integer::conversion;
-    let Proposition::ConditionIs(ConditionTerm::IntegerEqual(a, b), true) = goal else {
+    let Some((ConditionTerm::IntegerEqual(a, b), true)) = goal.condition_native() else {
         return None;
     };
     for (cast, original, original_on_left) in [(a, b, false), (b, a, true)] {
@@ -253,7 +253,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // Native unsigned comparisons use their own observation, rather than
         // relabelling their bits int32. Transport a written cast explicitly.
         if matches!(goal, Proposition::ConditionIs(condition, _) if
-            crate::kernel::machine_integer::comparison::structural_comparison_view(condition)
+            crate::kernel::machine_integer::comparison::structural_comparison_view(condition.native_compat())
                 .is_some_and(|view| view.format == MachineIntegerType::UInt32))
             && let Some(surface @ ClickProposition::Comparison { left, right, .. }) =
                 input.surface_goal()
@@ -343,12 +343,16 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 // An exact type range can be computed even when its operand
                 // is written at a program point. Use the goal-local check
                 // before the history and retained-read compatibility rule.
-                let step = if premises.is_empty()
-                    && scope
-                        .body()
-                        .goal()
-                        .is_some_and(crate::surface::planning::solve::computes_with_known)
-                {
+                let body = scope.body();
+                let step = if body
+                    .goal()
+                    .is_some_and(crate::surface::planning::solve::computes_with_known)
+                    && premises.iter().all(|source| {
+                        body.lower_cited_surface_proposition(source, "interval source")
+                            .is_ok_and(|premise| {
+                                body.facts().listed_premise_available(&premise, &[], false)
+                            })
+                    }) {
                     ProofStep::Known
                 } else {
                     ProofStep::NormalizeUsing(premises.to_vec())

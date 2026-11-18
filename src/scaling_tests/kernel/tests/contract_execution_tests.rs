@@ -104,7 +104,7 @@ fn reassociated_signed_add_domain_requires_each_guard_and_scales() {
     let a = MachineTerm::Variable(Variable(960_170));
     let b = MachineTerm::Variable(Variable(960_171));
     let c = MachineTerm::Variable(Variable(960_172));
-    let goal = Proposition::ConditionIs(
+    let goal = Proposition::condition_is(
         ConditionTerm::signed_add_overflows(a.clone(), MachineTerm::add(b.clone(), c.clone())),
         false,
     );
@@ -155,7 +155,7 @@ fn reassociated_signed_add_domain_requires_each_guard_and_scales() {
     let a = MachineTerm::constant(i32::MIN as u32);
     let b = MachineTerm::constant(i32::MAX as u32);
     let c = MachineTerm::constant(1);
-    let goal = Proposition::ConditionIs(
+    let goal = Proposition::condition_is(
         ConditionTerm::signed_add_overflows(a, MachineTerm::add(b, c)),
         false,
     );

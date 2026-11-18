@@ -1339,7 +1339,7 @@ fn candidate_unresolved_return_obligation_refuses_recovery() {
     .expect("candidate transfer should run")
     .expect("candidate transfer should be accepted");
     let callee = callee_state_with_resource_transfer(callee, &transfer);
-    let unresolved = ProofObligation::verification_condition(Proposition::ConditionIs(
+    let unresolved = ProofObligation::verification_condition(Proposition::condition_is(
         ConditionTerm::Constant(false),
         true,
     ))
@@ -2923,7 +2923,7 @@ fn refused_composite_assembly_retains_the_failed_source_clause() {
     // rather than folding it to `false`.
     assert_eq!(
         *fact,
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::Compare {
                 format: crate::kernel::MachineIntegerType::Int32,
                 relation: crate::kernel::CompareRelation::Equal,

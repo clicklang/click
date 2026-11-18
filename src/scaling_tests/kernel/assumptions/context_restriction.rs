@@ -3,7 +3,7 @@ fn selected_context_does_not_withdraw_ambient_pointer_facts() {
     let mut samples = Vec::new();
     for size in [8u64, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
-        let selected = Proposition::ConditionIs(ConditionTerm::Variable(Variable(700_000)), true);
+        let selected = Proposition::condition_is(ConditionTerm::Variable(Variable(700_000)), true);
         let mut context = PureFactContext::new().assume_proposition(selected.clone());
         for index in 0..size {
             context = context.assume_proposition(Proposition::Predicate {
@@ -47,7 +47,7 @@ fn memory_view_miss_does_not_scan_other_bases_in_one_block() {
             context = context.assume_proposition(Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: pointer(720_000 + index),
-                bytes: MachineTerm::constant(4),
+                bytes: (MachineTerm::constant(4)).into(),
                 wide: false,
             });
         }
@@ -256,7 +256,14 @@ fn ambiguous_view_buckets_keep_exact_and_selected_evidence() {
                     let fact = Proposition::MemoryLoadable {
                         memory: source,
                         base: base.clone(),
-                        bytes: span(index * 4),
+                        bytes: crate::kernel::StoredMachineTerm::new(
+                            if wide {
+                                crate::kernel::MachineIntegerType::UInt64
+                            } else {
+                                crate::kernel::MachineIntegerType::Int32
+                            },
+                            span(index * 4),
+                        ),
                         wide,
                     };
                     if index == size / 2 {
@@ -284,9 +291,13 @@ fn ambiguous_view_buckets_keep_exact_and_selected_evidence() {
                             unreachable!()
                         };
                         assert!(if wide {
-                            context.proves_native_memory_loadable(memory, &base, bytes)
+                            context.proves_native_memory_loadable(
+                                memory,
+                                &base,
+                                bytes.native_compat(),
+                            )
                         } else {
-                            context.proves_memory_loadable(memory, &base, bytes)
+                            context.proves_memory_loadable(memory, &base, bytes.native_compat())
                         });
                     }
                 });
@@ -371,14 +382,14 @@ fn numeric_comparison_view_queries_do_not_scan_supports() {
         let _session = crate::kernel::VerificationSession::enter();
         let mut context = PureFactContext::new();
         let view = Proposition::Or(
-            Box::new(Proposition::ConditionIs(
+            Box::new(Proposition::condition_is(
                 ConditionTerm::equal(
                     MachineTerm::Variable(Variable(880000)),
                     MachineTerm::constant(i32::MIN as u32),
                 ),
                 false,
             )),
-            Box::new(Proposition::ConditionIs(
+            Box::new(Proposition::condition_is(
                 ConditionTerm::Variable(Variable(880001)),
                 true,
             )),
@@ -390,7 +401,7 @@ fn numeric_comparison_view_queries_do_not_scan_supports() {
             )
             .into();
             let source = Proposition::Or(
-                Box::new(Proposition::ConditionIs(
+                Box::new(Proposition::condition_is(
                     ConditionTerm::IntegerNotEqual(
                         I::from_machine(
                             MachineIntegerType::Int32,
@@ -402,7 +413,7 @@ fn numeric_comparison_view_queries_do_not_scan_supports() {
                     ),
                     true,
                 )),
-                Box::new(Proposition::ConditionIs(
+                Box::new(Proposition::condition_is(
                     ConditionTerm::Variable(Variable(880001)),
                     true,
                 )),

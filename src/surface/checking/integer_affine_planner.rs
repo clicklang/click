@@ -1498,7 +1498,7 @@ mod tests {
     use crate::kernel::{ConditionTerm, IntegerTerm, Variable};
 
     fn proposition(condition: ConditionTerm) -> Proposition {
-        Proposition::ConditionIs(condition, true)
+        Proposition::condition_is(condition, true)
     }
 
     fn less_equal(left: IntegerTerm, right: IntegerTerm) -> Proposition {

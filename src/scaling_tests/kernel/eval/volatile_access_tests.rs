@@ -48,3 +48,44 @@ fn typed_volatile_events_scale_with_new_accesses_and_share_forked_history() {
         "{selected:?}"
     );
 }
+
+#[test]
+fn volatile_event_capture_shares_growing_operands_without_exporting() {
+    let mut baseline = None;
+    for size in [4, 16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut root =
+            KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(10993675));
+        for _ in 0..size {
+            root = KernelTerm::machine_binary_shared(
+                MachineIntegerType::Int32,
+                MachineBinaryOp::Add,
+                [root.clone(), root],
+            );
+        }
+        let exports = KernelTermExport::machine_export_count();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let fact = volatile_access_fact(
+                &mut ExecutionBudget::default(),
+                VolatileAccessKind::Write,
+                Address::symbolic(Variable(10993676)),
+                ProgramType::Int32,
+                crate::kernel::ExecutionValue::Shared(root.clone()),
+            )
+            .unwrap();
+            assert!(fact.volatile_read_result().is_none());
+            let Proposition::VolatileAccess(event) = fact.proposition() else {
+                panic!("event");
+            };
+            for _ in 0..32 {
+                let copy = event.as_ref().clone();
+                assert_eq!(copy.value.root(), Some(&root));
+                assert_eq!(copy.id, event.id);
+                assert_eq!(copy.kind, VolatileAccessKind::Write);
+            }
+        });
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        assert!(!root.has_cached_native_argument());
+        assert_eq!(work, *baseline.get_or_insert(work), "size={size}");
+    }
+}

@@ -256,7 +256,8 @@ impl GuardedTermRaiser<'_, '_> {
                 Box::new(self.guard(right)?),
             )),
             Proposition::ConditionIs(condition, false)
-                if let Some((left, right, construct)) = overflow_operands(condition) =>
+                if let Some((left, right, construct)) =
+                    overflow_operands(condition.native_compat()) =>
             {
                 Some(ClickProposition::Defined {
                     expression: construct(Box::new(self.term(left)?), Box::new(self.term(right)?)),
@@ -284,8 +285,9 @@ impl GuardedTermRaiser<'_, '_> {
         {
             return Some(whole);
         }
-        let view =
-            crate::kernel::machine_integer::comparison::structural_comparison_view(condition)?;
+        let view = crate::kernel::machine_integer::comparison::structural_comparison_view(
+            condition.native_compat(),
+        )?;
         if !matches!(
             view.format,
             MachineIntegerType::Int32 | MachineIntegerType::Int64

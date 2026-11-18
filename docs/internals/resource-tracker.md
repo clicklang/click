@@ -2040,6 +2040,14 @@ single unconditional finite entry case. Guarded and recursive cases retain
 their case-specific entry construction. Closing still needs the definition
 and footprint evidence for each requested claim.
 
+Normal `ensures` goal preparation and closing share one successful exit
+resource projection per retained entry case. Reuse requires the same exit
+checkpoint, adjusted memory and resource custody, composite definitions, and
+proof facts including logical read definitions. A changed checkpoint prepares
+a fresh projection. Each consumer builds its own claim state from the
+projection, and closing still checks allocation escape and computes the
+observation facts for its claims.
+
 The source tests in `tests/search_boundary.rs` pin the perimeter, including
 new/hidden references and duplicate caller edges. Runtime probes exercise
 raw-output admission and pending-return admission; the broader legacy routes

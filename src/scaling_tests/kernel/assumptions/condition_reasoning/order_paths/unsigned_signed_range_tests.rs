@@ -18,7 +18,7 @@ fn signed_range_admission_ignores_unrelated_facts() {
         }
         let x = MachineTerm::Variable(Variable(750_000));
         let query = ConditionTerm::unsigned_less_equal(x.clone(), MachineTerm::constant(256));
-        let expected = Proposition::ConditionIs(
+        let expected = Proposition::condition_is(
             ConditionTerm::signed_less_equal(MachineTerm::constant(0), signed_uint32_term(x)),
             true,
         );

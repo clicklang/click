@@ -327,7 +327,7 @@ impl MemoryStateLabels {
             .take(LIMIT)
             .map(|(condition, value)| {
                 render_proposition_labeled(
-                    &Proposition::ConditionIs(condition.clone(), *value),
+                    &Proposition::condition_is(condition.clone(), *value),
                     self,
                 )
             })
@@ -877,7 +877,7 @@ mod tests {
         let mut labels = MemoryStateLabels::default();
         labels.immutable_pointer_name(&pointer, "node");
         let expected =
-            render_proposition_labeled(&Proposition::ConditionIs(condition, true), &mut labels);
+            render_proposition_labeled(&Proposition::condition_is(condition, true), &mut labels);
         let text = labels.legend_kept_frame(&ranges, &premises);
         assert!(text.len() > 300, "{text}");
         assert!(text.contains("Int32:11..12"), "{text}");

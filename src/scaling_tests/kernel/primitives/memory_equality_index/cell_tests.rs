@@ -224,7 +224,7 @@ fn normalization_keeps_fork_pairing_without_deferred_input_scans() {
                 4u32.into(),
                 1,
             )),
-            Box::new(MachineTerm::constant(0)),
+            Box::new(MachineTerm::constant(0).into()),
         ));
         for i in (0..size).rev() {
             resources = resources.unchecked_with_fact(ResourceFact::own_memory(

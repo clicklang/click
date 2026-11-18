@@ -637,6 +637,72 @@ fn charon_array_loops_bind_their_variable_without_an_option() {
     }
     assert!(nexts > 0 && bound > 0);
 }
+/// A source name bound in two `Some(word)` arms, or by a shadowing `let`, is
+/// two declarations, each spelled as the source spells it, as C's are: a
+/// proof's `word` is the live one, and `ordered.statement(3).local(word)` or
+/// `ordered.local(5)` names the second wherever both are written.
+#[test]
+fn charon_repeated_source_names_are_distinct_declarations() {
+    let p = charon_iteration_project();
+    let prepared = p.prepared().unwrap();
+    let mir = prepared
+        .export()
+        .functions
+        .iter()
+        .find(|function| function.name == "ordered")
+        .and_then(|function| function.mir.as_ref())
+        .unwrap();
+    assert_eq!(
+        mir.spellings.values().collect::<Vec<_>>(),
+        ["word", "word"],
+        "{:?}",
+        mir.spellings
+    );
+    let proof = "fn ordered(a: u32, b: u32) -> u32 {
+    ensures result == ((a << 1u32) ^ b);
+} by {
+    step_until(assignment(first, 0));
+    have *word == a;
+    step_until(assignment(second, 0));
+    have *word == b;
+    have *ordered.statement(3).local(word) == b;
+    have *ordered.local(5) == b;
+}";
+    let before = "fn ordered(a: u32, b: u32) -> u32 {
+    ensures result == ((a << 1u32) ^ b);
+}";
+    assert!(CHARON_ITERATION_SIDECAR.contains(before));
+    let sidecar = CHARON_ITERATION_SIDECAR.replace(before, proof);
+    verify_rust_function(&sidecar, &prepared, "ordered").unwrap();
+    // A shadowing `let`: past it, `x` is the second binding.
+    verify_rust_function(CHARON_ITERATION_SIDECAR, &prepared, "shadowed").unwrap();
+    let shadowed = CHARON_ITERATION_SIDECAR.replacen(
+        "have x == (a & 7u32) + 1u32;",
+        "have x == (a & 7u32);",
+        1,
+    );
+    assert_ne!(shadowed, CHARON_ITERATION_SIDECAR);
+    verify_rust_function(&shadowed, &prepared, "shadowed")
+        .expect_err("the shadowed `x` must not be the live one");
+    for (before, after) in [
+        // The second arm's `word` is the live one, not the first.
+        ("have *word == b;", "have *word == a;"),
+        (
+            "have *ordered.statement(3).local(word) == b;",
+            "have *ordered.statement(3).local(word) == a;",
+        ),
+        // The first arm's `word` has ended.
+        (
+            "have *ordered.local(5) == b;",
+            "have *ordered.local(3) == a;",
+        ),
+    ] {
+        let invalid = sidecar.replacen(before, after, 1);
+        assert_ne!(invalid, sidecar);
+        verify_rust_function(&invalid, &prepared, "ordered")
+            .expect_err(&format!("`{before}` -> `{after}` must fail"));
+    }
+}
 #[test]
 #[ignore = "nightly: 7s in the parallel gate"]
 fn charon_shared_iteration_checks_order_moves_empty_arrays_and_read_authority() {

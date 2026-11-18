@@ -44,7 +44,10 @@ impl Context<'_> {
             if !self.locals.insert(local.clone()) {
                 return Err("range bound identity collision".into());
             }
-            result = program_seq(result, program_declare(local, interface_type));
+            result = program_seq(
+                result,
+                program_declare(self.binding(&local), interface_type),
+            );
         }
         Ok(result)
     }
@@ -89,20 +92,24 @@ impl Context<'_> {
         }
         Ok(program_seq(
             program_assign(
-                format!("{target}_start"),
-                crate::kernel::program_expression::variable(format!("{source}_start")),
+                self.binding(&format!("{target}_start")),
+                crate::kernel::program_expression::variable(
+                    self.binding(&format!("{source}_start")),
+                ),
             ),
             program_assign(
-                format!("{target}_end"),
-                crate::kernel::program_expression::variable(format!("{source}_end")),
+                self.binding(&format!("{target}_end")),
+                crate::kernel::program_expression::variable(self.binding(&format!("{source}_end"))),
             ),
         ))
     }
 
     pub(super) fn range_has_next(&self, iterator: &str) -> Result<ProgramExpression, String> {
         self.range_element(iterator)?;
-        let start = crate::kernel::program_expression::variable(format!("{iterator}_start"));
-        let end = crate::kernel::program_expression::variable(format!("{iterator}_end"));
+        let start =
+            crate::kernel::program_expression::variable(self.binding(&format!("{iterator}_start")));
+        let end =
+            crate::kernel::program_expression::variable(self.binding(&format!("{iterator}_end")));
         Ok(if self.inclusive(iterator)? {
             crate::kernel::program_expression::less_equal(start, end)
         } else {
@@ -145,8 +152,8 @@ impl Context<'_> {
             use crate::kernel::program_expression as e;
             let end = format!("{iterator}_end");
             let exhausted = program_seq(
-                program_assign(&start, e::int32_literal(1)),
-                program_assign(&end, e::int32_literal(0)),
+                program_assign(self.binding(&start), e::int32_literal(1)),
+                program_assign(self.binding(&end), e::int32_literal(0)),
             );
             program_if(
                 e::less_than(e::variable(&start), e::variable(&end)),

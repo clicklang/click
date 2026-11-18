@@ -22,8 +22,8 @@ pub(crate) fn prove_integer_truncation_law(
     integer_truncation_law_requirements(name)?;
     let zero = IntegerTerm::constant_i64(0);
     let one = IntegerTerm::constant_i64(1);
-    let condition = |condition| Proposition::ConditionIs(condition, true);
-    let nonzero = Proposition::ConditionIs(
+    let condition = |condition| Proposition::condition_is(condition, true);
+    let nonzero = Proposition::condition_is(
         ConditionTerm::IntegerNotEqual(d.clone().into(), zero.clone().into()),
         true,
     );
@@ -163,7 +163,7 @@ mod tests {
         match p {
             Proposition::Implies(a, b) => !proposition(a, n, d) || proposition(b, n, d),
             Proposition::ConditionIs(c, truth) => {
-                let actual = match c {
+                let actual = match c.native_compat() {
                     ConditionTerm::IntegerEqual(a, b) => integer(a, n, d) == integer(b, n, d),
                     ConditionTerm::IntegerNotEqual(a, b) => integer(a, n, d) != integer(b, n, d),
                     ConditionTerm::IntegerLessThan(a, b) => integer(a, n, d) < integer(b, n, d),

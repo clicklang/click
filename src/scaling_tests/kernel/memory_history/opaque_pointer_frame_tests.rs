@@ -315,7 +315,7 @@ fn packed_word_transport_visits_only_the_selected_word_and_delta() {
             Address::symbolic(Variable(9_891_000)),
             ProgramType::VoidPointer,
         );
-        let source = Proposition::ConditionIs(
+        let source = Proposition::condition_is(
             ConditionTerm::PointerEqual(Box::new(value), Box::new(parent)),
             true,
         );

@@ -412,6 +412,23 @@ fn resolve(
             }
             _ => false,
         },
+        // A shared slice of a local array, `&words[..]`: the array's address
+        // and length never change while the slice lives.
+        E::ArrayToSlice {
+            array,
+            mutable: false,
+        } => {
+            matches!(
+                types.get(&name.to_string()),
+                Some(
+                    super::super::schema::Type::ByteSlice { mutable: false }
+                        | super::super::schema::Type::ScalarSlice { mutable: false, .. }
+                )
+            ) && match array.as_ref() {
+                E::Borrow { place, .. } => place_root(place).is_some(),
+                _ => false,
+            }
+        }
         value => unchanging_scalar(value, unchanged),
     };
     let result = unchanging.then_some(value);
@@ -727,6 +744,14 @@ pub(super) fn return_values(locals: &mut Vec<Place>, blocks: &mut [MirBlock], re
             let S::Assign { value, .. } = blocks[block].statements.remove(position) else {
                 unreachable!("the return place's write is an assignment")
             };
+            // The return reads the value where the write did: the storage
+            // ends between them, which the return performs anyway, would
+            // otherwise end a local the value reads first.
+            let tail = blocks[block].statements.split_off(position);
+            blocks[block].statements.extend(
+                tail.into_iter()
+                    .filter(|statement| !matches!(statement, S::EndStorage { .. })),
+            );
             blocks[block].terminator = T::ReturnValue { value };
         }
         None => {
@@ -960,6 +985,12 @@ pub(super) fn bind_slice_payloads(
         for (position, _, _) in bindings.iter().rev() {
             blocks[target].statements.remove(*position);
         }
+        start_storage_at_next(
+            blocks,
+            index,
+            target,
+            bindings.iter().map(|(_, _, name)| name.as_str()),
+        );
         let bound = |read: Yielded| {
             bindings
                 .iter()
@@ -1030,6 +1061,37 @@ pub(super) fn bind_slice_payloads(
         });
     }
     locals.retain(|local| !removed.contains(&local.name));
+}
+
+/// Starts the storage of the locals the taken `next` ending block `next`
+/// now binds there, rather than in the `Some` arm `arm` that bound them: a
+/// binding's storage starts before its first write. Only the arm's leading
+/// storage markers move; the block holding the taken `next` leads only to
+/// the arm.
+fn start_storage_at_next<'a>(
+    blocks: &mut [MirBlock],
+    next: usize,
+    arm: usize,
+    bound: impl IntoIterator<Item = &'a str>,
+) {
+    for name in bound {
+        let Some(position) = blocks[arm]
+            .statements
+            .iter()
+            .take_while(|statement| {
+                matches!(
+                    statement,
+                    S::BeginStorage { .. } | S::EndStorage { .. } | S::Site { .. }
+                )
+            })
+            .position(|statement| matches!(statement, S::BeginStorage { local } if local == name))
+        else {
+            continue;
+        };
+        let start = blocks[arm].statements.remove(position);
+        let at = blocks[next].statements.len() - 1;
+        blocks[next].statements.insert(at, start);
+    }
 }
 
 /// The iterator `statement` moves: its kind, the local it moves into, and
@@ -1116,6 +1178,7 @@ pub(super) fn bind_range_payloads(
         }
         let payload = payload.clone();
         blocks[target].statements.remove(position);
+        start_storage_at_next(blocks, index, target, [payload.as_str()]);
         for block in blocks.iter_mut() {
             for statement in &mut block.statements {
                 if let S::RangeNext {
@@ -2784,6 +2847,63 @@ mod tests {
             [S::Assign { value: E::SliceLength { slice }, .. }]
                 if matches!(slice.as_ref(), E::Borrow { place, .. }
                     if matches!(place.as_ref(), E::Local { name } if name == "bytes"))
+        ));
+    }
+
+    #[test]
+    fn a_shared_slice_of_a_local_array_is_read_in_place() {
+        // `t1 = &words[..]; x = len(t1)` is `x = len(&words[..])`.
+        let slice = Type::ScalarSlice {
+            element: Box::new(Type::U32),
+            mutable: false,
+        };
+        let mut locals = vec![
+            place("x"),
+            place("words"),
+            Place {
+                value_type: slice.clone(),
+                ..place("t1")
+            },
+        ];
+        let mut blocks = vec![block(
+            vec![
+                assign(
+                    "t1",
+                    E::ArrayToSlice {
+                        array: Box::new(E::Borrow {
+                            place: Box::new(local("words")),
+                            value_type: Type::Reference {
+                                mutable: false,
+                                pointee: Box::new(Type::Array {
+                                    element: Box::new(Type::U32),
+                                    length: 4,
+                                }),
+                            },
+                        }),
+                        mutable: false,
+                    },
+                ),
+                assign(
+                    "x",
+                    E::SliceLength {
+                        slice: Box::new(local("t1")),
+                    },
+                ),
+            ],
+            T::Return,
+        )];
+        super::substitute_literals(
+            &mut locals,
+            &mut blocks,
+            &BTreeSet::from(["t1".into()]),
+            &BTreeMap::new(),
+        );
+        let names: Vec<_> = locals.iter().map(|local| local.name.as_str()).collect();
+        assert_eq!(names, ["x", "words"]);
+        assert!(matches!(
+            blocks[0].statements.as_slice(),
+            [S::Assign { value: E::SliceLength { slice }, .. }]
+                if matches!(slice.as_ref(), E::ArrayToSlice { .. })
         ));
     }
 }

@@ -133,8 +133,8 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                 rewrite((node->__rb_parent_color & 1), 0); normalize();
             }
             let initial_focus = fold(mirrored_context_uncle_node_frame(node, p), { color: Color::Red, word: node->__rb_parent_color, left: node->rb_left, right: node->rb_right });
-            let initial_parent = fold(mirrored_context_uncle_node_frame(p, g), { color: Color::Red, word: p->__rb_parent_color, left: p->rb_left, right: p->rb_right });
-            let initial_grandparent = fold(mirrored_context_uncle_node_frame(g, above), { color: Color::Black, word: g->__rb_parent_color, left: g->rb_left, right: g->rb_right });
+            let initial_parent = fold(mirrored_context_uncle_node_frame(p, g), { color: Color::Red, word: p->__rb_parent_color, right: p->rb_right, left: p->rb_left });
+            let initial_grandparent = fold(mirrored_context_uncle_node_frame(g, above), { color: Color::Black, word: g->__rb_parent_color, right: g->rb_right, left: g->rb_left });
             step(); step(); step(); step();
             unfold(initial_grandparent); unfold(initial_parent); unfold(initial_focus);
             let focus = fold(sized_at(node), { model: SizedTree::Node(node, p, Color::Red, nv, left, right) }, { metadata: n_size, left: n_left, right: n_right });
@@ -265,10 +265,10 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         rewrite((g->__rb_parent_color & 1), color_bit(Color::Black));
                         rewrite(color_bit(Color::Black), 1); normalize();
                     }
-                    let loop_parent = fold(mirrored_context_uncle_node_frame(p, g), { color: Color::Red, word: p->__rb_parent_color, left: m, right: node });
-                    let loop_grandparent = fold(mirrored_context_uncle_node_frame(g, above), { color: Color::Black, word: g->__rb_parent_color, left: u, right: p });
+                    let loop_parent = fold(mirrored_context_uncle_node_frame(p, g), { color: Color::Red, word: p->__rb_parent_color, right: node, left: m });
+                    let loop_grandparent = fold(mirrored_context_uncle_node_frame(g, above), { color: Color::Black, word: g->__rb_parent_color, right: p, left: u });
                     let { metadata: u_size, left: u_left, right: u_right } = unfold(g_left);
-                    let loop_uncle = fold(mirrored_context_uncle_node_frame(u, g), { color: Color::Black, word: u->__rb_parent_color, left: u->rb_left, right: u->rb_right });
+                    let loop_uncle = fold(mirrored_context_uncle_node_frame(u, g), { color: Color::Black, word: u->__rb_parent_color, right: u->rb_right, left: u->rb_left });
                     step(); step(); step(); step(); step(); step(); step(); step();
                     unfold(loop_grandparent); unfold(loop_parent);
                     have gparent == g by known();
@@ -287,7 +287,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         rewrite((u->__rb_parent_color & 1), color_bit(Color::Black));
                         rewrite(color_bit(Color::Black), 1); normalize();
                     }
-                    let uncle_observation = fold(mirrored_context_uncle_node_frame(u, g), { color: Color::Black, word: u->__rb_parent_color, left: u->rb_left, right: u->rb_right });
+                    let uncle_observation = fold(mirrored_context_uncle_node_frame(u, g), { color: Color::Black, word: u->__rb_parent_color, right: u->rb_right, left: u->rb_left });
                     step(); step(); step(); // Read the black uncle and skip the color flip.
                     unfold(uncle_observation);
                     let g_left = fold(sized_at(u), { model: SizedTree::Node(u, g, Color::Black, uv, uncle_left, uncle_right) }, { metadata: u_size, left: u_left, right: u_right });

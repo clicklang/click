@@ -632,7 +632,7 @@ fn aggregate_copy_result_preserves_unrelated_entry_byte_history() {
         )
     };
     let equality = |memory: &SymbolicMemory| {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,

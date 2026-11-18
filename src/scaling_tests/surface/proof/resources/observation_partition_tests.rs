@@ -18,7 +18,7 @@ fn constructed_state_observation_does_not_revisit_ambient_owners_or_aliases() {
             );
             for index in 0..count {
                 if axis == "aliases" {
-                    aliases.push(Proposition::ConditionIs(
+                    aliases.push(Proposition::condition_is(
                         ConditionTerm::address_equal(
                             pointer.clone(),
                             Address::symbolic(Variable(8_919_100 + u64::from(index))),

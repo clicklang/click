@@ -3061,7 +3061,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
             {
                 StableViewPlanError::MissingResource(ResourceFact::Own(
                     fact.resource().clone(),
-                    Box::new(MachineTerm::constant(demanded)),
+                    Box::new(MachineTerm::constant(demanded).into()),
                 ))
             }
             _ => StableViewPlanError::MissingResource(fact.clone()),

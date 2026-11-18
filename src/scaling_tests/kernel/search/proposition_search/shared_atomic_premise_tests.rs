@@ -11,7 +11,7 @@ fn solve_retains_recorded_equality_edges_instead_of_connected_aliases() {
     for count in [8, 16, 32, 64, 128] {
         let term = |index| MachineTerm::Variable(Variable(9_320_000 + index));
         let equality = |left, right| {
-            Proposition::ConditionIs(
+            Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
@@ -58,8 +58,9 @@ fn solve_reduces_connected_pointer_premises_before_spelling() {
         let left = pointer(1);
         let middle = pointer(2);
         let right = pointer(3);
-        let equality =
-            |left, right| Proposition::ConditionIs(ConditionTerm::address_equal(left, right), true);
+        let equality = |left, right| {
+            Proposition::condition_is(ConditionTerm::address_equal(left, right), true)
+        };
         let first = equality(left.clone(), middle.clone());
         let second = equality(middle.clone(), right.clone());
         let goal = equality(left, right);
@@ -126,7 +127,7 @@ fn solve_retains_recorded_load_address_equality_premises() {
         let indexed = load(AddressOffset::scaled_int32_node(term(0), 4));
         let first = load(AddressOffset::Constant(0));
         let equality = |left, right| {
-            Proposition::ConditionIs(
+            Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
@@ -162,7 +163,7 @@ fn native_view_prefix_retains_only_its_order_path() {
         let n = MachineTerm::Variable(Variable(9_340_000));
         let middle = MachineTerm::Variable(Variable(9_340_001));
         let le = |left, right| {
-            Proposition::ConditionIs(ConditionTerm::uint64_less_equal(left, right), true)
+            Proposition::condition_is(ConditionTerm::uint64_less_equal(left, right), true)
         };
         let first = le(MachineTerm::uint64_constant(1), middle.clone());
         let second = le(middle, n.clone());
@@ -171,13 +172,19 @@ fn native_view_prefix_retains_only_its_order_path() {
         let source = Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: base.clone(),
-            bytes: n.clone(),
+            bytes: crate::kernel::StoredMachineTerm::new(
+                crate::kernel::MachineIntegerType::UInt64,
+                n.clone(),
+            ),
             wide: true,
         };
         let goal = Proposition::MemoryLoadable {
             memory,
             base,
-            bytes: MachineTerm::uint64_constant(1),
+            bytes: crate::kernel::StoredMachineTerm::new(
+                crate::kernel::MachineIntegerType::UInt64,
+                MachineTerm::uint64_constant(1),
+            ),
             wide: true,
         };
         let mut context = PureFactContext::new()
@@ -223,8 +230,9 @@ fn solve_retains_common_base_pointer_equality_for_load_congruence() {
                 4,
             ),
         };
-        let equality =
-            |left, right| Proposition::ConditionIs(ConditionTerm::address_equal(left, right), true);
+        let equality = |left, right| {
+            Proposition::condition_is(ConditionTerm::address_equal(left, right), true)
+        };
         let required = equality(pointer(0), pointer(1));
         let mut context = PureFactContext::new().assume_proposition(required.clone());
         for index in 2..count {
@@ -241,7 +249,7 @@ fn solve_retains_common_base_pointer_equality_for_load_congruence() {
                 LoadKind::Int32,
             ))
         };
-        let goal = Proposition::ConditionIs(
+        let goal = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,

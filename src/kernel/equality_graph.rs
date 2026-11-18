@@ -732,6 +732,11 @@ impl EqualityGraph {
             .with(|reads| std::sync::Arc::ptr_eq(&reads.borrow(), &self.logical_reads))
     }
 
+    pub(in crate::kernel) fn shares_read_configuration_with(&self, other: &Self) -> bool {
+        self.resolve_stored_values == other.resolve_stored_values
+            && std::sync::Arc::ptr_eq(&self.logical_reads, &other.logical_reads)
+    }
+
     pub(in crate::kernel) fn logical_read_generation(&self) -> u64 {
         let definitions = self
             .logical_reads

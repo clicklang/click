@@ -87,7 +87,7 @@ fn add_float_to_integer_obligations(
     add_proof_obligation(
         obligations,
         assumptions,
-        Proposition::ConditionIs(finite, true),
+        Proposition::condition_is(finite, true),
     )?;
 
     if signed {
@@ -118,12 +118,12 @@ fn add_float_to_integer_obligations(
         add_proof_obligation(
             obligations,
             assumptions,
-            Proposition::ConditionIs(lower, true),
+            Proposition::condition_is(lower, true),
         )?;
         add_proof_obligation(
             obligations,
             assumptions,
-            Proposition::ConditionIs(upper, true),
+            Proposition::condition_is(upper, true),
         )?;
     } else {
         let lower = match source_type {
@@ -156,12 +156,12 @@ fn add_float_to_integer_obligations(
         add_proof_obligation(
             obligations,
             assumptions,
-            Proposition::ConditionIs(lower, true),
+            Proposition::condition_is(lower, true),
         )?;
         add_proof_obligation(
             obligations,
             assumptions,
-            Proposition::ConditionIs(upper, true),
+            Proposition::condition_is(upper, true),
         )?;
     }
     Some(())
@@ -203,22 +203,6 @@ fn float_to_integer_conversion_value(
         ProgramType::UInt64 => ProgramValue::UInt64(term),
         _ => unreachable!(),
     })
-}
-
-#[cfg(test)]
-pub(in crate::kernel) fn evaluate_program_expression(
-    state: &ExecutionState,
-    expression: &ProgramExpression,
-    assumptions: &PureFactContext,
-    budget: &mut ExecutionBudget,
-) -> Option<ExpressionOutcome> {
-    let paths = evaluate_program_expression_paths(state, expression, assumptions, budget).ok()?;
-    let mut paths = paths.into_iter();
-    let path = paths.next()?;
-    if paths.next().is_some() || !path.obligations.is_empty() {
-        return None;
-    }
-    Some(path.outcome)
 }
 
 thread_local! {
@@ -884,7 +868,7 @@ fn checked_narrowing_identity_readings(
 
     let observed = IntegerTerm::from_machine(*destination, converted.clone())?;
     let original = IntegerTerm::from_machine(source_type, operand.clone())?;
-    let mut identities = vec![Proposition::ConditionIs(
+    let mut identities = vec![Proposition::condition_is(
         ConditionTerm::integer_equal(observed, original),
         true,
     )];
@@ -898,7 +882,7 @@ fn checked_narrowing_identity_readings(
                 term.clone()
             }
         };
-        identities.push(Proposition::ConditionIs(
+        identities.push(Proposition::condition_is(
             ConditionTerm::equal(word(*destination, converted), word(source_type, operand)),
             true,
         ));
@@ -934,7 +918,7 @@ fn add_narrowing_bound_obligation(
     if add_proof_obligation_with_context(
         obligations,
         assumptions,
-        Proposition::ConditionIs(condition.clone(), true),
+        Proposition::condition_is(condition.clone(), true),
         Some(context),
     )
     .is_some()
@@ -1508,7 +1492,7 @@ pub(super) fn evaluate_native_expression_paths(
                         Proposition::MemoryLoadable {
                             memory: state.memory().clone(),
                             base: pointer.address().clone(),
-                            bytes: MachineTerm::constant(width),
+                            bytes: (MachineTerm::constant(width)).into(),
                             wide: false,
                         },
                         Some("reference binding requires live storage for the complete referent"),
@@ -3358,7 +3342,7 @@ fn read_retained_lvalue_paths_without_ranges(
                         VolatileAccessKind::Read,
                         pointer,
                         lvalue.value_type,
-                        value.clone().into_native(),
+                        value.clone(),
                     )?);
                 }
                 vec![ExecutionValuePath {
@@ -3601,13 +3585,12 @@ fn read_retained_lvalue_paths_without_ranges(
                 }
                 for path in &mut paths {
                     if let ExpressionOutcome::Value(value) = &path.outcome {
-                        let value = value.native().into_owned();
                         path.facts.push(volatile_access_fact(
                             budget,
                             VolatileAccessKind::Read,
                             pointer.clone(),
                             lvalue.value_type,
-                            value,
+                            value.clone(),
                         )?);
                     }
                 }
@@ -3958,7 +3941,7 @@ pub(in crate::kernel) fn program_truthiness_paths(
             else {
                 unreachable!("a truth claim is a condition claim");
             };
-            match decide_with_facts(assumptions, &facts, &condition) {
+            match decide_with_facts(assumptions, &facts, (&condition).native_compat()) {
                 Some(value) => vec![TruthinessPath {
                     is_true: value == holds,
                     facts,
@@ -3966,11 +3949,21 @@ pub(in crate::kernel) fn program_truthiness_paths(
                 }],
                 None => {
                     let mut true_facts = facts.clone();
-                    add_condition_path_fact(&mut true_facts, assumptions, condition.clone(), holds)
-                        .expect("unknown bool truthiness fact should be consistent");
+                    add_condition_path_fact(
+                        &mut true_facts,
+                        assumptions,
+                        (condition.clone()).native_compat().clone(),
+                        holds,
+                    )
+                    .expect("unknown bool truthiness fact should be consistent");
                     let mut false_facts = facts;
-                    add_condition_path_fact(&mut false_facts, assumptions, condition, !holds)
-                        .expect("unknown bool truthiness fact should be consistent");
+                    add_condition_path_fact(
+                        &mut false_facts,
+                        assumptions,
+                        condition.native_compat().clone(),
+                        !holds,
+                    )
+                    .expect("unknown bool truthiness fact should be consistent");
                     vec![
                         TruthinessPath {
                             is_true: true,
@@ -4575,7 +4568,7 @@ mod packed_word_contract_tests {
             true,
         );
         assert!(!numeric.pointer_provenance_match(&reconstructed, &target));
-        let relation = Proposition::ConditionIs(
+        let relation = Proposition::condition_is(
             ConditionTerm::PointerEqual(Box::new(reconstructed.clone()), Box::new(target.clone())),
             true,
         );
