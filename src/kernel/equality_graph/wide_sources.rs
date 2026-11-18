@@ -79,7 +79,6 @@ impl WideEqualitySources {
             })
     }
 
-    #[cfg(test)]
     pub(in crate::kernel) fn shares_root_with(&self, other: &Self) -> bool {
         self.endpoints.shares_root_with(&other.endpoints)
     }
