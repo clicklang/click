@@ -23,6 +23,17 @@ fn empty() -> u32 {
 fn ordered(a: u32, b: u32) -> u32 {
     ensures result == ((a << 1u32) ^ b);
 }
+fn shadowed(a: u32) -> u32 {
+    ensures result == (a & 7u32) + 1u32;
+} by {
+    // The second `let x` takes the name from where its storage starts; the
+    // first is the `x` statement 0 declares.
+    step_until(assignment(x, 1));
+    have shadowed.statement(0).local(x) == (a & 7u32);
+    have to_integer(a & 7u32) <= 7;
+    step();
+    have x == (a & 7u32) + 1u32;
+}
 
 fn signed(words: &[i32; 4]) -> i32 {
     views words[0..4];

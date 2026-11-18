@@ -118,6 +118,9 @@ pub(crate) struct SourceSites {
     /// The statement each region comes from, by region in the order the
     /// source layout numbers them; `None` for a region the lowering added.
     pub(crate) regions: Vec<Option<u32>>,
+    /// The statement each declaration the lowering places at a source
+    /// statement comes from, by the declaration's binding.
+    pub(crate) declarations: Vec<(crate::kernel::BindingName, u32)>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
