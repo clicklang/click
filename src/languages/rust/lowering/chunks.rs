@@ -8,16 +8,6 @@ use crate::kernel::program_expression::variable;
 use crate::languages::interface::ChunkIteratorFields;
 
 impl ChunkIteratorFields {
-    fn bindings(&self) -> [&BindingName; 5] {
-        [
-            &self.remaining,
-            &self.remaining_length,
-            &self.remainder,
-            &self.remainder_length,
-            &self.size,
-        ]
-    }
-
     fn advance(&self) -> ProgramStatement {
         use crate::kernel::program_expression::{add, subtract};
         program_seq(

@@ -199,6 +199,10 @@ impl LocalBindingId {
         )
     }
 
+    pub(crate) fn is_chunk_iterator_field(&self) -> bool {
+        matches!(self.0.kind, LocalBindingKind::ChunkIterator(_))
+    }
+
     pub fn is_temporary(&self) -> bool {
         self.0.kind == LocalBindingKind::Temporary
     }

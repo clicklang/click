@@ -1867,6 +1867,18 @@ pub(crate) struct ChunkIteratorFields {
     pub(crate) size: crate::kernel::BindingName,
 }
 
+impl ChunkIteratorFields {
+    pub(crate) fn bindings(&self) -> [&crate::kernel::BindingName; 5] {
+        [
+            &self.remaining,
+            &self.remaining_length,
+            &self.remainder,
+            &self.remainder_length,
+            &self.size,
+        ]
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum RustIteratorKind {
     /// `core::slice::Iter` or a shared array's iterator: the slice it still
