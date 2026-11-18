@@ -610,7 +610,7 @@ sequence below. These rows record planned scope, not completed implementation.
 | 10l | Migrate deferred Integer bindings and fold endpoints. | Deferred bindings and endpoints retain shared operands through substitution and evaluation with unchanged fold behavior. | Landed in [PR #3160](https://github.com/clicklang/click/pull/3160); all five pushed commits verified on upstream. |
 | 10m | Migrate algebraic field and match-result storage. | Fields and match results retain shared values with existing constructor/arm identity and producer metadata. | Landed in [PR #3169](https://github.com/clicklang/click/pull/3169); all four pushed commits verified on upstream. |
 | 10n | Migrate theorem argument and recorded-state value storage. | Stored arguments and recorded values retain shared operands with unchanged substitution and state selection. | Landed in [PR #3181](https://github.com/clicklang/click/pull/3181); all six pushed commits verified on upstream. Validation and program-point integration evidence below. |
-| 10o | Migrate program-valued resource-field storage. | Program-valued fields retain shared operands while preserving resource identity and substitution. | Implemented and locally validated; 383 initial checks, all 1,908 regular scaling cases, 2,346 integrated affected checks, the regular proof corpus, fact stability and quality passed. PR delivery follows 10n. |
+| 10o | Migrate program-valued resource-field storage. | Program-valued fields retain shared operands while preserving resource identity and substitution. | Published as [PR #3213](https://github.com/clicklang/click/pull/3213), with auto-merge requested. Local validation and final 648-check upstream integration passed; merge pending. |
 | 10p | Migrate remaining expression payloads in sequence/resource descriptors. | Inventory and subdivide independent families before implementation; preserve legitimate opaque descriptor identities. | Planned; family split may be needed. |
 | 10q | Migrate remaining native expression payloads in proposition outputs. | Proposition outputs retain shared operands with unchanged fact identity, raising/lowering and proof admission. | Planned. |
 | 10r | Remove obsolete machine compatibility caches and reverse bridges. | Remove only after their live readers migrate; account for any retained reader and reason. | Planned; after affected consumers. |
@@ -1038,7 +1038,8 @@ as did quality checks. On upstream `66ff4dedd`, the two isolated regular
 scaling cases and all 2,344 combined scaling/affected checks passed. Regular
 proof-corpus/fact-stability validation passed (778 seconds, 121 refused
 lowerings and zero changed terms or paths); quality passed again. The aggregate
-validation script exited zero. PR delivery follows 10n; full nightly was not run. Live native views, whole-list outputs and identity readers remain
+validation script exited zero. [PR #3213](https://github.com/clicklang/click/pull/3213)
+has auto-merge requested; full nightly was not run. Live native views, whole-list outputs and identity readers remain
 compatibility consumers for 10r–10t, not proof or search changes.
 
 The subsequent 10p1 parity regression exposed a literal-carrier difference in
@@ -1051,6 +1052,8 @@ including six signed/unsigned 8/16/32-bit field carriers. All 1,909 regular
 scaling cases and the sequence proof selection on that combined tree also passed.
 The full regular corpus
 above predates this final selected-literal fix; CI gates the published tree.
+After integrating upstream `306a1fec0`, all 648 Spec/API/resource/preservation
+and affected Surface checks passed, including the final literal-carrier fix.
 
 ### 10p Inventory and sequential descriptor families
 
