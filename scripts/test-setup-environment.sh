@@ -142,8 +142,18 @@ echo 'error: an archive runner tried to install Rust or mdBook' >&2
 exit 1
 EOF
 
+# Use a passthrough compressor with GNU tar so this setup regression can run
+# before installing zstd. The round trip below tests archive contents.
+if [[ "$platform" == Linux ]]; then
+    cat > "$directory/bin/zstd" <<'EOF'
+#!/usr/bin/env bash
+exec cat
+EOF
+    chmod +x "$directory/bin/zstd"
+fi
+
 # Fresh archive consumers have no runtime cache and still never call rustup.
-"$repository/scripts/charon-runtime.sh" pack "$directory/runtime.tar.gz"
+"$repository/scripts/charon-runtime.sh" pack "$directory/runtime.tar.zst"
 cached_runtime="$CHARON_SYSROOT"
 export RUSTUP_HOME="$directory/cold-rustup"
 source "$repository/scripts/charon-toolchain.sh"
@@ -153,7 +163,7 @@ if "$repository/scripts/setup-environment.sh" --rust-test-runner > "$directory/o
     echo "error: setup accepted a missing Charon runtime" >&2
     exit 1
 fi
-"$repository/scripts/charon-runtime.sh" restore "$directory/runtime.tar.gz"
+"$repository/scripts/charon-runtime.sh" restore "$directory/runtime.tar.zst"
 [[ -f "$CHARON_SYSROOT/lib/librustc_driver-mock.so" ]]
 [[ -x "$CHARON_SYSROOT/bin/rustc" ]]
 "$repository/scripts/setup-environment.sh" --rust-test-runner >/dev/null
@@ -164,19 +174,19 @@ if "$repository/scripts/setup-environment.sh" --rust-test-runner > "$directory/o
     echo "error: setup accepted a runtime without pinned rustc" >&2
     exit 1
 fi
-"$repository/scripts/charon-runtime.sh" restore "$directory/runtime.tar.gz"
+"$repository/scripts/charon-runtime.sh" restore "$directory/runtime.tar.zst"
 
 # Refuse mismatched identities before creating the destination runtime.
 printf 'wrong compiler identity\n' > "$directory/click-rust-runtime.identity"
-tar -czf "$directory/wrong-runtime.tar.gz" -C "$cached_runtime" lib \
+tar --zstd -cf "$directory/wrong-runtime.tar.zst" -C "$cached_runtime" lib \
     -C "$directory" click-rust-runtime.identity
 export RUSTUP_HOME="$directory/wrong-rustup"
-if "$repository/scripts/charon-runtime.sh" restore "$directory/wrong-runtime.tar.gz" > "$directory/output" 2>&1; then
+if "$repository/scripts/charon-runtime.sh" restore "$directory/wrong-runtime.tar.zst" > "$directory/output" 2>&1; then
     echo "error: restored a mismatched Rust runtime archive" >&2
     exit 1
 fi
 [[ ! -e "$RUSTUP_HOME" ]]
-if "$repository/scripts/charon-runtime.sh" pack "$directory/missing-runtime.tar.gz" > "$directory/output" 2>&1; then
+if "$repository/scripts/charon-runtime.sh" pack "$directory/missing-runtime.tar.zst" > "$directory/output" 2>&1; then
     echo "error: packed a missing Rust runtime" >&2
     exit 1
 fi
@@ -201,12 +211,7 @@ if [[ -n "$MOCK_MISSING_LLVM_FILE" ]]; then
     printf '%s\n' "$MOCK_MISSING_LLVM_FILE"
 fi
 EOF
-    # Compression is orthogonal to archive membership and missing-file errors.
-    cat > "$directory/bin/zstd" <<'EOF'
-#!/usr/bin/env bash
-exec cat
-EOF
-    chmod +x "$directory/bin/dpkg-query" "$directory/bin/zstd"
+    chmod +x "$directory/bin/dpkg-query"
     "$repository/scripts/cache-llvm.sh" "$directory/llvm.tar.zst"
     members="$(tar -tf "$directory/llvm.tar.zst")"
     [[ "$members" == *"${MOCK_LLVM_FILE#/}"* ]]

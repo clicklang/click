@@ -4724,7 +4724,7 @@ fn common_pointer_calls_round_trip_nested_source_calls() {
                         pointer: ProgramValue::Pointer(pointer),
                         element_type,
                     } => Some(KernelTerm::shared_array_reference(
-                        crate::kernel::intern_memory_ref(memory),
+                        crate::kernel::ProgramPoint::at(&crate::kernel::intern_memory_ref(memory)),
                         common(pointer),
                         *element_type,
                     )),
@@ -7717,6 +7717,34 @@ fn fixed_unsigned_left_shifts_in_conditionals_round_trip_after_rewrite() {
 }
 
 #[test]
+fn wrapping_add_subtract_in_conditionals_round_trip_after_rewrite() {
+    use crate::kernel::MachineIntegerType as T;
+    for (format, spelling, boundary) in [
+        (T::UInt32, "uint32", u64::from(u32::MAX)),
+        (T::UInt64, "uint64", u64::MAX),
+    ] {
+        for (op, value) in ["+", "-"]
+            .into_iter()
+            .flat_map(|op| [1, 7, boundary].map(|value| (op, value)))
+        {
+            let equality = format!("x == (z {op} ({value} as {spelling}))");
+            for reverse in [false, true] {
+                for guard in ["flag", "not flag"] {
+                    check_conditional_round_trip_using_equality(
+                        format, spelling, guard, reverse, &equality,
+                    );
+                }
+                for guard in ["x < y", "x == y", "y <= x", "y != x"] {
+                    check_conditional_round_trip_with_arm(
+                        format, spelling, guard, reverse, &equality, "z",
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn a_non_null_pointer_equality_spells_each_address_by_its_parameter() {
     use crate::kernel::PointerValue;
     let _session = crate::kernel::VerificationSession::enter();
@@ -7746,4 +7774,87 @@ fn a_non_null_pointer_equality_spells_each_address_by_its_parameter() {
         crate::surface::printing::source_click_proposition(&surface),
         "address(node) == address(node)"
     );
+}
+
+#[test]
+fn call_capture_names_the_selected_result_at_its_declared_type() {
+    use crate::kernel::{LocalBindingId, LocalFunctionId};
+    use crate::languages::interface::ImportedFunction;
+
+    let capture = LocalBindingId::temporary(LocalFunctionId::new(None, "f".into()), 0);
+    capture.initialize_program_type(ProgramType::Int32);
+    let capture = crate::kernel::BindingName::from(capture);
+    let (call, result) = crate::kernel::program_call_value(0, "get", Vec::new());
+    let function = ImportedFunction::external(InterfaceType::Int32, "f".into(), Vec::new())
+        .with_prelowered_kernel_function(crate::kernel::program_function(
+            ProgramType::Int32,
+            "f",
+            Vec::new(),
+            crate::kernel::program_seq(call, crate::kernel::program_assign(&capture, result)),
+        ));
+    let layout = crate::surface::lowering::SourceExecutionLayout::for_function(&function).unwrap();
+    let term = MachineTerm::Variable(Variable(977_921));
+    let value = ProgramValue::Int32(term.clone());
+    let state = ExecutionState::new().with_local(&capture, value.clone());
+    let mut points = RecordedStates::new().with_source_layout(layout);
+    let expected =
+        ContractExpression::RegionResult(CodeRegionRef::Path(vec![SourcePathStep::Call(
+            "get".into(),
+            0,
+        )]));
+
+    let raise = |points: &RecordedStates, sought: &MachineTerm, state: &ExecutionState| {
+        let _scope = SynthesisRecordedPointsScope::enter(points);
+        synthesize_surface_bitvector(sought, ParameterBinding::default(), state, &BTreeMap::new())
+    };
+    let before = ProgramPointSelector::Mark("before".into());
+    points.insert(before.clone(), ExecutionState::new());
+    points.record_call_result(0, Some(value.clone()));
+    assert_eq!(raise(&points, &term, &state), Some(expected.clone()));
+    let saved = ProgramPointSelector::Mark("saved".into());
+    points.insert(saved.clone(), state.clone());
+
+    // The same static call runs again and its capture is assigned a new
+    // symbolic value. The earlier value is still named at the proof mark.
+    let newer = MachineTerm::Variable(Variable(977_922));
+    let newer_value = ProgramValue::Int32(newer.clone());
+    let current = state.clone().with_local(&capture, newer_value.clone());
+    points.record_call_result(0, Some(newer_value.clone()));
+    let historical = ContractExpression::At {
+        selector: saved,
+        expression: Box::new(expected.clone()),
+    };
+    assert_eq!(raise(&points, &newer, &current), Some(expected.clone()));
+    assert_eq!(raise(&points, &term, &current), Some(historical.clone()));
+
+    let lower = |expression| {
+        crate::surface::lowering::elaborate_fixed_state_expression(
+            expression,
+            BTreeMap::new(),
+            &current,
+            BTreeMap::new(),
+            BTreeMap::new(),
+            None,
+            &points,
+            SpecDefinitions::new(
+                &PredicateEnvironment::new(&[]),
+                &ClickFunctionEnvironment::new(&[]),
+            ),
+            BTreeSet::new(),
+            BTreeMap::new(),
+        )
+    };
+    assert_eq!(lower(&historical).unwrap(), SpecExpression::Value(value));
+    assert_eq!(
+        lower(&expected).unwrap(),
+        SpecExpression::Value(newer_value)
+    );
+    let missing = ContractExpression::At {
+        selector: before,
+        expression: Box::new(expected.clone()),
+    };
+    assert!(lower(&missing).unwrap_err().contains("at `before`"));
+
+    points.record_call_result(0, Some(ProgramValue::UInt32(term.clone())));
+    assert_ne!(raise(&points, &term, &state), Some(expected));
 }

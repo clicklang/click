@@ -873,7 +873,11 @@ pub(in crate::surface::proof) fn walk_loop_body<'a>(
         let ProgramStatement::If { condition, .. } = source_statement else {
             return Err(proof.step_error("source branch does not match the lowered statement"));
         };
-        let condition = surface_program_condition(&condition, view.state)?;
+        let condition = surface_program_condition(
+            &condition,
+            view.state,
+            Some(&view.execution.presentation.recorded_states),
+        )?;
         let (split, ids) = proof.split_preservation_case(&condition, 0)?;
         splits += 1;
         for id in ids.into_iter().flatten() {
@@ -1081,7 +1085,9 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
     // pre-tested loop also has its condition there; a do-while does not, so
     // it must not be recorded as an available premise for the first body.
     let loop_condition = condition
-        .map(|condition| surface_program_condition(condition, preservation.state()))
+        .map(|condition| {
+            surface_program_condition(condition, preservation.state(), Some(&recorded_states))
+        })
         .transpose()?;
     // The loop head's own clauses, in declaration order, are what a smart
     // bundle closure may cite for a ranking member. Each declared invariant

@@ -95,3 +95,171 @@ fn observation_leaves_keep_growing_arithmetic_and_comparison_dags_shared() {
     }
     assert!(samples.windows(2).all(|p| p[1] <= 5 * p[0]), "{samples:?}");
 }
+
+#[test]
+fn neutral_bitwise_leaves_keep_large_operands_shared_without_fact_queries() {
+    let mut costs = Vec::new();
+    for size in [8, 32, 128, 512] {
+        let _session = VerificationSession::enter();
+        let ty = MachineIntegerType::UInt64;
+        let mut root =
+            KernelTerm::variable(KernelType::Program(ProgramType::UInt64), Variable(996500));
+        for _ in 0..size {
+            root =
+                KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [root.clone(), root]);
+        }
+        let operand =
+            IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(ty, root.clone()).unwrap());
+        let zero = KernelTerm::retained_machine_operand(
+            ty,
+            MachineOperandView::Legacy(&MachineTerm::uint64_constant(0)),
+        );
+        let mut goals = Vec::new();
+        for op in [MachineBinaryOp::BitwiseAnd, MachineBinaryOp::BitwiseOr] {
+            for parts in [[root.clone(), zero.clone()], [zero.clone(), root.clone()]] {
+                let word = KernelTerm::machine_binary_shared(ty, op, parts);
+                let observed =
+                    IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(ty, word).unwrap());
+                let result = if op == MachineBinaryOp::BitwiseAnd {
+                    IntegerTerm::constant_i64(0)
+                } else {
+                    operand.clone()
+                };
+                goals.push(equality(observed.clone(), result));
+                goals.push(equality(observed, IntegerTerm::constant_i64(1)));
+            }
+        }
+        let exports = KernelTermExport::machine_export_count();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for (i, goal) in goals.iter().enumerate() {
+                assert_eq!(
+                    known_bridge_leaf(goal, &|_| panic!("neutral computation queried facts")),
+                    i % 2 == 0
+                );
+            }
+        });
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        costs.push(work);
+    }
+    assert!(costs.windows(2).all(|p| p[0] == p[1]), "{costs:?}");
+}
+
+#[test]
+fn finite_float_reflexivity_uses_one_exact_classification() {
+    let _session = VerificationSession::enter();
+    let finite = |id| {
+        Proposition::ConditionIs(
+            ConditionTerm::float32_classification(
+                MachineTerm::Variable(Variable(id)),
+                FloatClassification::Finite,
+            ),
+            true,
+        )
+    };
+    let operand = MachineTerm::Variable(Variable(996800));
+    let goal = Proposition::ConditionIs(
+        ConditionTerm::float32_compare(operand.clone(), operand, ComparisonOperator::Equal),
+        true,
+    );
+    let mut costs = Vec::new();
+    for size in [8, 32, 128, 512] {
+        let mut premises = (0..size).map(|i| finite(997000 + i)).collect::<Vec<_>>();
+        let missing = PureFactStore::from_ordered(&premises);
+        premises.push(finite(996800));
+        let facts = PureFactStore::from_ordered(&premises);
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for (context, expected) in [(&missing, false), (&facts, true)] {
+                let lookups = std::cell::Cell::new(0);
+                assert_eq!(
+                    known_bridge_leaf(&goal, &|premise| {
+                        lookups.set(lookups.get() + 1);
+                        assert_eq!(premise, &finite(996800));
+                        context.pure_known_available(premise)
+                    }),
+                    expected
+                );
+                assert_eq!(lookups.get(), 1);
+            }
+        });
+        costs.push(work);
+    }
+    assert!(costs.windows(2).all(|p| p[1] <= 2 * p[0]), "{costs:?}");
+}
+
+#[test]
+fn non_numeric_arm_equations_use_only_the_written_guard() {
+    let _session = VerificationSession::enter();
+    let guard = ConditionTerm::Variable(Variable(998000));
+    let a = ConditionTerm::Variable(Variable(998001));
+    let b = ConditionTerm::Variable(Variable(998002));
+    let boolean = Proposition::ConditionIs(
+        ConditionTerm::bool_equal(ConditionTerm::bool_if(guard.clone(), a.clone(), b), a),
+        true,
+    );
+    let variants: std::sync::Arc<[AlgebraicVariantType]> = ["A", "B"]
+        .into_iter()
+        .map(|name| AlgebraicVariantType {
+            name: name.into(),
+            fields: vec![],
+        })
+        .collect::<Vec<_>>()
+        .into();
+    let key = AlgebraicValueType::Algebraic {
+        name: "ConditionalTest".into(),
+        arguments: vec![],
+    };
+    let ty = AlgebraicType {
+        rigid: false,
+        name: "ConditionalTest".into(),
+        arguments: vec![],
+        variants: variants.clone(),
+        schemas: std::sync::Arc::new(AlgebraicSchemas::new(std::collections::BTreeMap::from([(
+            key, variants,
+        )]))),
+    };
+    let constructor = |name: &str| AlgebraicTerm {
+        algebraic_type: ty.clone(),
+        node: AlgebraicTermNode::Constructor {
+            variant: name.into(),
+            fields: vec![],
+        },
+    };
+    let a = constructor("A");
+    let algebraic = Proposition::Equal(
+        Term::Algebraic(AlgebraicTerm::if_then_else(
+            guard.clone(),
+            a.clone(),
+            constructor("B"),
+        )),
+        Term::Algebraic(a),
+    );
+    let mut costs = Vec::new();
+    for size in [8, 32, 128, 512] {
+        let unrelated = (0..size)
+            .map(|index| ConditionTerm::Variable(Variable(998100 + index)).truth_claim(true))
+            .collect::<Vec<_>>();
+        let contexts = [None, Some(false), Some(true)].map(|polarity| {
+            let mut premises = unrelated.clone();
+            premises.extend(polarity.map(|polarity| guard.truth_claim(polarity)));
+            (polarity, PureFactStore::from_ordered(&premises))
+        });
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for (polarity, facts) in &contexts {
+                for goal in [&boolean, &algebraic] {
+                    assert_eq!(
+                        known_bridge_leaf(goal, &|premise| {
+                            assert!(
+                                premise == &guard.truth_claim(true)
+                                    || premise == &guard.truth_claim(false)
+                            );
+                            facts.pure_known_available(premise)
+                        }),
+                        *polarity == Some(true),
+                    );
+                }
+            }
+        });
+        costs.push(work);
+    }
+    assert!(costs.windows(2).all(|p| p[1] <= 2 * p[0]), "{costs:?}");
+}

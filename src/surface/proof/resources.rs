@@ -529,10 +529,10 @@ fn dynamic_body_fact_dependency(
                 }
             },
             Proposition::MemoryReadDefined {
+                at,
                 memory,
                 pointer,
                 value_type,
-                ..
             } => {
                 // Definedness is an observation of the same cell as a load.
                 // Retain its access dependency, including loads in its address.
@@ -544,7 +544,12 @@ fn dynamic_body_fact_dependency(
                     binder,
                     selected,
                 )?;
-                if memory == state.memory() {
+                // The point identifies the observation even when two states
+                // share a memory view. Synthetic facts may have no point.
+                let is_current = at
+                    .and_then(|point| state.observation_point_id().map(|current| point == current))
+                    .unwrap_or_else(|| memory == state.memory());
+                if is_current {
                     check_load(
                         pointer.clone(),
                         value_type.byte_width(),
@@ -1872,7 +1877,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
         &ProgramValue::Int32(MachineTerm::constant(0)),
         available_pure_facts,
         spec_definitions,
-        false,
+        CompositeObservation::Explicit(&surface_substitutions),
         Some(function.composite_resource_definitions()),
     )
     .map_err(|message| {
@@ -2361,7 +2366,7 @@ fn project_held_resource_observable_facts(
         result,
         available_pure_facts,
         spec_definitions,
-        true,
+        CompositeObservation::Implicit,
         None,
     )
     .map(|(memory, _, _)| memory)
@@ -2499,6 +2504,11 @@ fn composite_resource_body_is_active_with_assumptions(
     })
 }
 
+enum CompositeObservation<'a> {
+    Explicit(&'a BTreeMap<String, ContractExpression>),
+    Implicit,
+}
+
 /// Applies the non-consuming observation law declared by a composite body.
 /// The kernel algebra handles the folded resource fact itself; Click owns this
 /// definitional layer because it requires source-level substitution and fact
@@ -2514,7 +2524,7 @@ fn apply_composite_observation_law_with_facts<F: ResourcePureFacts>(
     result: &ProgramValue,
     available_pure_facts: &mut F,
     spec_definitions: SpecDefinitions<'_>,
-    lower_declared_source_facts: bool,
+    observation: CompositeObservation<'_>,
     compiled_definitions: Option<&[CompositeResourceDefinition]>,
 ) -> Result<(SymbolicMemory, ResourceContext, bool), String> {
     let Some(composite_body) = definition.composite_body() else {
@@ -2548,6 +2558,16 @@ fn apply_composite_observation_law_with_facts<F: ResourcePureFacts>(
         spec_definitions,
     )?
     else {
+        if let CompositeObservation::Explicit(substitutions) = observation {
+            let guard = composite_body
+                .condition()
+                .expect("only a guarded body can be undecided");
+            let guard = substitute_click_proposition(guard, substitutions)?;
+            return Err(format!(
+                "guard `{}` is undecided: prove it or its negation before observing the body",
+                describe_click_proposition(&guard)
+            ));
+        }
         return Ok((state.memory().clone(), ResourceContext::new(), false));
     };
     if !body_active {
@@ -2616,7 +2636,7 @@ fn apply_composite_observation_law_with_facts<F: ResourcePureFacts>(
         result,
         available_pure_facts,
         spec_definitions,
-        lower_declared_source_facts,
+        matches!(observation, CompositeObservation::Implicit),
     )?;
     Ok((memory, contained_resources, true))
 }
@@ -5839,6 +5859,36 @@ void child_release(struct child* obj) {
     #[test]
     fn dynamic_definedness_requires_live_view_binding_and_keeps_owner_scalar_distinct() {
         check_dynamic_current_fact_dependencies(true, false);
+    }
+
+    #[test]
+    fn dynamic_definedness_uses_the_observation_point_for_loan_dependencies() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let earlier = ExecutionState::new().with_memory(SymbolicMemory::new());
+        let current = earlier.clone().with_memory(earlier.memory().clone());
+        let earlier_point = earlier.observation_point_id().unwrap();
+        let current_point = current.observation_point_id().unwrap();
+        assert_ne!(earlier_point, current_point);
+        assert!(earlier.memory().same_storage_roots(current.memory()));
+
+        let assumptions = PureFactContext::new();
+        let no_views = DynamicViewDependencyIndex::new(&[], &[], &assumptions);
+        let dependency_at = |at| {
+            let fact = Proposition::MemoryReadDefined {
+                at,
+                memory: earlier.memory().clone(),
+                pointer: Address {
+                    base: AddressBase::ExternalArgument,
+                    offset: AddressOffset::Constant(0),
+                },
+                value_type: ProgramType::Int32,
+            };
+            dynamic_body_fact_dependency(&fact, &current, &assumptions, &no_views)
+        };
+
+        assert!(dependency_at(Some(earlier_point)).unwrap().is_none());
+        assert!(dependency_at(Some(current_point)).is_err());
+        assert!(dependency_at(None).is_err());
     }
 
     /// A guarded universal read depends on a view of every cell its guard
