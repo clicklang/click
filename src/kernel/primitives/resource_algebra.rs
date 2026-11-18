@@ -13074,13 +13074,20 @@ impl ResourceFact {
         base: Pointer,
         size: &AllocationSize,
     ) -> Self {
-        Self::own_token(
-            Self::ALLOCATION_RESOURCE_NAME.to_string(),
-            vec![
-                ProgramValue::Pointer(base.with_type(ProgramType::Int32Pointer)),
-                size.token_value(),
-            ],
-        )
+        Self::own(Resource::Token {
+            name: Self::ALLOCATION_RESOURCE_NAME.to_string(),
+            arguments: ResourceArguments::from_stored([
+                StoredResourceField::Input(AlgebraicValue::Program(ProgramValue::Pointer(
+                    base.with_type(ProgramType::Int32Pointer),
+                ))),
+                match size.bytes.value() {
+                    crate::kernel::ExecutionValue::Native(value) => {
+                        StoredResourceField::Input(AlgebraicValue::Program(value.clone()))
+                    }
+                    value => StoredResourceField::from_program(value.clone()),
+                },
+            ]),
+        })
     }
 
     /// Allocation identity supplies bounds, independently of read authority.
@@ -13125,8 +13132,19 @@ impl ResourceFact {
 
     /// The base and tagged size of an owned `allocation` token.
     pub(in crate::kernel) fn allocation_size(&self) -> Option<(&Pointer, AllocationSize)> {
-        let (base, bytes) = self.allocation_arguments()?;
-        Some((base, AllocationSize::from_token_value(bytes)?))
+        let Self::Own(Resource::Token { name, arguments }, _) = self else {
+            return None;
+        };
+        if name != Self::ALLOCATION_RESOURCE_NAME || arguments.len() != 2 {
+            return None;
+        }
+        let ResourceFieldValue::Program(ProgramValue::Pointer(base)) = arguments.get(0)? else {
+            return None;
+        };
+        Some((
+            base,
+            AllocationSize::from_value(arguments.program_value(1)?)?,
+        ))
     }
 
     fn allocation_arguments(&self) -> Option<(&Pointer, &ProgramValue)> {
