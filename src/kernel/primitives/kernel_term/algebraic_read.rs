@@ -51,7 +51,7 @@ mod tests {
         let sources = [first, second].map(|memory| AlgebraicTerm {
             algebraic_type: ty.clone(),
             node: AlgebraicTermNode::MemoryLoad {
-                memory,
+                point: crate::kernel::ProgramPoint::at(&memory),
                 pointer: Box::new(pointer.clone()),
             },
         });
@@ -86,10 +86,13 @@ mod tests {
             let KernelTermNode::AlgebraicRead(read) = root.node() else {
                 panic!("common read")
             };
-            let AlgebraicTermNode::MemoryLoad { memory, .. } = &value.node else {
+            let AlgebraicTermNode::MemoryLoad { point: memory, .. } = &value.node else {
                 panic!("read output")
             };
-            assert_eq!(memory.arena_id(), read.parts().0.shared_memory().arena_id());
+            assert_eq!(
+                memory.shared_memory().arena_id(),
+                read.parts().0.shared_memory().arena_id()
+            );
             let variable = AlgebraicTerm {
                 algebraic_type: ty.clone(),
                 node: AlgebraicTermNode::Variable(Variable(999746)),

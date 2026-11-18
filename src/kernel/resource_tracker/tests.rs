@@ -1685,7 +1685,8 @@ fn boolean_reads_report_only_the_one_byte_cell() {
             4,
         ),
     };
-    let source = ConditionTerm::BoolLoad(memory, Box::new(pointer));
+    let source =
+        ConditionTerm::BoolLoad(crate::kernel::ProgramPoint::at(&memory), Box::new(pointer));
     let root = KernelTermImport::default().condition(&source);
     let mut native = Vec::new();
     let mut shared = Vec::new();

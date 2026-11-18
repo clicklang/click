@@ -1572,7 +1572,10 @@ fn resource_instances_validate_fields_without_expanding_symbolic_values() {
     let ty = resource_index_type("Mark", vec![]);
     let model = resource_index_variable(&ty, 1);
     let instance = field_instance(2, model.clone(), 3);
-    assert_eq!(instance.fields()[0], AlgebraicValue::Algebraic(model));
+    assert_eq!(
+        instance.fields().get(0).unwrap().into_native(),
+        AlgebraicValue::Algebraic(model)
+    );
     let make = |schema, fields| {
         ResourceInstance::new(
             Variable(2),
@@ -1614,7 +1617,7 @@ fn resource_instances_validate_fields_without_expanding_symbolic_values() {
         .is_none()
     );
     let copy = instance.clone();
-    assert!(std::sync::Arc::ptr_eq(&instance.fields, &copy.fields));
+    assert!(instance.fields.shares_storage_with(&copy.fields));
     assert!(std::sync::Arc::ptr_eq(&instance.arguments, &copy.arguments));
 }
 

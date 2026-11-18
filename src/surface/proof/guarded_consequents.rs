@@ -380,7 +380,9 @@ impl GuardedTermRaiser<'_, '_> {
             .fields()
             .get(access.field_index)?
         {
-            AlgebraicValue::Program(crate::kernel::integer64_c_value!(value)) => Some(value),
+            crate::kernel::ResourceFieldValue::Program(
+                crate::kernel::integer64_c_value!(value),
+            ) => Some(value),
             _ => None,
         }
     }

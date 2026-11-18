@@ -377,7 +377,7 @@ pub(in crate::surface) fn check_resource_field_schemas(
                         }
                     }
                 })
-                .collect::<crate::kernel::ResourceArguments>();
+                .collect::<crate::kernel::ResourceFieldValues>();
             binding.schema = Some(schema.clone());
             binding.fields = Some(fields);
             bindings.insert(binding.identity, binding.clone());
@@ -648,7 +648,7 @@ pub(in crate::surface) fn register_kernel_fold_read_definitions(
             spec_definitions,
             entry_state: &entry_state,
             result_type: ProgramType::Int32,
-            entry_values: BTreeMap::new(),
+            entry_values: ProgramValueBindings::new(),
             aggregate_parameters: BTreeSet::new(),
             program_parameter_types: BTreeMap::new(),
             local_type_state: None,
@@ -715,7 +715,7 @@ pub(in crate::surface) fn lower_composite_resource_condition(
         spec_definitions,
         entry_state: &entry_state,
         result_type: ProgramType::Int32,
-        entry_values: BTreeMap::new(),
+        entry_values: ProgramValueBindings::new(),
         aggregate_parameters: BTreeSet::new(),
         program_parameter_types: BTreeMap::new(),
         local_type_state: None,
@@ -803,7 +803,7 @@ pub(in crate::surface) fn lower_composite_resource_body_with_bindings(
         spec_definitions,
         entry_state: &entry_state,
         result_type: ProgramType::Int32,
-        entry_values: BTreeMap::new(),
+        entry_values: ProgramValueBindings::new(),
         aggregate_parameters: BTreeSet::new(),
         program_parameter_types: BTreeMap::new(),
         local_type_state: None,
@@ -2219,8 +2219,8 @@ fn fixed_state_elaboration<'a>(
     array_element_types: BTreeMap<String, ProgramType>,
     bound_array_memories: BTreeMap<String, SpecPoint>,
     entry_state: &'a ExecutionState,
-    entry_values: BTreeMap<String, ProgramValue>,
-    current_values: BTreeMap<String, ProgramValue>,
+    entry_values: ProgramValueBindings,
+    current_values: ProgramValueBindings,
     result: Option<&ProgramValue>,
     retained_states: &'a RecordedStates,
     spec_definitions: SpecDefinitions<'a>,
@@ -2287,8 +2287,8 @@ pub(in crate::surface) fn elaborate_fixed_state_proposition_with_algebraic_and_i
     bound_array_memories: BTreeMap<String, SpecPoint>,
     entry_state: &ExecutionState,
     current_type_state: &ExecutionState,
-    entry_values: BTreeMap<String, ProgramValue>,
-    current_values: BTreeMap<String, ProgramValue>,
+    entry_values: ProgramValueBindings,
+    current_values: ProgramValueBindings,
     algebraic_values: BTreeMap<String, SpecAlgebraicExpression>,
     integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
     result: Option<&ProgramValue>,
@@ -2374,8 +2374,8 @@ pub(in crate::surface) fn elaborate_fixed_state_algebraic_expression(
     expression: &ContractExpression,
     array_element_types: BTreeMap<String, ProgramType>,
     entry_state: &ExecutionState,
-    entry_values: BTreeMap<String, ProgramValue>,
-    current_values: BTreeMap<String, ProgramValue>,
+    entry_values: ProgramValueBindings,
+    current_values: ProgramValueBindings,
     algebraic_values: BTreeMap<String, SpecAlgebraicExpression>,
     result: Option<&ProgramValue>,
     retained_states: &RecordedStates,
@@ -2408,8 +2408,8 @@ pub(in crate::surface) fn elaborate_fixed_state_integer_expression(
     expression: &ContractExpression,
     array_element_types: BTreeMap<String, ProgramType>,
     entry_state: &ExecutionState,
-    entry_values: BTreeMap<String, ProgramValue>,
-    current_values: BTreeMap<String, ProgramValue>,
+    entry_values: ProgramValueBindings,
+    current_values: ProgramValueBindings,
     result: Option<&ProgramValue>,
     retained_states: &RecordedStates,
     spec_definitions: SpecDefinitions<'_>,
@@ -2441,8 +2441,8 @@ pub(in crate::surface) fn elaborate_fixed_state_integer_expression_with_integer_
     expression: &ContractExpression,
     array_element_types: BTreeMap<String, ProgramType>,
     entry_state: &ExecutionState,
-    entry_values: BTreeMap<String, ProgramValue>,
-    current_values: BTreeMap<String, ProgramValue>,
+    entry_values: ProgramValueBindings,
+    current_values: ProgramValueBindings,
     integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
     algebraic_values: BTreeMap<String, SpecAlgebraicExpression>,
     result: Option<&ProgramValue>,
@@ -2554,8 +2554,8 @@ pub(in crate::surface) fn elaborate_fixed_state_expression(
     expression: &ContractExpression,
     array_element_types: BTreeMap<String, ProgramType>,
     entry_state: &ExecutionState,
-    entry_values: BTreeMap<String, ProgramValue>,
-    current_values: BTreeMap<String, ProgramValue>,
+    entry_values: ProgramValueBindings,
+    current_values: ProgramValueBindings,
     result: Option<&ProgramValue>,
     retained_states: &RecordedStates,
     spec_definitions: SpecDefinitions<'_>,
@@ -2582,8 +2582,8 @@ pub(in crate::surface) fn elaborate_fixed_state_expression_with_algebraic_values
     expression: &ContractExpression,
     array_element_types: BTreeMap<String, ProgramType>,
     entry_state: &ExecutionState,
-    entry_values: BTreeMap<String, ProgramValue>,
-    current_values: BTreeMap<String, ProgramValue>,
+    entry_values: ProgramValueBindings,
+    current_values: ProgramValueBindings,
     algebraic_values: BTreeMap<String, SpecAlgebraicExpression>,
     result: Option<&ProgramValue>,
     retained_states: &RecordedStates,
@@ -2612,8 +2612,8 @@ pub(in crate::surface) fn elaborate_fixed_state_expression_with_algebraic_and_in
     expression: &ContractExpression,
     array_element_types: BTreeMap<String, ProgramType>,
     entry_state: &ExecutionState,
-    entry_values: BTreeMap<String, ProgramValue>,
-    current_values: BTreeMap<String, ProgramValue>,
+    entry_values: ProgramValueBindings,
+    current_values: ProgramValueBindings,
     algebraic_values: BTreeMap<String, SpecAlgebraicExpression>,
     integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
     result: Option<&ProgramValue>,
@@ -2704,7 +2704,7 @@ pub(in crate::surface) fn elaborate_requirement_proposition(
         spec_definitions,
         entry_state,
         result_type: ProgramType::Int32,
-        entry_values: BTreeMap::new(),
+        entry_values: ProgramValueBindings::new(),
         aggregate_parameters: BTreeSet::new(),
         program_parameter_types: parameters
             .iter()
@@ -2779,7 +2779,7 @@ pub(in crate::surface) fn function_contract_summary(
         spec_definitions,
         entry_state: &entry_state,
         result_type: parsed_function.return_type().to_kernel_type(),
-        entry_values: BTreeMap::new(),
+        entry_values: ProgramValueBindings::new(),
         aggregate_parameters: BTreeSet::new(),
         program_parameter_types: parsed_function
             .parameters()
@@ -3342,7 +3342,7 @@ struct AnnotationLowerer<'a> {
     spec_definitions: SpecDefinitions<'a>,
     entry_state: &'a ExecutionState,
     result_type: ProgramType,
-    entry_values: BTreeMap<String, ProgramValue>,
+    entry_values: ProgramValueBindings,
     /// Live declaration types for state-parametric branch facts; values remain symbolic.
     /// Each referenced name uses the state's existing index, without a body/history scan.
     local_type_state: Option<&'a ExecutionState>,
@@ -3593,7 +3593,7 @@ fn integer_kernel_root_work(term: &crate::kernel::KernelTerm) -> usize {
     }
 }
 
-/// Arithmetic certificate operands remain typed common roots.
+/// Arithmetic step operands remain typed common roots.
 /// Bindings are looked up by name; neither facts nor unrelated bindings are
 /// traversed. Native condition storage is an explicit final output adapter.
 pub(in crate::surface) fn lower_surface_integer_term(
@@ -5680,7 +5680,7 @@ impl AnnotationLowerer<'_> {
                     crate::kernel::record_transport_field(instance, access.field_index);
                     instance.fields().get(access.field_index)
                 })
-                .cloned()
+                .map(crate::kernel::ResourceFieldValue::into_native)
                 .map(Some)
                 .ok_or_else(|| {
                     format!(
@@ -10995,7 +10995,7 @@ mod integer_source_quantifier_tests {
                     BTreeMap::new(),
                     &state,
                     &state,
-                    BTreeMap::new(),
+                    ProgramValueBindings::new(),
                     [("x".to_string(), captured.clone())].into_iter().collect(),
                     BTreeMap::new(),
                     &PersistentBinderMap::default(),
@@ -11055,8 +11055,8 @@ mod integer_source_quantifier_tests {
                 BTreeMap::new(),
                 &state,
                 &state,
-                BTreeMap::new(),
-                BTreeMap::new(),
+                ProgramValueBindings::new(),
+                ProgramValueBindings::new(),
                 BTreeMap::new(),
                 &integer_values,
                 None,

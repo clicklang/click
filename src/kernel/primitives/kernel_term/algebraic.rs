@@ -59,13 +59,14 @@ impl KernelTermImport {
                         pending.push(Task::Call(&term.algebraic_type, name, arguments));
                         pending.extend(arguments.iter().rev().map(Task::Argument));
                     }
-                    AlgebraicTermNode::MemoryLoad { memory, pointer } => {
-                        values.push(KernelTerm::algebraic_read(
-                            term.algebraic_type.clone(),
-                            ProgramPoint::at(memory),
-                            SharedAddress::import(pointer),
-                        ))
-                    }
+                    AlgebraicTermNode::MemoryLoad {
+                        point: memory,
+                        pointer,
+                    } => values.push(KernelTerm::algebraic_read(
+                        term.algebraic_type.clone(),
+                        memory.clone(),
+                        SharedAddress::import(pointer),
+                    )),
                 },
                 Task::If(ty, condition) => {
                     let else_term = values.pop().expect("else branch");
@@ -225,7 +226,7 @@ impl KernelTermExport {
                         values.push(PureFunctionArgument::Algebraic(AlgebraicTerm {
                             algebraic_type: ty.clone(),
                             node: AlgebraicTermNode::MemoryLoad {
-                                memory: point.shared_memory().clone(),
+                                point: point.clone(),
                                 pointer: Box::new(address.export()?),
                             },
                         }));

@@ -187,8 +187,19 @@ pub(crate) fn resource_arguments_proven_equal(
     right: &AlgebraicValue,
     assumptions: &PureFactContext,
 ) -> bool {
+    resource_field_values_proven_equal(left.into(), right.into(), assumptions)
+}
+
+pub(crate) fn resource_field_values_proven_equal(
+    left: crate::kernel::ResourceFieldValue<'_>,
+    right: crate::kernel::ResourceFieldValue<'_>,
+    assumptions: &PureFactContext,
+) -> bool {
     match (left, right) {
-        (AlgebraicValue::Program(left), AlgebraicValue::Program(right)) => {
+        (
+            crate::kernel::ResourceFieldValue::Program(left),
+            crate::kernel::ResourceFieldValue::Program(right),
+        ) => {
             // A resource index observes an integer's numeric value. Matching
             // indices neither copies a C word nor transports its hidden record.
             program_values_proven_equal_for_memory_resolution(
@@ -197,7 +208,10 @@ pub(crate) fn resource_arguments_proven_equal(
                 assumptions,
             )
         }
-        (AlgebraicValue::Algebraic(left), AlgebraicValue::Algebraic(right)) => {
+        (
+            crate::kernel::ResourceFieldValue::Algebraic(left),
+            crate::kernel::ResourceFieldValue::Algebraic(right),
+        ) => {
             left.algebraic_type == right.algebraic_type
                 && (left == right
                     || assumptions.proves_exact(&Proposition::Equal(
@@ -229,7 +243,11 @@ pub(crate) fn instance_arguments_proven_equal(
     right: &AlgebraicValue,
     assumptions: &PureFactContext,
 ) -> bool {
-    if let (AlgebraicValue::Program(left), AlgebraicValue::Program(right)) = (left, right)
+    let (left, right) = (left.into(), right.into());
+    if let (
+        crate::kernel::ResourceFieldValue::Program(left),
+        crate::kernel::ResourceFieldValue::Program(right),
+    ) = (left, right)
         && let (ProgramValue::Pointer(left), ProgramValue::Pointer(right)) =
             (left.numeric_value(), right.numeric_value())
     {
@@ -241,7 +259,7 @@ pub(crate) fn instance_arguments_proven_equal(
                 assumptions,
             );
     }
-    resource_arguments_proven_equal(left, right, assumptions)
+    resource_field_values_proven_equal(left, right, assumptions)
 }
 
 pub(crate) fn canonical_program_memory_for_pointer_load(
@@ -410,9 +428,16 @@ pub(crate) fn resources_directly_match(
                 && left
                     .arguments()
                     .iter()
+                    .map(crate::kernel::ResourceFieldValue::from)
                     .chain(left.fields())
-                    .zip(right.arguments().iter().chain(right.fields()))
-                    .all(|(a, b)| resource_arguments_proven_equal(a, b, assumptions))
+                    .zip(
+                        right
+                            .arguments()
+                            .iter()
+                            .map(crate::kernel::ResourceFieldValue::from)
+                            .chain(right.fields()),
+                    )
+                    .all(|(a, b)| resource_field_values_proven_equal(a, b, assumptions))
         }
         (
             Resource::Composite {
@@ -6510,8 +6535,8 @@ fn collect_condition_memories(condition: &ConditionTerm, memories: &mut Vec<Shar
             collect_condition_memories(right, memories);
         }
         ConditionTerm::BoolLoad(memory, pointer) => {
-            if !memories.contains(memory) {
-                memories.push(memory.clone());
+            if !memories.contains(memory.shared_memory()) {
+                memories.push(memory.shared_memory().clone());
             }
             collect_pointer_offset_memories(&pointer.offset, memories);
         }
@@ -9412,7 +9437,10 @@ mod common_boolean_transport_tests {
                 Box::new(ConditionTerm::Constant(true)),
                 Box::new(ConditionTerm::Constant(false)),
             ),
-            ConditionTerm::BoolLoad(memory, Box::new(Address::symbolic(Variable(972_003)))),
+            ConditionTerm::BoolLoad(
+                crate::kernel::ProgramPoint::at(&memory),
+                Box::new(Address::symbolic(Variable(972_003))),
+            ),
         ] {
             assert!(
                 transport_framed_atomic_condition(&source, &SymbolicMemory::new(), None).is_none()
@@ -9441,7 +9469,7 @@ mod common_boolean_read_tests {
         let old = crate::kernel::intern_memory(before);
         let new = crate::kernel::intern_memory(after);
         let source = ConditionTerm::BoolLoad(
-            new.clone(),
+            crate::kernel::ProgramPoint::at(&new.clone()),
             Box::new(Address {
                 base: AddressBase::Symbolic(Variable(999370)),
                 offset: AddressOffset::scaled_int32_node(

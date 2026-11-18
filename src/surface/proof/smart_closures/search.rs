@@ -3467,11 +3467,22 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         }) {
             return Self::apply_normalization_closure(search_input, Some(Vec::new())).map(Some);
         }
-        if let Some(proof) =
-            crate::kernel::search::ProofSearch::try_goal_conditional_normalization(search_input)
-        {
-            return Ok(Some(proof));
-        }
+        let pointer_congruence_fallback =
+            match Self::try_goal_conditional_normalization(search_input) {
+                Some(proof)
+                    if matches!(
+                        search_input.goal(),
+                        Some(Proposition::ConditionIs(
+                            ConditionTerm::PointerEqual(..) | ConditionTerm::PointerValueEqual(..),
+                            true
+                        ))
+                    ) && proof.ends_in_empty_normalize_using() =>
+                {
+                    Some(proof)
+                }
+                Some(proof) => return Ok(Some(proof)),
+                None => None,
+            };
         // Close an indexed equality rewrite before deriving a longer
         // arithmetic proof of the same fact. Connected chains still wait
         // until selected arithmetic has had the goal.
@@ -3493,6 +3504,24 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             std::ops::ControlFlow::Break(None) => false,
             std::ops::ControlFlow::Continue(()) => true,
         };
+        let rewrite_chain = |allow_unfold| {
+            crate::instrumentation::measure_operation(
+                "surface",
+                "solve closure",
+                "solve closure: goal equality rewrite",
+                || Self::try_connected_goal_equality_chain_closure(search_input, allow_unfold),
+            )
+        };
+        // Preserve the graph check for equalities the indexed rewrite
+        // candidates cannot reconstruct as ordinary proof steps.
+        if let Some(fallback) = pointer_congruence_fallback {
+            let rewritten = if chain_rewrites {
+                rewrite_chain(false)?
+            } else {
+                None
+            };
+            return Ok(rewritten.or(Some(fallback)));
+        }
         if let Some(surface_goal) = search_input.surface_goal()
             && let Some(proof) =
                 crate::kernel::search::ProofSearch::try_selected_unchanged_load_forall_goal(
@@ -3758,19 +3787,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         {
             return Ok(Some(proof));
         }
-        if chain_rewrites
-            && let Some(rewritten) = crate::instrumentation::measure_operation(
-                "surface",
-                "solve closure",
-                "solve closure: goal equality rewrite",
-                || {
-                    crate::kernel::search::ProofSearch::try_connected_goal_equality_chain_closure(
-                        search_input,
-                        allow_function_unfold,
-                    )
-                },
-            )?
-        {
+        if chain_rewrites && let Some(rewritten) = rewrite_chain(allow_function_unfold)? {
             return Ok(Some(rewritten));
         }
         // Indexed rewrite planning uses Option for an ordinary candidate
@@ -3850,7 +3867,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(Some(enumerated));
         }
         // A pure goal that its own signed bounds already decide gets the one
-        // checked arithmetic certificate, not a case split over those same
+        // checked arithmetic step, not a case split over those same
         // bounds. The certificate reads the goal's own bound buckets and
         // emits a single leaf, while the split searches for a pivot and then
         // owes a proof on each arm — including a dead arm closed only by a
@@ -9177,7 +9194,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     }
 
     /// Specialization can expose an arithmetic consequence without changing
-    /// any read. Keep that consequence as ordinary arithmetic certificates,
+    /// any read. Keep that consequence as ordinary arithmetic steps,
     /// rather than asking legacy transport to rediscover it. This runs only
     /// in search; checking the emitted steps never enters arithmetic planning.
     fn try_universal_steps_with_arithmetic(

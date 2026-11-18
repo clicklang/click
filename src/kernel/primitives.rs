@@ -156,6 +156,9 @@ pub use iterated::{IteratedGuard, IteratedMemory};
 pub(in crate::kernel) mod canonical_fact_set;
 mod composition_member_index;
 mod memory_equality_index;
+mod resource_fields;
+pub(crate) use resource_fields::StoredResourceField;
+pub use resource_fields::{ResourceFieldValue, ResourceFieldValues};
 mod resource_algebra;
 pub(crate) use resource_algebra::coalesce_written_resource_descriptions;
 #[cfg(test)]
@@ -1306,7 +1309,7 @@ pub enum ConditionTerm {
     /// `byte != 0` (the byte rule of Stage 5 bounds the byte to 0 or 1
     /// where a front end produces the read). Two reads of one cell in one
     /// state are one value.
-    BoolLoad(SharedMemory, Box<Address>),
+    BoolLoad(ProgramPoint, Box<Address>),
 }
 
 /// A condition's identity: the condition itself, with a 32-bit equality's
@@ -1348,7 +1351,7 @@ enum ConditionIdentity<'a> {
         else_condition: &'a ConditionTerm,
     },
     BoolEqual(&'a ConditionTerm, &'a ConditionTerm),
-    BoolLoad(&'a SharedMemory, &'a Address),
+    BoolLoad(&'a ProgramPoint, &'a Address),
 }
 
 /// A comparison side as its fact identity reads it
@@ -4817,7 +4820,7 @@ pub enum AlgebraicTermNode {
     /// `pointer`, a generic struct's field: the algebraic counterpart of a
     /// [`MachineTerm::MemoryLoad`].
     MemoryLoad {
-        memory: SharedMemory,
+        point: ProgramPoint,
         pointer: Box<Address>,
     },
 }
@@ -4826,12 +4829,8 @@ impl AlgebraicTermNode {
     /// The scalar load term at the same memory and address as a
     /// [`AlgebraicTermNode::MemoryLoad`]: a walker reaches its memory and
     /// address as it reaches a scalar load's.
-    pub(crate) fn memory_load_carrier(memory: &SharedMemory, pointer: &Address) -> MachineTerm {
-        MachineTerm::MemoryLoad(
-            ProgramPoint::at(memory),
-            Box::new(pointer.clone()),
-            LoadKind::Bits64,
-        )
+    pub(crate) fn memory_load_carrier(point: &ProgramPoint, pointer: &Address) -> MachineTerm {
+        MachineTerm::MemoryLoad(point.clone(), Box::new(pointer.clone()), LoadKind::Bits64)
     }
 
     /// The [`AlgebraicTermNode::MemoryLoad`] whose carrier a rewrite of
@@ -4839,9 +4838,9 @@ impl AlgebraicTermNode {
     /// address. `None` when the rewrite replaced the load.
     pub(crate) fn memory_load_from_carrier(carrier: &ProgramValue) -> Option<Self> {
         match carrier {
-            ProgramValue::UInt64(MachineTerm::MemoryLoad(memory, pointer, LoadKind::Bits64)) => {
+            ProgramValue::UInt64(MachineTerm::MemoryLoad(point, pointer, LoadKind::Bits64)) => {
                 Some(Self::MemoryLoad {
-                    memory: memory.shared_memory().clone(),
+                    point: point.clone(),
                     pointer: pointer.clone(),
                 })
             }
@@ -4866,7 +4865,7 @@ impl AlgebraicTermNode {
         ProgramValue::Parameter(Box::new(AlgebraicTerm {
             algebraic_type: parameter.algebraic_type(),
             node: Self::MemoryLoad {
-                memory,
+                point: crate::kernel::ProgramPoint::at(&memory),
                 pointer: Box::new(pointer),
             },
         }))
@@ -4878,7 +4877,8 @@ impl AlgebraicTermNode {
         pointer: &Address,
     ) -> AlgebraicValue {
         AlgebraicValue::Program(ProgramValue::UInt64(Self::memory_load_carrier(
-            memory, pointer,
+            &crate::kernel::ProgramPoint::at(memory),
+            pointer,
         )))
     }
 }
@@ -5004,7 +5004,10 @@ impl AlgebraicTerm {
                             });
                         }
                     }
-                    AlgebraicTermNode::MemoryLoad { memory, pointer } => {
+                    AlgebraicTermNode::MemoryLoad {
+                        point: memory,
+                        pointer,
+                    } => {
                         visit(MachineOperandView::Legacy(
                             &AlgebraicTermNode::memory_load_carrier(memory, pointer),
                         ));
@@ -6544,15 +6547,9 @@ impl AggregateLayout {
         }
     }
 
-    pub(crate) fn bit_field_record(
-        size_bytes: u32,
-        alignment_bytes: u32,
-        field_bytes: BitFieldBytes,
-    ) -> Self {
-        Self {
-            bit_field_bytes: Some(field_bytes),
-            ..Self::new(size_bytes, alignment_bytes, Vec::new())
-        }
+    pub(crate) fn with_bit_field_bytes(mut self, field_bytes: Option<BitFieldBytes>) -> Self {
+        self.bit_field_bytes = field_bytes;
+        self
     }
 
     /// The layout of an object that holds one value of `value_type`, a type
@@ -11761,7 +11758,7 @@ pub struct ResourceInstance {
     pub(super) name: String,
     pub(super) arguments: ResourceArguments,
     pub(super) schema: ResourceFieldSchema,
-    pub(super) fields: ResourceArguments,
+    pub(super) fields: ResourceFieldValues,
     pub(super) resource_arguments: Arc<[super::ResourceReference]>,
 }
 
@@ -11771,7 +11768,7 @@ impl ResourceInstance {
         name: String,
         arguments: ResourceArguments,
         schema: ResourceFieldSchema,
-        fields: ResourceArguments,
+        fields: ResourceFieldValues,
     ) -> Option<Self> {
         Self::new_with_resource_arguments(identity, name, arguments, schema, fields, Vec::new())
     }
@@ -11783,26 +11780,14 @@ impl ResourceInstance {
         name: String,
         arguments: ResourceArguments,
         schema: ResourceFieldSchema,
-        fields: ResourceArguments,
+        fields: ResourceFieldValues,
         resource_arguments: Vec<super::ResourceReference>,
     ) -> Option<Self> {
         if schema.is_fieldless() || schema.fields().len() != fields.len() {
             return None;
         }
-        for ((_, ty), value) in schema.fields().iter().zip(fields.iter()) {
-            let valid = match (ty, value) {
-                (ResourceFieldType::Integer, AlgebraicValue::Integer(_)) => true,
-                (ResourceFieldType::Program(ty), AlgebraicValue::Program(value)) => {
-                    *ty == value.program_type()
-                }
-                (ResourceFieldType::Algebraic(ty), AlgebraicValue::Algebraic(value)) => {
-                    *ty == value.algebraic_type && value.is_well_formed()
-                }
-                _ => false,
-            };
-            if !valid {
-                return None;
-            }
+        if !fields.matches_schema(&schema) {
+            return None;
         }
         Some(Self {
             identity,
@@ -11833,7 +11818,7 @@ impl ResourceInstance {
     pub fn arguments(&self) -> &[AlgebraicValue] {
         &self.arguments
     }
-    pub fn fields(&self) -> &[AlgebraicValue] {
+    pub fn fields(&self) -> &ResourceFieldValues {
         &self.fields
     }
     pub fn schema(&self) -> &ResourceFieldSchema {
@@ -12709,9 +12694,9 @@ impl ResourceSpec {
     /// Current arguments remain state-dependent; source spellings remain intact.
     pub(crate) fn with_captured_entry_parameters(
         mut self,
-        entry_values: &BTreeMap<String, ProgramValue>,
+        entry_values: &impl NamedBindingMap<ProgramValue>,
     ) -> Self {
-        fn capture(term: &mut ResourceTerm, entry_values: &BTreeMap<String, ProgramValue>) {
+        fn capture(term: &mut ResourceTerm, entry_values: &impl NamedBindingMap<ProgramValue>) {
             match term {
                 ResourceTerm::Instance { resource, .. } => capture(resource, entry_values),
                 ResourceTerm::Composite {

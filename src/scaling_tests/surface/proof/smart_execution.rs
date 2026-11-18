@@ -44,7 +44,7 @@ fn model_argument_guard_work(prepare: bool) {
     let theorems = TheoremEnvironment::new(parsed.theorem_definitions());
     let mut baseline = None;
     for size in [4usize, 16, 64, 256] {
-        let mut values = BTreeMap::from([(
+        let mut values = ProgramValueBindings::from([(
             "x".into(),
             ProgramValue::Int32(crate::kernel::MachineTerm::Variable(
                 crate::kernel::Variable(90_000),

@@ -168,7 +168,7 @@ follow it. None of these whole-operation rows is marked complete.
 | Check a write against loans; pay for selected conflict/evidence, not all loans or aliases | `LoanLedger::permits_memory_access_with_assumptions`, called by memory-access checking | `kernel/loans/tests.rs`: `write_barrier_does_not_enumerate_overlapping_loans`, `writes_without_active_memory_loans_do_not_walk_pointer_aliases` | L1: aliases with active loans and symbolic-loan comparisons. Zero-loan and concrete-overlap controls do not finish this operation. |
 | Apply a modular call, transfer resources and finish it; pay for selected contract and effects | `kernel/functions.rs`: `execute_verified_function_applications_with_suspension`, `call_kept_ownership`; `kernel/proof/execution.rs` | source `a_call_ignores_unrelated_owned_objects`; `kernel/functions/stable_view_call_tests.rs`: `returning_one_borrowed_owner_does_not_rebuild_its_memory_block` | C1: resource-family selection and selected-address composite candidates; non-direct member-count preparation is now flat. E1: execution/publication/completion accounting. |
 | Split/join branches and enter/exit loops; pay for explicit arms/interfaces and actual changes | `kernel/api.rs`: `abstract_c_state_for_interface_join_across`; `kernel/loops.rs`; `kernel/proof/execution.rs` | `kernel/loops/contract_exit_join_tests.rs`, `kernel/loops/frame_resource_tests.rs`; branch availability and interface-join controls | J1 coverage gap: fixed-delta joins across growing stable state; loop-head abstraction uses a different policy. Existing growth allowances do not establish ambient independence. |
-| Apply an explicit equality, arithmetic certificate or preservation step; pay for written nodes/premises | `kernel/proof/{preservation,integer_arithmetic,term_rewrite}.rs` | `kernel/proof/preservation.rs`: history independence, explicit-step linearity, selected resource fields; `kernel/proof/integer_arithmetic/tests.rs`: repeated premise and shared-DAG controls | Coverage gap: map every Surface certificate driver through lowering, premise lookup, application and publication; preserve cold expansion/replay evidence. Do not re-enter discovery during application. |
+| Apply an explicit equality, arithmetic step or preservation step; pay for written nodes/premises | `kernel/proof/{preservation,integer_arithmetic,term_rewrite}.rs` | `kernel/proof/preservation.rs`: history independence, explicit-step linearity, selected resource fields; `kernel/proof/integer_arithmetic/tests.rs`: repeated premise and shared-DAG controls | Coverage gap: map every Surface certificate driver through lowering, premise lookup, application and publication; preserve cold expansion/replay evidence. Do not re-enter discovery during application. |
 | Introduce binders, apply logical rules and publish checked results; pay for explicit proof structure | `ProofObject::apply_intro`, `ProofFacts::freshen_integer_forall_body`, proof execution event recording | selected term-rewrite, fact-key and event-publication controls | Q1 deferred nested-quantifier work; E1 deferred/revalidation candidates. A helper's flat lookup says nothing about repeated whole-body copying. |
 
 Test paths in the evidence column are relative to `src/scaling_tests/`.
@@ -195,18 +195,16 @@ excluding prose and Rust test strings, leaves:
 
 | Corpus | Files | Sites |
 | --- | ---: | ---: |
-| `mdtests/` | 6 | 16 |
+| `mdtests/` | 4 | 11 |
 | `examples/` | 16 | 105 |
 | `library/` | 0 | 0 |
-| Total | 22 | 121 |
+| Total | 20 | 116 |
 
-The remaining mdtest with a failure expectation must retain its semantic
-refusal during migration. Positive fixtures also supply exact input text
-to expansion/mutation tests; migrate those inputs together with their tests,
-rather than replacing a smart test input with an already-expanded proof. Positive fixtures also need full-file verification:
-selected-tactic expansion verifies a prefix, so it does not establish that the
-rewritten proof's remaining suffix closes. Remaining groups include historical
-initializedness, computed range bounds, loop frames, and call preservation.
+Positive fixtures also supply exact input text to expansion and mutation tests.
+Migrate those inputs together with their tests and keep the smart proof inputs.
+Verify the full file as well, because selected-tactic expansion checks only a
+prefix. Remaining groups include historical initializedness, computed range
+bounds, loop frames, and call preservation.
 The final corpus pass and syntax/dispatcher deletion remain distinct tasks.
 
 ### Remaining PR-sized chunks
@@ -226,7 +224,6 @@ pattern is understood but the complete family has not yet been validated.
 | 13 | Named-root aliased-pointer baseline diagnosis/repair | Uncertain |
 | 14 | Named-root fixture migration after baseline repair | Medium |
 | 15 | Remaining fold, resource-observation, count mdtests | Medium |
-| 16 | Remaining negative mdtests, preserving semantic refusals | Medium |
 | 17 | Red-black insertion baseline diagnosis/repair | Uncertain |
 | 18 | Insertion: field and parent-link preservation | Medium |
 | 19 | Insertion: inner/double rotations | Medium |

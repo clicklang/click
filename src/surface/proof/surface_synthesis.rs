@@ -729,7 +729,7 @@ fn synthesize_recorded_held_value_local(
     pointer: &Address,
 ) -> Option<ContractExpression> {
     let crate::kernel::AlgebraicTermNode::MemoryLoad {
-        memory,
+        point: memory,
         pointer: address,
     } = &term.node
     else {
@@ -737,7 +737,9 @@ fn synthesize_recorded_held_value_local(
     };
     SYNTHESIS_RECORDED_POINTS.with(|slot| {
         let slot = slot.borrow();
-        let (selector, recorded) = slot.as_ref()?.point_reading_load(memory, address)?;
+        let (selector, recorded) = slot
+            .as_ref()?
+            .point_reading_load(memory.shared_memory(), address)?;
         Some(ContractExpression::At {
             selector: selector.clone(),
             expression: Box::new(synthesize_held_value_local(term, pointer, recorded)?),
@@ -3231,20 +3233,24 @@ fn synthesize_surface_atomic_proposition(
         } else {
             synthesize_surface_bitvector(term, parameter_binding, state, bound_variables)?
         };
-        // A bare sum in a reparsed equality can become Integer arithmetic.
+        // A bare arithmetic expression in a reparsed equality can become Integer arithmetic.
         // Give the generated uint32 word expression an explicit machine context.
         if unsigned_word_equality
             && matches!(
                 term,
                 MachineTerm::Binary {
                     format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                    op: MachineBinaryOp::Add | MachineBinaryOp::Subtract,
+                    op: MachineBinaryOp::Add
+                        | MachineBinaryOp::Subtract
+                        | MachineBinaryOp::Multiply,
                     ..
                 }
             )
             && matches!(
                 expression,
-                ContractExpression::Add(..) | ContractExpression::Subtract(..)
+                ContractExpression::Add(..)
+                    | ContractExpression::Subtract(..)
+                    | ContractExpression::Multiply(..)
             )
         {
             synthesize_uint32_operand(expression)
@@ -3624,14 +3630,16 @@ fn raise_algebraic_read(
             return None;
         };
         let AlgebraicTermNode::MemoryLoad {
-            memory: held_memory,
+            point: held_memory,
             pointer,
         } = &held.node
         else {
             return None;
         };
-        (ty == &held.algebraic_type && memory == held_memory && same_address(pointer))
-            .then(|| SurfaceTerm::ProgramExpression(ProgramExpression::Variable(name.clone())))
+        (ty == &held.algebraic_type
+            && memory == held_memory.shared_memory()
+            && same_address(pointer))
+        .then(|| SurfaceTerm::ProgramExpression(ProgramExpression::Variable(name.clone())))
     };
     held_at(state).or_else(|| {
         SYNTHESIS_RECORDED_POINTS.with(|slot| {
@@ -3788,7 +3796,7 @@ fn spell_wrapping_uint64_operand(
     use crate::kernel::KernelTermNode as Node;
     if let Node::MachineBinary {
         format: MachineIntegerType::UInt64,
-        operator: MachineBinaryOp::Add | MachineBinaryOp::Subtract,
+        operator: MachineBinaryOp::Add | MachineBinaryOp::Subtract | MachineBinaryOp::Multiply,
         arguments,
     } = term.node()
         && matches!(
@@ -3796,7 +3804,10 @@ fn spell_wrapping_uint64_operand(
             [Node::Variable(_), Node::MachineLiteral(_)]
                 | [Node::MachineLiteral(_), Node::Variable(_)]
         )
-        && matches!(expression, SurfaceTerm::Add(..) | SurfaceTerm::Subtract(..))
+        && matches!(
+            expression,
+            SurfaceTerm::Add(..) | SurfaceTerm::Subtract(..) | SurfaceTerm::Multiply(..)
+        )
     {
         synthesize_observation_operand(expression, ProgramType::UInt64)
     } else {
@@ -7115,7 +7126,7 @@ fn synthesize_scalar_model_field(
         let instance = state.resource_instance_at_path(origin.identity, &[])?;
         matches!(
             instance.fields().get(origin.field_index),
-            Some(AlgebraicValue::Program(crate::kernel::integer_c_value!(MachineTerm::Variable(held)))) if *held == variable
+            Some(crate::kernel::ResourceFieldValue::Program(crate::kernel::integer_c_value!(MachineTerm::Variable(held)))) if *held == variable
         )
         .then_some(())?;
         // The field's declared C type, as the parser's elaboration records it.
@@ -7368,8 +7379,8 @@ fn synthesize_surface_algebraic(
                 let instance = state.resource_instance_at_path(origin.identity, &[])?;
                 let held = instance.fields().get(origin.field_index)?;
                 let exact = match held {
-                    crate::kernel::AlgebraicValue::Algebraic(value) => value == term,
-                    crate::kernel::AlgebraicValue::Program(ProgramValue::Parameter(value)) => {
+                    crate::kernel::ResourceFieldValue::Algebraic(value) => value == term,
+                    crate::kernel::ResourceFieldValue::Program(ProgramValue::Parameter(value)) => {
                         value.as_ref() == term
                     }
                     _ => false,

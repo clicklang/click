@@ -738,6 +738,41 @@ impl KernelTerm {
     ) -> crate::kernel::execution_value::storage_keys::ConditionStorageKey {
         crate::kernel::execution_value::storage_keys::condition_for_root(self)
     }
+    /// Selected native program-value output for stored argument/state readers.
+    /// Reuse the existing root-owned compatibility slot; cloning or retaining
+    /// the stored value never requests this reading.
+    pub(crate) fn program_value_native_compat(&self) -> Option<&ProgramValue> {
+        if let KernelTermNode::Legacy(legacy) = self.node()
+            && let PureFunctionArgument::Value(value) = legacy.value()
+        {
+            return Some(value);
+        }
+        if let Some(value) = self
+            .pointer_native()
+            .or_else(|| self.boolean_native())
+            .or_else(|| self.algebraic_native_value())
+            .or_else(|| self.float_native_value())
+        {
+            return Some(value);
+        }
+        if !matches!(self.ty(), KernelType::Program(_)) {
+            return None;
+        }
+        let PureFunctionArgument::Value(value) = self
+            .0
+            .argument_leaf
+            .get_or_init(|| {
+                Box::new(PureFunctionArgument::Value(
+                    crate::kernel::ExecutionValue::Shared(self.clone()).into_native(),
+                ))
+            })
+            .as_ref()
+        else {
+            unreachable!("program value output cache")
+        };
+        Some(value)
+    }
+
     #[cfg(test)]
     pub(crate) fn has_cached_native_argument(&self) -> bool {
         self.0.argument_leaf.get().is_some()
@@ -1122,11 +1157,21 @@ impl KernelTerm {
 #[derive(Default)]
 pub(crate) struct KernelTermImport {
     integers: HashMap<SharedIntegerTerm, KernelTerm>,
+    // Stored native field inputs preserve argument carrier forms. Numeric
+    // checking/producer imports keep their existing common-operand policy.
+    exact_field_inputs: bool,
     // Index producers can retain their supplied native tree unless import
     // expanded a registered read.
     pub(super) machine_input_requires_export: bool,
 }
 impl KernelTermImport {
+    pub(crate) fn for_exact_field_inputs() -> Self {
+        Self {
+            exact_field_inputs: true,
+            ..Self::default()
+        }
+    }
+
     /// Every argument family is explicit here. Native fallbacks preserve C
     /// carrier records and out-of-domain inputs; migrated expressions expose
     /// their children through the common nodes.

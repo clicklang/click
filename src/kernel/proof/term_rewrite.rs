@@ -782,9 +782,12 @@ fn collect_algebraic_carriers_seen(
         AlgebraicTermNode::Variable(variable) => {
             variables.algebraic.insert(*variable);
         }
-        AlgebraicTermNode::MemoryLoad { memory, pointer } => {
+        AlgebraicTermNode::MemoryLoad {
+            point: memory,
+            pointer,
+        } => {
             collect_algebraic_value_carriers(
-                &AlgebraicTermNode::memory_load_carrier_value(memory, pointer),
+                &AlgebraicTermNode::memory_load_carrier_value(memory.shared_memory(), pointer),
                 variables,
                 seen,
             );
@@ -3712,42 +3715,51 @@ impl<'a> TermRewrite<'a> {
             self.changed = true;
             return self.rewrite_algebraic_replacement(to);
         }
-        if let AlgebraicTermNode::MemoryLoad { memory, pointer } = &term.node
+        if let AlgebraicTermNode::MemoryLoad {
+            point: memory,
+            pointer,
+        } = &term.node
             && let Some(reads) = self.comparison_algebraic_reads
-            && let Some(replacement) = reads.get(&(memory.arena_id(), pointer.as_ref().clone()))
+            && let Some(replacement) =
+                reads.get(&(memory.shared_memory().arena_id(), pointer.as_ref().clone()))
         {
             self.changed = true;
             return replacement.clone();
         }
         let node = match &term.node {
             AlgebraicTermNode::Variable(v) => AlgebraicTermNode::Variable(*v),
-            AlgebraicTermNode::MemoryLoad { memory, pointer } => {
-                let carrier = AlgebraicTermNode::memory_load_carrier_value(memory, pointer);
+            AlgebraicTermNode::MemoryLoad {
+                point: memory,
+                pointer,
+            } => {
+                let carrier =
+                    AlgebraicTermNode::memory_load_carrier_value(memory.shared_memory(), pointer);
                 match self.field(&carrier) {
                     AlgebraicValue::Program(value) => {
                         let rewritten = AlgebraicTermNode::memory_load_from_carrier(&value)
                             .unwrap_or_else(|| term.node.clone());
                         match rewritten {
                             AlgebraicTermNode::MemoryLoad {
-                                memory: moved_memory,
+                                point: moved_memory,
                                 pointer: moved_pointer,
                             } if moved_memory == *memory && moved_pointer != *pointer => {
                                 // A projection names the original selected cell.
                                 // Moving the read names the substituted cell at
                                 // its recorded observation, as lowering does.
                                 let origin = crate::kernel::prelude::value_load_origin(
-                                    memory,
+                                    memory.shared_memory(),
                                     pointer,
                                     crate::kernel::ABSTRACT_VALUE_WIDTH,
                                 )
-                                .unwrap_or_else(|| memory.clone());
+                                .unwrap_or_else(|| memory.shared_memory().clone());
                                 AlgebraicTermNode::MemoryLoad {
-                                    memory:
-                                        crate::kernel::memory_history::canonical_value_load_memory(
+                                    point: crate::kernel::ProgramPoint::at(
+                                        &crate::kernel::memory_history::canonical_value_load_memory(
                                             &origin,
                                             &moved_pointer,
                                             crate::kernel::ABSTRACT_VALUE_WIDTH,
                                         ),
+                                    ),
                                     pointer: moved_pointer,
                                 }
                             }

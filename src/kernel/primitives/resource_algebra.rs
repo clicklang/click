@@ -9820,11 +9820,9 @@ fn exact_resources_proven_equal(
                     .iter()
                     .zip(right.arguments.iter())
                     .all(|(a, b)| crate::kernel::instance_arguments_proven_equal(a, b, assumptions))
-                && left
-                    .fields
-                    .iter()
-                    .zip(right.fields.iter())
-                    .all(|(a, b)| crate::kernel::resource_arguments_proven_equal(a, b, assumptions))
+                && left.fields.iter().zip(right.fields.iter()).all(|(a, b)| {
+                    crate::kernel::resource_field_values_proven_equal(a, b, assumptions)
+                })
         }
         (
             Resource::Composite {

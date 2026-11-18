@@ -1,22 +1,41 @@
 //! Named int bit-fields in automatic records and fixed local pointers to them.
 use super::bit_field_layout::IntBitField;
 use super::*;
-use crate::kernel::BitFieldBytes;
 use std::num::NonZeroU8;
 use std::sync::Arc;
 
 /// One named member at its target ABI position.
 #[derive(Clone, Copy, Debug)]
-struct Slice {
+pub(super) struct Slice {
     placement: IntBitField,
     signed: bool,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum Member {
+    Bits(Slice),
+    Scalar {
+        offset: u32,
+        ty: InterfaceType,
+        width: u32,
+    },
+}
+
+impl Member {
+    fn start_bit(self) -> u64 {
+        match self {
+            Self::Bits(field) => field.placement.start_bit(),
+            Self::Scalar { offset, .. } => 8 * u64::from(offset),
+        }
+    }
 }
 
 #[derive(Debug)]
 pub(super) struct BitFieldRecord {
     names: BTreeMap<String, usize>,
-    fields: Vec<Slice>,
-    storage: RecordLayout,
+    fields: Vec<Member>,
+    pub(super) storage: RecordLayout,
+    supports_local_objects: bool,
 }
 
 impl BitFieldRecord {
@@ -75,6 +94,70 @@ impl LocalBitFields {
         CExpression::PointerOffsetBytes {
             pointer: Box::new(self.address()),
             bytes: offset,
+        }
+    }
+
+    fn scalar_pointer(&self, offset: u32, width: u32) -> CExpression {
+        let pointer = CExpression::Subobject {
+            pointer: Box::new(self.byte_address(offset)),
+            width,
+        };
+        if self.read_only {
+            let mut view = scalar_cast(pointer, InterfaceType::UInt8Pointer);
+            let CExpression::Cast {
+                pointee_constant, ..
+            } = &mut view
+            else {
+                unreachable!("pointer cast");
+            };
+            *pointee_constant = true;
+            view
+        } else {
+            pointer
+        }
+    }
+
+    fn scalar_class(
+        &self,
+        ty: InterfaceType,
+    ) -> Option<crate::kernel::effective_type::CAccessClass> {
+        let class = self.record.storage.class.as_ref()?.clone();
+        Some(crate::kernel::effective_type::CAccessClass::member(
+            class,
+            ty.access_class(),
+        ))
+    }
+
+    fn read_member(&self, member: Member) -> CExpression {
+        match member {
+            Member::Bits(field) => self.read(field),
+            Member::Scalar { offset, ty, width } => CExpression::Field {
+                pointer: Box::new(self.scalar_pointer(offset, width)),
+                field_type: ty,
+                pointee_constant: false,
+                field_struct_name: None,
+                function_pointer_signature: None,
+                array_shape: None,
+                source: None,
+                access_class: self.scalar_class(ty),
+            },
+        }
+    }
+
+    fn scalar_store(
+        &self,
+        offset: u32,
+        ty: InterfaceType,
+        width: u32,
+        value: CExpression,
+    ) -> CStatement {
+        CStatement::Store {
+            pointer: self.scalar_pointer(offset, width),
+            value,
+            value_type: Some(ty),
+            lvalue_class: self.scalar_class(ty),
+            pointee_constant: self.read_only,
+            site: CSite::NONE,
         }
     }
 
@@ -175,7 +258,10 @@ impl Slice {
 
 enum RecordInitializer {
     Unwritten,
-    Literal(BTreeMap<u32, u8>),
+    Literal {
+        bytes: BTreeMap<u32, u8>,
+        scalars: BTreeMap<usize, CExpression>,
+    },
     Copy(LocalBitFields),
 }
 
@@ -210,81 +296,69 @@ fn scalar_declaration(
 }
 
 impl Parser {
-    pub(super) fn parse_bit_field_record(
+    pub(super) fn parse_int_bit_field(
+        &mut self,
+        field_type: &ParsedType,
+        cursor: &mut u64,
+    ) -> Result<Option<(String, Slice)>, CSyntaxError> {
+        if !matches!(
+            field_type.interface_type,
+            InterfaceType::Int32 | InterfaceType::UInt32
+        ) || field_type.is_constant
+            || field_type.is_volatile
+            || field_type.enum_name.is_some()
+            || field_type.struct_name.is_some()
+            || field_type.union_name.is_some()
+            || field_type.aligned_typedef
+            || field_type.opaque_builtin
+            || field_type.long_double
+        {
+            return Err(self.error_here(
+                "this bit-field layout requires unqualified signed or unsigned int members",
+            ));
+        }
+        let name = if self.peek() == Some(&Token::Colon) {
+            None
+        } else {
+            Some(self.expect_ident("bit-field name")?)
+        };
+        self.expect(Token::Colon)?;
+        let Some(Token::Number(width)) = self.next() else {
+            return Err(self.error_at_previous("bit-field width must be a decimal integer literal"));
+        };
+        let Ok(width @ 0..=32) = width.parse::<u8>() else {
+            return Err(self.error_at_previous("bit-field width must be between 0 and 32"));
+        };
+        let overflow = || self.error_at_previous("bit-field record layout is too large");
+        if width == 0 {
+            if name.is_some() {
+                return Err(self.error_at_previous("a zero-width bit-field must be unnamed"));
+            }
+            *cursor = IntBitField::next_word(*cursor).ok_or_else(overflow)?;
+            return Ok(None);
+        }
+        let placement = IntBitField::place(*cursor, width).ok_or_else(overflow)?;
+        *cursor = placement.end_bit();
+        Ok(name.map(|name| {
+            (
+                name,
+                Slice {
+                    placement,
+                    signed: field_type.interface_type == InterfaceType::Int32,
+                },
+            )
+        }))
+    }
+
+    pub(super) fn register_bit_field_record(
         &mut self,
         tag: String,
-        mut field_type: ParsedType,
+        mut storage: RecordLayout,
+        bit_fields: Vec<(String, Slice)>,
+        qualified_scalar: bool,
     ) -> Result<(), CSyntaxError> {
-        if self.current_function_source_name.is_some() {
-            return Err(
-                self.error_here("bit-field record definitions currently require file scope")
-            );
-        }
-        let mut names = BTreeMap::new();
-        let mut fields = Vec::new();
-        let mut cursor = 0;
-        loop {
-            if !matches!(
-                field_type.interface_type,
-                InterfaceType::Int32 | InterfaceType::UInt32
-            ) || field_type.is_constant
-                || field_type.is_volatile
-                || field_type.enum_name.is_some()
-                || field_type.struct_name.is_some()
-                || field_type.union_name.is_some()
-                || field_type.aligned_typedef
-                || field_type.opaque_builtin
-                || field_type.long_double
-            {
-                return Err(self.error_here(
-                    "this bit-field layout requires unqualified signed or unsigned int members",
-                ));
-            }
-            let signed = field_type.interface_type == InterfaceType::Int32;
-            loop {
-                let name = self.expect_ident("bit-field name")?;
-                self.expect(Token::Colon)?;
-                let Some(Token::Number(width)) = self.next() else {
-                    return Err(
-                        self.error_at_previous("bit-field width must be a decimal integer literal")
-                    );
-                };
-                let placement = width
-                    .parse::<u8>()
-                    .ok()
-                    .and_then(|width| IntBitField::place(cursor, width));
-                let Some(placement) = placement else {
-                    return Err(self.error_at_previous("bit-field width must be between 1 and 32"));
-                };
-                if names.insert(name.clone(), fields.len()).is_some() {
-                    return Err(self.error_at_previous(format!("duplicate bit-field `{name}`")));
-                }
-                fields.push(Slice { placement, signed });
-                cursor = placement.end_bit();
-                if self.peek() != Some(&Token::Comma) {
-                    break;
-                }
-                self.position += 1;
-            }
-            self.expect(Token::Semicolon)?;
-            if self.peek() == Some(&Token::RBrace) {
-                break;
-            }
-            field_type = self.parse_type()?;
-        }
-        self.expect(Token::RBrace)?;
-        if self.consume_struct_alignment_attribute()?.is_some() {
-            return Err(self.error_at_previous("aligned bit-field records are not supported"));
-        }
-        if self.structs.contains_key(&tag) || self.bit_field_records.contains_key(&tag) {
-            return Err(self.error_at_previous(format!("duplicate struct declaration `{tag}`")));
-        }
-        let size = u32::try_from(cursor.div_ceil(32) * 4)
-            .map_err(|_| self.error_at_previous(format!("struct `{tag}` layout is too large")))?;
-        // Keep only the bytes containing named members, in declaration
-        // order. Adjacent fields can share a byte.
         let mut members: Vec<(u32, NonZeroU8)> = Vec::new();
-        for (offset, bits) in fields.iter().flat_map(|field| field.byte_masks()) {
+        for (offset, bits) in bit_fields.iter().flat_map(|(_, field)| field.byte_masks()) {
             if let Some((previous, mask)) = members.last_mut()
                 && *previous == offset
             {
@@ -293,21 +367,45 @@ impl Parser {
                 members.push((offset, bits));
             }
         }
-        // The allocation has no individually addressable scalar members.
-        let mut storage =
-            RecordLayout::from_explicit_fields_with_structs(Vec::new(), size, 4, &BTreeMap::new())
-                .expect("aligned bit-field record");
-        let members: BitFieldBytes = members.into();
-        storage.bit_field_bytes = Some(members);
-        storage.class = Some(
-            crate::kernel::effective_type::CStructContentsBuilder::default().build(tag.clone()),
-        );
+        let mut ordered: Vec<_> = bit_fields
+            .into_iter()
+            .map(|(name, field)| (name, Member::Bits(field)))
+            .collect();
+        let supports_local_objects = !qualified_scalar
+            && storage.fields.values().all(|field| {
+                is_arithmetic_type(field.interface_type)
+                    && field.enum_name.is_none()
+                    && field.struct_name.is_none()
+                    && field.union_name.is_none()
+                    && !field.long_double
+            });
+        for (name, field) in &storage.fields {
+            ordered.push((
+                name.clone(),
+                Member::Scalar {
+                    offset: field.offset_bytes,
+                    width: field.byte_width,
+                    ty: field.interface_type,
+                },
+            ));
+        }
+        ordered.sort_unstable_by_key(|(_, member)| member.start_bit());
+        let mut names = BTreeMap::new();
+        let mut fields = Vec::with_capacity(ordered.len());
+        for (name, member) in ordered {
+            if names.insert(name.clone(), fields.len()).is_some() {
+                return Err(self.error_here(format!("duplicate field `{name}` in struct `{tag}`")));
+            }
+            fields.push(member);
+        }
+        storage.bit_field_bytes = Some(members.into());
         self.bit_field_records.insert(
             tag,
             Arc::new(BitFieldRecord {
                 names,
                 fields,
                 storage,
+                supports_local_objects,
             }),
         );
         Ok(())
@@ -325,6 +423,11 @@ impl Parser {
         self.function_has_bit_fields = true;
         let record =
             self.bit_field_records[parsed.struct_name.as_ref().expect("bit-field tag")].clone();
+        if !record.supports_local_objects {
+            return Err(self.error_here(
+                "local bit-field objects require modeled unqualified arithmetic scalar members",
+            ));
+        }
         if parsed.volatile_levels != 0 || parsed.aligned_typedef {
             return Err(self.error_here("volatile or aligned bit-field records are not supported"));
         }
@@ -343,7 +446,7 @@ impl Parser {
         } else {
             self.position += 1;
             if self.peek() == Some(&Token::LBrace) {
-                RecordInitializer::Literal(self.parse_bit_field_initializer(&record)?)
+                self.parse_bit_field_initializer(&record)?
             } else {
                 RecordInitializer::Copy(self.parse_bit_field_copy_source(&record)?)
             }
@@ -364,7 +467,7 @@ impl Parser {
         let mut statements = vec![declaration];
         match initializer {
             RecordInitializer::Unwritten => {}
-            RecordInitializer::Literal(values) => {
+            RecordInitializer::Literal { bytes, mut scalars } => {
                 let members = object
                     .record
                     .storage
@@ -372,8 +475,16 @@ impl Parser {
                     .as_deref()
                     .expect("bit-field layout");
                 statements.extend(object.store_bytes(members.iter().copied(), |offset| {
-                    CExpression::UInt8Literal(values.get(&offset).copied().unwrap_or(0))
+                    CExpression::UInt8Literal(bytes.get(&offset).copied().unwrap_or(0))
                 }));
+                for (index, member) in object.record.fields.iter().enumerate() {
+                    if let Member::Scalar { offset, ty, width } = *member {
+                        let value = scalars
+                            .remove(&index)
+                            .unwrap_or_else(|| zero_initializer_value(ty));
+                        statements.push(object.scalar_store(offset, ty, width, value));
+                    }
+                }
             }
             RecordInitializer::Copy(source) => statements.push(object.copy_from(&source)),
         }
@@ -461,9 +572,10 @@ impl Parser {
     fn parse_bit_field_initializer(
         &mut self,
         record: &BitFieldRecord,
-    ) -> Result<BTreeMap<u32, u8>, CSyntaxError> {
+    ) -> Result<RecordInitializer, CSyntaxError> {
         self.expect(Token::LBrace)?;
         let mut bytes = BTreeMap::new();
+        let mut scalars = BTreeMap::new();
         let mut index = 0;
         let mut selected = BTreeSet::new();
         loop {
@@ -483,16 +595,39 @@ impl Parser {
                 return Err(self.error_here("repeated bit-field initializers are not supported"));
             }
             let value = self.parse_assignment()?;
-            let value = match value {
-                CExpression::Int32Literal(value) | CExpression::UInt32Literal(value) => value,
-                _ => {
-                    return Err(self
-                        .error_here("bit-field initializers currently require integer literals"));
+            match field {
+                Member::Bits(field) => {
+                    let value = match value {
+                        CExpression::Int32Literal(value) | CExpression::UInt32Literal(value) => {
+                            value
+                        }
+                        _ => {
+                            return Err(self.error_here(
+                                "bit-field initializers currently require integer literals",
+                            ));
+                        }
+                    };
+                    let positioned = (value << field.placement.shift_in_word()).to_le_bytes();
+                    for (offset, mask) in field.byte_masks() {
+                        *bytes.entry(offset).or_insert(0) |=
+                            positioned[(offset % 4) as usize] & mask.get();
+                    }
                 }
-            };
-            let positioned = (value << field.placement.shift_in_word()).to_le_bytes();
-            for (offset, mask) in field.byte_masks() {
-                *bytes.entry(offset).or_insert(0) |= positioned[(offset % 4) as usize] & mask.get();
+                Member::Scalar { .. } => {
+                    if !matches!(
+                        value,
+                        CExpression::Int32Literal(_)
+                            | CExpression::UInt32Literal(_)
+                            | CExpression::Int64Literal(_)
+                            | CExpression::UInt64Literal(_)
+                            | CExpression::UInt8Literal(_)
+                            | CExpression::Float32Literal(_)
+                            | CExpression::Float64Literal(_)
+                    ) {
+                        return Err(self.error_here("mixed-record scalar initializers currently require arithmetic literals"));
+                    }
+                    scalars.insert(index, value);
+                }
             }
             index += 1;
             if self.peek() != Some(&Token::Comma) {
@@ -504,7 +639,7 @@ impl Parser {
             }
         }
         self.expect(Token::RBrace)?;
-        Ok(bytes)
+        Ok(RecordInitializer::Literal { bytes, scalars })
     }
 
     pub(super) fn local_bit_field_object(&self) -> Option<&LocalBitFields> {
@@ -519,7 +654,7 @@ impl Parser {
     fn parse_local_bit_field_member(
         &mut self,
         object: &LocalBitFields,
-    ) -> Result<Slice, CSyntaxError> {
+    ) -> Result<Member, CSyntaxError> {
         self.position += 1;
         if self.peek() != Some(&object.member_operator()) {
             return Err(self.error_here("bit-field objects require a direct named member access"));
@@ -538,13 +673,13 @@ impl Parser {
         &mut self,
         object: LocalBitFields,
     ) -> Result<CExpression, CSyntaxError> {
-        if self.bit_field_forbidden_operand {
+        let field = self.parse_local_bit_field_member(&object)?;
+        if self.bit_field_forbidden_operand && matches!(field, Member::Bits(_)) {
             return Err(self.error_here(
                 "bit-field accesses are not supported in address or unevaluated operands",
             ));
         }
-        let field = self.parse_local_bit_field_member(&object)?;
-        Ok(object.read(field))
+        Ok(object.read_member(field))
     }
 
     pub(super) fn parse_local_bit_field_store(
@@ -611,11 +746,14 @@ impl Parser {
                 let value = self.parse_expression()?;
                 if !self
                     .source_expression_type(&value)
-                    .is_some_and(is_integer_type)
+                    .is_some_and(|ty| match field {
+                        Member::Bits(_) => is_integer_type(ty),
+                        Member::Scalar { .. } => is_arithmetic_type(ty),
+                    })
                     || self.expression_has_runtime_effect(&value)
                 {
                     return Err(self.error_here(
-                        "bit-field assignment requires a side-effect-free integer expression",
+                        "member assignment requires a side-effect-free expression of the supported arithmetic type",
                     ));
                 }
                 value
@@ -624,14 +762,20 @@ impl Parser {
         let value = match operator {
             Token::Equal => rhs,
             Token::PlusPlus | Token::PlusEqual => {
-                CExpression::Add(Box::new(object.read(field)), Box::new(rhs))
+                CExpression::Add(Box::new(object.read_member(field)), Box::new(rhs))
             }
             Token::MinusMinus | Token::MinusEqual => {
-                CExpression::Subtract(Box::new(object.read(field)), Box::new(rhs))
+                CExpression::Subtract(Box::new(object.read_member(field)), Box::new(rhs))
             }
             _ => unreachable!("bit-field member assignment operator"),
         };
         self.expect(Token::Semicolon)?;
+        let field = match field {
+            Member::Scalar { offset, ty, width } => {
+                return Ok(Some(object.scalar_store(offset, ty, width, value)));
+            }
+            Member::Bits(field) => field,
+        };
         // Save the converted value before writing any byte: a field may
         // span bytes and its RHS may read from the same allocation.
         let temporary = self.hidden_bit_field_binding("value", InterfaceType::UInt32);

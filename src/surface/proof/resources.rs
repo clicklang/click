@@ -702,7 +702,8 @@ pub(in crate::surface) fn selected_resource_instance_arm(
         .fields()
         .iter()
         .position(|field| field.name() == matched.field)?;
-    let AlgebraicValue::Algebraic(model) = instance.fields().get(field_index)? else {
+    let crate::kernel::ResourceFieldValue::Algebraic(model) = instance.fields().get(field_index)?
+    else {
         return None;
     };
     let scopes = crate::surface::validation::resource_match_arm_scopes(
@@ -834,7 +835,7 @@ pub(in crate::surface) fn pair_instance_body_clause_presentations(
     click_function_environment: &ClickFunctionEnvironment,
     instance: &ResourceInstance,
     records: &[crate::kernel::ResourceBodyClauseRecord],
-    function_values: &BTreeMap<String, ProgramValue>,
+    function_values: &ProgramValueBindings,
     proof_bindings: Option<&[String]>,
 ) -> Result<Vec<ResourceClausePresentation>, ClickError> {
     let Some(first) = records.first() else {

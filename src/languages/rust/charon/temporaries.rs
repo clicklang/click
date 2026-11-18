@@ -801,6 +801,130 @@ fn returned_directly(value_type: &super::super::schema::Type) -> bool {
     )
 }
 
+/// Binds a slice loop's variable where `next` yields, as
+/// [`bind_range_payloads`] does for a range: once the protocol has split a
+/// slice iterator's `next` into its two outcomes, the `Option` it returns is
+/// read only by the `Some` arm's first statement, `x = (opt as Some).0`, and
+/// by the tag test the split left unreachable. The yielding outcome then
+/// assigns `x` the element's reference itself (`payload: Some(x)`), the
+/// other outcome is nothing, and the `Option`, its tag test and its
+/// temporary go.
+pub(super) fn bind_slice_payloads(
+    locals: &mut Vec<Place>,
+    blocks: &mut [MirBlock],
+    temporaries: &BTreeSet<String>,
+) {
+    let transparent = |statement: &S| {
+        matches!(
+            statement,
+            S::BeginStorage { .. } | S::EndStorage { .. } | S::Site { .. }
+        )
+    };
+    // A block that tests the `Option`'s tag, which the split replaced.
+    let tests = |block: &MirBlock, option: &str| matches!(&block.terminator, T::If { condition: E::SharedArrayOptionTag { option: tested }, .. } if tested == option);
+    let mut removed = BTreeSet::new();
+    for index in 0..blocks.len() {
+        let (option, target) = match (blocks[index].statements.last(), &blocks[index].terminator) {
+            (
+                Some(S::SharedArrayNext {
+                    option: Some(option),
+                    payload: None,
+                    taken: Some(true),
+                    ..
+                }),
+                T::Goto { target },
+            ) => (option.clone(), *target),
+            _ => continue,
+        };
+        if !temporaries.contains(&option) || removed.contains(&option) {
+            continue;
+        }
+        // The `Some` arm's binding of the element, `x = (opt as Some).0`,
+        // when its first statement is one; a `Some(_)` arm binds nothing.
+        let binding = blocks[target]
+            .statements
+            .iter()
+            .position(|statement| !transparent(statement))
+            .and_then(|position| match &blocks[target].statements[position] {
+                S::Assign {
+                    target: E::Local { name: payload },
+                    value: E::SharedArrayOptionElement { option: read },
+                } if *read == option => Some((position, payload.clone())),
+                _ => None,
+            });
+        // Nothing else names the `Option`: its `next` outcomes, each decided,
+        // the binding, and the replaced tag test and its tag copies.
+        let mut nexts = 0;
+        let mut others = 0;
+        for (number, block) in blocks.iter().enumerate() {
+            let replaced = tests(block, &option);
+            for (place, statement) in block.statements.iter().enumerate() {
+                if transparent(statement) || !mentioned_locals(statement).contains(&option) {
+                    continue;
+                }
+                match statement {
+                    S::SharedArrayNext { taken: Some(_), .. } => nexts += 1,
+                    S::Assign {
+                        value: E::SharedArrayOptionTag { .. },
+                        ..
+                    } if replaced => {}
+                    _ if binding
+                        .as_ref()
+                        .is_some_and(|(position, _)| number == target && place == *position) => {}
+                    _ => others += 1,
+                }
+            }
+            if !replaced {
+                let mut reads = BTreeMap::new();
+                let mut named = BTreeSet::new();
+                terminator_uses(&block.terminator, &mut reads, &mut named);
+                if reads.contains_key(&option) || named.contains(&option) {
+                    others += 1;
+                }
+            }
+        }
+        if others != 0 || nexts != 2 {
+            continue;
+        }
+        if let Some((position, _)) = &binding {
+            blocks[target].statements.remove(*position);
+        }
+        let payload = binding.map(|(_, payload)| payload);
+        for block in blocks.iter_mut() {
+            if tests(block, &option) {
+                block.statements.retain(|statement| !matches!(statement, S::Assign { value: E::SharedArrayOptionTag { option: tag }, .. } if *tag == option));
+                block.terminator = T::Unreachable;
+            }
+            for statement in &mut block.statements {
+                if let S::SharedArrayNext {
+                    option: next_option,
+                    payload: next_payload,
+                    taken,
+                    ..
+                } = statement
+                    && next_option.as_deref() == Some(option.as_str())
+                {
+                    *next_option = None;
+                    if *taken == Some(true) {
+                        next_payload.clone_from(&payload);
+                    }
+                }
+            }
+        }
+        removed.insert(option);
+    }
+    if removed.is_empty() {
+        return;
+    }
+    for block in blocks.iter_mut() {
+        block.statements.retain(|statement| match statement {
+            S::BeginStorage { local } | S::EndStorage { local } => !removed.contains(local),
+            _ => true,
+        });
+    }
+    locals.retain(|local| !removed.contains(&local.name));
+}
+
 /// The iterator `statement` moves: its kind, the local it moves into, and
 /// the local it moves from.
 /// Binds a range loop's variable where `next` yields it. Once the iterator
@@ -1424,9 +1548,18 @@ fn statement_named_locals(statement: &S) -> Vec<&String> {
         | S::ChunkMove { target, source }
         | S::Move { target, source, .. }
         | S::Copy { target, source, .. } => vec![target, source],
-        S::SharedArrayNext { iterator, option }
-        | S::EnumerateNext { iterator, option }
-        | S::ChunkNext { iterator, option } => vec![iterator, option],
+        S::EnumerateNext { iterator, option } | S::ChunkNext { iterator, option } => {
+            vec![iterator, option]
+        }
+        S::SharedArrayNext {
+            iterator,
+            option,
+            payload,
+            ..
+        } => std::iter::once(iterator)
+            .chain(option)
+            .chain(payload)
+            .collect(),
         S::RangeNext {
             iterator,
             option,

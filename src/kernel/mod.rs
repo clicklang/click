@@ -32,6 +32,7 @@ pub(crate) use eval::typed_reads::{
     FieldScope as TransportFieldScope, ReadScope as TransportReadScope,
     record_field as record_transport_field,
 };
+pub(crate) use execution_value::RetainedProgramValue;
 pub use execution_value::{ExecutionValue, StoredExecutionValue, StoredMemoryValue};
 pub(crate) mod fact_collections;
 pub(crate) mod fact_stability;
@@ -546,3 +547,5 @@ pub use execution_facts::{ExecutionFactSource, ExecutionFacts, ExecutionFactsIte
 pub(crate) mod search;
 
 pub(crate) use spec::prepare_spec_integer_argument;
+
+pub(crate) use memory_history::resource_field_values_proven_equal;

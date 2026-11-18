@@ -4791,7 +4791,7 @@ fn abstract_reads_follow_address_equalities_in_the_shared_graph() {
     let read = |pointer: &Address, memory: &SharedMemory| AlgebraicTerm {
         algebraic_type: parameter.algebraic_type(),
         node: AlgebraicTermNode::MemoryLoad {
-            memory: memory.clone(),
+            point: crate::kernel::ProgramPoint::at(&memory.clone()),
             pointer: Box::new(pointer.clone()),
         },
     };
@@ -4873,7 +4873,7 @@ fn abstract_read_naming_retains_its_selected_width_origin() {
     let observed = AlgebraicTerm {
         algebraic_type: parameter.algebraic_type(),
         node: AlgebraicTermNode::MemoryLoad {
-            memory: source.clone(),
+            point: crate::kernel::ProgramPoint::at(&source.clone()),
             pointer: Box::new(address.clone()),
         },
     };
@@ -4884,10 +4884,12 @@ fn abstract_read_naming_retains_its_selected_width_origin() {
             .equality_graph
             .are_algebraic_equal(&named, &observed)
     );
-    let AlgebraicTermNode::MemoryLoad { memory, .. } = &named.node else {
+    let AlgebraicTermNode::MemoryLoad { point: memory, .. } = &named.node else {
         unreachable!()
     };
-    assert!(crate::kernel::prelude::value_load_origin(memory, &address, 16).is_none());
+    assert!(
+        crate::kernel::prelude::value_load_origin(memory.shared_memory(), &address, 16).is_none()
+    );
     let changed = intern_memory(
         source
             .memory()
@@ -4897,7 +4899,7 @@ fn abstract_read_naming_retains_its_selected_width_origin() {
     let changed_read = AlgebraicTerm {
         algebraic_type: parameter.algebraic_type(),
         node: AlgebraicTermNode::MemoryLoad {
-            memory: changed,
+            point: crate::kernel::ProgramPoint::at(&changed),
             pointer: Box::new(address),
         },
     };

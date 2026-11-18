@@ -989,7 +989,7 @@ impl Printer<'_> {
             }
             ConditionTerm::BoolLoad(memory, pointer) => {
                 let read = self.load(
-                    memory.as_ref(),
+                    memory.memory(),
                     pointer,
                     crate::kernel::LoadKind::UInt8,
                     depth,
@@ -2376,7 +2376,10 @@ impl Printer<'_> {
             }
             Resource::Instance(instance) => {
                 let application = self.resource_arguments(instance.name(), instance.arguments());
-                match self.hidden_record(instance.schema().fields(), instance.fields()) {
+                match self.hidden_record(
+                    instance.schema().fields(),
+                    &instance.fields().native_values(),
+                ) {
                     Some(record) => format!("{application} {record}"),
                     None => application,
                 }
@@ -2629,7 +2632,10 @@ impl Printer<'_> {
             AlgebraicTermNode::PureFunctionApplication { name, arguments } => {
                 self.call(name, arguments, depth + 1)
             }
-            AlgebraicTermNode::MemoryLoad { memory, pointer } => self.bitvector(
+            AlgebraicTermNode::MemoryLoad {
+                point: memory,
+                pointer,
+            } => self.bitvector(
                 &AlgebraicTermNode::memory_load_carrier(memory, pointer),
                 None,
                 depth + 1,

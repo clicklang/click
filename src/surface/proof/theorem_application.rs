@@ -68,7 +68,7 @@ fn requirement_source_bindings(
 
 pub(super) struct TheoremApplicationContext<'a> {
     pub(super) parameters: ParameterBinding<'a>,
-    pub(super) values: &'a BTreeMap<String, ProgramValue>,
+    pub(super) values: &'a ProgramValueBindings,
     pub(super) array_refs: &'a ClickArrayRefs,
     pub(super) algebraic_values: &'a BTreeMap<String, SpecAlgebraicExpression>,
     pub(super) pre_state: &'a ExecutionState,
@@ -1012,6 +1012,23 @@ fn evaluate_native_theorem_argument(
     spec_definitions: SpecDefinitions<'_>,
     opaque_click_functions: &BTreeSet<String>,
 ) -> Result<ProgramValue, String> {
+    evaluate_retained_theorem_argument(
+        argument,
+        context,
+        assumptions,
+        spec_definitions,
+        opaque_click_functions,
+    )
+    .map(crate::kernel::ExecutionValue::into_native)
+}
+
+fn evaluate_retained_theorem_argument(
+    argument: &ContractExpression,
+    context: &TheoremApplicationContext<'_>,
+    assumptions: &PureFactContext,
+    spec_definitions: SpecDefinitions<'_>,
+    opaque_click_functions: &BTreeSet<String>,
+) -> Result<crate::kernel::ExecutionValue, String> {
     let algebraic_values = contract_expression_referenced_names(argument)
         .into_iter()
         .filter_map(|name| {
@@ -1022,7 +1039,7 @@ fn evaluate_native_theorem_argument(
                 .map(|value| (name, value))
         })
         .collect();
-    evaluate_fixed_state_expression_through_kernel_with_algebraic_and_integer_values(
+    capture_fixed_state_retained_expression_with_guards(
         argument,
         assumptions,
         ContractEnvironment::new(context.values, context.array_refs)
@@ -1038,6 +1055,7 @@ fn evaluate_native_theorem_argument(
         spec_definitions,
         opaque_click_functions,
     )
+    .map(|(root, _)| crate::kernel::ExecutionValue::Shared(root))
 }
 
 pub(super) fn theorem_application_bindings(
@@ -1048,7 +1066,7 @@ pub(super) fn theorem_application_bindings(
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<
     (
-        BTreeMap<String, ProgramValue>,
+        ProgramValueBindings,
         ClickArrayRefs,
         BTreeMap<String, SpecAlgebraicExpression>,
         PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
@@ -1056,7 +1074,7 @@ pub(super) fn theorem_application_bindings(
     String,
 > {
     let active_functions = BTreeSet::new();
-    let mut values = BTreeMap::new();
+    let mut values = ProgramValueBindings::new();
     let mut array_refs = BTreeMap::new();
     let mut algebraic_values = BTreeMap::new();
     // Callee parameters are substituted simultaneously.  Keep the caller's
@@ -1318,14 +1336,15 @@ pub(super) fn theorem_application_bindings(
             values.insert(parameter.name().to_string(), value);
             array_refs.insert(parameter.name().to_string(), array_ref);
         } else {
-            let value = evaluate_native_theorem_argument(
+            let value = RetainedProgramValue::from(evaluate_retained_theorem_argument(
                 argument,
                 context,
                 assumptions,
                 spec_definitions,
                 &active_functions,
-            )?;
-            if !program_value_matches_click_type(&value, parameter_type) {
+            )?);
+            let native = value.native_compat();
+            if !program_value_matches_click_type(native, parameter_type) {
                 let (naming_parameters, naming_arguments) =
                     crate::surface::diagnostics::value_naming_tables(context.values);
                 return Err(format!(
@@ -1334,13 +1353,13 @@ pub(super) fn theorem_application_bindings(
                     parameter.name(),
                     describe_interface_type(parameter_type),
                     crate::surface::diagnostics::describe_program_value(
-                        &value,
+                        native,
                         ParameterBinding::new(&naming_parameters, &naming_arguments)
                     ),
-                    crate::kernel::program_type_spelling(value.program_type())
+                    crate::kernel::program_type_spelling(native.program_type())
                 ));
             }
-            values.insert(parameter.name().to_string(), value);
+            values.insert_retained(parameter.name().to_string(), value);
         }
     }
     Ok((values, array_refs, algebraic_values, integer_values))
@@ -1778,7 +1797,7 @@ theorem nested_count(value: int32) {
         let theorem = &parsed.theorem_definitions()[0];
         let pre_state = ExecutionState::new().with_local("x", int32(7u32));
         let post_state = pre_state.clone().with_local("x", int32(9u32));
-        let values = BTreeMap::new();
+        let values = ProgramValueBindings::new();
         let arrays = BTreeMap::new();
         let algebraic = BTreeMap::new();
         let integers = PersistentBinderMap::default();

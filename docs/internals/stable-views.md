@@ -194,9 +194,11 @@ Each effect range is compared with the full checked view frontier; an effect
 and a view reserved from distinct caller occurrences are disjoint by the
 partition invariant, while the same occurrence needs an arithmetic proof.
 Every path that retires an allocation, definite or of undecided continuity,
-consults the ledger that carries the call's own loans. Automatic lifetime ends
-also consult it: normal scope exit, return, break, continue, jump, exception,
-and the retained proof event refuse to retire a block with a live loan.
+consults the ledger that carries the call's own loans. Scope exits, function
+returns and throws, and temporary cleanup check that ledger by automatic
+object identity. A live loan pins its backing object until the loan ends,
+including when its protected bytes have symbolic bounds. Retained proof
+events repeat the same check.
 The same ledger already guards direct local assignments and alias stores,
 including same-value writes. A nested reader reborrows the local loan through
 its exact resource binding. No new surface clause is needed.

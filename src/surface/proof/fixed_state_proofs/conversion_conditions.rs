@@ -69,7 +69,7 @@ impl StatedForm<'_> {
 pub(in crate::surface::proof) struct StatedSite<'a> {
     form: StatedForm<'a>,
     state: &'a ExecutionState,
-    values: &'a BTreeMap<String, ProgramValue>,
+    values: &'a ProgramValueBindings,
     /// The `Integer` bindings in scope where the statement is written, which
     /// name a theorem's `Integer` binders.
     integer_values: Option<&'a PersistentBinderMap<crate::kernel::SpecIntegerExpression>>,
@@ -86,7 +86,7 @@ impl<'a> StatedSite<'a> {
     pub(in crate::surface::proof) fn new(
         form: StatedForm<'a>,
         state: &'a ExecutionState,
-        values: &'a BTreeMap<String, ProgramValue>,
+        values: &'a ProgramValueBindings,
     ) -> Self {
         Self {
             form,

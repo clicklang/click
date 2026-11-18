@@ -5536,6 +5536,7 @@ impl SymbolicMemory {
         destination: &Address,
         bytes: u32,
         field_bytes: &[(u32, std::num::NonZeroU8)],
+        fields: &[AggregateField],
     ) -> Result<Self, UndefinedBehavior> {
         if !source.base.is_local_block()
             || !destination.base.is_local_block()
@@ -5593,6 +5594,29 @@ impl SymbolicMemory {
                         ProgramValue::UInt8(crate::kernel::eval::mask_byte(value, mask))
                     });
                     initialized.set_partial(to, mask, value);
+                }
+            }
+        }
+        for field in fields {
+            let width = field.program_type().byte_width();
+            let from = source.offset_by_bytes(field.offset_bytes());
+            let to = destination.offset_by_bytes(field.offset_bytes());
+            initialized
+                .copy_exact_range_from(&snapshot.heap.initialized, &from, &to, width)
+                .expect("checked local member range");
+            let start = from.offset.as_const().expect("exact local member");
+            for (address, value) in snapshot
+                .cells
+                .concrete()
+                .range(from.clone()..from.offset_by_bytes(width))
+            {
+                crate::instrumentation::record_deterministic_work(1);
+                let offset = address.offset.as_const().expect("exact cell offset") - start;
+                let relative = u32::try_from(offset).expect("cell starts within the member");
+                if value.byte_width() <= width - relative {
+                    let target = to.offset_by_bytes(relative);
+                    initialized.record(&target, value.byte_width());
+                    Arc::make_mut(&mut self.cells).insert_retained(target, value.clone());
                 }
             }
         }
@@ -10017,6 +10041,29 @@ impl ExecutionState {
         self
     }
 
+    /// Bind an existing producer for proof-side expression lowering through
+    /// the same local type/qualifier policy as `with_local`.
+    pub(crate) fn with_retained_local(
+        mut self,
+        name: impl Into<BindingName>,
+        value: ExecutionValue,
+    ) -> Self {
+        if let ExecutionValue::Native(value) = value {
+            return self.with_local(name, value);
+        }
+        let program_type = value.program_type();
+        self.locals.set_retained_typed_with_all_qualifiers(
+            name,
+            value,
+            program_type,
+            false,
+            false,
+            false,
+            false,
+        );
+        self
+    }
+
     pub fn with_memory(mut self, memory: SymbolicMemory) -> Self {
         self.set_memory(memory);
         self
@@ -10301,6 +10348,16 @@ impl ExecutionState {
         self.loan_ledger
             .as_ref()
             .and_then(|ledger| ledger.memory_access_refusal(range, assumptions, operation))
+    }
+
+    pub(in crate::kernel) fn automatic_storage_loan_refusal(
+        &self,
+        block: &AddressBase,
+    ) -> Option<RuntimeError> {
+        self.loan_ledger
+            .as_ref()?
+            .automatic_storage_retirement_refusal(block, self.memory.block_size(block)?)
+            .map(|refusal| RuntimeError::LoanRefusal(Box::new(refusal)))
     }
 
     pub fn locals(&self) -> &LocalEnvironment {
