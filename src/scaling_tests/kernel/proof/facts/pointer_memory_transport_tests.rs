@@ -9,14 +9,14 @@ fn full_pointer_fact_transport_checks_provenance_and_the_whole_read() {
     let before = intern_memory(SymbolicMemory::new().with_block(cell.base.clone(), 8));
     let after = intern_memory(before.memory().clone().with_block("other-local", 4));
     let pointer = |memory: &SharedMemory| {
-        PointerValue::from_read(
+        Pointer::from_read(
             Address::loaded_value(memory, &cell),
             ProgramType::Int32Pointer,
             memory,
             &cell,
         )
     };
-    let rhs = PointerValue::new(
+    let rhs = Pointer::new(
         Address::symbolic(Variable(991_100)),
         ProgramType::Int32Pointer,
     );

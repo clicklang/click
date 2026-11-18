@@ -254,7 +254,7 @@ impl MemoryStateLabels {
 
     fn legend_value(&mut self, value: &ProgramValue) -> String {
         match value {
-            ProgramValue::Pointer(pointer) => self.pointer_value_name(pointer.pointer()),
+            ProgramValue::Pointer(pointer) => self.pointer_value_name(pointer.address()),
             ProgramValue::Int32(bits)
             | ProgramValue::UInt32(bits)
             | ProgramValue::Int64(bits)
@@ -737,7 +737,7 @@ mod tests {
                 "select",
                 vec![PureFunctionArgument::ArrayRef {
                     memory,
-                    pointer: ProgramValue::Pointer(crate::kernel::PointerValue::new(
+                    pointer: ProgramValue::Pointer(crate::kernel::Pointer::new(
                         base.clone(),
                         crate::kernel::ProgramType::Int32Pointer,
                     )),

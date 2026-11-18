@@ -419,20 +419,20 @@ impl PureFactContext {
             }
             if self.pointer_provenance_match(left, right)
                 && (crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
-                    left.pointer(),
-                    right.pointer(),
+                    left.address(),
+                    right.address(),
                     self,
                 ) || crate::kernel::memory_history::pointer_read_has_recorded_value(
-                    left.pointer(),
-                    right.pointer(),
+                    left.address(),
+                    right.address(),
                     self,
                 ))
             {
                 return Some(true);
             }
             let address = self.decide(&ConditionTerm::pointer_equal(
-                left.pointer().clone(),
-                right.pointer().clone(),
+                left.address().clone(),
+                right.address().clone(),
             ));
             return match address {
                 Some(false) => Some(false),

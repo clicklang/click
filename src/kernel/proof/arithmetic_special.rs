@@ -2,7 +2,7 @@
 //! plans selecting those rules for ordinary proof expansion.
 use super::super::{
     Address, AddressBase, AddressOffset, ComparisonOperator, ConditionTerm, FloatClassification,
-    FloatCondition, MachineTerm, PointerValue, Proposition, SignedDefinedWidth,
+    FloatCondition, MachineTerm, Pointer, Proposition, SignedDefinedWidth,
 };
 
 use crate::kernel::binary_term;
@@ -1192,7 +1192,7 @@ fn pointer_translation(
     goal: &Proposition,
 ) -> bool {
     if let Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, right), true) = goal {
-        let same_domain = |a: &PointerValue, b: &PointerValue| {
+        let same_domain = |a: &Pointer, b: &Pointer| {
             a.provenance() == b.provenance()
                 && a.bounds() == b.bounds()
                 && a.bounds_are_known() == b.bounds_are_known()

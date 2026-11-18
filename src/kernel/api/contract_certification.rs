@@ -1540,7 +1540,7 @@ fn program_function_contract_entry_facts(
                     return Err("array reference entry argument is not a pointer value".into());
                 };
                 if let Some(coverage) = pointer.opaque_coverage_fact(&MemoryRange::new_wide(
-                    pointer.pointer().clone(),
+                    pointer.address().clone(),
                     MachineTerm::uint64_constant(0),
                     MachineTerm::uint64_constant(u64::from(bytes)),
                     1,
@@ -1582,7 +1582,7 @@ fn program_function_contract_entry_facts(
                 ),
             );
             if let Some(coverage) = pointer.opaque_coverage_fact(&MemoryRange::new_wide(
-                pointer.pointer().clone(),
+                pointer.address().clone(),
                 MachineTerm::uint64_constant(0),
                 length.clone(),
                 width,
@@ -1763,6 +1763,19 @@ fn program_function_contract_entry_facts(
                 ));
             }
         };
+    let required_resources = crate::kernel::admit_declared_entry_resources(
+        required_resources,
+        &required_entry_clauses,
+        &entry_state,
+        function.composite_resource_definitions(),
+        &assumptions,
+    )
+    .map_err(|error| {
+        format!(
+            "could not construct the contract entry partition: {}",
+            describe_certification_runtime_error(&error),
+        )
+    })?;
     // The entry partition: a transferred clause and a borrowed `views`
     // clause of this contract denote disjoint memory. The proof side spells
     // the same facts from the same clause list
@@ -3268,12 +3281,12 @@ pub(crate) fn condition_holds_by_memory_resolution(
             .contains_known(&Proposition::ConditionIs(condition.clone(), true))
             || (assumptions.pointer_provenance_match(left, right)
                 && (pointers_proven_equal_for_memory_resolution(
-                    left.pointer(),
-                    right.pointer(),
+                    left.address(),
+                    right.address(),
                     assumptions,
                 ) || crate::kernel::memory_history::complete_pointer_reads_equal_across_frame(
-                    left.pointer(),
-                    right.pointer(),
+                    left.address(),
+                    right.address(),
                     assumptions,
                 ))),
         (ConditionTerm::PointerEqual(left, right), true) => {

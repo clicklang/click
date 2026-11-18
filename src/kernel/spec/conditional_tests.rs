@@ -244,7 +244,7 @@ fn exact_rewrites_keep_opaque_conditional_observation_identity() {
 #[test]
 fn pointer_conditional_handoffs_keep_selected_roots_metadata_and_refusals() {
     let _session = VerificationSession::enter();
-    let pointer = PointerValue::new(
+    let pointer = Pointer::new(
         Address::symbolic(Variable(1026100)),
         ProgramType::Int32Pointer,
     )
@@ -273,7 +273,7 @@ fn pointer_conditional_handoffs_keep_selected_roots_metadata_and_refusals() {
             assert!(result.pointer().unwrap().pointee_volatile());
         }
     }
-    let distinct = SpecValue::Native(ProgramValue::Pointer(PointerValue::new(
+    let distinct = SpecValue::Native(ProgramValue::Pointer(Pointer::new(
         Address::symbolic(Variable(1026102)),
         ProgramType::Int32Pointer,
     )));

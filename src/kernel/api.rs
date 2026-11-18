@@ -1,3 +1,4 @@
+pub(crate) use super::functions::admit_declared_entry_resources;
 use super::functions::{
     apply_verified_contract_resource_transition,
     construct_program_function_resource as construct_c_function_resource_checked,
@@ -7566,8 +7567,8 @@ pub fn contract_refinement_context(
     };
     if pointer.program_type() != target.function_pointer_type()
         || pointer.program_type() != source.function_pointer_type()
-        || !matches!(pointer.pointer().base, AddressBase::FunctionSymbolic(_))
-        || pointer.pointer().offset != AddressOffset::Constant(0)
+        || !matches!(pointer.address().base, AddressBase::FunctionSymbolic(_))
+        || pointer.address().offset != AddressOffset::Constant(0)
     {
         return None;
     }
@@ -7646,7 +7647,7 @@ pub(crate) fn prove_program_function_contract_refinement(
     }
     let theorem = match &context.source_contract {
         None => {
-            if context.pointer.pointer().base
+            if context.pointer.address().base
                 != AddressBase::Function(context.function_name.clone())
             {
                 return None;
@@ -7654,7 +7655,7 @@ pub(crate) fn prove_program_function_contract_refinement(
             conclusion
         }
         Some(source) => {
-            let AddressBase::FunctionSymbolic(variable) = &context.pointer.pointer().base else {
+            let AddressBase::FunctionSymbolic(variable) = &context.pointer.address().base else {
                 return None;
             };
             let premise = Proposition::Predicate {
@@ -7769,12 +7770,12 @@ pub(crate) fn prove_executed_contract_refinement(
     else {
         return None;
     };
-    let AddressBase::FunctionSymbolic(variable) = pointer.pointer().base else {
+    let AddressBase::FunctionSymbolic(variable) = pointer.address().base else {
         return None;
     };
     if name != &target.predicate_name()
         || pointer.program_type() != target.function_pointer_type()
-        || pointer.pointer().offset != AddressOffset::Constant(0)
+        || pointer.address().offset != AddressOffset::Constant(0)
     {
         return None;
     }
@@ -7941,12 +7942,12 @@ pub(crate) fn prove_executed_concrete_contract_refinement(
     else {
         return None;
     };
-    if pointer.pointer().base != AddressBase::Function(callee_name.to_string()) {
+    if pointer.address().base != AddressBase::Function(callee_name.to_string()) {
         return None;
     }
     if name != &target.predicate_name()
         || pointer.program_type() != target.function_pointer_type()
-        || pointer.pointer().offset != AddressOffset::Constant(0)
+        || pointer.address().offset != AddressOffset::Constant(0)
     {
         return None;
     }

@@ -1064,8 +1064,8 @@ not a change to proof rules or snapshot architecture.
 
 | Subslice | Owning stores | Status |
 | --- | --- | --- |
-| 10p1 | `SequenceTermNode::Literal` evaluated elements and their evaluator/substitution handoffs. | Published as [PR #3217](https://github.com/clicklang/click/pull/3217), with auto-merge requested; 437 focused checks, all 1,909 regular scaling cases, selected proofs, fact stability and quality passed. |
-| 10p2 | Composite/token/instance `ResourceArguments`, `ResourceDescription` arguments and remaining Integer/algebraic resource fields. Preserve argument order, native identity classes and nominal resource identities. | Split: 10p2a implements Integer/algebraic fields (413 focused checks, all 1,915 regular scaling cases, resource-field proofs, fact stability and quality passed); 10p2b covers argument stores. |
+| 10p1 | `SequenceTermNode::Literal` evaluated elements and their evaluator/substitution handoffs. | Landed in [PR #3217](https://github.com/clicklang/click/pull/3217); all pushed commits verified upstream; 437 focused checks, all 1,909 regular scaling cases, selected proofs, fact stability and quality passed. |
+| 10p2 | Composite/token/instance `ResourceArguments`, `ResourceDescription` arguments and remaining Integer/algebraic resource fields. Preserve argument order, native identity classes and nominal resource identities. | Split: 10p2a landed in [PR #3220](https://github.com/clicklang/click/pull/3220); all seven pushed commits verified upstream; it implements Integer/algebraic fields (413 focused checks, all 1,915 regular scaling cases, resource-field proofs, fact stability and quality passed); 10p2b implements argument stores (427 focused checks, all 1,917 regular scaling cases and quality passed; full regular proofs/fact stability passed). |
 | 10p3 | `MemoryRange` bounds and `AllocationSize` byte counts. Preserve signed/wide reading, bound provenance and existing identity/hash contracts. | Implemented locally; all 524 focused checks, all 1,918 regular scaling cases, selected wide-range/allocation proofs, fact stability and quality passed. |
 | 10p4 | `IteratedMemory` endpoints, guard comparison value and selected holes. Preserve checked ownership transitions and opaque owner/address identities. | Inventoried; pending. |
 | 10p5 | `PublicationRight::observed` and `ConditionalMutexGuard::held`. Preserve channel/acquisition identities and protocol rules. | Inventoried; pending. |
@@ -1126,7 +1126,28 @@ All 1,915 regular scaling cases passed (two isolated and 1,913 remaining).
 The resource-field proof selection, fact stability (zero changed terms/paths)
 and quality checks passed; validation script exit is zero. PR delivery follows
 10p1. After integrating upstream `3557c0453`, all 413 affected checks and
-quality passed again. Full nightly was not run.
+quality passed again. [PR #3220](https://github.com/clicklang/click/pull/3220)
+has auto-merge requested. Full nightly was not run.
+
+### 10p2b Evaluated resource arguments
+
+Composite/token, instance and resource-description argument arrays now use the
+same immutable typed carrier as fields. Evaluating Composite/Token arguments
+stores existing `ExecutionValue` producers directly; instance, description and
+reference copies share that storage. Borrowed argument walkers, exact-arity
+pointer patterns and equality consumers use selected views. Native source DTOs
+remain `NativeResourceArguments`; native slice readers use an explicit borrowed
+or temporary `native_values` boundary rather than an enclosing cached array.
+Source resource ASTs and captured-entry expression rewrites remain source inputs.
+
+The actual evaluator regression was red with three machine exports and now
+passes with the original root and zero exports. Growing-DAG tests cover the
+evaluator and repeated instance/description/reference handoffs; exact native
+Eq/Ord/Hash/debug, pointer provenance and existing nominal identities remain
+unchanged. All 427 focused checks, all 1,917 regular scaling checks (two isolated
+and 1,915 remaining), and quality passed. All 5,599 regular proof fixtures passed (815.69 seconds), with zero changed
+terms or selected paths in the fact-stability report (121 legitimate refusals).
+Full nightly was not run.
 
 ### 10p3 Common range and allocation operands
 
@@ -1148,7 +1169,7 @@ The evaluator regression was red with six machine exports; the first fixed
 build passed all 524 focused checks. Native exact-syntax tests and growing-DAG
 range/token/size handoffs passed. Final width-refusal checks ensure a query for
 the wrong format returns before requesting native output. All 1,918 regular
-scaling cases and all 524 focused checks passed on the final tree. Selected
+scaling cases and all 524 focused checks passed on the final tree. All 14 selected
 wide-range/allocation proofs, fact stability (zero changed terms/paths), and
 quality passed. No syntax, proof-rule, search-budget or snapshot change.
 

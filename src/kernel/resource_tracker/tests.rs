@@ -1658,8 +1658,8 @@ fn complete_pointer_conditions_keep_read_order() {
     let mut right = Address::loaded_value(&memory, &at(block("local:f:pointer_right"), 0));
     right.offset = offset("local:f:i");
     let source = ConditionTerm::PointerValueEqual(
-        Box::new(PointerValue::new(left, ProgramType::Int32Pointer)),
-        Box::new(PointerValue::new(right, ProgramType::Int32Pointer)),
+        Box::new(Pointer::new(left, ProgramType::Int32Pointer)),
+        Box::new(Pointer::new(right, ProgramType::Int32Pointer)),
     );
     let root = KernelTermImport::default().condition(&source);
     let mut expected = Vec::new();
@@ -1685,7 +1685,8 @@ fn boolean_reads_report_only_the_one_byte_cell() {
             4,
         ),
     };
-    let source = ConditionTerm::BoolLoad(memory, Box::new(pointer));
+    let source =
+        ConditionTerm::BoolLoad(crate::kernel::ProgramPoint::at(&memory), Box::new(pointer));
     let root = KernelTermImport::default().condition(&source);
     let mut native = Vec::new();
     let mut shared = Vec::new();

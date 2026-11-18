@@ -184,7 +184,7 @@ fn algebraic_read_fold_alpha_keys_ignore_unrelated_cells() {
         let read = AlgebraicTerm {
             algebraic_type: algebraic_type.clone(),
             node: AlgebraicTermNode::MemoryLoad {
-                memory: memory.clone(),
+                point: crate::kernel::ProgramPoint::at(&memory.clone()),
                 pointer: Box::new(Address {
                     base: AddressBase::Heap(992_000),
                     offset: AddressOffset::Constant(0),

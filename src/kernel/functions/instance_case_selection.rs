@@ -495,11 +495,11 @@ pub(super) fn selected_instance_resource_load_values(
                     };
                     resource_context_has_read(
                         &owned_memory,
-                        address.pointer(),
+                        address.address(),
                         value_type.byte_width(),
                         assumptions,
                     )
-                    .then(|| ((address.pointer().clone(), *value_type), value))
+                    .then(|| ((address.address().clone(), *value_type), value))
                 });
             let Some((key, value)) = candidate else {
                 continue;

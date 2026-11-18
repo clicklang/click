@@ -4802,7 +4802,7 @@ impl PureFactContext {
     /// classes select candidates; only full bounds identity admits evidence.
     pub(in crate::kernel) fn opaque_pointer_covers(
         &self,
-        value: &PointerValue,
+        value: &Pointer,
         position: &Address,
         bytes: u32,
     ) -> bool {
@@ -4820,14 +4820,14 @@ impl PureFactContext {
                 else {
                     return false;
                 };
-                if !self.bounds_owners_equal(origin, source.pointer()) {
+                if !self.bounds_owners_equal(origin, source.address()) {
                     return false;
                 }
                 let covered = if let Some(range) = SubobjectBounds::covered_wide_range(fact) {
                     let contains = |pointer| {
                         crate::kernel::primitives::pointer_formation_in_range(
                             pointer,
-                            value.pointer(),
+                            value.address(),
                             &range,
                             self,
                         )
@@ -4847,7 +4847,7 @@ impl PureFactContext {
                         };
                         contains(position, bytes)
                             && (bytes > 0
-                                || contains(value.pointer(), 0)
+                                || contains(value.address(), 0)
                                 || contains(position, 1)
                                 || self.decide(&ConditionTerm::signed_less_than(
                                     MachineTerm::constant(0),
@@ -6229,7 +6229,7 @@ mod shallow_composition_separation_tests {
         let boxed = |variable: u64| Resource::Composite {
             name: "boxed".into(),
             arguments: vec![crate::kernel::AlgebraicValue::Program(
-                crate::kernel::ProgramValue::Pointer(crate::kernel::PointerValue::new(
+                crate::kernel::ProgramValue::Pointer(crate::kernel::Pointer::new(
                     symbolic(variable),
                     crate::kernel::ProgramType::Int32Pointer,
                 )),
