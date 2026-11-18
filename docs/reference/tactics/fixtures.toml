@@ -10,7 +10,7 @@ needle = "match c.model {"
 [[form]]
 id = "both"
 path = "mdtests/proof_both_and.md"
-needle = "both { normalize(); } and {"
+needle = "left => { normalize(); }"
 
 [[form]]
 id = "mark"
@@ -165,7 +165,7 @@ needle = "witness(0)"
 [[form]]
 id = "obtain"
 path = "mdtests/integer_exists_choose.md"
-needle = "obtain (candidate: Integer) { candidate == candidate }"
+needle = "let candidate = obtain(exists (k: Integer) { k == k });"
 
 [[form]]
 id = "known"

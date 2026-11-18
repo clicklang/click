@@ -34,14 +34,14 @@ use super::loans::MutexUseLoan;
 use super::loans::{LoanHoldId, LoanLedger, LoanParticipantId, MutexUseBinding};
 use crate::persistent::PersistentMap;
 
-use super::{ConditionTerm, ExecutionState, Pointer, PureFactContext, Resource, ResourceFact};
+use super::{Address, ConditionTerm, ExecutionState, PureFactContext, Resource, ResourceFact};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) enum MutexTransitionError {
     NotInitialized,
-    MissingGuard(Pointer),
-    MissingLive(Pointer),
-    MissingUse(Pointer),
+    MissingGuard(Address),
+    MissingLive(Address),
+    MissingUse(Address),
     MissingInvariant(ResourceFact),
     /// The selected state is owned but is not the protected type.
     MismatchedInvariant {
@@ -59,7 +59,7 @@ impl From<&'static str> for MutexTransitionError {
 }
 
 impl MutexTransitionError {
-    pub(super) fn into_runtime_error(self, mutex: &Pointer) -> super::RuntimeError {
+    pub(super) fn into_runtime_error(self, mutex: &Address) -> super::RuntimeError {
         match self {
             Self::NotInitialized => super::RuntimeError::UninitializedMutex {
                 mutex: mutex.clone(),
@@ -144,7 +144,7 @@ impl MutexInitializationId {
         .map(Self)
         .map_err(|_| "mutex initialization identity space exhausted")
     }
-    pub(super) fn description(self, mutex: &Pointer) -> ResourceFact {
+    pub(super) fn description(self, mutex: &Address) -> ResourceFact {
         ResourceFact::own(Resource::MutexLive(super::MutexIdentity {
             epoch: Some(self.0),
             mutex: mutex.clone(),
@@ -153,13 +153,13 @@ impl MutexInitializationId {
 }
 
 impl MutexInitialization {
-    fn resource_fact(self, mutex: &Pointer) -> ResourceFact {
+    fn resource_fact(self, mutex: &Address) -> ResourceFact {
         self.0.description(mutex)
     }
 
     fn fresh(storage_bytes: u32) -> Result<Self, &'static str> {
         if storage_bytes == 0 {
-            return Err("mutex storage extent must be nonzero");
+            return Err("mutex storage size must be nonzero");
         }
         Ok(Self(MutexInitializationId::fresh()?, storage_bytes))
     }
@@ -203,24 +203,24 @@ enum ProvenanceKind {
 }
 
 impl ProvenanceKind {
-    fn of(block: &super::PointerBlock) -> Self {
-        use super::PointerBlock;
+    fn of(block: &super::AddressBase) -> Self {
+        use super::AddressBase;
         match block {
-            PointerBlock::ContractResult
-            | PointerBlock::ContractException
-            | PointerBlock::AggregateReturn { .. }
-            | PointerBlock::AutomaticLocal { .. }
-            | PointerBlock::ReferenceCarrier { .. } => Self::Local,
-            PointerBlock::Concrete(name) if PointerBlock::is_local_name(name) => Self::Local,
-            PointerBlock::StaticObject { .. } | PointerBlock::Concrete(_) => Self::Global,
-            PointerBlock::Heap(_) | PointerBlock::Temporary(_) => Self::Fresh,
-            PointerBlock::ExternalArgument | PointerBlock::ExternalObject(_) => Self::External,
-            PointerBlock::Symbolic(_)
-            | PointerBlock::LoadedPointer(_)
-            | PointerBlock::PureFunctionApplication(_) => Self::Symbolic,
-            PointerBlock::Function(_)
-            | PointerBlock::FunctionSymbolic(_)
-            | PointerBlock::StringLiteral { .. } => Self::Other,
+            AddressBase::ContractResult
+            | AddressBase::ContractException
+            | AddressBase::AggregateReturn { .. }
+            | AddressBase::AutomaticLocal { .. }
+            | AddressBase::ReferenceCarrier { .. } => Self::Local,
+            AddressBase::Concrete(name) if AddressBase::is_local_name(name) => Self::Local,
+            AddressBase::StaticObject { .. } | AddressBase::Concrete(_) => Self::Global,
+            AddressBase::Heap(_) | AddressBase::Temporary(_) => Self::Fresh,
+            AddressBase::ExternalArgument | AddressBase::ExternalObject(_) => Self::External,
+            AddressBase::Symbolic(_)
+            | AddressBase::LoadedPointer(_)
+            | AddressBase::PureFunctionApplication(_) => Self::Symbolic,
+            AddressBase::Function(_)
+            | AddressBase::FunctionSymbolic(_)
+            | AddressBase::StringLiteral { .. } => Self::Other,
         }
     }
 
@@ -241,46 +241,46 @@ impl ProvenanceKind {
 
 struct MutexLedgerStorage {
     identity: u64,
-    entries: PersistentMap<Pointer, MutexEntry>,
-    direct_loop_carriers: PersistentMap<Pointer, Arc<direct_loop_guard::DirectLoopGuard>>,
-    direct_loop_selection: Arc<Vec<Pointer>>,
-    by_block: PersistentMap<super::PointerBlock, PersistentMap<Pointer, u32>>,
+    entries: PersistentMap<Address, MutexEntry>,
+    direct_loop_carriers: PersistentMap<Address, Arc<direct_loop_guard::DirectLoopGuard>>,
+    direct_loop_selection: Arc<Vec<Address>>,
+    by_block: PersistentMap<super::AddressBase, PersistentMap<Address, u32>>,
     reserved: MutexStorageIndex,
-    by_provenance: PersistentMap<ProvenanceKind, PersistentMap<Pointer, u32>>,
+    by_provenance: PersistentMap<ProvenanceKind, PersistentMap<Address, u32>>,
     /// Initializations whose symbolic provenance may name any automatic object.
     /// Kept separately so a scope exit never scans unrelated concrete mutexes.
-    ambiguous_automatic_storage: PersistentMap<Pointer, ()>,
+    ambiguous_automatic_storage: PersistentMap<Address, ()>,
     /// Initializations that consumed explicit ownership of their storage
     /// bytes. Until destruction returns it nobody owns that storage, so
     /// ownership alone keeps every write and transferred footprint off it.
-    consumed_storage: PersistentMap<Pointer, ()>,
+    consumed_storage: PersistentMap<Address, ()>,
     locked_count: usize,
     return_obligation_count: usize,
     /// A loop join need only revisit mutexes changed since its head. Keeping
     /// this path avoids scanning unrelated mutexes on every back edge.
     predecessor: Option<Arc<MutexLedgerStorage>>,
-    changed_mutex: Option<Pointer>,
+    changed_mutex: Option<Address>,
 }
 
 /// Dyadic byte intervals select overlapping storage without visiting unrelated
 /// mutexes in the same object. Symbolic bounds remain conservative candidates.
 #[derive(Clone, Default)]
 struct MutexStorageIndex {
-    intervals: PersistentMap<super::ResourceMemoryIntervalNode, PersistentMap<Pointer, u32>>,
-    subtrees: PersistentMap<super::ResourceMemoryIntervalNode, PersistentMap<Pointer, u32>>,
-    symbolic: PersistentMap<super::PointerBlock, PersistentMap<Pointer, u32>>,
+    intervals: PersistentMap<super::ResourceMemoryIntervalNode, PersistentMap<Address, u32>>,
+    subtrees: PersistentMap<super::ResourceMemoryIntervalNode, PersistentMap<Address, u32>>,
+    symbolic: PersistentMap<super::AddressBase, PersistentMap<Address, u32>>,
 }
 
-fn storage_range(mutex: &Pointer, bytes: u32) -> super::MemoryRange {
+fn storage_range(mutex: &Address, bytes: u32) -> super::MemoryRange {
     super::MemoryRange::new_with_element_width(mutex.clone(), 0u32.into(), bytes.into(), 1)
 }
 
 impl MutexStorageIndex {
-    fn changed(&self, mutex: &Pointer, bytes: u32, insert: bool) -> Self {
+    fn changed(&self, mutex: &Address, bytes: u32, insert: bool) -> Self {
         fn update<K: Ord + Clone>(
-            map: &mut PersistentMap<K, PersistentMap<Pointer, u32>>,
+            map: &mut PersistentMap<K, PersistentMap<Address, u32>>,
             key: K,
-            mutex: &Pointer,
+            mutex: &Address,
             bytes: u32,
             insert: bool,
         ) {
@@ -308,13 +308,7 @@ impl MutexStorageIndex {
                 update(&mut next.subtrees, node, mutex, bytes, insert);
             }
         } else {
-            update(
-                &mut next.symbolic,
-                mutex.block.clone(),
-                mutex,
-                bytes,
-                insert,
-            );
+            update(&mut next.symbolic, mutex.base.clone(), mutex, bytes, insert);
         }
         next
     }
@@ -322,7 +316,7 @@ impl MutexStorageIndex {
     fn overlapping(
         &self,
         range: &super::MemoryRange,
-    ) -> Option<std::collections::BTreeMap<Pointer, u32>> {
+    ) -> Option<std::collections::BTreeMap<Address, u32>> {
         let nodes = super::primitives::memory_interval_nodes(range)?;
         let mut candidates = std::collections::BTreeMap::new();
         for node in nodes {
@@ -344,7 +338,7 @@ impl MutexStorageIndex {
                 );
             }
         }
-        if let Some(bucket) = self.symbolic.get(&range.base().block) {
+        if let Some(bucket) = self.symbolic.get(&range.base().base) {
             candidates.extend(
                 bucket
                     .iter()
@@ -397,11 +391,11 @@ pub(in crate::kernel) fn consumed_storage_refusal(
 /// The guard projection is computed at independent entry, not at each call.
 pub(super) fn abstract_guard_acquisition_refusal(
     state: &ExecutionState,
-    mutex: &Pointer,
+    mutex: &Address,
     assumptions: &PureFactContext,
 ) -> Option<super::RuntimeError> {
     let inputs = state.mutex_input_reservations.as_ref()?;
-    if inputs.guard_unnamed && !mutex.block.is_local_block() {
+    if inputs.guard_unnamed && !mutex.base.is_local_block() {
         return Some(super::RuntimeError::FunctionContract(
             "cannot establish that the mutex is available: an input guard has an unresolved mutex address".into(),
         ));
@@ -430,7 +424,7 @@ fn ledger_storage_write_refusal(
     if !ledger.has_any_mutex() || write.bound_terms().0 == write.bound_terms().1 {
         return None;
     }
-    let block = &write.base().block;
+    let block = &write.base().base;
     let direct = ledger
         .storage
         .reserved
@@ -450,7 +444,7 @@ fn ledger_storage_write_refusal(
         .iter()
         .filter_map(|provenance| ledger.storage.by_provenance.get(provenance))
         .flat_map(|bucket| bucket.iter())
-        .filter(|(mutex, _)| &mutex.block != block && !mutex.block.proven_distinct(block));
+        .filter(|(mutex, _)| &mutex.base != block && !mutex.base.proven_distinct(block));
     for (mutex, bytes) in direct.iter().chain(possible_aliases) {
         crate::instrumentation::record_deterministic_work(1);
         if !include_consumed && ledger.storage_consumed(mutex) {
@@ -496,8 +490,8 @@ pub(super) struct MutexInputReservations {
     unnamed: bool,
     guard_ledger: MutexLedger,
     guard_unnamed: bool,
-    guards: PersistentMap<Pointer, ResourceFact>,
-    lifetimes: PersistentMap<Pointer, ResourceFact>,
+    guards: PersistentMap<Address, ResourceFact>,
+    lifetimes: PersistentMap<Address, ResourceFact>,
     helper_return: Option<Arc<helper_contracts::HelperReturnPermission>>,
 }
 
@@ -608,7 +602,7 @@ impl MutexInputReservations {
 /// An acquisition identity. The private fields cannot be synthesized from a
 /// mutex address or an integer value copied by C.
 pub(super) struct MutexGuard {
-    mutex: Pointer,
+    mutex: Address,
     initialization: MutexInitialization,
     epoch: u64,
 }
@@ -729,7 +723,7 @@ impl MutexGuard {
 /// not establish ownership; callers must check the ordinary resource context.
 pub(super) fn live_resource(
     state: &ExecutionState,
-    mutex: &Pointer,
+    mutex: &Address,
     abstract_entry: bool,
 ) -> Option<ResourceFact> {
     if let Some(ledger) = &state.mutex_ledger {
@@ -755,7 +749,7 @@ pub(super) fn live_resource(
 }
 
 /// A description is not authority: only a rooted owned occurrence permits use.
-pub(super) fn use_resource(state: &ExecutionState, mutex: &Pointer) -> ResourceFact {
+pub(super) fn use_resource(state: &ExecutionState, mutex: &Address) -> ResourceFact {
     state
         .resources
         .mutex_use_candidate_at(mutex)
@@ -774,7 +768,7 @@ pub(super) fn use_resource(state: &ExecutionState, mutex: &Pointer) -> ResourceF
 /// assumptions are inputs; execution still requires checked resource transfer.
 pub(super) fn guard_resource(
     state: &ExecutionState,
-    mutex: &Pointer,
+    mutex: &Address,
     abstract_entry: bool,
 ) -> Option<ResourceFact> {
     if let Some(guard) = state
@@ -809,7 +803,7 @@ pub(super) fn guard_resource(
 /// entry guard or another outstanding local acquisition must be separate.
 pub(super) fn acquisition_availability_refusal(
     state: &ExecutionState,
-    mutex: &Pointer,
+    mutex: &Address,
     assumptions: &PureFactContext,
 ) -> Option<MutexTransitionError> {
     if abstract_guard_acquisition_refusal(state, mutex, assumptions).is_some()
@@ -831,7 +825,7 @@ pub(super) fn acquisition_availability_refusal(
 /// objects require ordinary explicit memory ownership.
 pub(super) fn initialization_storage_refusal(
     state: &ExecutionState,
-    mutex: &Pointer,
+    mutex: &Address,
     bytes: u32,
     alignment: u32,
     assumptions: &PureFactContext,
@@ -841,7 +835,7 @@ pub(super) fn initialization_storage_refusal(
         super::MemoryRange::new_with_element_width(mutex.clone(), 0u32.into(), bytes.into(), 1);
     let automatic = storage_is_automatic(state, mutex, bytes, assumptions);
     if bytes == 0
-        || state.memory.is_read_only_block(&resolved.block)
+        || state.memory.is_read_only_block(&resolved.base)
         || state.memory.is_ended_local_address(&resolved)
         || state
             .memory
@@ -890,12 +884,12 @@ pub(super) fn initialization_storage_refusal(
 /// by its scope rather than by an explicit memory resource.
 pub(super) fn storage_is_automatic(
     state: &ExecutionState,
-    mutex: &Pointer,
+    mutex: &Address,
     bytes: u32,
     assumptions: &PureFactContext,
 ) -> bool {
     let resolved = assumptions.equality_graph.storage_address(mutex);
-    resolved.block.is_local_block() && state.memory.access_in_bounds(&resolved, bytes)
+    resolved.base.is_local_block() && state.memory.access_in_bounds(&resolved, bytes)
 }
 
 /// A storage release must not leave a live initialization behind. Abstract
@@ -929,26 +923,26 @@ pub(super) fn storage_retirement_refusal(
 /// A symbolic pointer, however, can be constrained to a local address by a
 /// later equality. Treat all other non-object provenances conservatively too;
 /// initialization storage validity is a separate precondition still to check.
-fn may_alias_automatic_storage(block: &super::PointerBlock) -> bool {
-    use super::PointerBlock;
+fn may_alias_automatic_storage(block: &super::AddressBase) -> bool {
+    use super::AddressBase;
     match block {
-        PointerBlock::ContractResult
-        | PointerBlock::ContractException
-        | PointerBlock::AggregateReturn { .. }
-        | PointerBlock::StaticObject { .. }
-        | PointerBlock::AutomaticLocal { .. }
-        | PointerBlock::ReferenceCarrier { .. }
-        | PointerBlock::Concrete(_)
-        | PointerBlock::ExternalArgument
-        | PointerBlock::ExternalObject(_)
-        | PointerBlock::Heap(_)
-        | PointerBlock::Temporary(_) => false,
-        PointerBlock::Symbolic(_)
-        | PointerBlock::PureFunctionApplication(_)
-        | PointerBlock::LoadedPointer(_)
-        | PointerBlock::FunctionSymbolic(_)
-        | PointerBlock::Function(_)
-        | PointerBlock::StringLiteral { .. } => true,
+        AddressBase::ContractResult
+        | AddressBase::ContractException
+        | AddressBase::AggregateReturn { .. }
+        | AddressBase::StaticObject { .. }
+        | AddressBase::AutomaticLocal { .. }
+        | AddressBase::ReferenceCarrier { .. }
+        | AddressBase::Concrete(_)
+        | AddressBase::ExternalArgument
+        | AddressBase::ExternalObject(_)
+        | AddressBase::Heap(_)
+        | AddressBase::Temporary(_) => false,
+        AddressBase::Symbolic(_)
+        | AddressBase::PureFunctionApplication(_)
+        | AddressBase::LoadedPointer(_)
+        | AddressBase::FunctionSymbolic(_)
+        | AddressBase::Function(_)
+        | AddressBase::StringLiteral { .. } => true,
     }
 }
 
@@ -960,7 +954,7 @@ fn may_alias_automatic_storage(block: &super::PointerBlock) -> bool {
 pub(super) fn automatic_storage_refusal(
     state: &ExecutionState,
     local: &(impl std::fmt::Display + ?Sized),
-    block: &super::PointerBlock,
+    block: &super::AddressBase,
 ) -> Option<super::RuntimeError> {
     let ledger = state.mutex_ledger.as_ref()?;
     let direct = ledger
@@ -1038,7 +1032,7 @@ impl MutexContext {
     /// the ledger's write reservation instead.
     pub(super) fn consume_initialized_storage(
         mut self,
-        mutex: &Pointer,
+        mutex: &Address,
         bytes: u32,
         assumptions: &PureFactContext,
     ) -> Result<Self, &'static str> {
@@ -1062,7 +1056,7 @@ impl MutexContext {
     /// Initialize a mutex that transfers no Click resource at lock/unlock.
     pub(super) fn initialize_empty(
         &self,
-        mutex: Pointer,
+        mutex: Address,
         storage_bytes: u32,
     ) -> Result<Self, &'static str> {
         if self.state.preserves_mutex_protocols {
@@ -1103,7 +1097,7 @@ impl MutexContext {
     /// actual folded ownership. A declaration alone cannot publish authority.
     pub(super) fn publish_declared(
         &self,
-        mutex: &Pointer,
+        mutex: &Address,
         identity: super::Variable,
         definitions: &std::collections::BTreeMap<String, super::CompositeResourceDefinition>,
         assumptions: &PureFactContext,
@@ -1133,7 +1127,7 @@ impl MutexContext {
     #[cfg(test)]
     fn publish(
         &self,
-        mutex: Pointer,
+        mutex: Address,
         invariant: ResourceFact,
         assumptions: &PureFactContext,
         storage_bytes: u32,
@@ -1143,7 +1137,7 @@ impl MutexContext {
 
     fn publish_with_interface(
         &self,
-        mutex: Pointer,
+        mutex: Address,
         invariant: ResourceFact,
         assumptions: &PureFactContext,
         storage_bytes: u32,
@@ -1223,7 +1217,7 @@ impl MutexContext {
     #[cfg(test)]
     pub(super) fn lend_use(
         &self,
-        mutex: &Pointer,
+        mutex: &Address,
         assumptions: &PureFactContext,
     ) -> Result<(Self, MutexUseLoan), MutexTransitionError> {
         if self
@@ -1480,7 +1474,7 @@ impl MutexContext {
     /// can transport use occurrences and returned guard dependencies.
     pub(super) fn acquire_using(
         &self,
-        mutex: &Pointer,
+        mutex: &Address,
         usage: MutexUseBinding,
         assumptions: &PureFactContext,
     ) -> Result<(Self, MutexGuard), MutexTransitionError> {
@@ -1489,7 +1483,7 @@ impl MutexContext {
 
     pub(super) fn acquire(
         &self,
-        mutex: &Pointer,
+        mutex: &Address,
         assumptions: &PureFactContext,
     ) -> Result<(Self, MutexGuard), MutexTransitionError> {
         self.acquire_with_use(mutex, None, assumptions)
@@ -1497,7 +1491,7 @@ impl MutexContext {
 
     fn acquire_with_use(
         &self,
-        mutex: &Pointer,
+        mutex: &Address,
         usage: Option<MutexUseBinding>,
         assumptions: &PureFactContext,
     ) -> Result<(Self, MutexGuard), MutexTransitionError> {
@@ -1609,7 +1603,7 @@ impl MutexContext {
 
     pub(super) fn acquire_current(
         &self,
-        mutex: &Pointer,
+        mutex: &Address,
         assumptions: &PureFactContext,
     ) -> Result<Self, MutexTransitionError> {
         // The resource occurrence selects the loan; an address or a loan
@@ -1644,7 +1638,7 @@ impl MutexContext {
 
     pub(super) fn release_current(
         &self,
-        mutex: &Pointer,
+        mutex: &Address,
         assumptions: &PureFactContext,
     ) -> Result<Self, MutexTransitionError> {
         if let Some(opened) = self.open_direct_loop_guard(mutex, assumptions)? {
@@ -1698,7 +1692,7 @@ impl MutexContext {
 
     pub(super) fn destroy(
         &self,
-        mutex: &Pointer,
+        mutex: &Address,
         assumptions: &PureFactContext,
     ) -> Result<Self, MutexTransitionError> {
         if let Some(opened) = self.open_direct_loop_guard(mutex, assumptions)? {
@@ -1920,13 +1914,13 @@ impl MutexLedger {
         }
     }
 
-    fn get(&self, mutex: &Pointer) -> Option<&MutexEntry> {
+    fn get(&self, mutex: &Address) -> Option<&MutexEntry> {
         self.storage.entries.get(mutex)
     }
 
     /// The type authenticated by this initialization, without exposing an
     /// owned payload or any of its current field observations.
-    pub(super) fn protected_type(&self, mutex: &Pointer) -> Option<&super::ResourceDescription> {
+    pub(super) fn protected_type(&self, mutex: &Address) -> Option<&super::ResourceDescription> {
         self.get(mutex)?
             .interface()
             .map(|interface| interface.description())
@@ -1985,7 +1979,7 @@ impl MutexLedger {
     /// footprint is not derived here: unfolding names it in current memory.
     pub(super) fn havoc_protected_for_call(
         state: &ExecutionState,
-        mutex: &Pointer,
+        mutex: &Address,
         definition: &super::CompositeResourceDefinition,
         definitions: &[super::CompositeResourceDefinition],
         assumptions: &PureFactContext,
@@ -2066,7 +2060,7 @@ impl MutexLedger {
         allocation: &super::MemoryRange,
         assumptions: &PureFactContext,
     ) -> Option<super::RuntimeError> {
-        let block = &allocation.base().block;
+        let block = &allocation.base().base;
         let direct = self
             .storage
             .by_block
@@ -2078,7 +2072,7 @@ impl MutexLedger {
             .iter()
             .filter_map(|provenance| self.storage.by_provenance.get(provenance))
             .flat_map(|entries| entries.iter())
-            .filter(|(mutex, _)| &mutex.block != block);
+            .filter(|(mutex, _)| &mutex.base != block);
         let allocation_resource = Resource::Memory(allocation.clone());
         for (mutex, bytes) in direct.chain(possible_aliases) {
             crate::instrumentation::record_deterministic_work(1);
@@ -2095,13 +2089,13 @@ impl MutexLedger {
                 if allocation.element_width() != 1 || allocation.constant_start() != Some(0) {
                     return None;
                 }
-                let extent = i64::from(allocation.constant_end()?);
+                let size = i64::from(allocation.constant_end()?);
                 let delta = mutex.exact_element_delta_from_base(allocation.base(), 1, None)?;
                 if !delta.is_constant() {
                     return None;
                 }
                 let end = delta.constant.checked_add(i64::from(*bytes))?;
-                Some(end <= 0 || delta.constant >= extent)
+                Some(end <= 0 || delta.constant >= size)
             })();
             let stated_separation =
                 assumptions.proves_exact(&super::Proposition::ResourceSeparate {
@@ -2109,10 +2103,10 @@ impl MutexLedger {
                     right: Box::new(storage.clone()),
                 }) || (allocation.element_width() == 1
                     && allocation.constant_start() == Some(0)
-                    && allocation.constant_end().is_some_and(|extent| {
+                    && allocation.constant_end().is_some_and(|size| {
                         assumptions.proves_stated_byte_separation(
                             allocation.base(),
-                            extent,
+                            size,
                             mutex,
                             *bytes,
                         )
@@ -2139,14 +2133,14 @@ impl MutexLedger {
         None
     }
 
-    pub(super) fn live_resource(&self, mutex: &Pointer) -> Option<ResourceFact> {
+    pub(super) fn live_resource(&self, mutex: &Address) -> Option<ResourceFact> {
         let (MutexEntry::Unlocked { initialization, .. }
         | MutexEntry::Locked { initialization, .. }
         | MutexEntry::ConditionalLoop { initialization, .. }) = self.get(mutex)?;
         Some(initialization.resource_fact(mutex))
     }
 
-    pub(super) fn guard_resource(&self, mutex: &Pointer) -> Option<ResourceFact> {
+    pub(super) fn guard_resource(&self, mutex: &Address) -> Option<ResourceFact> {
         match self.get(mutex) {
             Some(MutexEntry::Locked { epoch, .. } | MutexEntry::ConditionalLoop { epoch, .. }) => {
                 Some(ResourceFact::own(Resource::MutexGuard(
@@ -2160,14 +2154,14 @@ impl MutexLedger {
         }
     }
 
-    pub(super) fn held_condition(&self, mutex: &Pointer) -> ConditionTerm {
+    pub(super) fn held_condition(&self, mutex: &Address) -> ConditionTerm {
         match self.get(mutex) {
             Some(MutexEntry::ConditionalLoop { held, .. }) => held.clone(),
             entry => ConditionTerm::Constant(matches!(entry, Some(MutexEntry::Locked { .. }))),
         }
     }
 
-    fn with_inserted(&self, mutex: Pointer, entry: MutexEntry) -> Self {
+    fn with_inserted(&self, mutex: Address, entry: MutexEntry) -> Self {
         let was_locked = matches!(
             self.get(&mutex),
             Some(MutexEntry::Locked { .. } | MutexEntry::ConditionalLoop { .. })
@@ -2193,7 +2187,7 @@ impl MutexLedger {
                     self.storage.reserved.clone()
                 },
                 by_provenance: if self.get(&mutex).is_none() {
-                    let provenance = ProvenanceKind::of(&mutex.block);
+                    let provenance = ProvenanceKind::of(&mutex.base);
                     let entries = self
                         .storage
                         .by_provenance
@@ -2211,17 +2205,17 @@ impl MutexLedger {
                     let entries = self
                         .storage
                         .by_block
-                        .get(&mutex.block)
+                        .get(&mutex.base)
                         .cloned()
                         .unwrap_or_default()
                         .with_inserted(mutex.clone(), entry.initialization().1);
                     self.storage
                         .by_block
-                        .with_inserted(mutex.block.clone(), entries)
+                        .with_inserted(mutex.base.clone(), entries)
                 } else {
                     self.storage.by_block.clone()
                 },
-                ambiguous_automatic_storage: if may_alias_automatic_storage(&mutex.block) {
+                ambiguous_automatic_storage: if may_alias_automatic_storage(&mutex.base) {
                     self.storage
                         .ambiguous_automatic_storage
                         .with_inserted(mutex.clone(), ())
@@ -2241,7 +2235,7 @@ impl MutexLedger {
         }
     }
 
-    fn without(&self, mutex: &Pointer) -> Self {
+    fn without(&self, mutex: &Address) -> Self {
         let was_locked = matches!(
             self.get(mutex),
             Some(MutexEntry::Locked { .. } | MutexEntry::ConditionalLoop { .. })
@@ -2263,14 +2257,14 @@ impl MutexLedger {
                 entries: self.storage.entries.without_key(mutex),
                 direct_loop_carriers: self.storage.direct_loop_carriers.without_key(mutex),
                 direct_loop_selection: self.storage.direct_loop_selection.clone(),
-                ambiguous_automatic_storage: if may_alias_automatic_storage(&mutex.block) {
+                ambiguous_automatic_storage: if may_alias_automatic_storage(&mutex.base) {
                     self.storage.ambiguous_automatic_storage.without_key(mutex)
                 } else {
                     self.storage.ambiguous_automatic_storage.clone()
                 },
                 consumed_storage: self.storage.consumed_storage.without_key(mutex),
                 by_provenance: {
-                    let provenance = ProvenanceKind::of(&mutex.block);
+                    let provenance = ProvenanceKind::of(&mutex.base);
                     let entries = self
                         .storage
                         .by_provenance
@@ -2289,15 +2283,15 @@ impl MutexLedger {
                     let entries = self
                         .storage
                         .by_block
-                        .get(&mutex.block)
+                        .get(&mutex.base)
                         .expect("initialized mutex storage")
                         .without_key(mutex);
                     if entries.is_empty() {
-                        self.storage.by_block.without_key(&mutex.block)
+                        self.storage.by_block.without_key(&mutex.base)
                     } else {
                         self.storage
                             .by_block
-                            .with_inserted(mutex.block.clone(), entries)
+                            .with_inserted(mutex.base.clone(), entries)
                     }
                 },
                 locked_count: self.storage.locked_count - usize::from(was_locked),
@@ -2309,7 +2303,7 @@ impl MutexLedger {
         }
     }
 
-    fn with_storage_consumed(&self, mutex: &Pointer) -> Self {
+    fn with_storage_consumed(&self, mutex: &Address) -> Self {
         let storage = &self.storage;
         Self {
             storage: Arc::new(MutexLedgerStorage {
@@ -2330,7 +2324,7 @@ impl MutexLedger {
         }
     }
 
-    fn storage_consumed(&self, mutex: &Pointer) -> bool {
+    fn storage_consumed(&self, mutex: &Address) -> bool {
         self.storage.consumed_storage.contains_key(mutex)
     }
 
@@ -2517,7 +2511,7 @@ mod tests {
     use super::*;
 
     fn guard_spec(
-        mutex: Pointer,
+        mutex: Address,
         retained_state: super::super::ResourceStateSource,
     ) -> super::super::ResourceSpec {
         use super::super::*;
@@ -2537,7 +2531,7 @@ mod tests {
     fn evaluate_guard(
         entry: &ExecutionState,
         current: &ExecutionState,
-        mutex: Pointer,
+        mutex: Address,
         retained_state: super::super::ResourceStateSource,
     ) -> ResourceFact {
         super::super::functions::evaluate_function_resource_spec_with_entry(
@@ -2595,7 +2589,7 @@ mod tests {
         assert!(bind_assumed_lifetime_inputs(input, &assumptions).is_err());
     }
 
-    fn assumed_guard_state(address: &Pointer) -> ExecutionState {
+    fn assumed_guard_state(address: &Address) -> ExecutionState {
         let mut state = ExecutionState::new();
         state.preserves_mutex_protocols = true;
         let description = guard_resource(&state, address, true).unwrap();
@@ -3240,11 +3234,11 @@ mod tests {
         assert!(destroyed.state().mutex_ledger.is_none());
     }
 
-    fn automatic_holder() -> (ExecutionState, Pointer) {
+    fn automatic_holder() -> (ExecutionState, Address) {
         let state = ExecutionState::new().with_local("holder", super::super::int32(0));
         let slot = state.locals().slot("holder").unwrap().clone();
-        let state =
-            state.with_memory(super::super::Memory::new().with_block(slot.block.clone(), 88));
+        let state = state
+            .with_memory(super::super::SymbolicMemory::new().with_block(slot.base.clone(), 88));
         (state, slot.offset_by_bytes(8))
     }
 
@@ -3279,7 +3273,7 @@ mod tests {
         let destroyed = initialized.destroy(&address, &assumptions).unwrap();
         let expired =
             super::super::eval::end_scope_automatic_lifetimes(destroyed.state(), &names).unwrap();
-        assert!(!expired.memory().has_block(&address.block));
+        assert!(!expired.memory().has_block(&address.base));
         assert!(expired.locals().get("holder").is_none());
     }
 
@@ -3334,7 +3328,7 @@ mod tests {
             .destroy(&first, &assumptions)
             .unwrap();
         assert_eq!(
-            automatic_storage_refusal(context.state(), "holder", &first.block),
+            automatic_storage_refusal(context.state(), "holder", &first.base),
             Some(super::super::RuntimeError::MutexStorageScopeEnd {
                 local: "holder".into(),
                 mutex: second.clone(),
@@ -3342,20 +3336,20 @@ mod tests {
             })
         );
         let context = context.destroy(&second, &assumptions).unwrap();
-        assert!(automatic_storage_refusal(context.state(), "holder", &first.block).is_none());
+        assert!(automatic_storage_refusal(context.state(), "holder", &first.base).is_none());
     }
 
     #[test]
     fn automatic_storage_cannot_ignore_a_symbolic_mutex_alias() {
         let assumptions = PureFactContext::new();
         let (state, address) = automatic_holder();
-        let symbolic = Pointer::symbolic(super::super::Variable(72_000));
-        assert!(!symbolic.block.proven_distinct(&address.block));
+        let symbolic = Address::symbolic(super::super::Variable(72_000));
+        assert!(!symbolic.base.proven_distinct(&address.base));
         let context = MutexContext::new(state)
             .initialize_empty(symbolic.clone(), 40)
             .unwrap();
         assert_eq!(
-            automatic_storage_refusal(context.state(), "holder", &address.block),
+            automatic_storage_refusal(context.state(), "holder", &address.base),
             Some(super::super::RuntimeError::MutexStorageScopeEnd {
                 local: "holder".into(),
                 mutex: symbolic.clone(),
@@ -3363,13 +3357,13 @@ mod tests {
             })
         );
         let held = context.acquire_current(&symbolic, &assumptions).unwrap();
-        assert!(automatic_storage_refusal(held.state(), "holder", &address.block).is_some());
+        assert!(automatic_storage_refusal(held.state(), "holder", &address.base).is_some());
         let destroyed = held
             .release_current(&symbolic, &assumptions)
             .unwrap()
             .destroy(&symbolic, &assumptions)
             .unwrap();
-        assert!(automatic_storage_refusal(destroyed.state(), "holder", &address.block).is_none());
+        assert!(automatic_storage_refusal(destroyed.state(), "holder", &address.base).is_none());
     }
 
     #[test]
@@ -3433,7 +3427,7 @@ mod tests {
     fn ordinary_program_store_rejects_live_storage_and_accepts_destroyed_storage() {
         use super::super::*;
         let (state, address) = automatic_holder();
-        register_block_alignment(&address.block, 8);
+        register_block_alignment(&address.base, 8);
         let context = MutexContext::new(state)
             .initialize_empty(address.clone(), 40)
             .unwrap();
@@ -3520,7 +3514,7 @@ mod tests {
     #[test]
     fn reservation_requires_separation_from_a_symbolic_alias() {
         use super::super::*;
-        let address = Pointer::symbolic(Variable(91_101));
+        let address = Address::symbolic(Variable(91_101));
         let context = MutexContext::new(ExecutionState::new())
             .initialize_empty(address.clone(), 40)
             .unwrap();
@@ -3539,8 +3533,8 @@ mod tests {
     #[test]
     fn assumed_guard_projection_distinguishes_guards_from_use_storage() {
         use super::super::*;
-        let held = Pointer::symbolic(Variable(91_201));
-        let requested = Pointer::symbolic(Variable(91_202));
+        let held = Address::symbolic(Variable(91_201));
+        let requested = Address::symbolic(Variable(91_202));
         let mut state = ExecutionState::new();
         state.mutex_input_reservations = MutexInputReservations::from_ranges_and_guards(
             [storage_range(&requested, 40)],
@@ -3572,7 +3566,7 @@ mod tests {
         assert!(
             abstract_guard_acquisition_refusal(
                 &state,
-                &Pointer::symbolic(super::super::Variable(91_203)),
+                &Address::symbolic(super::super::Variable(91_203)),
                 &assumptions,
             )
             .is_some()
@@ -3580,9 +3574,9 @@ mod tests {
         assert!(
             abstract_guard_acquisition_refusal(
                 &state,
-                &Pointer {
-                    block: "local:f:fresh_mutex".into(),
-                    offset: super::super::PointerOffsetTerm::Constant(0),
+                &Address {
+                    base: "local:f:fresh_mutex".into(),
+                    offset: super::super::AddressOffset::Constant(0),
                 },
                 &assumptions,
             )
@@ -3594,7 +3588,7 @@ mod tests {
     fn initialization_rejects_an_interior_overlap_and_accepts_adjacent_storage() {
         use super::super::*;
         let base = mutex(91_103);
-        register_block_alignment(&base.block, 8);
+        register_block_alignment(&base.base, 8);
         let state = ExecutionState::new().with_resource_context(
             ResourceContext::new()
                 .unchecked_with_fact(ResourceFact::own_memory(storage_range(&base, 128))),
@@ -3676,7 +3670,7 @@ mod tests {
     #[test]
     fn initialization_requires_the_complete_owned_storage_and_alignment() {
         use super::super::*;
-        let pointer = Pointer::symbolic(Variable(91_000));
+        let pointer = Address::symbolic(Variable(91_000));
         let aligned = PureFactContext::new()
             .assume_condition(ConditionTerm::pointer_aligned(pointer.clone(), 8), true);
         let state_for = |bytes, owned| {
@@ -3724,20 +3718,20 @@ mod tests {
     fn initialization_rejects_read_only_and_expired_automatic_storage() {
         use super::super::*;
         let (state, pointer) = automatic_holder();
-        register_block_alignment(&pointer.block, 8);
+        register_block_alignment(&pointer.base, 8);
         assert!(
             initialization_storage_refusal(&state, &pointer, 40, 8, &PureFactContext::new())
                 .is_none()
         );
         let ended = state
             .clone()
-            .with_memory(state.memory().clone().without_local_block(&pointer.block));
+            .with_memory(state.memory().clone().without_local_block(&pointer.base));
         assert!(matches!(
             initialization_storage_refusal(&ended, &pointer, 40, 8, &PureFactContext::new()),
             Some(RuntimeError::MissingResource { .. })
         ));
         let read_only =
-            state.with_memory(Memory::new().with_read_only_block(pointer.block.clone(), 48));
+            state.with_memory(SymbolicMemory::new().with_read_only_block(pointer.base.clone(), 48));
         assert!(matches!(
             initialization_storage_refusal(&read_only, &pointer, 40, 8, &PureFactContext::new()),
             Some(RuntimeError::MissingResource { .. })
@@ -3748,7 +3742,7 @@ mod tests {
     fn initialization_forgets_old_representation_and_preserves_adjacent_cells() {
         use super::super::*;
         let (state, pointer) = automatic_holder();
-        register_block_alignment(&pointer.block, 8);
+        register_block_alignment(&pointer.base, 8);
         let prefix = state.locals().slot("holder").unwrap().clone();
         let state = state.clone().with_memory(
             state
@@ -3796,7 +3790,7 @@ mod tests {
         use crate::kernel::loans::{LoanLedger, plan_stable_view_transfer};
         use crate::kernel::prelude::CheckedResourceFact;
         let (state, pointer) = automatic_holder();
-        register_block_alignment(&pointer.block, 8);
+        register_block_alignment(&pointer.base, 8);
         let viewed = ResourceFact::view_memory(allocation_range(pointer.clone(), 40));
         let ledger = LoanLedger::new();
         let caller = ledger.fresh_participant().unwrap();
@@ -3872,9 +3866,9 @@ mod tests {
     #[test]
     fn initialization_does_not_reuse_consumed_or_zero_storage_authority() {
         use super::super::*;
-        let pointer = Pointer {
-            block: PointerBlock::Heap(91_003),
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: AddressBase::Heap(91_003),
+            offset: AddressOffset::Constant(0),
         };
         let range = allocation_range(pointer.clone(), 40);
         let fact = ResourceFact::own_memory(range.clone());
@@ -3892,7 +3886,7 @@ mod tests {
         assert!(overlapping_zero.owns_storage_access(&pointer, 40, &assumptions));
     }
 
-    fn allocation_range(base: Pointer, bytes: u32) -> super::super::MemoryRange {
+    fn allocation_range(base: Address, bytes: u32) -> super::super::MemoryRange {
         super::super::MemoryRange::new_with_element_width(base, 0u32.into(), bytes.into(), 1)
     }
 
@@ -3945,20 +3939,20 @@ mod tests {
 
     #[test]
     fn retirement_candidate_index_covers_every_possible_provenance_alias() {
-        use super::super::{PointerBlock, Variable};
+        use super::super::{AddressBase, Variable};
         // Include distinct members of every parameterized provenance class.
-        let mut blocks = vec![PointerBlock::ExternalArgument];
+        let mut blocks = vec![AddressBase::ExternalArgument];
         for index in 0..2 {
             blocks.extend([
-                PointerBlock::Concrete(format!("local:{index}")),
-                PointerBlock::Concrete(format!("global:{index}")),
-                PointerBlock::Heap(index),
-                PointerBlock::Temporary(index),
-                PointerBlock::ExternalObject(Variable(index)),
-                PointerBlock::Symbolic(Variable(index)),
-                PointerBlock::FunctionSymbolic(Variable(index)),
-                PointerBlock::Function(format!("function{index}")),
-                PointerBlock::StringLiteral {
+                AddressBase::Concrete(format!("local:{index}")),
+                AddressBase::Concrete(format!("global:{index}")),
+                AddressBase::Heap(index),
+                AddressBase::Temporary(index),
+                AddressBase::ExternalObject(Variable(index)),
+                AddressBase::Symbolic(Variable(index)),
+                AddressBase::FunctionSymbolic(Variable(index)),
+                AddressBase::Function(format!("function{index}")),
+                AddressBase::StringLiteral {
                     identity: crate::kernel::StringLiteralId::new("literal", index as u32),
                     bytes: vec![0],
                 },
@@ -3981,11 +3975,11 @@ mod tests {
     #[test]
     fn retirement_requires_separation_from_symbolic_initializations() {
         use super::super::*;
-        let base = Pointer {
-            block: PointerBlock::Heap(90_000),
-            offset: PointerOffsetTerm::constant(0),
+        let base = Address {
+            base: AddressBase::Heap(90_000),
+            offset: AddressOffset::constant(0),
         };
-        let symbolic = Pointer::symbolic(Variable(90_001));
+        let symbolic = Address::symbolic(Variable(90_001));
         let context = MutexContext::new(ExecutionState::new())
             .initialize_empty(symbolic.clone(), 40)
             .unwrap();
@@ -4089,15 +4083,15 @@ mod tests {
             let StatementOutcome::Normal(state) = &paths[0].outcome else {
                 panic!("{paths:?}")
             };
-            assert_ne!(state.locals().slot("holder").unwrap().block, address.block);
-            assert!(!state.memory().has_block(&address.block));
+            assert_ne!(state.locals().slot("holder").unwrap().base, address.base);
+            assert!(!state.memory().has_block(&address.base));
         }
     }
 
     #[test]
-    fn storage_retirement_uses_unsigned_heap_extents_and_wide_offsets() {
+    fn storage_retirement_uses_unsigned_allocation_sizes_and_wide_offsets() {
         let assumptions = PureFactContext::new();
-        for (extent, offset) in [(u32::MAX, 8), (i32::MAX as u32, i32::MAX as u32 - 8)] {
+        for (size, offset) in [(u32::MAX, 8), (i32::MAX as u32, i32::MAX as u32 - 8)] {
             let base = mutex(0);
             let state = MutexContext::new(ExecutionState::new())
                 .initialize_empty(base.offset_by_bytes(offset), 40)
@@ -4105,7 +4099,7 @@ mod tests {
             assert!(
                 storage_retirement_refusal(
                     state.state(),
-                    &allocation_range(base, extent),
+                    &allocation_range(base, size),
                     &assumptions
                 )
                 .is_some()
@@ -4266,14 +4260,14 @@ mod tests {
     }
 
     use crate::kernel::{
-        PointerOffsetTerm, ProgramType, ResourceContext, ResourceFieldSchema, ResourceFieldType,
+        AddressOffset, ProgramType, ResourceContext, ResourceFieldSchema, ResourceFieldType,
         ResourceInstance, Variable, int32,
     };
 
-    fn mutex(index: usize) -> Pointer {
-        Pointer {
-            block: format!("mutex-{index}").into(),
-            offset: PointerOffsetTerm::Constant(0),
+    fn mutex(index: usize) -> Address {
+        Address {
+            base: format!("mutex-{index}").into(),
+            offset: AddressOffset::Constant(0),
         }
     }
 
@@ -4443,7 +4437,7 @@ mod tests {
 
     fn runtime_mutex_call(
         state: &ExecutionState,
-        address: &Pointer,
+        address: &Address,
         name: &str,
     ) -> Result<ExecutionState, super::super::RuntimeError> {
         use super::super::*;
@@ -5284,7 +5278,7 @@ mod wide_range_reader_tests {
     // A real reserved mutex makes the emptiness reader inspect a native write.
     #[test]
     fn wide_writes_to_reserved_mutex_storage_are_refused_without_panicking() {
-        let base = Pointer::symbolic(Variable(985_000));
+        let base = Address::symbolic(Variable(985_000));
         let ledger = MutexLedger::new().with_inserted(
             base.clone(),
             MutexEntry::Unlocked {

@@ -914,14 +914,7 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
                 &format!("open({}) {{", format_resource_call(&open.resource)),
             );
             write_tactics(output, &open.tactics, indent + 1);
-            match &open.close_proof {
-                Some(close_proof) => {
-                    line(output, &prefix, "} by {");
-                    write_tactics(output, close_proof, indent + 1);
-                    line(output, &prefix, "}");
-                }
-                None => line(output, &prefix, "}"),
-            }
+            line(output, &prefix, "}");
         }
         ProofTactic::If(proof_if) => {
             output.push_str(&prefix);
@@ -940,10 +933,14 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
             line(output, &prefix, "}");
         }
         ProofTactic::Both(both) => {
+            let arm_prefix = "    ".repeat(indent + 1);
             line(output, &prefix, "both {");
-            write_tactics(output, &both.left_tactics, indent + 1);
-            line(output, &prefix, "} and {");
-            write_tactics(output, &both.right_tactics, indent + 1);
+            line(output, &arm_prefix, "left => {");
+            write_tactics(output, &both.left_tactics, indent + 2);
+            line(output, &arm_prefix, "}");
+            line(output, &arm_prefix, "right => {");
+            write_tactics(output, &both.right_tactics, indent + 2);
+            line(output, &arm_prefix, "}");
             line(output, &prefix, "}");
         }
         ProofTactic::Cases(proof_cases) => {
@@ -976,12 +973,21 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
         ProofTactic::CallOutcomes(outcomes) => {
             let arm_prefix = "    ".repeat(indent + 1);
             line(output, &prefix, "outcomes {");
-            line(output, &arm_prefix, "returned => {");
-            write_tactics(output, &outcomes.returned_tactics, indent + 2);
-            line(output, &arm_prefix, "}");
-            line(output, &arm_prefix, "threw => {");
-            write_tactics(output, &outcomes.threw_tactics, indent + 2);
-            line(output, &arm_prefix, "}");
+            for ((label, tactics), binding) in [
+                ("returned", &outcomes.returned_tactics),
+                ("threw", &outcomes.threw_tactics),
+            ]
+            .into_iter()
+            .zip(&outcomes.payload_bindings)
+            {
+                let payload = binding
+                    .as_ref()
+                    .map(|name| format!("({name})"))
+                    .unwrap_or_default();
+                line(output, &arm_prefix, &format!("{label}{payload} => {{"));
+                write_tactics(output, tactics, indent + 2);
+                line(output, &arm_prefix, "}");
+            }
             line(output, &prefix, "}");
         }
         ProofTactic::Loop(loop_clause) => {
@@ -1093,40 +1099,20 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
             ),
         ),
         ProofTactic::LetSatisfy(binding) => {
-            let bindings = binding
+            let names = binding
                 .bindings
                 .iter()
-                .map(|(name, click_type)| {
-                    format!("{name}: {}", validation::describe_click_type(click_type))
-                })
-                .collect::<Vec<_>>()
-                .join(", ");
-            let (retained_state, mut body) = match &binding.proposition {
-                ClickProposition::At {
-                    selector,
-                    proposition,
-                } => (Some(selector), proposition.as_ref()),
-                proposition => (None, proposition),
+                .map(|(name, _)| name.as_str())
+                .collect::<Vec<_>>();
+            let pattern = match names.as_slice() {
+                [name] => name.to_string(),
+                _ => format!("({})", names.join(", ")),
             };
-            for _ in &binding.bindings {
-                let ClickProposition::Exists { body: inner, .. } = body else {
-                    unreachable!("let-satisfy source contains its declared binders")
-                };
-                body = inner;
-            }
-            let body = if let Some(selector) = retained_state {
-                format!(
-                    "at({}, {})",
-                    describe_program_point_selector(selector),
-                    source_click_proposition(body)
-                )
-            } else {
-                source_click_proposition(body)
-            };
+            let source = source_click_proposition(&binding.proposition);
             line(
                 output,
                 &prefix,
-                &format!("obtain ({bindings}) {{ {body} }}"),
+                &format!("let {pattern} = obtain({source});"),
             );
         }
         ProofTactic::CheckTerminationLocal(function) => line(
@@ -1480,7 +1466,6 @@ fn format_click_function_application(application: &ClickFunctionApplication) -> 
 fn format_fact_source(source: &ProofFactSource) -> String {
     match source {
         ProofFactSource::Requirement(index) => format!("requirement {index}"),
-        ProofFactSource::Invariant(index) => format!("invariant {index}"),
     }
 }
 

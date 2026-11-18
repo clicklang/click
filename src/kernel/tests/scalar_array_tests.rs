@@ -1,18 +1,18 @@
 //! Compact scalar arrays keep checked authority independent of logical length.
 use super::*;
 
-fn pointer(block: &str, offset: i64) -> Pointer {
-    Pointer {
-        block: block.into(),
-        offset: PointerOffsetTerm::Constant(offset),
+fn pointer(block: &str, offset: i64) -> Address {
+    Address {
+        base: block.into(),
+        offset: AddressOffset::Constant(offset),
     }
 }
-fn fresh(count: u32) -> Memory {
-    Memory::new()
+fn fresh(count: u32) -> SymbolicMemory {
+    SymbolicMemory::new()
         .with_block("local:array-source", count * 4)
         .with_block("local:array-target", count * 4)
 }
-fn seeded(count: u32) -> Memory {
+fn seeded(count: u32) -> SymbolicMemory {
     fresh(count)
         .initialize_scalar_array(
             &pointer("local:array-source", 0),
@@ -257,7 +257,7 @@ fn compact_scalar_array_initialization_rejects_readonly_storage_and_pointer_qual
     let target = pointer("local:array-target", 0);
     for readonly_block in [false, true] {
         let memory =
-            Memory::new().with_block_or_read_only(target.block.clone(), 16, readonly_block);
+            SymbolicMemory::new().with_block_or_read_only(target.base.clone(), 16, readonly_block);
         let state = ExecutionState::new()
             .with_memory(memory)
             .with_resource_context(own_memory_context(target.clone(), 0, 4));
@@ -362,13 +362,13 @@ fn compact_scalar_array_initialization_cannot_bypass_an_active_view_loan() {
 }
 
 #[test]
-fn compact_array_regions_check_source_type_extent_alignment_and_initialization() {
+fn compact_array_regions_check_source_type_size_alignment_and_initialization() {
     let context = PureFactContext::new();
     let source = pointer("local:source", 4);
     let target = pointer("local:target", 4);
-    let memory = Memory::new()
-        .with_block(source.block.clone(), 24)
-        .with_block(target.block.clone(), 24)
+    let memory = SymbolicMemory::new()
+        .with_block(source.base.clone(), 24)
+        .with_block(target.base.clone(), 24)
         .write_scalar_array_region(
             &source,
             ProgramType::UInt32,
@@ -422,9 +422,9 @@ fn compact_array_regions_check_source_type_extent_alignment_and_initialization()
         copied.load(&target),
         ExpressionOutcome::Value(ProgramValue::UInt32(9u32.into()))
     );
-    let fresh = Memory::new()
-        .with_block(source.block.clone(), 24)
-        .with_block(target.block.clone(), 24);
+    let fresh = SymbolicMemory::new()
+        .with_block(source.base.clone(), 24)
+        .with_block(target.base.clone(), 24);
     assert!(
         fresh
             .write_scalar_array_region(
@@ -471,7 +471,11 @@ fn compact_array_region_execution_requires_full_authority_and_mutable_storage() 
             view_memory_fact(target.clone(), 0, 4)
         };
         let state = ExecutionState::new()
-            .with_memory(Memory::new().with_block_or_read_only(target.block.clone(), 24, readonly))
+            .with_memory(SymbolicMemory::new().with_block_or_read_only(
+                target.base.clone(),
+                24,
+                readonly,
+            ))
             .with_resource_context(ResourceContext::new().unchecked_with_facts(vec![resource]));
         let statement = program_write_scalar_array_region(
             crate::kernel::program_expression::pointer_value(target),

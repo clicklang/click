@@ -57,7 +57,11 @@ impl<T> LoweredTermPath<T> {
 }
 
 pub(super) type SpecExpressionPath = LoweredTermPath<SpecValue>;
-pub(super) type SpecIntegerPath = LoweredTermPath<IntegerTerm>;
+mod integer_result;
+use integer_result::IntegerResult;
+mod integer_fold_index;
+use integer_fold_index::IntegerFoldIndexResult;
+pub(super) type SpecIntegerPath = LoweredTermPath<IntegerResult>;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct SpecSequencePath {
@@ -162,7 +166,7 @@ struct SpecEvaluation<'a> {
     pointer_cast_operand: bool,
     machine_preparation_disabled: bool,
     machine_result_production_disabled: bool,
-    integer_bindings: BTreeMap<Variable, IntegerTerm>,
+    integer_bindings: BTreeMap<Variable, IntegerResult>,
 }
 
 /// The identity a loop invariant's `iterations` lowers to: the number of
@@ -178,17 +182,17 @@ struct SpecEvaluation<'a> {
 pub(crate) const LOOP_ITERATIONS_VARIABLE: Variable = Variable(1 << 44);
 
 std::thread_local! {
-    static LOOP_ITERATIONS: std::cell::RefCell<Option<IntegerTerm>> =
+    static LOOP_ITERATIONS: std::cell::RefCell<Option<IntegerResult>> =
         const { std::cell::RefCell::new(None) };
 }
 
 /// Binds a loop invariant's `iterations` for the lowerings made while it
 /// lives: the pass count of the loop phase lowering the invariant.
-pub(in crate::kernel) struct LoopIterationsScope(Option<IntegerTerm>);
+pub(in crate::kernel) struct LoopIterationsScope(Option<IntegerResult>);
 
 impl LoopIterationsScope {
     pub(in crate::kernel) fn enter(iterations: IntegerTerm) -> Self {
-        Self(LOOP_ITERATIONS.with(|slot| slot.replace(Some(iterations))))
+        Self(LOOP_ITERATIONS.with(|slot| slot.replace(Some(iterations.into()))))
     }
 }
 
@@ -202,7 +206,7 @@ impl Drop for LoopIterationsScope {
 
 /// The integer bindings an evaluation starts with: a loop phase's pass
 /// count, when one is in scope.
-fn initial_integer_bindings() -> BTreeMap<Variable, IntegerTerm> {
+fn initial_integer_bindings() -> BTreeMap<Variable, IntegerResult> {
     LOOP_ITERATIONS.with(|slot| {
         slot.borrow()
             .clone()
@@ -258,7 +262,8 @@ impl<'a> SpecEvaluation<'a> {
                 crate::instrumentation::record_deterministic_work(1);
                 saved.push((
                     *variable,
-                    self.integer_bindings.insert(*variable, field.clone()),
+                    self.integer_bindings
+                        .insert(*variable, field.clone().into()),
                 ));
             }
         }
@@ -313,7 +318,7 @@ impl<'a> SpecEvaluation<'a> {
         result
     }
 
-    fn bound_integer_term(&self, term: &IntegerTerm) -> ExecutionResult<IntegerTerm> {
+    fn bound_integer_term(&self, term: &IntegerTerm) -> ExecutionResult<IntegerResult> {
         if *term == IntegerTerm::Variable(LOOP_ITERATIONS_VARIABLE)
             && !self
                 .integer_bindings
@@ -322,7 +327,7 @@ impl<'a> SpecEvaluation<'a> {
             return Err(ExecutionLimit::LoopIterationsUnbound);
         }
         if self.integer_bindings.is_empty() {
-            return Ok(term.clone());
+            return Ok(term.clone().into());
         }
         match term {
             IntegerTerm::Variable(variable) => {
@@ -331,9 +336,9 @@ impl<'a> SpecEvaluation<'a> {
                     .integer_bindings
                     .get(variable)
                     .cloned()
-                    .unwrap_or_else(|| term.clone()));
+                    .unwrap_or_else(|| term.clone().into()));
             }
-            IntegerTerm::Constant(_) => return Ok(term.clone()),
+            IntegerTerm::Constant(_) => return Ok(term.clone().into()),
             _ => {}
         }
         // Select replacements from this payload only. Never scan the ambient
@@ -349,18 +354,22 @@ impl<'a> SpecEvaluation<'a> {
                 self.integer_bindings
                     .get(&variable)
                     .cloned()
-                    .map(|value| (variable, value))
+                    .map(|value| (variable, value.into_native_compat()))
             })
             .collect::<BTreeMap<_, _>>();
         if replacements.is_empty() {
-            return Ok(term.clone());
+            return Ok(term.clone().into());
         }
+        // Compound native specification inputs still cross the existing typed
+        // checking boundary. Only selected replacements are exported; the
+        // evaluator bindings and returned result retain common roots.
         rewrite_integer_match_typed_body(
             term.clone(),
             &BTreeMap::new(),
             &replacements,
             &BTreeMap::new(),
         )
+        .map(IntegerResult::from)
         .ok_or(ExecutionLimit::Paths)
     }
 }
@@ -893,7 +902,7 @@ fn capture_spec_integer_argument(
         .map(|fact| fact.proposition().clone())
         .chain(path.obligations.iter().map(|o| o.proposition().clone()))
         .collect();
-    Ok((path.value.clone(), guards))
+    Ok((path.value.clone().into_native_compat(), guards))
 }
 
 /// Which written subterm contributed `proposition` to a capture path.
@@ -979,7 +988,7 @@ fn lower_spec_proposition_at_state_without_range_guards_in(
     // Separation retains its range-validity conjuncts even in a resource
     // definition: folding establishes them and observing may expose them.
     let SpecProposition::MemoryLoadable {
-        memory,
+        point: memory,
         base,
         start,
         end,
@@ -1460,31 +1469,31 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                     };
                     let condition = match operator {
                         IntegerComparisonOperator::Equal => ConditionTerm::IntegerEqual(
-                            left_path.value.clone().into(),
-                            right_path.value.clone().into(),
+                            left_path.value.native_compat(),
+                            right_path.value.native_compat(),
                         ),
                         IntegerComparisonOperator::NotEqual => ConditionTerm::IntegerNotEqual(
-                            left_path.value.clone().into(),
-                            right_path.value.clone().into(),
+                            left_path.value.native_compat(),
+                            right_path.value.native_compat(),
                         ),
                         IntegerComparisonOperator::LessThan => ConditionTerm::IntegerLessThan(
-                            left_path.value.clone().into(),
-                            right_path.value.clone().into(),
+                            left_path.value.native_compat(),
+                            right_path.value.native_compat(),
                         ),
                         IntegerComparisonOperator::LessEqual => ConditionTerm::IntegerLessEqual(
-                            left_path.value.clone().into(),
-                            right_path.value.clone().into(),
+                            left_path.value.native_compat(),
+                            right_path.value.native_compat(),
                         ),
                         IntegerComparisonOperator::GreaterThan => {
                             ConditionTerm::IntegerGreaterThan(
-                                left_path.value.clone().into(),
-                                right_path.value.clone().into(),
+                                left_path.value.native_compat(),
+                                right_path.value.native_compat(),
                             )
                         }
                         IntegerComparisonOperator::GreaterEqual => {
                             ConditionTerm::IntegerGreaterEqual(
-                                left_path.value.clone().into(),
-                                right_path.value.clone().into(),
+                                left_path.value.native_compat(),
+                                right_path.value.native_compat(),
                             )
                         }
                     };
@@ -2020,14 +2029,17 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                 },
             )
         }
-        SpecProposition::ResourceViewable { memory, resource } => {
+        SpecProposition::ResourceViewable {
+            point: memory,
+            resource,
+        } => {
             let memory = match memory {
-                SpecMemory::Current => scope.state.memory(),
-                SpecMemory::FunctionEntry | SpecMemory::LoopEntry => match scope.loop_entry_state {
+                SpecPoint::Current => scope.state.memory(),
+                SpecPoint::FunctionEntry | SpecPoint::LoopEntry => match scope.loop_entry_state {
                     Some(entry) => entry.memory(),
                     None => return Ok(Vec::new()),
                 },
-                SpecMemory::Fixed(memory) => memory,
+                SpecPoint::At(point) => point.memory(),
             };
             let mut paths = Vec::new();
             for (resource, facts, obligations) in
@@ -2056,7 +2068,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
             )
         }
         SpecProposition::MemoryLoadable {
-            memory,
+            point: memory,
             base,
             start,
             end,
@@ -2077,9 +2089,9 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
             checked.program_definedness = true;
             // Definedness is decided from no facts, except that a contract
             // entry's own requirement keeps assuming what its caller checked
-            // about opaque pointer extents.
-            let context = if assumptions.should_assume_entry_clause_extents() {
-                PureFactContext::new().assume_entry_clause_extents()
+            // about opaque pointer bounds.
+            let context = if assumptions.should_assume_entry_clause_spans() {
+                PureFactContext::new().assume_entry_clause_spans()
             } else {
                 PureFactContext::new()
             };
@@ -2189,14 +2201,14 @@ fn evaluate_spec_integer_expression_paths_in(
                 return Err(ExecutionLimit::ResourceFieldInstanceUnavailable);
             };
             Ok(vec![SpecIntegerPath {
-                value: value.clone(),
+                value: value.clone().into(),
                 facts: Vec::new().into(),
                 obligations: Vec::new(),
             }])
         }
         SpecIntegerExpression::Term(term) => {
             let term = budget.bound_integer_term(term)?;
-            if crate::instrumentation::numeric_operation_work_exceeded(integer_term_bits(&term)) {
+            if crate::instrumentation::numeric_operation_work_exceeded(term.bits()) {
                 return Err(ExecutionLimit::Deadline);
             }
             Ok(vec![SpecIntegerPath {
@@ -2284,30 +2296,31 @@ fn evaluate_spec_integer_expression_paths_in(
                         domain.clone(),
                     );
                     Ok(SpecIntegerPath {
-                        value,
+                        value: value.into(),
                         facts: path.facts,
                         obligations,
                     })
                 })
                 .collect()
         }
-        SpecIntegerExpression::Negate(inner) => {
-            evaluate_spec_integer_expression_paths_in(scope, inner, assumptions, budget).and_then(
-                |paths| {
-                    let mut result = Vec::new();
-                    for mut path in paths {
-                        if crate::instrumentation::numeric_operation_work_exceeded(
-                            integer_term_bits(&path.value),
-                        ) {
-                            return Err(ExecutionLimit::Deadline);
-                        }
-                        path.value = IntegerTerm::Negate(path.value.into());
-                        result.push(path);
-                    }
-                    Ok(result)
-                },
-            )
-        }
+        SpecIntegerExpression::Negate(inner) => evaluate_spec_integer_expression_paths_in(
+            scope,
+            inner,
+            assumptions,
+            budget,
+        )
+        .and_then(|paths| {
+            let mut result = Vec::new();
+            for mut path in paths {
+                if crate::instrumentation::numeric_operation_work_exceeded(path.value.bits()) {
+                    return Err(ExecutionLimit::Deadline);
+                }
+                path.value =
+                    IntegerResult::operation(KernelIntegerOperator::Negate, vec![path.value]);
+                result.push(path);
+            }
+            Ok(result)
+        }),
         SpecIntegerExpression::Add(left, right) => evaluate_integer_binary_paths_in(
             scope,
             left,
@@ -2396,8 +2409,7 @@ fn evaluate_spec_integer_expression_paths_in(
                         let body_paths = budget.with_integer_bindings(
                             &[
                                 Some(*accumulator),
-                                matches!(index, IntegerRangeFoldIndex::Integer { .. })
-                                    .then_some(*item),
+                                (index.kind == KernelFoldIndex::Integer).then_some(*item),
                             ],
                             &[
                                 AlgebraicValue::Integer(IntegerTerm::var(*accumulator)),
@@ -2421,7 +2433,7 @@ fn evaluate_spec_integer_expression_paths_in(
                         };
                         if let Some(body_value) = body_value {
                             result.push(SpecIntegerPath {
-                                value: IntegerTerm::range_fold(
+                                value: IntegerResult::range_fold(
                                     index.clone(),
                                     initial_path.value.clone(),
                                     *accumulator,
@@ -2444,7 +2456,7 @@ fn evaluate_spec_integer_expression_paths_in(
                     let body_paths = budget.with_integer_bindings(
                         &[
                             Some(*accumulator),
-                            matches!(index, IntegerRangeFoldIndex::Integer { .. }).then_some(*item),
+                            (index.kind == KernelFoldIndex::Integer).then_some(*item),
                         ],
                         &[
                             AlgebraicValue::Integer(IntegerTerm::var(*accumulator)),
@@ -2514,7 +2526,7 @@ fn evaluate_spec_integer_expression_paths_in(
                             continue;
                         };
                         result.push(SpecIntegerPath {
-                            value: IntegerTerm::range_fold(
+                            value: IntegerResult::range_fold(
                                 index.clone(),
                                 initial_path.value.clone(),
                                 *accumulator,
@@ -2614,7 +2626,7 @@ pub(super) fn existential_body_branch(path: &SpecPropositionPath) -> Proposition
 /// range makes the body requirement vacuous.
 fn integer_range_fold_body_obligation(
     proposition: Proposition,
-    index: &IntegerRangeFoldIndex,
+    index: &IntegerFoldIndexResult,
     accumulator: Variable,
     item: Variable,
 ) -> Proposition {
@@ -2639,141 +2651,38 @@ fn integer_range_fold_body_obligation(
 }
 
 fn integer_range_fold_item_domain(
-    index: &IntegerRangeFoldIndex,
+    index: &IntegerFoldIndexResult,
     item: Variable,
 ) -> (Sort, Proposition) {
-    use crate::kernel::machine_integer::comparison::condition_for_operand_views;
-    use crate::kernel::{CompareRelation as R, MachineOperandView as V};
-    let (item_sort, guard) = match index {
-        IntegerRangeFoldIndex::Int32 { start, end } => {
-            let item_term = MachineTerm::Variable(item);
-            let guard = Proposition::And(
-                Box::new(Proposition::ConditionIs(
-                    condition_for_operand_views(
-                        MachineIntegerType::Int32,
-                        R::GreaterEqual,
-                        [
-                            V::Legacy(&item_term),
-                            start.machine_operand().operand_view(),
-                        ],
-                    ),
-                    true,
-                )),
-                Box::new(Proposition::ConditionIs(
-                    condition_for_operand_views(
-                        MachineIntegerType::Int32,
-                        R::LessThan,
-                        [V::Legacy(&item_term), end.machine_operand().operand_view()],
-                    ),
-                    true,
-                )),
-            );
-            (Sort::ProgramInt32, guard)
-        }
-        IntegerRangeFoldIndex::UInt64 { start, end } => {
-            let item_term = MachineTerm::Variable(item);
-            let guard = Proposition::And(
-                Box::new(Proposition::ConditionIs(
-                    condition_for_operand_views(
-                        MachineIntegerType::UInt64,
-                        R::LessEqual,
-                        [
-                            start.machine_operand().operand_view(),
-                            V::Legacy(&item_term),
-                        ],
-                    ),
-                    true,
-                )),
-                Box::new(Proposition::ConditionIs(
-                    condition_for_operand_views(
-                        MachineIntegerType::UInt64,
-                        R::LessThan,
-                        [V::Legacy(&item_term), end.machine_operand().operand_view()],
-                    ),
-                    true,
-                )),
-            );
-            (Sort::ProgramInteger(MachineIntegerType::UInt64), guard)
-        }
-        IntegerRangeFoldIndex::Integer { start, end } => {
-            let item_term = IntegerTerm::Variable(item);
-            let guard = Proposition::And(
-                Box::new(Proposition::ConditionIs(
-                    ConditionTerm::integer_greater_equal(item_term.clone(), start.as_ref().clone()),
-                    true,
-                )),
-                Box::new(Proposition::ConditionIs(
-                    ConditionTerm::integer_less_than(item_term, end.as_ref().clone()),
-                    true,
-                )),
-            );
-            (Sort::Integer, guard)
-        }
-    };
-
-    (item_sort, guard)
+    index.item_domain(item)
 }
 
-fn integer_range_fold_index_is_empty(index: &IntegerRangeFoldIndex) -> bool {
-    match index {
-        IntegerRangeFoldIndex::Int32 { start, end } => {
-            let Some(start) = start
-                .machine_operand()
-                .operand_view()
-                .word32_constant()
-                .map(|value| value as i32)
-            else {
-                return false;
-            };
-            let Some(end) = end
-                .machine_operand()
-                .operand_view()
-                .word32_constant()
-                .map(|value| value as i32)
-            else {
-                return false;
-            };
-            start >= end
-        }
-        IntegerRangeFoldIndex::UInt64 { start, end } => {
-            match (
-                start.machine_operand().operand_view().uint64_constant(),
-                end.machine_operand().operand_view().uint64_constant(),
-            ) {
-                (Some(start), Some(end)) => start >= end,
-                _ => false,
-            }
-        }
-        IntegerRangeFoldIndex::Integer { start, end } => match (start.as_const(), end.as_const()) {
-            (Some(start), Some(end)) => start >= end,
-            _ => false,
-        },
-    }
+fn integer_range_fold_index_is_empty(index: &IntegerFoldIndexResult) -> bool {
+    index.is_empty()
 }
 
-fn integer_carrier_in_pointer(pointer: &Pointer, variable: Variable) -> bool {
+fn integer_carrier_in_pointer(pointer: &Address, variable: Variable) -> bool {
     // Like an opaque algebraic application, a pointer call can carry the
     // accumulator through its arguments, and a loaded pointer through its
     // defining read's address. Retain the scope without expanding a shared
     // application or registry DAG once for every fold obligation.
     matches!(
-        pointer.block,
-        PointerBlock::PureFunctionApplication(_) | PointerBlock::LoadedPointer(_)
+        pointer.base,
+        AddressBase::PureFunctionApplication(_) | AddressBase::LoadedPointer(_)
     ) || integer_carrier_in_pointer_offset(&pointer.offset, variable)
 }
 
-fn integer_carrier_in_pointer_offset(offset: &PointerOffsetTerm, variable: Variable) -> bool {
+fn integer_carrier_in_pointer_offset(offset: &AddressOffset, variable: Variable) -> bool {
     match offset {
-        PointerOffsetTerm::Constant(_) => false,
-        PointerOffsetTerm::Variable(load) => {
+        AddressOffset::Constant(_) => false,
+        AddressOffset::Variable(load) => {
             integer_carrier_in_bitvector(&MachineTerm::Variable(*load), variable)
         }
-        PointerOffsetTerm::Add(left, right) => {
+        AddressOffset::Add(left, right) => {
             integer_carrier_in_pointer_offset(left, variable)
                 || integer_carrier_in_pointer_offset(right, variable)
         }
-        PointerOffsetTerm::Int32Scaled { value, .. }
-        | PointerOffsetTerm::Int64Scaled { value, .. } => {
+        AddressOffset::Int32Scaled { value, .. } | AddressOffset::Int64Scaled { value, .. } => {
             if let Some(load) = value.operand_view().variable() {
                 integer_carrier_in_bitvector(&MachineTerm::Variable(*load), variable)
             } else {
@@ -2790,15 +2699,15 @@ fn integer_carrier_in_pointer_offset(offset: &PointerOffsetTerm, variable: Varia
 /// Keep this query conservative for those selected pointer leaves: retaining
 /// the accumulator quantifier is sound, while expanding the registry here
 /// would duplicate the checked carrier collector and reopen its DAG.
-fn pointer_offset_contains_registered_load(offset: &PointerOffsetTerm) -> bool {
+fn pointer_offset_contains_registered_load(offset: &AddressOffset) -> bool {
     match offset {
-        PointerOffsetTerm::Constant(_) => false,
-        PointerOffsetTerm::Variable(variable) => crate::kernel::is_load_variable(variable),
-        PointerOffsetTerm::Add(left, right) => {
+        AddressOffset::Constant(_) => false,
+        AddressOffset::Variable(variable) => crate::kernel::is_load_variable(variable),
+        AddressOffset::Add(left, right) => {
             pointer_offset_contains_registered_load(left)
                 || pointer_offset_contains_registered_load(right)
         }
-        PointerOffsetTerm::Int32Scaled { .. } | PointerOffsetTerm::Int64Scaled { .. } => false,
+        AddressOffset::Int32Scaled { .. } | AddressOffset::Int64Scaled { .. } => false,
     }
 }
 
@@ -2952,15 +2861,12 @@ fn proposition_mentions_integer_variable(proposition: &Proposition, variable: Va
             Term::Sequence(sequence) => sequence_contains_integer_variable(sequence, variable),
             Term::PointerOffset(offset) => integer_carrier_in_pointer_offset(offset, variable),
             Term::Algebraic(value) => integer_carrier_in_algebraic(value, variable),
-            Term::ExpressionOutcome(ExpressionOutcome::Value(value)) => {
-                integer_carrier_in_program_value(value, variable)
-            }
-            // A state or an execution outcome may carry a mathematical
-            // machine conversion in a nested local.  Keep this conservative
+            // A state may carry a mathematical machine conversion in a
+            // nested local.  Keep this conservative
             // rather than silently dropping the accumulator scope; memory
             // states themselves remain opaque below.
-            Term::StatementOutcome(_) | Term::FunctionOutcome(_) | Term::ExecutionState(_) => true,
-            Term::ExpressionOutcome(_) | Term::Memory(_) => false,
+            Term::ExecutionState(_) => true,
+            Term::Memory(_) => false,
         }
     }
 
@@ -3068,7 +2974,7 @@ fn proposition_mentions_integer_variable(proposition: &Proposition, variable: Va
         }
         // These proposition forms can contain machine payloads in their C
         // state/outcome terms.  A conservative answer prevents dropping a
-        // needed accumulator scope, while Memory remains intentionally
+        // needed accumulator scope, while SymbolicMemory remains intentionally
         // opaque in the explicit forms above.
         _ => true,
     }
@@ -3079,7 +2985,7 @@ fn evaluate_spec_integer_range_fold_indices_in(
     index: &SpecIntegerRangeFoldIndex,
     assumptions: &PureFactContext,
     budget: &mut SpecEvaluation<'_>,
-) -> ExecutionResult<Vec<(IntegerRangeFoldIndex, ExecutionFacts, Vec<ProofObligation>)>> {
+) -> ExecutionResult<Vec<(IntegerFoldIndexResult, ExecutionFacts, Vec<ProofObligation>)>> {
     match index {
         SpecIntegerRangeFoldIndex::Int32 { start, end }
         | SpecIntegerRangeFoldIndex::UInt64 { start, end } => {
@@ -3114,25 +3020,28 @@ fn evaluate_spec_integer_range_fold_indices_in(
                     else {
                         continue;
                     };
-                    // Each kind takes endpoints of its own type only.
-                    let index = match (
-                        start_path.value.clone().into_native(),
-                        end_path.value.into_native(),
-                        unsigned64,
-                    ) {
-                        (ProgramValue::Int32(start), ProgramValue::Int32(end), false) => {
-                            IntegerRangeFoldIndex::Int32 {
-                                start: SharedIntegerRangeEndpoint::intern(start),
-                                end: SharedIntegerRangeEndpoint::intern(end),
-                            }
-                        }
-                        (ProgramValue::UInt64(start), ProgramValue::UInt64(end), true) => {
-                            IntegerRangeFoldIndex::UInt64 {
-                                start: SharedIntegerRangeEndpoint::intern(start),
-                                end: SharedIntegerRangeEndpoint::intern(end),
-                            }
-                        }
-                        _ => continue,
+                    // Keep the selected typed roots, including their producer payloads.
+                    let kind = if unsigned64 {
+                        KernelFoldIndex::UInt64
+                    } else {
+                        KernelFoldIndex::Int32
+                    };
+                    let expected = if unsigned64 {
+                        ProgramType::UInt64
+                    } else {
+                        ProgramType::Int32
+                    };
+                    if start_path.value.program_type() != expected
+                        || end_path.value.program_type() != expected
+                    {
+                        continue;
+                    }
+                    let index = IntegerFoldIndexResult {
+                        kind,
+                        bounds: [
+                            start_path.value.common_operand(),
+                            end_path.value.common_operand(),
+                        ],
                     };
                     result.push((index, facts, obligations));
                 }
@@ -3168,9 +3077,12 @@ fn evaluate_spec_integer_range_fold_indices_in(
                         continue;
                     };
                     result.push((
-                        IntegerRangeFoldIndex::Integer {
-                            start: start_path.value.clone().into(),
-                            end: end_path.value.into(),
+                        IntegerFoldIndexResult {
+                            kind: KernelFoldIndex::Integer,
+                            bounds: [
+                                start_path.value.clone().into_kernel(),
+                                end_path.value.into_kernel(),
+                            ],
                         },
                         facts,
                         obligations,
@@ -3275,18 +3187,19 @@ fn evaluate_spec_integer_algebraic_match_paths_in(
                 }
             }
             let body = rewrite_integer_match_typed_body(
-                body_path.value,
+                body_path.value.into_native_compat(),
                 &BTreeMap::new(),
                 &integer_replacements,
                 &BTreeMap::new(),
             )
             .ok_or(ExecutionLimit::Paths)?;
-            lowered_arms.push(AlgebraicIntegerMatchArm {
-                binding_names: crate::kernel::BindingNames::bindings(&arm.bindings),
-                variant: arm.variant.clone(),
-                bindings: bindings.clone(),
-                body: body.into(),
-            });
+            lowered_arms.push(KernelMatchArm::import(
+                &mut KernelTermImport::default(),
+                &arm.variant,
+                &bindings,
+                IntegerResult::from(body).into_kernel(),
+                &crate::kernel::BindingNames::bindings(&arm.bindings),
+            ));
         }
         let value = match scrutinee_path
             .value
@@ -3295,22 +3208,27 @@ fn evaluate_spec_integer_algebraic_match_paths_in(
         {
             Some(AlgebraicTermNode::Constructor { variant, fields }) => lowered_arms
                 .iter()
-                .find(|arm| arm.variant == *variant)
-                .and_then(|arm| {
+                .find(|(arm, _)| arm.variant == *variant)
+                .and_then(|(arm, body)| {
                     if arm.bindings.len() != fields.len() {
                         return None;
                     }
-                    let body = rewrite_integer_match_typed_fields(
-                        arm.body.as_ref().clone(),
-                        &arm.bindings,
-                        fields,
-                    )?;
-                    Some(body)
+                    // Constructor iota keeps the existing selected typed
+                    // checking boundary. Arm storage itself stays common.
+                    let bindings = arm.export_bindings(&mut KernelTermExport::default()).ok()?;
+                    let body = KernelTermExport::default().integer(body).ok()?;
+                    rewrite_integer_match_typed_fields(body.as_ref().clone(), &bindings, fields)
+                        .map(IntegerResult::from)
                 })
                 .ok_or(ExecutionLimit::Paths)?,
-            _ => IntegerTerm::algebraic_match(
-                scrutinee_path.value.into_native_compat(),
-                lowered_arms,
+            _ => IntegerResult::from_kernel(
+                KernelMatch::new(
+                    KernelType::Integer,
+                    scrutinee_path.value.into_kernel(),
+                    lowered_arms,
+                )
+                .map_err(|_| ExecutionLimit::Paths)?
+                .into_term(),
             ),
         };
         result.push(SpecIntegerPath {
@@ -3433,8 +3351,8 @@ fn rewrite_integer_match_typed_fields(
                     }
                 }
                 (ProgramValue::Pointer(from), ProgramValue::Pointer(to)) => {
-                    let (PointerBlock::Symbolic(from) | PointerBlock::FunctionSymbolic(from)) =
-                        &from.block
+                    let (AddressBase::Symbolic(from) | AddressBase::FunctionSymbolic(from)) =
+                        &from.base
                     else {
                         return None;
                     };
@@ -3519,8 +3437,8 @@ fn evaluate_integer_binary_paths_in(
             ) else {
                 continue;
             };
-            let left_bits = integer_term_bits(&left_path.value);
-            let right_bits = integer_term_bits(&right_path.value);
+            let left_bits = left_path.value.bits();
+            let right_bits = right_path.value.bits();
             let work = match operation {
                 IntegerBinaryOperation::Multiply
                 | IntegerBinaryOperation::TruncatingQuotient
@@ -3540,7 +3458,7 @@ fn evaluate_integer_binary_paths_in(
                     | IntegerBinaryOperation::TruncatingRemainder
             ) {
                 let nonzero = ConditionTerm::integer_not_equal(
-                    right_path.value.clone(),
+                    right_path.value.clone().into_native_compat(),
                     IntegerTerm::constant_i64(0),
                 );
                 retain_required_integer_obligation(
@@ -3549,25 +3467,19 @@ fn evaluate_integer_binary_paths_in(
                     Proposition::ConditionIs(nonzero, true),
                 );
             }
-            let value = match operation {
-                IntegerBinaryOperation::Add => {
-                    IntegerTerm::Add(left_path.value.clone().into(), right_path.value.into())
+            let operator = match operation {
+                IntegerBinaryOperation::Add => KernelIntegerOperator::Add,
+                IntegerBinaryOperation::Subtract => KernelIntegerOperator::Subtract,
+                IntegerBinaryOperation::Multiply => KernelIntegerOperator::Multiply,
+                IntegerBinaryOperation::TruncatingQuotient => {
+                    KernelIntegerOperator::TruncatingQuotient
                 }
-                IntegerBinaryOperation::Subtract => {
-                    IntegerTerm::Subtract(left_path.value.clone().into(), right_path.value.into())
+                IntegerBinaryOperation::TruncatingRemainder => {
+                    KernelIntegerOperator::TruncatingRemainder
                 }
-                IntegerBinaryOperation::Multiply => {
-                    IntegerTerm::Multiply(left_path.value.clone().into(), right_path.value.into())
-                }
-                IntegerBinaryOperation::TruncatingQuotient => IntegerTerm::TruncatingQuotient(
-                    left_path.value.clone().into(),
-                    right_path.value.into(),
-                ),
-                IntegerBinaryOperation::TruncatingRemainder => IntegerTerm::TruncatingRemainder(
-                    left_path.value.clone().into(),
-                    right_path.value.into(),
-                ),
             };
+            let value =
+                IntegerResult::operation(operator, vec![left_path.value.clone(), right_path.value]);
             result.push(SpecIntegerPath {
                 value,
                 facts,
@@ -3585,13 +3497,6 @@ enum IntegerBinaryOperation {
     Multiply,
     TruncatingQuotient,
     TruncatingRemainder,
-}
-
-fn integer_term_bits(term: &IntegerTerm) -> usize {
-    term.as_const()
-        .and_then(|value| usize::try_from(value.bits()).ok())
-        .unwrap_or(1)
-        .saturating_add(1)
 }
 
 fn lower_spec_algebraic_comparison_at_state_in(
@@ -3935,7 +3840,7 @@ fn evaluate_spec_algebraic_non_call_in(
                     let ProgramValue::Parameter(term) = path.value.into_native() else {
                         return Err(ExecutionLimit::Paths);
                     };
-                    AlgebraicResult::Native(*term)
+                    AlgebraicResult::from(*term)
                 };
                 if value.algebraic_type() != &expression.algebraic_type {
                     return Err(ExecutionLimit::Paths);
@@ -4163,8 +4068,8 @@ fn evaluate_spec_algebraic_non_call_in(
                             // The same original-class check governs model
                             // fields and calls. It also handles known null
                             // aliases and a declared object's block class.
-                            let (AlgebraicValueType::ObjectPointer(ty, class), Some(value)) =
-                                (expected, field_path.value.program_mut())
+                            let (AlgebraicValueType::ObjectPointer(ty, class), Some(mut value)) =
+                                (expected, field_path.value.program_compat())
                             else {
                                 continue;
                             };
@@ -4177,13 +4082,13 @@ fn evaluate_spec_algebraic_non_call_in(
                                 &field_path.obligations,
                             );
                             if !refine_object_pointer_argument(
-                                value,
+                                &mut value,
                                 class,
                                 scope.state.memory(),
                                 &context,
                             ) {
                                 if !budget.recover_resource_call_types
-                                    || !matches!(value, ProgramValue::Pointer(pointer)
+                                    || !matches!(&value, ProgramValue::Pointer(pointer)
                                         if pointer.object_type_evidence().is_none())
                                 {
                                     continue;
@@ -4191,16 +4096,17 @@ fn evaluate_spec_algebraic_non_call_in(
                                 // A held body asserts the constructor's nominal
                                 // field domain, just as it asserts a call's domain.
                                 // Never replace incompatible positive evidence.
-                                *value =
+                                value =
                                     value.clone().with_pointer_object_class(Some(class.clone()));
                             }
                             if budget.recover_resource_call_types {
                                 field_path.facts.push(ExecutionPureFact::certified(
                                     crate::kernel::object_types::checked_call_type_fact(
-                                        value, class,
+                                        &value, class,
                                     ),
                                 ));
                             }
+                            field_path.value = field_path.value.with_checked_program(value);
                         }
                         let Some((merged_facts, merged_obligations)) =
                             merge_execution_pure_facts_and_obligations_under(
@@ -4229,7 +4135,7 @@ fn evaluate_spec_algebraic_non_call_in(
                 .into_iter()
                 .map(|(fields, facts, obligations)| SpecAlgebraicPath {
                     value: if budget.machine_result_production_disabled {
-                        AlgebraicResult::Native(AlgebraicTerm {
+                        AlgebraicResult::from(AlgebraicTerm {
                             algebraic_type: expression.algebraic_type.clone(),
                             node: AlgebraicTermNode::Constructor {
                                 variant: variant.clone(),
@@ -4369,7 +4275,7 @@ fn evaluate_spec_algebraic_value_at_state_in(
                 evaluate_spec_integer_expression_paths_in(scope, expression, assumptions, budget)?
                     .into_iter()
                     .map(|path| SpecAlgebraicValuePath {
-                        value: AlgebraicFieldResult::Native(AlgebraicValue::Integer(path.value)),
+                        value: AlgebraicFieldResult::Shared(path.value.into_kernel()),
                         facts: path.facts,
                         obligations: path.obligations,
                     })
@@ -4539,7 +4445,7 @@ fn algebraic_case_paths_in(
             fields: fields
                 .iter()
                 .cloned()
-                .map(AlgebraicFieldResult::Native)
+                .map(AlgebraicFieldResult::from_native)
                 .collect(),
             facts: Vec::new().into(),
             obligations: Vec::new(),
@@ -4564,7 +4470,7 @@ fn algebraic_case_paths_in(
                     variant: variant.name.clone(),
                     fields: fields
                         .into_iter()
-                        .map(AlgebraicFieldResult::Native)
+                        .map(AlgebraicFieldResult::from_native)
                         .collect(),
                     facts: vec![ExecutionPureFact::new(Proposition::Equal(
                         Term::Algebraic(term.clone()),
@@ -5180,7 +5086,7 @@ fn evaluate_spec_resource_at_state_in(
 }
 
 /// Lower a resource relation structurally. Naming a descriptor does not
-/// establish a physical byte extent, access permission, or ownership.
+/// establish a physical byte span, access permission, or ownership.
 fn lower_spec_resource_relation_at_state_in(
     scope: SpecScope<'_>,
     left: &SpecResource,
@@ -5223,7 +5129,7 @@ fn lower_spec_resource_relation_at_state_in(
 #[allow(clippy::too_many_arguments)]
 fn lower_spec_memory_loadable_at_state_in(
     scope: SpecScope<'_>,
-    memory: &SpecMemory,
+    memory: &SpecPoint,
     base: &SpecExpression,
     start: &SpecExpression,
     end: &SpecExpression,
@@ -5235,12 +5141,12 @@ fn lower_spec_memory_loadable_at_state_in(
     let state = scope.state;
     let loop_entry_state = scope.loop_entry_state;
     let memory = match memory {
-        SpecMemory::Current => state.memory(),
-        SpecMemory::FunctionEntry | SpecMemory::LoopEntry => match loop_entry_state {
+        SpecPoint::Current => state.memory(),
+        SpecPoint::FunctionEntry | SpecPoint::LoopEntry => match loop_entry_state {
             Some(entry) => entry.memory(),
             None => return Ok(Vec::new()),
         },
-        SpecMemory::Fixed(memory) => memory,
+        SpecPoint::At(point) => point.memory(),
     };
     Ok(evaluate_spec_values_at_state_in(
         scope,
@@ -5251,7 +5157,7 @@ fn lower_spec_memory_loadable_at_state_in(
     .into_iter()
     .filter_map(|path| match path.values.as_slice() {
         // The proposition describes the same native range as a resource
-        // clause, including its extent guards, and states the wide liveness
+        // clause, including its span guards, and states the wide liveness
         // fact a contract holding it is given. Neither endpoint is a signed
         // observation of the source count.
         [ProgramValue::Pointer(base), start, end]
@@ -5259,8 +5165,8 @@ fn lower_spec_memory_loadable_at_state_in(
         {
             let (start, end) = crate::kernel::wide_range_bounds(start, end)?;
             let range = MemoryRange::new_wide(
-                Pointer {
-                    block: base.block.clone(),
+                Address {
+                    base: base.base.clone(),
                     offset: crate::kernel::eval::canonical_offset_term(&base.offset),
                 },
                 crate::kernel::eval::canonical_term(&start),
@@ -5269,7 +5175,7 @@ fn lower_spec_memory_loadable_at_state_in(
             );
             let mut obligations = path.obligations;
             if enforce_range_guards {
-                for guard in crate::kernel::memory_range_extent_guards(&range) {
+                for guard in crate::kernel::memory_range_span_guards(&range) {
                     add_proof_obligation(&mut obligations, assumptions, guard)?;
                 }
             }
@@ -5289,8 +5195,8 @@ fn lower_spec_memory_loadable_at_state_in(
             ProgramValue::UInt64(end),
         ] => {
             let range = MemoryRange::new_wide(
-                Pointer {
-                    block: base.block.clone(),
+                Address {
+                    base: base.base.clone(),
                     offset: crate::kernel::eval::canonical_offset_term(&base.offset),
                 },
                 MachineTerm::uint64_constant(0),
@@ -5299,7 +5205,7 @@ fn lower_spec_memory_loadable_at_state_in(
             );
             let mut obligations = path.obligations;
             if enforce_range_guards {
-                for guard in crate::kernel::memory_range_extent_guards(&range) {
+                for guard in crate::kernel::memory_range_span_guards(&range) {
                     add_proof_obligation(&mut obligations, assumptions, guard)?;
                 }
             }
@@ -5322,8 +5228,8 @@ fn lower_spec_memory_loadable_at_state_in(
             let mut discarded_facts = ExecutionFacts::new();
             let start =
                 crate::kernel::canonicalized_offset_index_term(start.clone(), &mut discarded_facts);
-            let base = Pointer {
-                block: base.block.clone(),
+            let base = Address {
+                base: base.base.clone(),
                 offset: canonical_offset_sum(
                     base.offset.clone(),
                     canonical_scaled_offset(start, i64::from(element_width)),
@@ -5331,36 +5237,32 @@ fn lower_spec_memory_loadable_at_state_in(
             };
             let mut obligations = path.obligations;
             if enforce_range_guards {
-                match crate::kernel::memory_range_byte_count_extent(
+                match crate::kernel::memory_range_byte_count_span(
                     range_start.clone(),
                     range_end.clone(),
                     element_width,
                 ) {
-                    crate::kernel::MemoryRangeExtent::ConstantValid => {}
+                    crate::kernel::MemoryRangeSpan::ConstantValid => {}
                     // A constant range that is reversed or wider than a `u32`
-                    // byte extent prunes this path. Record why: the surviving
+                    // byte span prunes this path. Record why: the surviving
                     // path count alone said only "no path".
-                    crate::kernel::MemoryRangeExtent::ConstantInvalid {
+                    crate::kernel::MemoryRangeSpan::ConstantInvalid {
                         element_count,
                         byte_limit,
                     } => {
-                        budget.record_dropped_range_extent(
-                            element_count,
-                            element_width,
-                            byte_limit,
-                        );
+                        budget.record_dropped_range_span(element_count, element_width, byte_limit);
                         return None;
                     }
-                    // The extent half of the stated range. It is owed here
+                    // The span half of the stated range. It is owed here
                     // like any other side condition of the lowering, and a
                     // site assuming the lowered proposition as a hypothesis
                     // proved elsewhere assumes it with the rest.
-                    crate::kernel::MemoryRangeExtent::Guards(guards) => {
+                    crate::kernel::MemoryRangeSpan::Guards(guards) => {
                         // Past one-byte elements the unsigned `fits` half is
                         // the signed count bound, which is the spelling a
                         // proof can write and a refusal can print.
                         let guards = if element_width > 1 {
-                            crate::kernel::memory_range_extent_guards(
+                            crate::kernel::memory_range_span_guards(
                                 &MemoryRange::new_with_element_width(
                                     base.clone(),
                                     range_start.clone(),
@@ -5384,7 +5286,7 @@ fn lower_spec_memory_loadable_at_state_in(
                             let reversed = guard == ordered;
                             if add_proof_obligation(&mut obligations, assumptions, guard).is_none()
                             {
-                                budget.record_dropped_refuted_range_extent(reversed);
+                                budget.record_dropped_refuted_range_span(reversed);
                                 return None;
                             }
                         }
@@ -5489,10 +5391,11 @@ fn evaluate_spec_integer_pure_function_application_paths_in(
     Ok(paths
         .into_iter()
         .map(|(arguments, facts, obligations)| SpecIntegerPath {
-            value: IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
+            value: (IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
                 name.to_string(),
                 call_arguments(arguments),
-            )),
+            )))
+            .into(),
             facts,
             obligations,
         })
@@ -5500,24 +5403,24 @@ fn evaluate_spec_integer_pure_function_application_paths_in(
 }
 
 /// An element index scaled to bytes, folded when the index is a constant.
-fn canonical_scaled_offset(value: MachineTerm, byte_width: i64) -> PointerOffsetTerm {
+fn canonical_scaled_offset(value: MachineTerm, byte_width: i64) -> AddressOffset {
     match value {
         bits32_constant!(value) => {
-            PointerOffsetTerm::Constant((constant_u32(value) as i32 as i64) * byte_width)
+            AddressOffset::Constant((constant_u32(value) as i32 as i64) * byte_width)
         }
-        value => PointerOffsetTerm::scaled_int32_node(value, byte_width),
+        value => AddressOffset::scaled_int32_node(value, byte_width),
     }
 }
 
 /// `left + right` on offsets with constants folded and zero addends dropped.
-fn canonical_offset_sum(left: PointerOffsetTerm, right: PointerOffsetTerm) -> PointerOffsetTerm {
+fn canonical_offset_sum(left: AddressOffset, right: AddressOffset) -> AddressOffset {
     match (&left, &right) {
-        (PointerOffsetTerm::Constant(left), PointerOffsetTerm::Constant(right)) => {
-            PointerOffsetTerm::Constant(left + right)
+        (AddressOffset::Constant(left), AddressOffset::Constant(right)) => {
+            AddressOffset::Constant(left + right)
         }
-        (PointerOffsetTerm::Constant(0), _) => right,
-        (_, PointerOffsetTerm::Constant(0)) => left,
-        _ => PointerOffsetTerm::Add(Box::new(left), Box::new(right)),
+        (AddressOffset::Constant(0), _) => right,
+        (_, AddressOffset::Constant(0)) => left,
+        _ => AddressOffset::Add(Box::new(left), Box::new(right)),
     }
 }
 
@@ -5819,7 +5722,10 @@ fn lower_spec_predicate_proposition_at_state_in(
     for argument in arguments {
         let (expression, memory) = match argument {
             SpecPredicateArgument::Value(expression) => (expression, None),
-            SpecPredicateArgument::ArrayRef { memory, pointer } => (pointer, Some(memory)),
+            SpecPredicateArgument::ArrayRef {
+                point: memory,
+                pointer,
+            } => (pointer, Some(memory)),
         };
         let argument_paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
             scope,
@@ -5853,14 +5759,14 @@ fn lower_spec_predicate_proposition_at_state_in(
                 };
                 if let Some(memory) = memory {
                     let memory = match memory {
-                        SpecMemory::Current => state.memory(),
-                        SpecMemory::FunctionEntry | SpecMemory::LoopEntry => {
+                        SpecPoint::Current => state.memory(),
+                        SpecPoint::FunctionEntry | SpecPoint::LoopEntry => {
                             let Some(entry_state) = loop_entry_state else {
                                 continue;
                             };
                             entry_state.memory()
                         }
-                        SpecMemory::Fixed(memory) => memory,
+                        SpecPoint::At(point) => point.memory(),
                     };
                     arguments.push(Term::Memory(memory.clone()));
                 }
@@ -6266,7 +6172,7 @@ fn evaluate_spec_add_chain_paths_in(
 fn aggregate_projection_pointer(
     expression: &SpecExpression,
     parameter: &BindingName,
-    slot: &Pointer,
+    slot: &Address,
 ) -> Option<SpecExpression> {
     match expression {
         SpecExpression::ProgramExpression(ProgramExpression::Variable(name))
@@ -6589,17 +6495,16 @@ fn evaluate_resource_count_paths(
                         obligations,
                     });
                 }
-                if anchor.offset != PointerOffsetTerm::Constant(0) {
+                if anchor.offset != AddressOffset::Constant(0) {
                     return Err(ExecutionLimit::AuthorityCountNeedsExactPointer);
                 }
                 if creation.governing_authority(&description).as_ref() != Some(&description) {
                     return Err(ExecutionLimit::AuthorityCountNeedsOwnership);
                 }
                 let count = creation
-                    .observe_term(&anchor.block, name)
+                    .observe_term(&anchor.base, name)
                     .map_err(|_| ExecutionLimit::AuthorityCountNeedsOwnership)?;
-                if let Some((base, quantity)) =
-                    creation.observed_symbolic_batch(&anchor.block, name)
+                if let Some((base, quantity)) = creation.observed_symbolic_batch(&anchor.base, name)
                 {
                     facts.push(ExecutionPureFact::certified(
                         Proposition::signed_arithmetic_domain(
@@ -6652,7 +6557,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 return evaluate_spec_expression_paths_with_algebraic_bindings_in(
                     SpecScope { state, ..scope },
                     &SpecExpression::MemoryLoad {
-                        memory: SpecMemory::Current,
+                        point: SpecPoint::Current,
                         pointer: pointer.clone(),
                         value_type: *value_type,
                     },
@@ -6667,15 +6572,15 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             // the contract retains the value from entry, never its permission.
             // Contract validation separately refuses current reads of fields
             // modified by the body, as for ordinary by-value parameter claims.
-            let memory = if state.memory.has_block(&slot.block) {
-                state.memory()
+            let selected = if state.memory.has_block(&slot.base) {
+                state
             } else {
-                entry.memory()
+                entry
             };
             evaluate_spec_expression_paths_with_algebraic_bindings_in(
                 SpecScope { state, ..scope },
                 &SpecExpression::MemoryLoad {
-                    memory: SpecMemory::Fixed(memory.clone()),
+                    point: SpecPoint::At(selected.program_point()),
                     pointer: Box::new(pointer),
                     value_type: *value_type,
                 },
@@ -6706,11 +6611,17 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 }
                 let mut obligations = path.obligations;
                 let lower_bound = Proposition::ConditionIs(
-                    ConditionTerm::integer_greater_equal(path.value.clone(), lower.clone()),
+                    ConditionTerm::integer_greater_equal(
+                        path.value.clone().into_native_compat(),
+                        lower.clone(),
+                    ),
                     true,
                 );
                 let upper_bound = Proposition::ConditionIs(
-                    ConditionTerm::integer_less_equal(path.value.clone(), upper.clone()),
+                    ConditionTerm::integer_less_equal(
+                        path.value.clone().into_native_compat(),
+                        upper.clone(),
+                    ),
                     true,
                 );
                 retain_required_integer_obligation(&mut obligations, assumptions, lower_bound);
@@ -6719,19 +6630,16 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     program_value_from_bitvector_term(
                         destination.program_type(),
                         MachineTerm::IntegerToMachine {
-                            value: path.value.into(),
+                            value: path.value.native_compat(),
                             destination: *destination,
                         },
                     )
                     .ok_or(ExecutionLimit::Paths)?
                     .into()
                 } else {
-                    KernelTerm::integer_to_machine(
-                        *destination,
-                        KernelTermImport::default().integer(&path.value.into()),
-                    )
-                    .expect("typed Integer conversion operand")
-                    .into()
+                    KernelTerm::integer_to_machine(*destination, path.value.into_kernel())
+                        .expect("typed Integer conversion operand")
+                        .into()
                 };
                 paths.push(SpecExpressionPath {
                     value,
@@ -7055,7 +6963,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             evaluate_spec_expression_paths_with_algebraic_bindings_in(
                 SpecScope { state, ..scope },
                 &SpecExpression::MemoryLoad {
-                    memory: SpecMemory::Current,
+                    point: SpecPoint::Current,
                     pointer: Box::new(SpecExpression::Value(ProgramValue::typed_pointer(
                         slot.clone(),
                         ProgramType::ParameterPointer(parameter),
@@ -7665,7 +7573,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     return None;
                 };
                 path.value =
-                    ProgramValue::Pointer(value.clone().with_extent(Some(SubobjectExtent {
+                    ProgramValue::Pointer(value.clone().with_bounds(Some(SubobjectBounds {
                         start: value.pointer().clone(),
                         width: (*width).into(),
                     })))
@@ -7687,13 +7595,13 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             budget,
         )?,
         SpecExpression::MemoryLoad {
-            memory,
+            point: memory,
             pointer,
             value_type,
         } => {
             let mut paths = Vec::new();
             let entry_projection =
-                if matches!(memory, SpecMemory::FunctionEntry | SpecMemory::LoopEntry) {
+                if matches!(memory, SpecPoint::FunctionEntry | SpecPoint::LoopEntry) {
                     fn root(expression: &SpecExpression) -> Option<&BindingName> {
                         match expression {
                             SpecExpression::ProgramExpression(ProgramExpression::Variable(
@@ -7725,17 +7633,15 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     continue;
                 };
                 let pointer = pointer.into_pointer();
-                let memory = match memory {
-                    SpecMemory::Current => state.memory(),
-                    SpecMemory::FunctionEntry => match loop_entry_state {
-                        Some(entry_state) => entry_state.memory(),
-                        None => continue,
-                    },
-                    SpecMemory::LoopEntry => match loop_entry_state {
-                        Some(loop_entry_state) => loop_entry_state.memory(),
-                        None => continue,
-                    },
-                    SpecMemory::Fixed(memory) => memory,
+                let (memory_view, selected_state) = match memory {
+                    SpecPoint::Current => (state.memory(), Some(state)),
+                    SpecPoint::FunctionEntry | SpecPoint::LoopEntry => {
+                        let Some(entry) = loop_entry_state else {
+                            continue;
+                        };
+                        (entry.memory(), Some(entry))
+                    }
+                    SpecPoint::At(point) => (point.memory(), None),
                 };
                 let mut obligations = pointer_path.obligations;
                 // A written definedness claim must retain the typed premise,
@@ -7745,20 +7651,24 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 if budget.checked_reads
                     && (budget.program_definedness
                         || !PureFactContext::new().proves_memory_read_defined(
-                            memory,
+                            memory_view,
                             &pointer,
                             *value_type,
                         ))
                 {
                     obligations.push(ProofObligation::new(Proposition::MemoryReadDefined {
-                        memory: memory.clone(),
+                        at: match memory {
+                            SpecPoint::At(point) => point.id(),
+                            _ => selected_state.and_then(ExecutionState::observation_point_id),
+                        },
+                        memory: memory_view.clone(),
                         pointer: pointer.clone(),
                         value_type: *value_type,
                     }));
                 }
                 paths.extend(spec_value_paths_in(
                     crate::kernel::eval::evaluate_logical_memory_load_paths(
-                        memory,
+                        memory_view,
                         pointer,
                         *value_type,
                         pointer_path.facts,
@@ -7908,13 +7818,13 @@ fn evaluate_spec_pure_function_application_paths_in(
                 .then(|| SharedPureApplication::intern(name.to_owned(), call_arguments(arguments)));
             let value = PointerValue::new(
                 if all_null {
-                    Pointer::null()
+                    Address::null()
                 } else {
-                    Pointer {
-                        block: PointerBlock::PureFunctionApplication(
+                    Address {
+                        base: AddressBase::PureFunctionApplication(
                             application.as_ref().unwrap().clone(),
                         ),
-                        offset: PointerOffsetTerm::Constant(0),
+                        offset: AddressOffset::Constant(0),
                     }
                 },
                 result_type,
@@ -8058,7 +7968,7 @@ fn pure_pointer_result_class_from<'a>(
 pub(crate) fn refine_object_pointer_argument(
     value: &mut ProgramValue,
     object_class: &crate::kernel::effective_type::CAccessClass,
-    memory: &Memory,
+    memory: &SymbolicMemory,
     assumptions: &PureFactContext,
 ) -> bool {
     refine_object_pointer_argument_with_null(
@@ -8069,7 +7979,7 @@ pub(crate) fn refine_object_pointer_argument(
         |facts, pointer| {
             facts.decide(&ConditionTerm::pointer_equal(
                 pointer.clone(),
-                Pointer::null(),
+                Address::null(),
             )) == Some(true)
         },
     )
@@ -8080,7 +7990,7 @@ pub(crate) fn refine_object_pointer_argument(
 pub(crate) fn refine_object_pointer_argument_using_facts(
     value: &mut ProgramValue,
     object_class: &crate::kernel::effective_type::CAccessClass,
-    memory: &Memory,
+    memory: &SymbolicMemory,
     assumptions: &PureFactContext,
 ) -> bool {
     refine_object_pointer_argument_with_null(
@@ -8091,7 +8001,7 @@ pub(crate) fn refine_object_pointer_argument_using_facts(
         |facts, pointer| {
             facts.exact_condition_value(&ConditionTerm::pointer_equal(
                 pointer.clone(),
-                Pointer::null(),
+                Address::null(),
             )) == Some(true)
         },
     )
@@ -8100,9 +8010,9 @@ pub(crate) fn refine_object_pointer_argument_using_facts(
 fn refine_object_pointer_argument_with_null(
     value: &mut ProgramValue,
     object_class: &crate::kernel::effective_type::CAccessClass,
-    memory: &Memory,
+    memory: &SymbolicMemory,
     assumptions: &PureFactContext,
-    proves_null: impl FnOnce(&PureFactContext, &Pointer) -> bool,
+    proves_null: impl FnOnce(&PureFactContext, &Address) -> bool,
 ) -> bool {
     let ProgramValue::Pointer(pointer) = value else {
         return false;
@@ -8114,18 +8024,30 @@ fn refine_object_pointer_argument_with_null(
     {
         return true;
     }
+    let names_declared_object = |value: &PointerValue| {
+        [value.pointer(), value.provenance()]
+            .into_iter()
+            .any(|object| {
+                object.offset == AddressOffset::Constant(0)
+                    && memory.declared_class(object).as_ref() == Some(object_class)
+            })
+    };
     if pointer.object_type_evidence().is_none()
         && (assumptions
             .equality_graph
             .has_object_type(pointer.pointer(), object_class)
-            // A modular result may have a symbolic address while its checked
-            // provenance already names the actual declared object.
-            || [pointer.pointer(), pointer.provenance()]
-                .into_iter()
-                .any(|object| {
-                    object.offset == PointerOffsetTerm::Constant(0)
-                        && memory.declared_class(object).as_ref() == Some(object_class)
-                })
+            || names_declared_object(pointer)
+            || {
+                // Complete-value equality can identify the declared object
+                // even when strict replay carries a symbolic result. Use
+                // the retained witness only for this class check.
+                let witness = assumptions
+                    .equality_graph
+                    .admitted
+                    .pointer_value_classes
+                    .representative(pointer);
+                witness != *pointer && names_declared_object(&witness)
+            }
             // A pointer the facts prove null meets the requirement too. It
             // keeps its written address rather than being respelled as null.
             || proves_null(assumptions, pointer.pointer()))
@@ -8149,8 +8071,10 @@ fn evaluate_spec_algebraic_argument_paths_in(
             .into_iter()
             .map(|path| SpecPureFunctionArgumentPath {
                 value: match path.value {
-                    AlgebraicResult::Native(value) => {
-                        SpecCallArgument::Native(PureFunctionArgument::Algebraic(value))
+                    AlgebraicResult::Imported(root) => {
+                        SpecCallArgument::Native(PureFunctionArgument::Algebraic(
+                            AlgebraicResult::Imported(root).into_native_compat(),
+                        ))
                     }
                     AlgebraicResult::Shared(root) => SpecCallArgument::Shared(root),
                 },
@@ -8244,7 +8168,7 @@ fn evaluate_spec_pure_function_argument_paths_in(
                 .into_iter()
                 .map(|path| SpecPureFunctionArgumentPath {
                     value: SpecCallArgument::Native(PureFunctionArgument::Integer(
-                        path.value.into(),
+                        path.value.native_compat(),
                     )),
                     facts: path.facts,
                     obligations: path.obligations,
@@ -8271,19 +8195,19 @@ fn evaluate_spec_pure_function_argument_paths_in(
             evaluate_spec_algebraic_argument_paths_in(scope, expression, assumptions, budget)
         }
         SpecPureFunctionArgument::ArrayRef {
-            memory,
+            point: memory,
             pointer,
             element_type,
         } => {
             let memory = match memory {
-                SpecMemory::Current => state.memory(),
-                SpecMemory::FunctionEntry | SpecMemory::LoopEntry => {
+                SpecPoint::Current => state.memory(),
+                SpecPoint::FunctionEntry | SpecPoint::LoopEntry => {
                     let Some(entry) = loop_entry_state else {
                         return Ok(Vec::new());
                     };
                     entry.memory()
                 }
-                SpecMemory::Fixed(memory) => memory,
+                SpecPoint::At(point) => point.memory(),
             };
             Ok(evaluate_spec_expression_paths_with_algebraic_bindings_in(
                 scope,
@@ -8330,13 +8254,13 @@ fn evaluate_spec_pure_function_argument_paths_in(
 /// argument that is not a pointer at all keeps the live state, which is
 /// always sound and merely as fragile as before; so does a block the walk
 /// cannot separate from anything, because it then crosses no edge.
-fn array_ref_argument_memory(memory: &Memory, pointer: &ProgramValue) -> Memory {
+fn array_ref_argument_memory(memory: &SymbolicMemory, pointer: &ProgramValue) -> SymbolicMemory {
     let ProgramValue::Pointer(pointer) = pointer else {
         return memory.clone();
     };
     let interned = crate::kernel::intern_memory(memory.clone());
     crate::kernel::resource_tracker::last_same_version_point(
-        crate::kernel::resource_tracker::TrackedResource::Block(&pointer.pointer().block),
+        crate::kernel::resource_tracker::TrackedResource::Block(&pointer.pointer().base),
         &crate::kernel::resource_tracker::ProgramPoint::at(&interned),
     )
     .map(|point| point.memory().clone())
@@ -8365,7 +8289,7 @@ pub(in crate::kernel) fn program_value_bitvector_term(value: &ProgramValue) -> O
 }
 
 fn integer_constant_to_machine(
-    value: &IntegerTerm,
+    value: &IntegerResult,
     destination: MachineIntegerType,
 ) -> Option<ProgramValue> {
     let value = MachineIntegerConstant::from_integer(destination.format(), value.as_const()?)?;
@@ -8869,7 +8793,7 @@ fn evaluate_spec_scalar_unary_paths_retaining_type_in(
             paths.push(path);
             continue;
         }
-        // An explicit pointer cast can change extent metadata even when its
+        // An explicit pointer cast can change bounds metadata even when its
         // type is unchanged. Let the existing cast producer select that payload,
         // then retain its producer and unchanged address children.
         let retained_pointer = (!budget.machine_result_production_disabled
@@ -8971,6 +8895,14 @@ fn evaluate_spec_if_paths_in(
         // select an arm; logical lowering retains both guarded values.
         let retained_comparison = !budget.machine_result_production_disabled
             && match &condition_path.proposition {
+                Proposition::ConditionIs(condition, _)
+                    if crate::kernel::machine_integer::comparison::is_bounded_bit_comparison(
+                        condition,
+                    ) =>
+                {
+                    true
+                }
+
                 Proposition::ConditionIs(
                     ConditionTerm::Compare {
                         format,
@@ -9413,7 +9345,7 @@ fn evaluate_spec_integer_if_paths_in(
                             (else_path.value.clone(), then_path.value.clone())
                         };
                         branch_paths.push(SpecIntegerPath {
-                            value: IntegerTerm::if_then_else(
+                            value: IntegerResult::conditional(
                                 condition.clone(),
                                 then_value,
                                 else_value,
@@ -10060,7 +9992,7 @@ pub(super) fn program_value_comparison_proposition(
                 | ComparisonOperator::LessEqual
                 | ComparisonOperator::GreaterThan
                 | ComparisonOperator::GreaterEqual
-                    if left.block == right.block =>
+                    if left.base == right.base =>
                 {
                     let left = byte_offset_from_pointer_offset(&left.offset)?;
                     let right = byte_offset_from_pointer_offset(&right.offset)?;
@@ -10422,7 +10354,7 @@ mod pointer_integer_observation_tests {
     fn integer_specifications_observe_bits_without_a_pointer_record() {
         let context = PureFactContext::new();
         let pointer = PointerValue::new(
-            Pointer::symbolic(Variable(994_001)),
+            Address::symbolic(Variable(994_001)),
             ProgramType::Int32Pointer,
         );
         let word = crate::kernel::eval::cast_program_value_to_type(
@@ -10497,7 +10429,7 @@ mod assumed_arithmetic_domain_tests {
         };
         let checked = evaluate(&PureFactContext::new());
         let assumed = evaluate(&PureFactContext::new().assume_held_resource_domains());
-        let entry = evaluate(&PureFactContext::new().assume_entry_clause_extents());
+        let entry = evaluate(&PureFactContext::new().assume_entry_clause_spans());
         assert!(entry.obligations.iter().all(|debt| !debt.is_assumable()));
         assert_eq!(checked.outcome, assumed.outcome);
         assert_eq!(checked.obligations.len(), 2);
@@ -10546,7 +10478,7 @@ mod shared_fold_operand_tests {
                 IntegerRangeFoldIndex::Int32 { start, end }
             };
             let exports = KernelTermExport::machine_export_count();
-            assert_eq!(integer_range_fold_index_is_empty(&index), empty);
+            assert_eq!(integer_range_fold_index_is_empty(&index.into()), empty);
             assert_eq!(KernelTermExport::machine_export_count(), exports);
         }
     }

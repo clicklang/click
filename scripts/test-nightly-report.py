@@ -1,0 +1,125 @@
+#!/usr/bin/env python3
+"""Exercise scripts/nightly-report.py on a small synthetic nightly."""
+import json
+from pathlib import Path
+import subprocess
+import tempfile
+
+JUNIT = """<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="nextest-run" tests="4" failures="2">
+  <testsuite name="clicklang" tests="2" failures="1">
+    <testcase name="kernel::tests::passes" classname="clicklang" time="0.5"/>
+    <testcase name="surface::tests::breaks" classname="clicklang" time="12.25">
+      <failure message="thread 'surface::tests::breaks' panicked at src/surface/tests.rs:9:5" type="test failure">
+thread 'surface::tests::breaks' panicked at src/surface/tests.rs:9:5:
+assertion failed: the goal closed
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+      </failure>
+    </testcase>
+  </testsuite>
+  <testsuite name="clicklang::mdtests" tests="1" failures="1">
+    <testcase name="mdtests" classname="clicklang::mdtests" time="700">
+      <failure message="2 of 3 mdtests failed" type="test failure"/>
+    </testcase>
+  </testsuite>
+  <testsuite name="clicklang::cpp_import" tests="1" failures="0">
+    <testcase name="imports_a_span" classname="clicklang::cpp_import" time="3"/>
+  </testsuite>
+</testsuites>
+"""
+
+
+def records(*rows):
+    return "".join(json.dumps(row) + "\n" for row in rows)
+
+
+def mdtest(name, passed, message=None, seconds=1.0):
+    return {"kind": "mdtest", "name": name, "passed": passed, "seconds": seconds, "message": message}
+
+
+with tempfile.TemporaryDirectory(prefix="click-nightly-report-") as directory:
+    root = Path(directory)
+    nightly, audit, out = root / "nightly", root / "audit", root / "out"
+    nightly.mkdir()
+    audit.mkdir()
+    (nightly / "mdtests.jsonl").write_text(records(
+        mdtest("a.md", True, seconds=40.0),
+        mdtest("reads.md", False, "expected pass, but failed: missing pure fact: defined(at(<state A>, p))"),
+        mdtest("rb_next.md", False, "`/x/mdtests/rb_next.md` expected pass, but failed: `f.contract` "
+               "tactic 3: fold requires the instance body facts: fact `p == 0` is not established"),
+        mdtest("rb_prev.md", False, "expected pass, but failed: `g.contract` tactic 9: fold requires "
+               "the instance body facts: fact `q == 0` is not established"),
+    ))
+    (nightly / "examples.jsonl").write_text(records(
+        {"kind": "example", "name": "arena", "passed": False, "seconds": 90.0,
+         "message": "sidecar `arena.click` failed:\n`requires x` proves the same obligation"},
+    ))
+    (nightly / "junit-tests.xml").write_text(JUNIT)
+    (nightly / "phases.tsv").write_text("clippy\t60\t0\ntests\t3600\t100\nfixtures\t900\t100\n")
+    (audit / "audit.jsonl").write_text(records(
+        {"kind": "audit", "name": "examples/arena/cells.click:12:5", "passed": False,
+         "seconds": 0, "message": "expansion did not parse"},
+    ))
+    jobs = root / "jobs"
+    jobs.mkdir()
+    (jobs / "jobs.tsv").write_text("nightly\tfailure\naudit\tfailure\n")
+    previous = root / "previous.json"
+    previous.write_text(json.dumps({"commit": "0" * 40, "failures": [
+        {"id": "mdtest:rb_next.md"},  # still failing
+        {"id": "mdtest:a.md"},  # passes tonight: fixed
+        {"id": "mdtest:gone.md"},  # did not run tonight
+    ]}))
+
+    result = subprocess.run(
+        ["python3", "-I", str(Path(__file__).with_name("nightly-report.py")),
+         "--input", str(nightly), "--input", str(audit), "--input", str(jobs),
+         "--previous", str(previous), "--out", str(out), "--commit", "f" * 40,
+         "--date", "2026-11-17", "--run-url", "https://example.invalid/run"],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    report = json.loads((out / "report.json").read_text())
+    by_id = {failure["id"]: failure for failure in report["failures"]}
+    assert set(by_id) == {
+        "mdtest:rb_next.md", "mdtest:rb_prev.md", "mdtest:reads.md", "example:arena",
+        "audit:examples/arena/cells.click:12:5", "test:clicklang surface::tests::breaks",
+    }, sorted(by_id)
+    # The aggregate mdtests failure is replaced by its fixtures.
+    assert not any("clicklang::mdtests" in key for key in by_id)
+    assert by_id["mdtest:rb_next.md"]["status"] == "persisting"
+    assert by_id["mdtest:rb_prev.md"]["status"] == "new"
+    assert by_id["mdtest:rb_next.md"]["summary"].startswith("expected pass, but failed:")
+    assert by_id["test:clicklang surface::tests::breaks"]["summary"] == "assertion failed: the goal closed"
+    assert report["fixed"] == ["mdtest:a.md"] and report["not_run"] == ["mdtest:gone.md"]
+    assert by_id["mdtest:rb_prev.md"]["reproduce"] == (
+        "RUST_MIN_STACK=8388608 MDTEST_FILTER=rb_prev.md cargo test --test mdtests -- --exact mdtests")
+    assert by_id["test:clicklang surface::tests::breaks"]["reproduce"] == (
+        "RUST_MIN_STACK=8388608 CLICK_NIGHTLY=1 cargo nextest run --run-ignored all --lib "
+        "-E 'test(=surface::tests::breaks)'"), by_id["test:clicklang surface::tests::breaks"]["reproduce"]
+    assert by_id["audit:examples/arena/cells.click:12:5"]["reproduce"] == (
+        "cargo run --release --bin click -- audit --claim examples/arena/cells.click:12:5 "
+        "examples/arena/cells.click")
+    # Both fold failures share one diagnostic shape.
+    assert any(set(group["ids"]) == {"mdtest:rb_next.md", "mdtest:rb_prev.md"}
+               for group in report["groups"]), report["groups"]
+    assert report["slowest"][0] == {"id": "example:arena", "seconds": 90.0}
+    assert not any(row["id"].startswith("audit:") for row in report["slowest"])
+    assert by_id["example:arena"]["summary"] == (
+        "sidecar `arena.click` failed: `requires x` proves the same obligation")
+    markdown = (out / "report.md").read_text()
+    assert "1 new" not in markdown and "5 new, 1 persisting; 1 fixed" in markdown, markdown
+    assert "## New failures" in markdown and "## Fixed since the previous night" in markdown
+    assert "&lt;state A&gt;" in markdown and "<state A>" not in markdown, markdown
+
+    # A job that failed without recording a check is reported as such.
+    (jobs / "jobs.tsv").write_text("nightly\tsuccess\naudit\tcancelled\n")
+    empty = root / "empty"
+    empty.mkdir()
+    subprocess.run(
+        ["python3", "-I", str(Path(__file__).with_name("nightly-report.py")),
+         "--input", str(jobs), "--input", str(empty), "--out", str(out)],
+        check=True, capture_output=True, text=True,
+    )
+    report = json.loads((out / "report.json").read_text())
+    assert [f["id"] for f in report["failures"]] == ["job:audit"], report["failures"]
+print("nightly report: synthetic run summarized")

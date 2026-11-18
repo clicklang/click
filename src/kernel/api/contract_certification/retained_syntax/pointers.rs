@@ -1,22 +1,22 @@
 //! Borrow exact pointer payloads and written addresses during certification.
 use super::*;
 use crate::kernel::{
-    KernelPointerOffset, Pointer, PointerBlock, PointerOffsetTerm, PointerValue,
-    RetainedPointerMetadata, SharedPointerAddress, SharedPointerOffset, SharedPointerValue,
+    Address, AddressBase, AddressOffset, KernelAddressOffset, PointerValue,
+    RetainedPointerMetadata, SharedAddress, SharedAddressOffset, SharedPointerValue,
 };
 use std::borrow::Cow;
 
 #[derive(Clone, Copy)]
-enum Address<'a> {
-    Native(&'a Pointer),
-    Shared(&'a SharedPointerAddress),
+enum BorrowedAddress<'a> {
+    Native(&'a Address),
+    Shared(&'a SharedAddress),
 }
-impl<'a> Address<'a> {
-    fn parts(self) -> (&'a PointerBlock, Offset<'a>) {
+impl<'a> BorrowedAddress<'a> {
+    fn parts(self) -> (&'a AddressBase, Offset<'a>) {
         match self {
-            Self::Native(value) => (&value.block, Offset::Native(&value.offset)),
+            Self::Native(value) => (&value.base, Offset::Native(&value.offset)),
             Self::Shared(value) => (
-                value.node().block.native_atom(),
+                value.node().base.native_atom(),
                 Offset::Shared(&value.node().offset),
             ),
         }
@@ -25,8 +25,8 @@ impl<'a> Address<'a> {
 
 #[derive(Clone, Copy)]
 enum Offset<'a> {
-    Native(&'a PointerOffsetTerm),
-    Shared(&'a SharedPointerOffset),
+    Native(&'a AddressOffset),
+    Shared(&'a SharedAddressOffset),
 }
 enum OffsetNode<'a> {
     Constant(i64),
@@ -42,9 +42,9 @@ enum OffsetNode<'a> {
 }
 impl<'a> Offset<'a> {
     fn node(self) -> Option<OffsetNode<'a>> {
-        use KernelPointerOffset as K;
+        use AddressOffset as P;
+        use KernelAddressOffset as K;
         use OffsetNode as V;
-        use PointerOffsetTerm as P;
         let shared_index = |value: &'a KernelTerm| {
             let KernelType::Program(ty) = value.ty() else {
                 return None;
@@ -135,30 +135,34 @@ impl<'a> Value<'a> {
             Self::Shared(value) => value.retained_nonaddress_metadata(),
         }
     }
-    fn address(self) -> Address<'a> {
+    fn address(self) -> BorrowedAddress<'a> {
         match self {
-            Self::Native(value) => Address::Native(value.pointer()),
-            Self::Shared(value) => Address::Shared(&value.node().address),
+            Self::Native(value) => BorrowedAddress::Native(value.pointer()),
+            Self::Shared(value) => BorrowedAddress::Shared(&value.node().address),
         }
     }
-    fn provenance(self) -> Address<'a> {
+    fn provenance(self) -> BorrowedAddress<'a> {
         match self {
-            Self::Native(value) => Address::Native(value.provenance()),
-            Self::Shared(value) => Address::Shared(&value.node().provenance),
+            Self::Native(value) => BorrowedAddress::Native(value.provenance()),
+            Self::Shared(value) => BorrowedAddress::Shared(&value.node().provenance),
         }
     }
-    fn opaque_extent(self) -> Option<Address<'a>> {
+    fn bounds_owner(self) -> Option<BorrowedAddress<'a>> {
         match self {
-            Self::Native(value) => value.opaque_extent().map(Address::Native),
-            Self::Shared(value) => value.node().opaque_extent.as_ref().map(Address::Shared),
+            Self::Native(value) => value.bounds_owner().map(BorrowedAddress::Native),
+            Self::Shared(value) => value
+                .node()
+                .bounds_owner
+                .as_ref()
+                .map(BorrowedAddress::Shared),
         }
     }
-    fn extent(self) -> Option<(Address<'a>, Operand<'a>)> {
+    fn bounds(self) -> Option<(BorrowedAddress<'a>, Operand<'a>)> {
         match self {
-            Self::Native(value) => value.extent().map(|extent| {
+            Self::Native(value) => value.bounds().map(|bounds| {
                 (
-                    Address::Native(&extent.start),
-                    Operand::Legacy(&extent.width),
+                    BorrowedAddress::Native(&bounds.start),
+                    Operand::Legacy(&bounds.width),
                 )
             }),
             Self::Shared(value) => {
@@ -166,12 +170,12 @@ impl<'a> Value<'a> {
                     .node()
                     .qualifiers
                     .as_ref()?
-                    .extent
+                    .bounds
                     .as_ref()
-                    .map(|extent| {
+                    .map(|bounds| {
                         (
-                            Address::Shared(&extent.start),
-                            Operand::Shared(&extent.width),
+                            BorrowedAddress::Shared(&bounds.start),
+                            Operand::Shared(&bounds.width),
                         )
                     })
             }
@@ -237,15 +241,11 @@ impl Comparison {
             (None, None) => None,
         }
     }
-    pub(super) fn pointer(&mut self, a: &Pointer, b: &Pointer) -> bool {
-        self.addresses(Address::Native(a), Address::Native(b))
+    pub(super) fn pointer(&mut self, a: &Address, b: &Address) -> bool {
+        self.addresses(BorrowedAddress::Native(a), BorrowedAddress::Native(b))
     }
-    pub(super) fn shared_addresses(
-        &mut self,
-        a: &SharedPointerAddress,
-        b: &SharedPointerAddress,
-    ) -> bool {
-        self.addresses(Address::Shared(a), Address::Shared(b))
+    pub(super) fn shared_addresses(&mut self, a: &SharedAddress, b: &SharedAddress) -> bool {
+        self.addresses(BorrowedAddress::Shared(a), BorrowedAddress::Shared(b))
     }
     pub(super) fn pointer_value(&mut self, a: &PointerValue, b: &PointerValue) -> bool {
         self.pointer_values(Value::Native(a), Value::Native(b))
@@ -257,23 +257,23 @@ impl Comparison {
         {
             return false;
         }
-        match (a.opaque_extent(), b.opaque_extent()) {
+        match (a.bounds_owner(), b.bounds_owner()) {
             (Some(a), Some(b)) if self.addresses(a, b) => {}
             (None, None) => {}
             _ => return false,
         }
-        match (a.extent(), b.extent()) {
+        match (a.bounds(), b.bounds()) {
             (Some((ap, aw)), Some((bp, bw))) => {
                 if !self.addresses(ap, bp) {
                     return false;
                 }
-                // Extent widths have an existing native-syntax admission rule.
+                // Bounds widths have an existing native-syntax admission rule.
                 // Export only this selected width, never the complete pointer;
                 // a shared identity shortcut would admit additional widths.
                 let native = |value| match value {
                     Operand::Legacy(value) => Cow::Borrowed(value),
                     Operand::Shared(root) => Cow::Owned(
-                        crate::kernel::KernelTermExport::machine(root).expect("extent width"),
+                        crate::kernel::KernelTermExport::machine(root).expect("bounds width"),
                     ),
                 };
                 let (aw, bw) = (native(aw), native(bw));
@@ -283,14 +283,11 @@ impl Comparison {
             _ => false,
         }
     }
-    fn addresses(&mut self, a: Address<'_>, b: Address<'_>) -> bool {
+    fn addresses(&mut self, a: BorrowedAddress<'_>, b: BorrowedAddress<'_>) -> bool {
         use OffsetNode as O;
         let ((ab, ao), (bb, bo)) = (a.parts(), b.parts());
         let blocks = match (ab, bb) {
-            (
-                PointerBlock::PureFunctionApplication(a),
-                PointerBlock::PureFunctionApplication(b),
-            ) => {
+            (AddressBase::PureFunctionApplication(a), AddressBase::PureFunctionApplication(b)) => {
                 a.name() == b.name()
                     && a.arguments().len() == b.arguments().len()
                     && a.arguments()

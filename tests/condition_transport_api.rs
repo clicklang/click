@@ -51,14 +51,14 @@ fn consistent_context_retains_its_symbolic_premise() {
 
 #[test]
 fn context_free_disjoint_store_transport_stays_closed() {
-    let before = Memory::new();
-    let written = Pointer {
-        block: "arg-memory".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let before = SymbolicMemory::new();
+    let written = Address {
+        base: "arg-memory".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let preserved = Pointer {
-        block: "arg-memory".into(),
-        offset: PointerOffsetTerm::Constant(4),
+    let preserved = Address {
+        base: "arg-memory".into(),
+        offset: AddressOffset::Constant(4),
     };
     let after = before.clone().store(written, int32(7));
     let old_load = MachineTerm::MemoryLoad(

@@ -427,9 +427,9 @@ fn return_publication_shares_effect_prefixes_and_suppresses_duplicates() {
                     before: memory.clone(),
                     after: memory.clone(),
                     writes: vec![(
-                        crate::kernel::Pointer {
-                            block: crate::kernel::PointerBlock::ExternalArgument,
-                            offset: crate::kernel::PointerOffsetTerm::Constant(index as i64 * 4),
+                        crate::kernel::Address {
+                            base: crate::kernel::AddressBase::ExternalArgument,
+                            offset: crate::kernel::AddressOffset::Constant(index as i64 * 4),
                         },
                         4,
                     )],
@@ -483,7 +483,7 @@ fn pure_identity_fixture() -> PureTheoremContext {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: PersistentBinderMap::default(),
-        memory: Memory::new(),
+        memory: SymbolicMemory::new(),
         values: BTreeMap::new(),
         array_refs: BTreeMap::new(),
         requires: Vec::new(),
@@ -492,9 +492,9 @@ fn pure_identity_fixture() -> PureTheoremContext {
 }
 
 fn invariant_bundle_leaf_fixture() -> (Proposition, Proposition) {
-    let pointer = Pointer {
-        block: "sum".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: "sum".into(),
+        offset: AddressOffset::Constant(0),
     };
     let loadable = Proposition::ForAll {
         name: Default::default(),
@@ -522,7 +522,7 @@ fn invariant_bundle_leaf_fixture() -> (Proposition, Proposition) {
                 )),
             )),
             Box::new(Proposition::MemoryLoadable {
-                memory: Memory::new().with_block("sum", 16),
+                memory: SymbolicMemory::new().with_block("sum", 16),
                 base: pointer,
                 bytes: MachineTerm::Variable(Variable(30)),
                 wide: false,
@@ -643,11 +643,11 @@ fn atomic_conjunct_extraction_requires_exact_selected_premise_on_small_stack() {
             let predicates = PredicateEnvironment::new(&[]);
             let functions = ClickFunctionEnvironment::new(&[]);
             let theorems = TheoremEnvironment::new(&[]);
-            let pointer = Pointer {
-                block: "atomic-extract-cell".into(),
-                offset: PointerOffsetTerm::Constant(0),
+            let pointer = Address {
+                base: "atomic-extract-cell".into(),
+                offset: AddressOffset::Constant(0),
             };
-            let old_memory = Memory::new().with_block("atomic-extract-cell", 4).store(
+            let old_memory = SymbolicMemory::new().with_block("atomic-extract-cell", 4).store(
                 pointer.clone(),
                 ProgramValue::Int32(MachineTerm::Variable(Variable(8_000_100))),
             );
@@ -1038,11 +1038,11 @@ fn both_and_preserves_exact_binders_and_saved_states() {
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
     let theorem_environment = TheoremEnvironment::new(&[]);
     let context = pure_identity_fixture();
-    let pointer = Pointer {
-        block: "cell".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: "cell".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let memory = Memory::new().with_block("cell", 4).store(
+    let memory = SymbolicMemory::new().with_block("cell", 4).store(
         pointer.clone(),
         ProgramValue::Int32(MachineTerm::Variable(Variable(11))),
     );
@@ -1485,7 +1485,7 @@ fn proof_failure_preserves_ancestor_and_selected_lineage() {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: PersistentBinderMap::default(),
-        memory: Memory::new(),
+        memory: SymbolicMemory::new(),
         values: BTreeMap::new(),
         array_refs: BTreeMap::new(),
         requires: vec![goal.clone()],
@@ -1531,7 +1531,7 @@ fn branch_identity_is_stable_across_fork_refinement_and_closure() {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: PersistentBinderMap::default(),
-        memory: Memory::new(),
+        memory: SymbolicMemory::new(),
         values: BTreeMap::new(),
         array_refs: BTreeMap::new(),
         requires: Vec::new(),
@@ -1597,7 +1597,7 @@ fn certificate_suffix_requires_an_exact_shared_ancestor() {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: PersistentBinderMap::default(),
-        memory: Memory::new(),
+        memory: SymbolicMemory::new(),
         values: BTreeMap::new(),
         array_refs: BTreeMap::new(),
         requires: Vec::new(),
@@ -1672,7 +1672,7 @@ fn have_scope_publishes_only_a_completed_checked_body() {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: PersistentBinderMap::default(),
-        memory: Memory::new(),
+        memory: SymbolicMemory::new(),
         values: BTreeMap::new(),
         array_refs: BTreeMap::new(),
         requires: Vec::new(),
@@ -1770,7 +1770,7 @@ fn pure_have_presentation_root(surface: ClickProposition) -> Proof<'static> {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: PersistentBinderMap::default(),
-        memory: Memory::new(),
+        memory: SymbolicMemory::new(),
         values: BTreeMap::new(),
         array_refs: BTreeMap::new(),
         requires: Vec::new(),
@@ -2130,7 +2130,7 @@ fn smart_have_scope_and_explicit_step_scale_with_local_output() {
     let predicate_environment = PredicateEnvironment::new(&[]);
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
     let theorem_environment = TheoremEnvironment::new(&[]);
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let kernel = lower_pure_theorem_proposition(
         "smart have scaling",
         &proposition,
@@ -2390,7 +2390,7 @@ fn persistent_fact_lookup_scales_logarithmically() {
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
             integer_values: PersistentBinderMap::default(),
-            memory: Memory::new(),
+            memory: SymbolicMemory::new(),
             values: BTreeMap::new(),
             array_refs: BTreeMap::new(),
             requires,
@@ -2688,7 +2688,7 @@ fn proposition_unfold_uses_indexed_facts_and_persistent_local_state() {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: PersistentBinderMap::default(),
-        memory: Memory::new(),
+        memory: SymbolicMemory::new(),
         values: BTreeMap::new(),
         array_refs: BTreeMap::new(),
         requires: Vec::new(),
@@ -3212,7 +3212,7 @@ fn proof_if_fork_and_join_work_is_logarithmic_in_unrelated_facts() {
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
             integer_values: PersistentBinderMap::default(),
-            memory: Memory::new(),
+            memory: SymbolicMemory::new(),
             values: BTreeMap::new(),
             array_refs: BTreeMap::new(),
             requires,
@@ -3774,7 +3774,7 @@ fn pure_rewrite_uses_indexed_equality_availability_without_changing_facts() {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: PersistentBinderMap::default(),
-        memory: Memory::new(),
+        memory: SymbolicMemory::new(),
         values,
         array_refs: BTreeMap::new(),
         requires: Vec::new(),
@@ -3936,7 +3936,7 @@ fn surface_rewrite_retains_structural_successor_and_scales() {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: PersistentBinderMap::default(),
-        memory: Memory::new(),
+        memory: SymbolicMemory::new(),
         values,
         array_refs: BTreeMap::new(),
         requires: Vec::new(),
@@ -4041,7 +4041,7 @@ fn apply_fact_uses_selected_implication_and_alpha_equivalent_antecedent() {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: PersistentBinderMap::default(),
-        memory: Memory::new(),
+        memory: SymbolicMemory::new(),
         values: BTreeMap::from([(
             "x".to_string(),
             ProgramValue::Int32(MachineTerm::Variable(Variable(8_000_000))),
@@ -5145,14 +5145,14 @@ fn assert_static_array_retry_uses_recorded_qualified_source(block: &str, name: &
     let arguments = [ProgramExpression::Value(ProgramValue::Int32(
         MachineTerm::constant(7),
     ))];
-    let state = ExecutionState::new().with_memory(Memory::new().with_block(
+    let state = ExecutionState::new().with_memory(SymbolicMemory::new().with_block(
         block,
         4 * u32::try_from(cells).expect("test array size should fit in a block"),
     ));
     let base = ProgramValue::typed_pointer(
-        Pointer {
-            block: PointerBlock::Concrete(block.into()),
-            offset: PointerOffsetTerm::Constant(0),
+        Address {
+            base: AddressBase::Concrete(block.into()),
+            offset: AddressOffset::Constant(0),
         },
         ProgramType::Int32Pointer,
     );
@@ -6302,7 +6302,7 @@ fn pure_signed_order_solve_builds_its_certificate_with_logarithmic_local_updates
     let theorem_definitions =
         proof_theorem_definitions(&click_file).expect("standard order theorems should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let terms = [
         MachineTerm::Variable(Variable(8_150_000)),
         MachineTerm::Variable(Variable(8_150_001)),
@@ -6445,7 +6445,7 @@ fn pure_equality_refinement_solve_applies_one_rewrite_with_logarithmic_local_upd
     let theorem_definitions =
         proof_theorem_definitions(&click_file).expect("standard theorem prelude should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let value = MachineTerm::Variable(Variable(8_174_000));
     let named = [value.clone()];
     let named_values = named_int32_values(&named);
@@ -6535,7 +6535,7 @@ fn goal_term_equality_rewrite_ignores_unrelated_equality_buckets() {
     let theorem_definitions =
         proof_theorem_definitions(&click_file).expect("standard theorem prelude should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let selected_term = MachineTerm::Variable(Variable(8_174_050));
     let named = [selected_term.clone()];
     let named_values = named_int32_values(&named);
@@ -6648,7 +6648,7 @@ fn goal_term_equality_rewrite_chain_shrinks_independently_of_unrelated_buckets()
     let theorem_definitions =
         proof_theorem_definitions(&click_file).expect("standard theorem prelude should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let left = MachineTerm::Variable(Variable(8_174_060));
     let right = MachineTerm::Variable(Variable(8_174_061));
     let named = [left.clone(), right.clone()];
@@ -9140,7 +9140,7 @@ fn pure_apply_search_instantiates_requirements_and_retains_its_successor() {
     let theorem_definitions =
         proof_theorem_definitions(&click_file).expect("standard theorem prelude should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let left = ProgramValue::Int32(MachineTerm::Variable(Variable(8_200_000)));
     let right = ProgramValue::Int32(MachineTerm::Variable(Variable(8_200_001)));
     let premise = ClickProposition::Comparison {
@@ -9283,7 +9283,7 @@ fn pure_apply_using_selects_a_checked_conjunct_without_accepting_disjunctions() 
     let theorem_definitions =
         proof_theorem_definitions(&click_file).expect("standard theorem prelude should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let left = ProgramValue::Int32(MachineTerm::Variable(Variable(8_210_000)));
     let right = ProgramValue::Int32(MachineTerm::Variable(Variable(8_210_001)));
     let premise = ClickProposition::Comparison {
@@ -10114,9 +10114,9 @@ fn execution_open_scope_owns_entry_body_and_close_transactionally() {
     let state =
         empty_state.with_resource_context(ResourceContext::new().unchecked_with_fact(lowered));
     let reflexive = ClickProposition::Comparison {
-        left: ContractExpression::CBinding("x".to_string()),
+        left: ContractExpression::ProgramBinding("x".to_string()),
         operator: ComparisonOperator::Equal,
-        right: ContractExpression::CBinding("x".to_string()),
+        right: ContractExpression::ProgramBinding("x".to_string()),
     };
     let _exposed_reflexive = ClickProposition::Comparison {
         left: ContractExpression::ProgramExpression(ProgramExpression::Variable(
@@ -10156,7 +10156,7 @@ fn execution_open_scope_owns_entry_body_and_close_transactionally() {
         let retained_root = root.clone();
         let before = fact_node_allocations();
         let scope = root
-            .begin_open(resource.clone(), 0, None)
+            .begin_open(resource.clone(), 0)
             .expect("the held marker should open");
         let rejected = scope
             .driver()
@@ -10190,7 +10190,7 @@ fn execution_open_scope_owns_entry_body_and_close_transactionally() {
             closed.certificate().steps(),
             &[ProofStep::Open {
                 resource: resource.clone(),
-                close_proof: None,
+                deferred_tail: false,
                 proof: Box::new(
                     ProofCertificate::from_steps(vec![
                         ProofStep::Have {
@@ -10208,7 +10208,7 @@ fn execution_open_scope_owns_entry_body_and_close_transactionally() {
         assert!(root.state.shares_state_with(&retained_root.state));
         assert!(root.certificate().steps().is_empty());
         let sibling_scope = root
-            .begin_open(resource.clone(), 0, None)
+            .begin_open(resource.clone(), 0)
             .expect("the retained root should open a sibling scope");
         let sibling_nested = sibling_scope
             .driver()
@@ -10218,7 +10218,7 @@ fn execution_open_scope_owns_entry_body_and_close_transactionally() {
             .apply_step(ProofStep::Known)
             .expect("the sibling nested proof should close");
         let unrelated_scope = root
-            .begin_open(resource.clone(), 0, None)
+            .begin_open(resource.clone(), 0)
             .expect("the retained root should open an unrelated scope");
         assert!(unrelated_scope.join_nested(sibling_nested).is_err());
         assert!(unrelated_scope.body().certificate().steps().is_empty());
@@ -10233,11 +10233,11 @@ fn execution_open_scope_owns_entry_body_and_close_transactionally() {
             panic!("the marker resource should be declared");
         };
         *name = "missing_marker".to_string();
-        assert!(root.begin_open(missing, 0, None).is_err());
+        assert!(root.begin_open(missing, 0).is_err());
         assert!(root.certificate().steps().is_empty());
 
         let terminal = root
-            .begin_open(resource.clone(), 0, None)
+            .begin_open(resource.clone(), 0)
             .expect("the retained root should open an alternate scope")
             .driver()
             .apply_step(ProofStep::Step)
@@ -10259,7 +10259,7 @@ fn execution_open_scope_owns_entry_body_and_close_transactionally() {
             terminal.certificate().steps(),
             &[ProofStep::Open {
                 resource: resource.clone(),
-                close_proof: None,
+                deferred_tail: false,
                 proof: Box::new(
                     ProofCertificate::from_steps(vec![ProofStep::Step, ProofStep::Step]).unwrap(),
                 ),
@@ -11605,9 +11605,9 @@ fn cursor_execution_branch_join_retains_structural_reads_without_bindings() {
     )
     .expect("test C branch should parse");
     let function = parsed_function.to_kernel_function();
-    let pointer = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
     };
     let state = ExecutionState::new().with_resource_context(
         ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
@@ -11768,9 +11768,9 @@ fn generated_load_source_event_fixture(
     occurrence: u32,
     pointer_offset: u32,
 ) -> crate::kernel::GeneratedLoadSourceEvent {
-    let pointer = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Constant(pointer_offset.into()),
+    let pointer = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(pointer_offset.into()),
     };
     crate::kernel::GeneratedLoadSourceEvent::new(
         crate::kernel::LoadSourceId {
@@ -11783,10 +11783,10 @@ fn generated_load_source_event_fixture(
         },
         crate::kernel::GeneratedLoadBinding::Exact {
             variable: Variable(variable.into()),
-            retained_state: crate::kernel::MemoryStateIdentity::of(&Memory::new()),
+            retained_state: crate::kernel::MemoryStateIdentity::of(&SymbolicMemory::new()),
             pointer: pointer.clone(),
             load: MachineTerm::MemoryLoad(
-                crate::kernel::ProgramPoint::of_memory(&Memory::new()),
+                crate::kernel::ProgramPoint::of_memory(&SymbolicMemory::new()),
                 Box::new(pointer),
                 crate::kernel::LoadKind::Int32,
             ),
@@ -13036,8 +13036,7 @@ fn nested_end_of_arm_interface_derives_its_enclosing_continuation() {
 fn mixed_call_outcomes_use_the_enclosing_branch_continuation() {
     use crate::kernel::{
         bool_value, program_call, program_parameter, program_return, program_skip,
-        program_try_catch_int32, prove_checked_program_function_execution_with_environment,
-        prove_program_function_contract_execution_paths_with_checked_artifacts,
+        program_try_catch_int32,
     };
 
     let click_file = crate::surface::parse(
@@ -13045,8 +13044,8 @@ fn mixed_call_outcomes_use_the_enclosing_branch_continuation() {
             ensures result == result by {
                 branch {
                     outcomes {
-                        returned => { step(); }
-                        threw => { step(); step_until(function.exit); }
+                        returned => { }
+                        threw => { step_until(function.exit); }
                     }
                 } else { }
                 step();
@@ -13073,30 +13072,7 @@ fn mixed_call_outcomes_use_the_enclosing_branch_continuation() {
         vec![FunctionContractClaim::body_safety()],
         true,
     );
-    let helper_arguments = vec![ProgramExpression::Value(bool_value(MachineTerm::Variable(
-        Variable(80_010),
-    )))];
-    let artifacts = prove_checked_program_function_execution_with_environment(
-        ExecutionState::new().with_population_creation_tracking(),
-        helper.clone(),
-        helper_arguments.clone(),
-        PureFactContext::new(),
-        ExecutionEnvironment::new(),
-        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
-        FunctionContractExecutionMode::VerifyLoops,
-    );
-    let certified = prove_program_function_contract_execution_paths_with_checked_artifacts(
-        ExecutionState::new().with_population_creation_tracking(),
-        helper.clone(),
-        helper_arguments,
-        ExecutionEnvironment::new(),
-        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
-        FunctionContractExecutionMode::VerifyLoops,
-        &[artifacts],
-    );
-    let claims = crate::kernel::program_verified_function_contract_claims(&helper, &certified)
-        .expect("helper body safety should certify");
-    let helper_rule = program_verified_function_rule(helper.clone(), &claims)
+    let helper_rule = crate::kernel::program_recursive_function_contract_hypothesis(helper.clone())
         .expect("the checked helper should have a modular rule");
     let function_environment = ExecutionEnvironment::new()
         .with_function(helper)
@@ -13182,7 +13158,7 @@ fn mixed_call_outcomes_use_the_enclosing_branch_continuation() {
     let (outcomes, call_record) = outer
         .focus_split_arm(&outer_record, true)
         .unwrap()
-        .split_focused_call_outcomes()
+        .split_focused_call_outcomes([None, None])
         .expect("call split should be checked")
         .expect("modular helper has normal and throwing outcomes");
     let returned = outcomes.focus_split_arm(&call_record, true).unwrap();
@@ -13240,8 +13216,9 @@ fn mixed_call_outcomes_use_the_enclosing_branch_continuation() {
             outcomes
                 .focus_branch(id)
                 .unwrap()
-                .checked_call_returned(0)
+                .checked_call_outcome(0)
                 .ok()
+                .map(|edge| edge.returned)
         })
         .collect::<Vec<_>>();
     call_edges.sort_unstable();
@@ -14311,16 +14288,16 @@ fn checked_callback_statement_publishes_its_typed_read_evidence() {
     }
     let (interface_type, read_local) =
         load_type(function.body()).expect("callback field is a typed load");
-    let argument = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(210_520)), 4),
+    let argument = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(210_520)), 4),
     };
-    let table = Pointer {
-        block: "global:callback-table".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let table = Address {
+        base: "global:callback-table".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let target = Pointer::function("callback");
-    let memory = Memory::new().store(
+    let target = Address::function("callback");
+    let memory = SymbolicMemory::new().store(
         table.clone(),
         ProgramValue::typed_pointer(target.clone(), interface_type),
     );
@@ -14930,9 +14907,9 @@ fn proposed_goal_spelling_retains_unproved_domains_for_the_driver() {
 fn partition_known_uses_the_fixed_state_not_its_entry_partition() {
     let cell = |name: &str| {
         Resource::Memory(MemoryRange::new(
-            Pointer {
-                block: name.into(),
-                offset: PointerOffsetTerm::Constant(0),
+            Address {
+                base: name.into(),
+                offset: AddressOffset::Constant(0),
             },
             MachineTerm::constant(0),
             MachineTerm::constant(1),
@@ -14993,7 +14970,7 @@ fn proof_binding_name_index_tracks_aliases_scopes_and_forks() {
     let value = |variable| {
         ContractExpression::ProgramExpression(ProgramExpression::Value(
             ProgramValue::typed_pointer(
-                Pointer::symbolic(Variable(variable)),
+                Address::symbolic(Variable(variable)),
                 ProgramType::Int32Pointer,
             ),
         ))
@@ -15115,7 +15092,7 @@ fn proof_binding_names_keep_typed_scopes_when_a_generic_alias_leaves() {
 fn generated_pointer_requirement_retains_lexical_binder_without_capturing_a_shadow() {
     let variable = Variable(981_020);
     let pointer =
-        crate::kernel::PointerValue::new(Pointer::symbolic(variable), ProgramType::Int32Pointer);
+        crate::kernel::PointerValue::new(Address::symbolic(variable), ProgramType::Int32Pointer);
     let expression = ContractExpression::ProgramExpression(ProgramExpression::Value(
         ProgramValue::Pointer(pointer.clone()),
     ));
@@ -15123,7 +15100,7 @@ fn generated_pointer_requirement_retains_lexical_binder_without_capturing_a_shad
     locals.set_values(locals.values.with_inserted("identity", expression));
     let state = ExecutionState::new();
     let goal = Proposition::ConditionIs(
-        ConditionTerm::pointer_equal(pointer.pointer().clone(), Pointer::null()),
+        ConditionTerm::pointer_equal(pointer.pointer().clone(), Address::null()),
         false,
     );
     let synthesize = || {
@@ -15145,7 +15122,7 @@ fn generated_pointer_requirement_retains_lexical_binder_without_capturing_a_shad
             "identity",
             ContractExpression::ProgramExpression(ProgramExpression::Value(
                 ProgramValue::typed_pointer(
-                    Pointer::symbolic(Variable(981_021)),
+                    Address::symbolic(Variable(981_021)),
                     ProgramType::Int32Pointer,
                 ),
             )),
@@ -15172,5 +15149,88 @@ fn known_have_step(proposition: ClickProposition) -> ProofStep {
     ProofStep::Have {
         proposition,
         proof: Box::new(ProofCertificate::from_steps(vec![ProofStep::Known]).unwrap()),
+    }
+}
+
+#[test]
+#[ignore = "nightly: 0.77s in the parallel scaling selection; guard classification has fast scaling coverage"]
+fn loop_exit_eligibility_comes_from_the_guard_not_an_ownership_failure() {
+    let file = crate::surface::parse("void boundary() { ensures true; }").unwrap();
+    let parsed = syntax::parse_function("void boundary() {}").unwrap();
+    let function = parsed.to_kernel_function();
+    let predicates = PredicateEnvironment::new(&[]);
+    let functions = ClickFunctionEnvironment::new(&[]);
+    let theorems = TheoremEnvironment::new(&[]);
+    let resources = ResourceEnvironment::new(&[]);
+    let environment = ExecutionEnvironment::new();
+    let state = ExecutionState::new().with_local(
+        "gate",
+        ProgramValue::Int32(MachineTerm::Variable(Variable(9_771_000))),
+    );
+    let root = Proof::for_execution_frontier(
+        "loop edge",
+        0,
+        ExecutionProofState::at_entry(
+            state.clone(),
+            ExecutionFrontier {
+                region: ExecutionRegionKind::LoopBody,
+                position: FrontierPosition::RegionBoundary,
+                ..ExecutionFrontier::default()
+            },
+            RecordedStates::new(),
+            SurfacePropositionMap::default(),
+            PersistentSequence::default(),
+        ),
+        vec![],
+        ExecutionProofConstants::default(),
+        &file.function_blocks()[0],
+        &function,
+        &parsed,
+        &[],
+        &environment,
+        &resources,
+        SpecDefinitions::new(&predicates, &functions),
+        &theorems,
+    );
+    let true_guard = ProgramExpression::Value(crate::kernel::int32(1));
+    let false_guard = ProgramExpression::Value(crate::kernel::int32(0));
+    let unknown_guard = ProgramExpression::Variable("gate".into());
+    let owned = state.clone().with_resource_context(
+        crate::kernel::ResourceContext::new().unchecked_with_fact(
+            crate::kernel::ResourceFact::own_token("keep".into(), Vec::new()),
+        ),
+    );
+    for (guard, consumed, may_continue, may_exit) in [
+        (&false_guard, false, false, true),
+        (&false_guard, true, false, true),
+        (&true_guard, true, true, false),
+        (&unknown_guard, true, true, true),
+    ] {
+        let head = if consumed { &owned } else { &state };
+        let result = root.check_loop_boundary(
+            head,
+            head,
+            &crate::kernel::IntegerTerm::constant_i64(0),
+            Some(guard),
+            &[],
+            &[],
+            None,
+            &[],
+        );
+        if consumed && may_continue {
+            assert!(
+                result
+                    .err()
+                    .unwrap()
+                    .message()
+                    .contains("resource ownership"),
+                "a continuing edge cannot become an exit when ownership is missing"
+            );
+        } else {
+            let edge = result.unwrap();
+            assert_eq!(edge.may_exit(), may_exit);
+            assert_eq!(edge.state(), &state);
+            assert_eq!(edge.explicit_exit_state().is_some(), consumed && may_exit);
+        }
     }
 }

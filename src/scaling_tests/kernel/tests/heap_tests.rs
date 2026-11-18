@@ -6,13 +6,14 @@ use super::*;
 
 #[test]
 fn aliased_read_validity_lookup_ignores_unrelated_facts() {
-    let memory = Memory::new();
-    let pointer = Pointer {
-        block: PointerBlock::Heap(941_000),
-        offset: PointerOffsetTerm::Constant(0),
+    let memory = SymbolicMemory::new();
+    let pointer = Address {
+        base: AddressBase::Heap(941_000),
+        offset: AddressOffset::Constant(0),
     };
-    let alias = Pointer::symbolic(Variable(941_001));
+    let alias = Address::symbolic(Variable(941_001));
     let validity = Proposition::MemoryReadDefined {
+        at: None,
         memory: memory.clone(),
         pointer: pointer.offset_by_bytes(4),
         value_type: ProgramType::Int32,
@@ -26,10 +27,11 @@ fn aliased_read_validity_lookup_ignores_unrelated_facts() {
         ));
         for index in 1..=count {
             unrelated = unrelated.assume_proposition(Proposition::MemoryReadDefined {
+                at: None,
                 memory: memory.clone(),
-                pointer: Pointer {
-                    block: PointerBlock::Heap(942_000 + index),
-                    offset: PointerOffsetTerm::Constant(0),
+                pointer: Address {
+                    base: AddressBase::Heap(942_000 + index),
+                    offset: AddressOffset::Constant(0),
                 },
                 value_type: ProgramType::Int32,
             });
@@ -54,12 +56,13 @@ fn aliased_read_validity_lookup_ignores_unrelated_facts() {
 
 #[test]
 fn read_validity_lookup_ignores_unrelated_cells() {
-    let memory = Memory::new();
-    let pointer = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Constant(0),
+    let memory = SymbolicMemory::new();
+    let pointer = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
     };
     let validity = Proposition::MemoryReadDefined {
+        at: None,
         memory: memory.clone(),
         pointer: pointer.clone(),
         value_type: ProgramType::Int32,
@@ -69,10 +72,11 @@ fn read_validity_lookup_ignores_unrelated_cells() {
         let mut unrelated = PureFactContext::new();
         for index in 1..=count {
             unrelated = unrelated.assume_proposition(Proposition::MemoryReadDefined {
+                at: None,
                 memory: memory.clone(),
-                pointer: Pointer {
-                    block: PointerBlock::ExternalArgument,
-                    offset: PointerOffsetTerm::Constant(index * 4),
+                pointer: Address {
+                    base: AddressBase::ExternalArgument,
+                    offset: AddressOffset::Constant(index * 4),
                 },
                 value_type: ProgramType::Int32,
             });
@@ -93,18 +97,18 @@ fn read_validity_lookup_ignores_unrelated_cells() {
 
 #[test]
 fn unknown_read_validity_does_not_resolve_unrelated_cells() {
-    let target = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(770)), 4),
+    let target = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(770)), 4),
     };
     let mut samples = Vec::new();
     for count in [0, 16, 64, 256] {
-        let mut memory = Memory::new();
+        let mut memory = SymbolicMemory::new();
         for index in 0..count {
             memory = memory.store(
-                Pointer {
-                    block: PointerBlock::ExternalArgument,
-                    offset: PointerOffsetTerm::Constant(index * 4),
+                Address {
+                    base: AddressBase::ExternalArgument,
+                    offset: AddressOffset::Constant(index * 4),
                 },
                 int32(index as u32),
             );
@@ -123,46 +127,48 @@ fn unknown_read_validity_does_not_resolve_unrelated_cells() {
 
 #[test]
 fn defined_read_survives_failed_allocation_after_an_unrelated_store() {
-    let address = Pointer {
-        block: PointerBlock::Heap(9100),
-        offset: PointerOffsetTerm::Constant(0),
+    let address = Address {
+        base: AddressBase::Heap(9100),
+        offset: AddressOffset::Constant(0),
     };
     let mut samples = Vec::new();
     for count in [8, 16, 32, 64] {
-        let mut memory = Memory::new().with_block(address.block.clone(), 4);
+        let mut memory = SymbolicMemory::new().with_block(address.base.clone(), 4);
         let mut assumptions = PureFactContext::new();
         for index in 0..count {
             assumptions = assumptions.assume_proposition(Proposition::MemoryReadDefined {
+                at: None,
                 memory: memory.clone(),
                 pointer: address.clone(),
                 value_type: ProgramType::Int32,
             });
             memory = memory.store(
-                Pointer {
-                    block: PointerBlock::Heap(9200 + index),
-                    offset: PointerOffsetTerm::Constant(0),
+                Address {
+                    base: AddressBase::Heap(9200 + index),
+                    offset: AddressOffset::Constant(0),
                 },
                 int32(1),
             );
         }
-        let request = Pointer {
-            block: PointerBlock::Symbolic(Variable(9300)),
-            offset: PointerOffsetTerm::Constant(0),
+        let request = Address {
+            base: AddressBase::Symbolic(Variable(9300)),
+            offset: AddressOffset::Constant(0),
         };
         let pending =
-            memory.with_pending_heap_allocation(request.clone(), HeapExtent::int32(4), false);
+            memory.with_pending_heap_allocation(request.clone(), AllocationSize::int32(4), false);
         // C assigns malloc's result before branching on it. That intervening
         // store prevents failure from merely interning back to the old memory.
         let pending = pending.store(
-            Pointer {
-                block: "local:result".into(),
-                offset: PointerOffsetTerm::Constant(0),
+            Address {
+                base: "local:result".into(),
+                offset: AddressOffset::Constant(0),
             },
             ProgramValue::pointer(request.clone()),
         );
         // Supply validity at the selected adjacent transition's entry.
         // Earlier history is deliberately not an implicit proof argument.
         let assumptions = assumptions.assume_proposition(Proposition::MemoryReadDefined {
+            at: None,
             memory: pending.clone(),
             pointer: address.clone(),
             value_type: ProgramType::Int32,
@@ -171,6 +177,7 @@ fn defined_read_survives_failed_allocation_after_an_unrelated_store() {
             .resolve_pending_heap_allocation(&request, false)
             .unwrap();
         let goal = Proposition::MemoryReadDefined {
+            at: None,
             memory: failed.clone(),
             pointer: address.clone(),
             value_type: ProgramType::Int32,
@@ -205,7 +212,7 @@ fn defined_read_survives_failed_allocation_after_an_unrelated_store() {
 #[test]
 fn free_allocation_discovery_ignores_unrelated_resource_tokens() {
     let _session = crate::kernel::VerificationSession::enter();
-    let base = Pointer::symbolic(Variable(948_000));
+    let base = Address::symbolic(Variable(948_000));
     let mut samples = Vec::new();
     for count in [0, 16, 64, 256] {
         let mut resources = ResourceContext::new()
@@ -217,9 +224,9 @@ fn free_allocation_discovery_ignores_unrelated_resource_tokens() {
             )));
         for index in 0..count {
             resources = resources.unchecked_with_fact(ResourceFact::own_allocation(
-                Pointer {
-                    block: PointerBlock::Heap(948_100 + index),
-                    offset: PointerOffsetTerm::Constant(0),
+                Address {
+                    base: AddressBase::Heap(948_100 + index),
+                    offset: AddressOffset::Constant(0),
                 },
                 16,
             ));
@@ -261,6 +268,146 @@ fn free_allocation_discovery_ignores_unrelated_resource_tokens() {
 }
 
 #[test]
+fn heap_free_loan_obligation_ignores_unrelated_aliases_and_loans() {
+    let _session = VerificationSession::enter();
+    let state = successful_heap_allocation_state();
+    let free = program_heap_free(crate::kernel::program_expression::variable("p"));
+    let backing_base = Address::symbolic(Variable(949_000));
+    for grow_aliases in [true, false] {
+        let mut samples = Vec::new();
+        for count in [4, 16, 64] {
+            let mut ledger = LoanLedger::new();
+            let owner = ledger.fresh_participant().unwrap();
+            let reader = ledger.fresh_participant().unwrap();
+            let mut assumptions = PureFactContext::new();
+            if grow_aliases {
+                for i in 0..count {
+                    assumptions = assumptions.assume_condition(
+                        ConditionTerm::pointer_equal(
+                            backing_base.clone(),
+                            Address::symbolic(Variable(950_000 + i)),
+                        ),
+                        true,
+                    );
+                }
+            }
+            for i in 0..if grow_aliases { 1 } else { count } {
+                let backing = ResourceFact::own_memory(MemoryRange::new(
+                    Address::symbolic(Variable(949_000 + i)),
+                    0.into(),
+                    1.into(),
+                ));
+                let occurrence = ResourceContext::new()
+                    .unchecked_with_fact(backing.clone())
+                    .unique_owned_occurrence_for_fact(&backing)
+                    .unwrap()
+                    .0;
+                let opening = ledger.lend(owner, reader, occurrence, backing).unwrap();
+                ledger = ledger.apply(&opening.transition).unwrap();
+            }
+            let state = state.clone().with_loan_ledger(Some(ledger));
+            let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
+                execute_execution_statement_paths(
+                    &state,
+                    &free,
+                    &assumptions,
+                    ExecutionContext::verify_loops(&ExecutionEnvironment::new()),
+                    &mut ExecutionBudget::default(),
+                )
+                .unwrap()
+            });
+            let [
+                StatementExecutionPath {
+                    outcome: StatementOutcome::Normal(_),
+                    obligations,
+                    ..
+                },
+            ] = paths.as_slice()
+            else {
+                panic!("expected one conditional free path: {paths:?}");
+            };
+            let [obligation] = obligations.as_slice() else {
+                panic!("expected one loan obligation");
+            };
+            assert!(matches!(
+                obligation.proposition(),
+                Proposition::ResourceSeparate { .. }
+            ));
+            samples.push(work);
+        }
+        assert!(
+            samples.iter().all(|work| *work <= samples[0] + 32),
+            "{grow_aliases}: {samples:?}"
+        );
+    }
+}
+
+#[test]
+fn realloc_loan_requirement_work_is_bounded_by_the_pending_result() {
+    let _session = VerificationSession::enter();
+    let state =
+        successful_heap_allocation_state().with_local("q", ProgramValue::pointer(Address::null()));
+    let loan_base = Address::symbolic(Variable(954_000));
+    for grow_aliases in [true, false] {
+        let mut samples = Vec::new();
+        for count in [4, 16, 64] {
+            let mut assumptions = PureFactContext::new();
+            if grow_aliases {
+                for i in 0..count {
+                    assumptions = assumptions.assume_condition(
+                        ConditionTerm::pointer_equal(
+                            loan_base.clone(),
+                            Address::symbolic(Variable(955_000 + i)),
+                        ),
+                        true,
+                    );
+                }
+            }
+            let mut ledger = LoanLedger::new();
+            let lender = ledger.fresh_participant().unwrap();
+            let borrower = ledger.fresh_participant().unwrap();
+            for i in 0..if grow_aliases { 1 } else { count } {
+                let backing = ResourceFact::own_memory(MemoryRange::new(
+                    Address::symbolic(Variable(954_000 + i)),
+                    0.into(),
+                    1.into(),
+                ));
+                let occurrence = ResourceContext::new()
+                    .unchecked_with_fact(backing.clone())
+                    .unique_owned_occurrence_for_fact(&backing)
+                    .unwrap()
+                    .0;
+                let opening = ledger.lend(lender, borrower, occurrence, backing).unwrap();
+                ledger = ledger.apply(&opening.transition).unwrap();
+            }
+            let state = state.clone().with_loan_ledger(Some(ledger));
+            let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let pending = start_test_realloc(&state, &assumptions);
+                resolve_test_realloc(&pending)
+            });
+            assert_eq!(paths.len(), 2);
+            assert!(
+                paths
+                    .iter()
+                    .all(|path| matches!(path.outcome, StatementOutcome::Normal(_)))
+            );
+            assert_eq!(
+                paths
+                    .iter()
+                    .map(|path| path.obligations.len())
+                    .sum::<usize>(),
+                1
+            );
+            samples.push(work);
+        }
+        assert!(
+            samples.iter().all(|work| *work <= samples[0] + 32),
+            "{grow_aliases}: {samples:?}"
+        );
+    }
+}
+
+#[test]
 fn realloc_reference_check_ignores_unrelated_resource_tokens() {
     let _session = crate::kernel::VerificationSession::enter();
     let mut samples = Vec::new();
@@ -269,16 +416,16 @@ fn realloc_reference_check_ignores_unrelated_resource_tokens() {
         let mut resources = state.resources().clone();
         for index in 0..count {
             resources = resources.unchecked_with_fact(ResourceFact::own_allocation(
-                Pointer {
-                    block: PointerBlock::Heap(949_100 + index),
-                    offset: PointerOffsetTerm::Constant(0),
+                Address {
+                    base: AddressBase::Heap(949_100 + index),
+                    offset: AddressOffset::Constant(0),
                 },
                 16,
             ));
         }
         let state = state
             .with_resource_context(resources)
-            .with_local("q", ProgramValue::pointer(Pointer::null()));
+            .with_local("q", ProgramValue::pointer(Address::null()));
         let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
             execute_execution_statement_paths(
                 &state,
@@ -322,20 +469,20 @@ fn typed_pending_heap_binding_uses_the_allocation_delta() {
     );
     let mut samples = Vec::new();
     for count in [16, 64, 256, 1024] {
-        let mut memory = Memory::new();
+        let mut memory = SymbolicMemory::new();
         for index in 0..count {
             memory = memory.with_pending_typed_heap_allocation(
-                Pointer::symbolic(Variable(950_000 + index)),
-                HeapExtent::int32(8),
+                Address::symbolic(Variable(950_000 + index)),
+                AllocationSize::int32(8),
                 false,
                 Some(class.clone()),
             );
         }
         let ((next, resolved), work) = crate::instrumentation::measure_deterministic_work(|| {
-            let base = Pointer::symbolic(Variable(960_000));
+            let base = Address::symbolic(Variable(960_000));
             let next = memory.clone().with_pending_typed_heap_allocation(
                 base.clone(),
-                HeapExtent::int32(8),
+                AllocationSize::int32(8),
                 false,
                 Some(class.clone()),
             );
@@ -359,21 +506,21 @@ fn typed_pending_heap_binding_uses_the_allocation_delta() {
 
 #[test]
 fn free_ownership_lookup_ignores_unrelated_resources() {
-    let base = Pointer::symbolic(Variable(946_000));
-    let cell = Pointer::symbolic(Variable(946_001));
+    let base = Address::symbolic(Variable(946_000));
+    let cell = Address::symbolic(Variable(946_001));
     let range =
-        |p: Pointer| ResourceFact::own_memory(MemoryRange::new(p, 0u32.into(), 1u32.into()));
+        |p: Address| ResourceFact::own_memory(MemoryRange::new(p, 0u32.into(), 1u32.into()));
     let assumptions = PureFactContext::new();
     let mut samples = Vec::new();
     for count in [0, 16, 64, 256] {
-        let memory = Memory::new()
-            .with_heap_allocation_claim(base.clone(), HeapExtent::int32(4))
+        let memory = SymbolicMemory::new()
+            .with_heap_allocation_claim(base.clone(), AllocationSize::int32(4))
             .unwrap()
             .store(cell.clone(), int32(7));
         let mut ownership = ResourceContext::new().unchecked_with_fact(range(cell.clone()));
         for index in 0..count {
             ownership =
-                ownership.unchecked_with_fact(range(Pointer::symbolic(Variable(947_000 + index))));
+                ownership.unchecked_with_fact(range(Address::symbolic(Variable(947_000 + index))));
         }
         let (freed, work) = crate::instrumentation::measure_deterministic_work(|| {
             memory
@@ -394,20 +541,20 @@ fn sequential_frees_preserving_one_owned_cell_stay_near_linear() {
     let mut samples = Vec::new();
     for count in [8, 16, 32, 64] {
         let _session = crate::kernel::VerificationSession::enter();
-        let cell = Pointer::symbolic(Variable(948_000));
+        let cell = Address::symbolic(Variable(948_000));
         let range =
-            |p: Pointer| ResourceFact::own_memory(MemoryRange::new(p, 0u32.into(), 1u32.into()));
-        let mut memory = Memory::new().store(cell.clone(), int32(7));
+            |p: Address| ResourceFact::own_memory(MemoryRange::new(p, 0u32.into(), 1u32.into()));
+        let mut memory = SymbolicMemory::new().store(cell.clone(), int32(7));
         let mut ownership = ResourceContext::new().unchecked_with_fact(range(cell.clone()));
         let bases = (0..count)
-            .map(|index| Pointer {
-                block: PointerBlock::Heap(949_000 + index),
-                offset: PointerOffsetTerm::Constant(0),
+            .map(|index| Address {
+                base: AddressBase::Heap(949_000 + index),
+                offset: AddressOffset::Constant(0),
             })
             .collect::<Vec<_>>();
         for base in &bases {
             memory = memory
-                .with_heap_allocation_claim(base.clone(), HeapExtent::int32(4))
+                .with_heap_allocation_claim(base.clone(), AllocationSize::int32(4))
                 .unwrap();
             ownership = ownership.unchecked_with_fact(range(base.clone()));
         }
@@ -438,21 +585,21 @@ fn sequential_free_pointer_frames_stay_near_linear() {
     let mut samples = Vec::new();
     for count in [8, 16, 32, 64] {
         let _session = crate::kernel::VerificationSession::enter();
-        let cell = Pointer::symbolic(Variable(951_000));
-        let value = Pointer::symbolic(Variable(951_001));
-        let mut memory = Memory::new().store(cell.clone(), ProgramValue::pointer(value));
+        let cell = Address::symbolic(Variable(951_000));
+        let value = Address::symbolic(Variable(951_001));
+        let mut memory = SymbolicMemory::new().store(cell.clone(), ProgramValue::pointer(value));
         let mut resources = ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(
             MemoryRange::new_with_element_width(cell.clone(), 0u32.into(), 1u32.into(), 8),
         ));
         let bases = (0..count)
-            .map(|index| Pointer {
-                block: PointerBlock::Heap(952_000 + index),
-                offset: PointerOffsetTerm::Constant(0),
+            .map(|index| Address {
+                base: AddressBase::Heap(952_000 + index),
+                offset: AddressOffset::Constant(0),
             })
             .collect::<Vec<_>>();
         for base in &bases {
             memory = memory
-                .with_heap_allocation_claim(base.clone(), HeapExtent::int32(4))
+                .with_heap_allocation_claim(base.clone(), AllocationSize::int32(4))
                 .unwrap();
             resources = resources
                 .unchecked_with_fact(ResourceFact::own_allocation(base.clone(), 4))
@@ -504,25 +651,25 @@ fn typed_validity_uses_one_storage_anchor_among_many_aliases() {
     let mut samples = Vec::new();
     for count in [1, 16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
-        let base = Pointer {
-            block: "global:validity-anchor".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let base = Address {
+            base: "global:validity-anchor".into(),
+            offset: AddressOffset::Constant(0),
         };
-        let query = Pointer::symbolic(Variable(960_000));
-        let mut memory = Memory::new()
-            .with_block(base.block.clone(), 8)
+        let query = Address::symbolic(Variable(960_000));
+        let mut memory = SymbolicMemory::new()
+            .with_block(base.base.clone(), 8)
             .store(base.offset_by_bytes(4), int32(7));
         let mut facts = PureFactContext::new();
         for index in 0..count {
-            let alias = Pointer::symbolic(Variable(960_000 + index));
+            let alias = Address::symbolic(Variable(960_000 + index));
             facts = facts.assume_proposition(Proposition::ConditionIs(
                 ConditionTerm::pointer_equal(alias, base.clone()),
                 true,
             ));
             memory = memory.store(
-                Pointer {
-                    block: PointerBlock::Heap(970_000 + index),
-                    offset: PointerOffsetTerm::Constant(0),
+                Address {
+                    base: AddressBase::Heap(970_000 + index),
+                    offset: AddressOffset::Constant(0),
                 },
                 int32(9),
             );

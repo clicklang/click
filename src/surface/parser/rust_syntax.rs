@@ -1214,7 +1214,7 @@ impl Parser {
                 return Err(self.error(
                     "inside a loop, `iter` is the loop's iterator, read through Rust's own \
                      accessors (`iter.len()`, `iter.as_slice()`, a range's `iter.start`); a \
-                     Rust local named `iter` is `rust(iter)`",
+                     Rust local named `iter` is `program::iter`",
                 ));
             };
             self.position += width;

@@ -43,19 +43,25 @@ theorem increment_is_guarded_progress() {
         unfold(GuardedProgress(&increment));
         intro();
         both {
-            solve() using {
-                old(cell[0]) < 100;
-            };
-        } and {
-            intro();
-            both {
-                have not (old(cell[0]) < 0) by {
-                    solve() using { 0 <= old(cell[0]); };
-                }
+            left => {
+                solve() using {
+                    old(cell[0]) < 100;
+                };
+            }
+            right => {
                 intro();
-                contradiction(not (old(cell[0]) < 0));
-            } and {
-                solve();
+                both {
+                    left => {
+                        have not (old(cell[0]) < 0) by {
+                            solve() using { 0 <= old(cell[0]); };
+                        }
+                        intro();
+                        contradiction(not (old(cell[0]) < 0));
+                    }
+                    right => {
+                        solve();
+                    }
+                }
             }
         }
     }

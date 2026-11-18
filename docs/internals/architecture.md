@@ -16,9 +16,17 @@ test has a placement before or after the body and a shared code region. A
 pure test contains just `LoopTest`, which owns its condition and temporary
 cleanup. A prepared test prefixes that same decision with its calls or other
 preparation. The loop has no separate condition or `do_while` flag.
-A borrowed execution view reads a preparation-free decision directly; prepared
-tests enter their code region before the decision is available. This keeps
-existing proof-step numbering without storing a second test on the loop.
+Every loop executes the same test/body/update phases. Its test placement
+selects the starting phase and remains unchanged on every iteration. The
+shared iteration runner keeps a pre-test outside the body's lifetime scope;
+a false pre-test never retires declarations in an unentered body. Pure test
+decisions have semantic positions appended after all written operations and
+their end boundary. Source-layout metadata keeps existing body numbers and can
+group a decision with its loop-head step. Test footprints and exit states never
+alias those of the whole loop.
+This scheduling rule changes no test representation and invents no entry guard.
+Preservation proofs may preselect a pure pre-test's entry facts and start at
+the selected body phase; the canonical executable pass retains its test region.
 `program_loop_pass` assembles the shared phase references for checked source
 execution; `program_loop_continuation` selects the update and post-test owed
 by a continuing edge. Normal body completion and `continue` leave the body
@@ -32,8 +40,24 @@ retains the reason directly as `TestFalse` or `Break`. Sequences, scopes and
 switches preserve a test exit; only its loop consumes it. Test temporaries end
 on either decision before its outcome is published.
 
-Checked concrete loop entry records explicit `continue` and `break`
-destinations. Each keeps the driver's local source position separately from
+Preservation proofs use the frontier's typed exit reason before planning a
+bundle. Normal body completion retains its rebound state, the condition's
+feasible decisions, and the exit representation as `LoopBoundary`. Generated and
+written preservation proofs consume this same result. Compatible exits use
+the invariant-head summary. An established false-guard exit with a distinct
+resource partition retains its own state; a feasible continuing edge with
+different ownership is an error, never an exit signal. Bundle closure adds
+proof facts without repeating the rebound or ownership comparison. The
+Surface bundle and the direct kernel summary select numeric ranking members
+from the same guard feasibility rule. A false next test leaves those members
+out of the bundle.
+Preselecting a pure guard is a premise rather than a source transition, so it
+records the selected body's entry, not fabricated test-entry/exit states.
+
+Checked concrete loop entry records a structural `LoopEntry` event and explicit
+`continue` and `break` destinations. The event retains the entered source pass;
+it needs neither a `Skip` theorem nor a rewritten post-test loop. Each keeps
+the driver's local source position separately from
 the kernel's full evidence cursor, which includes enclosing loop and function
 tails. The continuation code comes from that checked source construction.
 Transfers discard only the inner lexical continuations they leave, restore the
@@ -221,6 +245,10 @@ alias as a new object or granting memory authority. Binding through a record
 pointer uses checked address formation on a byte-array lvalue of the complete
 record size, followed by the adapter's existing record-pointer representation.
 The address rule validates storage without reading the array or its fields.
+Record-reference results retain their nominal layout in the existing pointer
+result metadata and keep the separate reference-result flag and pointee const.
+Calls carry the referent's address; they do not use aggregate-result copying.
+Signature checking compares the written reference result's nominal record.
 Automatic destructor cleanup emits the existing storage-lifetime-end operation
 after the destructor returns, so an alias cannot keep a scoped record alive.
 

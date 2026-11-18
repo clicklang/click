@@ -110,7 +110,7 @@ pub(in crate::surface) struct SynthesisStructOwners {
     /// The function's global and static arrays by kernel and source name: the source name and
     /// declared shape an element read is spelled with.
     storage_arrays: BTreeMap<crate::kernel::BindingName, (crate::kernel::BindingName, Vec<u32>)>,
-    storage_scalars: BTreeMap<Pointer, (crate::kernel::BindingName, ProgramType)>,
+    storage_scalars: BTreeMap<Address, (crate::kernel::BindingName, ProgramType)>,
     /// Declaration spellings for kernel identifiers in retained C arguments.
     storage_source_names: BTreeMap<String, ContractExpression>,
 }
@@ -170,7 +170,7 @@ impl LocalStructLayoutScope {
             .values()
             .map(|global| {
                 (
-                    Memory::global_pointer(global.kernel_name()),
+                    SymbolicMemory::global_pointer(global.kernel_name()),
                     (
                         global.kernel_name().clone(),
                         global.interface_type().to_kernel_type(),
@@ -179,7 +179,7 @@ impl LocalStructLayoutScope {
             })
             .chain(function.static_locals().values().map(|local| {
                 (
-                    Memory::static_pointer(function.name(), local.kernel_name()),
+                    SymbolicMemory::static_pointer(function.name(), local.kernel_name()),
                     (
                         local.kernel_name().clone(),
                         local.interface_type().to_kernel_type(),
@@ -346,6 +346,21 @@ fn struct_owners(
     found
 }
 
+/// A program parameter or local raised as a Surface operand: `program::name`
+/// where its name is also a Click value (`result`, `iterations`), so it
+/// lowers to the program's binding rather than that value; otherwise the
+/// C expression itself. Only a caller that knows `expression` names a
+/// program binding uses this: the same name can also carry the contract
+/// result.
+fn program_operand(expression: ProgramExpression) -> ContractExpression {
+    match &expression {
+        ProgramExpression::Variable(name) if crate::surface::is_click_value_name(name.clone()) => {
+            ContractExpression::ProgramBinding(name.to_string())
+        }
+        _ => ContractExpression::ProgramExpression(expression),
+    }
+}
+
 fn owner_field_pointer(base: &ProgramExpression, offset_bytes: u32) -> ProgramExpression {
     if offset_bytes == 0 {
         base.clone()
@@ -399,7 +414,7 @@ fn range_struct_owners(
 /// shorter span excludes the field's padding, so it needs an explicit byte
 /// pointer instead; a range on the struct pointer would count whole structs.
 fn synthesize_struct_loadable_segment(
-    base: &Pointer,
+    base: &Address,
     bytes: &MachineTerm,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
@@ -518,7 +533,7 @@ fn field_pointer_bases(
                 // pointer-width load of the field: the pointer it names is
                 // that read.
                 ExpressionOutcome::Value(ProgramValue::Int32(value)) => {
-                    let Some(pointer) = Pointer::loaded(&value) else {
+                    let Some(pointer) = Address::loaded(&value) else {
                         continue;
                     };
                     let ProgramValue::Pointer(loaded) =
@@ -672,25 +687,21 @@ impl Drop for SynthesisRecordedPointsScope {
     }
 }
 
-/// A recorded state whose structural read selection reproduces this read.
-/// Prefer the point recording its memory, then indexed nearby points.
+/// The recorded state whose structural read selection reproduces this read:
+/// the point recording its memory, or the projection's source memory.
 fn recorded_point_of_load(
     read: &MachineTerm,
 ) -> Option<(ProgramPointSelector, ExecutionState, MachineTerm)> {
-    let MachineTerm::MemoryLoad(memory, _, _) = read else {
+    let MachineTerm::MemoryLoad(memory, pointer, _) = read else {
         return None;
     };
     SYNTHESIS_RECORDED_POINTS.with(|slot| {
         let slot = slot.borrow();
-        let points = slot.as_ref()?;
-        points
-            .point_reading_memory(memory.shared_memory())
-            .into_iter()
-            .chain(points.points_near_memory(memory.shared_memory()))
-            .find_map(|(selector, state)| {
-                let load = scalar_read_in_state(read, state)?;
-                Some((selector.clone(), state.clone(), load))
-            })
+        let (selector, state) = slot
+            .as_ref()?
+            .point_reading_load(memory.shared_memory(), pointer)?;
+        let load = scalar_read_in_state(read, state)?;
+        Some((selector.clone(), state.clone(), load))
     })
 }
 
@@ -700,7 +711,7 @@ fn recorded_point_of_load(
 /// ([`ExecutionState::held_local_value`]), so it spells exactly that read.
 fn synthesize_held_value_local(
     term: &crate::kernel::AlgebraicTerm,
-    pointer: &Pointer,
+    pointer: &Address,
     state: &ExecutionState,
 ) -> Option<ContractExpression> {
     let (name, _, _) = state.locals().held_value_locals().find(|(_, _, slot)| {
@@ -715,24 +726,22 @@ fn synthesize_held_value_local(
 /// state names: the recorded point whose memory reads that version.
 fn synthesize_recorded_held_value_local(
     term: &crate::kernel::AlgebraicTerm,
-    pointer: &Pointer,
+    pointer: &Address,
 ) -> Option<ContractExpression> {
-    let crate::kernel::AlgebraicTermNode::MemoryLoad { memory, .. } = &term.node else {
+    let crate::kernel::AlgebraicTermNode::MemoryLoad {
+        memory,
+        pointer: address,
+    } = &term.node
+    else {
         return None;
     };
     SYNTHESIS_RECORDED_POINTS.with(|slot| {
         let slot = slot.borrow();
-        let points = slot.as_ref()?;
-        points
-            .point_reading_memory(memory)
-            .into_iter()
-            .chain(points.points_near_memory(memory))
-            .find_map(|(selector, recorded)| {
-                Some(ContractExpression::At {
-                    selector: selector.clone(),
-                    expression: Box::new(synthesize_held_value_local(term, pointer, recorded)?),
-                })
-            })
+        let (selector, recorded) = slot.as_ref()?.point_reading_load(memory, address)?;
+        Some(ContractExpression::At {
+            selector: selector.clone(),
+            expression: Box::new(synthesize_held_value_local(term, pointer, recorded)?),
+        })
     })
 }
 
@@ -775,7 +784,7 @@ fn synthesize_state_local(term: &MachineTerm) -> Option<ContractExpression> {
         Some(ContractExpression::At {
             selector: selector.clone(),
             expression: Box::new(if crate::surface::is_click_value_name(name) {
-                ContractExpression::CBinding(name.to_string())
+                ContractExpression::ProgramBinding(name.to_string())
             } else {
                 ContractExpression::ProgramExpression(ProgramExpression::Variable(
                     surface_local_name(name),
@@ -795,7 +804,7 @@ fn synthesize_recorded_local(term: &MachineTerm) -> Option<ContractExpression> {
         Some(ContractExpression::At {
             selector: selector.clone(),
             expression: Box::new(if crate::surface::is_click_value_name(name) {
-                ContractExpression::CBinding(name.to_string())
+                ContractExpression::ProgramBinding(name.to_string())
             } else {
                 ContractExpression::ProgramExpression(ProgramExpression::Variable(
                     surface_local_name(name),
@@ -878,7 +887,7 @@ struct SurfaceSynthesisFrame {
 // Reject that candidate edge; another local can still name the pointer.
 #[derive(Clone, Eq, PartialEq, Hash)]
 struct PointerSynthesisKey {
-    pointer: Pointer,
+    pointer: Address,
     state: usize,
     parameters: usize,
     arguments: usize,
@@ -889,7 +898,7 @@ struct SurfacePointerFrame(PointerSynthesisKey);
 
 impl SurfacePointerFrame {
     fn enter(
-        pointer: &Pointer,
+        pointer: &Address,
         parameter_binding: ParameterBinding<'_>,
         state: &ExecutionState,
         bound_variables: &BTreeMap<Variable, SurfaceBinder>,
@@ -1047,15 +1056,15 @@ fn bitvector_term_exceeds_depth_limit(root: &MachineTerm) -> bool {
             | MachineTerm::IntegerToMachine { .. }
             | MachineTerm::BoolCast { .. } => {}
             MachineTerm::MemoryLoad(_, pointer, _) => {
-                if let PointerOffsetTerm::Int32Scaled { value, .. }
-                | PointerOffsetTerm::Int64Scaled { value, .. } = &pointer.offset
+                if let AddressOffset::Int32Scaled { value, .. }
+                | AddressOffset::Int64Scaled { value, .. } = &pointer.offset
                 {
                     pending.push((value.structural_value(), depth + 1));
                 }
             }
             MachineTerm::PointerAddress(pointer, _) => {
-                if let PointerOffsetTerm::Int32Scaled { value, .. }
-                | PointerOffsetTerm::Int64Scaled { value, .. } = &pointer.offset
+                if let AddressOffset::Int32Scaled { value, .. }
+                | AddressOffset::Int64Scaled { value, .. } = &pointer.offset
                 {
                     pending.push((value.structural_value(), depth + 1));
                 }
@@ -1266,28 +1275,39 @@ pub(in crate::surface) fn with_proof_local_value_names<R>(
 /// inferred from memory: the proof local that names it, else a pointer or an
 /// `int32` as the proof would write it at `state`.
 fn synthesize_surface_pointer_address(
-    pointer: &Pointer,
+    pointer: &Address,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<ContractExpression> {
     let operand =
         synthesize_surface_pointer_expression(pointer, parameter_binding, state, bound_variables)?;
-    Some(crate::surface::lowering::contract_c_unary(
-        operand,
-        ProgramExpression::Cast {
-            expression: Box::new(ProgramExpression::Value(ProgramValue::typed_pointer(
+    // The address is spelled over the operand's own C expression when it has
+    // one, such as a parameter name; only a Surface-only operand keeps the
+    // operand beside a cast of the value it denotes.
+    let (operand, expression) = match operand {
+        ContractExpression::ProgramExpression(expression) => (None, expression),
+        operand => (
+            Some(operand),
+            ProgramExpression::Value(ProgramValue::typed_pointer(
                 pointer.clone(),
                 ProgramType::VoidPointer,
-            ))),
-            target_type: ProgramType::UInt64,
-            integer_mode: crate::kernel::IntegerCastMode::Standard,
-            pointee_struct: None,
-            pointee_volatile: false,
-            pointee_constant: false,
-            explicit_qualification: false,
-        },
-    ))
+            )),
+        ),
+    };
+    let cast = ProgramExpression::Cast {
+        expression: Box::new(expression),
+        target_type: ProgramType::UInt64,
+        integer_mode: crate::kernel::IntegerCastMode::Standard,
+        pointee_struct: None,
+        pointee_volatile: false,
+        pointee_constant: false,
+        explicit_qualification: false,
+    };
+    Some(match operand {
+        None => ContractExpression::ProgramExpression(cast),
+        Some(operand) => crate::surface::lowering::contract_c_unary(operand, cast),
+    })
 }
 
 pub(in crate::surface) fn synthesize_surface_value(
@@ -1295,7 +1315,7 @@ pub(in crate::surface) fn synthesize_surface_value(
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
 ) -> Option<ContractExpression> {
-    if matches!(value, ProgramValue::Pointer(pointer) if matches!(pointer.pointer().block, PointerBlock::ContractResult | PointerBlock::ContractException | PointerBlock::AggregateReturn { .. } | PointerBlock::StringLiteral { .. } | PointerBlock::AutomaticLocal { .. } | PointerBlock::ReferenceCarrier { .. } | PointerBlock::StaticObject { .. }))
+    if matches!(value, ProgramValue::Pointer(pointer) if matches!(pointer.pointer().base, AddressBase::ContractResult | AddressBase::ContractException | AddressBase::AggregateReturn { .. } | AddressBase::StringLiteral { .. } | AddressBase::AutomaticLocal { .. } | AddressBase::ReferenceCarrier { .. } | AddressBase::StaticObject { .. }))
     {
         return Some(ContractExpression::ProgramExpression(
             ProgramExpression::Value(value.clone()),
@@ -1597,7 +1617,7 @@ fn synthesized_surface_matches_proposition(
     let array_refs = array_refs_for_parameters(
         parameter_binding.parameters,
         &parameter_values,
-        state.memory(),
+        &state.program_point(),
     );
     let (values, array_refs) = contract_environment_at_state(&parameter_values, &array_refs, state);
     let pointer_element_widths =
@@ -1675,7 +1695,7 @@ fn synthesize_surface_quantified_proposition(
 /// multiple of the `int32` cell the segment counts in. The start index is
 /// zero, so the pointer's own offset is folded into the printed base.
 fn synthesize_zero_based_loadable_segment(
-    base: &Pointer,
+    base: &Address,
     bytes: &MachineTerm,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
@@ -1731,7 +1751,7 @@ fn synthesize_zero_based_loadable_segment(
             ProgramType::Int32Pointer,
         )
     } else if !matches!(bytes, binary_term!(Int32, Subtract, _, _)) {
-        // A byte extent remains unscaled over an explicit byte pointer.
+        // A byte span remains unscaled over an explicit byte pointer.
         (
             contract_expression_to_program_expression(&synthesize_surface_bitvector(
                 bytes,
@@ -1783,13 +1803,13 @@ fn synthesize_zero_based_loadable_segment(
 /// unique exact parameter match: an aliased parameter is not enough source
 /// information to choose one spelling over another.
 fn synthesize_exact_external_zero_based_byte_range(
-    base: &Pointer,
+    base: &Address,
     bytes: &MachineTerm,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Result<Option<ClickProposition>, ()> {
-    if base.block != PointerBlock::ExternalArgument {
+    if base.base != AddressBase::ExternalArgument {
         return Ok(None);
     }
     let mut matches = parameter_binding
@@ -1852,7 +1872,7 @@ fn synthesize_exact_external_zero_based_byte_range(
 /// A spelling whose ends differ re-lowers to a different byte count, which
 /// is exactly what the caller's round-trip check rejects.
 fn synthesize_named_range_loadable_segment(
-    base: &Pointer,
+    base: &Address,
     bytes: &MachineTerm,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
@@ -1867,7 +1887,7 @@ fn synthesize_named_range_loadable_segment(
     // before the historical folded-range paths so the source index comes from
     // the exact external parameter displacement rather than a same-block
     // inference.
-    if base.block == PointerBlock::ExternalArgument
+    if base.base == AddressBase::ExternalArgument
         && is_one_element_byte_count(bytes)
         && let Some(special) = synthesize_external_symbolic_element_range(
             base,
@@ -1879,19 +1899,18 @@ fn synthesize_named_range_loadable_segment(
     {
         return Some(special);
     }
-    let named_pointer_state = if base.block == PointerBlock::ExternalArgument
-        && is_reduced_one_element_byte_count(bytes)
-    {
-        None
-    } else {
-        Some(state)
-    };
+    let named_pointer_state =
+        if base.base == AddressBase::ExternalArgument && is_reduced_one_element_byte_count(bytes) {
+            None
+        } else {
+            Some(state)
+        };
     if let Some(byte_count) = bytes.as_const() {
         let (named, width, start) =
             named_range_bases(parameter_binding, named_pointer_state, state)
                 .into_iter()
                 .filter_map(|named| {
-                    if named.pointer.offset == PointerOffsetTerm::Constant(0)
+                    if named.pointer.offset == AddressOffset::Constant(0)
                         || byte_count % named.width != 0
                     {
                         return None;
@@ -1984,13 +2003,13 @@ fn synthesize_named_range_loadable_segment(
 
 /// Recover the written range for a one-element byte load emitted by
 /// `loadable(bytes[index..index + 1])`. This is deliberately narrower than
-/// `Pointer::element_index_from_base_with_width`: only a declared external
+/// `Address::element_index_from_base_with_width`: only a declared external
 /// parameter, an exact direct displacement from that parameter's pointer, and
 /// a one-byte element are authoritative enough to reconstruct the spelling.
 /// The producer may retain either the exact constant `1` or the unreduced
 /// `(index + 1) - index` form.
 fn synthesize_external_symbolic_element_range(
-    base: &Pointer,
+    base: &Address,
     bytes: &MachineTerm,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
@@ -2018,25 +2037,25 @@ fn synthesize_external_symbolic_element_range(
                 .byte_width()
                 != 1
                 || named_base.program_type().pointee_type()?.byte_width() != 1
-                || named_base.pointer().block != PointerBlock::ExternalArgument
-                || base.block != PointerBlock::ExternalArgument
+                || named_base.pointer().base != AddressBase::ExternalArgument
+                || base.base != AddressBase::ExternalArgument
             {
                 return None;
             }
             let index = match &base.offset {
-                PointerOffsetTerm::Add(left, right)
+                AddressOffset::Add(left, right)
                     if left.as_ref() == &named_base.pointer().offset =>
                 {
                     int32_scaled_value(right, 1)?
                 }
-                PointerOffsetTerm::Add(left, right)
+                AddressOffset::Add(left, right)
                     if right.as_ref() == &named_base.pointer().offset =>
                 {
                     int32_scaled_value(left, 1)?
                 }
                 // `bytes` itself can be at offset zero, in which case the
                 // canonical pointer offset drops the zero-valued add.
-                _ if named_base.pointer().offset == PointerOffsetTerm::Constant(0) => {
+                _ if named_base.pointer().offset == AddressOffset::Constant(0) => {
                     int32_scaled_value(&base.offset, 1)?
                 }
                 _ => return None,
@@ -2120,9 +2139,9 @@ fn is_one_element_byte_count(bytes: &MachineTerm) -> bool {
     matches!(bytes, bits32_constant!(1)) || is_reduced_one_element_byte_count(bytes)
 }
 
-fn int32_scaled_value(offset: &PointerOffsetTerm, width: i64) -> Option<MachineTerm> {
+fn int32_scaled_value(offset: &AddressOffset, width: i64) -> Option<MachineTerm> {
     match offset {
-        PointerOffsetTerm::Int32Scaled { value, byte_width } if *byte_width == width => {
+        AddressOffset::Int32Scaled { value, byte_width } if *byte_width == width => {
             Some(value.structural_value().clone())
         }
         _ => None,
@@ -2177,7 +2196,7 @@ fn named_pointer_bases<'a>(
 fn synthesize_load_defining_equation(
     variable: &Variable,
     memory: &crate::kernel::SharedMemory,
-    pointer: &Pointer,
+    pointer: &Address,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
@@ -2345,7 +2364,7 @@ fn names_bool_local(expression: &ContractExpression, state: &ExecutionState) -> 
             .locals()
             .get(name)
             .is_some_and(|value| value.program_type() == ProgramType::Bool),
-        ContractExpression::CBinding(name) => state
+        ContractExpression::ProgramBinding(name) => state
             .locals()
             .get(name)
             .is_some_and(|value| value.program_type() == ProgramType::Bool),
@@ -2454,7 +2473,7 @@ fn synthesize_surface_atomic_proposition(
     // state. Its source call does not write that argument. Each array-ref
     // argument then lowers to a (memory, pointer) term pair and each value
     // argument to a single value term, so the remaining kernel argument list
-    // reads back unambiguously: a `Memory` term always opens an array-ref
+    // reads back unambiguously: a `SymbolicMemory` term always opens an array-ref
     // pair. The state the pair names is not written here — the current
     // memory needs no form, and every caller re-lowers the candidate and
     // compares it to the kernel fact, so a candidate built against the wrong
@@ -2600,13 +2619,53 @@ fn synthesize_surface_atomic_proposition(
         });
     }
     if let Proposition::MemoryReadDefined {
+        at,
         memory,
         pointer,
         value_type,
     } = proposition
     {
+        let matches_point = |candidate: &ExecutionState| match at {
+            Some(id) => candidate.observation_point_id() == Some(*id),
+            None => candidate.memory() == memory,
+        };
+        let historical = if matches_point(state) {
+            None
+        } else {
+            Some(
+                SYNTHESIS_ENTRY_STATE
+                    .with(|slot| {
+                        let slot = slot.borrow();
+                        let entry = slot.as_ref().filter(|entry| matches_point(entry))?;
+                        Some((
+                            ProgramPointSelector::ProgramPoint(ProgramPointRef {
+                                region: CodeRegionRef::Function,
+                                kind: ProgramPointKind::Entry,
+                            }),
+                            entry.clone(),
+                        ))
+                    })
+                    .or_else(|| {
+                        SYNTHESIS_REFERENCE_STATE.with(|slot| {
+                            let slot = slot.borrow();
+                            let (retained, selector) = slot.as_ref()?;
+                            matches_point(retained).then(|| (selector.clone(), retained.clone()))
+                        })
+                    })
+                    .or_else(|| {
+                        SYNTHESIS_RECORDED_POINTS.with(|slot| {
+                            let slot = slot.borrow();
+                            let points = slot.as_ref()?;
+                            let selector = points.point_name((*at)?)?;
+                            let recorded = points.get_exact(selector)?;
+                            matches_point(recorded).then(|| (selector.clone(), recorded.clone()))
+                        })
+                    })?,
+            )
+        };
+        let read_state = historical.as_ref().map_or(state, |(_, state)| state);
         let pointer =
-            synthesize_surface_pointer(pointer, parameter_binding, state, bound_variables)?;
+            synthesize_surface_pointer(pointer, parameter_binding, read_state, bound_variables)?;
         let validity = ClickProposition::Defined {
             expression: ContractExpression::ProgramExpression(ProgramExpression::TypedLoad {
                 pointer: Box::new(pointer),
@@ -2617,29 +2676,12 @@ fn synthesize_surface_atomic_proposition(
                 source: crate::kernel::ExpressionLoadSource::none(),
             }),
         };
-        if state.memory() == memory {
-            return Some(validity);
-        }
-        let at_entry = SYNTHESIS_ENTRY_STATE.with(|slot| {
-            slot.borrow()
-                .as_ref()
-                .is_some_and(|entry| entry.memory() == memory)
-        });
-        let selector = if at_entry {
-            ProgramPointSelector::ProgramPoint(ProgramPointRef {
-                region: CodeRegionRef::Function,
-                kind: ProgramPointKind::Entry,
-            })
-        } else {
-            SYNTHESIS_REFERENCE_STATE.with(|slot| {
-                let slot = slot.borrow();
-                let (retained_state, selector) = slot.as_ref()?;
-                (retained_state.memory() == memory).then(|| selector.clone())
-            })?
-        };
-        return Some(ClickProposition::At {
-            selector,
-            proposition: Box::new(validity),
+        return Some(match historical {
+            Some((selector, _)) => ClickProposition::At {
+                selector,
+                proposition: Box::new(validity),
+            },
+            None => validity,
         });
     }
     if let Proposition::MemoryLoadable {
@@ -2832,7 +2874,7 @@ fn synthesize_surface_atomic_proposition(
         });
     }
     if let ConditionTerm::PointerEqual(left, right) = condition {
-        let pointer = if **left == Pointer::null() || **right == Pointer::null() {
+        let pointer = if **left == Address::null() || **right == Address::null() {
             synthesize_surface_pointer_expression
         } else {
             synthesize_surface_pointer_address
@@ -3145,6 +3187,20 @@ fn synthesize_surface_atomic_proposition(
                 {
                     raise_call(name, arguments, parameter_binding, state, bound_variables)?
                 }
+                // A read there is likewise the read as written, `s.value`,
+                // and not a typed word read at the equality's signedness
+                // (`load_int64(&s)`), which lowers to a different read.
+                crate::kernel::KernelTermNode::MemoryLoad { .. }
+                    if *relation == CompareRelation::Equal
+                        && let Some(read) = synthesize_surface_bitvector(
+                            term,
+                            parameter_binding,
+                            state,
+                            bound_variables,
+                        ) =>
+                {
+                    read
+                }
                 _ => raise_kernel_term(&root, parameter_binding, state, bound_variables)?,
             }
         } else {
@@ -3382,7 +3438,7 @@ pub(super) fn raise_kernel_term(
 }
 
 // A comparison's presentation reads addresses and declared pointer types.
-// Keep producer qualifiers/evidence/extents on the root; do not export those
+// Keep producer qualifiers/evidence/bounds on the root; do not export those
 // unrelated payloads merely to pass through a native condition constructor.
 fn raise_pointer_comparison(
     term: &crate::kernel::KernelTerm,
@@ -3390,7 +3446,7 @@ fn raise_pointer_comparison(
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<SurfaceTerm> {
-    use crate::kernel::{KernelPointerOffset, KernelTermNode as Node};
+    use crate::kernel::{KernelAddressOffset, KernelTermNode as Node};
     let (left, right) = match term.node() {
         Node::PointerValueEqual(pair) => {
             let operand = |value: &crate::kernel::SharedPointerValue| {
@@ -3410,7 +3466,7 @@ fn raise_pointer_comparison(
         Node::PointerEqual { arguments } => {
             let left = arguments[0].export().ok()?;
             let right = arguments[1].export().ok()?;
-            let pointer = if left == Pointer::null() || right == Pointer::null() {
+            let pointer = if left == Address::null() || right == Address::null() {
                 synthesize_surface_pointer_expression
             } else {
                 synthesize_surface_pointer_address
@@ -3422,13 +3478,13 @@ fn raise_pointer_comparison(
         }
         Node::PointerOffsetEqual { arguments } => (
             synthesize_surface_pointer_offset(
-                &KernelPointerOffset::export(&arguments[0]).ok()?,
+                &KernelAddressOffset::export(&arguments[0]).ok()?,
                 parameter_binding,
                 state,
                 bound_variables,
             )?,
             synthesize_surface_pointer_offset(
-                &KernelPointerOffset::export(&arguments[1]).ok()?,
+                &KernelAddressOffset::export(&arguments[1]).ok()?,
                 parameter_binding,
                 state,
                 bound_variables,
@@ -3494,14 +3550,13 @@ fn raise_algebraic_read(
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
 ) -> Option<SurfaceTerm> {
-    use crate::kernel::{AlgebraicTermNode, KernelTermNode, KernelType, SharedPointerAddress};
+    use crate::kernel::{AlgebraicTermNode, KernelTermNode, KernelType, SharedAddress};
     let (KernelType::Algebraic(ty), KernelTermNode::AlgebraicRead(read)) = (term.ty(), term.node())
     else {
         return None;
     };
     let (memory, address) = read.parts();
-    let same_address =
-        |pointer: &Pointer| address.syntax_equal(&SharedPointerAddress::import(pointer));
+    let same_address = |pointer: &Address| address.syntax_equal(&SharedAddress::import(pointer));
     if let Some((parameter, _)) = parameter_binding
         .parameters
         .iter()
@@ -3539,16 +3594,13 @@ fn raise_algebraic_read(
         SYNTHESIS_RECORDED_POINTS.with(|slot| {
             let slot = slot.borrow();
             let points = slot.as_ref()?;
-            points
+            let (selector, recorded) = points
                 .point_reading_memory(memory)
-                .into_iter()
-                .chain(points.points_near_memory(memory))
-                .find_map(|(selector, recorded)| {
-                    Some(SurfaceTerm::At {
-                        selector: selector.clone(),
-                        expression: Box::new(held_at(recorded)?),
-                    })
-                })
+                .or_else(|| points.point_reading_load(memory, &address.export().ok()?))?;
+            Some(SurfaceTerm::At {
+                selector: selector.clone(),
+                expression: Box::new(held_at(recorded)?),
+            })
         })
     })
 }
@@ -3629,8 +3681,8 @@ fn raise_constructor_pointer(
             // is needed only for a checked root view; adding
             // it to a saved narrow view would change the value.
             if pointer.program_type() == ProgramType::VoidPointer
-                && pointer.extent_is_known()
-                && pointer.extent().is_none()
+                && pointer.bounds_are_known()
+                && pointer.bounds().is_none()
             {
                 ContractExpression::CUnary {
                     lowered: ProgramExpression::Cast {
@@ -4332,102 +4384,6 @@ pub(super) fn synthesize_surface_resource_subject(
     }))
 }
 
-/// Spells one certified equality whose operands were read from different
-/// states, such as a callee postcondition relating a cell after
-/// the call to its value before it. Each operand is anchored at the first
-/// listed point where it denotes a source expression; the caller lists the
-/// recorded statement entries nearest first and must re-lower the result to
-/// confirm it denotes exactly this kernel fact.
-pub(in crate::surface) fn synthesize_surface_equality_across_points(
-    proposition: &Proposition,
-    parameter_binding: ParameterBinding<'_>,
-    points: &[(ProgramPointRef, &ExecutionState)],
-) -> Option<ClickProposition> {
-    let _scope = SurfaceSynthesisScope::enter();
-    let Proposition::ConditionIs(condition, true) = proposition else {
-        return None;
-    };
-    let bound_variables = BTreeMap::new();
-    let anchored = |synthesize: &dyn Fn(&ExecutionState) -> Option<ContractExpression>| {
-        points
-            .iter()
-            .take_while(|_| !crate::instrumentation::deadline_exceeded())
-            .find_map(|(point, state)| {
-                let expression = synthesize(state)?;
-                Some(ContractExpression::At {
-                    selector: ProgramPointSelector::ProgramPoint(point.clone()),
-                    expression: Box::new(expression),
-                })
-            })
-    };
-    let (left, right) = match condition {
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-            relation: CompareRelation::Equal,
-            left,
-            right,
-        }
-        | ConditionTerm::Compare {
-            format: MachineIntegerType::Int64,
-            relation: CompareRelation::Equal,
-            left,
-            right,
-        } => (
-            anchored(&|state| {
-                synthesize_surface_bitvector(left, parameter_binding, state, &bound_variables)
-            })?,
-            anchored(&|state| {
-                synthesize_surface_bitvector(right, parameter_binding, state, &bound_variables)
-            })?,
-        ),
-        ConditionTerm::PointerOffsetEqual(left, right) => (
-            anchored(&|state| {
-                synthesize_surface_pointer_offset(left, parameter_binding, state, &bound_variables)
-            })?,
-            anchored(&|state| {
-                synthesize_surface_pointer_offset(right, parameter_binding, state, &bound_variables)
-            })?,
-        ),
-        ConditionTerm::PointerValueEqual(left, right) => (
-            anchored(&|state| {
-                synthesize_pointer_equality_operand(
-                    left,
-                    parameter_binding,
-                    state,
-                    &bound_variables,
-                )
-            })?,
-            anchored(&|state| {
-                synthesize_pointer_equality_operand(
-                    right,
-                    parameter_binding,
-                    state,
-                    &bound_variables,
-                )
-            })?,
-        ),
-        ConditionTerm::PointerEqual(left, right) => (
-            anchored(&|state| {
-                synthesize_surface_pointer_address(left, parameter_binding, state, &bound_variables)
-            })?,
-            anchored(&|state| {
-                synthesize_surface_pointer_address(
-                    right,
-                    parameter_binding,
-                    state,
-                    &bound_variables,
-                )
-            })?,
-        ),
-        _ => return None,
-    };
-    Some(ClickProposition::Comparison {
-        left,
-        operator: ComparisonOperator::Equal,
-        right,
-    })
-}
-
 /// Whether a parameter's bare name still means the value it was passed: false
 /// once the function has reassigned it, when the bare name means the new value
 /// and the passed one is spelled at function entry instead.
@@ -4446,7 +4402,7 @@ fn parameter_names_its_argument(
 }
 
 pub(super) fn synthesize_surface_pointer_offset(
-    term: &PointerOffsetTerm,
+    term: &AddressOffset,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
@@ -4476,9 +4432,9 @@ pub(super) fn synthesize_surface_pointer_offset(
         return Some(field);
     }
     match term {
-        PointerOffsetTerm::Add(left, right) => {
-            let indexed_pointer = |base: &PointerOffsetTerm, byte_offset: &PointerOffsetTerm| {
-                let PointerOffsetTerm::Constant(byte_offset) = byte_offset else {
+        AddressOffset::Add(left, right) => {
+            let indexed_pointer = |base: &AddressOffset, byte_offset: &AddressOffset| {
+                let AddressOffset::Constant(byte_offset) = byte_offset else {
                     return None;
                 };
                 if byte_offset % 4 != 0 {
@@ -4503,40 +4459,38 @@ pub(super) fn synthesize_surface_pointer_offset(
                     ),
                 ))
             };
-            let dynamically_indexed_pointer =
-                |base: &PointerOffsetTerm, index: &PointerOffsetTerm| {
-                    let PointerOffsetTerm::Int32Scaled {
-                        value: index,
-                        byte_width: 4,
-                    } = index
-                    else {
-                        return None;
-                    };
-                    let base = contract_expression_to_program_expression(
-                        &synthesize_surface_pointer_offset(
-                            base,
-                            parameter_binding,
-                            state,
-                            bound_variables,
-                        )?,
-                    )?;
-                    let index =
-                        contract_expression_to_program_expression(&synthesize_surface_bitvector(
-                            index.structural_value(),
-                            parameter_binding,
-                            state,
-                            bound_variables,
-                        )?)?;
-                    Some(ContractExpression::ProgramExpression(
-                        ProgramExpression::Add(Box::new(base), Box::new(index)),
-                    ))
+            let dynamically_indexed_pointer = |base: &AddressOffset, index: &AddressOffset| {
+                let AddressOffset::Int32Scaled {
+                    value: index,
+                    byte_width: 4,
+                } = index
+                else {
+                    return None;
                 };
+                let base =
+                    contract_expression_to_program_expression(&synthesize_surface_pointer_offset(
+                        base,
+                        parameter_binding,
+                        state,
+                        bound_variables,
+                    )?)?;
+                let index =
+                    contract_expression_to_program_expression(&synthesize_surface_bitvector(
+                        index.structural_value(),
+                        parameter_binding,
+                        state,
+                        bound_variables,
+                    )?)?;
+                Some(ContractExpression::ProgramExpression(
+                    ProgramExpression::Add(Box::new(base), Box::new(index)),
+                ))
+            };
             indexed_pointer(left, right)
                 .or_else(|| indexed_pointer(right, left))
                 .or_else(|| dynamically_indexed_pointer(left, right))
                 .or_else(|| dynamically_indexed_pointer(right, left))
         }
-        PointerOffsetTerm::Int32Scaled { value, byte_width } if matches!(*byte_width, 1 | 4) => {
+        AddressOffset::Int32Scaled { value, byte_width } if matches!(*byte_width, 1 | 4) => {
             synthesize_surface_bitvector(
                 value.structural_value(),
                 parameter_binding,
@@ -4544,10 +4498,10 @@ pub(super) fn synthesize_surface_pointer_offset(
                 bound_variables,
             )
         }
-        PointerOffsetTerm::Constant(_)
-        | PointerOffsetTerm::Variable(_)
-        | PointerOffsetTerm::Int32Scaled { .. }
-        | PointerOffsetTerm::Int64Scaled { .. } => None,
+        AddressOffset::Constant(_)
+        | AddressOffset::Variable(_)
+        | AddressOffset::Int32Scaled { .. }
+        | AddressOffset::Int64Scaled { .. } => None,
     }
 }
 
@@ -4556,7 +4510,7 @@ pub(super) fn synthesize_surface_pointer_offset(
 /// allocation offsets, not the memory-load syntax that produced them; this
 /// reverse lookup recovers stable source syntax at each recorded state.
 fn synthesize_parameter_field_pointer_value(
-    term: &PointerOffsetTerm,
+    term: &AddressOffset,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
 ) -> Option<ContractExpression> {
@@ -4580,12 +4534,10 @@ fn synthesize_parameter_field_pointer_value(
                 ExpressionOutcome::Value(ProgramValue::Pointer(value)) => value.offset.clone(),
                 // Struct pointer fields are represented in contract memory
                 // by their pointer-width scalar offset.
-                ExpressionOutcome::Value(ProgramValue::Int32(value)) => {
-                    PointerOffsetTerm::scale_int32(
-                        value,
-                        i64::from(value_type.pointee_type()?.byte_width()),
-                    )
-                }
+                ExpressionOutcome::Value(ProgramValue::Int32(value)) => AddressOffset::scale_int32(
+                    value,
+                    i64::from(value_type.pointee_type()?.byte_width()),
+                ),
                 _ => continue,
             };
             if !crate::kernel::offsets_have_same_canonical_form(&loaded_offset, term) {
@@ -4604,7 +4556,7 @@ fn synthesize_parameter_field_pointer_value(
             };
             return Some(ContractExpression::Field {
                 pointee_struct: None,
-                base: Box::new(ContractExpression::ProgramExpression(base_expression)),
+                base: Box::new(program_operand(base_expression)),
                 field: field_name.clone(),
                 lowered: ProgramExpression::TypedLoad {
                     pointer: Box::new(lowered_pointer),
@@ -4630,12 +4582,10 @@ fn synthesize_parameter_field_pointer_value(
             let field_pointer = owner.pointer.offset_by_bytes(field.offset_bytes());
             let loaded_offset = match state.memory().load(&field_pointer) {
                 ExpressionOutcome::Value(ProgramValue::Pointer(value)) => value.offset.clone(),
-                ExpressionOutcome::Value(ProgramValue::Int32(value)) => {
-                    PointerOffsetTerm::scale_int32(
-                        value,
-                        i64::from(value_type.pointee_type()?.byte_width()),
-                    )
-                }
+                ExpressionOutcome::Value(ProgramValue::Int32(value)) => AddressOffset::scale_int32(
+                    value,
+                    i64::from(value_type.pointee_type()?.byte_width()),
+                ),
                 _ => continue,
             };
             if !crate::kernel::offsets_have_same_canonical_form(&loaded_offset, term) {
@@ -4664,6 +4614,16 @@ fn synthesize_parameter_field_pointer_value(
 fn registered_load_in_state(variable: &Variable, state: &ExecutionState) -> Option<MachineTerm> {
     let read = crate::kernel::registered_load_term_for_variable(variable)?;
     scalar_read_in_state(&read, state)
+}
+
+/// Whether entry/current synthesis is looking at one actual program point.
+/// A later point can have equal memory, and two absent IDs prove nothing.
+fn synthesis_states_share_program_point(entry: &ExecutionState, state: &ExecutionState) -> bool {
+    std::ptr::eq(entry, state)
+        || entry
+            .program_point()
+            .id()
+            .is_some_and(|point| state.program_point().id() == Some(point))
 }
 
 fn scalar_read_in_state(read: &MachineTerm, state: &ExecutionState) -> Option<MachineTerm> {
@@ -4794,7 +4754,7 @@ fn synthesize_named_integer_local<'a>(
 ) -> Option<SurfaceTerm> {
     if let Some(name) = holders.next() {
         return Some(if crate::surface::is_click_value_name(name) {
-            ContractExpression::CBinding(name.to_string())
+            ContractExpression::ProgramBinding(name.to_string())
         } else {
             ContractExpression::ProgramExpression(ProgramExpression::Variable(surface_local_name(
                 name,
@@ -4912,7 +4872,7 @@ fn synthesize_surface_bitvector(
                     kind: ProgramPointKind::Entry,
                 }),
                 expression: Box::new(if crate::surface::is_click_value_name(&name) {
-                    ContractExpression::CBinding(name)
+                    ContractExpression::ProgramBinding(name)
                 } else {
                     ContractExpression::ProgramExpression(ProgramExpression::Variable(
                         (name).into(),
@@ -4920,7 +4880,7 @@ fn synthesize_surface_bitvector(
                 }),
             }
         } else if crate::surface::is_click_value_name(&name) {
-            ContractExpression::CBinding(name)
+            ContractExpression::ProgramBinding(name)
         } else {
             ContractExpression::ProgramExpression(ProgramExpression::Variable((name).into()))
         });
@@ -5144,7 +5104,7 @@ fn synthesize_surface_bitvector(
             let old = SYNTHESIS_ENTRY_STATE
                 .with(|slot| slot.borrow().clone())
                 .and_then(|entry| {
-                    if entry.memory() == state.memory() {
+                    if synthesis_states_share_program_point(&entry, state) {
                         return None;
                     }
                     let load = scalar_read_in_state(&read, &entry)?;
@@ -5351,10 +5311,10 @@ fn synthesize_surface_bitvector(
                 } else {
                     value_type
                 };
-                Some(ContractExpression::ProgramExpression(match value_type {
+                let load = match value_type {
                     Some(value_type) if value_type == ProgramType::UInt8 || typed_word => {
                         ProgramExpression::TypedLoad {
-                            pointer: Box::new(pointer),
+                            pointer: Box::new(pointer.clone()),
                             value_type,
                             volatile: false,
                             pointee_constant: false,
@@ -5362,8 +5322,18 @@ fn synthesize_surface_bitvector(
                             source: Default::default(),
                         }
                     }
-                    _ => ProgramExpression::Load(Box::new(pointer)),
-                }))
+                    _ => ProgramExpression::Load(Box::new(pointer.clone())),
+                };
+                // `synthesize_surface_pointer` names a program parameter or
+                // local, never the contract result, so a pointer named like
+                // a Click value is read through `program::name`.
+                Some(match program_operand(pointer) {
+                    operand @ ContractExpression::ProgramBinding(_) => ContractExpression::CUnary {
+                        operand: Box::new(operand),
+                        lowered: load,
+                    },
+                    _ => ContractExpression::ProgramExpression(load),
+                })
             }
         }
         // A load variable names one cell of one memory version. It denotes
@@ -5690,16 +5660,16 @@ fn synthesize_legacy_call_argument(
 }
 
 fn synthesize_parameter_field_indexed_int32_load(
-    pointer: &Pointer,
+    pointer: &Address,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<ContractExpression> {
     let _frame = SurfaceSynthesisFrame::enter("indexed-field")?;
-    let pointer_field_and_index = |base: &PointerOffsetTerm,
-                                   index: Option<&PointerOffsetTerm>|
+    let pointer_field_and_index = |base: &AddressOffset,
+                                   index: Option<&AddressOffset>|
      -> Option<(ContractExpression, ContractExpression)> {
-        let PointerOffsetTerm::Int32Scaled {
+        let AddressOffset::Int32Scaled {
             value,
             byte_width: 4,
         } = base
@@ -5725,7 +5695,7 @@ fn synthesize_parameter_field_indexed_int32_load(
         )?;
         let index = match index {
             None => ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
-            Some(PointerOffsetTerm::Int32Scaled {
+            Some(AddressOffset::Int32Scaled {
                 value,
                 byte_width: 4,
             }) => synthesize_surface_bitvector(
@@ -5734,7 +5704,7 @@ fn synthesize_parameter_field_indexed_int32_load(
                 state,
                 bound_variables,
             )?,
-            Some(PointerOffsetTerm::Constant(bytes)) if bytes % 4 == 0 => {
+            Some(AddressOffset::Constant(bytes)) if bytes % 4 == 0 => {
                 ContractExpression::ProgramExpression(ProgramExpression::Value(int32(
                     u32::try_from(bytes / 4).ok()?,
                 )))
@@ -5744,12 +5714,12 @@ fn synthesize_parameter_field_indexed_int32_load(
         Some((field, index))
     };
     let (field, index) = match &pointer.offset {
-        base @ (PointerOffsetTerm::Int32Scaled { .. } | PointerOffsetTerm::Int64Scaled { .. }) => {
+        base @ (AddressOffset::Int32Scaled { .. } | AddressOffset::Int64Scaled { .. }) => {
             pointer_field_and_index(base, None)?
         }
-        PointerOffsetTerm::Add(left, right) => pointer_field_and_index(left, Some(right))
+        AddressOffset::Add(left, right) => pointer_field_and_index(left, Some(right))
             .or_else(|| pointer_field_and_index(right, Some(left)))?,
-        PointerOffsetTerm::Constant(_) | PointerOffsetTerm::Variable(_) => return None,
+        AddressOffset::Constant(_) | AddressOffset::Variable(_) => return None,
     };
     // Preserve array indexing for a declared int32 pointer, including fields
     // reached through automatic struct-pointer locals. Their layout is already
@@ -5916,13 +5886,11 @@ fn synthesize_local_aggregate_field(
                     let pointer = if element_offset == 0 {
                         slot.clone()
                     } else {
-                        Pointer {
-                            block: slot.block.clone(),
-                            offset: crate::kernel::PointerOffsetTerm::add(
+                        Address {
+                            base: slot.base.clone(),
+                            offset: crate::kernel::AddressOffset::add(
                                 slot.offset.clone(),
-                                crate::kernel::PointerOffsetTerm::constant(i64::from(
-                                    element_offset,
-                                )),
+                                crate::kernel::AddressOffset::constant(i64::from(element_offset)),
                             ),
                         }
                     };
@@ -6023,7 +5991,7 @@ pub(super) fn bitvector_term_is_load_free(term: &MachineTerm) -> bool {
 }
 
 fn synthesize_local_indexed_load(
-    pointer: &Pointer,
+    pointer: &Address,
     kind: crate::kernel::LoadKind,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
@@ -6040,9 +6008,9 @@ fn synthesize_local_indexed_load(
         // also have a numeric difference, but indexing the local by it names
         // a different C expression, one that reads the local as an `int32`
         // array and lowers to a different address term.
-        if pointer.block != base.block
-            || !(base.offset == PointerOffsetTerm::Constant(0)
-                || matches!(&pointer.offset, PointerOffsetTerm::Add(left, right)
+        if pointer.base != base.base
+            || !(base.offset == AddressOffset::Constant(0)
+                || matches!(&pointer.offset, AddressOffset::Add(left, right)
                     if left.as_ref() == &base.offset || right.as_ref() == &base.offset))
         {
             return None;
@@ -6081,18 +6049,18 @@ fn synthesize_local_indexed_load(
 /// shape from the function's declarations. A multidimensional element needs
 /// a constant index to split into subscripts.
 fn synthesize_static_storage_array_element_load(
-    pointer: &Pointer,
+    pointer: &Address,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<ContractExpression> {
-    if !pointer.block.is_static_storage_block() {
+    if !pointer.base.is_static_storage_block() {
         return None;
     }
     let owners = SYNTHESIS_STRUCT_OWNERS.with(|slot| slot.borrow().clone())?;
     state
         .locals()
-        .array_objects_with_slot_in(&pointer.block)
+        .array_objects_with_slot_in(&pointer.base)
         .into_iter()
         .find_map(|(name, element_type, slot)| {
             crate::instrumentation::record_deterministic_work(1);
@@ -6142,7 +6110,7 @@ fn synthesize_static_storage_array_element_load(
 }
 
 fn synthesize_parameter_field_load(
-    pointer: &Pointer,
+    pointer: &Address,
     value_type: ProgramType,
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<ContractExpression> {
@@ -6150,7 +6118,7 @@ fn synthesize_parameter_field_load(
 }
 
 fn synthesize_parameter_field_load_matching(
-    pointer: &Pointer,
+    pointer: &Address,
     value_type: Option<ProgramType>,
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<ContractExpression> {
@@ -6199,7 +6167,7 @@ fn synthesize_parameter_field_load_matching(
         };
         return Some(ContractExpression::Field {
             pointee_struct: None,
-            base: Box::new(ContractExpression::ProgramExpression(base)),
+            base: Box::new(program_operand(base)),
             field: field_name.clone(),
             lowered: ProgramExpression::TypedLoad {
                 pointer: Box::new(field_pointer),
@@ -6219,7 +6187,7 @@ fn synthesize_parameter_field_load_matching(
 /// `local->field`, when the installed local layout scope knows the local's
 /// struct and this state holds the local's pointer value.
 fn synthesize_local_field_load(
-    pointer: &Pointer,
+    pointer: &Address,
     value_type: ProgramType,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
@@ -6228,7 +6196,7 @@ fn synthesize_local_field_load(
 }
 
 fn synthesize_local_field_load_matching(
-    pointer: &Pointer,
+    pointer: &Address,
     value_type: Option<ProgramType>,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
@@ -6239,7 +6207,7 @@ fn synthesize_local_field_load_matching(
         // offset that element arithmetic over the struct width would miss.
         let Some((field_name, field)) = owner.layout.fields().iter().find(|(_, field)| {
             let field_pointer = owner.pointer.offset_by_bytes(field.offset_bytes());
-            field_pointer.block == pointer.block
+            field_pointer.base == pointer.base
                 && crate::kernel::offsets_have_same_canonical_form(
                     &field_pointer.offset,
                     &pointer.offset,
@@ -6273,7 +6241,7 @@ fn synthesize_local_field_load_matching(
 /// A field read spelled through a struct-pointer parameter or, failing
 /// that, through a struct-pointer local of the function under proof.
 fn synthesize_struct_field_load(
-    pointer: &Pointer,
+    pointer: &Address,
     value_type: ProgramType,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
@@ -6286,13 +6254,13 @@ fn synthesize_struct_field_load(
 /// aggregate field. Offset-based synthesis cannot name its distinct block.
 /// This is a candidate spelling; callers must re-lower it to the exact fact.
 fn synthesize_owned_field_at_address(
-    address: &Pointer,
+    address: &Address,
     value_type: ProgramType,
     state: &ExecutionState,
 ) -> Option<ContractExpression> {
-    let name: crate::kernel::BindingName = match &address.block {
-        PointerBlock::AutomaticLocal { binding, .. } => binding.clone().into(),
-        PointerBlock::Concrete(block) => block.strip_prefix("local:")?.rsplit(':').next()?.into(),
+    let name: crate::kernel::BindingName = match &address.base {
+        AddressBase::AutomaticLocal { binding, .. } => binding.clone().into(),
+        AddressBase::Concrete(block) => block.strip_prefix("local:")?.rsplit(':').next()?.into(),
         _ => return None,
     };
     let slot = state.locals().aggregate_object_pointer(&name)?;
@@ -6321,22 +6289,22 @@ fn synthesize_owned_field_at_address(
 /// that read: a legacy load variable whose canonical load in `state` is
 /// itself, or a loaded pointer at displacement zero that `state`'s canonical
 /// read of its defining address reproduces.
-fn pointer_read_address_in_state(pointer: &Pointer, state: &ExecutionState) -> Option<Pointer> {
-    if pointer.offset != PointerOffsetTerm::Constant(0) {
+fn pointer_read_address_in_state(pointer: &Address, state: &ExecutionState) -> Option<Address> {
+    if pointer.offset != AddressOffset::Constant(0) {
         return None;
     }
     let memory = crate::kernel::intern_memory_ref(state.memory());
-    match &pointer.block {
-        PointerBlock::Symbolic(variable) => {
+    match &pointer.base {
+        AddressBase::Symbolic(variable) => {
             let (_, address) = crate::kernel::registered_load_for_variable(variable)?;
             registered_load_in_state(variable, state).map(|_| address)
         }
-        PointerBlock::LoadedPointer(_) => {
+        AddressBase::LoadedPointer(_) => {
             let read = pointer.as_loaded_value()?;
             // A retained read always names its exact defining state,
             // including a post-store read whose canonical value is now known.
             (memory == read.defining_memory
-                || Pointer::canonical_loaded_value(&memory, &read.defining_address) == *pointer)
+                || Address::canonical_loaded_value(&memory, &read.defining_address) == *pointer)
                 .then_some(read.defining_address)
         }
         _ => None,
@@ -6344,13 +6312,13 @@ fn pointer_read_address_in_state(pointer: &Pointer, state: &ExecutionState) -> O
 }
 
 fn synthesize_owned_pointer_field(
-    pointer: &Pointer,
+    pointer: &Address,
     state: &ExecutionState,
 ) -> Option<ContractExpression> {
     let address = pointer_read_address_in_state(pointer, state)?;
-    let name: crate::kernel::BindingName = match &address.block {
-        PointerBlock::AutomaticLocal { binding, .. } => binding.clone().into(),
-        PointerBlock::Concrete(block) => block.strip_prefix("local:")?.rsplit(':').next()?.into(),
+    let name: crate::kernel::BindingName = match &address.base {
+        AddressBase::AutomaticLocal { binding, .. } => binding.clone().into(),
+        AddressBase::Concrete(block) => block.strip_prefix("local:")?.rsplit(':').next()?.into(),
         _ => return None,
     };
     let slot = state.locals().aggregate_object_pointer(&name)?;
@@ -6380,14 +6348,14 @@ fn synthesize_owned_pointer_field(
 /// its own 64-bit value: spelled back, it lowers to the same displacement,
 /// and every synthesized candidate is re-lowered and compared before use.
 fn synthesis_element_index(
-    pointer: &Pointer,
-    base: &Pointer,
+    pointer: &Address,
+    base: &Address,
     element_width: u32,
 ) -> Option<pointer_indices::SourceIndex> {
     // Legacy-only offsets already have a native source reader. Retain that
     // result without importing temporary arithmetic. Any shared child selects
     // the shared path, so this compatibility read cannot export a shared DAG.
-    let native = |offset: &PointerOffsetTerm| {
+    let native = |offset: &AddressOffset| {
         !offset.any_scaled_operand(|index| index.shared_operand().is_some())
     };
     if native(&pointer.offset)
@@ -6399,17 +6367,17 @@ fn synthesis_element_index(
     if let Some(index) = pointer.shared_element_index_from_base_with_width(base, element_width) {
         return Some(pointer_indices::SourceIndex::Shared(index));
     }
-    if pointer.block != base.block {
+    if pointer.base != base.base {
         return None;
     }
     let displacement = match &pointer.offset {
-        offset if base.offset == PointerOffsetTerm::Constant(0) => offset,
-        PointerOffsetTerm::Add(left, right) if left.as_ref() == &base.offset => right.as_ref(),
-        PointerOffsetTerm::Add(left, right) if right.as_ref() == &base.offset => left.as_ref(),
+        offset if base.offset == AddressOffset::Constant(0) => offset,
+        AddressOffset::Add(left, right) if left.as_ref() == &base.offset => right.as_ref(),
+        AddressOffset::Add(left, right) if right.as_ref() == &base.offset => left.as_ref(),
         _ => return None,
     };
     match displacement {
-        PointerOffsetTerm::Int64Scaled {
+        AddressOffset::Int64Scaled {
             value,
             byte_width,
             unsigned,
@@ -6421,7 +6389,7 @@ fn synthesis_element_index(
 }
 
 fn synthesize_surface_pointer(
-    pointer: &Pointer,
+    pointer: &Address,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
@@ -6429,18 +6397,18 @@ fn synthesize_surface_pointer(
     let _pointer_frame =
         SurfacePointerFrame::enter(pointer, parameter_binding, state, bound_variables)?;
     let _frame = SurfaceSynthesisFrame::enter("pointer")?;
-    if pointer == &Pointer::null() {
+    if pointer == &Address::null() {
         return Some(ProgramExpression::Value(int32(0)));
     }
     if matches!(
-        pointer.block,
-        PointerBlock::ContractResult
-            | PointerBlock::ContractException
-            | PointerBlock::AggregateReturn { .. }
-            | PointerBlock::StringLiteral { .. }
-            | PointerBlock::AutomaticLocal { .. }
-            | PointerBlock::ReferenceCarrier { .. }
-            | PointerBlock::StaticObject { .. }
+        pointer.base,
+        AddressBase::ContractResult
+            | AddressBase::ContractException
+            | AddressBase::AggregateReturn { .. }
+            | AddressBase::StringLiteral { .. }
+            | AddressBase::AutomaticLocal { .. }
+            | AddressBase::ReferenceCarrier { .. }
+            | AddressBase::StaticObject { .. }
     ) {
         return Some(ProgramExpression::Value(ProgramValue::typed_pointer(
             pointer.clone(),
@@ -6448,14 +6416,14 @@ fn synthesize_surface_pointer(
         )));
     }
     // A function's address spells as the function's name.
-    if let (PointerBlock::Function(function), PointerOffsetTerm::Constant(0)) =
-        (&pointer.block, &pointer.offset)
+    if let (AddressBase::Function(function), AddressOffset::Constant(0)) =
+        (&pointer.base, &pointer.offset)
     {
         return Some(ProgramExpression::FunctionAddress(function.clone()));
     }
     // A pointer a proof binder names, such as a match arm's payload.
-    if let (PointerBlock::Symbolic(variable), PointerOffsetTerm::Constant(0)) =
-        (&pointer.block, &pointer.offset)
+    if let (AddressBase::Symbolic(variable), AddressOffset::Constant(0)) =
+        (&pointer.base, &pointer.offset)
         && let Some(name) =
             folds::binder_name(false, *variable).or_else(|| bound_variables.get(variable).cloned())
     {
@@ -6532,7 +6500,7 @@ fn synthesize_surface_pointer(
     }
     if let Some(expression) = state
         .locals()
-        .pointer_objects_in_block(&pointer.block)
+        .pointer_objects_in_block(&pointer.base)
         .find_map(|(name, base)| {
             crate::instrumentation::record_deterministic_work(1);
             let element_width = base.program_type().pointee_type()?.byte_width();
@@ -6572,12 +6540,12 @@ fn synthesize_surface_pointer(
     // Static scalar and aggregate storage has an indexed source slot too.
     // Name a displaced address from that slot, without scanning objects or
     // pretending the aggregate itself is an array pointer.
-    if pointer.block.is_static_storage_block()
-        && let PointerOffsetTerm::Constant(bytes) = pointer.offset
+    if pointer.base.is_static_storage_block()
+        && let AddressOffset::Constant(bytes) = pointer.offset
         && let Ok(bytes) = u32::try_from(bytes)
-        && let Some(name) = state.locals().name_for_slot(&Pointer {
-            block: pointer.block.clone(),
-            offset: PointerOffsetTerm::Constant(0),
+        && let Some(name) = state.locals().name_for_slot(&Address {
+            base: pointer.base.clone(),
+            offset: AddressOffset::Constant(0),
         })
         && (state.locals().aggregate_layout(name).is_some()
             || state.locals().scalar_object_type(name).is_some())
@@ -6596,14 +6564,14 @@ fn synthesize_surface_pointer(
     }
     // A pointer into a global or static array, at a constant byte offset
     // from the array's slot: the array's name, displaced by those bytes.
-    if pointer.block.is_static_storage_block()
+    if pointer.base.is_static_storage_block()
         && let Some(expression) = state
             .locals()
-            .array_objects_with_slot_in(&pointer.block)
+            .array_objects_with_slot_in(&pointer.base)
             .into_iter()
             .find_map(|(name, _, slot)| {
                 crate::instrumentation::record_deterministic_work(1);
-                let (PointerOffsetTerm::Constant(at), PointerOffsetTerm::Constant(start)) =
+                let (AddressOffset::Constant(at), AddressOffset::Constant(start)) =
                     (&pointer.offset, &slot.offset)
                 else {
                     return None;
@@ -6622,8 +6590,8 @@ fn synthesize_surface_pointer(
     {
         return Some(expression);
     }
-    if let (PointerBlock::Symbolic(variable), PointerOffsetTerm::Constant(0)) =
-        (&pointer.block, &pointer.offset)
+    if let (AddressBase::Symbolic(variable), AddressOffset::Constant(0)) =
+        (&pointer.base, &pointer.offset)
         && let Some(name) = proof_binder_name(*variable)
     {
         return Some(ProgramExpression::Variable((name).into()));
@@ -6633,12 +6601,12 @@ fn synthesize_surface_pointer(
     }
     // A pointer read from a struct field spells as that field.
     if let Some(read) = pointer.as_loaded_value() {
-        if let PointerOffsetTerm::Constant(bytes) = read.displacement
+        if let AddressOffset::Constant(bytes) = read.displacement
             && bytes != 0
         {
-            let base = Pointer {
-                block: pointer.block.clone(),
-                offset: PointerOffsetTerm::Constant(0),
+            let base = Address {
+                base: pointer.base.clone(),
+                offset: AddressOffset::Constant(0),
             };
             return Some(ProgramExpression::PointerOffsetBytes {
                 pointer: Box::new(synthesize_surface_pointer(
@@ -6650,7 +6618,7 @@ fn synthesize_surface_pointer(
                 bytes: u32::try_from(bytes).ok()?,
             });
         }
-        if read.displacement != PointerOffsetTerm::Constant(0) {
+        if read.displacement != AddressOffset::Constant(0) {
             return None;
         }
         // A field spelling reads this state; historical reads need their
@@ -6694,7 +6662,7 @@ fn synthesize_surface_pointer(
     if !parameter_binding.arguments.iter().any(|argument| {
         matches!(
             argument,
-            ProgramExpression::Value(ProgramValue::Pointer(base)) if base.block == pointer.block
+            ProgramExpression::Value(ProgramValue::Pointer(base)) if base.base == pointer.base
         )
     }) {
         return None;
@@ -6811,7 +6779,7 @@ fn synthesize_pointer_equality_operand(
 }
 
 fn synthesize_pointer_equality_address(
-    pointer: &Pointer,
+    pointer: &Address,
     program_type: ProgramType,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
@@ -6839,7 +6807,7 @@ fn synthesize_pointer_equality_address(
 }
 
 fn synthesize_surface_pointer_expression(
-    pointer: &Pointer,
+    pointer: &Address,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
@@ -6894,7 +6862,7 @@ fn synthesize_surface_pointer_expression(
     if parameter_binding.arguments.iter().any(|argument| {
         matches!(
             argument,
-            ProgramExpression::Value(ProgramValue::Pointer(base)) if base.block == pointer.block
+            ProgramExpression::Value(ProgramValue::Pointer(base)) if base.base == pointer.base
         )
     }) && let Some(offset) = synthesize_surface_pointer_offset(
         &pointer.offset,
@@ -6917,7 +6885,7 @@ fn synthesize_surface_pointer_expression(
 /// where a local held a pointer into its block: the point that introduced
 /// the value, found by the block in one index range.
 fn synthesize_recorded_pointer_expression(
-    pointer: &Pointer,
+    pointer: &Address,
     parameter_binding: ParameterBinding<'_>,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<ContractExpression> {
@@ -6926,7 +6894,7 @@ fn synthesize_recorded_pointer_expression(
         let points = slot.as_ref()?;
         Some(
             points
-                .points_holding_pointer_block(&pointer.block)
+                .points_holding_address_base(&pointer.base)
                 .map(|(selector, state)| (selector.clone(), state.clone()))
                 .collect::<Vec<_>>(),
         )
@@ -6944,7 +6912,7 @@ fn synthesize_recorded_pointer_expression(
 /// `old(e)` for a pointer the entry state names and this state does not.
 /// The entry scope is cleared for the inner synthesis, so it never nests.
 fn synthesize_entry_pointer_expression(
-    pointer: &Pointer,
+    pointer: &Address,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
@@ -6993,35 +6961,26 @@ fn synthesize_loaded_pointer_value(
 /// when `state` does not read it. The read is checked there with the
 /// kernel's naming law, as [`pointer_read_address_in_state`] decides it.
 fn recorded_point_of_pointer_read(
-    pointer: &Pointer,
+    pointer: &Address,
     state: &ExecutionState,
 ) -> Option<(ProgramPointSelector, ExecutionState)> {
-    if pointer.offset != PointerOffsetTerm::Constant(0) {
+    if pointer.offset != AddressOffset::Constant(0) {
         return None;
     }
-    let memory = match &pointer.block {
-        PointerBlock::Symbolic(variable) => {
-            crate::kernel::registered_load_for_variable(variable)?.0
-        }
-        PointerBlock::LoadedPointer(_) => pointer.as_loaded_value()?.defining_memory,
+    let memory = match &pointer.base {
+        AddressBase::Symbolic(variable) => crate::kernel::registered_load_for_variable(variable)?.0,
+        AddressBase::LoadedPointer(_) => pointer.as_loaded_value()?.defining_memory,
         _ => return None,
     };
     if pointer_read_address_in_state(pointer, state).is_some() {
         return None;
     }
-    // Read where the memory is recorded or, for a memory no point records,
-    // at a recorded memory near it that reads the same, as a load is.
+    // Read where the memory is recorded.
     SYNTHESIS_RECORDED_POINTS.with(|slot| {
         let slot = slot.borrow();
-        let points = slot.as_ref()?;
-        points
-            .point_reading_memory(&memory)
-            .into_iter()
-            .chain(points.points_near_memory(&memory))
-            .find_map(|(selector, recorded)| {
-                pointer_read_address_in_state(pointer, recorded)?;
-                Some((selector.clone(), recorded.clone()))
-            })
+        let (selector, recorded) = slot.as_ref()?.point_reading_memory(&memory)?;
+        pointer_read_address_in_state(pointer, recorded)?;
+        Some((selector.clone(), recorded.clone()))
     })
 }
 
@@ -7095,7 +7054,7 @@ fn synthesize_scalar_model_field(
 /// that call's entry. The state scope is cleared for the inner synthesis,
 /// so the state spelling never nests.
 fn synthesize_state_pointer_expression(
-    pointer: &Pointer,
+    pointer: &Address,
     parameter_binding: ParameterBinding<'_>,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<ContractExpression> {
@@ -7243,11 +7202,9 @@ fn synthesize_surface_algebraic(
                         if value.as_ref() == term)
                 })
             {
-                return Some(ContractExpression::ProgramExpression(
-                    ProgramExpression::Variable(crate::surface::surface_parameter_binding(
-                        parameter.binding_name(),
-                    )),
-                ));
+                return Some(program_operand(ProgramExpression::Variable(
+                    crate::surface::surface_parameter_binding(parameter.binding_name()),
+                )));
             }
             // A value a call returned is spelled by its call.
             if let Some(result) = state_call_result(

@@ -2,6 +2,40 @@ use super::*;
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_00")]
+fn separately_declared_guarded_invariants_close_at_the_back_edge() {
+    // Keep separately declared guarded members in the gate without the
+    // arithmetic search of the large counter-loop scaling audit.
+    let c_source = "void guarded_bundle(int x, int y) { int i = 1; while (i > 0) { i = 0; } }";
+    let click_source = r#"
+        verifying "guarded_bundle.c";
+        void guarded_bundle(int32 x, int32 y) {
+            requires x == 0;
+            requires y == 0;
+            ensures x == 0 or x == 1;
+            ensures y == 0 or y == 1;
+        } by {
+            step();
+            step();
+            loop {
+                decreases i;
+                invariant x == 0 or x == 1;
+                invariant y == 0 or y == 1;
+                initialize by solve();
+                preserve by {
+                    step();
+                    have x == 0 or x == 1 by { known(); }
+                    have y == 0 or y == 1 by { known(); }
+                }
+            }
+            step();
+        }
+    "#;
+    verify_c_sources(click_source, &[("guarded_bundle.c", c_source)])
+        .expect("separately declared guarded invariants should close at the back edge");
+}
+
+#[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_00")]
 fn loop_metadata_sees_address_escape_after_the_loop() {
     let c_source = r#"void bounded(int32 n) {
         int32 i = 0;
@@ -83,56 +117,68 @@ fn expanded_loop_phase_proofs_are_certificates() {
         // Readability certificates name a pointer field through void*.
         ("fork_join_worker_direct_contract", "fill_range"),
     ] {
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("mdtests")
-            .join(format!("{filename}.md"));
-        let source = std::fs::read_to_string(&path).unwrap();
-        let fixture = crate::cli::parse_mdtest(&path, &source).unwrap();
-        let sources = fixture
-            .c_sources
-            .iter()
-            .map(|(name, source)| (name.as_str(), source.as_str()))
-            .collect::<Vec<_>>();
-        let click = fixture.click_source.as_deref().unwrap();
-        let verified = verify_c_sources(click, &sources)
-            .unwrap_or_else(|e| panic!("{filename}: {}", e.message()));
-        let expanded = expand_checked_grouped_claim(click, &verified, function)
-            .unwrap_or_else(|e| panic!("{filename}: {}", e.message()));
-        assert!(
-            !expanded.contains("close_invariants"),
-            "{filename}: {expanded}"
-        );
-        let parsed =
-            crate::surface::verification::parse_click_file_with_c_sources(&expanded, &sources)
-                .unwrap_or_else(|e| panic!("{filename}: {}", e.message()));
-        let block = parsed
-            .function_blocks()
-            .iter()
-            .find(|block| block.signature().name() == function)
-            .unwrap_or_else(|| panic!("{filename}: expansion lost `{function}`"));
-        let mut clauses = block.structural_clauses().to_vec();
-        if let Some(tactics) = block.grouped_proof().and_then(SourceProof::tactics) {
-            loop_clauses_in(tactics, &mut clauses);
-        }
-        assert!(!clauses.is_empty(), "{filename}: expansion lost its loop");
-        for clause in &clauses {
-            for (phase, proof) in [
-                ("initialize", clause.initialize_proof()),
-                ("preserve", clause.preserve_proof()),
-            ] {
-                let proof =
-                    proof.unwrap_or_else(|| panic!("{filename}: `{phase}` was not expanded"));
-                let tactics = proof.tactics().unwrap_or_else(|| {
-                    panic!("{filename}: `{phase}` stayed a smart proof: {expanded}")
-                });
-                ProofCertificate::from_proof_tactics(tactics).unwrap_or_else(|error| {
-                    panic!("{filename}: `{phase}` is not a certificate: {error:?}\n{expanded}")
-                });
-            }
-        }
-        verify_c_sources(&expanded, &sources)
-            .unwrap_or_else(|e| panic!("{filename}: {}", e.message()));
+        assert_loop_phase_expansion_replays(filename, function);
     }
+}
+
+#[test]
+#[ignore = "nightly: verifies and replays two complete loop fixtures"]
+fn numeric_descent_exit_expansion_replays() {
+    for fixture in [
+        "loop_numeric_descent_on_exit",
+        "loop_numeric_descent_on_generated_exit",
+    ] {
+        assert_loop_phase_expansion_replays(fixture, "fill");
+    }
+}
+
+fn assert_loop_phase_expansion_replays(filename: &str, function: &str) {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests")
+        .join(format!("{filename}.md"));
+    let source = std::fs::read_to_string(&path).unwrap();
+    let fixture = crate::cli::parse_mdtest(&path, &source).unwrap();
+    let sources = fixture
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let click = fixture.click_source.as_deref().unwrap();
+    let verified =
+        verify_c_sources(click, &sources).unwrap_or_else(|e| panic!("{filename}: {}", e.message()));
+    let expanded = expand_checked_grouped_claim(click, &verified, function)
+        .unwrap_or_else(|e| panic!("{filename}: {}", e.message()));
+    assert!(
+        !expanded.contains("close_invariants"),
+        "{filename}: {expanded}"
+    );
+    let parsed = crate::surface::verification::parse_click_file_with_c_sources(&expanded, &sources)
+        .unwrap_or_else(|e| panic!("{filename}: {}", e.message()));
+    let block = parsed
+        .function_blocks()
+        .iter()
+        .find(|block| block.signature().name() == function)
+        .unwrap_or_else(|| panic!("{filename}: expansion lost `{function}`"));
+    let mut clauses = block.structural_clauses().to_vec();
+    if let Some(tactics) = block.grouped_proof().and_then(SourceProof::tactics) {
+        loop_clauses_in(tactics, &mut clauses);
+    }
+    assert!(!clauses.is_empty(), "{filename}: expansion lost its loop");
+    for clause in &clauses {
+        for (phase, proof) in [
+            ("initialize", clause.initialize_proof()),
+            ("preserve", clause.preserve_proof()),
+        ] {
+            let proof = proof.unwrap_or_else(|| panic!("{filename}: `{phase}` was not expanded"));
+            let tactics = proof.tactics().unwrap_or_else(|| {
+                panic!("{filename}: `{phase}` stayed a smart proof: {expanded}")
+            });
+            ProofCertificate::from_proof_tactics(tactics).unwrap_or_else(|error| {
+                panic!("{filename}: `{phase}` is not a certificate: {error:?}\n{expanded}")
+            });
+        }
+    }
+    verify_c_sources(&expanded, &sources).unwrap_or_else(|e| panic!("{filename}: {}", e.message()));
 }
 
 #[test]
@@ -416,7 +462,7 @@ fn migrated_negative_loop_fixtures_reach_the_decrease_check() {
             error.message().len() <= 64 * 1024,
             "diagnostic exceeded report cap"
         );
-        assert!(!error.message().contains("Memory {"));
+        assert!(!error.message().contains("SymbolicMemory {"));
         assert!(!error.message().contains("ExecutionState {"));
         if error.message().contains("goal:") {
             assert!(error.message().contains("recent premises"));
@@ -2441,7 +2487,7 @@ fn loop_local_pointer_invariants_retain_declared_element_types() {
 }
 
 #[test]
-#[ignore = "nightly: local pointer extent mutation and expansion"]
+#[ignore = "nightly: local pointer bounds mutation and expansion"]
 fn loop_local_pointer_invariants_refuse_short_wide_views_and_expand() {
     let (click, sources) = loop_fixture("loop_local_pointer_element_types");
     let sources = borrowed_sources(&sources);
@@ -2644,9 +2690,9 @@ fn a_loop_state_is_one_entry_under_every_spelling() {
 fn recorded_states_find_the_point_reading_a_memory() {
     let mark = |name: &str| ProgramPointSelector::Mark(name.to_string());
     let memory = |index: u32| {
-        let pointer = Pointer::symbolic(Variable(97_400 + u64::from(index)));
+        let pointer = Address::symbolic(Variable(97_400 + u64::from(index)));
         crate::kernel::intern_memory(
-            Memory::new().store(pointer, ProgramValue::Int32(MachineTerm::constant(index))),
+            SymbolicMemory::new().store(pointer, ProgramValue::Int32(MachineTerm::constant(index))),
         )
     };
     let state = |memory: &crate::kernel::SharedMemory| {
@@ -2791,6 +2837,7 @@ test_batches! {
         nested_conjunction_extraction_precedes_explicit_arithmetic_certificate,
         lexicographic_ranking_bundle_prints_its_pivot_arm,
         smart_ranking_closure_expands_its_pivot_arm,
+        separately_declared_guarded_invariants_close_at_the_back_edge,
     ],
     loop_batch_01: [
         smart_ranking_closure_reads_an_inequality_in_scope,

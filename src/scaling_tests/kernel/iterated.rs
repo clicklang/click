@@ -8,13 +8,13 @@ fn iterated_exposure_preserves_the_frame_without_admission_or_normalization() {
             let mut preparation = Vec::new();
             for count in [4_u64, 16, 64] {
                 let _session = crate::kernel::VerificationSession::enter();
-                let base = Pointer {
-                    block: PointerBlock::Heap(9_970_000),
-                    offset: PointerOffsetTerm::Constant(0),
+                let base = Address {
+                    base: AddressBase::Heap(9_970_000),
+                    offset: AddressOffset::Constant(0),
                 };
-                let guards = Pointer {
-                    block: "local:iterated-exposure-guards".into(),
-                    offset: PointerOffsetTerm::Constant(0),
+                let guards = Address {
+                    base: "local:iterated-exposure-guards".into(),
+                    offset: AddressOffset::Constant(0),
                 };
                 let template = IteratedMemory::new(
                     "cells",
@@ -39,11 +39,11 @@ fn iterated_exposure_preserves_the_frame_without_admission_or_normalization() {
                         )));
                     } else if axis != "range premises" {
                         let alias = if axis == "aliases" {
-                            Pointer::symbolic(Variable(9_980_000 + index))
+                            Address::symbolic(Variable(9_980_000 + index))
                         } else {
-                            Pointer {
-                                block: base.block.clone(),
-                                offset: PointerOffsetTerm::Variable(Variable(9_980_000 + index)),
+                            Address {
+                                base: base.base.clone(),
+                                offset: AddressOffset::Variable(Variable(9_980_000 + index)),
                             }
                         };
                         facts = facts.assume_condition(
@@ -63,8 +63,8 @@ fn iterated_exposure_preserves_the_frame_without_admission_or_normalization() {
                 let (resources, inserted) = ResourceContext::new_with_equalities(&facts)
                     .unchecked_with_facts_and_occurrences(owners);
                 let retained_source = inserted.last().unwrap().1;
-                let memory = Memory::new()
-                    .with_block(guards.block.clone(), 16)
+                let memory = SymbolicMemory::new()
+                    .with_block(guards.base.clone(), 16)
                     .initialize_scalar_array(
                         &guards,
                         ProgramType::Int32,

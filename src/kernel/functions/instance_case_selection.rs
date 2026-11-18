@@ -153,7 +153,7 @@ pub(super) fn matched_resource_instance_case_read_projection(
         let Some(range) = fact.memory_range() else {
             continue;
         };
-        supporting_facts.extend(crate::kernel::admitted_memory_range_extent_facts(range));
+        supporting_facts.extend(crate::kernel::admitted_memory_range_span_facts(range));
         supporting_facts.push(range.loadable_fact(&state.memory));
     }
     supporting_facts.push(Proposition::ResourceComposition(body_resources));
@@ -211,7 +211,7 @@ pub(super) fn matched_resource_instance_case_read_projection(
 /// evidence contributes nothing.
 /// A returned named head carries its verified body's pure invariants. Only
 /// the explicit outputs are visited, after ensures have selected their model.
-/// Memory state readability and containment follow the exact owned head; no child
+/// SymbolicMemory state readability and containment follow the exact owned head; no child
 /// ownership or permanent view is published.
 pub(super) fn checked_returned_instance_body_facts(
     outputs: &ResourceContext,
@@ -368,7 +368,7 @@ pub(super) fn selected_instance_resource_load_values(
     state: &ExecutionState,
     definitions: &[CompositeResourceDefinition],
     assumptions: &PureFactContext,
-) -> BTreeMap<(Pointer, ProgramType), ProgramValue> {
+) -> BTreeMap<(Address, ProgramType), ProgramValue> {
     let Some(bindings) = state.resource_bindings.as_ref() else {
         return BTreeMap::new();
     };
@@ -450,7 +450,7 @@ pub(super) fn selected_instance_resource_load_values(
                 .into_iter()
                 .find_map(|(load, value)| {
                     let SpecExpression::MemoryLoad {
-                        memory: SpecMemory::Current,
+                        point: SpecPoint::Current,
                         pointer,
                         value_type,
                     } = load

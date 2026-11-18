@@ -1,8 +1,8 @@
 //! Local arithmetic rules used by selected-input normalization, and internal
 //! plans selecting those rules for ordinary proof expansion.
 use super::super::{
-    ComparisonOperator, ConditionTerm, FloatClassification, FloatCondition, MachineTerm, Pointer,
-    PointerBlock, PointerOffsetTerm, PointerValue, Proposition, SignedDefinedWidth,
+    Address, AddressBase, AddressOffset, ComparisonOperator, ConditionTerm, FloatClassification,
+    FloatCondition, MachineTerm, PointerValue, Proposition, SignedDefinedWidth,
 };
 
 use crate::kernel::binary_term;
@@ -31,37 +31,37 @@ fn charge_payload(payload: usize) -> bool {
         && !crate::instrumentation::deadline_exceeded_with_work(payload.max(1))
 }
 
-fn pointer_block_payload(block: &PointerBlock) -> Option<usize> {
+fn address_base_payload(block: &AddressBase) -> Option<usize> {
     let payload = match block {
-        PointerBlock::ContractResult
-        | PointerBlock::ContractException
-        | PointerBlock::AggregateReturn { .. }
-        | PointerBlock::StaticObject { .. }
-        | PointerBlock::AutomaticLocal { .. }
-        | PointerBlock::ReferenceCarrier { .. } => 1,
-        PointerBlock::Concrete(name) | PointerBlock::Function(name) => {
+        AddressBase::ContractResult
+        | AddressBase::ContractException
+        | AddressBase::AggregateReturn { .. }
+        | AddressBase::StaticObject { .. }
+        | AddressBase::AutomaticLocal { .. }
+        | AddressBase::ReferenceCarrier { .. } => 1,
+        AddressBase::Concrete(name) | AddressBase::Function(name) => {
             1usize.checked_add(name.len())?
         }
-        PointerBlock::StringLiteral { identity, bytes } => 1usize
+        AddressBase::StringLiteral { identity, bytes } => 1usize
             .checked_add(identity.payload_bytes())?
             .checked_add(bytes.len())?,
-        PointerBlock::PureFunctionApplication(_)
-        | PointerBlock::FunctionSymbolic(_)
-        | PointerBlock::ExternalArgument
-        | PointerBlock::ExternalObject(_)
-        | PointerBlock::Symbolic(_)
-        | PointerBlock::LoadedPointer(_)
-        | PointerBlock::Heap(_)
-        | PointerBlock::Temporary(_) => 1,
+        AddressBase::PureFunctionApplication(_)
+        | AddressBase::FunctionSymbolic(_)
+        | AddressBase::ExternalArgument
+        | AddressBase::ExternalObject(_)
+        | AddressBase::Symbolic(_)
+        | AddressBase::LoadedPointer(_)
+        | AddressBase::Heap(_)
+        | AddressBase::Temporary(_) => 1,
     };
     (payload <= MAX_TERM_PAYLOAD).then_some(payload)
 }
 
-fn pointer_payload(pointer: &Pointer) -> Option<usize> {
-    pointer_block_payload(&pointer.block)?.checked_add(pointer_offset_payload(&pointer.offset)?)
+fn pointer_payload(pointer: &Address) -> Option<usize> {
+    address_base_payload(&pointer.base)?.checked_add(pointer_offset_payload(&pointer.offset)?)
 }
 
-fn pointer_offset_payload(root: &PointerOffsetTerm) -> Option<usize> {
+fn pointer_offset_payload(root: &AddressOffset) -> Option<usize> {
     let mut pending = vec![root];
     let mut payload = 0usize;
     while let Some(offset) = pending.pop() {
@@ -70,13 +70,12 @@ fn pointer_offset_payload(root: &PointerOffsetTerm) -> Option<usize> {
             return None;
         }
         match offset {
-            PointerOffsetTerm::Constant(_) | PointerOffsetTerm::Variable(_) => {}
-            PointerOffsetTerm::Add(left, right) => {
+            AddressOffset::Constant(_) | AddressOffset::Variable(_) => {}
+            AddressOffset::Add(left, right) => {
                 pending.push(left);
                 pending.push(right);
             }
-            PointerOffsetTerm::Int32Scaled { value, .. }
-            | PointerOffsetTerm::Int64Scaled { value, .. } => {
+            AddressOffset::Int32Scaled { value, .. } | AddressOffset::Int64Scaled { value, .. } => {
                 payload = payload.checked_add(pointer_index_payload(value.operand_view())?)?;
             }
         }
@@ -196,23 +195,23 @@ fn bitvector_payload(root: &MachineTerm) -> Option<usize> {
     Some(payload)
 }
 
-fn charge_pointer_offset(offset: &PointerOffsetTerm) -> bool {
+fn charge_pointer_offset(offset: &AddressOffset) -> bool {
     pointer_offset_payload(offset).is_some_and(charge_payload)
 }
 
-fn charge_pointer(pointer: &Pointer) -> bool {
+fn charge_pointer(pointer: &Address) -> bool {
     pointer_payload(pointer).is_some_and(charge_payload)
 }
 
-fn charge_pointer_block(block: &PointerBlock) -> bool {
-    pointer_block_payload(block).is_some_and(charge_payload)
+fn charge_address_base(block: &AddressBase) -> bool {
+    address_base_payload(block).is_some_and(charge_payload)
 }
 
 fn charge_bitvector(term: &MachineTerm) -> bool {
     bitvector_payload(term).is_some_and(charge_payload)
 }
 
-fn charge_map_insert(offset: &PointerOffsetTerm, map_len: usize) -> bool {
+fn charge_map_insert(offset: &AddressOffset, map_len: usize) -> bool {
     let comparisons = (usize::BITS - map_len.max(1).leading_zeros()) as usize;
     pointer_offset_payload(offset).is_some_and(|payload| {
         !crate::instrumentation::deadline_exceeded_with_work(
@@ -251,38 +250,38 @@ fn charge_signed_bound(proposition: &Proposition) -> bool {
     charge_bitvector(left) && charge_bitvector(right)
 }
 
-fn pointer_block_equal(left: &PointerBlock, right: &PointerBlock) -> bool {
+fn address_base_equal(left: &AddressBase, right: &AddressBase) -> bool {
     match (left, right) {
-        (PointerBlock::Concrete(left), PointerBlock::Concrete(right))
-        | (PointerBlock::Function(left), PointerBlock::Function(right)) => left == right,
+        (AddressBase::Concrete(left), AddressBase::Concrete(right))
+        | (AddressBase::Function(left), AddressBase::Function(right)) => left == right,
         (
-            PointerBlock::StringLiteral {
+            AddressBase::StringLiteral {
                 identity: left_identity,
                 bytes: left_bytes,
             },
-            PointerBlock::StringLiteral {
+            AddressBase::StringLiteral {
                 identity: right_identity,
                 bytes: right_bytes,
             },
         ) => left_identity == right_identity && left_bytes == right_bytes,
-        (PointerBlock::FunctionSymbolic(left), PointerBlock::FunctionSymbolic(right))
-        | (PointerBlock::Symbolic(left), PointerBlock::Symbolic(right)) => left == right,
-        (PointerBlock::ExternalArgument, PointerBlock::ExternalArgument)
-        | (PointerBlock::Heap(_), PointerBlock::Heap(_))
-        | (PointerBlock::Temporary(_), PointerBlock::Temporary(_))
+        (AddressBase::FunctionSymbolic(left), AddressBase::FunctionSymbolic(right))
+        | (AddressBase::Symbolic(left), AddressBase::Symbolic(right)) => left == right,
+        (AddressBase::ExternalArgument, AddressBase::ExternalArgument)
+        | (AddressBase::Heap(_), AddressBase::Heap(_))
+        | (AddressBase::Temporary(_), AddressBase::Temporary(_))
         | (
-            PointerBlock::ContractResult
-            | PointerBlock::ContractException
-            | PointerBlock::AggregateReturn { .. }
-            | PointerBlock::StaticObject { .. }
-            | PointerBlock::AutomaticLocal { .. }
-            | PointerBlock::ReferenceCarrier { .. },
-            PointerBlock::ContractResult
-            | PointerBlock::ContractException
-            | PointerBlock::AggregateReturn { .. }
-            | PointerBlock::StaticObject { .. }
-            | PointerBlock::AutomaticLocal { .. }
-            | PointerBlock::ReferenceCarrier { .. },
+            AddressBase::ContractResult
+            | AddressBase::ContractException
+            | AddressBase::AggregateReturn { .. }
+            | AddressBase::StaticObject { .. }
+            | AddressBase::AutomaticLocal { .. }
+            | AddressBase::ReferenceCarrier { .. },
+            AddressBase::ContractResult
+            | AddressBase::ContractException
+            | AddressBase::AggregateReturn { .. }
+            | AddressBase::StaticObject { .. }
+            | AddressBase::AutomaticLocal { .. }
+            | AddressBase::ReferenceCarrier { .. },
         ) => left == right,
         _ => false,
     }
@@ -332,33 +331,33 @@ fn pointer_index_equal(
     true
 }
 
-fn pointer_offset_equal(left: &PointerOffsetTerm, right: &PointerOffsetTerm) -> bool {
+fn pointer_offset_equal(left: &AddressOffset, right: &AddressOffset) -> bool {
     let mut pending = vec![(left, right)];
     while let Some((left, right)) = pending.pop() {
         match (left, right) {
-            (PointerOffsetTerm::Constant(left), PointerOffsetTerm::Constant(right)) => {
+            (AddressOffset::Constant(left), AddressOffset::Constant(right)) => {
                 if left != right {
                     return false;
                 }
             }
-            (PointerOffsetTerm::Variable(left), PointerOffsetTerm::Variable(right)) => {
+            (AddressOffset::Variable(left), AddressOffset::Variable(right)) => {
                 if left != right {
                     return false;
                 }
             }
             (
-                PointerOffsetTerm::Add(left_first, left_second),
-                PointerOffsetTerm::Add(right_first, right_second),
+                AddressOffset::Add(left_first, left_second),
+                AddressOffset::Add(right_first, right_second),
             ) => {
                 pending.push((left_first, right_first));
                 pending.push((left_second, right_second));
             }
             (
-                PointerOffsetTerm::Int32Scaled {
+                AddressOffset::Int32Scaled {
                     value: left,
                     byte_width: left_width,
                 },
-                PointerOffsetTerm::Int32Scaled {
+                AddressOffset::Int32Scaled {
                     value: right,
                     byte_width: right_width,
                 },
@@ -368,12 +367,12 @@ fn pointer_offset_equal(left: &PointerOffsetTerm, right: &PointerOffsetTerm) -> 
                 }
             }
             (
-                PointerOffsetTerm::Int64Scaled {
+                AddressOffset::Int64Scaled {
                     value: left,
                     byte_width: left_width,
                     unsigned: left_unsigned,
                 },
-                PointerOffsetTerm::Int64Scaled {
+                AddressOffset::Int64Scaled {
                     value: right,
                     byte_width: right_width,
                     unsigned: right_unsigned,
@@ -389,10 +388,10 @@ fn pointer_offset_equal(left: &PointerOffsetTerm, right: &PointerOffsetTerm) -> 
     true
 }
 
-fn pointer_equal(left: &Pointer, right: &Pointer) -> bool {
+fn pointer_equal(left: &Address, right: &Address) -> bool {
     charge_pointer(left)
         && charge_pointer(right)
-        && pointer_block_equal(&left.block, &right.block)
+        && address_base_equal(&left.base, &right.base)
         && pointer_offset_equal(&left.offset, &right.offset)
 }
 
@@ -560,7 +559,7 @@ fn legacy_bitvector_equal_after_payload_check(left: &MachineTerm, right: &Machin
 /// uses the convenience `uint64_as_const` recognizer, whose implementation is
 /// recursive for constant expressions; keeping it behind this bounded walk
 /// makes attacker-controlled depth fail before that helper is reached.
-pub(crate) fn checked_pointer_alignment(condition: &ConditionTerm) -> Option<(&Pointer, u64)> {
+pub(crate) fn checked_pointer_alignment(condition: &ConditionTerm) -> Option<(&Address, u64)> {
     match condition {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int64,
@@ -867,21 +866,17 @@ impl SpecialArithmeticNode {}
 fn pointer_sides(
     proposition: &Proposition,
 ) -> Option<(
-    &PointerOffsetTerm,
-    &PointerOffsetTerm,
-    Option<(&PointerBlock, &PointerBlock)>,
+    &AddressOffset,
+    &AddressOffset,
+    Option<(&AddressBase, &AddressBase)>,
 )> {
     match proposition {
-        Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, right), true) => Some((
-            &left.offset,
-            &right.offset,
-            Some((&left.block, &right.block)),
-        )),
-        Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) => Some((
-            &left.offset,
-            &right.offset,
-            Some((&left.block, &right.block)),
-        )),
+        Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, right), true) => {
+            Some((&left.offset, &right.offset, Some((&left.base, &right.base))))
+        }
+        Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) => {
+            Some((&left.offset, &right.offset, Some((&left.base, &right.base))))
+        }
         Proposition::ConditionIs(ConditionTerm::PointerOffsetEqual(left, right), true) => {
             Some((left, right, None))
         }
@@ -1053,7 +1048,7 @@ fn unsigned64_bounds(premises: &[&Proposition]) -> Option<BTreeMap<MachineTerm, 
 }
 
 enum OffsetPart<'a> {
-    Offset(&'a PointerOffsetTerm),
+    Offset(&'a AddressOffset),
     Scaled(crate::kernel::MachineOperandView<'a>, i64),
     /// An unsigned 64-bit index scaled by an element width.
     Scaled64(crate::kernel::MachineOperandView<'a>, i64),
@@ -1199,8 +1194,8 @@ fn pointer_translation(
     if let Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, right), true) = goal {
         let same_domain = |a: &PointerValue, b: &PointerValue| {
             a.provenance() == b.provenance()
-                && a.extent() == b.extent()
-                && a.extent_is_known() == b.extent_is_known()
+                && a.bounds() == b.bounds()
+                && a.bounds_are_known() == b.bounds_are_known()
         };
         let linked = match relation {
             Proposition::ConditionIs(ConditionTerm::PointerValueEqual(a, b), true) => {
@@ -1227,24 +1222,24 @@ fn pointer_translation(
         return false;
     }
     if let Some((goal_l, goal_r)) = goal_blocks
-        && (!charge_pointer_block(goal_l) || !charge_pointer_block(goal_r))
+        && (!charge_address_base(goal_l) || !charge_address_base(goal_r))
     {
         return false;
     }
     if let Some((premise_l, premise_r)) = premise_blocks
-        && (!charge_pointer_block(premise_l) || !charge_pointer_block(premise_r))
+        && (!charge_address_base(premise_l) || !charge_address_base(premise_r))
     {
         return false;
     }
     let (left, right) = match (goal_blocks, premise_blocks) {
         (None, None) => (goal_left, goal_right),
         (Some((goal_l, goal_r)), Some((premise_l, premise_r)))
-            if pointer_block_equal(goal_l, premise_l) && pointer_block_equal(goal_r, premise_r) =>
+            if address_base_equal(goal_l, premise_l) && address_base_equal(goal_r, premise_r) =>
         {
             (goal_left, goal_right)
         }
         (Some((goal_l, goal_r)), Some((premise_l, premise_r)))
-            if pointer_block_equal(goal_l, premise_r) && pointer_block_equal(goal_r, premise_l) =>
+            if address_base_equal(goal_l, premise_r) && address_base_equal(goal_r, premise_l) =>
         {
             (goal_right, goal_left)
         }
@@ -1311,7 +1306,7 @@ fn pointer_translation(
         };
         xmin + ymin >= SIGNED_MIN && xmax + ymax <= SIGNED_MAX
     };
-    let mut terms = BTreeMap::<PointerOffsetTerm, i128>::new();
+    let mut terms = BTreeMap::<AddressOffset, i128>::new();
     let mut constant = 0i128;
     for (offset, sign) in [
         (left, 1i128),
@@ -1322,19 +1317,19 @@ fn pointer_translation(
         let mut pending = vec![OffsetPart::Offset(offset)];
         while let Some(part) = pending.pop() {
             let atom = match part {
-                OffsetPart::Offset(PointerOffsetTerm::Constant(value)) => {
+                OffsetPart::Offset(AddressOffset::Constant(value)) => {
                     let Some(next) = constant.checked_add(sign * i128::from(*value)) else {
                         return false;
                     };
                     constant = next;
                     continue;
                 }
-                OffsetPart::Offset(PointerOffsetTerm::Add(left, right)) => {
+                OffsetPart::Offset(AddressOffset::Add(left, right)) => {
                     pending.push(OffsetPart::Offset(left));
                     pending.push(OffsetPart::Offset(right));
                     continue;
                 }
-                OffsetPart::Offset(PointerOffsetTerm::Int32Scaled { value, byte_width }) => {
+                OffsetPart::Offset(AddressOffset::Int32Scaled { value, byte_width }) => {
                     pending.push(OffsetPart::Scaled(value.operand_view(), *byte_width));
                     continue;
                 }
@@ -1355,12 +1350,12 @@ fn pointer_translation(
                         pending.push(OffsetPart::Scaled(right, width));
                         continue;
                     }
-                    PointerOffsetTerm::Int32Scaled {
+                    AddressOffset::Int32Scaled {
                         value: value.retain(MachineIntegerType::Int32),
                         byte_width: width,
                     }
                 }
-                OffsetPart::Offset(PointerOffsetTerm::Int64Scaled {
+                OffsetPart::Offset(AddressOffset::Int64Scaled {
                     value,
                     byte_width,
                     unsigned: true,
@@ -1385,7 +1380,7 @@ fn pointer_translation(
                         pending.push(OffsetPart::Scaled64(right, width));
                         continue;
                     }
-                    PointerOffsetTerm::Int64Scaled {
+                    AddressOffset::Int64Scaled {
                         value: value.retain(MachineIntegerType::Int64),
                         byte_width: width,
                         unsigned: true,
@@ -1406,20 +1401,20 @@ fn pointer_translation(
     constant == 0 && terms.values().all(|coefficient| *coefficient == 0)
 }
 
-fn offset_difference(goal: &PointerOffsetTerm, premise: &PointerOffsetTerm) -> Option<i128> {
+fn offset_difference(goal: &AddressOffset, premise: &AddressOffset) -> Option<i128> {
     if !charge_pointer_offset(goal) || !charge_pointer_offset(premise) {
         return None;
     }
-    let mut terms = BTreeMap::<PointerOffsetTerm, i128>::new();
+    let mut terms = BTreeMap::<AddressOffset, i128>::new();
     let mut constant = 0i128;
     for (offset, sign) in [(goal, 1i128), (premise, -1)] {
         let mut pending = vec![offset];
         while let Some(offset) = pending.pop() {
             match offset {
-                PointerOffsetTerm::Constant(value) => {
+                AddressOffset::Constant(value) => {
                     constant = constant.checked_add(sign * i128::from(*value))?
                 }
-                PointerOffsetTerm::Add(left, right) => {
+                AddressOffset::Add(left, right) => {
                     pending.push(left);
                     pending.push(right);
                 }
@@ -1463,8 +1458,7 @@ fn pointer_alignment(premise: Option<&Proposition>, result: &Proposition) -> boo
         if !charge_pointer(base) {
             return false;
         }
-        if !pointer_block_equal(&base.block, &goal_pointer.block) || alignment % goal_alignment != 0
-        {
+        if !address_base_equal(&base.base, &goal_pointer.base) || alignment % goal_alignment != 0 {
             return false;
         }
         let mut candidates = vec![goal_pointer.offset.clone()];
@@ -1479,16 +1473,16 @@ fn pointer_alignment(premise: Option<&Proposition>, result: &Proposition) -> boo
         };
         aligned
     } else {
-        let intrinsic_alignment = if pointer_equal(goal_pointer, &Pointer::null()) {
+        let intrinsic_alignment = if pointer_equal(goal_pointer, &Address::null()) {
             // The null address is zero, so every valid power-of-two alignment
             // divides it; use the largest possible bound as an intrinsic
             // alignment sentinel.
             Some(u64::MAX)
         } else {
-            match &goal_pointer.block {
-                PointerBlock::Heap(_) => Some(crate::kernel::primitives::HEAP_ALLOCATION_ALIGNMENT),
+            match &goal_pointer.base {
+                AddressBase::Heap(_) => Some(crate::kernel::primitives::HEAP_ALLOCATION_ALIGNMENT),
                 block => {
-                    let Some(payload) = pointer_block_payload(block) else {
+                    let Some(payload) = address_base_payload(block) else {
                         return false;
                     };
                     crate::kernel::primitives::registered_block_alignment_charged(block, payload)
@@ -1501,7 +1495,7 @@ fn pointer_alignment(premise: Option<&Proposition>, result: &Proposition) -> boo
         if goal_alignment > intrinsic {
             return false;
         }
-        let Some(delta) = offset_difference(&goal_pointer.offset, &PointerOffsetTerm::Constant(0))
+        let Some(delta) = offset_difference(&goal_pointer.offset, &AddressOffset::Constant(0))
         else {
             return false;
         };
@@ -1514,10 +1508,7 @@ fn pointer_alignment(premise: Option<&Proposition>, result: &Proposition) -> boo
 /// alignment.  Such an addend cannot change the pointer's residue.  The
 /// traversal is iterative because this helper runs on source-shaped pointer
 /// offsets and must not inherit their nesting depth.
-fn drop_aligned_scaled_addends(
-    offset: &PointerOffsetTerm,
-    alignment: u64,
-) -> Option<PointerOffsetTerm> {
+fn drop_aligned_scaled_addends(offset: &AddressOffset, alignment: u64) -> Option<AddressOffset> {
     if !charge_pointer_offset(offset) {
         return None;
     }
@@ -1526,7 +1517,7 @@ fn drop_aligned_scaled_addends(
     let mut parts = Vec::new();
     while let Some(offset) = pending.pop() {
         match offset {
-            PointerOffsetTerm::Add(left, right) => {
+            AddressOffset::Add(left, right) => {
                 pending.push(right);
                 pending.push(left);
             }
@@ -1543,9 +1534,9 @@ fn drop_aligned_scaled_addends(
             .or_else(|| right.word32_constant())
             .map(|value| i64::from(value as i32))
     }
-    let divisible = |part: &PointerOffsetTerm| match part {
-        PointerOffsetTerm::Int32Scaled { value, byte_width }
-        | PointerOffsetTerm::Int64Scaled {
+    let divisible = |part: &AddressOffset| match part {
+        AddressOffset::Int32Scaled { value, byte_width }
+        | AddressOffset::Int64Scaled {
             value, byte_width, ..
         } => {
             let scale = constant_factor(value.operand_view())
@@ -1562,8 +1553,8 @@ fn drop_aligned_scaled_addends(
         parts
             .into_iter()
             .filter(|part| !divisible(part))
-            .reduce(PointerOffsetTerm::add)
-            .unwrap_or(PointerOffsetTerm::Constant(0)),
+            .reduce(AddressOffset::add)
+            .unwrap_or(AddressOffset::Constant(0)),
     )
 }
 
@@ -1581,9 +1572,9 @@ enum TaggedTag<'a> {
 struct TaggedAddress<'a> {
     /// Pointer payloads can be large symbolic offset trees.  The iterative
     /// evaluator keeps one of these forms at every visited term, so sharing
-    /// the payload is essential: cloning a `Pointer` here would turn a tag
+    /// the payload is essential: cloning an `Address` here would turn a tag
     /// chain over a deep pointer into a payload-depth by tag-depth operation.
-    pointer: Arc<Pointer>,
+    pointer: Arc<Address>,
     tag: Arc<TaggedTag<'a>>,
     /// The tag's constant value, when it is known.  Keeping this alongside
     /// the term is important: a symbolic tag chain must not be recursively
@@ -1681,35 +1672,35 @@ fn pointer_index_hash(view: crate::kernel::MachineOperandView<'_>) -> Option<u64
     Some(hash.finish())
 }
 
-fn pointer_identity_hash(pointer: &Pointer) -> Option<u64> {
+fn pointer_identity_hash(pointer: &Address) -> Option<u64> {
     let payload = pointer_payload(pointer)?;
     if crate::instrumentation::deadline_exceeded_with_work(payload.max(1)) {
         return None;
     }
     let mut hasher = DefaultHasher::new();
-    pointer.block.hash(&mut hasher);
+    pointer.base.hash(&mut hasher);
     let mut pending = vec![&pointer.offset];
     while let Some(offset) = pending.pop() {
         match offset {
-            PointerOffsetTerm::Constant(value) => {
+            AddressOffset::Constant(value) => {
                 0u8.hash(&mut hasher);
                 value.hash(&mut hasher);
             }
-            PointerOffsetTerm::Variable(value) => {
+            AddressOffset::Variable(value) => {
                 1u8.hash(&mut hasher);
                 value.hash(&mut hasher);
             }
-            PointerOffsetTerm::Add(left, right) => {
+            AddressOffset::Add(left, right) => {
                 2u8.hash(&mut hasher);
                 pending.push(right);
                 pending.push(left);
             }
-            PointerOffsetTerm::Int32Scaled { value, byte_width } => {
+            AddressOffset::Int32Scaled { value, byte_width } => {
                 3u8.hash(&mut hasher);
                 byte_width.hash(&mut hasher);
                 pointer_index_hash(value.operand_view())?.hash(&mut hasher);
             }
-            PointerOffsetTerm::Int64Scaled { .. } => return None,
+            AddressOffset::Int64Scaled { .. } => return None,
         }
     }
     Some(hasher.finish())
@@ -1723,12 +1714,12 @@ struct AlignmentIndex<'a> {
 }
 
 struct AlignmentEntry<'a> {
-    pointer: &'a Pointer,
+    pointer: &'a Address,
     max_alignment: u64,
 }
 
 impl<'a> AlignmentIndex<'a> {
-    fn new(alignments: &'a [(&'a Pointer, u64)]) -> Option<Self> {
+    fn new(alignments: &'a [(&'a Address, u64)]) -> Option<Self> {
         let mut by_hash: HashMap<u64, Vec<AlignmentEntry<'a>>> = HashMap::new();
         for (pointer, alignment) in alignments {
             if crate::instrumentation::deadline_exceeded_with_work(1) {
@@ -1756,7 +1747,7 @@ impl<'a> AlignmentIndex<'a> {
         Some(Self { by_hash })
     }
 
-    fn supports(&self, pointer: &Pointer, required: u64) -> bool {
+    fn supports(&self, pointer: &Address, required: u64) -> bool {
         let Some(hash) = pointer_identity_hash(pointer) else {
             return false;
         };
@@ -1926,7 +1917,7 @@ fn masked_source(term: Word<'_>) -> Option<(Word<'_>, u64)> {
 fn pointer_or_masked_tag<'a>(
     left: Word<'a>,
     right: Word<'a>,
-) -> Option<(&'a Pointer, Word<'a>, u64)> {
+) -> Option<(&'a Address, Word<'a>, u64)> {
     let (pointer, tag) = match (left.node(), right.node()) {
         (WordNode::PointerAddress(pointer), _) => (pointer, right),
         (_, WordNode::PointerAddress(pointer)) => (pointer, left),
@@ -2003,7 +1994,7 @@ fn tagged_form_inner<'a>(
         },
         FinishPointerOr {
             term: Word<'a>,
-            pointer: &'a Pointer,
+            pointer: &'a Address,
             tag: Word<'a>,
             alignment: u64,
         },
@@ -2598,9 +2589,9 @@ mod tests {
             KernelTerm::retained_machine_operand(MachineIntegerType::Int32, V::Legacy(&x));
         for depth in 0..9 {
             let index = S::from_shared(MachineIntegerType::Int32, root.clone()).unwrap();
-            let pointer = Pointer {
-                block: PointerBlock::ExternalArgument,
-                offset: PointerOffsetTerm::Int32Scaled {
+            let pointer = Address {
+                base: AddressBase::ExternalArgument,
+                offset: AddressOffset::Int32Scaled {
                     value: index.clone(),
                     byte_width: 4,
                 },
@@ -2843,15 +2834,15 @@ mod tests {
         assert!(!bitvector_equal(&constant(1.into()), &constant(2.into())));
     }
 
-    fn pointer(offset: PointerOffsetTerm) -> Pointer {
-        Pointer {
-            block: PointerBlock::ExternalArgument,
+    fn pointer(offset: AddressOffset) -> Address {
+        Address {
+            base: AddressBase::ExternalArgument,
             offset,
         }
     }
 
-    fn add(left: PointerOffsetTerm, right: PointerOffsetTerm) -> PointerOffsetTerm {
-        PointerOffsetTerm::Add(Box::new(left), Box::new(right))
+    fn add(left: AddressOffset, right: AddressOffset) -> AddressOffset {
+        AddressOffset::Add(Box::new(left), Box::new(right))
     }
 
     fn tagged_tag_nodes(root: &Arc<TaggedTag<'_>>) -> usize {
@@ -2873,10 +2864,10 @@ mod tests {
         seen.len()
     }
 
-    fn deep_pointer(depth: usize) -> Pointer {
-        let mut offset = PointerOffsetTerm::Constant(0);
+    fn deep_pointer(depth: usize) -> Address {
+        let mut offset = AddressOffset::Constant(0);
         for _ in 0..depth {
-            offset = add(offset, PointerOffsetTerm::Constant(1));
+            offset = add(offset, AddressOffset::Constant(1));
         }
         pointer(offset)
     }
@@ -2937,11 +2928,11 @@ mod tests {
     fn retained_masked_read_equation_checks_native_pointer_goal() {
         use crate::kernel::MachineOperandView;
         let _session = crate::kernel::VerificationSession::enter();
-        let next = pointer(PointerOffsetTerm::Constant(0));
+        let next = pointer(AddressOffset::Constant(0));
         let address = MachineTerm::pointer_address(next.clone());
         let raw = MachineTerm::MemoryLoad(
             crate::kernel::ProgramPoint::at(
-                &(crate::kernel::intern_memory(crate::kernel::Memory::new())),
+                &(crate::kernel::intern_memory(crate::kernel::SymbolicMemory::new())),
             ),
             Box::new(next.clone()),
             crate::kernel::LoadKind::Bits64,
@@ -2986,7 +2977,7 @@ mod tests {
         let mut previous = 0;
         for depth in [4, 16, 64, 256, 1024] {
             let address = MachineTerm::PointerAddress(
-                Box::new(pointer(PointerOffsetTerm::Constant(0))),
+                Box::new(pointer(AddressOffset::Constant(0))),
                 crate::kernel::AddressObjectClass::NONE,
             );
             let variable = MachineTerm::Variable(crate::kernel::Variable(294));

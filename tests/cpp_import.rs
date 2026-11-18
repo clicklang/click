@@ -7,9 +7,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use click::cli::{VerificationInput, parse_mdtest, read_click_project, read_verification_inputs};
 use click::kernel::{
-    ExecutionState, FunctionOutcome, MachineTerm, Memory, MemoryRange, Pointer, PointerOffsetTerm,
+    Address, AddressOffset, ExecutionState, FunctionOutcome, MachineTerm, MemoryRange,
     ProgramExpression, ProgramStatement, ProgramType, Proposition, PureFactContext,
-    ResourceContext, ResourceFact, UndefinedBehavior, int32,
+    ResourceContext, ResourceFact, SymbolicMemory, UndefinedBehavior, int32,
     prove_symbolic_program_function_execution,
 };
 use click::languages::cpp::{
@@ -569,10 +569,14 @@ int32 probe(struct View& target, const struct View& source) {
  owns target.data;
  owns target.extent.size;
  views source.extent.size;
+ requires separate(memory((&target as (uint8*))[0..16]), memory(source.extent.size));
  ensures target.data == old(target.data);
  ensures target.extent.size == source.extent.size;
  ensures source.extent.size == old(source.extent.size);
  ensures result == 0;
+} by {
+ step() by { solve(); }
+ step() by { known(); }
 }
 "#;
     let path = project.directory.join("copy.click");
@@ -2308,6 +2312,37 @@ fn scalar_int32_profile_catches_a_modular_throw_with_a_typed_payload() {
     let click_project = read_click_project(&sidecar, sidecar_source).unwrap();
     verify_program_prepared_project(&click_project, &prepared)
         .expect("a caught modular throw should satisfy a nonthrowing caller signature");
+    let with_payload = format!(
+        r#"{sidecar_source} by {{
+            outcomes {{
+                returned => {{ step_until(function.exit); }}
+                threw => {{ step_until(function.exit); }}
+            }}
+            outcomes {{
+                returned => {{ solve(); }}
+                threw(error) => {{ have error == 7 by known(); solve(); }}
+            }}
+        }}"#
+    );
+    let payload_project = click_project.with_entry_source(with_payload);
+    let expanded_payload = expand_project_claim_source_by_label(
+        &payload_project,
+        &ProgramInputs::program(&prepared),
+        "caller.contract",
+    )
+    .expect("expand the proof that names the caught payload at function exit");
+    assert!(
+        expanded_payload.contains("threw(error) =>"),
+        "{expanded_payload}"
+    );
+    click::surface::without_implicit_solve_for_claim("caller.contract", || {
+        verify_program_prepared_project(
+            &payload_project.with_entry_source(expanded_payload),
+            &prepared,
+        )
+        .map_err(|error| error.to_string())
+    })
+    .expect("the checked caught payload remains available on replay at function exit");
     let expanded = expand_project_claim_source_by_label(
         &click_project,
         &ProgramInputs::program(&prepared),
@@ -2435,11 +2470,10 @@ fn scalar_int32_profile_joins_a_caught_throw_inside_conditional_cleanup() {
                 step();
                 outcomes {
                     returned => {
-                        step(); // helper
                         step(); // destructor
                         step(); // retire the guard's automatic storage
                     }
-                    threw => { step(); step_until(function.exit); solve(); }
+                    threw => { step_until(function.exit); solve(); }
                 }
             } else { }
             step();
@@ -6230,9 +6264,9 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
             ) }
     ));
 
-    let pointer = Pointer {
-        block: "cpp-reference".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: "cpp-reference".into(),
+        offset: AddressOffset::Constant(0),
     };
     let resources =
         ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
@@ -6245,10 +6279,10 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
         ProgramType::Int32Pointer,
     )];
     let state = ExecutionState::new()
-        .with_memory(Memory::new().store(pointer.clone(), int32(41)))
+        .with_memory(SymbolicMemory::new().store(pointer.clone(), int32(41)))
         .with_resource_context(resources.clone());
     let expected_state = ExecutionState::new()
-        .with_memory(Memory::new().store(pointer.clone(), int32(42)))
+        .with_memory(SymbolicMemory::new().store(pointer.clone(), int32(42)))
         .with_resource_context(resources.clone());
     let theorem = prove_symbolic_program_function_execution(
         state.clone(),
@@ -6271,7 +6305,7 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
     );
 
     let max_state = ExecutionState::new()
-        .with_memory(Memory::new().store(pointer, int32(i32::MAX as u32)))
+        .with_memory(SymbolicMemory::new().store(pointer, int32(i32::MAX as u32)))
         .with_resource_context(resources);
     let overflow = prove_symbolic_program_function_execution(
         max_state.clone(),
@@ -14000,7 +14034,7 @@ fn nested_record_contracts_reject_missing_authority_false_frames_and_readonly_wr
 }
 
 #[test]
-fn nested_record_artifacts_reject_wrong_identity_extent_constness_and_cycles() {
+fn nested_record_artifacts_reject_wrong_identity_size_constness_and_cycles() {
     use sha2::{Digest, Sha256};
     let project = nested_record_project("FeeEnvelope::ReadStamp");
     refresh_import(&project.config()).unwrap();
@@ -14908,8 +14942,8 @@ fn condition_calls_preserve_the_enclosing_catch_scope() {
         int32 choose(bool fail) { ensures result == 5 or result == 7; } by {
             step();
             outcomes {
-                returned => { step(); step_until(function.exit); solve(); }
-                threw => { step(); step_until(function.exit); solve(); }
+                returned => { step_until(function.exit); solve(); }
+                threw => { step_until(function.exit); solve(); }
             }
         }
     "#;
@@ -16881,7 +16915,7 @@ fn cpp_bounded_native_descriptor_last_reference_verifies_offline() {
     let import = load_import(&project.config()).unwrap();
     // The bound is the code's `unsigned long`, uncast, and the last
     // element is at `size - 1` in that type. Nothing bounds `size` from
-    // above: the held range states its own extent limit.
+    // above: the held range states its own span limit.
     let source = r#"verifying "bounds.cpp";
 int32& run(const struct View& view) {
  views view.data;
@@ -20737,8 +20771,8 @@ int32 fallible(int32 x, bool fail) throws Error { ensures result == x; exception
 int32 guarded(int32 x, bool fail) { requires fail == false; ensures result == x; } by {
     step();
     outcomes {
-        returned => { step(); step_until(function.exit); solve(); }
-        threw => { step(); have fail == true; have false by { contradiction(fail); }; solve(); }
+        returned => { step_until(function.exit); solve(); }
+        threw => { have fail == true; have false by { contradiction(fail); }; solve(); }
     }
 }
 int32 probe(int32 x, bool fail) throws Error { requires fail == false; ensures result == x; exceptional ensures true; }
@@ -21183,5 +21217,360 @@ int32 probe() { ensures result == 0; }
     assert!(
         verify_program_prepared_project(&parsed, &import).is_err(),
         "an unused reference must still reject retired record storage"
+    );
+}
+
+#[test]
+#[ignore = "nightly: returned member write with sibling view and complete replay"]
+fn cpp_returned_member_pointer_write_retains_its_source_domain() {
+    let project = Project::with_fixture(
+        "reference.cpp",
+        "probe",
+        r#"
+struct Widget { int value; };
+struct Outer { int first; Widget child; };
+int* child(Outer& outer) noexcept { return &outer.child.value; }
+int probe(Outer& outer, int value) noexcept { auto* ref = child(outer); *ref = value; return outer.child.value; }
+"#,
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "reference.cpp";
+int32* child(Outer& outer) { views outer.first; views outer.child.value; ensures result == &outer.child.value; }
+int32 probe(Outer& outer, int32 value) { owns outer.child.value; views outer.first; ensures result == value; ensures outer.child.value == value; ensures outer.first == old(outer.first); } by {
+    step(); step(); step();
+    have ref == &outer.child.value by { known(); }
+    have separate(memory(outer.child.value), memory(outer.first)) by { known(); }
+    have separate(memory(ref[0]), memory(outer.first)) by {
+        rewrite(ref, &outer.child.value); known();
+    }
+    step();
+}
+"#;
+    let path = project.directory.join("arithmetic.click");
+    fs::write(&path, source).unwrap();
+    let mut parsed = read_click_project(&path, source).unwrap();
+    for (label, target) in [
+        ("child.ensures_0", "ensures result == &outer.child.value"),
+        ("probe.contract", "ensures result == value"),
+    ] {
+        let expanded =
+            expand_project_claim_source_by_label(&parsed, &ProgramInputs::program(&import), label)
+                .unwrap_or_else(|error| panic!("{}", error.report()));
+        let (session, _) =
+            ProgramVerificationSession::new_program_prepared_project(&parsed, &import)
+                .unwrap_or_else(|error| panic!("{}", error.report()));
+        let offset = expanded.find(target).unwrap();
+        let prefix = &expanded[..offset];
+        let line = prefix.bytes().filter(|b| *b == b'\n').count() + 1;
+        let column = prefix.rsplit('\n').next().unwrap().chars().count() + 1;
+        session
+            .verify_at_project(&expanded, line, column)
+            .unwrap_or_else(|error| panic!("{}", error.report()));
+        drop(session);
+        parsed = parsed.with_entry_source(expanded);
+    }
+    click::surface::without_implicit_solve(|| verify_program_prepared_project(&parsed, &import))
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    for bad in [
+        source.replace("owns outer.child.value;", "views outer.child.value;"),
+        source.replace(
+            "ensures result == &outer.child.value;",
+            "ensures (result as uint64) == (&outer.child.value as uint64);",
+        ),
+    ] {
+        let path = project.directory.join("bad.click");
+        fs::write(&path, &bad).unwrap();
+        let parsed = read_click_project(&path, &bad).unwrap();
+        assert!(verify_program_prepared_project(&parsed, &import).is_err());
+    }
+}
+
+#[test]
+#[ignore = "nightly: record reference result identity, mutation, and full replay"]
+fn cpp_record_reference_results_preserve_aliases_and_mutation() {
+    let project = Project::with_fixture(
+        "reference.cpp",
+        "probe",
+        r#"
+struct Widget { int padding; int value; };
+Widget& identity(Widget& widget) noexcept { Widget& alias = widget; return alias; }
+Widget& relay(Widget& widget) noexcept { return identity(widget); }
+Widget& probe(Widget& widget) noexcept { auto& ref = relay(widget); ref.value = 7; return ref; }
+"#,
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "reference.cpp";
+Widget& identity(Widget& widget) { ensures &result == &widget; }
+Widget& relay(Widget& widget) { ensures &result == &widget; }
+Widget& probe(Widget& widget) {
+    owns widget.value; views widget.padding;
+    ensures &result == &widget;
+    ensures result.value == 7;
+    ensures widget.value == 7;
+    ensures widget.padding == old(widget.padding);
+}
+"#;
+    click::surface::with_proof_trace("probe", || {
+        check_noexcept_replay_all(&project, &import, source)
+    });
+    for bad in [
+        source.replace("owns widget.value;", "views widget.value;"),
+        source.replace("owns widget.value;", ""),
+        source.replace("ensures result.value == 7;", "ensures result.value == 8;"),
+        source.replace("Widget& identity", "int32& identity"),
+        source.replace("Widget& identity", "Widget* identity"),
+    ] {
+        let path = project.directory.join("bad.click");
+        fs::write(&path, &bad).unwrap();
+        let parsed = read_click_project(&path, &bad).unwrap();
+        assert!(verify_program_prepared_project(&parsed, &import).is_err());
+    }
+}
+
+#[test]
+#[ignore = "nightly: const record result fields and local call bindings"]
+fn cpp_record_reference_results_keep_const_fields_and_identity() {
+    let project = Project::with_fixture(
+        "reference.cpp",
+        "probe",
+        r#"
+class Widget { public: int padding; int value; };
+const Widget& identity(const Widget& widget) noexcept { return widget; }
+int probe(const Widget& widget) noexcept { const auto& ref = identity(widget); return ref.value; }
+"#,
+    );
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "reference.cpp";
+const Widget& identity(const Widget& widget) { views widget.value; ensures &result == &widget; ensures result.value == widget.value; }
+int32 probe(const Widget& widget) { views widget.value; ensures result == widget.value; }
+"#;
+    check_noexcept_replay_all(&project, &import, source);
+    for bad in [
+        source.replace("views widget.value;", ""),
+        source.replace("const Widget& identity", "Widget& identity"),
+        source.replace(
+            "ensures result == widget.value;",
+            "ensures result == widget.value + 1;",
+        ),
+    ] {
+        let path = project.directory.join("bad.click");
+        fs::write(&path, &bad).unwrap();
+        let parsed = read_click_project(&path, &bad).unwrap();
+        assert!(verify_program_prepared_project(&parsed, &import).is_err());
+    }
+}
+
+#[test]
+#[ignore = "nightly: record reference result subobject identity and member authority"]
+fn cpp_record_reference_results_keep_nested_subobjects() {
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/cpp-verification/record-reference-results");
+    let cpp = fs::read_to_string(fixture.join("reference.cpp")).unwrap();
+    let project = Project::with_fixture("reference.cpp", "probe", &cpp);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = fs::read_to_string(fixture.join("reference.click")).unwrap();
+    click::surface::with_proof_trace("probe", || {
+        check_record_reference_claim_replay(
+            &project,
+            &import,
+            &source,
+            &["Outer::get.ensures_0", "child.ensures_0", "probe.contract"],
+        )
+    });
+    let bad = source
+        .replace("owns outer.child.value;", "owns outer.first;")
+        .replace("views outer.first;", "views outer.child.value;");
+    let path = project.directory.join("bad.click");
+    fs::write(&path, &bad).unwrap();
+    assert!(
+        verify_program_prepared_project(&read_click_project(&path, &bad).unwrap(), &import)
+            .is_err()
+    );
+}
+
+fn check_record_reference_claim_replay(
+    project: &Project,
+    import: &click::languages::cpp::PreparedCppImport,
+    source: &str,
+    claims: &[&str],
+) {
+    let path = project.directory.join("arithmetic.click");
+    fs::write(&path, source).unwrap();
+    let mut parsed = read_click_project(&path, source).unwrap();
+    let inputs = ProgramInputs::program(import);
+    verify_program_prepared_project(&parsed, import).unwrap_or_else(|error| {
+        panic!(
+            "{}\n{}",
+            error.report(),
+            error.trace_context_report().unwrap_or_default()
+        )
+    });
+    // A written body can have an implicit closer but no source smart tactic.
+    // Expand the declared claims so that these bodies get checked too.
+    for claim in claims {
+        let expanded = expand_project_claim_source_by_label(&parsed, &inputs, claim)
+            .unwrap_or_else(|error| panic!("{claim}: {}", error.report()));
+        let (session, _) =
+            ProgramVerificationSession::new_program_prepared_project(&parsed, import)
+                .unwrap_or_else(|error| panic!("{claim}: {}", error.report()));
+        let rewritten = parsed.with_entry_source(expanded.clone());
+        let position = project_tactic_source_position(&rewritten, &inputs, claim, 0).unwrap();
+        session
+            .verify_at_project(&expanded, position.line, position.column)
+            .unwrap_or_else(|error| panic!("{claim}: {}\n{expanded}", error.report()));
+        parsed = rewritten;
+    }
+    click::surface::without_implicit_solve(|| verify_program_prepared_project(&parsed, import))
+        .unwrap_or_else(|error| panic!("{}\n{}", error.report(), parsed.entry_source().unwrap()));
+}
+
+#[test]
+#[ignore = "nightly: pointer-backed record results and invalid storage rejection"]
+fn cpp_record_reference_results_check_pointer_backing() {
+    let project = Project::with_fixture(
+        "reference.cpp",
+        "probe",
+        r#"
+struct Widget { int padding; int value; };
+Widget& dereference(Widget* pointer) noexcept { return *pointer; }
+int probe(Widget* pointer) noexcept { auto& ref = dereference(pointer); return ref.value; }
+"#,
+    );
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "reference.cpp";
+Widget& dereference(Widget* pointer) { views pointer->padding; views pointer->value; ensures &result == pointer; } by {
+    step();
+    have &result == pointer by { normalize() using {}; }
+}
+int32 probe(Widget* pointer) { views pointer->padding; views pointer->value; ensures result == pointer->value; }
+"#;
+    check_record_reference_claim_replay(
+        &project,
+        &import,
+        source,
+        &["dereference.contract", "probe.ensures_0"],
+    );
+    let bad = source.replace("views pointer->value;", "");
+    let path = project.directory.join("bad.click");
+    fs::write(&path, &bad).unwrap();
+    assert!(
+        verify_program_prepared_project(&read_click_project(&path, &bad).unwrap(), &import)
+            .is_err()
+    );
+    let null = Project::with_fixture(
+        "null.cpp",
+        "probe",
+        "struct Widget { int value; }; Widget& probe() noexcept { Widget* pointer = nullptr; return *pointer; }",
+    );
+    refresh_import(&null.config()).unwrap();
+    let import = load_import(&null.config()).unwrap();
+    let source = "verifying \"null.cpp\"; Widget& probe() { ensures &result == &result; }";
+    let path = null.directory.join("bad.click");
+    fs::write(&path, source).unwrap();
+    assert!(
+        verify_program_prepared_project(&read_click_project(&path, source).unwrap(), &import)
+            .is_err()
+    );
+}
+
+#[test]
+fn cpp_record_reference_results_refuse_forged_call_types() {
+    use sha2::{Digest, Sha256};
+    let project = Project::with_fixture(
+        "reference.cpp",
+        "probe",
+        r#"
+struct Widget { int value; }; struct Other { int value; };
+const Widget& identity(const Widget& widget) noexcept { return widget; }
+int probe(const Widget& widget, const Other& other) noexcept { const Widget& ref = identity(widget); return 0; }
+"#,
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let original_artifact = fs::read(project.artifact()).unwrap();
+    let original_lock = fs::read(project.lock()).unwrap();
+    for mutation in 0..3 {
+        let mut artifact: serde_json::Value = serde_json::from_slice(&original_artifact).unwrap();
+        let other = artifact["records"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|record| record["name"] == "Other")
+            .unwrap()
+            .clone();
+        let local_type = &mut artifact["functions"][0]["body"][0]["local"]["value_type"];
+        match mutation {
+            0 => local_type["pointee"]["is_const"] = false.into(),
+            1 => {
+                local_type["pointee"]["declaration_id"] = other["declaration_id"].clone();
+                local_type["pointee"]["name"] = other["name"].clone();
+            }
+            _ => local_type["kind"] = "pointer".into(),
+        }
+        let bytes = serde_json::to_vec_pretty(&artifact).unwrap();
+        let mut lock: serde_json::Value = serde_json::from_slice(&original_lock).unwrap();
+        lock_source_mut(&mut lock)["artifact"]["sha256"] =
+            format!("{:x}", Sha256::digest(&bytes)).into();
+        lock_source_mut(&mut lock)["artifact"]["bytes"] = bytes.len().into();
+        fs::write(project.artifact(), bytes).unwrap();
+        fs::write(project.lock(), serde_json::to_vec_pretty(&lock).unwrap()).unwrap();
+        assert!(
+            load_import(&project.config()).is_err(),
+            "forged call capture {mutation} must be refused"
+        );
+    }
+}
+
+#[test]
+#[ignore = "nightly: returned record aliases grant no authority and preserve backing lifetimes"]
+fn cpp_record_reference_results_keep_backing_lifetimes_separate() {
+    for (cpp, source) in [
+        (
+            "struct Widget { int value; }; Widget& identity(Widget& widget) noexcept { return widget; } Widget& probe(Widget& widget) noexcept { auto& ref = identity(widget); return ref; }",
+            "verifying \"reference.cpp\"; Widget& identity(Widget& widget) { ensures &result == &widget; } Widget& probe(Widget& widget) { ensures &result == &widget; }",
+        ),
+        (
+            "struct Widget { int value; }; Widget& identity(Widget& widget) noexcept { return widget; } int probe() noexcept { Widget widget{7}; auto& ref = identity(widget); ref.value = 9; return widget.value; }",
+            "verifying \"reference.cpp\"; Widget& identity(Widget& widget) { ensures &result == &widget; } int32 probe() { ensures result == 9; }",
+        ),
+        (
+            "struct Widget { unsigned char value; }; struct Outer { Widget child; }; Widget& child(Outer& outer) noexcept { return outer.child; } int probe(Outer& outer) noexcept { auto& ref = child(outer); return ref.value; }",
+            "verifying \"reference.cpp\"; Widget& child(Outer& outer) { views outer.child.value; ensures &result == &outer.child; } int32 probe(Outer& outer) { views outer.child.value; ensures to_integer(result) == to_integer(outer.child.value); }",
+        ),
+    ] {
+        let project = Project::with_fixture("reference.cpp", "probe", cpp);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        check_noexcept_replay_all(&project, &import, source);
+    }
+    let project = Project::with_fixture(
+        "reference.cpp",
+        "probe",
+        r#"
+struct Widget { int value; explicit Widget(int v) noexcept : value(v) {} ~Widget() noexcept { value = 0; } };
+Widget& dereference(Widget* pointer) noexcept { return *pointer; }
+int probe() noexcept { Widget* pointer = nullptr; { Widget widget(7); pointer = &widget; } auto& ref = dereference(pointer); return ref.value; }
+"#,
+    );
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "reference.cpp";
+Widget::Widget(int32 v) { owns this->value; ensures this->value == v; }
+Widget::~Widget() { owns this->value; ensures this->value == 0; }
+Widget& dereference(Widget* pointer) { views pointer->value; ensures &result == pointer; }
+int32 probe() { ensures result == 0; }
+"#;
+    let path = project.directory.join("bad.click");
+    fs::write(&path, source).unwrap();
+    assert!(
+        verify_program_prepared_project(&read_click_project(&path, source).unwrap(), &import)
+            .is_err()
     );
 }

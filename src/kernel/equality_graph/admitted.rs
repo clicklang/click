@@ -12,8 +12,8 @@ pub(in crate::kernel) struct InputData {
         crate::persistent::PersistentSet<ConditionTerm>,
     >,
     pub(in crate::kernel) provenance_graph:
-        crate::kernel::pointer_provenance::ValueClasses<Pointer>,
-    pub(in crate::kernel) extent_graph: crate::kernel::pointer_provenance::ValueClasses<Pointer>,
+        crate::kernel::pointer_provenance::ValueClasses<Address>,
+    pub(in crate::kernel) bounds_graph: crate::kernel::pointer_provenance::ValueClasses<Address>,
     pub(in crate::kernel) pointer_value_classes:
         crate::kernel::pointer_provenance::ValueClasses<PointerValue>,
     pub(in crate::kernel) pointer_value_equalities:
@@ -28,7 +28,7 @@ pub(in crate::kernel) struct InputData {
     /// Full-width load premises by exact address and interpretation. MemoryState
     /// transport checks only this bucket; it never scans ambient conditions.
     pub(in crate::kernel) wide_load_sources: crate::persistent::PersistentMap<
-        (Pointer, LoadKind),
+        (Address, LoadKind),
         crate::persistent::PersistentSet<ConditionTerm>,
     >,
     /// True 64-bit equalities as an undirected adjacency map, derived
@@ -45,7 +45,7 @@ pub(in crate::kernel) struct InputData {
     >,
     /// Exact alignment premises, including their numeric address annotations.
     pub(in crate::kernel) pointer_alignment_facts: crate::persistent::PersistentMap<
-        (Pointer, u64),
+        (Address, u64),
         crate::persistent::PersistentSet<ConditionTerm>,
     >,
     /// Exact equalities between two pointers of *different* blocks, indexed
@@ -56,19 +56,20 @@ pub(in crate::kernel) struct InputData {
     /// `condition_facts`, like every other index above, so asking what one
     /// pointer is proved equal to is a keyed lookup rather than a scan of
     /// every pointer comparison the path happens to hold.
-    pub(in crate::kernel) pointer_block_aliases: crate::persistent::PersistentMap<
-        Pointer,
-        crate::persistent::PersistentMap<Pointer, ConditionTerm>,
+    pub(in crate::kernel) local_pointer_aliases: crate::persistent::PersistentSet<ConditionTerm>,
+    pub(in crate::kernel) address_base_aliases: crate::persistent::PersistentMap<
+        Address,
+        crate::persistent::PersistentMap<Address, ConditionTerm>,
     >,
     /// Cross-block alias endpoints grouped by object. External arguments
     /// use their offset stem, since all parameters share one block; other
     /// blocks use one bucket. Derived incrementally from exact aliases.
     pub(in crate::kernel) pointer_alias_endpoints_by_object:
-        crate::persistent::PersistentMap<Pointer, crate::persistent::PersistentSet<Pointer>>,
+        crate::persistent::PersistentMap<Address, crate::persistent::PersistentSet<Address>>,
     /// Pointer-address endpoints of full-width equalities, by object.
     /// Lets store framing follow address copies without scanning size facts.
     pub(in crate::kernel) wide_pointer_alias_endpoints_by_object:
-        crate::persistent::PersistentMap<Pointer, crate::persistent::PersistentSet<MachineTerm>>,
+        crate::persistent::PersistentMap<Address, crate::persistent::PersistentSet<MachineTerm>>,
     pub(in crate::kernel) algebraic_graph_equalities: crate::persistent::PersistentMap<
         (
             crate::kernel::SharedPureApplication,
@@ -84,7 +85,7 @@ pub(in crate::kernel) struct InputData {
     /// are required before a graph query may use the read as a bridge.
     pub(in crate::kernel) typed_pointer_read_definitions: crate::persistent::PersistentMap<
         Variable,
-        crate::persistent::PersistentMap<((u32, u32), Pointer), (Pointer, SharedMemory)>,
+        crate::persistent::PersistentMap<((u32, u32), Address), (Address, SharedMemory)>,
     >,
     pub(in crate::kernel) uint64_graph_equalities: crate::persistent::PersistentMap<
         (
@@ -104,14 +105,14 @@ pub(in crate::kernel) struct InputData {
     >,
     /// Normalized same-block pointer equalities, indexed under each offset.
     pub(in crate::kernel) pointer_offset_aliases: crate::persistent::PersistentMap<
-        PointerOffsetTerm,
-        crate::persistent::PersistentSet<PointerOffsetTerm>,
+        AddressOffset,
+        crate::persistent::PersistentSet<AddressOffset>,
     >,
     /// `pointer_offset_aliases` again, keyed by the alias offset's root atom
     /// (`resource_algebra::offset_root_atom`).
     pub(in crate::kernel) pointer_offset_aliases_by_root: crate::persistent::PersistentMap<
-        Option<PointerOffsetTerm>,
-        crate::persistent::PersistentSet<(PointerOffsetTerm, PointerOffsetTerm)>,
+        Option<AddressOffset>,
+        crate::persistent::PersistentSet<(AddressOffset, AddressOffset)>,
     >,
     /// Admission-time keys of the admitted scalar evidence inputs.
     pub(in crate::kernel) scalar_evidence_keys: crate::persistent::PersistentMap<

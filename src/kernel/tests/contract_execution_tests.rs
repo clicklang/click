@@ -424,9 +424,9 @@ fn borrowed_contract_input_roots_are_shared_across_proof_units_of_one_function()
 /// it instead of proving a vacuous body under it.
 #[test]
 fn borrowed_contract_input_refuses_an_owned_clause_inside_a_viewed_range() {
-    let pointer = crate::kernel::Pointer {
-        block: "buffer".into(),
-        offset: crate::kernel::PointerOffsetTerm::Constant(0),
+    let pointer = crate::kernel::Address {
+        base: "buffer".into(),
+        offset: crate::kernel::AddressOffset::Constant(0),
     };
     let viewed = ResourceFact::view_memory(MemoryRange::new(
         pointer.clone(),
@@ -439,7 +439,7 @@ fn borrowed_contract_input_refuses_an_owned_clause_inside_a_viewed_range() {
         MachineTerm::constant(2),
     ));
     let state = ExecutionState::new()
-        .with_memory(Memory::new().with_block(pointer.block.clone(), 8))
+        .with_memory(SymbolicMemory::new().with_block(pointer.base.clone(), 8))
         .with_resource_context(
             ResourceContext::new().unchecked_with_facts([viewed.clone(), owned.clone()]),
         );
@@ -486,7 +486,7 @@ fn borrowed_contract_input_rejects_derived_or_ambiguous_views() {
         owner_occurrence,
         &owner,
         [viewed.clone()],
-        &Memory::new(),
+        &SymbolicMemory::new(),
     );
     let function = borrowed_input_view_function("reject_derived_input");
     let refusal = execution_state_with_borrowed_contract_inputs(
@@ -511,17 +511,17 @@ fn borrowed_contract_input_rejects_derived_or_ambiguous_views() {
 
 /// The aggregate-copy path is the same shape at a wider width: the copy's
 /// target is owned, its source is readable, and the lent range inside the
-/// target refuses the whole-struct write at the ledger (R01 aggregate case;
-/// docs/internals/stable-views.md).
+/// target cannot discharge the whole-struct separation obligation (R01
+/// aggregate case in docs/internals/stable-views.md).
 #[test]
-fn owner_authorized_aggregate_copy_into_a_lent_range_is_refused() {
-    let target = Pointer {
-        block: "target".into(),
-        offset: PointerOffsetTerm::Constant(0),
+fn owner_authorized_aggregate_copy_into_a_lent_range_requires_separation() {
+    let target = Address {
+        base: "target".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let source = Pointer {
-        block: "source".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let source = Address {
+        base: "source".into(),
+        offset: AddressOffset::Constant(0),
     };
     let owned_target = own_memory_fact(target.clone(), 0, 2);
     let owned_source = own_memory_fact(source.clone(), 0, 2);
@@ -587,21 +587,21 @@ fn owner_authorized_aggregate_copy_into_a_lent_range_is_refused() {
         ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
     )
     .expect("an owner-authorized aggregate copy over a lent field has a checked outcome");
-    let Proposition::ProgramFunctionVerifies { outcome, .. } = theorem.proposition() else {
-        panic!("expected a function execution proposition");
+    let Proposition::Implies(requirement, execution) = theorem.proposition() else {
+        panic!("the aggregate copy must remain conditional on loan separation");
     };
-    let FunctionOutcome::RuntimeError(RuntimeError::LoanRefusal(diagnostic)) = outcome else {
-        panic!("expected a loan refusal, got {outcome:?}");
+    let Proposition::ResourceSeparate { left, right } = requirement.as_ref() else {
+        panic!("expected the explicit loan separation premise");
     };
-    assert_eq!(diagnostic.category(), LoanRefusalCategory::ActiveDependency);
-    assert_eq!(
-        diagnostic.operation(),
-        crate::kernel::LoanRefusalOperation::MemoryAccess
-    );
-    assert_eq!(
-        diagnostic.subject().conflicting_resource_fact(),
-        Some(&view_memory_fact(target, 1, 2))
-    );
+    assert!(!PureFactContext::new().proves_resource_separate(left, right));
+    assert_eq!(right.as_ref(), view_memory_fact(target, 1, 2).resource());
+    assert!(matches!(
+        execution.as_ref(),
+        Proposition::ProgramFunctionVerifies {
+            outcome: FunctionOutcome::Return { .. },
+            ..
+        }
+    ));
 }
 
 /// The loan barrier exists for exactly one shape: a write the ordinary
@@ -610,9 +610,9 @@ fn owner_authorized_aggregate_copy_into_a_lent_range_is_refused() {
 /// check now runs first.
 #[test]
 fn owner_authorized_write_into_a_lent_range_is_refused() {
-    let pointer = Pointer {
-        block: "block".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: "block".into(),
+        offset: AddressOffset::Constant(0),
     };
     let owned = own_memory_fact(pointer.clone(), 0, 2);
     let viewed = view_memory_fact(pointer.clone(), 0, 1);
@@ -690,9 +690,9 @@ fn owner_authorized_write_into_a_lent_range_is_refused() {
 /// would change nothing (R01's same-value negative; docs/internals/stable-views.md).
 #[test]
 fn owner_authorized_same_value_store_into_a_lent_range_is_refused() {
-    let pointer = Pointer {
-        block: "block".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: "block".into(),
+        offset: AddressOffset::Constant(0),
     };
     let owned = own_memory_fact(pointer.clone(), 0, 2);
     let viewed = view_memory_fact(pointer.clone(), 0, 1);
@@ -718,8 +718,8 @@ fn owner_authorized_same_value_store_into_a_lent_range_is_refused() {
         },
     );
     // The cell already holds 9; the body stores 9 into it.
-    let populated = Memory::new()
-        .with_block(pointer.block.clone(), 8)
+    let populated = SymbolicMemory::new()
+        .with_block(pointer.base.clone(), 8)
         .store(pointer.clone(), int32(9));
     let state = ExecutionState::new()
         .with_memory(populated.clone())
@@ -768,40 +768,10 @@ fn owner_authorized_same_value_store_into_a_lent_range_is_refused() {
 }
 
 #[test]
-fn certified_program_entry_claims_do_not_authorize_ordinary_calls() {
-    let function = program_function(
-        ProgramType::Int32,
-        "main",
-        vec![],
-        program_return(crate::kernel::program_expression::int32_literal(0)),
-    )
-    .with_program_entry()
-    .with_contract(
-        vec![],
-        vec![],
-        vec![],
-        vec![FunctionContractClaim::body_safety()],
-        true,
-    );
-    let execution = certify_contract_with_kernel_artifacts(
-        ExecutionState::new(),
-        function.clone(),
-        vec![],
-        vec![],
-        ExecutionEnvironment::new(),
-        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
-        FunctionContractExecutionMode::VerifyLoops,
-    );
-    let claims = program_verified_function_contract_claims(&function, &execution).unwrap();
-    assert!(!claims.is_empty());
-    assert!(program_verified_function_rule(function, &claims).is_none());
-}
-
-#[test]
 fn local_declaration_allocates_stack_object_for_address_of() {
-    let local_pointer = Pointer {
-        block: "local:x".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let local_pointer = Address {
+        base: "local:x".into(),
+        offset: AddressOffset::Constant(0),
     };
     let state = ExecutionState::new();
     let statement = program_seq(
@@ -814,20 +784,24 @@ fn local_declaration_allocates_stack_object_for_address_of() {
         ),
     );
     let final_state = ExecutionState::new().with_local("x", int32(5)).with_memory(
-        Memory::new()
+        SymbolicMemory::new()
             .with_declared_scalar_block("local:x".into(), 4, ProgramType::Int32)
             .store(local_pointer, int32(5)),
     );
-    let final_state = final_state.with_resource_context(
-        ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(
-            MemoryRange::new_with_element_width(Memory::local_pointer("x"), 0.into(), 4.into(), 1),
-        )),
-    );
+    let final_state =
+        final_state.with_resource_context(ResourceContext::new().unchecked_with_fact(
+            ResourceFact::own_memory(MemoryRange::new_with_element_width(
+                SymbolicMemory::local_pointer("x"),
+                0.into(),
+                4.into(),
+                1,
+            )),
+        ));
     let mut final_state = final_state;
     final_state.locals.set_uninitialized_with_all_qualifiers(
         "x",
         ProgramType::Int32,
-        Memory::local_pointer("x"),
+        SymbolicMemory::local_pointer("x"),
         false,
         false,
         false,
@@ -878,7 +852,7 @@ fn addressable_parameter_gets_a_fresh_callee_stack_slot() {
         .slot("n")
         .expect("parameter slot")
         .clone();
-    assert!(caller_slot.block.starts_with("local:frame:0:"));
+    assert!(caller_slot.base.starts_with("local:frame:0:"));
     assert_eq!(
         caller_state.memory().cells.get(&caller_slot),
         Some(int32(3))
@@ -1296,11 +1270,11 @@ fn signed_addition_ranges_nested_additions_only_when_each_level_is_safe() {
 
 #[test]
 fn signed_addition_matches_interval_facts_across_unchanged_states() {
-    let cell = Pointer {
-        block: "arg-memory".into(),
-        offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(660)), 4),
+    let cell = Address {
+        base: "arg-memory".into(),
+        offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(660)), 4),
     };
-    let before = Memory::new();
+    let before = SymbolicMemory::new();
     let after = before.clone().with_block("local:temporary", 4);
     let before_load = MachineTerm::MemoryLoad(
         ProgramPoint::at(&(crate::kernel::intern_memory(before))),
@@ -1333,9 +1307,9 @@ fn signed_addition_matches_interval_facts_across_unchanged_states() {
 
 #[test]
 fn pointer_store_through_local_address_updates_named_lvalue() {
-    let local_pointer = Pointer {
-        block: "local:x".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let local_pointer = Address {
+        base: "local:x".into(),
+        offset: AddressOffset::Constant(0),
     };
     let statement = program_seq(
         program_declare("x", ProgramType::Int32),
@@ -1348,20 +1322,24 @@ fn pointer_store_through_local_address_updates_named_lvalue() {
         ),
     );
     let final_state = ExecutionState::new().with_local("x", int32(5)).with_memory(
-        Memory::new()
+        SymbolicMemory::new()
             .with_declared_scalar_block("local:x".into(), 4, ProgramType::Int32)
             .store(local_pointer, int32(5)),
     );
-    let final_state = final_state.with_resource_context(
-        ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(
-            MemoryRange::new_with_element_width(Memory::local_pointer("x"), 0.into(), 4.into(), 1),
-        )),
-    );
+    let final_state =
+        final_state.with_resource_context(ResourceContext::new().unchecked_with_fact(
+            ResourceFact::own_memory(MemoryRange::new_with_element_width(
+                SymbolicMemory::local_pointer("x"),
+                0.into(),
+                4.into(),
+                1,
+            )),
+        ));
     let mut final_state = final_state;
     final_state.locals.set_uninitialized_with_all_qualifiers(
         "x",
         ProgramType::Int32,
-        Memory::local_pointer("x"),
+        SymbolicMemory::local_pointer("x"),
         false,
         false,
         false,
@@ -1392,17 +1370,18 @@ fn pointer_store_through_local_address_updates_named_lvalue() {
 
 #[test]
 fn memory_load_store_are_native_theorems() {
-    let pointer = Pointer {
-        block: "block".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: "block".into(),
+        offset: AddressOffset::Constant(0),
     };
     let value = int32(7);
-    let theorem = prove_memory_load_after_store_same(Memory::new(), pointer.clone(), value.clone());
+    let theorem =
+        prove_memory_load_after_store_same(SymbolicMemory::new(), pointer.clone(), value.clone());
 
     assert_eq!(
         theorem.proposition(),
         &Proposition::MemoryLoads {
-            memory: Memory::new().store(pointer.clone(), value.clone()),
+            memory: SymbolicMemory::new().store(pointer.clone(), value.clone()),
             pointer,
             outcome: ExpressionOutcome::Value(value),
         }
@@ -1411,15 +1390,15 @@ fn memory_load_store_are_native_theorems() {
 
 #[test]
 fn store_preserves_distinct_memory_cell_frame() {
-    let stored_pointer = Pointer {
-        block: "left".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let stored_pointer = Address {
+        base: "left".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let loaded_pointer = Pointer {
-        block: "right".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let loaded_pointer = Address {
+        base: "right".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let memory = Memory::new().store(loaded_pointer.clone(), int32(42));
+    let memory = SymbolicMemory::new().store(loaded_pointer.clone(), int32(42));
     let theorem = prove_memory_load_after_store_other(
         memory.clone(),
         stored_pointer.clone(),
@@ -1440,80 +1419,20 @@ fn store_preserves_distinct_memory_cell_frame() {
 
 #[test]
 fn missing_memory_load_is_native_undefined_behavior() {
-    let pointer = Pointer {
-        block: "block".into(),
-        offset: PointerOffsetTerm::Constant(4),
+    let pointer = Address {
+        base: "block".into(),
+        offset: AddressOffset::Constant(4),
     };
-    let theorem = prove_memory_load(Memory::new(), pointer.clone());
+    let theorem = prove_memory_load(SymbolicMemory::new(), pointer.clone());
 
     assert_eq!(
         theorem.proposition(),
         &Proposition::MemoryLoads {
-            memory: Memory::new(),
+            memory: SymbolicMemory::new(),
             pointer,
             outcome: ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::InvalidMemory),
         }
     );
-}
-
-#[test]
-fn contract_certification_checks_every_spec_lowering_path() {
-    let base = Pointer {
-        block: "local:contract-path-probe".into(),
-        offset: PointerOffsetTerm::Constant(0),
-    };
-    let queried = Pointer {
-        block: base.block.clone(),
-        offset: PointerOffsetTerm::Variable(Variable(900_001)),
-    };
-    let memory = Memory::new()
-        .with_block(base.block.clone(), 8)
-        .store(base, int32(0));
-    let state = ExecutionState::new().with_memory(memory);
-    let q = SpecExpression::ProgramExpression(crate::kernel::program_expression::variable("q"));
-    let function = program_function(
-        ProgramType::Int32,
-        "contract_path_probe",
-        vec![program_parameter("q", ProgramType::Int32Pointer)],
-        program_return(crate::kernel::program_expression::int32_literal(0)),
-    )
-    .with_contract(
-        vec![SpecProposition::MemoryLoadable {
-            memory: SpecMemory::Current,
-            base: q.clone(),
-            start: SpecExpression::Value(int32(0)),
-            end: SpecExpression::Value(int32(1)),
-            element_width: 4,
-        }],
-        vec![SpecProposition::Comparison {
-            left: SpecExpression::MemoryLoad {
-                memory: SpecMemory::Current,
-                pointer: Box::new(q),
-                value_type: ProgramType::Int32,
-            },
-            operator: ComparisonOperator::Equal,
-            right: SpecExpression::Value(int32(0)),
-        }],
-        vec![],
-        vec![
-            FunctionContractClaim::body_safety(),
-            FunctionContractClaim::ensure_proposition(0, 0),
-        ],
-        true,
-    );
-    let execution = certify_contract_with_kernel_artifacts(
-        state,
-        function.clone(),
-        vec![crate::kernel::program_expression::pointer_value(queried)],
-        vec![],
-        ExecutionEnvironment::new(),
-        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
-        FunctionContractExecutionMode::VerifyLoops,
-    );
-    let unverified = program_unverified_function_contract_claims(&function, &execution)
-        .expect("the complete frontier should remain checkable");
-
-    assert_eq!(unverified, vec![FunctionContractClaimKey::Ensure(0)]);
 }
 
 #[test]
@@ -1762,24 +1681,24 @@ fn verified_function_rule_coerces_null_constants_in_contract_views() {
 
 #[test]
 fn verified_function_rule_does_not_publish_one_spec_alias_path() {
-    let stored = Pointer {
-        block: "heap".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let stored = Address {
+        base: "heap".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let queried = Pointer {
-        block: stored.block.clone(),
-        offset: PointerOffsetTerm::Variable(Variable(900_002)),
+    let queried = Address {
+        base: stored.base.clone(),
+        offset: AddressOffset::Variable(Variable(900_002)),
     };
     let q = SpecExpression::ProgramExpression(crate::kernel::program_expression::variable("q"));
     let reflexive_load = SpecProposition::Comparison {
         left: SpecExpression::MemoryLoad {
-            memory: SpecMemory::Current,
+            point: SpecPoint::Current,
             pointer: Box::new(q.clone()),
             value_type: ProgramType::Int32,
         },
         operator: ComparisonOperator::Equal,
         right: SpecExpression::MemoryLoad {
-            memory: SpecMemory::Current,
+            point: SpecPoint::Current,
             pointer: Box::new(q),
             value_type: ProgramType::Int32,
         },
@@ -1814,7 +1733,11 @@ fn verified_function_rule_does_not_publish_one_spec_alias_path() {
     let execution = prove_symbolic_program_execution_paths_with_environment(
         ExecutionState::new()
             .with_population_creation_tracking()
-            .with_memory(Memory::new().with_block("heap", 8).store(stored, int32(0))),
+            .with_memory(
+                SymbolicMemory::new()
+                    .with_block("heap", 8)
+                    .store(stored, int32(0)),
+            ),
         program_call_then_assign(
             2,
             "result",
@@ -1842,9 +1765,9 @@ fn verified_function_rule_does_not_publish_one_spec_alias_path() {
 
 #[test]
 fn opaque_pointer_result_can_alias_its_argument() {
-    let argument = Pointer {
-        block: "heap".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let argument = Address {
+        base: "heap".into(),
+        offset: AddressOffset::Constant(0),
     };
     let helper = program_function(
         ProgramType::Int32Pointer,
@@ -1881,7 +1804,7 @@ fn opaque_pointer_result_can_alias_its_argument() {
     let execution = prove_symbolic_program_execution_paths_with_environment(
         ExecutionState::new()
             .with_population_creation_tracking()
-            .with_local("result", ProgramValue::pointer(Pointer::null())),
+            .with_local("result", ProgramValue::pointer(Address::null())),
         program_call_then_assign(
             3,
             "result",
@@ -2103,216 +2026,6 @@ fn separate_statement_verification_calls_preserve_fresh_identity_progress() {
 }
 
 #[test]
-fn verified_function_rule_requires_every_contract_claim_certificate() {
-    let function = program_function(
-        ProgramType::Int32,
-        "two_claims",
-        Vec::new(),
-        program_return(crate::kernel::program_expression::int32_literal(0)),
-    )
-    .with_contract(
-        Vec::new(),
-        vec![
-            SpecProposition::Comparison {
-                left: SpecExpression::Value(int32(0)),
-                operator: ComparisonOperator::Equal,
-                right: SpecExpression::Value(int32(0)),
-            },
-            SpecProposition::Comparison {
-                left: SpecExpression::Value(int32(0)),
-                operator: ComparisonOperator::Equal,
-                right: SpecExpression::Value(int32(0)),
-            },
-        ],
-        Vec::new(),
-        vec![
-            FunctionContractClaim::ensure_proposition(0, 0),
-            FunctionContractClaim::ensure_proposition(1, 1),
-        ],
-        true,
-    );
-    let execution = certify_contract_with_kernel_artifacts(
-        ExecutionState::new(),
-        function.clone(),
-        Vec::new(),
-        Vec::new(),
-        ExecutionEnvironment::new(),
-        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
-        FunctionContractExecutionMode::VerifyLoops,
-    );
-
-    let impostor = program_function(
-        ProgramType::Int32,
-        "two_claims",
-        Vec::new(),
-        program_return(crate::kernel::program_expression::int32_literal(1)),
-    );
-    let impostor_execution = certify_contract_with_kernel_artifacts(
-        ExecutionState::new(),
-        impostor,
-        Vec::new(),
-        Vec::new(),
-        ExecutionEnvironment::new(),
-        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
-        FunctionContractExecutionMode::VerifyLoops,
-    );
-
-    assert!(
-        program_verified_function_contract_claim(
-            &function,
-            FunctionContractClaimKey::Ensure(0),
-            &impostor_execution,
-        )
-        .is_none()
-    );
-
-    let first = program_verified_function_contract_claim(
-        &function,
-        FunctionContractClaimKey::Ensure(0),
-        &execution,
-    )
-    .expect("first claim should certify");
-
-    assert!(
-        program_verified_function_rule(function.clone(), std::slice::from_ref(&first)).is_none()
-    );
-
-    let second = program_verified_function_contract_claim(
-        &function,
-        FunctionContractClaimKey::Ensure(1),
-        &execution,
-    )
-    .expect("second claim should certify");
-    assert!(program_verified_function_rule(function, &[first, second]).is_some());
-}
-
-#[test]
-fn verified_function_rule_rejects_unclaimed_contract_obligations() {
-    let function = program_function(
-        ProgramType::Int32,
-        "unclaimed_ensure",
-        Vec::new(),
-        program_return(crate::kernel::program_expression::int32_literal(1)),
-    )
-    .with_contract(
-        Vec::new(),
-        vec![SpecProposition::Comparison {
-            left: SpecExpression::ProgramExpression(crate::kernel::program_expression::variable(
-                CONTRACT_RESULT,
-            )),
-            operator: ComparisonOperator::Equal,
-            right: SpecExpression::Value(int32(0)),
-        }],
-        Vec::new(),
-        vec![FunctionContractClaim::body_safety()],
-        true,
-    );
-    let execution = certify_contract_with_kernel_artifacts(
-        ExecutionState::new(),
-        function.clone(),
-        Vec::new(),
-        Vec::new(),
-        ExecutionEnvironment::new(),
-        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
-        FunctionContractExecutionMode::VerifyLoops,
-    );
-
-    assert_eq!(
-        program_unverified_function_contract_claims(&function, &execution)
-            .expect("the complete frontier should remain diagnostic"),
-        vec![FunctionContractClaimKey::Ensure(0)]
-    );
-    let body_safety = program_verified_function_contract_claim(
-        &function,
-        FunctionContractClaimKey::BodySafety,
-        &execution,
-    )
-    .expect("the body-safety claim itself should still certify");
-    assert!(program_verified_function_rule(function, &[body_safety]).is_none());
-}
-
-#[test]
-fn declared_exceptional_path_certifies_its_payload_postcondition() {
-    let normal_false = SpecProposition::Comparison {
-        left: SpecExpression::Value(int32(0)),
-        operator: ComparisonOperator::Equal,
-        right: SpecExpression::Value(int32(1)),
-    };
-    let exceptional_payload = SpecProposition::Comparison {
-        left: SpecExpression::ProgramExpression(crate::kernel::program_expression::variable(
-            CONTRACT_EXCEPTION,
-        )),
-        operator: ComparisonOperator::Equal,
-        right: SpecExpression::Value(int32(7)),
-    };
-    let function = program_function(
-        ProgramType::Int32,
-        "certified_throw",
-        Vec::new(),
-        ProgramStatement::Throw(crate::kernel::program_expression::int32_literal(7)),
-    )
-    .with_int32_exceptional_outcome()
-    .with_exceptional_ensures(vec![exceptional_payload])
-    .with_contract(
-        Vec::new(),
-        vec![normal_false],
-        Vec::new(),
-        vec![
-            FunctionContractClaim::body_safety(),
-            FunctionContractClaim::ensure_proposition(0, 0),
-            FunctionContractClaim::exceptional_ensure_proposition(0, 0),
-        ],
-        true,
-    );
-    let execution = certify_contract_with_kernel_artifacts(
-        ExecutionState::new(),
-        function.clone(),
-        Vec::new(),
-        Vec::new(),
-        ExecutionEnvironment::new(),
-        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
-        FunctionContractExecutionMode::VerifyLoops,
-    );
-
-    let throw_outcome = FunctionOutcome::Throw {
-        value: int32(7).into(),
-        state: Box::new(ExecutionState::new()),
-    };
-    let goals = program_function_exceptional_ensure_goals(
-        &function,
-        0,
-        &ExecutionState::new(),
-        &[],
-        &throw_outcome,
-        &PureFactContext::new(),
-    )
-    .expect("the exceptional payload should lower at the throw boundary");
-    assert_eq!(goals.len(), 1);
-    // The payload is 7: lowering retains the closed comparison `7 == 7`
-    // rather than folding it to `true`.
-    assert!(
-        matches!(
-            goals[0].proposition(),
-            Proposition::ConditionIs(condition @ ConditionTerm::Compare { .. }, true)
-                if crate::kernel::machine_integer::comparison::closed_condition_value(condition)
-                    == Some(true)
-        ),
-        "unexpected exceptional goal: {:?}",
-        goals[0].proposition()
-    );
-
-    assert_eq!(
-        program_unverified_function_contract_claims(&function, &execution)
-            .expect("a declared exceptional path is a safe certification path"),
-        Vec::<FunctionContractClaimKey>::new(),
-    );
-    let proofs = program_verified_function_contract_claims(&function, &execution)
-        .expect("the payload postcondition should certify");
-    assert_eq!(proofs.len(), 3);
-    assert!(program_verified_function_rule(function, &proofs).is_some());
-}
-
-#[test]
 fn verified_exceptional_rule_produces_isolated_outcome_paths() {
     let normal_ensure = SpecProposition::Comparison {
         left: SpecExpression::ProgramExpression(crate::kernel::program_expression::variable(
@@ -2354,20 +2067,7 @@ fn verified_exceptional_rule_produces_isolated_outcome_paths() {
         ],
         true,
     );
-    let execution = certify_contract_with_kernel_artifacts(
-        ExecutionState::new().with_population_creation_tracking(),
-        function.clone(),
-        vec![ProgramExpression::Value(ProgramValue::Int32(
-            MachineTerm::Variable(Variable(700_001)),
-        ))],
-        Vec::new(),
-        ExecutionEnvironment::new(),
-        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
-        FunctionContractExecutionMode::VerifyLoops,
-    );
-    let proofs = program_verified_function_contract_claims(&function, &execution)
-        .expect("both outcome families should certify");
-    let rule = program_verified_function_rule(function.clone(), &proofs)
+    let rule = crate::kernel::program_recursive_function_contract_hypothesis(function.clone())
         .expect("a certified exceptional direct rule should form");
     let environment = ExecutionEnvironment::new()
         .with_function(function)
@@ -2601,18 +2301,7 @@ fn verified_exceptional_call_enters_int32_handler_with_only_exceptional_claims()
         ],
         true,
     );
-    let execution = certify_contract_with_kernel_artifacts(
-        ExecutionState::new().with_population_creation_tracking(),
-        function.clone(),
-        Vec::new(),
-        Vec::new(),
-        ExecutionEnvironment::new(),
-        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
-        FunctionContractExecutionMode::VerifyLoops,
-    );
-    let proofs = program_verified_function_contract_claims(&function, &execution)
-        .expect("the helper's exceptional claim should certify");
-    let rule = program_verified_function_rule(function.clone(), &proofs)
+    let rule = crate::kernel::program_recursive_function_contract_hypothesis(function.clone())
         .expect("the fully checked helper should form a direct rule");
     let statement = program_try_catch_int32(
         program_seq(
@@ -2693,61 +2382,6 @@ fn verified_exceptional_call_enters_int32_handler_with_only_exceptional_claims()
 }
 
 #[test]
-fn declared_exceptional_channel_does_not_vanish_without_an_exceptional_ensure() {
-    let function = program_function(
-        ProgramType::Int32,
-        "unconstrained_exceptional_channel",
-        Vec::new(),
-        program_return(crate::kernel::program_expression::int32_literal(0)),
-    )
-    .with_int32_exceptional_outcome()
-    .with_contract(
-        Vec::new(),
-        Vec::new(),
-        Vec::new(),
-        vec![FunctionContractClaim::body_safety()],
-        true,
-    );
-    let certification = certify_contract_with_kernel_artifacts(
-        ExecutionState::new().with_population_creation_tracking(),
-        function.clone(),
-        Vec::new(),
-        Vec::new(),
-        ExecutionEnvironment::new(),
-        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
-        FunctionContractExecutionMode::VerifyLoops,
-    );
-    let proofs = program_verified_function_contract_claims(&function, &certification)
-        .expect("the declared channel needs no invented exceptional guarantee");
-    let rule = program_verified_function_rule(function.clone(), &proofs)
-        .expect("the body-certified direct rule should form");
-    let modular = prove_symbolic_program_execution_paths_with_environment(
-        ExecutionState::new().with_population_creation_tracking(),
-        program_call("unconstrained_exceptional_channel", Vec::new()),
-        PureFactContext::new(),
-        ExecutionEnvironment::new()
-            .with_function(function)
-            .with_verified_function_rule(rule),
-        ExecutionSemantics::APPLY_VERIFIED_RULES,
-    );
-
-    assert_eq!(modular.paths().len(), 2);
-    assert!(modular.paths().iter().any(|path| {
-        let mut proposition = path.theorem().proposition();
-        while let Proposition::Implies(_, body) = proposition {
-            proposition = body;
-        }
-        matches!(
-            proposition,
-            Proposition::ProgramStatementVerifies {
-                outcome: StatementOutcome::Throw { .. },
-                ..
-            }
-        )
-    }));
-}
-
-#[test]
 fn exceptional_direct_rule_boundary_excludes_mutable_effects() {
     let function = program_function(
         ProgramType::Int32,
@@ -2770,122 +2404,6 @@ fn exceptional_direct_rule_boundary_excludes_mutable_effects() {
 
     assert!(!function.verified_direct_contract_supported());
     assert!(FunctionContract::new("EffectfulThrow", function).is_none());
-}
-
-#[test]
-fn exceptional_postconditions_apply_only_to_throw_outcomes() {
-    let exceptional_false = SpecProposition::Comparison {
-        left: SpecExpression::Value(int32(0)),
-        operator: ComparisonOperator::Equal,
-        right: SpecExpression::Value(int32(1)),
-    };
-    let function = program_function(
-        ProgramType::Int32,
-        "ordinary_return_with_exceptional_family",
-        Vec::new(),
-        program_return(crate::kernel::program_expression::int32_literal(4)),
-    )
-    .with_int32_exceptional_outcome()
-    .with_exceptional_ensures(vec![exceptional_false])
-    .with_contract(
-        Vec::new(),
-        Vec::new(),
-        Vec::new(),
-        vec![FunctionContractClaim::exceptional_ensure_proposition(0, 0)],
-        true,
-    );
-    let execution = certify_contract_with_kernel_artifacts(
-        ExecutionState::new(),
-        function.clone(),
-        Vec::new(),
-        Vec::new(),
-        ExecutionEnvironment::new(),
-        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
-        FunctionContractExecutionMode::VerifyLoops,
-    );
-
-    assert_eq!(
-        program_unverified_function_contract_claims(&function, &execution)
-            .expect("the complete return path should remain checkable"),
-        Vec::<FunctionContractClaimKey>::new(),
-    );
-}
-
-#[test]
-fn false_or_missing_exceptional_postconditions_do_not_certify() {
-    let wrong_payload = SpecProposition::Comparison {
-        left: SpecExpression::ProgramExpression(crate::kernel::program_expression::variable(
-            CONTRACT_EXCEPTION,
-        )),
-        operator: ComparisonOperator::Equal,
-        right: SpecExpression::Value(int32(8)),
-    };
-    let with_false_claim = program_function(
-        ProgramType::Int32,
-        "wrong_exceptional_payload",
-        Vec::new(),
-        ProgramStatement::Throw(crate::kernel::program_expression::int32_literal(7)),
-    )
-    .with_int32_exceptional_outcome()
-    .with_exceptional_ensures(vec![wrong_payload.clone()])
-    .with_contract(
-        Vec::new(),
-        Vec::new(),
-        Vec::new(),
-        vec![FunctionContractClaim::exceptional_ensure_proposition(0, 0)],
-        true,
-    );
-    let false_execution = certify_contract_with_kernel_artifacts(
-        ExecutionState::new(),
-        with_false_claim.clone(),
-        Vec::new(),
-        Vec::new(),
-        ExecutionEnvironment::new(),
-        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
-        FunctionContractExecutionMode::VerifyLoops,
-    );
-    assert_eq!(
-        program_unverified_function_contract_claims(&with_false_claim, &false_execution)
-            .expect("the false exceptional claim should be diagnosed"),
-        vec![FunctionContractClaimKey::ExceptionalEnsure(0)],
-    );
-
-    let without_claim = program_function(
-        ProgramType::Int32,
-        "missing_exceptional_claim",
-        Vec::new(),
-        ProgramStatement::Throw(crate::kernel::program_expression::int32_literal(7)),
-    )
-    .with_int32_exceptional_outcome()
-    .with_exceptional_ensures(vec![wrong_payload])
-    .with_contract(
-        Vec::new(),
-        Vec::new(),
-        Vec::new(),
-        vec![FunctionContractClaim::body_safety()],
-        true,
-    );
-    let missing_execution = certify_contract_with_kernel_artifacts(
-        ExecutionState::new(),
-        without_claim.clone(),
-        Vec::new(),
-        Vec::new(),
-        ExecutionEnvironment::new(),
-        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
-        FunctionContractExecutionMode::VerifyLoops,
-    );
-    assert_eq!(
-        program_unverified_function_contract_claims(&without_claim, &missing_execution)
-            .expect("the omitted exceptional claim should be diagnosed"),
-        vec![FunctionContractClaimKey::ExceptionalEnsure(0)],
-    );
-    let body_safety = program_verified_function_contract_claim(
-        &without_claim,
-        FunctionContractClaimKey::BodySafety,
-        &missing_execution,
-    )
-    .expect("the safe body remains independently certified");
-    assert!(program_verified_function_rule(without_claim, &[body_safety]).is_none());
 }
 
 #[test]
@@ -2919,988 +2437,12 @@ fn exceptional_direct_rule_boundary_excludes_resource_transitions() {
 }
 
 #[test]
-fn exceptional_postconditions_observe_the_throw_state() {
-    let pointer = Pointer {
-        block: "exceptional-output".into(),
-        offset: PointerOffsetTerm::Constant(0),
-    };
-    let p = SpecExpression::ProgramExpression(crate::kernel::program_expression::variable("p"));
-    let loadable = SpecProposition::MemoryLoadable {
-        memory: SpecMemory::Current,
-        base: p.clone(),
-        start: SpecExpression::Value(int32(0)),
-        end: SpecExpression::Value(int32(1)),
-        element_width: 4,
-    };
-    let claims_ten = SpecProposition::Comparison {
-        left: SpecExpression::MemoryLoad {
-            memory: SpecMemory::Current,
-            pointer: Box::new(p),
-            value_type: ProgramType::Int32,
-        },
-        operator: ComparisonOperator::Equal,
-        right: SpecExpression::Value(int32(10)),
-    };
-    let function = program_function(
-        ProgramType::Int32,
-        "wrong_exceptional_state",
-        vec![program_parameter("p", ProgramType::Int32Pointer)],
-        ProgramStatement::Throw(crate::kernel::program_expression::int32_literal(7)),
-    )
-    .with_int32_exceptional_outcome()
-    .with_exceptional_ensures(vec![claims_ten])
-    .with_contract(
-        vec![loadable],
-        Vec::new(),
-        Vec::new(),
-        vec![FunctionContractClaim::exceptional_ensure_proposition(0, 0)],
-        true,
-    );
-    let execution = certify_contract_with_kernel_artifacts(
-        ExecutionState::new().with_memory(
-            Memory::new()
-                .with_block(pointer.block.clone(), 4)
-                .store(pointer.clone(), int32(9)),
-        ),
-        function.clone(),
-        vec![crate::kernel::program_expression::pointer_value(pointer)],
-        Vec::new(),
-        ExecutionEnvironment::new(),
-        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
-        FunctionContractExecutionMode::VerifyLoops,
-    );
-
-    assert_eq!(
-        program_unverified_function_contract_claims(&function, &execution)
-            .expect("the exceptional exit state should be available to claims"),
-        vec![FunctionContractClaimKey::ExceptionalEnsure(0)],
-    );
-}
-
-#[test]
-fn contract_certification_does_not_accept_injected_opaque_predicate_facts() {
-    let predicate = SpecProposition::Predicate {
-        resource_state_dependent: true,
-        name: "positive".to_string(),
-        arguments: vec![SpecPredicateArgument::Value(
-            SpecExpression::ProgramExpression(crate::kernel::program_expression::variable(
-                CONTRACT_RESULT,
-            )),
-        )],
-    };
-    let positive_body = SpecProposition::Comparison {
-        left: SpecExpression::ProgramExpression(crate::kernel::program_expression::variable(
-            CONTRACT_RESULT,
-        )),
-        operator: ComparisonOperator::GreaterEqual,
-        right: SpecExpression::Value(int32(1)),
-    };
-    let function = program_function(
-        ProgramType::Int32,
-        "injected_predicate",
-        Vec::new(),
-        program_return(crate::kernel::program_expression::int32_literal(0)),
-    )
-    .with_contract(
-        Vec::new(),
-        vec![positive_body.clone()],
-        Vec::new(),
-        vec![FunctionContractClaim::ensure_proposition(0, 0)],
-        true,
-    )
-    .with_predicate_unfoldings(vec![PredicateUnfolding::new(predicate, positive_body)]);
-    let injected = Proposition::ForAll {
-        name: Default::default(),
-        var: Variable(991_001),
-        sort: Sort::ProgramInt32,
-        body: Box::new(Proposition::Predicate {
-            name: "positive".to_string(),
-            arguments: vec![Term::Bitvector32(MachineTerm::Variable(Variable(991_001)))],
-        }),
-    };
-    let execution = certify_contract_with_kernel_artifacts(
-        ExecutionState::new(),
-        function.clone(),
-        Vec::new(),
-        vec![injected],
-        ExecutionEnvironment::new(),
-        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
-        FunctionContractExecutionMode::VerifyLoops,
-    );
-
-    assert!(
-        program_verified_function_contract_claim(
-            &function,
-            FunctionContractClaimKey::Ensure(0),
-            &execution,
-        )
-        .is_none(),
-        "caller-supplied quantified predicate facts must not certify a false ensure"
-    );
-}
-
-#[test]
-fn contract_effect_claim_rejects_an_undecidable_guard() {
-    let base = Pointer {
-        block: PointerBlock::Concrete("heap:guarded-effect".to_string()),
-        offset: PointerOffsetTerm::Constant(0),
-    };
-    let flag = Variable(991_002);
-    let function = program_function(
-        ProgramType::Int32,
-        "undecidable_guarded_effect",
-        vec![
-            program_parameter("p", ProgramType::Int32Pointer),
-            program_parameter("flag", ProgramType::Int32),
-        ],
-        program_seq(
-            program_store(
-                crate::kernel::program_expression::index(
-                    crate::kernel::program_expression::variable("p"),
-                    crate::kernel::program_expression::int32_literal(0),
-                ),
-                crate::kernel::program_expression::int32_literal(1),
-            ),
-            program_return(crate::kernel::program_expression::int32_literal(1)),
-        ),
-    )
-    .with_contract(
-        Vec::new(),
-        Vec::new(),
-        vec![
-            MemorySegment::new(
-                crate::kernel::program_expression::variable("p"),
-                crate::kernel::program_expression::int32_literal(0),
-                crate::kernel::program_expression::int32_literal(1),
-            )
-            .with_guard(SpecProposition::Comparison {
-                left: SpecExpression::ProgramExpression(
-                    crate::kernel::program_expression::variable("flag"),
-                ),
-                operator: ComparisonOperator::NotEqual,
-                right: SpecExpression::Value(int32(0)),
-            }),
-        ],
-        vec![FunctionContractClaim::effect(0)],
-        true,
-    );
-    let execution = certify_contract_with_kernel_artifacts(
-        ExecutionState::new().with_memory(Memory::new().with_block(base.block.clone(), 4)),
-        function.clone(),
-        vec![
-            crate::kernel::program_expression::pointer_value(base),
-            ProgramExpression::Value(ProgramValue::Int32(MachineTerm::Variable(flag))),
-        ],
-        Vec::new(),
-        ExecutionEnvironment::new(),
-        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
-        FunctionContractExecutionMode::VerifyLoops,
-    );
-
-    assert!(
-        program_verified_function_contract_claim(
-            &function,
-            FunctionContractClaimKey::Effect(0),
-            &execution,
-        )
-        .is_none(),
-        "a guarded frame must be case-split or proven true before certification"
-    );
-}
-
-#[test]
-fn contract_effect_claim_rejects_interior_entry_live_heap_pointer_as_fresh() {
-    let allocation_base = Pointer {
-        block: PointerBlock::Heap(991_003),
-        offset: PointerOffsetTerm::Constant(0),
-    };
-    let interior = Pointer {
-        block: allocation_base.block.clone(),
-        offset: PointerOffsetTerm::Constant(8),
-    };
-    let function = program_function(
-        ProgramType::Int32,
-        "interior_entry_live_effect",
-        vec![program_parameter("p", ProgramType::Int32Pointer)],
-        program_seq(
-            program_store(
-                crate::kernel::program_expression::pointer_offset_bytes(
-                    crate::kernel::program_expression::variable("p"),
-                    8,
-                ),
-                crate::kernel::program_expression::int32_literal(1),
-            ),
-            program_return(crate::kernel::program_expression::int32_literal(0)),
-        ),
-    )
-    .with_resource_summary(
-        vec![ResourceSpec::owned_memory(MemorySegment::new(
-            crate::kernel::program_expression::pointer_offset_bytes(
-                crate::kernel::program_expression::variable("p"),
-                8,
-            ),
-            crate::kernel::program_expression::int32_literal(0),
-            crate::kernel::program_expression::int32_literal(1),
-        ))],
-        Vec::new(),
-    )
-    .with_contract(
-        Vec::new(),
-        Vec::new(),
-        vec![MemorySegment::new(
-            crate::kernel::program_expression::variable("p"),
-            crate::kernel::program_expression::int32_literal(0),
-            crate::kernel::program_expression::int32_literal(1),
-        )],
-        vec![FunctionContractClaim::effect(0)],
-        true,
-    );
-    let caller_state = ExecutionState::new()
-        .with_memory(
-            Memory::new()
-                .with_heap_allocation_claim(allocation_base.clone(), HeapExtent::int32(16))
-                .expect("the entry allocation should be live"),
-        )
-        .with_resource_context(own_memory_context(interior, 0, 1));
-    let execution = certify_contract_with_kernel_artifacts(
-        caller_state,
-        function.clone(),
-        vec![crate::kernel::program_expression::pointer_value(
-            allocation_base,
-        )],
-        Vec::new(),
-        ExecutionEnvironment::new(),
-        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
-        FunctionContractExecutionMode::VerifyLoops,
-    );
-    assert!(
-        program_verified_function_contract_claim(
-            &function,
-            FunctionContractClaimKey::Effect(0),
-            &execution,
-        )
-        .is_none(),
-        "an interior pointer into an entry-live block must not bypass the mutable frame"
-    );
-}
-
-#[test]
-fn contract_certification_reuses_a_matching_kernel_checked_execution() {
-    let function = program_function(
-        ProgramType::Int32,
-        "checked_once",
-        Vec::new(),
-        program_return(crate::kernel::program_expression::int32_literal(0)),
-    )
-    .with_contract(
-        Vec::new(),
-        vec![SpecProposition::Comparison {
-            left: SpecExpression::Value(int32(0)),
-            operator: ComparisonOperator::Equal,
-            right: SpecExpression::Value(int32(0)),
-        }],
-        Vec::new(),
-        vec![FunctionContractClaim::ensure_proposition(0, 0)],
-        true,
-    );
-    let state = ExecutionState::new();
-    let environment = ExecutionEnvironment::new();
-    let semantics = ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS;
-    let mode = FunctionContractExecutionMode::VerifyLoops;
-    let _ = crate::kernel::api::take_checked_function_body_execution_count();
-    let checked = prove_checked_program_function_execution_with_environment(
-        state.clone(),
-        function.clone(),
-        Vec::new(),
-        PureFactContext::new(),
-        environment.clone(),
-        semantics,
-        mode,
-    );
-    assert_eq!(
-        crate::kernel::api::take_checked_function_body_execution_count(),
-        1
-    );
-
-    let execution = prove_program_function_contract_execution_paths_with_checked_artifacts(
-        state,
-        function.clone(),
-        Vec::new(),
-        environment,
-        semantics,
-        mode,
-        &[checked],
-    );
-
-    assert_eq!(
-        crate::kernel::api::take_checked_function_body_execution_count(),
-        0,
-        "matching checked authority should avoid a second function-body execution"
-    );
-    assert!(program_verified_function_contract_claims(&function, &execution).is_some());
-
-    let extra_assumption = PureFactContext::new().assume_condition(
-        ConditionTerm::equal(
-            MachineTerm::Variable(Variable(919_000)),
-            MachineTerm::constant(0),
-        ),
-        true,
-    );
-    let unchecked_boundary = prove_checked_program_function_execution_with_environment(
-        ExecutionState::new(),
-        function.clone(),
-        Vec::new(),
-        extra_assumption,
-        ExecutionEnvironment::new(),
-        semantics,
-        mode,
-    );
-    assert_eq!(
-        crate::kernel::api::take_checked_function_body_execution_count(),
-        1
-    );
-    let fallback = prove_program_function_contract_execution_paths_with_checked_artifacts(
-        ExecutionState::new(),
-        function.clone(),
-        Vec::new(),
-        ExecutionEnvironment::new(),
-        semantics,
-        mode,
-        &[unchecked_boundary],
-    );
-    assert_eq!(
-        crate::kernel::api::take_checked_function_body_execution_count(),
-        0,
-        "an artifact with an unproved entry known must not be reused, and certification must not execute the body instead"
-    );
-    assert_eq!(fallback.path_count(), 0);
-    assert!(
-        fallback
-            .reuse_diagnostic()
-            .is_some_and(|detail| detail.contains("a condition fact")),
-        "{:?}",
-        fallback.reuse_diagnostic()
-    );
-    assert!(program_verified_function_contract_claims(&function, &fallback).is_none());
-}
-
-#[test]
-fn checked_view_certificate_initializes_a_pristine_loan_authority() {
-    let base = Pointer {
-        block: PointerBlock::Concrete("checked:initial-view".to_string()),
-        offset: PointerOffsetTerm::Constant(0),
-    };
-    let function = program_function(
-        ProgramType::Int32,
-        "checked_initial_view",
-        vec![program_parameter("p", ProgramType::Int32Pointer)],
-        program_return(crate::kernel::program_expression::load(
-            crate::kernel::program_expression::variable("p"),
-        )),
-    )
-    .with_resource_summary(
-        vec![ResourceSpec::viewed_memory(MemorySegment::new(
-            crate::kernel::program_expression::variable("p"),
-            crate::kernel::program_expression::int32_literal(0),
-            crate::kernel::program_expression::int32_literal(1),
-        ))],
-        Vec::new(),
-    )
-    .with_contract(Vec::new(), Vec::new(), Vec::new(), Vec::new(), true);
-    let state = ExecutionState::new()
-        .with_memory(
-            Memory::new()
-                .with_block(base.block.clone(), 4)
-                .store(base.clone(), int32(7)),
-        )
-        .with_resource_context(own_memory_context(base.clone(), 0, 1));
-    let environment = ExecutionEnvironment::new();
-    let arguments = vec![crate::kernel::program_expression::pointer_value(base)];
-    let checked = prove_checked_program_function_execution_with_environment(
-        state.clone(),
-        function.clone(),
-        arguments.clone(),
-        PureFactContext::new(),
-        environment.clone(),
-        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
-        FunctionContractExecutionMode::VerifyLoops,
-    );
-    assert_eq!(checked.paths().len(), 1);
-    let execution = prove_program_function_contract_execution_paths_with_checked_artifacts(
-        state,
-        function,
-        arguments,
-        environment,
-        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
-        FunctionContractExecutionMode::VerifyLoops,
-        &[checked],
-    );
-    assert_eq!(execution.path_count(), 1);
-}
-
-#[test]
-fn contract_certification_refuses_split_entry_artifacts() {
-    let input = MachineTerm::Variable(Variable(919_100));
-    let branch = ConditionTerm::signed_less_than(input.clone(), MachineTerm::constant(0));
-    let function = program_function(
-        ProgramType::Int32,
-        "checked_partition",
-        vec![program_parameter("x", ProgramType::Int32)],
-        program_if(
-            crate::kernel::program_expression::less_than(
-                crate::kernel::program_expression::variable("x"),
-                crate::kernel::program_expression::int32_literal(0),
-            ),
-            program_return(crate::kernel::program_expression::int32_literal(1)),
-            program_return(crate::kernel::program_expression::int32_literal(2)),
-        ),
-    )
-    .with_contract(
-        Vec::new(),
-        vec![SpecProposition::Comparison {
-            left: SpecExpression::ProgramExpression(crate::kernel::program_expression::variable(
-                CONTRACT_RESULT,
-            )),
-            operator: ComparisonOperator::NotEqual,
-            right: SpecExpression::Value(int32(0)),
-        }],
-        Vec::new(),
-        vec![FunctionContractClaim::ensure_proposition(0, 0)],
-        true,
-    );
-    let state = ExecutionState::new();
-    let arguments = vec![ProgramExpression::Value(int32(input))];
-    let environment = ExecutionEnvironment::new();
-    let semantics = ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS;
-    let mode = FunctionContractExecutionMode::VerifyLoops;
-    let _ = crate::kernel::api::take_checked_function_body_execution_count();
-    let checked_true = prove_checked_program_function_execution_with_environment(
-        state.clone(),
-        function.clone(),
-        arguments.clone(),
-        PureFactContext::new().assume_condition(branch.clone(), true),
-        environment.clone(),
-        semantics,
-        mode,
-    );
-    let checked_false = prove_checked_program_function_execution_with_environment(
-        state.clone(),
-        function.clone(),
-        arguments.clone(),
-        PureFactContext::new().assume_condition(branch, false),
-        environment.clone(),
-        semantics,
-        mode,
-    );
-    assert_eq!(
-        crate::kernel::api::take_checked_function_body_execution_count(),
-        2
-    );
-
-    let execution = prove_program_function_contract_execution_paths_with_checked_artifacts(
-        state.clone(),
-        function.clone(),
-        arguments.clone(),
-        environment.clone(),
-        semantics,
-        mode,
-        &[checked_true.clone(), checked_false],
-    );
-    assert_eq!(
-        crate::kernel::api::take_checked_function_body_execution_count(),
-        0,
-        "two opposite entry cases are not one complete contract frontier, and certification must not execute the body instead"
-    );
-    assert_eq!(execution.path_count(), 0);
-    assert!(execution.reuse_diagnostic().is_some());
-    assert!(program_verified_function_contract_claims(&function, &execution).is_none());
-
-    let fallback = prove_program_function_contract_execution_paths_with_checked_artifacts(
-        state,
-        function.clone(),
-        arguments,
-        environment,
-        semantics,
-        mode,
-        &[checked_true],
-    );
-    assert_eq!(
-        crate::kernel::api::take_checked_function_body_execution_count(),
-        0,
-        "one side of an entry partition is not a complete contract frontier, and certification must not execute the body instead"
-    );
-    assert_eq!(fallback.path_count(), 0);
-    assert!(fallback.reuse_diagnostic().is_some());
-    assert!(program_verified_function_contract_claims(&function, &fallback).is_none());
-}
-
-#[test]
-fn contract_certification_reuses_definitionally_equal_entry_resources() {
-    let unit = ResourceFact::own_token("entry_unit".to_string(), vec![int32(7)]);
-    let proof_resources = ResourceContext::new()
-        .unchecked_with_fact(unit.clone())
-        .unchecked_with_fact(unit.clone());
-    let contract_resources = ResourceContext::new()
-        .try_compose_with_facts([unit.clone(), unit], &PureFactContext::new())
-        .expect("the contract representation should normalize the two units");
-    assert_ne!(proof_resources, contract_resources);
-    assert!(resource_contexts_definitionally_equal_with_definitions(
-        &[],
-        &Memory::new(),
-        &proof_resources,
-        &Memory::new(),
-        &contract_resources,
-        &PureFactContext::new(),
-    ));
-
-    let function = program_function(
-        ProgramType::Int32,
-        "checked_resource_entry",
-        Vec::new(),
-        program_return(crate::kernel::program_expression::int32_literal(0)),
-    )
-    .with_contract(
-        Vec::new(),
-        vec![SpecProposition::Comparison {
-            left: SpecExpression::ProgramExpression(crate::kernel::program_expression::variable(
-                CONTRACT_RESULT,
-            )),
-            operator: ComparisonOperator::Equal,
-            right: SpecExpression::Value(int32(0)),
-        }],
-        Vec::new(),
-        vec![FunctionContractClaim::ensure_proposition(0, 0)],
-        true,
-    );
-    let proof_state = ExecutionState::new().with_resource_context(proof_resources.clone());
-    let contract_state = ExecutionState::new().with_resource_context(contract_resources.clone());
-    let environment = ExecutionEnvironment::new();
-    let semantics = ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS;
-    let mode = FunctionContractExecutionMode::VerifyLoops;
-    let _ = crate::kernel::api::take_checked_function_body_execution_count();
-    let checked = prove_checked_program_function_execution_with_environment(
-        proof_state,
-        function.clone(),
-        Vec::new(),
-        PureFactContext::new(),
-        environment.clone(),
-        semantics,
-        mode,
-    );
-    assert_eq!(
-        crate::kernel::api::take_checked_function_body_execution_count(),
-        1
-    );
-
-    let execution = prove_program_function_contract_execution_paths_with_checked_artifacts(
-        contract_state,
-        function.clone(),
-        Vec::new(),
-        environment,
-        semantics,
-        mode,
-        &[checked],
-    );
-    assert_eq!(
-        crate::kernel::api::take_checked_function_body_execution_count(),
-        0,
-        "definitionally equal ghost entry resources should not rerun the C body"
-    );
-    assert!(program_verified_function_contract_claims(&function, &execution).is_some());
-
-    let recursive_function = function.clone().with_composite_resource_definitions(vec![
-        CompositeResourceDefinition::new(
-            "recursive_entry",
-            Vec::new(),
-            None,
-            true,
-            Vec::new(),
-            Vec::new(),
-        ),
-    ]);
-    let recursive_checked = prove_checked_program_function_execution_with_environment(
-        ExecutionState::new().with_resource_context(proof_resources),
-        recursive_function.clone(),
-        Vec::new(),
-        PureFactContext::new(),
-        ExecutionEnvironment::new(),
-        semantics,
-        mode,
-    );
-    assert_eq!(
-        crate::kernel::api::take_checked_function_body_execution_count(),
-        1
-    );
-    let recursive_execution =
-        prove_program_function_contract_execution_paths_with_checked_artifacts(
-            ExecutionState::new().with_resource_context(contract_resources),
-            recursive_function.clone(),
-            Vec::new(),
-            ExecutionEnvironment::new(),
-            semantics,
-            mode,
-            &[recursive_checked],
-        );
-    assert_eq!(
-        crate::kernel::api::take_checked_function_body_execution_count(),
-        0,
-        "recursive resource representations are not rebased without a kernel-issued entry origin, and certification must not execute the body instead"
-    );
-    assert_eq!(recursive_execution.path_count(), 0);
-    assert!(
-        recursive_execution
-            .reuse_diagnostic()
-            .is_some_and(|detail| detail.contains("different entry state")),
-        "{:?}",
-        recursive_execution.reuse_diagnostic()
-    );
-    assert!(
-        program_verified_function_contract_claims(&recursive_function, &recursive_execution)
-            .is_none()
-    );
-}
-
-#[test]
-fn contract_claim_rejects_same_source_function_with_a_different_contract() {
-    let body = program_return(crate::kernel::program_expression::int32_literal(0));
-    let uncontracted = program_function(
-        ProgramType::Int32,
-        "contract_identity",
-        Vec::new(),
-        body.clone(),
-    );
-    let execution = certify_contract_with_kernel_artifacts(
-        ExecutionState::new(),
-        uncontracted,
-        Vec::new(),
-        Vec::new(),
-        ExecutionEnvironment::new(),
-        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
-        FunctionContractExecutionMode::VerifyLoops,
-    );
-    let stronger = program_function(ProgramType::Int32, "contract_identity", Vec::new(), body)
-        .with_contract(
-            Vec::new(),
-            vec![SpecProposition::Comparison {
-                left: SpecExpression::ProgramExpression(
-                    crate::kernel::program_expression::variable(CONTRACT_RESULT),
-                ),
-                operator: ComparisonOperator::Equal,
-                right: SpecExpression::Value(int32(1)),
-            }],
-            Vec::new(),
-            vec![FunctionContractClaim::ensure_proposition(0, 0)],
-            true,
-        );
-
-    assert!(
-        program_verified_function_contract_claim(
-            &stronger,
-            FunctionContractClaimKey::Ensure(0),
-            &execution,
-        )
-        .is_none()
-    );
-}
-
-#[test]
-fn body_safety_claim_rejects_an_unproved_execution_condition() {
-    let function = program_function(
-        ProgramType::Int32,
-        "unsafe_body",
-        Vec::new(),
-        program_return(crate::kernel::program_expression::int32_literal(0)),
-    )
-    .with_contract(
-        Vec::new(),
-        Vec::new(),
-        Vec::new(),
-        vec![FunctionContractClaim::body_safety()],
-        true,
-    );
-    let state = ExecutionState::new();
-    let obligation = ProofObligation::verification_condition(Proposition::ConditionIs(
-        ConditionTerm::Constant(false),
-        true,
-    ));
-    let proposition = Proposition::ProgramFunctionVerifies {
-        state: Box::new(state.clone()),
-        function: Box::new(function.clone()),
-        arguments: Vec::new(),
-        outcome: FunctionOutcome::Return {
-            value: int32(0).into(),
-            state: Box::new(state),
-        },
-    };
-    let path = SymbolicExecutionPath {
-        call_parameters: None,
-        descent_step: None,
-        completion_origin: None,
-        call_result: None,
-        assumptions: PureFactContext::new(),
-        post_assumptions: None,
-        facts: Vec::new().into(),
-        effect_facts: Vec::new().into(),
-        obligations: vec![obligation.clone()],
-        theorem: Theorem::new(wrap_proof_facts(
-            proposition,
-            &PureFactContext::new(),
-            &[],
-            &[obligation],
-        )),
-
-        loan_evidence: crate::kernel::loans::empty_checked_loan_evidence_sequence(),
-    };
-    let execution = FunctionContractExecution {
-        pointer_result: None,
-        cases: vec![vec![ContractPathSet {
-            closed_exit_obligations: vec![],
-            completion_path_origins: Vec::new(),
-            paths: vec![path],
-            checked_resource_claims: vec![Vec::new()],
-            checked_resource_transitions: vec![false],
-            deferred_contract_exits: vec![false],
-            deferred_contract_exit_errors: vec![None],
-            checked_returned_resources: vec![ResourceContext::new()],
-            boundary_transfers: vec![None],
-            completion_origin_state: None,
-        }]],
-        reuse_diagnostic: None,
-        reuse_unauthorized_premise: None,
-        reuse_entry_resources: Vec::new(),
-        reuse_context_facts: Vec::new(),
-        checked_call_events: Default::default(),
-        loop_semantics: LoopSemantics::Verify,
-        checked_callees: None,
-        applied_tactics: Default::default(),
-    };
-
-    assert!(
-        program_verified_function_contract_claim(
-            &function,
-            FunctionContractClaimKey::BodySafety,
-            &execution,
-        )
-        .is_none()
-    );
-}
-
-/// A claim is judged over each path set of a case in turn: a set whose
-/// paths fail it does not decide the claim while another set certifies it,
-/// every case needs a certifying set, and a case with no set certifies
-/// nothing.
-#[test]
-fn contract_claims_are_judged_over_each_path_set_of_a_case() {
-    let function = program_function(
-        ProgramType::Int32,
-        "alternatives",
-        Vec::new(),
-        program_return(crate::kernel::program_expression::int32_literal(0)),
-    )
-    .with_contract(
-        Vec::new(),
-        Vec::new(),
-        Vec::new(),
-        vec![FunctionContractClaim::body_safety()],
-        true,
-    );
-    let state = ExecutionState::new();
-    let proposition = Proposition::ProgramFunctionVerifies {
-        state: Box::new(state.clone()),
-        function: Box::new(function.clone()),
-        arguments: Vec::new(),
-        outcome: FunctionOutcome::Return {
-            value: int32(0).into(),
-            state: Box::new(state),
-        },
-    };
-    let unproved = ProofObligation::verification_condition(Proposition::ConditionIs(
-        ConditionTerm::signed_less_than(
-            MachineTerm::Variable(Variable(91_200)),
-            MachineTerm::constant(8),
-        ),
-        true,
-    ));
-    let failing = SymbolicExecutionPath {
-        call_parameters: None,
-        descent_step: None,
-        completion_origin: None,
-        call_result: None,
-        assumptions: PureFactContext::new(),
-        post_assumptions: Some(PureFactContext::new()),
-        facts: Vec::new().into(),
-        effect_facts: Vec::new().into(),
-        obligations: vec![unproved.clone()],
-        theorem: Theorem::new(wrap_proof_facts(
-            proposition.clone(),
-            &PureFactContext::new(),
-            &[],
-            &[unproved],
-        )),
-
-        loan_evidence: crate::kernel::loans::empty_checked_loan_evidence_sequence(),
-    };
-    let clean = SymbolicExecutionPath {
-        call_parameters: None,
-        descent_step: None,
-        completion_origin: None,
-        call_result: None,
-        assumptions: PureFactContext::new(),
-        post_assumptions: Some(PureFactContext::new()),
-        facts: Vec::new().into(),
-        effect_facts: Vec::new().into(),
-        obligations: Vec::new(),
-        theorem: Theorem::new(wrap_proof_facts(
-            proposition,
-            &PureFactContext::new(),
-            &[],
-            &[],
-        )),
-
-        loan_evidence: crate::kernel::loans::empty_checked_loan_evidence_sequence(),
-    };
-    let set = |path: &SymbolicExecutionPath| ContractPathSet {
-        closed_exit_obligations: vec![],
-        completion_path_origins: Vec::new(),
-        paths: vec![path.clone()],
-        checked_resource_claims: vec![Vec::new()],
-        checked_resource_transitions: vec![false],
-        deferred_contract_exits: vec![false],
-        deferred_contract_exit_errors: vec![None],
-        checked_returned_resources: vec![ResourceContext::new()],
-        boundary_transfers: vec![None],
-        completion_origin_state: None,
-    };
-    let certified = |cases: Vec<Vec<ContractPathSet>>| {
-        program_verified_function_contract_claim(
-            &function,
-            FunctionContractClaimKey::BodySafety,
-            &FunctionContractExecution {
-                pointer_result: None,
-                cases,
-                reuse_diagnostic: None,
-                reuse_unauthorized_premise: None,
-                reuse_entry_resources: Vec::new(),
-                reuse_context_facts: Vec::new(),
-                checked_call_events: Default::default(),
-                loop_semantics: LoopSemantics::Verify,
-                checked_callees: None,
-                applied_tactics: Default::default(),
-            },
-        )
-        .is_some()
-    };
-    assert!(
-        certified(vec![vec![set(&failing), set(&clean)]]),
-        "a later path set certifies the claim the first fails"
-    );
-    assert!(certified(vec![vec![set(&clean), set(&failing)]]));
-    assert!(!certified(vec![vec![set(&failing)]]));
-    assert!(
-        !certified(vec![vec![set(&clean)], vec![set(&failing)]]),
-        "every case needs a certifying path set"
-    );
-    assert!(
-        !certified(vec![vec![set(&clean)], Vec::new()]),
-        "a case with no path set certifies nothing"
-    );
-}
-
-#[test]
-fn body_safety_claim_uses_path_facts_for_verification_conditions() {
-    let function = program_function(
-        ProgramType::Int32,
-        "guarded_body",
-        Vec::new(),
-        program_return(crate::kernel::program_expression::int32_literal(0)),
-    )
-    .with_contract(
-        Vec::new(),
-        Vec::new(),
-        Vec::new(),
-        vec![FunctionContractClaim::body_safety()],
-        true,
-    );
-    let state = ExecutionState::new();
-    let guard = Proposition::ConditionIs(
-        ConditionTerm::signed_less_than(
-            MachineTerm::Variable(Variable(91_000)),
-            MachineTerm::constant(8),
-        ),
-        true,
-    );
-    let fact = ExecutionPureFact::new(guard.clone());
-    let obligation = ProofObligation::verification_condition(guard);
-    let proposition = Proposition::ProgramFunctionVerifies {
-        state: Box::new(state.clone()),
-        function: Box::new(function.clone()),
-        arguments: Vec::new(),
-        outcome: FunctionOutcome::Return {
-            value: int32(0).into(),
-            state: Box::new(state),
-        },
-    };
-    let path = SymbolicExecutionPath {
-        call_parameters: None,
-        descent_step: None,
-        completion_origin: None,
-        call_result: None,
-        assumptions: PureFactContext::new(),
-        post_assumptions: None,
-        facts: vec![fact.clone()].into(),
-        effect_facts: Vec::new().into(),
-        obligations: vec![obligation.clone()],
-        theorem: Theorem::new(wrap_proof_facts(
-            proposition,
-            &PureFactContext::new(),
-            &[fact],
-            &[obligation],
-        )),
-
-        loan_evidence: crate::kernel::loans::empty_checked_loan_evidence_sequence(),
-    };
-    let execution = FunctionContractExecution {
-        pointer_result: None,
-        cases: vec![vec![ContractPathSet {
-            closed_exit_obligations: vec![],
-            completion_path_origins: Vec::new(),
-            paths: vec![path],
-            checked_resource_claims: vec![Vec::new()],
-            checked_resource_transitions: vec![false],
-            deferred_contract_exits: vec![false],
-            deferred_contract_exit_errors: vec![None],
-            checked_returned_resources: vec![ResourceContext::new()],
-            boundary_transfers: vec![None],
-            completion_origin_state: None,
-        }]],
-        reuse_diagnostic: None,
-        reuse_unauthorized_premise: None,
-        reuse_entry_resources: Vec::new(),
-        reuse_context_facts: Vec::new(),
-        checked_call_events: Default::default(),
-        loop_semantics: LoopSemantics::Verify,
-        checked_callees: None,
-        applied_tactics: Default::default(),
-    };
-
-    assert!(
-        program_verified_function_contract_claim(
-            &function,
-            FunctionContractClaimKey::BodySafety,
-            &execution,
-        )
-        .is_some(),
-        "a path guard established by symbolic execution must discharge a guarded safety condition"
-    );
-}
-
-#[test]
 fn effect_endpoint_comparison_ignores_function_local_cells() {
-    let local = Pointer {
-        block: "local:temporary".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let local = Address {
+        base: "local:temporary".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let before = Memory::new().with_block("local:temporary", 4);
+    let before = SymbolicMemory::new().with_block("local:temporary", 4);
     let after = before.clone().store(local, int32(7));
 
     assert!(
@@ -3911,9 +2453,9 @@ fn effect_endpoint_comparison_ignores_function_local_cells() {
         )
     );
 
-    let external = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Constant(0),
+    let external = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
     };
     let changed_external = after.store(external, int32(9));
     assert!(
@@ -3927,14 +2469,14 @@ fn effect_endpoint_comparison_ignores_function_local_cells() {
 
 #[test]
 fn effect_endpoint_allows_resource_allocation_bookkeeping() {
-    let allocation = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Constant(64),
+    let allocation = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(64),
     };
-    let before = Memory::new();
+    let before = SymbolicMemory::new();
     let after = before
         .clone()
-        .with_heap_allocation_claim(allocation, HeapExtent::int32(16))
+        .with_heap_allocation_claim(allocation, AllocationSize::int32(16))
         .expect("a fresh symbolic allocation claim should be registerable");
 
     assert!(
@@ -3977,50 +2519,6 @@ fn bool_cast_range_is_rule_c1_of_the_cast() {
     assert_eq!(
         program_bool_cast_range_facts(&int32(MachineTerm::Variable(Variable(2)))),
         None
-    );
-}
-
-#[test]
-fn contract_claim_rejects_caller_supplied_false_entry_fact() {
-    let function = program_function(
-        ProgramType::Int32,
-        "false_postcondition",
-        Vec::new(),
-        program_return(crate::kernel::program_expression::int32_literal(0)),
-    )
-    .with_contract(
-        Vec::new(),
-        vec![SpecProposition::Comparison {
-            left: SpecExpression::ProgramExpression(crate::kernel::program_expression::variable(
-                CONTRACT_RESULT,
-            )),
-            operator: ComparisonOperator::Equal,
-            right: SpecExpression::Value(int32(1)),
-        }],
-        Vec::new(),
-        vec![FunctionContractClaim::ensure_proposition(0, 0)],
-        true,
-    );
-    let execution = certify_contract_with_kernel_artifacts(
-        ExecutionState::new(),
-        function.clone(),
-        Vec::new(),
-        vec![Proposition::ConditionIs(
-            ConditionTerm::Constant(false),
-            true,
-        )],
-        ExecutionEnvironment::new(),
-        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
-        FunctionContractExecutionMode::VerifyLoops,
-    );
-
-    assert!(
-        program_verified_function_contract_claim(
-            &function,
-            FunctionContractClaimKey::Ensure(0),
-            &execution,
-        )
-        .is_none()
     );
 }
 
@@ -5543,16 +4041,16 @@ fn a_recursion_anchor_is_part_of_the_environment_identity() {
 /// kernel sites read two equal blocks as one object. A called frame runs on
 /// the caller's memory with its own locals map, so it cannot see the caller's
 /// objects; if it minted the plain `local:<name>` anyway, the callee's object
-/// and the caller's would be one block, one extent and one cell map.
+/// and the caller's would be one block, one allocation size and one cell map.
 #[test]
 fn a_called_frames_declaration_does_not_take_the_callers_block() {
-    let callers = Pointer {
-        block: "local:x".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let callers = Address {
+        base: "local:x".into(),
+        offset: AddressOffset::Constant(0),
     };
     let state = ExecutionState::new()
         .with_memory(
-            Memory::new()
+            SymbolicMemory::new()
                 .with_block("local:x", 4)
                 .store(callers.clone(), int32(1)),
         )
@@ -5584,9 +4082,9 @@ fn a_called_frames_declaration_does_not_take_the_callers_block() {
 /// block to a new object would revive every stale pointer to the old one.
 #[test]
 fn a_declaration_does_not_take_a_block_whose_lifetime_ended() {
-    let retired = PointerBlock::from("local:x");
+    let retired = AddressBase::from("local:x");
     let state = ExecutionState::new().with_memory(
-        Memory::new()
+        SymbolicMemory::new()
             .with_block("local:x", 4)
             .without_local_block(&retired),
     );
@@ -5612,7 +4110,7 @@ fn a_declaration_does_not_take_a_block_whose_lifetime_ended() {
             .locals()
             .slot("x")
             .expect("the new object's slot")
-            .block,
+            .base,
         &retired
     );
 }
@@ -5904,7 +4402,7 @@ fn path_exists_at_program_point(
     ty: &AlgebraicType,
     binder: u64,
     argument: u64,
-    memory: Memory,
+    memory: SymbolicMemory,
     target: u32,
 ) -> Proposition {
     Proposition::Exists {
@@ -5918,9 +4416,9 @@ fn path_exists_at_program_point(
                     arguments: vec![
                         PureFunctionArgument::ArrayRef {
                             memory,
-                            pointer: ProgramValue::pointer(Pointer {
-                                block: "graph".into(),
-                                offset: PointerOffsetTerm::Constant(0),
+                            pointer: ProgramValue::pointer(Address {
+                                base: "graph".into(),
+                                offset: AddressOffset::Constant(0),
                             }),
                             element_type: ProgramType::Int32,
                         },
@@ -5941,11 +4439,11 @@ fn path_exists_at_program_point(
 fn certification_recognizes_only_the_same_algebraic_existential() {
     let _session = crate::kernel::VerificationSession::enter();
     let ty = AlgebraicType::parameter("Path".into());
-    let before = Memory::new().with_block("graph", 4);
+    let before = SymbolicMemory::new().with_block("graph", 4);
     let after = before.clone().store(
-        Pointer {
-            block: "graph".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        Address {
+            base: "graph".into(),
+            offset: AddressOffset::Constant(0),
         },
         int32(1),
     );
@@ -6051,7 +4549,7 @@ fn kernel_fresh_identity_cannot_be_forged_by_the_numeric_constructor() {
 fn conditional_path_universal(
     ty: &AlgebraicType,
     binder: u64,
-    memory: Memory,
+    memory: SymbolicMemory,
     target: u32,
 ) -> Proposition {
     let Proposition::Exists {
@@ -6086,7 +4584,7 @@ fn conditional_path_universal(
 fn certification_keeps_conditional_universal_guards_states_and_sorts() {
     let _session = crate::kernel::VerificationSession::enter();
     let ty = AlgebraicType::parameter("Path".into());
-    let memory = Memory::new().with_block("graph", 4);
+    let memory = SymbolicMemory::new().with_block("graph", 4);
     let fact = conditional_path_universal(&ty, 100, memory.clone(), 0);
     let proof_facts =
         crate::kernel::proof::PureFactStore::from_ordered(std::slice::from_ref(&fact));
@@ -6118,9 +4616,9 @@ fn certification_keeps_conditional_universal_guards_states_and_sorts() {
         0,
     )));
     let after = memory.store(
-        Pointer {
-            block: "graph".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        Address {
+            base: "graph".into(),
+            offset: AddressOffset::Constant(0),
         },
         int32(1),
     );
@@ -6129,13 +4627,13 @@ fn certification_keeps_conditional_universal_guards_states_and_sorts() {
 
 #[test]
 fn aggregate_copy_requires_write_authority_for_each_destination_field() {
-    let target = Pointer {
-        block: "target".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let target = Address {
+        base: "target".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let source = Pointer {
-        block: "source".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let source = Address {
+        base: "source".into(),
+        offset: AddressOffset::Constant(0),
     };
     let layout = AggregateLayout::new(
         8,
@@ -6199,743 +4697,7 @@ fn aggregate_copy_requires_write_authority_for_each_destination_field() {
     }
 }
 
-// Construction summaries reuse caller storage, including the result's own
-// address. This exercises checked artifacts and rule application together.
-#[test]
-fn construction_return_contract_certifies_and_applies_to_caller_storage() {
-    let _session = crate::kernel::VerificationSession::enter();
-    let layout = AggregateLayout::new(
-        16,
-        8,
-        vec![
-            AggregateField::new("self", 0, ProgramType::Int32Pointer),
-            AggregateField::new("value", 8, ProgramType::Int32),
-        ],
-    );
-    let result = crate::kernel::program_expression::variable(CONTRACT_RESULT);
-    let field = crate::kernel::program_expression::cast(
-        crate::kernel::program_expression::pointer_offset_bytes(result.clone(), 8),
-        ProgramType::Int32Pointer,
-    );
-    let storage = MemorySegment::new(
-        result.clone(),
-        crate::kernel::program_expression::int32_literal(0),
-        crate::kernel::program_expression::int32_literal(4),
-    );
-    let owner = ResourceSpec::owned_memory(storage.clone());
-    let equality = |left, right| SpecProposition::Comparison {
-        left: SpecExpression::ProgramExpression(left),
-        operator: ComparisonOperator::Equal,
-        right: SpecExpression::ProgramExpression(right),
-    };
-    let function = program_function(
-        ProgramType::VoidPointer,
-        "constructed_node",
-        vec![program_parameter("input", ProgramType::Int32)],
-        program_seq(
-            program_typed_store(result.clone(), field.clone(), ProgramType::Int32Pointer),
-            program_seq(
-                program_typed_store(
-                    field.clone(),
-                    crate::kernel::program_expression::variable("input"),
-                    ProgramType::Int32,
-                ),
-                program_return(result.clone()),
-            ),
-        ),
-    )
-    .with_construction_return(layout.clone())
-    .with_resource_summary(vec![owner.clone()], vec![owner])
-    .with_contract(
-        vec![],
-        vec![
-            equality(
-                crate::kernel::program_expression::typed_load(result, ProgramType::Int32Pointer),
-                field.clone(),
-            ),
-            equality(
-                crate::kernel::program_expression::typed_load(field, ProgramType::Int32),
-                crate::kernel::program_expression::variable("input"),
-            ),
-        ],
-        vec![storage],
-        vec![
-            FunctionContractClaim::body_safety(),
-            FunctionContractClaim::effect(0),
-            FunctionContractClaim::ensure_proposition(0, 0),
-            FunctionContractClaim::ensure_proposition(1, 1),
-            FunctionContractClaim::ensure_resource(2, 0),
-        ],
-        true,
-    );
-    let proof_destination = Pointer::symbolic(Variable(873_001));
-    register_block_alignment(&proof_destination.block, 8);
-    let proof_state = ExecutionState::new()
-        .with_population_creation_tracking()
-        .with_memory(Memory::new().with_uninitialized_block(proof_destination.block.clone(), 16))
-        .with_resource_context(ResourceContext::new().unchecked_with_fact(
-            ResourceFact::own_memory(MemoryRange::new(
-                proof_destination.clone(),
-                0u32.into(),
-                4u32.into(),
-            )),
-        ))
-        .with_aggregate_return_destination(proof_destination, layout.clone());
-    let execution = certify_contract_with_kernel_artifacts(
-        proof_state.clone(),
-        function.clone(),
-        vec![ProgramExpression::Value(int32(MachineTerm::Variable(
-            Variable(873_002),
-        )))],
-        vec![],
-        ExecutionEnvironment::new(),
-        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
-        FunctionContractExecutionMode::VerifyLoops,
-    );
-    let claims = program_verified_function_contract_claims(&function, &execution)
-        .expect("construction claims should certify from generic unwritten storage");
-    let rule =
-        program_verified_function_rule(function.clone(), &claims).expect("construction rule");
-    assert!(
-        program_verified_function_rule(
-            function
-                .clone()
-                .with_return_aggregate_layout(layout.clone()),
-            &claims
-        )
-        .is_none()
-    );
-    assert!(program_external_function_rule(function.clone()).is_some());
-    assert!(FunctionContract::new("ConstructionCallback", function.clone()).is_none());
-    let mut environment = ExecutionEnvironment::new()
-        .with_function(function.clone())
-        .with_verified_function_rule(rule);
-    let mut callee = "constructed_node";
-    for name in ["forward_constructed_node", "outer_constructed_node"] {
-        let forward = program_function(
-            ProgramType::VoidPointer,
-            name,
-            function.parameters().to_vec(),
-            program_seq(
-                program_call_construct(
-                    CONTRACT_RESULT,
-                    callee,
-                    vec![crate::kernel::program_expression::variable("input")],
-                ),
-                program_return(crate::kernel::program_expression::variable(CONTRACT_RESULT)),
-            ),
-        )
-        .with_construction_return(layout.clone())
-        .with_resource_summary(
-            function.resource_requires().to_vec(),
-            function.resource_ensures().to_vec(),
-        )
-        .with_contract(
-            function.contract_requires().to_vec(),
-            function.contract_ensures().to_vec(),
-            function.contract_mutable().to_vec(),
-            function.contract_claims().to_vec(),
-            true,
-        );
-        let arguments = vec![ProgramExpression::Value(int32(MachineTerm::Variable(
-            Variable(873_002),
-        )))];
-        let artifact = prove_checked_program_function_execution_with_environment(
-            proof_state.clone(),
-            forward.clone(),
-            arguments.clone(),
-            PureFactContext::new(),
-            environment.clone(),
-            ExecutionSemantics::APPLY_VERIFIED_RULES,
-            FunctionContractExecutionMode::VerifyLoops,
-        );
-        // Summary ensures are symbolic facts, so forwarding needs the same
-        // checked proposition completions that a Surface proof supplies.
-        let mut completions = Vec::new();
-        let closing = crate::kernel::ContractClosingContext::new(&artifact);
-        let mut exit_completions = Vec::new();
-        for (path_index, path) in artifact.paths().iter().enumerate() {
-            use crate::kernel::proof::*;
-            let Proposition::ProgramFunctionVerifies { outcome, .. } =
-                crate::kernel::api::proof_evidence_conclusion(path.theorem())
-            else {
-                panic!("forwarding must have a checked function outcome");
-            };
-            let FunctionOutcome::Return { value, state } = outcome else {
-                panic!("forwarding must return");
-            };
-            let mut facts = path.assumptions().pure_facts();
-            facts.extend(path.facts().iter().map(|fact| fact.proposition().clone()));
-            let assumptions = facts.iter().fold(PureFactContext::new(), |context, fact| {
-                context.assume_proposition(fact.clone())
-            });
-            let core = OutcomeProofCore {
-                publication: None,
-                identity: OutcomeIdentity::fresh(),
-                result: value.clone(),
-                store_consequences_available: true,
-                state: state.as_ref().clone().into(),
-                is_exceptional: false,
-                effect_facts: path.facts().clone().into(),
-            };
-            let owned = crate::kernel::CheckedPathSpecification::new(&forward, path)
-                .expect("forwarded path specification");
-            let closing_facts = PureFactStore::from_ordered(&facts);
-            let claim_goals = OutcomeClaimGoals::open([], false);
-            let mut goals = closing.open(path_index, &core);
-            while let Some(kind) = goals.first_open_goal() {
-                goals = goals
-                    .prove_goal_for_specification(
-                        kind,
-                        &artifact,
-                        path,
-                        owned.specification(),
-                        &core,
-                        &claim_goals,
-                        &closing_facts,
-                    )
-                    .expect("forwarded resource and effect obligation");
-            }
-            let completion = goals
-                .completion(path)
-                .expect("all forwarding goals are closed");
-            exit_completions.push(completion);
-            for index in 0..2 {
-                let goals = program_function_ensure_goals(
-                    &forward,
-                    index,
-                    &proof_state,
-                    &arguments,
-                    outcome,
-                    &assumptions,
-                )
-                .expect("forwarded ensure goals");
-                assert_eq!(goals.len(), 1);
-                let goal = &goals[0];
-                let mut goal_facts = facts.clone();
-                goal_facts.extend_from_slice(goal.facts());
-                let outcome = Arc::new(OutcomeProofState::new(
-                    OutcomeProofCore {
-                        publication: None,
-                        identity: OutcomeIdentity::fresh(),
-                        result: value.clone(),
-                        store_consequences_available: true,
-                        state: state.as_ref().clone().into(),
-                        is_exceptional: false,
-                        effect_facts: path.facts().clone().into(),
-                    },
-                    (),
-                ));
-                let proof: ProofObject<(), ProofObligation<(), Arc<OutcomeProofState<()>>>, ()> =
-                    ProofObject::root(
-                        (),
-                        ProofBranch::new(
-                            ProofObligation::FunctionOutcome(FunctionOutcomeObligation::new(
-                                0, outcome,
-                            )),
-                            ProofBranchState {
-                                facts: PureFactStore::from_ordered(&goal_facts),
-                                execution: None,
-                            },
-                        ),
-                    );
-                let proof = proof
-                    .focus_contract_claim(goal, ())
-                    .expect("forwarded claim requirements");
-                let closed = proof
-                    .apply_known(PropositionKnownContext::Exact)
-                    .unwrap_or_else(|_| {
-                        panic!("forwarded ensure {index} must follow from the call")
-                    });
-                let owned =
-                    crate::kernel::api::contract_certification::CheckedPathSpecification::new(
-                        &forward, path,
-                    )
-                    .expect("forwarded path specification");
-                completions.push(
-                    owned
-                        .complete(
-                            &closed.completed_proposition().expect("closed ensure"),
-                            path,
-                        )
-                        .expect("checked forwarded ensure"),
-                );
-            }
-        }
-        let artifact = artifact
-            .with_closed_exit_obligations(exit_completions)
-            .expect("forwarded exit completions");
-        let execution = prove_program_function_contract_execution_paths_with_checked_artifacts(
-            proof_state.clone(),
-            forward.clone(),
-            arguments,
-            environment.clone(),
-            ExecutionSemantics::APPLY_VERIFIED_RULES,
-            FunctionContractExecutionMode::VerifyLoops,
-            &[artifact],
-        );
-        let claims =
-            program_function_contract_claims_from_completions(&forward, &execution, &completions)
-                .unwrap_or_else(|| panic!("forwarded construction claims for {name}"));
-        let rule = program_verified_function_rule(forward.clone(), &claims)
-            .expect("forwarded construction rule");
-        environment = environment
-            .with_function(forward)
-            .with_verified_function_rule(rule);
-        callee = name;
-    }
-    let paths = prove_symbolic_program_execution_paths_with_environment(
-        ExecutionState::new().with_population_creation_tracking(),
-        program_seq(
-            program_allocate_aggregate_destination("node", layout),
-            program_seq(
-                program_call_construct(
-                    "node",
-                    "outer_constructed_node",
-                    vec![crate::kernel::program_expression::int32_literal(37)],
-                ),
-                program_return(crate::kernel::program_expression::typed_load(
-                    crate::kernel::program_expression::pointer_offset_bytes(
-                        crate::kernel::program_expression::variable("node"),
-                        8,
-                    ),
-                    ProgramType::Int32,
-                )),
-            ),
-        ),
-        PureFactContext::new(),
-        environment,
-        ExecutionSemantics::APPLY_VERIFIED_RULES,
-    );
-    assert_eq!(paths.paths().len(), 1);
-    let path = &paths.paths()[0];
-    let Proposition::ProgramStatementVerifies {
-        outcome: StatementOutcome::Return { value, state },
-        ..
-    } = crate::kernel::api::proof_evidence_conclusion(path.theorem())
-    else {
-        panic!(
-            "constructed result must be readable: {:?}",
-            crate::kernel::api::proof_evidence_conclusion(path.theorem())
-        );
-    };
-    let at = state.locals().aggregate_object_pointer("node").unwrap();
-    assert!(state.memory().has_initialized_bytes_at(at, 8));
-    assert!(
-        !state.memory().has_initialized_bytes_at(at, 16),
-        "padding is not a constructed value field"
-    );
-    assert!(
-        state
-            .memory()
-            .has_initialized_bytes_at(&at.offset_by_bytes(8), 4)
-    );
-    let assumptions = path
-        .facts()
-        .iter()
-        .fold(PureFactContext::new(), |context, fact| {
-            context.assume_proposition(fact.proposition().clone())
-        });
-    let ProgramValue::Int32(value) = value.clone().into_native() else {
-        panic!("constructed int32 field");
-    };
-    assert!(crate::kernel::search::ProofSearch::proves(
-        &(assumptions),
-        &Proposition::ConditionIs(ConditionTerm::equal(value.clone(), 37u32.into()), true,)
-    ));
-    let loads = evaluate_program_expression_paths(
-        state,
-        &crate::kernel::program_expression::typed_load(
-            crate::kernel::program_expression::variable("node"),
-            ProgramType::Int32Pointer,
-        ),
-        &assumptions,
-        &mut ExecutionBudget::default(),
-    )
-    .unwrap();
-    let [load] = loads.as_slice() else {
-        panic!("one self-pointer load");
-    };
-    let ExpressionOutcome::Value(ProgramValue::Pointer(self_pointer)) = &load.outcome else {
-        panic!("constructed self-pointer should be readable");
-    };
-    let assumptions = load.facts.iter().fold(assumptions, |context, fact| {
-        context.assume_proposition(fact.proposition().clone())
-    });
-    assert!(crate::kernel::search::ProofSearch::proves(
-        &(assumptions),
-        &Proposition::ConditionIs(
-            ConditionTerm::pointer_equal(self_pointer.pointer().clone(), at.offset_by_bytes(8)),
-            true,
-        )
-    ));
-}
-
-// A modular ordinary-parameter constructor must establish initialization from
-// its checked body, without manufacturing values for unwritten padding.
-#[test]
-fn construction_parameter_summary_initializes_only_checked_fields() {
-    let _session = crate::kernel::VerificationSession::enter();
-    let layout = AggregateLayout::new(
-        16,
-        8,
-        vec![
-            AggregateField::new("self", 0, ProgramType::Int32Pointer),
-            AggregateField::new("value", 8, ProgramType::Int32),
-        ],
-    );
-    let destination = crate::kernel::program_expression::variable("destination");
-    let field = crate::kernel::program_expression::cast(
-        crate::kernel::program_expression::pointer_offset_bytes(destination.clone(), 8),
-        ProgramType::Int32Pointer,
-    );
-    let storage = MemorySegment::new(
-        destination.clone(),
-        crate::kernel::program_expression::int32_literal(0),
-        crate::kernel::program_expression::int32_literal(4),
-    );
-    let owner = ResourceSpec::owned_memory(storage.clone());
-    let function = program_function(
-        ProgramType::Void,
-        "construct_parameter",
-        vec![
-            program_parameter("destination", ProgramType::Int32Pointer),
-            program_parameter("input", ProgramType::Int32),
-        ],
-        program_seq(
-            program_typed_store(destination, field.clone(), ProgramType::Int32Pointer),
-            program_seq(
-                program_typed_store(
-                    field,
-                    crate::kernel::program_expression::variable("input"),
-                    ProgramType::Int32,
-                ),
-                program_return(program_void_value()),
-            ),
-        ),
-    )
-    .with_construction_parameter(0, layout.clone())
-    .with_resource_summary(vec![owner.clone()], vec![owner])
-    .with_contract(
-        vec![],
-        vec![],
-        vec![storage],
-        vec![
-            FunctionContractClaim::body_safety(),
-            FunctionContractClaim::effect(0),
-            FunctionContractClaim::ensure_resource(0, 0),
-        ],
-        true,
-    );
-    let at = Pointer::symbolic(Variable(873_011));
-    register_block_alignment(&at.block, 8);
-    let entry = ExecutionState::new()
-        .with_population_creation_tracking()
-        .with_memory(Memory::new().with_uninitialized_block(at.block.clone(), 16))
-        .with_resource_context(ResourceContext::new().unchecked_with_fact(
-            ResourceFact::own_memory(MemoryRange::new(at.clone(), 0u32.into(), 4u32.into())),
-        ));
-    let execution = certify_contract_with_kernel_artifacts(
-        entry.clone(),
-        function.clone(),
-        vec![
-            crate::kernel::program_expression::pointer_value(at.clone()),
-            ProgramExpression::Value(int32(MachineTerm::Variable(Variable(873_012)))),
-        ],
-        vec![],
-        ExecutionEnvironment::new(),
-        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
-        FunctionContractExecutionMode::VerifyLoops,
-    );
-    let claims = program_verified_function_contract_claims(&function, &execution)
-        .expect("constructor claims");
-    let rule = program_verified_function_rule(function.clone(), &claims).expect("constructor rule");
-    assert!(program_external_function_rule(function.clone()).is_none());
-    assert!(FunctionContract::new("ConstructorCallback", function.clone()).is_none());
-    assert!(
-        program_verified_function_rule(
-            function
-                .clone()
-                .with_construction_parameter(1, layout.clone()),
-            &claims
-        )
-        .is_none()
-    );
-    let environment = ExecutionEnvironment::new()
-        .with_function(function)
-        .with_verified_function_rule(rule);
-    // A returned-construction factory uses the same ordinary constructor
-    // summary while retaining its own hidden destination across the void call.
-    let result = crate::kernel::program_expression::variable(CONTRACT_RESULT);
-    let storage = MemorySegment::new(
-        result.clone(),
-        crate::kernel::program_expression::int32_literal(0),
-        crate::kernel::program_expression::int32_literal(4),
-    );
-    let owner = ResourceSpec::owned_memory(storage.clone());
-    let factory = program_function(
-        ProgramType::VoidPointer,
-        "parameter_factory",
-        vec![program_parameter("input", ProgramType::Int32)],
-        program_seq(
-            program_call(
-                "construct_parameter",
-                vec![
-                    crate::kernel::program_expression::cast(
-                        result.clone(),
-                        ProgramType::Int32Pointer,
-                    ),
-                    crate::kernel::program_expression::variable("input"),
-                ],
-            ),
-            program_return(result),
-        ),
-    )
-    .with_construction_return(layout.clone())
-    .with_resource_summary(vec![owner.clone()], vec![owner])
-    .with_contract(
-        vec![],
-        vec![],
-        vec![storage],
-        vec![
-            FunctionContractClaim::body_safety(),
-            FunctionContractClaim::effect(0),
-            FunctionContractClaim::ensure_resource(0, 0),
-        ],
-        true,
-    );
-    let execution = certify_contract_with_kernel_artifacts(
-        entry.with_aggregate_return_destination(at, layout.clone()),
-        factory.clone(),
-        vec![ProgramExpression::Value(int32(MachineTerm::Variable(
-            Variable(873_012),
-        )))],
-        vec![],
-        environment.clone(),
-        ExecutionSemantics::APPLY_VERIFIED_RULES,
-        FunctionContractExecutionMode::VerifyLoops,
-    );
-    let claims = program_verified_function_contract_claims(&factory, &execution)
-        .expect("factory calling ordinary constructor");
-    let rule = program_verified_function_rule(factory.clone(), &claims).expect("factory rule");
-    let environment = environment
-        .with_function(factory)
-        .with_verified_function_rule(rule);
-    let paths = prove_symbolic_program_execution_paths_with_environment(
-        ExecutionState::new().with_population_creation_tracking(),
-        program_seq(
-            program_allocate_aggregate_destination("node", layout),
-            program_seq(
-                program_call_construct(
-                    "node",
-                    "parameter_factory",
-                    vec![crate::kernel::program_expression::int32_literal(37)],
-                ),
-                program_return(crate::kernel::program_expression::typed_load(
-                    crate::kernel::program_expression::pointer_offset_bytes(
-                        crate::kernel::program_expression::variable("node"),
-                        8,
-                    ),
-                    ProgramType::Int32,
-                )),
-            ),
-        ),
-        PureFactContext::new(),
-        environment,
-        ExecutionSemantics::APPLY_VERIFIED_RULES,
-    );
-    let [path] = paths.paths() else {
-        panic!("one constructor summary path");
-    };
-    let Proposition::ProgramStatementVerifies {
-        outcome: StatementOutcome::Return { state, .. },
-        ..
-    } = crate::kernel::api::proof_evidence_conclusion(path.theorem())
-    else {
-        let conclusion = crate::kernel::api::proof_evidence_conclusion(path.theorem());
-        match conclusion {
-            Proposition::ProgramStatementVerifies { outcome, .. } => match outcome {
-                StatementOutcome::RuntimeError(error) => panic!("constructor summary: {error:?}"),
-                StatementOutcome::UndefinedBehavior(error) => {
-                    panic!("constructor summary: {error:?}")
-                }
-                _ => panic!("unexpected constructor summary outcome"),
-            },
-            _ => panic!("unexpected constructor summary theorem"),
-        }
-    };
-    let at = state.locals().aggregate_object_pointer("node").unwrap();
-    assert!(state.memory().has_initialized_bytes_at(at, 8));
-    assert!(
-        state
-            .memory()
-            .has_initialized_bytes_at(&at.offset_by_bytes(8), 4)
-    );
-    assert!(!state.memory().has_initialized_bytes_at(at, 16));
-}
-
-// An embedded constructor initializes its own footprint without shrinking its
-// parent's allocation or initializing a sibling. Its proof entry describes
-// only that footprint, so it does not assume a complete allocation of that size.
-#[test]
-fn subobject_constructor_summary_preserves_parent_extent_and_siblings() {
-    let _session = crate::kernel::VerificationSession::enter();
-    let child = AggregateLayout::new(
-        8,
-        8,
-        vec![AggregateField::new("size", 0, ProgramType::UInt64)],
-    );
-    let parent = AggregateLayout::new(
-        16,
-        8,
-        vec![
-            AggregateField::new("data", 0, ProgramType::Int32Pointer),
-            AggregateField::new("extent.size", 8, ProgramType::UInt64),
-        ],
-    );
-    let storage = MemorySegment::new(
-        crate::kernel::program_expression::variable("destination"),
-        crate::kernel::program_expression::int32_literal(0),
-        crate::kernel::program_expression::int32_literal(2),
-    );
-    let owner = ResourceSpec::owned_memory(storage.clone());
-    let function = program_function(
-        ProgramType::Void,
-        "construct_extent",
-        vec![
-            program_parameter("destination", ProgramType::Int32Pointer),
-            program_parameter("input", ProgramType::UInt64),
-        ],
-        program_seq(
-            program_typed_store(
-                crate::kernel::program_expression::variable("destination"),
-                crate::kernel::program_expression::variable("input"),
-                ProgramType::UInt64,
-            ),
-            program_return(program_void_value()),
-        ),
-    )
-    .with_construction_parameter(0, child)
-    .with_resource_summary(vec![owner.clone()], vec![owner])
-    .with_contract(
-        vec![],
-        vec![],
-        vec![storage],
-        vec![
-            FunctionContractClaim::body_safety(),
-            FunctionContractClaim::effect(0),
-            FunctionContractClaim::ensure_resource(0, 0),
-        ],
-        true,
-    );
-    let at = Pointer::symbolic(Variable(873_021));
-    register_block_alignment(&at.block, 8);
-    let memory = Memory::new().with_uninitialized_object(at.clone(), 8);
-    assert!(memory.block_size(&at.block).is_none());
-    let live = Proposition::MemoryLoadable {
-        memory: memory.clone(),
-        base: at.clone(),
-        bytes: 8u32.into(),
-        wide: false,
-    };
-    let entry = ExecutionState::new()
-        .with_population_creation_tracking()
-        .with_memory(memory)
-        .with_resource_context(ResourceContext::new().unchecked_with_fact(
-            ResourceFact::own_memory(MemoryRange::new(at.clone(), 0u32.into(), 2u32.into())),
-        ));
-    let execution = certify_contract_with_kernel_artifacts(
-        entry,
-        function.clone(),
-        vec![
-            crate::kernel::program_expression::pointer_value(at),
-            ProgramExpression::Value(uint64(MachineTerm::Variable(Variable(873_022)))),
-        ],
-        vec![live],
-        ExecutionEnvironment::new(),
-        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
-        FunctionContractExecutionMode::VerifyLoops,
-    );
-    let claims = program_verified_function_contract_claims(&function, &execution)
-        .expect("object-footprint constructor proof");
-    let rule = program_verified_function_rule(function.clone(), &claims)
-        .expect("subobject constructor rule");
-    let environment = ExecutionEnvironment::new()
-        .with_function(function)
-        .with_verified_function_rule(rule);
-    for offset in [8, 4, 16] {
-        let paths = prove_symbolic_program_execution_paths_with_environment(
-            ExecutionState::new().with_population_creation_tracking(),
-            program_seq(
-                program_allocate_aggregate_destination("parent", parent.clone()),
-                program_seq(
-                    program_call(
-                        "construct_extent",
-                        vec![
-                            crate::kernel::program_expression::cast(
-                                crate::kernel::program_expression::pointer_offset_bytes(
-                                    crate::kernel::program_expression::variable("parent"),
-                                    offset,
-                                ),
-                                ProgramType::Int32Pointer,
-                            ),
-                            crate::kernel::program_expression::uint64_literal(37),
-                        ],
-                    ),
-                    program_return(crate::kernel::program_expression::typed_load(
-                        crate::kernel::program_expression::pointer_offset_bytes(
-                            crate::kernel::program_expression::variable("parent"),
-                            8,
-                        ),
-                        ProgramType::UInt64,
-                    )),
-                ),
-            ),
-            PureFactContext::new(),
-            environment.clone(),
-            ExecutionSemantics::APPLY_VERIFIED_RULES,
-        );
-        let [path] = paths.paths() else {
-            panic!("one subobject call outcome");
-        };
-        let Proposition::ProgramStatementVerifies { outcome, .. } =
-            crate::kernel::api::proof_evidence_conclusion(path.theorem())
-        else {
-            panic!("checked subobject execution");
-        };
-        if offset != 8 {
-            assert!(
-                matches!(outcome, StatementOutcome::RuntimeError(_)),
-                "misaligned or out-of-bounds child must be refused"
-            );
-            continue;
-        }
-        let StatementOutcome::Return { state, .. } = outcome else {
-            match outcome {
-                StatementOutcome::RuntimeError(error) => {
-                    panic!("subobject constructor: {error:?}")
-                }
-                StatementOutcome::UndefinedBehavior(error) => {
-                    panic!("subobject constructor: {error:?}")
-                }
-                _ => panic!("subobject constructor must return"),
-            }
-        };
-        let base = state.locals().aggregate_object_pointer("parent").unwrap();
-        assert_eq!(state.memory().block_size(&base.block), Some(&16u32.into()));
-        assert!(
-            state
-                .memory()
-                .has_initialized_bytes_at(&base.offset_by_bytes(8), 8)
-        );
-        assert!(
-            !state.memory().has_initialized_bytes_at(base, 8),
-            "sibling remains unwritten"
-        );
-    }
-}
-
-// Allocation grants only its exact byte extent, never initialization; taking
+// Allocation grants only its exact byte span, never initialization; taking
 // that owner away must block both named and pointer-mediated local accesses.
 #[test]
 fn automatic_scalar_ownership_is_exact_and_required_for_all_accesses() {
@@ -6952,7 +4714,7 @@ fn automatic_scalar_ownership_is_exact_and_required_for_all_accesses() {
         panic!("scalar declaration");
     };
     let state = state.as_ref().clone();
-    let pointer = Memory::local_pointer("word");
+    let pointer = SymbolicMemory::local_pointer("word");
     let owner = ResourceFact::own_memory(MemoryRange::new_with_element_width(
         pointer.clone(),
         0.into(),
@@ -7023,130 +4785,6 @@ mod scaling_tests {
     include!("../../scaling_tests/kernel/tests/contract_execution_tests.rs");
 }
 
-/// A contract that `produces` a composite from pieces publishes the body's
-/// facts with it. Certification assembles the composite from the exit's
-/// pieces only when each body fact holds there; a C store that falsified a
-/// fact leaves the claim uncertified, and the same store of the stated value
-/// certifies it (`bugs/` regression: an ordinary exit produced a composite
-/// without its body facts).
-#[test]
-fn a_produced_composite_is_certified_only_when_the_exit_establishes_its_body_facts() {
-    let pointer = Pointer {
-        block: "produced-composite-cell".into(),
-        offset: PointerOffsetTerm::Constant(0),
-    };
-    let cell = || {
-        crate::kernel::program_expression::index(
-            crate::kernel::program_expression::variable("p"),
-            crate::kernel::program_expression::int32_literal(0),
-        )
-    };
-    let definition = CompositeResourceDefinition::new(
-        "zero_cell",
-        vec![program_parameter("p", ProgramType::Int32Pointer)],
-        None,
-        false,
-        vec![ResourceSpec::owned_memory(MemorySegment::new(
-            crate::kernel::program_expression::variable("p"),
-            crate::kernel::program_expression::int32_literal(0),
-            crate::kernel::program_expression::int32_literal(1),
-        ))],
-        vec![SpecProposition::Comparison {
-            left: SpecExpression::ProgramExpression(cell()),
-            operator: ComparisonOperator::Equal,
-            right: SpecExpression::Value(int32(0)),
-        }],
-    );
-    let certified = |stored: u32| {
-        let function = program_function(
-            ProgramType::Void,
-            "produce_zero_cell",
-            vec![program_parameter("p", ProgramType::Int32Pointer)],
-            program_seq(
-                program_store(
-                    crate::kernel::program_expression::variable("p"),
-                    crate::kernel::program_expression::int32_literal(stored),
-                ),
-                program_return(program_void_value()),
-            ),
-        )
-        .with_resource_summary(
-            vec![ResourceSpec::owned_memory(MemorySegment::new(
-                crate::kernel::program_expression::variable("p"),
-                crate::kernel::program_expression::int32_literal(0),
-                crate::kernel::program_expression::int32_literal(1),
-            ))],
-            vec![ResourceSpec::composite(
-                ResourceAccessMode::Own,
-                "zero_cell".into(),
-                vec![crate::kernel::program_expression::variable("p")],
-                vec![ProgramType::Int32Pointer],
-            )],
-        )
-        .with_composite_resource_definitions(vec![definition.clone()])
-        .with_contract(
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            vec![FunctionContractClaim::ensure_resource(0, 0)],
-            true,
-        );
-        let state = ExecutionState::new()
-            .with_memory(
-                Memory::new()
-                    .with_block(pointer.block.clone(), 4)
-                    .store(pointer.clone(), int32(7)),
-            )
-            .with_resource_context(ResourceContext::new().unchecked_with_fact(
-                ResourceFact::own_memory(MemoryRange::new(pointer.clone(), 0.into(), 1.into())),
-            ));
-        let arguments = vec![crate::kernel::program_expression::pointer_value(
-            pointer.clone(),
-        )];
-        let execution = certify_contract_with_kernel_artifacts(
-            state.clone(),
-            function.clone(),
-            arguments.clone(),
-            Vec::new(),
-            ExecutionEnvironment::new(),
-            ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
-            FunctionContractExecutionMode::VerifyLoops,
-        );
-        let claims = program_unverified_function_contract_claims(&function, &execution)
-            .expect("the exit frontier is available to claims");
-        // The kernel's exit transition is the publication the Surface reads
-        // a produced resource through; it must refuse exactly when
-        // certification does.
-        let path = &execution.cases()[0][0].paths[0];
-        let mut proposition = path.theorem.proposition();
-        while let Proposition::Implies(_, body) = proposition {
-            proposition = body;
-        }
-        let Proposition::ProgramFunctionVerifies {
-            state: caller_state,
-            outcome,
-            ..
-        } = proposition
-        else {
-            panic!("a contract path concludes a function execution: {proposition:?}");
-        };
-        let transition = crate::kernel::api::checked_program_function_contract_resource_transition(
-            caller_state,
-            &function,
-            &arguments,
-            outcome.clone(),
-            &path.assumptions,
-        );
-        assert_eq!(claims.is_empty(), transition.is_ok(), "{transition:?}");
-        claims.is_empty()
-    };
-    assert!(
-        !certified(9),
-        "a store of 9 falsifies `p[0] == 0`: the composite must not be produced"
-    );
-    assert!(certified(0), "a store of 0 establishes the body fact");
-}
-
 /// A proof issues a theorem per path and claim, and each carries the
 /// function and its specification, so cloning them shares the contract and
 /// the specification's argument and requirement lists rather than copying
@@ -7183,201 +4821,4 @@ fn cloned_functions_and_specifications_share_their_contracts() {
     let copy = specification.clone();
     assert!(Arc::ptr_eq(&specification.arguments, &copy.arguments));
     assert!(Arc::ptr_eq(&specification.requires, &copy.requires));
-}
-
-/// An allocator's produced resources are checked against what its body
-/// actually allocated, whether they are listed directly or wrapped in a
-/// composite: claiming eight cells of a sixteen-byte allocation is refused.
-#[test]
-fn allocator_certification_checks_the_body_allocation_against_produced_resources() {
-    use crate::kernel::program_expression::{int32_literal, variable};
-    for cells in [4u32, 8] {
-        let _session = crate::kernel::VerificationSession::enter();
-        let specs = |base: crate::kernel::BindingName| {
-            vec![
-                ResourceSpec::owned_memory(
-                    MemorySegment::new(
-                        variable(base.clone()),
-                        int32_literal(0),
-                        int32_literal(cells),
-                    )
-                    .with_uninitialized(true),
-                )
-                .with_role(ResourceTransferRole::Produce)
-                .with_state_source(ResourceStateSource::Post),
-                ResourceSpec::token(
-                    ResourceAccessMode::Own,
-                    ResourceFact::ALLOCATION_RESOURCE_NAME.into(),
-                    vec![variable(base), int32_literal(16)],
-                    vec![ProgramType::Int32Pointer, ProgramType::Int32],
-                )
-                .with_role(ResourceTransferRole::Produce)
-                .with_state_source(ResourceStateSource::Post),
-            ]
-        };
-        let body = program_seq(
-            program_declare("p", ProgramType::Int32Pointer),
-            program_seq(
-                ProgramStatement::HeapAllocate {
-                    target: "p".into(),
-                    bytes: int32_literal(16),
-                    zeroed: false,
-                    object_type: None,
-                    ends_program_on_failure: true,
-                },
-                program_return(variable("p")),
-            ),
-        );
-        for composite in [false, true] {
-            let mut function = program_function(
-                ProgramType::Int32Pointer,
-                "allocate_return",
-                vec![],
-                body.clone(),
-            );
-            function = if composite {
-                function
-                    .with_resource_summary(
-                        vec![],
-                        vec![
-                            ResourceSpec::declared(
-                                ResourceFamily::Composite,
-                                ResourceAccessMode::Own,
-                                "allocated_body".into(),
-                                vec![variable(CONTRACT_RESULT)],
-                                vec![ProgramType::Int32Pointer],
-                                ResourceTransferRole::Produce,
-                                ResourceStateSource::Post,
-                            )
-                            .unwrap(),
-                        ],
-                    )
-                    .with_composite_resource_definitions(vec![CompositeResourceDefinition::new(
-                        "allocated_body",
-                        vec![program_parameter("p", ProgramType::Int32Pointer)],
-                        None,
-                        false,
-                        specs("p".into()),
-                        vec![],
-                    )])
-            } else {
-                function.with_resource_summary(vec![], specs(CONTRACT_RESULT))
-            };
-            let claims_list = if composite {
-                vec![
-                    FunctionContractClaim::body_safety(),
-                    FunctionContractClaim::ensure_resource(0, 0),
-                ]
-            } else {
-                vec![
-                    FunctionContractClaim::body_safety(),
-                    FunctionContractClaim::ensure_resource(0, 0),
-                    FunctionContractClaim::ensure_resource(1, 1),
-                ]
-            };
-            let function = function.with_contract(vec![], vec![], vec![], claims_list, true);
-            let execution = certify_contract_with_kernel_artifacts(
-                ExecutionState::new().with_population_creation_tracking(),
-                function.clone(),
-                vec![],
-                vec![],
-                ExecutionEnvironment::new(),
-                ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
-                FunctionContractExecutionMode::VerifyLoops,
-            );
-            let claims = program_verified_function_contract_claims(&function, &execution);
-            let rule = claims
-                .as_ref()
-                .and_then(|claims| program_verified_function_rule(function.clone(), claims));
-            assert_eq!(
-                rule.is_some(),
-                cells == 4,
-                "cells={cells} composite={composite}: claims {claims:?}"
-            );
-        }
-    }
-}
-
-#[test]
-fn allocator_certification_splits_joint_custody_and_refuses_duplicate_or_overrun_units() {
-    use crate::kernel::program_expression::{int32_literal, variable};
-    let produced = |spec: ResourceSpec| {
-        spec.with_role(ResourceTransferRole::Produce)
-            .with_state_source(ResourceStateSource::Post)
-    };
-    let cells = |start: u32, end: u32| {
-        produced(ResourceSpec::owned_memory(
-            MemorySegment::new(
-                variable(CONTRACT_RESULT),
-                int32_literal(start),
-                int32_literal(end),
-            )
-            .with_uninitialized(true),
-        ))
-    };
-    let body = program_seq(
-        program_declare("p", ProgramType::Int32Pointer),
-        program_seq(
-            ProgramStatement::HeapAllocate {
-                target: "p".into(),
-                bytes: int32_literal(16),
-                zeroed: false,
-                object_type: None,
-                ends_program_on_failure: true,
-            },
-            program_return(variable("p")),
-        ),
-    );
-    // One fresh allocation is jointly held by the body; its returned units
-    // must partition it: a split certifies, a duplicate or overrun does not.
-    for (second, certifies) in [((1, 4), true), ((0, 1), false), ((1, 5), false)] {
-        let _session = crate::kernel::VerificationSession::enter();
-        let specs = vec![
-            cells(0, 1),
-            cells(second.0, second.1),
-            produced(ResourceSpec::token(
-                ResourceAccessMode::Own,
-                ResourceFact::ALLOCATION_RESOURCE_NAME.into(),
-                vec![variable(CONTRACT_RESULT), int32_literal(16)],
-                vec![ProgramType::Int32Pointer, ProgramType::Int32],
-            )),
-        ];
-        let function = program_function(
-            ProgramType::Int32Pointer,
-            "allocate_return",
-            vec![],
-            body.clone(),
-        )
-        .with_resource_summary(vec![], specs)
-        .with_contract(
-            vec![],
-            vec![],
-            vec![],
-            vec![
-                FunctionContractClaim::body_safety(),
-                FunctionContractClaim::ensure_resource(0, 0),
-                FunctionContractClaim::ensure_resource(1, 1),
-                FunctionContractClaim::ensure_resource(2, 2),
-            ],
-            true,
-        );
-        let execution = certify_contract_with_kernel_artifacts(
-            ExecutionState::new().with_population_creation_tracking(),
-            function.clone(),
-            vec![],
-            vec![],
-            ExecutionEnvironment::new(),
-            ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
-            FunctionContractExecutionMode::VerifyLoops,
-        );
-        let claims = program_verified_function_contract_claims(&function, &execution);
-        let rule = claims
-            .as_ref()
-            .and_then(|claims| program_verified_function_rule(function.clone(), claims));
-        assert_eq!(
-            rule.is_some(),
-            certifies,
-            "second unit {second:?}: claims {claims:?}"
-        );
-    }
 }

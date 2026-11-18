@@ -2,7 +2,7 @@ use super::*;
 use crate::kernel::VerificationSession;
 
 fn fixture(fields: u32) -> (ExecutionState, ProgramExpression, AggregateLayout) {
-    let source = Memory::local_pointer("source");
+    let source = SymbolicMemory::local_pointer("source");
     let layout = AggregateLayout::new(
         fields * 8,
         8,
@@ -11,7 +11,7 @@ fn fixture(fields: u32) -> (ExecutionState, ProgramExpression, AggregateLayout) 
             .collect(),
     );
     let mut memory =
-        Memory::new().with_uninitialized_block(source.block.clone(), layout.size_bytes());
+        SymbolicMemory::new().with_uninitialized_block(source.base.clone(), layout.size_bytes());
     for i in 0..fields {
         memory = memory.store(source.offset_by_bytes(i * 8), int32(i));
     }
@@ -58,7 +58,7 @@ fn aggregate_results_have_anonymous_storage_and_end_with_their_expression() {
     let mut budget = ExecutionBudget::for_new_execution();
     let result = materialize(&state, &source, &layout, &mut budget);
     let pointer = result.aggregate_step_objects.get(&0).unwrap().clone();
-    assert!(matches!(pointer.block, PointerBlock::Temporary(_)));
+    assert!(matches!(pointer.base, AddressBase::Temporary(_)));
     assert_eq!(
         result.memory.known_value(&pointer.offset_by_bytes(8)),
         Some(int32(1))
@@ -78,7 +78,7 @@ fn aggregate_results_have_anonymous_storage_and_end_with_their_expression() {
     ));
 
     let ended = end_aggregate_step_lifetimes(&result, &[0]).unwrap();
-    assert!(!ended.memory.has_block(&pointer.block));
+    assert!(!ended.memory.has_block(&pointer.base));
     assert!(ended.step_result(0).is_none());
     assert!(ended.aggregate_step_objects.is_empty());
     let read =
@@ -90,7 +90,7 @@ fn aggregate_results_have_anonymous_storage_and_end_with_their_expression() {
         Some(StatementOutcome::UndefinedBehavior(_))
     ));
     // A historical result keeps its own state; re-execution allocates a new object.
-    assert!(result.memory.has_block(&pointer.block));
+    assert!(result.memory.has_block(&pointer.base));
     let again = materialize(&ended, &source, &layout, &mut budget);
     assert_ne!(&pointer, again.aggregate_step_objects.get(&0).unwrap());
 }
@@ -98,8 +98,8 @@ fn aggregate_results_have_anonymous_storage_and_end_with_their_expression() {
 #[test]
 fn aggregate_result_copies_pointer_fields_without_copying_or_retiring_the_pointee() {
     let _session = VerificationSession::enter();
-    let backing = Memory::local_pointer("backing");
-    let source = Memory::local_pointer("source");
+    let backing = SymbolicMemory::local_pointer("backing");
+    let source = SymbolicMemory::local_pointer("source");
     let value = ProgramValue::typed_pointer(backing.clone(), ProgramType::Int32Pointer);
     let layout = AggregateLayout::new(
         8,
@@ -107,10 +107,10 @@ fn aggregate_result_copies_pointer_fields_without_copying_or_retiring_the_pointe
         vec![AggregateField::new("data", 0, ProgramType::Int32Pointer)],
     );
     let state = ExecutionState::new().with_memory(
-        Memory::new()
-            .with_block(backing.block.clone(), 4)
+        SymbolicMemory::new()
+            .with_block(backing.base.clone(), 4)
             .store(backing.clone(), int32(9))
-            .with_block(source.block.clone(), 8)
+            .with_block(source.base.clone(), 8)
             .store(source.clone(), value.clone()),
     );
     let copied = materialize(
@@ -126,7 +126,7 @@ fn aggregate_result_copies_pointer_fields_without_copying_or_retiring_the_pointe
     assert_eq!(copied.memory.known_value(destination), Some(value));
     let ended = end_aggregate_step_lifetimes(&copied, &[0]).unwrap();
     assert_eq!(ended.memory.known_value(&backing), Some(int32(9)));
-    assert!(ended.memory.has_block(&backing.block));
+    assert!(ended.memory.has_block(&backing.base));
 }
 
 #[test]
@@ -134,9 +134,9 @@ fn aggregate_result_rejects_an_uninitialized_source_field() {
     let _session = VerificationSession::enter();
     let (mut state, source, layout) = fixture(2);
     state.set_memory(
-        Memory::new()
+        SymbolicMemory::new()
             .with_uninitialized_block("local:source", 16)
-            .store(Memory::local_pointer("source"), int32(0)),
+            .store(SymbolicMemory::local_pointer("source"), int32(0)),
     );
     let paths = execute_program_aggregate_step_paths(
         &state,
@@ -159,9 +159,9 @@ fn aggregate_result_rejects_an_uninitialized_source_field() {
 #[test]
 fn aggregate_array_field_decay_keeps_the_element_pointer_type() {
     let _session = VerificationSession::enter();
-    let source = Memory::local_pointer("array");
+    let source = SymbolicMemory::local_pointer("array");
     let state = ExecutionState::new()
-        .with_memory(Memory::new().with_uninitialized_block(source.block.clone(), 16));
+        .with_memory(SymbolicMemory::new().with_uninitialized_block(source.base.clone(), 16));
     let pointer = ProgramValue::typed_pointer(source, ProgramType::UInt8Pointer)
         .with_pointer_pointee_constant(true);
     for (array_type, pointer_type) in [
@@ -215,12 +215,12 @@ fn loop_test_retires_aggregate_storage_on_true_and_false_outcomes() {
             | (false, StatementOutcome::LoopTestFalse(state)) => state,
             (_, outcome) => panic!("unexpected test outcome {outcome:?}"),
         };
-        assert!(!ended.memory.has_block(&pointer.block));
+        assert!(!ended.memory.has_block(&pointer.base));
         assert!(ended.aggregate_step_objects.is_empty());
         assert!(ended.step_result(0).is_none());
     }
     assert!(
-        result.memory.has_block(&pointer.block),
+        result.memory.has_block(&pointer.base),
         "each decision forks the original state"
     );
 }

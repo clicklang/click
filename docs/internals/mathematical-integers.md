@@ -781,7 +781,7 @@ through the existing typed-lvalue operations. Symbolic loads use the shared
 state/address/kind identity and certified defining facts. Their kinds retain
 signedness to match the checked constant format; cross-type reinterpretation
 and byte views remain unsupported. A wide read or write requires the full
-16-byte extent and resource authority, and retains initialization obligations.
+16-byte span and resource authority, and retains initialization obligations.
 Framing and store invalidation account for every byte, including bytes 8–15.
 The conservative fallback width for an access of unknown type is now 16;
 indexed store-gap decisions use the same bound. Known load kinds, pointer

@@ -2,8 +2,7 @@ use super::*;
 use crate::kernel::{
     FunctionContractClaim, ProgramStatement, Proposition, bool_value, program_call,
     program_function, program_if, program_parameter, program_return, program_seq, program_skip,
-    program_try_catch_int32, prove_checked_program_function_execution_with_environment,
-    prove_program_function_contract_execution_paths_with_checked_artifacts,
+    program_try_catch_int32,
 };
 
 /// A caught-throw call splits into its returned and threw arms the way a C
@@ -33,30 +32,7 @@ fn call_outcome_split_does_not_copy_the_proofs_facts() {
         vec![FunctionContractClaim::body_safety()],
         true,
     );
-    let helper_arguments = vec![ProgramExpression::Value(bool_value(MachineTerm::Variable(
-        Variable(80_111),
-    )))];
-    let artifacts = prove_checked_program_function_execution_with_environment(
-        ExecutionState::new().with_population_creation_tracking(),
-        helper.clone(),
-        helper_arguments.clone(),
-        PureFactContext::new(),
-        ExecutionEnvironment::new(),
-        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
-        FunctionContractExecutionMode::VerifyLoops,
-    );
-    let certified = prove_program_function_contract_execution_paths_with_checked_artifacts(
-        ExecutionState::new().with_population_creation_tracking(),
-        helper.clone(),
-        helper_arguments,
-        ExecutionEnvironment::new(),
-        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
-        FunctionContractExecutionMode::VerifyLoops,
-        &[artifacts],
-    );
-    let claims = crate::kernel::program_verified_function_contract_claims(&helper, &certified)
-        .expect("helper body safety should certify");
-    let helper_rule = program_verified_function_rule(helper.clone(), &claims)
+    let helper_rule = crate::kernel::program_recursive_function_contract_hypothesis(helper.clone())
         .expect("the checked helper should have a modular rule");
     let function_environment = ExecutionEnvironment::new()
         .with_function(helper)
@@ -160,10 +136,15 @@ fn call_outcome_split_does_not_copy_the_proofs_facts() {
         let at_call = branch.focus_split_arm(&branch_record, true).unwrap();
         let [copied_before, _] = crate::surface::pure_fact_list::fact_list_entry_counts();
         let (split, work) = crate::instrumentation::measure_deterministic_work(|| {
-            at_call
-                .split_focused_call_outcomes()
+            let (split, record) = at_call
+                .split_focused_call_outcomes([None, Some("error".to_owned())])
                 .expect("the call split should be checked")
-                .expect("the helper both returns and throws")
+                .expect("the helper both returns and throws");
+            let threw = split
+                .focus_call_outcome_arm(&record, false, &at_call)
+                .unwrap();
+            assert!(threw.state().locals().values.contains_key("error"));
+            (split, record)
         });
         let [copied_after, _] = crate::surface::pure_fact_list::fact_list_entry_counts();
         let (outcomes, record) = split;

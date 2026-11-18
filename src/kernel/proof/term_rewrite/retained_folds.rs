@@ -138,12 +138,12 @@ mod tests {
     #[test]
     fn common_fold_pointer_transport_preserves_state_and_condition_scope() {
         let _session = crate::kernel::VerificationSession::enter();
-        let memory = Memory::new();
+        let memory = SymbolicMemory::new();
         let source = Variable(55);
-        let replacement = Pointer::symbolic(Variable(56));
+        let replacement = Address::symbolic(Variable(56));
         let read = MachineTerm::MemoryLoad(
             ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
-            Box::new(Pointer::symbolic(source)),
+            Box::new(Address::symbolic(source)),
             LoadKind::Int32,
         );
         let native = MachineTerm::RangeFold {

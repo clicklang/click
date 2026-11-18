@@ -143,8 +143,8 @@ mod tests {
 
     #[test]
     fn inventory_fact_kinds_show_operands_instead_of_opaque_counts() {
-        let p = Pointer::symbolic(Variable(986_700));
-        let memory = Memory::new();
+        let p = Address::symbolic(Variable(986_700));
+        let memory = SymbolicMemory::new();
         let word = MachineTerm::MemoryLoad(
             crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
             Box::new(p.clone()),
@@ -205,7 +205,7 @@ mod tests {
             ),
             (
                 Proposition::ConditionIs(
-                    ConditionTerm::PointerEqual(Box::new(p.clone()), Box::new(Pointer::null())),
+                    ConditionTerm::PointerEqual(Box::new(p.clone()), Box::new(Address::null())),
                     false,
                 ),
                 "is false",
@@ -218,7 +218,7 @@ mod tests {
                 Proposition::ConditionIs(
                     ConditionTerm::PointerOffsetEqual(
                         Box::new(p.offset.clone()),
-                        Box::new(PointerOffsetTerm::Constant(16)),
+                        Box::new(AddressOffset::Constant(16)),
                     ),
                     true,
                 ),
@@ -245,7 +245,7 @@ mod tests {
                 Proposition::VolatileAccess(std::sync::Arc::new(crate::kernel::VolatileAccess {
                     id: crate::kernel::VolatileEventId(123),
                     kind: crate::kernel::VolatileAccessKind::Write,
-                    pointer: Pointer::symbolic(Variable(986_703)),
+                    pointer: Address::symbolic(Variable(986_703)),
                     value_type: crate::kernel::ProgramType::UInt64,
                     value: ProgramValue::UInt64(MachineTerm::uint64_constant(1)),
                 })),
@@ -266,9 +266,10 @@ mod tests {
 
     #[test]
     fn trace_reads_preserve_state_and_load_kind_without_current_pointer_names() {
-        let address = Pointer::symbolic(Variable(986_702));
-        let first = crate::kernel::intern_memory(Memory::new());
-        let second = crate::kernel::intern_memory(Memory::new().with_block("trace_changed", 4));
+        let address = Address::symbolic(Variable(986_702));
+        let first = crate::kernel::intern_memory(SymbolicMemory::new());
+        let second =
+            crate::kernel::intern_memory(SymbolicMemory::new().with_block("trace_changed", 4));
         let load = |memory, kind| {
             Term::Bitvector32(MachineTerm::MemoryLoad(
                 memory,
@@ -363,7 +364,7 @@ mod extended_state_tests {
         let fact = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
         render_trace_fact_labeled(&fact, &mut labels);
         let memories: Vec<_> = (0..64)
-            .map(|i| Memory::new().with_block(format!("late_{i}"), 8))
+            .map(|i| SymbolicMemory::new().with_block(format!("late_{i}"), 8))
             .collect();
         for (i, memory) in memories.iter().enumerate() {
             assert_eq!(labels.memory_state_name(memory), format!("state#{}", i + 1));

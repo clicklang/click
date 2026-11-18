@@ -9,7 +9,7 @@ use click::cli::{
     read_click_project, read_mdtest, read_mdtest_project_if_needed,
     read_verification_inputs_for_project, source_refs,
 };
-use click::instrumentation::{self, ArtifactReuseRejection, HiddenPrerequisiteRoute};
+use click::instrumentation::{self, HiddenPrerequisiteRoute};
 use click::surface::{
     c_tactic_source_position, project_tactic_source_position, verify_c_project, verify_c_sources,
     verify_program_prepared_project,
@@ -43,18 +43,23 @@ const QUARANTINED: &[(&str, &str)] = &[];
 /// libraries stay in the gate so it checks both sides of their imports. Run
 /// one with `MDTEST_FILTER=<name>`.
 const NIGHTLY: &[&str] = &[
+    "loop_numeric_descent_on_exit.md", // 1.09s focused: split final and continuing preservation paths
+    "loop_numeric_descent_on_generated_exit.md", // 0.58s in parallel: generated preservation of a false next test
+    "a_returned_member_domain_supports_a_logical_read.md", // 2.3s: member-result resource fold and logical read
     "scalar_induction_after_helper_facts.md", // 0.78s in the parallel induction fixture selection
     "witness_mixed_type_values.md", // 1.36s focused: pointer, Integer, and machine binders
     "modeled_pthread_copied_handle.md", // 0.6s focused: forwarded handle and retained equality
     "modeled_pthread_copied_handle_join_twice.md", // forwarded handle must consume one right
     "shared_loop_test_and_update.md", // 1.2s focused: ranked pre/post-test call proofs
     "shared_loop_post_test_ends_body_scope.md", // 0.8s focused: post-test after an expired body array
+    "a_summarized_pure_loop_does_not_record_its_test_state.md", // 0.84s focused; fast layout coverage checks the test selector
     "a_fixed_range_transfer_preserves_the_retained_tail.md", // 0.55s focused: typed byte-range call and return
     "consumed_scalar_transfer_mixes_with_a_borrowed_return.md", // 0.67s focused: two-parameter call and caller return
     "aliased_packaged_views_keep_their_selected_whole_loan.md", // 0.71s focused: selected whole-loan recovery
     "multiple_witnesses_survive_checked_calls.md", // 1.07s focused: repeated calls with two recorded witnesses
     "symbolic_return_boundary_uses_explicit_bounds.md", // 0.78s focused: symbolic return beside retained memory
-    "integer_migration_routes.md",                      // 0.9s: signed/native routes and rounding
+    "symbolic_output_partitions_rejoin_a_retained_frame.md", // 3.8s focused: symbolic flat/composite partitions beside retained memory
+    "integer_migration_routes.md", // 0.9s: signed/native routes and rounding
     "aggregate_expression_results_are_named_by_their_source_steps.md", // 1.61s focused
     "aggregate_result_storage_ends_at_the_statement_exit.md", // 0.82s focused in parallel
     // 0.78s focused, 0.57s in the parallel gate; the automatic-array refusal
@@ -334,12 +339,6 @@ const NIGHTLY: &[&str] = &[
     "wide_read_model_arm_rejects_changed_word.md",                             // 0.7s
 ];
 
-/// The artifact reuse rejection ratchet (`docs/internals/testing.md`): count
-/// contract certification rejections of checked execution artifacts over the
-/// whole unfiltered corpus, by reason. A count may only fall; lower its pin
-/// when it does.
-const ARTIFACT_REUSE_REJECTION_BASELINE: &[(ArtifactReuseRejection, usize)] = &[];
-
 /// The hidden prerequisite ratchet (`docs/internals/testing.md`): count the
 /// prerequisites simple statement checking derived by a search the proof does
 /// not retain, over the whole unfiltered corpus, by route and top rule. A
@@ -455,9 +454,18 @@ fn mdtests() {
         })
         .collect::<Vec<_>>();
     let filtered = if let Ok(filter) = std::env::var("MDTEST_FILTER") {
+        // A whole file name selects just that file; anything else selects
+        // every file whose name contains it.
+        let exact = filter.ends_with(".md");
         paths.retain(|path| {
-            path.file_name()
-                .is_some_and(|name| name.to_string_lossy().contains(&filter))
+            path.file_name().is_some_and(|name| {
+                let name = name.to_string_lossy();
+                if exact {
+                    name == filter
+                } else {
+                    name.contains(&filter)
+                }
+            })
         });
         true
     } else {
@@ -522,12 +530,10 @@ fn mdtests() {
     } else {
         false
     };
-    let filtered_by_name = filtered;
     // Without its nightly fixtures the corpus is partial, as in a partition:
     // the hidden prerequisite ratchet still catches a rise but cannot see a
-    // fall, and the artifact reuse ratchet waits for a whole-corpus run.
+    // fall.
     let partial = partitioned || skipped_nightly;
-    let filtered = filtered || partial;
 
     assert!(
         !paths.is_empty(),
@@ -540,17 +546,15 @@ fn mdtests() {
     // available to each file, so concurrency cannot change a verdict. Peak
     // memory stays small: on 2026-09-11 the whole corpus peaked at 171 MB
     // serially and 291 MB on 8 workers.
-    let _ = instrumentation::take_artifact_reuse_rejection_census();
     let _ = instrumentation::take_hidden_prerequisite_census();
     let _ = instrumentation::take_backwards_memory_derivation_census();
     let workers = std::thread::available_parallelism().map_or(1, usize::from);
     let failures = limits::run_parallel(&paths, workers, |path| run_mdtest_in_thread(path));
-    let census = instrumentation::take_artifact_reuse_rejection_census();
     let hidden_prerequisites = instrumentation::take_hidden_prerequisite_census();
     // Which producers still end a step on a state older than itself, so
     // that the step is recorded on no history. A knowledge-losing forget
     // cannot: its mark makes the result a node no earlier state can be
-    // (`Memory::mark_forgotten_from`). Anything else here is a producer
+    // (`SymbolicMemory::mark_forgotten_from`). Anything else here is a producer
     // whose steps are invisible to every history-based rule, and this line
     // is how a corpus run names it.
     eprintln!(
@@ -559,15 +563,6 @@ fn mdtests() {
     );
     if failures.is_empty() {
         if !filtered
-            && std::env::var_os(RUN_QUARANTINED).is_none()
-            && let Some(mismatch) = instrumentation::artifact_reuse_rejection_census_mismatch(
-                &census,
-                ARTIFACT_REUSE_REJECTION_BASELINE,
-            )
-        {
-            panic!("artifact reuse rejection ratchet (tests/mdtests.rs baselines):\n{mismatch}");
-        }
-        if !filtered_by_name
             && std::env::var_os(RUN_QUARANTINED).is_none()
             && let Some(mismatch) = instrumentation::hidden_prerequisite_census_mismatch(
                 &hidden_prerequisites,
@@ -603,12 +598,27 @@ fn run_mdtest_in_thread(path: &Path) -> Result<(), String> {
     let result = limits::spawn("mdtest verifier", thread_name, move || {
         run_mdtest_attempt(&path)
     })?;
+    let seconds = started.elapsed().as_secs_f64();
     eprintln!(
-        "mdtest `{name}` {} in {:.2}s",
+        "mdtest `{name}` {} in {seconds:.2}s",
         if result.is_ok() { "passed" } else { "failed" },
-        started.elapsed().as_secs_f64()
+    );
+    click::nightly_report::record(
+        "mdtests",
+        &click::nightly_report::NightlyResult {
+            kind: "mdtest",
+            name: path_file_name(&name),
+            passed: result.is_ok(),
+            seconds,
+            message: result.as_ref().err().map(String::as_str),
+        },
     );
     result
+}
+
+/// The file name the report's `MDTEST_FILTER=<name>` selects.
+fn path_file_name(path: &str) -> &str {
+    path.rsplit('/').next().unwrap_or(path)
 }
 
 fn run_mdtest_attempt(path: &Path) -> Result<(), String> {
@@ -784,7 +794,7 @@ fn check_expectation(
             path.display()
         )),
         (MdTestExpectation::FailContains(expected), Err((message, report))) => {
-            if let Some(internal) = ["Memory {", "HeapMemory {", "pointer(pointer "]
+            if let Some(internal) = ["SymbolicMemory {", "HeapMemory {", "pointer(pointer "]
                 .into_iter()
                 .find(|internal| report.contains(internal))
             {

@@ -121,11 +121,11 @@ fn preservation_uses_selected_observations_without_scanning_the_registry() {
         let _session = crate::kernel::VerificationSession::enter();
         let _reads = typed_reads::ReadScope::enter();
         let (preservation, goal) = tests::fixture(2, false);
-        let memory = Memory::new();
+        let memory = SymbolicMemory::new();
         for index in 0..unrelated {
             tests::observe(
                 &memory,
-                &Pointer::symbolic(Variable(8_410_000 + index)),
+                &Address::symbolic(Variable(8_410_000 + index)),
                 ProgramType::Int32Pointer,
             );
         }
@@ -199,7 +199,7 @@ fn simple_footprint_separation_does_not_walk_a_region_sequence() {
             true,
         ));
         let kept = Resource::Memory(MemoryRange::new_with_element_width(
-            Pointer::symbolic(Variable(8_390_100)),
+            Address::symbolic(Variable(8_390_100)),
             0u32.into(),
             1u32.into(),
             4,
@@ -223,9 +223,9 @@ fn selected_footprint_separations_are_linear_with_one_shared_address_bucket() {
         let state = ExecutionState::new();
         let range = |index: u64| {
             MemoryRange::new_with_element_width(
-                Pointer {
-                    block: PointerBlock::ExternalArgument,
-                    offset: PointerOffsetTerm::Variable(Variable(8_391_000 + index)),
+                Address {
+                    base: AddressBase::ExternalArgument,
+                    offset: AddressOffset::Variable(Variable(8_391_000 + index)),
                 },
                 0u32.into(),
                 4u32.into(),
@@ -290,7 +290,7 @@ fn two_footprints_do_not_expand_into_a_cartesian_product() {
                 mutable_ranges: (0..count)
                     .map(|index| {
                         MemoryRange::new_with_element_width(
-                            Pointer::symbolic(Variable(8_392_000 + index)),
+                            Address::symbolic(Variable(8_392_000 + index)),
                             0u32.into(),
                             4u32.into(),
                             1,
@@ -379,11 +379,13 @@ fn definedness_preservation_ignores_history_and_ambient_facts() {
                 memory,
                 pointer,
                 value_type,
+                ..
             } = &old
             else {
                 unreachable!()
             };
             facts = facts.with_fact(Proposition::MemoryReadDefined {
+                at: None,
                 memory: memory
                     .clone()
                     .store(pointer.clone(), ProgramValue::Int32((i as u32).into())),
@@ -391,8 +393,9 @@ fn definedness_preservation_ignores_history_and_ambient_facts() {
                 value_type: *value_type,
             });
             facts = facts.with_fact(Proposition::MemoryReadDefined {
+                at: None,
                 memory: memory.clone(),
-                pointer: Pointer::symbolic(Variable(8_500_000 + i)),
+                pointer: Address::symbolic(Variable(8_500_000 + i)),
                 value_type: *value_type,
             });
         }
@@ -420,7 +423,7 @@ fn preservation_separation_orientations_use_exact_indexes() {
                 let mut ambient = Vec::new();
                 for index in 0..size {
                     let other = Resource::Memory(MemoryRange::new_with_element_width(
-                        Pointer::symbolic(Variable(8_900_000 + index)),
+                        Address::symbolic(Variable(8_900_000 + index)),
                         0u32.into(),
                         1u32.into(),
                         4,

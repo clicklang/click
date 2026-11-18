@@ -414,9 +414,9 @@ fn concrete_view_carrier_recovery_ignores_unrelated_owners() {
         for extra in 0..size {
             resources = resources.unchecked_with_fact(ResourceFact::own_memory(
                 crate::kernel::MemoryRange::new(
-                    Pointer {
-                        block: format!("unrelated-view-carrier-{extra}").into(),
-                        offset: PointerOffsetTerm::Constant(0),
+                    Address {
+                        base: format!("unrelated-view-carrier-{extra}").into(),
+                        offset: AddressOffset::Constant(0),
                     },
                     0u32.into(),
                     4u32.into(),
@@ -452,9 +452,9 @@ fn partial_borrow_carrier_return_ignores_unrelated_owners() {
         let mut resources = ResourceContext::new().unchecked_with_fact(owner.clone());
         for extra in 0..size {
             let range = crate::kernel::MemoryRange::new(
-                Pointer {
-                    block: format!("unrelated-carrier-{extra}").into(),
-                    offset: PointerOffsetTerm::Constant(0),
+                Address {
+                    base: format!("unrelated-carrier-{extra}").into(),
+                    offset: AddressOffset::Constant(0),
                 },
                 0u32.into(),
                 4u32.into(),
@@ -498,7 +498,7 @@ fn mutex_contract_input_checks_ignore_unrelated_roots_at_multiple_sizes() {
                 .borrowed_mutex_use_input(
                     holder,
                     backing(&owned("unrelated")),
-                    Pointer::symbolic(Variable(1000 + index)),
+                    Address::symbolic(Variable(1000 + index)),
                 )
                 .unwrap();
             ledger = next;
@@ -796,9 +796,9 @@ fn overlapping_memory_view_clustering_handles_chains_and_equal_starts() {
         let mut chain_requirements = Vec::with_capacity(size * 3);
         let mut equal_requirements = Vec::with_capacity(size * 3);
         for index in 0..size {
-            let base = crate::kernel::Pointer {
-                block: crate::kernel::PointerBlock::Concrete(format!("overlap-{index}")),
-                offset: crate::kernel::PointerOffsetTerm::Constant(0),
+            let base = crate::kernel::Address {
+                base: crate::kernel::AddressBase::Concrete(format!("overlap-{index}")),
+                offset: crate::kernel::AddressOffset::Constant(0),
             };
             let owner = ResourceFact::own_memory(MemoryRange::new(
                 base.clone(),
@@ -974,14 +974,14 @@ fn loan_certificate_recheck_scales_with_explicit_transition_delta() {
 
 #[test]
 fn offset_alias_overlap_uses_exact_bytes_and_ignores_unrelated_facts() {
-    use crate::kernel::{ConditionTerm, Pointer, PointerOffsetTerm};
-    let p = Pointer {
-        block: "overlap".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    use crate::kernel::{Address, AddressOffset, ConditionTerm};
+    let p = Address {
+        base: "overlap".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let q = Pointer {
-        block: p.block.clone(),
-        offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(600)), 1),
+    let q = Address {
+        base: p.base.clone(),
+        offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(600)), 1),
     };
     let protected = MemoryRange::new_with_element_width(
         p.clone(),
@@ -1010,7 +1010,7 @@ fn offset_alias_overlap_uses_exact_bytes_and_ignores_unrelated_facts() {
         ] {
             let equality = ConditionTerm::pointer_offset_equal(
                 q.offset.clone(),
-                PointerOffsetTerm::Constant(offset),
+                AddressOffset::Constant(offset),
             );
             let context = assumptions.clone().assume_condition(equality.clone(), true);
             let query = MemoryRange::new_with_element_width(
@@ -1137,9 +1137,9 @@ fn mixed_width_view_backing_joins_only_its_own_pieces() {
     let (ledger, caller, callee) = participants();
     let piece = |start: u32, end: u32, width: u32| {
         ResourceFact::own_memory(crate::kernel::MemoryRange::new_with_element_width(
-            crate::kernel::Pointer {
-                block: "buffer".into(),
-                offset: crate::kernel::PointerOffsetTerm::Constant(0),
+            crate::kernel::Address {
+                base: "buffer".into(),
+                offset: crate::kernel::AddressOffset::Constant(0),
             },
             crate::kernel::MachineTerm::constant(start),
             crate::kernel::MachineTerm::constant(end),
@@ -1427,13 +1427,13 @@ fn writes_without_active_memory_loans_do_not_walk_pointer_aliases() {
         for symbolic_bound in [false, true] {
             let mut samples = Vec::new();
             for count in [4, 16, 64, 256] {
-                let base = Pointer::symbolic(Variable(980_000));
+                let base = Address::symbolic(Variable(980_000));
                 let mut facts = PureFactContext::new();
                 for index in 0..count {
                     facts = facts.assume_condition(
                         ConditionTerm::pointer_equal(
                             base.clone(),
-                            Pointer::symbolic(Variable(980_001 + index as u64)),
+                            Address::symbolic(Variable(980_001 + index as u64)),
                         ),
                         true,
                     );
@@ -1526,7 +1526,7 @@ fn returned_view_recovery_retains_the_constructed_frame_as_aliases_and_owners_gr
                     assumptions = assumptions.assume_condition(
                         ConditionTerm::pointer_equal(
                             base.clone(),
-                            Pointer::symbolic(Variable(8_799_000 + u64::from(index))),
+                            Address::symbolic(Variable(8_799_000 + u64::from(index))),
                         ),
                         true,
                     );
@@ -1546,13 +1546,15 @@ fn returned_view_recovery_retains_the_constructed_frame_as_aliases_and_owners_gr
                 callee,
             )
             .unwrap();
-            let output = plan
+            let (output, emitted) = plan
                 .caller_resources_after_requirements
                 .clone()
-                .unchecked_with_fact(memory(8, 12, true));
+                .unchecked_with_facts_and_occurrences([memory(8, 12, true)]);
+            let boundary =
+                crate::kernel::functions::EscrowRecoveryBoundary::from_raw_outputs(emitted);
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 let recovery = plan
-                    .recover_returned_views(output, &assumptions, &BTreeMap::new(), &[])
+                    .recover_returned_views(output, &boundary, &assumptions, &BTreeMap::new(), &[])
                     .unwrap();
                 assert!(recovery.resources.contains_exact_representation(&owner));
                 assert!(
@@ -1569,4 +1571,63 @@ fn returned_view_recovery_retains_the_constructed_frame_as_aliases_and_owners_gr
             "{aliases}: {samples:?}"
         );
     }
+}
+
+#[test]
+fn escrow_restoration_ignores_unrelated_frame_owners() {
+    let mut samples = Vec::new();
+    for count in [4usize, 16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let facts = PureFactContext::new();
+        let owner = memory(0, 8, true);
+        let mut resources =
+            ResourceContext::new_with_equalities(&facts).unchecked_with_fact(owner.clone());
+        let source = resources
+            .unique_owned_occurrence_for_fact(&owner)
+            .unwrap()
+            .0;
+        for index in 0..count {
+            resources = resources.unchecked_with_fact(ResourceFact::own_memory(
+                crate::kernel::MemoryRange::new(
+                    Address::symbolic(Variable(9_870_000 + index as u64)),
+                    0u32.into(),
+                    8u32.into(),
+                ),
+            ));
+        }
+        let (ledger, caller, callee) = participants();
+        let plan = plan_stable_view_transfer(
+            &resources,
+            &[checked(memory(0, 8, false))],
+            &facts,
+            &ledger,
+            caller,
+            callee,
+        )
+        .unwrap();
+        let frame = plan.caller_resources_after_requirements.clone();
+        let ((returned, work), maps) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                let recovery = plan
+                    .recover_stable_views(&facts, &BTreeMap::new(), &[])
+                    .unwrap();
+                recovery
+                    .restore_returned_escrows(
+                        frame,
+                        &crate::kernel::functions::EscrowRecoveryBoundary::default(),
+                        &facts,
+                    )
+                    .unwrap()
+                    .0
+            })
+        });
+        assert_eq!(returned.owned_fact_for_occurrence(source), Some(&owner));
+        samples.push((work, maps));
+    }
+    assert!(
+        samples
+            .iter()
+            .all(|(work, maps)| *work <= samples[0].0 + 64 && *maps <= samples[0].1 * 3 + 256),
+        "escrow restoration scanned unrelated state: {samples:?}"
+    );
 }

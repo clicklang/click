@@ -5,14 +5,14 @@ use super::*;
 use crate::kernel::intern_memory;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
-fn block(name: &str) -> PointerBlock {
-    PointerBlock::Concrete(name.to_string())
+fn block(name: &str) -> AddressBase {
+    AddressBase::Concrete(name.to_string())
 }
 
-fn at(block: PointerBlock, offset: i64) -> Pointer {
-    Pointer {
-        block,
-        offset: PointerOffsetTerm::Constant(offset),
+fn at(block: AddressBase, offset: i64) -> Address {
+    Address {
+        base: block,
+        offset: AddressOffset::Constant(offset),
     }
 }
 
@@ -20,12 +20,12 @@ fn one() -> ProgramValue {
     ProgramValue::Int32(MachineTerm::constant(1))
 }
 
-fn point(memory: &Memory) -> ProgramPoint {
+fn point(memory: &SymbolicMemory) -> ProgramPoint {
     ProgramPoint::at(&intern_memory(memory.clone()))
 }
 
-fn entry_memory() -> Memory {
-    Memory::new()
+fn entry_memory() -> SymbolicMemory {
+    SymbolicMemory::new()
         .with_block(block("global:g"), 16)
         .with_block(block("global:h"), 16)
         .with_block(block("local:f:i"), 4)
@@ -141,7 +141,7 @@ fn a_narrow_store_inside_a_wide_cell_reports_changed() {
 #[test]
 fn a_store_that_may_alias_reports_unknown_and_the_check_it_needs() {
     let entry = entry_memory();
-    let written = at(PointerBlock::Symbolic(Variable(77)), 0);
+    let written = at(AddressBase::Symbolic(Variable(77)), 0);
     let after = entry.clone().store(written.clone(), one());
     let cell = at(block("global:g"), 0);
     let outcome = same(
@@ -258,7 +258,7 @@ fn a_call_havoc_carries_a_block_outside_its_write_set_only() {
     // possibly one object, so a write set naming the global separates from
     // neither.
     let outcome = same(
-        TrackedResource::Block(&PointerBlock::ExternalArgument),
+        TrackedResource::Block(&AddressBase::ExternalArgument),
         &point(&after),
         &point(&entry),
     );
@@ -348,7 +348,7 @@ fn a_loop_without_a_write_set_needs_no_separation_check() {
 
 /// A bare declaration writes nothing, so one rule carries both resources
 /// across it: the declared object has its own `blocks` key, and a block
-/// proven distinct from it keeps its extent, cells, overlays, liveness and
+/// proven distinct from it keeps its size, cells, overlays, liveness and
 /// heap status. `mdtests/array_fact_survives_a_declaration.md` is the user's
 /// view of the same step.
 #[test]
@@ -405,7 +405,7 @@ fn a_block_does_not_cross_its_own_declaration_or_an_unseparated_one() {
 
     // A symbolic block is a logic variable later facts may constrain to any
     // address, so nothing separates it from the declared object.
-    let symbolic = PointerBlock::Symbolic(Variable(81));
+    let symbolic = AddressBase::Symbolic(Variable(81));
     let after = entry.clone().with_block(block("local:f:t"), 4);
     let outcome = same(
         TrackedResource::Block(&symbolic),
@@ -431,13 +431,13 @@ fn a_block_does_not_cross_its_own_declaration_or_an_unseparated_one() {
 /// continuation the recorded execution does not connect across.
 #[test]
 fn a_release_of_another_object_keeps_one_version() {
-    let heap = PointerBlock::Heap(1);
-    let fresh = Pointer {
-        block: heap.clone(),
-        offset: PointerOffsetTerm::Constant(0),
+    let heap = AddressBase::Heap(1);
+    let fresh = Address {
+        base: heap.clone(),
+        offset: AddressOffset::Constant(0),
     };
     let live = entry_memory()
-        .with_heap_allocation_claim(fresh.clone(), HeapExtent::int32(16))
+        .with_heap_allocation_claim(fresh.clone(), AllocationSize::int32(16))
         .expect("a fresh allocation claim");
     let freed = live
         .clone()
@@ -468,12 +468,12 @@ fn a_release_of_another_object_keeps_one_version() {
 /// printed as an internal error in every trace through a `free`.
 #[test]
 fn a_release_is_based_on_the_memory_it_started_from() {
-    let fresh = Pointer {
-        block: PointerBlock::Heap(1),
-        offset: PointerOffsetTerm::Constant(0),
+    let fresh = Address {
+        base: AddressBase::Heap(1),
+        offset: AddressOffset::Constant(0),
     };
     let live = entry_memory()
-        .with_heap_allocation_claim(fresh.clone(), HeapExtent::int32(16))
+        .with_heap_allocation_claim(fresh.clone(), AllocationSize::int32(16))
         .expect("a fresh allocation claim");
     let before = intern_memory(live.clone());
     let freed = intern_memory(
@@ -496,18 +496,18 @@ fn a_release_is_based_on_the_memory_it_started_from() {
 /// every array parameter of a function shares.
 #[test]
 fn a_release_inside_the_argument_object_stops_a_block_fact() {
-    let inside = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Constant(0),
+    let inside = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
     };
     let live = entry_memory()
-        .with_heap_allocation_claim(inside.clone(), HeapExtent::int32(16))
+        .with_heap_allocation_claim(inside.clone(), AllocationSize::int32(16))
         .expect("a fresh allocation claim");
     let freed = live
         .free_heap_block(&inside, &PureFactContext::new())
         .expect("the allocation is live, so it can be released");
     let stopped = last_same(
-        TrackedResource::Block(&PointerBlock::ExternalArgument),
+        TrackedResource::Block(&AddressBase::ExternalArgument),
         &point(&freed),
     )
     .expect("a block always has a last-same point");
@@ -557,17 +557,17 @@ fn a_lifetime_end_of_another_local_keeps_one_version() {
 
 /// An allocation request with no address yet records only that request, and
 /// nothing that decides what a read of a block sees consults it. The pin is
-/// that the step changes no extent, no cell, no overlay, no liveness and no
+/// that the step changes no size, no cell, no overlay, no liveness and no
 /// heap status other than the pending maps.
 #[test]
 fn a_pending_allocation_records_nothing_a_block_can_observe() {
     let entry = entry_memory();
     let requested = entry.clone().with_pending_heap_allocation(
-        Pointer {
-            block: PointerBlock::Symbolic(Variable(1_000)),
-            offset: PointerOffsetTerm::Constant(0),
+        Address {
+            base: AddressBase::Symbolic(Variable(1_000)),
+            offset: AddressOffset::Constant(0),
         },
-        HeapExtent::int32(16),
+        AllocationSize::int32(16),
         false,
     );
     assert_eq!(entry.blocks, requested.blocks);
@@ -588,9 +588,9 @@ fn a_pending_allocation_records_nothing_a_block_can_observe() {
     );
 
     for subject in [
-        PointerBlock::ExternalArgument,
+        AddressBase::ExternalArgument,
         block("global:g"),
-        PointerBlock::Symbolic(Variable(1_000)),
+        AddressBase::Symbolic(Variable(1_000)),
     ] {
         assert_eq!(
             same(
@@ -621,7 +621,7 @@ fn one_sided_explanation_reaches_the_beginning_of_the_history() {
     assert_eq!(explanation.outcome, Sameness::Same);
     assert_eq!(explanation.there, None);
 
-    let written = at(PointerBlock::Symbolic(Variable(78)), 0);
+    let written = at(AddressBase::Symbolic(Variable(78)), 0);
     let after = entry.store(written.clone(), one());
     let explanation = explain_last_same(
         TrackedResource::Cell {
@@ -650,7 +650,7 @@ fn an_explanation_counts_the_steps_it_crossed() {
     let entry = entry_memory();
     let blocked = entry
         .clone()
-        .store(at(PointerBlock::Symbolic(Variable(79)), 0), one());
+        .store(at(AddressBase::Symbolic(Variable(79)), 0), one());
     let after = blocked
         .clone()
         .store(at(block("local:f:i"), 0), one())
@@ -684,15 +684,15 @@ fn a_version_mismatch_names_the_resource_and_both_points() {
     let cell = at(block("global:g"), 0);
     let after = entry
         .clone()
-        .store(at(PointerBlock::Symbolic(Variable(80)), 0), one());
-    let load = |memory: &Memory| {
+        .store(at(AddressBase::Symbolic(Variable(80)), 0), one());
+    let load = |memory: &SymbolicMemory| {
         MachineTerm::MemoryLoad(
             ProgramPoint::at(&(intern_memory(memory.clone()))),
             Box::new(cell.clone()),
             crate::kernel::LoadKind::Int32,
         )
     };
-    let fact = |memory: &Memory| {
+    let fact = |memory: &SymbolicMemory| {
         Proposition::ConditionIs(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
@@ -739,7 +739,7 @@ fn a_version_mismatch_names_the_resource_and_both_points() {
 fn a_session_reset_empties_the_version_memos() {
     let memory = entry_memory().store(at(block("local:f:i"), 0), one());
     last_same_version_point(
-        TrackedResource::Block(&PointerBlock::ExternalArgument),
+        TrackedResource::Block(&AddressBase::ExternalArgument),
         &point(&memory),
     );
     assert!(
@@ -944,7 +944,7 @@ mod footprints {
         Evidence, FootprintSeparation, Separation, StepEffect, affects,
     };
 
-    fn bytes(base: Pointer, count: u32) -> MemoryRange {
+    fn bytes(base: Address, count: u32) -> MemoryRange {
         MemoryRange::new_with_element_width(
             base,
             MachineTerm::constant(0),
@@ -955,7 +955,7 @@ mod footprints {
 
     /// The rule's answer for the step that produced `after`, asked about a
     /// footprint that is `Some(ranges)` when the kernel could name it.
-    fn effect(after: &Memory, ranges: Option<&[MemoryRange]>) -> StepEffect {
+    fn effect(after: &SymbolicMemory, ranges: Option<&[MemoryRange]>) -> StepEffect {
         let produced = intern_memory(after.clone());
         let derivation = produced
             .derivation()
@@ -1007,7 +1007,7 @@ mod footprints {
     /// and removing one more often is the safe direction.
     #[test]
     fn a_store_through_an_argument_reaches_every_stated_footprint() {
-        let after = entry_memory().store(at(PointerBlock::ExternalArgument, 64), one());
+        let after = entry_memory().store(at(AddressBase::ExternalArgument, 64), one());
         let footprint = [bytes(at(block("global:g"), 0), 4)];
         assert!(!matches!(
             effect(&after, Some(&footprint)),
@@ -1023,8 +1023,8 @@ mod footprints {
     fn a_store_through_a_loaded_pointer_reaches_every_stated_footprint() {
         let cells = entry_memory();
         let source = intern_memory(cells.clone());
-        let p = Pointer::loaded_value(&source, &at(block("global:cells"), 0));
-        let q = Pointer::loaded_value(&source, &at(block("global:cells"), 8));
+        let p = Address::loaded_value(&source, &at(block("global:cells"), 0));
+        let q = Address::loaded_value(&source, &at(block("global:cells"), 8));
         let after = cells.store(q.offset_by_bytes(8), one());
         for footprint in [[bytes(p.clone(), 8)], [bytes(at(block("global:g"), 0), 4)]] {
             assert!(
@@ -1066,9 +1066,9 @@ mod footprints {
 fn a_cell_value_on_a_path_crosses_only_a_store_its_facts_place_elsewhere() {
     let cell = at(block("global:g"), 0);
     let index = MachineTerm::Variable(Variable(0));
-    let written = Pointer {
-        block: block("global:g"),
-        offset: PointerOffsetTerm::scaled_int32_node(index.clone(), 4),
+    let written = Address {
+        base: block("global:g"),
+        offset: AddressOffset::scaled_int32_node(index.clone(), 4),
     };
     let three = ProgramValue::Int32(MachineTerm::constant(3));
     let no_facts = PureFactContext::new();
@@ -1164,7 +1164,7 @@ fn branch_join_preserves_uncached_reads_only_when_every_arm_agrees() {
             .clone()
             .with_interface_memory_havoc(
                 Variable(981001),
-                &std::collections::BTreeSet::<crate::kernel::PointerBlock>::new(),
+                &std::collections::BTreeSet::<crate::kernel::AddressBase>::new(),
                 &[&first, &second],
             )
             .unwrap();
@@ -1183,14 +1183,14 @@ fn branch_join_preserves_uncached_reads_only_when_every_arm_agrees() {
         // A partial overlap in any arm blocks the full-width read, including
         // when that arm was not chosen as the join's derivation base.
         let changed = second.store(
-            at(cell.block.clone(), i64::from(bytes - 1)),
+            at(cell.base.clone(), i64::from(bytes - 1)),
             crate::kernel::uint8(9),
         );
         let bad = first
             .clone()
             .with_interface_memory_havoc(
                 Variable(981002),
-                &std::collections::BTreeSet::<crate::kernel::PointerBlock>::new(),
+                &std::collections::BTreeSet::<crate::kernel::AddressBase>::new(),
                 &[&first, &changed],
             )
             .unwrap();
@@ -1221,7 +1221,7 @@ fn branch_join_identity_retains_inputs_through_read_projection() {
         .clone()
         .with_interface_memory_havoc(
             Variable(981010),
-            &std::collections::BTreeSet::<crate::kernel::PointerBlock>::new(),
+            &std::collections::BTreeSet::<crate::kernel::AddressBase>::new(),
             &[&a, &b],
         )
         .unwrap();
@@ -1237,14 +1237,14 @@ fn branch_join_identity_retains_inputs_through_read_projection() {
         .clone()
         .with_interface_memory_havoc(
             Variable(981010),
-            &std::collections::BTreeSet::<crate::kernel::PointerBlock>::new(),
+            &std::collections::BTreeSet::<crate::kernel::AddressBase>::new(),
             &[&c, &d],
         )
         .unwrap();
     assert!(unchanged.known_value(&cell).is_none());
     assert!(changed.known_value(&cell).is_none());
     assert_ne!(unchanged, changed);
-    let project = |memory: &Memory| {
+    let project = |memory: &SymbolicMemory| {
         crate::kernel::reasoning::memory_resolution::canonical_memory_for_pointer_load(
             memory, &cell,
         )
@@ -1264,16 +1264,16 @@ fn branch_join_identity_retains_inputs_through_read_projection() {
 #[test]
 fn branch_join_typed_agreement_checks_alias_premises_and_access_width() {
     let cell = at(block("global:g"), 0);
-    let alias = Pointer {
-        block: PointerBlock::Symbolic(Variable(981021)),
-        offset: PointerOffsetTerm::Constant(0),
+    let alias = Address {
+        base: AddressBase::Symbolic(Variable(981021)),
+        offset: AddressOffset::Constant(0),
     };
     let before = entry_memory();
     let left = intern_memory(before.clone().store(at(block("local:f:i"), 0), one()));
     let right = intern_memory(before.store(alias.clone(), one()));
     let bare = PureFactContext::new();
     let separated = bare.clone().assume_condition(
-        ConditionTerm::pointer_equal(alias, at(cell.block.clone(), 8)),
+        ConditionTerm::pointer_equal(alias, at(cell.base.clone(), 8)),
         true,
     );
     let query = |facts: &PureFactContext, bytes| {
@@ -1386,9 +1386,9 @@ fn transport_diagnostic_retains_the_actual_cell_walk_and_scope() {
 #[test]
 fn named_cell_stop_retains_the_decision_made_by_its_walk() {
     let _session = crate::kernel::VerificationSession::enter();
-    let read = Pointer::symbolic(crate::kernel::Variable(981_201));
-    let write = Pointer::symbolic(crate::kernel::Variable(981_202));
-    let memory = intern_memory(Memory::new().store(write.clone(), one()));
+    let read = Address::symbolic(crate::kernel::Variable(981_201));
+    let write = Address::symbolic(crate::kernel::Variable(981_202));
+    let memory = intern_memory(SymbolicMemory::new().store(write.clone(), one()));
     let here = ProgramPoint::at(&memory);
     let named = last_same_named_cell(&read, 4, &here).expect("named cell");
     assert!(matches!(
@@ -1520,8 +1520,9 @@ fn a_cell_version_point_is_the_same_whichever_point_is_asked_first() {
     );
     let after_store = after_loop.clone().store(at(block("global:h"), 4), one());
     let cell = at(block("global:h"), 0);
-    let ask =
-        |memory: &Memory| cell_last_same_version_point(&intern_memory(memory.clone()), &cell, 4);
+    let ask = |memory: &SymbolicMemory| {
+        cell_last_same_version_point(&intern_memory(memory.clone()), &cell, 4)
+    };
     clear_version_memos();
     let store_first = (ask(&after_store), ask(&after_loop));
     clear_version_memos();
@@ -1585,7 +1586,7 @@ fn shared_offset_condition_resource_reads_keep_native_right_first_order() {
     use crate::kernel::{BooleanOperandView, KernelTermImport};
     let memory = intern_memory(entry_memory());
     let offset = |name| {
-        PointerOffsetTerm::scaled_int32_node(
+        AddressOffset::scaled_int32_node(
             MachineTerm::MemoryLoad(
                 ProgramPoint::at(&memory),
                 Box::new(at(block(name), 0)),
@@ -1595,7 +1596,7 @@ fn shared_offset_condition_resource_reads_keep_native_right_first_order() {
         )
     };
     let source = ConditionTerm::PointerOffsetEqual(
-        Box::new(PointerOffsetTerm::Add(
+        Box::new(AddressOffset::Add(
             Box::new(offset("global:g")),
             Box::new(offset("global:h")),
         )),
@@ -1615,7 +1616,7 @@ fn raw_pointer_condition_reads_keep_block_and_displacement_order() {
     use crate::kernel::{BooleanOperandView, KernelTermImport};
     let memory = intern_memory(entry_memory());
     let offset = |name| {
-        PointerOffsetTerm::scaled_int32_node(
+        AddressOffset::scaled_int32_node(
             MachineTerm::MemoryLoad(
                 ProgramPoint::at(&memory),
                 Box::new(at(block(name), 0)),
@@ -1624,10 +1625,9 @@ fn raw_pointer_condition_reads_keep_block_and_displacement_order() {
             4,
         )
     };
-    let mut left = Pointer::loaded_value(&memory, &at(block("local:f:pointer_left"), 0));
-    left.offset =
-        PointerOffsetTerm::Add(Box::new(offset("global:g")), Box::new(offset("global:h")));
-    let mut right = Pointer::loaded_value(&memory, &at(block("local:f:pointer_right"), 0));
+    let mut left = Address::loaded_value(&memory, &at(block("local:f:pointer_left"), 0));
+    left.offset = AddressOffset::Add(Box::new(offset("global:g")), Box::new(offset("global:h")));
+    let mut right = Address::loaded_value(&memory, &at(block("local:f:pointer_right"), 0));
     right.offset = offset("local:f:i");
     let source = ConditionTerm::PointerEqual(Box::new(left), Box::new(right));
     let root = KernelTermImport::default().condition(&source);
@@ -1644,7 +1644,7 @@ fn complete_pointer_conditions_keep_read_order() {
     use crate::kernel::{BooleanOperandView, KernelTermImport};
     let memory = intern_memory(entry_memory());
     let offset = |name| {
-        PointerOffsetTerm::scaled_int32_node(
+        AddressOffset::scaled_int32_node(
             MachineTerm::MemoryLoad(
                 ProgramPoint::at(&memory),
                 Box::new(at(block(name), 0)),
@@ -1653,10 +1653,9 @@ fn complete_pointer_conditions_keep_read_order() {
             4,
         )
     };
-    let mut left = Pointer::loaded_value(&memory, &at(block("local:f:pointer_left"), 0));
-    left.offset =
-        PointerOffsetTerm::Add(Box::new(offset("global:g")), Box::new(offset("global:h")));
-    let mut right = Pointer::loaded_value(&memory, &at(block("local:f:pointer_right"), 0));
+    let mut left = Address::loaded_value(&memory, &at(block("local:f:pointer_left"), 0));
+    left.offset = AddressOffset::Add(Box::new(offset("global:g")), Box::new(offset("global:h")));
+    let mut right = Address::loaded_value(&memory, &at(block("local:f:pointer_right"), 0));
     right.offset = offset("local:f:i");
     let source = ConditionTerm::PointerValueEqual(
         Box::new(PointerValue::new(left, ProgramType::Int32Pointer)),
@@ -1675,9 +1674,9 @@ fn complete_pointer_conditions_keep_read_order() {
 fn boolean_reads_report_only_the_one_byte_cell() {
     use crate::kernel::{BooleanOperandView, KernelTermImport};
     let memory = intern_memory(entry_memory());
-    let pointer = Pointer {
-        block: PointerBlock::Symbolic(Variable(999350)),
-        offset: PointerOffsetTerm::scaled_int32_node(
+    let pointer = Address {
+        base: AddressBase::Symbolic(Variable(999350)),
+        offset: AddressOffset::scaled_int32_node(
             MachineTerm::MemoryLoad(
                 ProgramPoint::at(&memory),
                 Box::new(at(block("global:g"), 0)),
@@ -1713,7 +1712,7 @@ fn path_of_stores(start: &ExecutionState, stores: &[(&str, u32)]) -> Vec<Executi
 }
 
 fn start_with(names: &[&str]) -> ExecutionState {
-    let memory = names.iter().fold(Memory::new(), |memory, name| {
+    let memory = names.iter().fold(SymbolicMemory::new(), |memory, name| {
         memory.with_block(block(name), 4)
     });
     ExecutionState::default().with_memory(memory)

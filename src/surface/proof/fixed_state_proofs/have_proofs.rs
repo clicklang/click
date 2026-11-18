@@ -276,7 +276,7 @@ pub(in crate::surface) struct FixedStateLoweringOptions<'a> {
     /// application binds its parameters. An argument that names another state
     /// (`old(a)`, `at(mark, a)`) binds the parameter to that state's memory;
     /// one read at the lowering state is absent and reads through it.
-    pub(in crate::surface) bound_array_memories: Option<&'a BTreeMap<String, SpecMemory>>,
+    pub(in crate::surface) bound_array_memories: Option<&'a BTreeMap<String, SpecPoint>>,
     /// Click functions that stay applications: the proof unfolds them itself.
     pub(in crate::surface) opaque_click_functions: Option<&'a BTreeSet<String>>,
     pub(in crate::surface) pointer_element_widths: BTreeMap<String, u32>,
@@ -966,7 +966,7 @@ pub(in crate::surface) fn evaluate_resource_argument_through_kernel(
     result: Option<&ProgramValue>,
 ) -> Result<ProgramValue, String> {
     // Most resource fragments already carry their resolved C spelling.
-    // Retain the source expression only where its `c(result)` distinction
+    // Retain the source expression only where its `program::result` distinction
     // matters, and keep the typed null supplied by parameter lowering.
     let original = if result.is_none()
         || !crate::surface::lowering::contract_expression_referenced_names(original)
@@ -1085,7 +1085,7 @@ pub(in crate::surface) fn evaluate_fixed_state_array_ref_through_kernel(
     | ContractExpression::ProgramExpression(ProgramExpression::Variable(
         crate::kernel::BindingName::Named(name),
     ))
-    | ContractExpression::CBinding(name) = expression
+    | ContractExpression::ProgramBinding(name) = expression
         && let Some(array_ref) = contract_environment.array_refs.get(name)
         && let Some(ProgramValue::Pointer(value)) = contract_environment.values.get(name)
     {
@@ -1108,21 +1108,20 @@ pub(in crate::surface) fn evaluate_fixed_state_array_ref_through_kernel(
             )
         ));
     };
-    let memory = match expression {
-        ContractExpression::Old(_) => fixed_state.pre_state.memory().clone(),
+    let point = match expression {
+        ContractExpression::Old(_) => fixed_state.pre_state.program_point(),
         ContractExpression::At { selector, .. } => {
             selected_program_state(selector, fixed_state.pre_state, fixed_state.recorded_states)?
-                .memory()
-                .clone()
+                .program_point()
         }
-        _ => fixed_state.state.memory().clone(),
+        _ => fixed_state.state.program_point(),
     };
     let element_type = contract_array_ref_element_type(contract_environment.array_refs, expression)
         .or_else(|| pointer.program_type().pointee_type())
         .ok_or_else(|| "array reference pointer has no modeled element type".to_string())?;
     Ok((
         ClickArrayRef {
-            memory,
+            point,
             pointer: pointer.pointer().clone(),
             element_type,
         },
@@ -1173,7 +1172,7 @@ fn has_live_aggregate_binding(state: &ExecutionState, name: &str) -> bool {
     state
         .locals()
         .aggregate_object_pointer(name)
-        .is_some_and(|slot| state.memory().has_block(&slot.block))
+        .is_some_and(|slot| state.memory().has_block(&slot.base))
 }
 
 impl FixedStateLowering {
@@ -1757,7 +1756,7 @@ mod retained_capture_tests {
             ProgramValue::Float64(MachineTerm::Variable(Variable(997002))),
             ProgramValue::Pointer(
                 crate::kernel::PointerValue::new(
-                    crate::kernel::Pointer::symbolic(Variable(997003)),
+                    crate::kernel::Address::symbolic(Variable(997003)),
                     ProgramType::Int32Pointer,
                 )
                 .with_pointee_constant(true),
@@ -1779,5 +1778,60 @@ mod retained_capture_tests {
         include!(
             "../../../scaling_tests/surface/proof/fixed_state_proofs/have_proofs/retained_capture.rs"
         );
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn fixed_array_argument_retains_the_selected_point_with_equal_memory() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let pointer = crate::kernel::Address::symbolic(crate::kernel::Variable(995_001));
+    let entry = ExecutionState::new()
+        .with_memory(crate::kernel::SymbolicMemory::new())
+        .with_local(
+            "a",
+            ProgramValue::typed_pointer(pointer, ProgramType::Int32Pointer),
+        );
+    let later = entry.clone().with_memory(entry.memory().clone());
+    assert_eq!(entry.memory(), later.memory());
+    let entry_id = entry.program_point_id().unwrap();
+    let later_id = later.program_point_id().unwrap();
+    assert_ne!(entry_id, later_id);
+
+    let values = BTreeMap::new();
+    let arrays = ClickArrayRefs::new();
+    let selector = ProgramPointSelector::ProgramPoint(ProgramPointRef {
+        region: CodeRegionRef::Region(0),
+        kind: ProgramPointKind::Exit,
+    });
+    let mut recorded = RecordedStates::new();
+    recorded.insert(selector.clone(), later.clone());
+    let binding = || {
+        Box::new(ContractExpression::ProgramExpression(
+            ProgramExpression::Variable("a".into()),
+        ))
+    };
+    for (expression, expected) in [
+        (ContractExpression::Old(binding()), entry_id),
+        (
+            ContractExpression::At {
+                selector,
+                expression: binding(),
+            },
+            later_id,
+        ),
+    ] {
+        let (array, _) = evaluate_fixed_state_array_ref_through_kernel(
+            &expression,
+            &PureFactContext::new(),
+            ContractEnvironment::new(&values, &arrays),
+            FixedStateFrame::new(&entry, &later, None, &recorded),
+            SpecDefinitions::new(
+                &PredicateEnvironment::new(&[]),
+                &ClickFunctionEnvironment::new(&[]),
+            ),
+        )
+        .unwrap();
+        assert_eq!(array.point.id(), Some(expected));
     }
 }

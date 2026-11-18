@@ -2,26 +2,24 @@
 //! native distinction between syntax, connections, capture and bound variables.
 use super::retained_folds::{FoldVariableRead, collect_argument, common_variables};
 use super::*;
-use crate::kernel::{
-    KernelPointerOffset, SharedPointerAddress, SharedPointerOffset, SharedPointerValue,
-};
+use crate::kernel::{KernelAddressOffset, SharedAddress, SharedAddressOffset, SharedPointerValue};
 
 enum Component<'a> {
-    Block(&'a PointerBlock),
+    Block(&'a AddressBase),
     Coordinate(Variable),
     Index(&'a KernelTerm),
 }
 
 fn visit_components<'a>(
-    addresses: impl IntoIterator<Item = &'a SharedPointerAddress>,
+    addresses: impl IntoIterator<Item = &'a SharedAddress>,
     mut visit: impl FnMut(Component<'a>),
 ) {
-    let mut seen = std::collections::HashSet::<&SharedPointerOffset>::new();
+    let mut seen = std::collections::HashSet::<&SharedAddressOffset>::new();
     for address in addresses {
         if checked_collection_checkpoint() {
             return;
         }
-        visit(Component::Block(address.node().block.native_atom()));
+        visit(Component::Block(address.node().base.native_atom()));
         let mut pending = vec![&address.node().offset];
         while let Some(offset) = pending.pop() {
             if checked_collection_checkpoint() {
@@ -31,28 +29,28 @@ fn visit_components<'a>(
                 continue;
             }
             match offset.node() {
-                KernelPointerOffset::Constant(_) => {}
-                KernelPointerOffset::Variable(variable) => visit(Component::Coordinate(*variable)),
-                KernelPointerOffset::Add([left, right]) => pending.extend([right, left]),
-                KernelPointerOffset::Int32Scaled { value, .. }
-                | KernelPointerOffset::Int64Scaled { value, .. } => visit(Component::Index(value)),
+                KernelAddressOffset::Constant(_) => {}
+                KernelAddressOffset::Variable(variable) => visit(Component::Coordinate(*variable)),
+                KernelAddressOffset::Add([left, right]) => pending.extend([right, left]),
+                KernelAddressOffset::Int32Scaled { value, .. }
+                | KernelAddressOffset::Int64Scaled { value, .. } => visit(Component::Index(value)),
             }
         }
     }
 }
 
 pub(super) fn collect_offset_variables_with_summaries(
-    offsets: &[SharedPointerOffset; 2],
+    offsets: &[SharedAddressOffset; 2],
     mode: FoldVariableRead,
     variables: &mut BTreeSet<Variable>,
     summaries: &mut std::collections::HashMap<u64, crate::persistent::PersistentSet<Variable>>,
 ) {
-    SharedPointerOffset::visit_pair(offsets, |node| {
+    SharedAddressOffset::visit_pair(offsets, |node| {
         if checked_collection_checkpoint() {
             return;
         }
         match node {
-            KernelPointerOffset::Variable(variable)
+            KernelAddressOffset::Variable(variable)
                 if mode == FoldVariableRead::ExpressionFree
                     && (collecting_connection_variables()
                         || COORDINATE_VARIABLES.with(std::cell::Cell::get)) =>
@@ -69,7 +67,7 @@ pub(super) fn collect_offset_variables_with_summaries(
 }
 
 pub(crate) fn collect_address_variables(
-    address: &SharedPointerAddress,
+    address: &SharedAddress,
     mode: FoldVariableRead,
     variables: &mut BTreeSet<Variable>,
 ) {
@@ -82,14 +80,14 @@ pub(crate) fn collect_pointer_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     // The native ProgramValue Integer-free reader treats pointers as opaque.
-    // Its expression/capture/binder readers visit address roles, not extent widths.
+    // Its expression/capture/binder readers visit address roles, not bounds widths.
     if mode != FoldVariableRead::IntegerFree {
         collect_addresses(pointer.addresses(), mode, variables);
     }
 }
 
 fn collect_addresses<'a>(
-    addresses: impl IntoIterator<Item = &'a SharedPointerAddress>,
+    addresses: impl IntoIterator<Item = &'a SharedAddress>,
     mode: FoldVariableRead,
     variables: &mut BTreeSet<Variable>,
 ) {
@@ -99,7 +97,7 @@ fn collect_addresses<'a>(
 /// A read address is a child of the enclosing common term traversal. Share its
 /// memo so diamonds of nested reads do not revisit their common prefixes.
 pub(super) fn collect_address_variables_with_summaries(
-    address: &SharedPointerAddress,
+    address: &SharedAddress,
     mode: FoldVariableRead,
     variables: &mut BTreeSet<Variable>,
     summaries: &mut std::collections::HashMap<u64, crate::persistent::PersistentSet<Variable>>,
@@ -108,7 +106,7 @@ pub(super) fn collect_address_variables_with_summaries(
 }
 
 fn collect_addresses_with_summaries<'a>(
-    addresses: impl IntoIterator<Item = &'a SharedPointerAddress>,
+    addresses: impl IntoIterator<Item = &'a SharedAddress>,
     mode: FoldVariableRead,
     variables: &mut BTreeSet<Variable>,
     summaries: &mut std::collections::HashMap<u64, crate::persistent::PersistentSet<Variable>>,
@@ -116,9 +114,9 @@ fn collect_addresses_with_summaries<'a>(
     let mut native_seen = SeenTerms::default();
     visit_components(addresses, |component| match component {
         Component::Block(block) if mode == FoldVariableRead::ExpressionFree => {
-            collect_pointer_block_bitvector_variables(block, variables);
+            collect_address_base_bitvector_variables(block, variables);
         }
-        Component::Block(PointerBlock::PureFunctionApplication(application)) => {
+        Component::Block(AddressBase::PureFunctionApplication(application)) => {
             if native_seen.pointers.insert(application.id()) {
                 for argument in application.arguments() {
                     collect_argument(argument, mode, variables, &mut native_seen);
@@ -126,9 +124,9 @@ fn collect_addresses_with_summaries<'a>(
             }
         }
         Component::Block(
-            PointerBlock::Symbolic(variable)
-            | PointerBlock::FunctionSymbolic(variable)
-            | PointerBlock::ExternalObject(variable),
+            AddressBase::Symbolic(variable)
+            | AddressBase::FunctionSymbolic(variable)
+            | AddressBase::ExternalObject(variable),
         ) if mode == FoldVariableRead::MachineCapture => {
             variables.insert(*variable);
         }
@@ -147,7 +145,7 @@ fn collect_addresses_with_summaries<'a>(
 }
 
 pub(crate) fn address_scope_summary(
-    address: &SharedPointerAddress,
+    address: &SharedAddress,
     summaries: &mut std::collections::HashMap<u64, IntegerScopeSummary>,
 ) -> IntegerScopeSummary {
     addresses_scope_summary(std::iter::once(address), summaries)
@@ -159,15 +157,15 @@ pub(crate) fn pointer_scope_summary(
     addresses_scope_summary(pointer.addresses(), summaries)
 }
 fn addresses_scope_summary<'a>(
-    addresses: impl IntoIterator<Item = &'a SharedPointerAddress>,
+    addresses: impl IntoIterator<Item = &'a SharedAddress>,
     summaries: &mut std::collections::HashMap<u64, IntegerScopeSummary>,
 ) -> IntegerScopeSummary {
     let mut result = IntegerScopeSummary::default();
     visit_components(addresses, |component| match component {
         Component::Block(
-            PointerBlock::Symbolic(variable)
-            | PointerBlock::FunctionSymbolic(variable)
-            | PointerBlock::ExternalObject(variable),
+            AddressBase::Symbolic(variable)
+            | AddressBase::FunctionSymbolic(variable)
+            | AddressBase::ExternalObject(variable),
         ) => result.reserve(*variable),
         Component::Index(root) => result.merge(collect_machine_operand_scope_summary(
             MachineOperandView::Shared(root),
@@ -188,8 +186,7 @@ pub(super) fn collect_pointer_bound_identities(
         if checked_collection_checkpoint() {
             return;
         }
-        if let PointerBlock::PureFunctionApplication(application) =
-            address.node().block.native_atom()
+        if let AddressBase::PureFunctionApplication(application) = address.node().base.native_atom()
             && seen.pointers.insert(application.id())
         {
             for argument in application.arguments() {
@@ -204,7 +201,7 @@ mod tests {
     use super::*;
     use std::sync::Arc;
     pub(super) fn native_variables(
-        pointer: &Pointer,
+        pointer: &Address,
         mode: FoldVariableRead,
     ) -> BTreeSet<Variable> {
         let mut result = BTreeSet::new();
@@ -242,29 +239,29 @@ mod tests {
     #[test]
     fn shared_address_readers_match_native_modes_without_export() {
         let _session = crate::kernel::VerificationSession::enter();
-        let memory = intern_memory(Memory::new());
+        let memory = intern_memory(SymbolicMemory::new());
         let cases = [
-            Pointer {
-                block: PointerBlock::Symbolic(Variable(1001001)),
-                offset: PointerOffsetTerm::scaled_int64_node(
+            Address {
+                base: AddressBase::Symbolic(Variable(1001001)),
+                offset: AddressOffset::scaled_int64_node(
                     MachineTerm::Variable(Variable(1001002)),
                     8,
                     true,
                 ),
             },
-            Pointer {
-                block: PointerBlock::PureFunctionApplication(SharedPureApplication::intern(
+            Address {
+                base: AddressBase::PureFunctionApplication(SharedPureApplication::intern(
                     "dependency_call".into(),
                     vec![PureFunctionArgument::Integer(
                         IntegerTerm::Variable(Variable(1001003)).into(),
                     )],
                 )),
-                offset: PointerOffsetTerm::Variable(Variable(1001004)),
+                offset: AddressOffset::Variable(Variable(1001004)),
             },
-            Pointer::loaded_value(&memory, &Pointer::symbolic(Variable(1001005))),
+            Address::loaded_value(&memory, &Address::symbolic(Variable(1001005))),
         ];
         for source in cases {
-            let shared = SharedPointerAddress::import(&source);
+            let shared = SharedAddress::import(&source);
             for mode in MODES {
                 let expected = native_variables(&source, mode);
                 let exports = KernelTermExport::machine_export_count();
@@ -293,12 +290,12 @@ mod tests {
             body: IntegerTerm::Variable(Variable(1001022)).into(),
         }
         .into();
-        let address = Pointer {
-            block: PointerBlock::PureFunctionApplication(SharedPureApplication::intern(
+        let address = Address {
+            base: AddressBase::PureFunctionApplication(SharedPureApplication::intern(
                 "fold_pointer".into(),
                 vec![PureFunctionArgument::Integer(fold.clone())],
             )),
-            offset: PointerOffsetTerm::scaled_int32_node(
+            offset: AddressOffset::scaled_int32_node(
                 MachineTerm::IntegerToMachine {
                     value: fold,
                     destination: MachineIntegerType::Int32,
@@ -306,7 +303,7 @@ mod tests {
                 4,
             ),
         };
-        let shared = SharedPointerAddress::import(&address);
+        let shared = SharedAddress::import(&address);
         for mode in MODES {
             let mut actual = BTreeSet::new();
             collect_address_variables(&shared, mode, &mut actual);
@@ -330,13 +327,13 @@ mod tests {
     fn complete_pointer_readers_keep_native_metadata_and_coordinate_policy() {
         let _session = crate::kernel::VerificationSession::enter();
         let source = PointerValue::new(
-            Pointer::symbolic(Variable(1001010)),
+            Address::symbolic(Variable(1001010)),
             ProgramType::VoidPointer,
         )
-        .with_provenance(Arc::new(Pointer::symbolic(Variable(1001011))))
-        .with_opaque_extent(Some(Arc::new(Pointer::symbolic(Variable(1001012)))))
-        .with_extent(Some(SubobjectExtent {
-            start: Pointer::symbolic(Variable(1001013)),
+        .with_provenance(Arc::new(Address::symbolic(Variable(1001011))))
+        .with_bounds_owner(Some(Arc::new(Address::symbolic(Variable(1001012)))))
+        .with_bounds(Some(SubobjectBounds {
+            start: Address::symbolic(Variable(1001013)),
             width: MachineTerm::Variable(Variable(1001014)),
         }));
         let shared = SharedPointerValue::import(&source);
@@ -361,11 +358,11 @@ mod tests {
             )
             .max
         );
-        let source = Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::Variable(Variable(1001015)),
+        let source = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Variable(Variable(1001015)),
         };
-        let shared = SharedPointerAddress::import(&source);
+        let shared = SharedAddress::import(&source);
         let before = COORDINATE_VARIABLES.with(|flag| flag.replace(true));
         let expected = native_variables(&source, FoldVariableRead::ExpressionFree);
         let mut actual = BTreeSet::new();

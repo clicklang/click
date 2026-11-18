@@ -8,12 +8,12 @@ fn aggregate_step_results_cost_their_fields_instead_of_unrelated_state() {
             let (mut state, source, layout) = fixture(fields);
             if unrelated {
                 for i in 0..size {
-                    let pointer = Memory::local_pointer(format!("other{i}"));
+                    let pointer = SymbolicMemory::local_pointer(format!("other{i}"));
                     state.set_memory(
                         state
                             .memory
                             .clone()
-                            .with_block(pointer.block.clone(), 4)
+                            .with_block(pointer.base.clone(), 4)
                             .store(pointer, int32(i)),
                     );
                 }
@@ -52,12 +52,12 @@ fn opaque_exception_creation_ignores_unrelated_memory_and_types() {
         let mut state = ExecutionState::new();
         for index in 0..size {
             TypeParameterName::intern(&format!("Unrelated{index}"));
-            let pointer = Memory::local_pointer(format!("other{index}"));
+            let pointer = SymbolicMemory::local_pointer(format!("other{index}"));
             state.set_memory(
                 state
                     .memory
                     .clone()
-                    .with_block(pointer.block.clone(), 4)
+                    .with_block(pointer.base.clone(), 4)
                     .store(pointer, int32(index)),
             );
         }
@@ -100,4 +100,112 @@ fn opaque_exception_creation_ignores_unrelated_memory_and_types() {
         costs.push(work);
     }
     assert!(costs.iter().all(|work| *work == costs[0]), "{costs:?}");
+}
+
+use crate::kernel::loans::LoanLedger;
+
+#[test]
+fn aggregate_copy_builds_one_loan_obligation_without_visiting_aliases_or_loans() {
+    let _session = VerificationSession::enter();
+    let (state, source, layout) = fixture(2);
+    let target = SymbolicMemory::local_pointer("destination");
+    let state = state.clone().with_memory(
+        state
+            .memory
+            .clone()
+            .with_block(target.base.clone(), layout.size_bytes()),
+    );
+    let target_expression = ProgramExpression::Value(ProgramValue::typed_pointer(
+        target.clone(),
+        ProgramType::UInt8Pointer,
+    ));
+    for grow_aliases in [true, false] {
+        let mut work = Vec::new();
+        for size in [4_u64, 16, 64] {
+            let mut ledger = LoanLedger::new();
+            let lender = ledger.fresh_participant().unwrap();
+            let borrower = ledger.fresh_participant().unwrap();
+            let mut assumptions = PureFactContext::new();
+            if grow_aliases {
+                for i in 0..size {
+                    assumptions = assumptions.assume_condition(
+                        ConditionTerm::pointer_equal(
+                            target.clone(),
+                            Address::symbolic(Variable(9_831_000 + i)),
+                        ),
+                        true,
+                    );
+                }
+            }
+            let mut last = None;
+            for i in 0..if grow_aliases { 1 } else { size } {
+                let owner = ResourceFact::own_memory(MemoryRange::new(
+                    Address::symbolic(Variable(9_832_000 + i)),
+                    0u32.into(),
+                    1u32.into(),
+                ));
+                let support = ResourceContext::new()
+                    .unchecked_with_fact(owner.clone())
+                    .unique_owned_occurrence_for_fact(&owner)
+                    .unwrap()
+                    .0;
+                let opening = ledger.lend(lender, borrower, support, owner).unwrap();
+                ledger = ledger.apply(&opening.transition).unwrap();
+                last = Some(opening);
+            }
+            let copy = |ledger: &LoanLedger| {
+                let state = state.clone().with_loan_ledger(Some(ledger.clone()));
+                let mut paths = execute_program_aggregate_copy_paths(
+                    &state,
+                    &target_expression,
+                    &source,
+                    &layout,
+                    AggregateCopyDestination::Assignment,
+                    &assumptions,
+                    &mut ExecutionBudget::for_new_execution(),
+                )
+                .unwrap();
+                assert_eq!(paths.len(), 1);
+                paths.pop().unwrap()
+            };
+            let (path, units) =
+                crate::instrumentation::measure_deterministic_work(|| copy(&ledger));
+            assert!(
+                matches!(path.outcome, StatementOutcome::Normal(_)),
+                "{:?}",
+                path.outcome
+            );
+            let [obligation] = path.obligations.as_slice() else {
+                panic!("expected one separation obligation");
+            };
+            let Proposition::ResourceSeparate { left, .. } = obligation.proposition() else {
+                panic!("expected a separation obligation");
+            };
+            let expected = Resource::Memory(MemoryRange::from_pointer_value(
+                &PointerValue::new(target.clone(), ProgramType::UInt8Pointer),
+                0u32.into(),
+                layout.size_bytes().into(),
+                1,
+            ));
+            assert_eq!(left.as_ref(), &expected);
+            work.push(units);
+
+            if grow_aliases {
+                let opening = last.unwrap();
+                let returned = ledger
+                    .transfer(opening.root_share, borrower, lender)
+                    .unwrap();
+                let ledger = ledger.apply(&returned).unwrap();
+                let ended = ledger.end(opening.scope, lender).unwrap();
+                let ledger = ledger.apply(&ended).unwrap();
+                let path = copy(&ledger);
+                assert!(matches!(path.outcome, StatementOutcome::Normal(_)));
+                assert!(path.obligations.is_empty());
+            }
+        }
+        assert!(
+            work.iter().all(|units| *units <= work[0] + 32),
+            "{grow_aliases}: {work:?}"
+        );
+    }
 }

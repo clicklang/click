@@ -1448,7 +1448,8 @@ impl ProgramLayouts {
                 .entry(id.function().to_owned())
                 .or_default()
                 .insert(id.source().map(str::to_owned));
-            let pointer = crate::kernel::Memory::string_literal_pointer(&id, literal.bytes());
+            let pointer =
+                crate::kernel::SymbolicMemory::string_literal_pointer(&id, literal.bytes());
             std::sync::Arc::make_mut(&mut self.string_literal_values).insert(
                 id,
                 ProgramValue::typed_pointer(
@@ -3087,6 +3088,11 @@ impl Parser {
             self.position += 1;
             let alias = self.expect_ident("C source alias")?;
             self.refuse_cast_type_binder(&alias)?;
+            if alias == "program" {
+                return Err(self.error(
+                    "`program` names the verified program's bindings (`program::name`) and cannot be a source alias",
+                ));
+            }
             if self
                 .source_aliases
                 .insert(alias.clone(), source_path.clone())
@@ -8839,6 +8845,9 @@ impl Parser {
         if matches!(self.peek(), Some(Token::Ident(_)))
             && self.peek_ident() != Some("old")
             && self.peek_ident() != Some("at")
+            && !(self.peek_ident() == Some("program")
+                && self.peek_next() == Some(&Token::ColonColon))
+            // The earlier `c(name)` / `rust(name)` forms reach their refusal.
             && self.peek_ident() != Some("c")
             && self.peek_ident() != Some("rust")
             && !(self.peek_ident() == Some("count")
@@ -9344,7 +9353,7 @@ impl Parser {
                         == Some(spec_arithmetic::SpecificationBinding::Proposition)
                 }
                 ContractExpression::Binding(name)
-                | ContractExpression::CBinding(name)
+                | ContractExpression::ProgramBinding(name)
                 | ContractExpression::ProgramExpression(ProgramExpression::Variable(
                     crate::kernel::BindingName::Named(name),
                 )) => {
@@ -10044,8 +10053,31 @@ impl Parser {
             self.expect(Token::Semicolon)?;
             return self.named_intro(binder);
         }
+        if self.peek() == Some(&Token::LParen) {
+            self.position += 1;
+            let mut names = vec![self.expect_ident("existential witness name")?];
+            self.expect(Token::Comma)?;
+            loop {
+                names.push(self.expect_ident("existential witness name")?);
+                if self.peek() != Some(&Token::Comma) {
+                    break;
+                }
+                self.position += 1;
+            }
+            self.expect(Token::RParen)?;
+            self.expect(Token::Equal)?;
+            self.expect_ident_spelling("obtain")?;
+            return self.parse_obtain(names);
+        }
         let output = self.parse_let_output_pattern()?;
         self.expect(Token::Equal)?;
+        if self.peek_ident() == Some("obtain") && !self.tactic_names.contains("obtain") {
+            self.position += 1;
+            let CallOutputPattern::Single(name) = output else {
+                return Err(self.error("use positional witness names on the left of `obtain`"));
+            };
+            return self.parse_obtain(vec![name]);
+        }
         if matches!(self.peek_ident(), Some("intro" | "induct"))
             && !self.tactic_names.contains(self.peek_ident().unwrap())
         {
@@ -10381,105 +10413,42 @@ impl Parser {
         }
     }
 
-    /// `obtain (name: Type, ...) { P }` opens an available
-    /// `exists (name: Type, ...) { P }`, binding its typed names.
-    fn parse_obtain(&mut self) -> Result<ProofTactic, ClickError> {
+    /// Parse the source before adding any of the output names to scope.
+    #[inline(never)]
+    fn parse_obtain(&mut self, names: Vec<String>) -> Result<ProofTactic, ClickError> {
         self.expect(Token::LParen)?;
-        let mut bindings = Vec::new();
-        loop {
-            let name = self.expect_ident("existential binding name")?;
-            if is_c_type_keyword(&name)
-                || self.names.contains(NameKind::ProofBinder, &name)
-                || bindings.iter().any(|(bound, _)| bound == &name)
-            {
+        let proposition = self.parse_proposition()?;
+        self.expect(Token::RParen)?;
+        self.expect(Token::Semicolon)?;
+        let mut source = match &proposition {
+            ClickProposition::At { proposition, .. } => proposition.as_ref(),
+            proposition => proposition,
+        };
+        let mut bindings = Vec::with_capacity(names.len());
+        let previous_integer_context = self.integer_literal_context;
+        for name in names {
+            let ClickProposition::Exists {
+                click_type, body, ..
+            } = source
+            else {
+                return Err(self.error(
+                    "`obtain` needs an existential proposition with at least one binder per output",
+                ));
+            };
+            self.refuse_cast_type_binder(&name)?;
+            if self.names.contains(NameKind::ProofBinder, &name) {
                 return Err(self.error(format!("`{name}` is already in scope")));
             }
-            self.expect(Token::Colon)?;
-            let (click_type, parsed_type) = self.parse_click_type()?;
-            if parsed_type
-                .as_ref()
-                .is_some_and(|parsed| parsed.struct_name.is_some() && !parsed.struct_pointer)
-            {
-                return Err(self.error("only pointer-to-struct types are supported"));
-            }
-            if matches!(
-                click_type,
-                ClickType::Function { .. } | ClickType::Parameter(_)
-            ) {
-                return Err(self.error(
-                    "existential binding type must be a concrete C, Integer, or algebraic type",
-                ));
-            }
-            bindings.push((name, click_type));
-            if self.peek() != Some(&Token::Comma) {
-                break;
-            }
-            self.position += 1;
+            self.bind_proof_name(&name, false)?;
+            let integer = *click_type == ClickType::Integer;
+            self.names
+                .set_scoped(NameKind::ContractBinding, &name, !integer);
+            self.names.set_scoped(NameKind::IntegerLet, &name, integer);
+            self.names.insert(NameKind::ProofBinder, name.clone());
+            bindings.push((name, click_type.clone()));
+            source = body;
         }
-        self.expect(Token::RParen)?;
-        self.expect(Token::LBrace)?;
-        let previous_integer_context = self.integer_literal_context;
-        for (name, click_type) in &bindings {
-            self.bind_proof_name(name, false)?;
-            match click_type {
-                ClickType::Resource => {
-                    return Err(
-                        self.error("Resource is currently supported only for theorem parameters")
-                    );
-                }
-                ClickType::Integer => {
-                    self.names
-                        .set_scoped(NameKind::ContractBinding, name, false);
-                    self.names.set_scoped(NameKind::IntegerLet, name, true);
-                    self.integer_literal_context = true;
-                }
-                ClickType::Program(_)
-                | ClickType::CObjectPointer { .. }
-                | ClickType::Algebraic(_) => {
-                    self.names.set_scoped(NameKind::IntegerLet, name, false);
-                    self.names.set_scoped(NameKind::ContractBinding, name, true);
-                    self.integer_literal_context = false;
-                }
-                ClickType::Proposition | ClickType::Function { .. } | ClickType::Parameter(_) => {
-                    unreachable!("rejected above")
-                }
-            }
-        }
-        let body = self.parse_proposition()?;
-        self.expect(Token::RBrace)?;
-        self.skip_redundant_semicolon();
         self.integer_literal_context = previous_integer_context;
-        self.names.extend(
-            NameKind::ProofBinder,
-            bindings.iter().map(|(name, _)| name.clone()),
-        );
-        // The state is independent of the newly bound variables, so
-        // `exists x. at(S, P(x))` is stated at the source as
-        // `at(S, exists x. P(x))`. This preserves the exact fact identity of
-        // an existential recorded at a past program point.
-        let (program_point, body) = match body {
-            ClickProposition::At {
-                selector,
-                proposition,
-            } => (Some(selector), *proposition),
-            body => (None, body),
-        };
-        let proposition = bindings
-            .iter()
-            .rev()
-            .fold(body, |body, (name, click_type)| ClickProposition::Exists {
-                click_type: click_type.clone(),
-                name: name.clone().into(),
-                written_name: None,
-                body: Box::new(body),
-            });
-        let proposition = match program_point {
-            Some(selector) => ClickProposition::At {
-                selector,
-                proposition: Box::new(proposition),
-            },
-            None => proposition,
-        };
         Ok(ProofTactic::LetSatisfy(ProofLetSatisfy {
             bindings,
             proposition,
@@ -10491,25 +10460,15 @@ impl Parser {
         let mut nested_both = 0;
         // The left blocks that hold only a nested `both`, outermost first.
         let mut nested_left_blocks = Vec::new();
-        self.expect(Token::LBrace)?;
-        let mut left_tactics = if self.peek_ident() == Some("both") {
-            nested_left_blocks.push((
-                self.positions[self.position - 1].clone(),
-                self.positions[self.position].clone(),
-            ));
-            self.position += 1;
-            nested_both += 1;
-            None
-        } else {
-            Some(self.parse_tactics_until_rbrace()?)
-        };
-
-        while left_tactics.is_none() {
-            if self.proof_nesting + nested_both >= STRUCTURAL_NESTING_LIMIT {
+        let mut left_tactics = Some(loop {
+            if nested_both > 0 && self.proof_nesting + nested_both >= STRUCTURAL_NESTING_LIMIT {
                 return Err(self.error(format!(
                     "structural proof nesting exceeds Click's supported depth of {STRUCTURAL_NESTING_LIMIT}"
                 )));
             }
+            self.expect(Token::LBrace)?;
+            self.expect_ident_spelling("left")?;
+            self.expect(Token::FatArrow)?;
             self.expect(Token::LBrace)?;
             if self.peek_ident() == Some("both") {
                 nested_left_blocks.push((
@@ -10519,17 +10478,18 @@ impl Parser {
                 self.position += 1;
                 nested_both += 1;
             } else {
-                left_tactics = Some(self.parse_tactics_until_rbrace()?);
+                break self.parse_tactics_until_rbrace()?;
             }
-        }
+        });
         self.expect(Token::RBrace)?;
 
         let mut current = None;
         for level in 0..=nested_both {
-            self.expect_ident_spelling("and")?;
-            self.expect(Token::LBrace)?;
-            let right_tactics = self.parse_tactics_until_rbrace()?;
+            self.expect_ident_spelling("right")?;
+            self.expect(Token::FatArrow)?;
+            let right_tactics = self.parse_possibly_empty_tactic_block()?;
             self.expect(Token::RBrace)?;
+            self.skip_redundant_semicolon();
             let left = if let Some(current) = current.take() {
                 vec![current]
             } else {
@@ -10548,7 +10508,6 @@ impl Parser {
                 self.expect(Token::RBrace)?;
             }
         }
-        self.skip_redundant_semicolon();
         Ok(current.expect("the both tactic chain has a root"))
     }
 
@@ -10651,19 +10610,16 @@ impl Parser {
             let resource = self.parse_declared_resource_call()?;
             self.expect(Token::RParen)?;
             let tactics = self.parse_possibly_empty_tactic_block()?;
-            // `open(r) { ... } by ...`: the proof of the one body fact the
-            // closing fold leaves open, as after `fold(r) by`.
-            let close_proof = if self.peek_ident() == Some("by") {
-                self.position += 1;
-                Some(self.parse_step_proof_body()?)
-            } else {
-                None
-            };
+            if self.peek_ident() == Some("by") {
+                return Err(self.error(
+                    "`open` takes no trailing `by`; prove the closing fact with `have` inside the block",
+                ));
+            }
             self.skip_redundant_semicolon();
             return Ok(ProofTactic::Open(ProofOpen {
                 resource,
                 tactics,
-                close_proof,
+                deferred_tail: false,
             }));
         }
         if name == "cases" {
@@ -10774,22 +10730,43 @@ impl Parser {
             self.expect(Token::LBrace)?;
             let mut returned_tactics = None;
             let mut threw_tactics = None;
+            let mut payload_bindings = [None, None];
             while self.peek() != Some(&Token::RBrace) {
                 let arm = self.expect_ident("`returned` or `threw`")?;
-                self.expect(Token::FatArrow)?;
-                let tactics = self.parse_possibly_empty_tactic_block()?;
-                let slot = match arm.as_str() {
-                    "returned" => &mut returned_tactics,
-                    "threw" => &mut threw_tactics,
+                let (index, slot) = match arm.as_str() {
+                    "returned" => (0, &mut returned_tactics),
+                    "threw" => (1, &mut threw_tactics),
                     _ => {
                         return Err(self.error(format!(
                             "`outcomes` arms are `returned` and `threw`, got `{arm}`"
                         )));
                     }
                 };
-                if slot.replace(tactics).is_some() {
+                if slot.is_some() {
                     return Err(self.error(format!("duplicate `outcomes` arm `{arm}`")));
                 }
+                let binding = if self.peek() == Some(&Token::LParen) {
+                    self.expect(Token::LParen)?;
+                    let name = self.expect_ident("call payload name")?;
+                    self.refuse_cast_type_binder(&name)?;
+                    self.refuse_fact_name_in_scope(&name)?;
+                    self.expect(Token::RParen)?;
+                    Some(name)
+                } else {
+                    None
+                };
+                self.expect(Token::FatArrow)?;
+                let scope = self.names.scope();
+                let value_scope = self.loop_proof_value_names.clone();
+                if let Some(name) = &binding {
+                    self.bind_proof_name(name, false)?;
+                    self.names.set_scoped(NameKind::ContractBinding, name, true);
+                }
+                let tactics = self.parse_possibly_empty_tactic_block();
+                self.names.end(scope);
+                self.loop_proof_value_names = value_scope;
+                *slot = Some(tactics?);
+                payload_bindings[index] = binding;
                 if self.peek() == Some(&Token::Comma) {
                     self.position += 1;
                 }
@@ -10801,6 +10778,7 @@ impl Parser {
             };
             self.skip_redundant_semicolon();
             return Ok(ProofTactic::CallOutcomes(ProofCallOutcomes {
+                payload_bindings,
                 returned_tactics,
                 threw_tactics,
             }));
@@ -10832,7 +10810,7 @@ impl Parser {
             // The loop's pass count, an Integer, is in scope in its clauses
             // and proofs, so a comparison with it reads its other side as an
             // Integer, as one with a population count does.
-            // A program binding of that name is `c(iterations)`.
+            // A program binding of that name is `program::iterations`.
             let iterations_was_bound = self.names.contains(
                 NameKind::IntegerParameter,
                 crate::surface::LOOP_ITERATIONS_NAME,
@@ -11269,7 +11247,7 @@ impl Parser {
                 }
                 ProofTactic::Witness(ProofWitness::new(values))
             }
-            "obtain" => return self.parse_obtain(),
+            "obtain" => return Err(self.error("write `let name = obtain(exists (k: Type) { P });` to name an existential witness")) ,
             "check_termination_local" => {
                 self.expect(Token::LParen)?;
                 let function = self.expect_string("function name")?;
@@ -13024,7 +13002,7 @@ impl Parser {
             return Ok(vec![self.object_segment(base, struct_name)?]);
         }
         // A declared struct object owns all of its storage, with the same
-        // word-based extent as `*p` for a pointer to that struct. Retain its
+        // word-based size as `*p` for a pointer to that struct. Retain its
         // imported ABI so input cells use the actual field types.
         if postfixes == 0
             && self.peek() != Some(&Token::LBracket)
@@ -13316,7 +13294,7 @@ impl Parser {
                 .ok_or_else(|| self.error("aggregate field offset overflows"))?;
             let absolute_end = base_offset
                 .checked_add(resolved.slot_end_bytes)
-                .ok_or_else(|| self.error("aggregate field extent overflows"))?;
+                .ok_or_else(|| self.error("aggregate field size overflows"))?;
             let mut absolute = resolved.clone();
             absolute.offset_bytes = absolute_offset;
             absolute.slot_end_bytes = absolute_end;
@@ -13840,7 +13818,7 @@ impl Parser {
                 || field.slot_end_bytes < field.offset_bytes
                 || !(field.slot_end_bytes - field.offset_bytes).is_multiple_of(width)
             {
-                return Err(self.error("inline array field has an invalid resource extent"));
+                return Err(self.error("inline array field has an invalid resource size"));
             }
             return Ok(());
         }
@@ -14282,7 +14260,7 @@ impl Parser {
                 // This preserves the field's pointee type and qualifiers even
                 // when the aggregate itself uses byte-addressed storage.
                 // The member is its own subobject, as the C frontend narrows
-                // `&p->f` (`design/pointer-subobject-extents.md`), so a
+                // `&p->f` (`design/pointer-subobject-bounds.md`), so a
                 // contract's `&pair->second` is the program's pointer value
                 // and is not equal to `&pair->first + 1`.
                 if let ProgramExpression::TypedLoad { value_type, .. } = lowered
@@ -14293,6 +14271,21 @@ impl Parser {
                         lowered: ProgramExpression::AddressOf(Box::new(contract_member_lvalue(
                             lowered,
                         ))),
+                    });
+                }
+                // An embedded record is already lowered as its address,
+                // rather than a scalar load. Select that record's complete
+                // subobject bounds, just as the source frontend does.
+                if !matches!(lowered, ProgramExpression::TypedLoad { .. })
+                    && let Some(name) = self.contract_expression_struct_name(&expression)
+                    && let Some(layout) = self.struct_layouts.get(&name)
+                {
+                    return Ok(ContractExpression::CUnary {
+                        operand: Box::new(expression.clone()),
+                        lowered: ProgramExpression::Subobject {
+                            pointer: Box::new(lowered.clone()),
+                            width: layout.size_bytes(),
+                        },
                     });
                 }
                 let source_base = (**base).clone();
@@ -15208,9 +15201,9 @@ impl Parser {
             self.expect(Token::RParen)?;
             return Ok(ContractExpression::ProgramExpression(
                 ProgramExpression::Value(ProgramValue::typed_pointer(
-                    crate::kernel::Pointer {
-                        block: crate::kernel::PointerBlock::StaticObject { binding: id },
-                        offset: crate::kernel::PointerOffsetTerm::Constant(0),
+                    crate::kernel::Address {
+                        base: crate::kernel::AddressBase::StaticObject { binding: id },
+                        offset: crate::kernel::AddressOffset::Constant(0),
                     },
                     ProgramType::UInt8Pointer,
                 )),
@@ -15437,12 +15430,12 @@ impl Parser {
             self.expect(Token::RParen)?;
             return Ok(Some(ContractExpression::ProgramExpression(
                 ProgramExpression::Value(ProgramValue::typed_pointer(
-                    crate::kernel::Pointer {
-                        block: crate::kernel::PointerBlock::AutomaticLocal {
+                    crate::kernel::Address {
+                        base: crate::kernel::AddressBase::AutomaticLocal {
                             binding: id,
                             instance,
                         },
-                        offset: crate::kernel::PointerOffsetTerm::Constant(0),
+                        offset: crate::kernel::AddressOffset::Constant(0),
                     },
                     ProgramType::UInt8Pointer,
                 )),
@@ -15589,9 +15582,9 @@ impl Parser {
             let exceptional = self.peek_ident() == Some("exception");
             self.position += 4;
             let block = if exceptional {
-                crate::kernel::PointerBlock::ContractException
+                crate::kernel::AddressBase::ContractException
             } else if self.peek() == Some(&Token::RParen) {
-                crate::kernel::PointerBlock::ContractResult
+                crate::kernel::AddressBase::ContractResult
             } else {
                 let kind = self.expect_ident("return storage kind `frame`")?;
                 if kind != "frame" {
@@ -15599,14 +15592,14 @@ impl Parser {
                 }
                 self.expect(Token::Comma)?;
                 let frame = self.expect_u64("return storage frame")?;
-                crate::kernel::PointerBlock::AggregateReturn { frame }
+                crate::kernel::AddressBase::AggregateReturn { frame }
             };
             self.expect(Token::RParen)?;
             return Ok(ContractExpression::ProgramExpression(
                 ProgramExpression::Value(ProgramValue::typed_pointer(
-                    crate::kernel::Pointer {
-                        block,
-                        offset: crate::kernel::PointerOffsetTerm::Constant(0),
+                    crate::kernel::Address {
+                        base: block,
+                        offset: crate::kernel::AddressOffset::Constant(0),
                     },
                     ProgramType::UInt8Pointer,
                 )),
@@ -15806,34 +15799,39 @@ impl Parser {
             });
         }
 
-        // `c(name)` names a C binding, and `rust(name)` a Rust one, where a
-        // Click name has the same spelling; any other argument is an ordinary
-        // call, so a declaration that takes the name is refused by name
-        // rather than failing to parse at its first use.
+        // `program::name` names the verified program's binding `name`, as the
+        // program itself resolves it at this point, where a Click name has the
+        // same spelling (`result`, `iterations`). The form is the same in every
+        // source language.
+        if self.peek_ident() == Some("program")
+            && self.peek_next() == Some(&Token::ColonColon)
+            && matches!(self.tokens.get(self.position + 2), Some(Token::Ident(_)))
+        {
+            self.position += 2;
+            let name = self.expect_ident("program binding name")?;
+            self.refuse_unknown_loop_value(&name)?;
+            return Ok(ContractExpression::ProgramBinding(name));
+        }
+        // The earlier language-named forms are refused with their replacement.
         if matches!(self.peek_ident(), Some("c" | "rust"))
             && self.peek_next() == Some(&Token::LParen)
             && matches!(self.tokens.get(self.position + 2), Some(Token::Ident(_)))
             && self.tokens.get(self.position + 3) == Some(&Token::RParen)
+            && !matches!(
+                self.peek_ident()
+                    .and_then(|name| self.specification_binding_kind(name)),
+                Some(spec_arithmetic::SpecificationBinding::Function { .. })
+            )
         {
-            let written = self.peek_ident() == Some("rust");
-            if written != self.verifies_rust() {
-                let name = match self.tokens.get(self.position + 2) {
-                    Some(Token::Ident(name)) => name.clone(),
-                    _ => unreachable!("checked above"),
-                };
-                return Err(self.error(if written {
-                    format!(
-                        "`rust({name})` names a Rust binding; a C or C++ source's is `c({name})`"
-                    )
-                } else {
-                    format!("`c({name})` names a C binding; a Rust source's is `rust({name})`")
-                }));
-            }
-            self.position += 2;
-            let name = self.expect_ident("C binding name")?;
-            self.refuse_unknown_loop_value(&name)?;
-            self.expect(Token::RParen)?;
-            return Ok(ContractExpression::CBinding(name));
+            let (Some(Token::Ident(form)), Some(Token::Ident(name))) = (
+                self.tokens.get(self.position),
+                self.tokens.get(self.position + 2),
+            ) else {
+                unreachable!("checked above");
+            };
+            return Err(self.error(format!(
+                "`{form}({name})` is no longer Click syntax: a program binding is `program::{name}`"
+            )));
         }
 
         if self.peek_ident() == Some("address") && self.peek_next() == Some(&Token::LParen) {
@@ -15861,7 +15859,7 @@ impl Parser {
             if matches!(
                 &source_pointer,
                 ContractExpression::Binding(_)
-                    | ContractExpression::CBinding(_)
+                    | ContractExpression::ProgramBinding(_)
                     | ContractExpression::ProgramExpression(_)
                     | ContractExpression::QualifiedC { .. }
             ) {
@@ -16028,7 +16026,7 @@ impl Parser {
                 }
                 // Inside a loop, `iter` is the loop's iterator, read through
                 // its accessors, even where the function has a local of
-                // that name, which is `rust(iter)`.
+                // that name, which is `program::iter`.
                 if name == "iter"
                     && let Some(expression) = self.take_rust_iterator_method(&name, None)?
                 {
@@ -16362,6 +16360,10 @@ impl Parser {
     /// Whether an identifier starts `Name::Variant` or `Name<arguments>::Variant`.
     fn looks_like_algebraic_constructor(&self) -> bool {
         if !matches!(self.peek(), Some(Token::Ident(_))) {
+            return false;
+        }
+        // `program::name` is a program binding, never a datatype's variant.
+        if self.peek_ident() == Some("program") {
             return false;
         }
         if self.peek_next() == Some(&Token::ColonColon) {
@@ -17519,7 +17521,7 @@ fn row_major_index_path(flat_index: u32, shape: &[u32]) -> String {
 }
 
 /// A scalar member load whose place is narrowed to the member, for a
-/// contract's `&p->f`: the address keeps the member's extent as the C
+/// contract's `&p->f`: the address keeps the member's bounds as the C
 /// frontend's member address does. The specification lowers the address as
 /// one C fragment, so the kernel evaluates the narrowing.
 fn contract_member_lvalue(load: &ProgramExpression) -> ProgramExpression {
@@ -17677,11 +17679,17 @@ fn validate_parenthesis_nesting(
                     .is_some_and(|(_, parent_proof, _)| *parent_proof);
                 let proof = pending_proof_blocks != 0 || parent_is_proof;
                 pending_proof_blocks = pending_proof_blocks.saturating_sub(1);
+                let preceding = index.checked_sub(1).and_then(|i| tokens.get(i));
+                // The outer `both` braces group the labeled arms. Only
+                // the arm bodies add proof nesting.
+                let both_container = matches!(preceding, Some(Token::Ident(name)) if name == "both")
+                    && matches!(tokens.get(index + 1..index + 4),
+                        Some([Token::Ident(label), Token::FatArrow, Token::LBrace]) if label == "left");
                 // Proof `if` else blocks are read by the iterative spine
                 // parser. They retain a scope, but no recursive parser frame.
                 let recursive_proof = proof
-                    && !matches!(index.checked_sub(1).and_then(|i| tokens.get(i)),
-                        Some(Token::Ident(name)) if name == "else");
+                    && !both_container
+                    && !matches!(preceding, Some(Token::Ident(name)) if name == "else");
                 brace_kinds.push((quantifier, proof, recursive_proof));
                 if quantifier {
                     if quantifier_depth + 1 >= STRUCTURAL_NESTING_LIMIT {
@@ -18211,7 +18219,10 @@ mod tactic_classification_tests {
             "cases",
             "cases { x == 1 => { normalize(); } x != 1 => { normalize(); } }",
         ),
-        ("both", "both { normalize(); } and { normalize(); }"),
+        (
+            "both",
+            "both { left => { normalize(); } right => { normalize(); } }",
+        ),
         (
             "branch",
             "branch ensuring { fact x == 1; } then { normalize(); } else { normalize(); }",
@@ -18226,7 +18237,7 @@ mod tactic_classification_tests {
         ),
         ("observe-resource", "observe(reference(p));"),
         ("witness", "witness(1);"),
-        ("obtain", "obtain (x: Integer) { x == x }"),
+        ("obtain", "let x = obtain(exists (k: Integer) { k == k });"),
         ("known", "known();"),
         ("normalize", "normalize();"),
         ("normalize-using", "normalize() using { x == 1; };"),
@@ -18370,7 +18381,7 @@ mod loop_name_tests {
         for (body, clause) in [
             ("invariant bogus <= n;", "invariant"),
             ("invariant bogus == bogus;", "invariant"),
-            ("invariant c(bogus) == n;", "invariant"),
+            ("invariant program::bogus == n;", "invariant"),
             (
                 "invariant (0..n).all(|bogus| { bogus == bogus }); invariant bogus == 0;",
                 "invariant",

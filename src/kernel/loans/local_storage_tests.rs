@@ -1,12 +1,12 @@
 use super::*;
-use crate::kernel::{Memory, Pointer, PointerOffsetTerm};
+use crate::kernel::{Address, AddressOffset, SymbolicMemory};
 
 fn view(index: usize, end: u32) -> CheckedResourceFact {
     CheckedResourceFact {
         fact: ResourceFact::view_memory(MemoryRange::new(
-            Pointer {
-                block: format!("local:loan-{index}").into(),
-                offset: PointerOffsetTerm::Constant(0),
+            Address {
+                base: format!("local:loan-{index}").into(),
+                offset: AddressOffset::Constant(0),
             },
             0.into(),
             end.into(),
@@ -34,8 +34,8 @@ fn plan() -> StableViewTransferPlan {
 
 #[test]
 fn local_views_preserve_aliases_check_bounds_and_mint_no_owned_escrow() {
-    let memory = Memory::new().with_block(
-        view(0, 2).fact.memory_range().unwrap().base().block.clone(),
+    let memory = SymbolicMemory::new().with_block(
+        view(0, 2).fact.memory_range().unwrap().base().base.clone(),
         8,
     );
     let assumptions = PureFactContext::new();
@@ -52,7 +52,7 @@ fn local_views_preserve_aliases_check_bounds_and_mint_no_owned_escrow() {
         .recover_stable_views(&assumptions, &BTreeMap::new(), &[])
         .unwrap();
     assert!(recovery.resources.is_empty());
-    assert!(recovery.recovered_escrows.is_empty());
+    assert!(recovery.restorations.is_empty());
     assert!(recovery.terminal_ledger.invariant_holds());
     let mut outside = self::plan();
     assert!(
@@ -60,7 +60,7 @@ fn local_views_preserve_aliases_check_bounds_and_mint_no_owned_escrow() {
             .lend_local_views(&memory, &[view(0, 3)], &assumptions)
             .is_err()
     );
-    let ended = memory.without_local_block(&view(0, 2).fact.memory_range().unwrap().base().block);
+    let ended = memory.without_local_block(&view(0, 2).fact.memory_range().unwrap().base().base);
     assert!(
         outside
             .lend_local_views(&ended, &[view(0, 1)], &assumptions)

@@ -4,7 +4,6 @@ use super::*;
 
 pub(super) enum Construction {
     Body(Box<ConstructedReturnBody>),
-    Unsupported,
 }
 
 #[derive(Clone, Copy)]
@@ -145,6 +144,7 @@ pub(super) fn construct(
     composition: ReturnResourceComposition,
     borrowed: bool,
     assumptions: &PureFactContext,
+    mut admission: Option<&mut ReturnFrontierAdmission>,
 ) -> Option<Construction> {
     let name = match support.resource() {
         Resource::Instance(instance) => instance.name(),
@@ -237,7 +237,7 @@ pub(super) fn construct(
         .clone()
         .allow_symbolic_contract_loads()
         .prefer_symbolic_external_loads()
-        .assume_entry_clause_extents()
+        .assume_entry_clause_spans()
         .assume_held_resource_domains();
     let mut budget = ExecutionBudget::beside_live_state();
     let active = match evaluate_composite_resource_body_condition(
@@ -258,6 +258,8 @@ pub(super) fn construct(
         .iter()
         .map(ProgramParameter::binding_name)
         .collect::<BTreeSet<_>>();
+    let fixed_guard =
+        summary_transfer::invariant_condition(definition.condition.as_ref(), &parameters);
     let mut context = ResourceContext::new_with_equalities(assumptions);
     let mut transfers = Vec::new();
     let mut viewed_children = Vec::new();
@@ -284,7 +286,20 @@ pub(super) fn construct(
                 .ok()?
                 .ok()?
         };
+        let transferred = if let Some(admission) = admission.as_deref_mut() {
+            admission.admit(&fact, assumptions)?
+        } else {
+            None
+        };
         let origin = if fact.is_view() {
+            ReturnOwnershipOrigin::Description
+        } else if let Some(input) = transferred {
+            ReturnOwnershipOrigin::ConsumedCell(input)
+        } else if admission
+            .as_ref()
+            .is_some_and(|admission| !admission.constructed_partition)
+            && fact.memory_own_range().is_some()
+        {
             ReturnOwnershipOrigin::Description
         } else if borrowed
             && (fixed_memory_shape(spec, &parameters).is_some()
@@ -299,22 +314,26 @@ pub(super) fn construct(
             && let Some(transfer) = consumed.children.get(&vec![clause, index])
         {
             ReturnOwnershipOrigin::ConsumedCell(*transfer)
-        } else if let Some((creator, events)) = composition.allocation_events() {
-            FreshAllocationReturn::from_created_owner(&fact, creator, events)
-                .map(ReturnOwnershipOrigin::FreshAllocation)
-                .unwrap_or(ReturnOwnershipOrigin::Description)
+        } else if let Some(fresh) = composition
+            .allocation_events()
+            .and_then(|(creator, events)| {
+                FreshAllocationReturn::from_created_owner(&fact, creator, events)
+            })
+        {
+            ReturnOwnershipOrigin::FreshAllocation(fresh)
+        } else if borrowed
+            && (fixed_memory_shape(spec, &parameters).is_some()
+                || fixed_guard
+                    && definition.matched.is_none()
+                    && summary_transfer::invariant_memory_shape(spec, &parameters))
+        {
+            ReturnOwnershipOrigin::EntryBorrow
         } else {
             ReturnOwnershipOrigin::Description
         };
-        let (next, emitted) = match context.admit_without_discovery([fact.clone()], assumptions) {
-            OwnershipAdmission::Admitted { context, inserted } => (context, inserted),
-            OwnershipAdmission::Conflict(_) => {
-                return None;
-            }
-            OwnershipAdmission::Unsupported(_) => {
-                return Some(Construction::Unsupported);
-            }
-        };
+        let (next, emitted) = context
+            .install_established_partition([fact.clone()], assumptions)
+            .ok()?;
         context = next;
         let child = emitted[0].1;
         if fact.is_view() {

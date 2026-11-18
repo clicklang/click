@@ -6,7 +6,7 @@
 //!
 //! V14 design handoff: the extension model treats a context as an abstract
 //! sequential actor and explores interleavings only at explicit transition
-//! boundaries. Memory is a bounded array of initialized byte cells; ranges
+//! boundaries. SymbolicMemory is a bounded array of initialized byte cells; ranges
 //! are nonempty, concrete, and at most eight cells wide in the witnesses.
 //! The original loan search remains depth five with a 50,000-state cap, and
 //! extension identities are eight-bit counters with checked exhaustion. This
@@ -35,7 +35,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::kernel::functions::CheckedResourceFact;
 use crate::kernel::loans::{LoanLedger, LoanRefusal, LoanViewBinding, plan_stable_view_transfer};
 use crate::kernel::{
-    MachineTerm, MemoryRange, Pointer, PointerOffsetTerm, PureFactContext, ResourceContext,
+    Address, AddressOffset, MachineTerm, MemoryRange, PureFactContext, ResourceContext,
     ResourceFact, ResourceOccurrenceId, ResourceStateSource, ResourceTransferRole,
 };
 
@@ -1228,9 +1228,9 @@ impl ThreadLocalCellModel {
 
 fn production_memory_fact(start: u32, end: u32, own: bool) -> ResourceFact {
     let range = MemoryRange::new(
-        Pointer {
-            block: "v14-buffer".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        Address {
+            base: "v14-buffer".into(),
+            offset: AddressOffset::Constant(0),
         },
         MachineTerm::constant(start),
         MachineTerm::constant(end),

@@ -37,7 +37,6 @@ pub enum CPointeeBase {
     PlainChar,
     SignedChar,
     UnsignedChar,
-    Bool,
     Integer { class: CScalarClass, signed: bool },
     Float,
     Double,
@@ -129,12 +128,16 @@ pub enum CAccessClass {
     /// `.1`, as `p->field` is; the member's class is `None` when it is not
     /// known, as for a function pointer.
     Member(Arc<(CStructClass, Option<CAccessClass>)>),
+    /// One byte-sized part of a C bit-field. The mask selects the bits this
+    /// source access reads or writes in its physical storage byte.
+    BitFieldByte(std::num::NonZeroU8),
 }
 
 impl std::fmt::Display for CAccessClass {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Scalar(class) => write!(f, "scalar({class:?})"),
+            Self::BitFieldByte(mask) => write!(f, "bit-field byte ({mask:#04x})"),
             Self::Struct(class) => write!(f, "struct {}", class.tag()),
             Self::Pointer { base, depth } => {
                 write!(f, "pointer(base=")?;
@@ -259,7 +262,7 @@ impl CAccessClass {
         let (base, depth) = match self {
             Self::Pointer { base, depth } => (base, *depth),
             Self::Member(access) => return access.1.as_ref()?.pointee(),
-            Self::Scalar(_) | Self::Struct(_) => return None,
+            Self::Scalar(_) | Self::Struct(_) | Self::BitFieldByte(_) => return None,
         };
         if depth > 1 {
             return Some(Self::Pointer {
@@ -273,7 +276,6 @@ impl CAccessClass {
             CPointeeBase::PlainChar | CPointeeBase::SignedChar | CPointeeBase::UnsignedChar => {
                 CScalarClass::Char
             }
-            CPointeeBase::Bool => CScalarClass::Bool,
             CPointeeBase::Integer { class, .. } => *class,
             CPointeeBase::Float => CScalarClass::Float,
             CPointeeBase::Double => CScalarClass::Double,
@@ -283,6 +285,7 @@ impl CAccessClass {
     fn is_character(&self) -> bool {
         match self {
             Self::Scalar(class) => *class == CScalarClass::Char,
+            Self::BitFieldByte(_) => true,
             Self::Member(access) => access.1.as_ref().is_some_and(Self::is_character),
             Self::Pointer { .. } | Self::Struct(_) => false,
         }
@@ -349,6 +352,7 @@ impl CAccessClass {
     pub fn spelling(&self) -> String {
         match self {
             Self::Scalar(class) => class.spelling().to_string(),
+            Self::BitFieldByte(_) => "bit-field byte".to_string(),
             Self::Pointer { base, depth } => {
                 format!("{} {}", base.spelling(), "*".repeat(usize::from(*depth)))
             }
@@ -387,7 +391,6 @@ impl CPointeeBase {
             Self::PlainChar => "char".to_string(),
             Self::SignedChar => "signed char".to_string(),
             Self::UnsignedChar => "unsigned char".to_string(),
-            Self::Bool => "_Bool".to_string(),
             Self::Integer { class, signed } => {
                 let name = class.spelling();
                 if *signed {

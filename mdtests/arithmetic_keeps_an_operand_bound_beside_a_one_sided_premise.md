@@ -1,8 +1,8 @@
 # Arithmetic keeps an operand bound beside a one-sided premise
 
-A loop's back edge owes a stated range's extent bound over the new index
+A loop's back edge owes a stated range's span bound over the new index
 `i + 1`, and the loop head supplies both the invariant `0 <= i + 1` and, through
-the guard, `i < n` with `n <= 1073741823`. The extent bound is the `uint32`
+the guard, `i < n` with `n <= 1073741823`. The span bound is the `uint32`
 order `((i + 1) as uint32) <= 1073741823u32`, which the signed-arithmetic
 certificate decides from an interval for `i + 1` read as unsigned.
 

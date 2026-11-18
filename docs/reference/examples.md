@@ -163,10 +163,10 @@ authorities.
   malloc, calloc, and realloc member access.
 - `mdtests/heap_struct_array_bounds.md`: out-of-bounds access through a heap
   struct array is rejected.
-- `mdtests/arbitrary_layout_realloc.md`: raw byte extents through typed
+- `mdtests/arbitrary_layout_realloc.md`: raw byte sizes through typed
   pointers, including complete-cell preservation across `realloc`.
 - `mdtests/arbitrary_layout_realloc_bounds.md`: typed access beyond a raw
-  resized byte extent is rejected.
+  resized byte size is rejected.
 
 ## Aliasing and separation
 
@@ -509,7 +509,7 @@ sequence:
   stdlib `bytes::count` helper over `uint8[]` matched against a C count after
   two branches merge.
 - `mdtests/byte_slice_range_predicates.md`: byte contains/all-not-equal
-  predicates and `obtain (...)` after explicit predicate unfolding.
+  predicates and `let ... = obtain(...)` after explicit predicate unfolding.
 - `mdtests/cstr_stdlib.md`: first C-string predicates over `uint8[]`, including
   exact spec length, bounded terminator, and plain existential string facts.
 - `mdtests/cstr_dynamic_indexed_read.md`: a `strlen` result used for a real

@@ -333,7 +333,9 @@ The budget is kept by what the gate leaves out, not by a faster machine:
 - An example that does is listed in `NIGHTLY` in `tests/examples.rs`, and an
   mdtest fixture that takes half a second or more is listed in `NIGHTLY` in
   `tests/mdtests.rs`. Shared `.click` lemma libraries stay in the gate.
-  `MDTEST_FILTER` runs a nightly fixture by name.
+  `MDTEST_FILTER` runs a nightly fixture by name: a value ending in `.md`
+  selects exactly that file, and any other value every file whose name
+  contains it.
 - `click audit` re-expands and re-verifies every site of a claim, tens of
   seconds where `verify` takes under one. The import tests run it only under
   `CLICK_NIGHTLY`.
@@ -376,6 +378,33 @@ ratchets over the whole corpus. On 2026-10-15 the warm local gate took 11.7
 minutes on four cores, from one example: `examples/rbtree/rbtree-augmented` grew
 from 259 to 5,467 proof lines in a day and verified in 261 seconds of the
 examples harness's 317, so it joined the other rbtree examples in nightly.
+
+### Nightly report
+
+The nightly workflow's `report` job writes a short report of each run to the
+`nightly-reports` branch, which shares no history with `master`, and to the
+run's summary page. Read it with:
+
+```console
+git fetch origin nightly-reports && git show FETCH_HEAD:report.md
+```
+
+`report.md` lists each failing check with the first line of its diagnostic
+and the command that reproduces it locally. Since the previous night's
+report, it marks each failure new or persisting and lists the checks that
+were fixed or did not run. It also groups failures that share a diagnostic
+shape, times each phase, and names the slowest checks. `report.json` holds
+the same data, and the branch history keeps every night's report. To see
+what changed between two nights, diff the branch's commits.
+
+The report is built from records the run leaves when
+`CLICK_NIGHTLY_REPORT_DIR` is set: one JSON line per mdtest fixture, example
+project, and failed `click audit` site (`src/nightly_report.rs`); nextest's
+JUnit results for the nightly profile; and each `check.sh --nightly` phase's
+time and exit status. `scripts/nightly-report.py` renders them, and
+`scripts/test-nightly-report.py` exercises it in the gate. A job that fails
+without recording a failing check, such as a build error or a timeout, is
+reported as that job's failure, with the run log as its reference.
 
 ## Gate timing baselines
 
@@ -698,7 +727,9 @@ four (five where one case would be left alone), so a batch parses the library
 once. The batched files are `diagnostic_tests.rs`, `expansion_tests.rs`,
 `surface_syntax.rs`, `contract_tests.rs`, `execution_tests.rs`,
 `loop_tests.rs`, `project_tests.rs`, `preservation.rs` and the
-files under `tactic_tests/`: 1,000 cases in 253 batches.
+files under `tactic_tests/`. The initial rollout covered 1,000 cases in
+253 batches. The expansion API tests in `src/surface/expansion/tests.rs`
+reuse the same runner and inventory macro: 69 short cases in 17 batches.
 
 Each case starts on a fresh 8 MiB-stack thread, retaining thread-local
 isolation while sharing the immutable library-syntax cache across cases.
@@ -709,7 +740,7 @@ is ignored only in `fast-gate`; ordinary and nightly builds run it normally.
 To run one individually in a fast-gate build, select its exact name and add
 `--ignored`. Batch output names each case, its elapsed time, and any failure.
 
-A file's batches are declared at its end with `test_batches!`
+A file declares its batches with `test_batches!`
 (`src/surface/tests.rs`), which also defines
 `batch_inventory_covers_each_ignored_case_once`: the registry must cover
 every annotated test of the file exactly once. A new test without the
@@ -727,6 +758,114 @@ Measured on Claude Code cloud (4 vCPUs) at `e01ca81`, one run each: batching
 the 903 cases outside `diagnostic_tests.rs` took the unit/API suite from
 1,265 to 1,091 test-seconds and from 317s to 267s of wall clock; the slowest
 batch took 2.7s.
+
+### Keep stress sizes out of the gate
+
+Use one fixture generator for a small gate regression and its full nightly
+stress range. Keep deterministic cost assertions on the gate sizes when they
+still detect the regression; do not replace scaling checks with elapsed-time
+thresholds. Include the largest sizes nightly, with the original assertions.
+For full expansion/replay audits, keep the small positive and negative proof
+regressions in the gate and run the multi-size audit nightly.
+
+The gate still proves every standard-library theorem through
+`standard_library_theorems_are_proved_by_their_own_entry_point`. Ordinary
+verification trusts those dependency declarations, so moving this test to
+nightly would remove foundational coverage from pull requests.
+
+At `2ba6b3961`, a Linux x86-64 Intel Xeon Platinum 8573C host with a
+four-CPU quota and 16 GiB RAM ran all 8,574 unit/API tests in 601.318s with
+four workers (2,401.294 summed test-seconds). This excludes compilation and
+the Markdown/example-project corpus harnesses. Tool and frontend caches were
+warm; the ordinary unoptimized `fast-gate` test binary was reused through
+`nextest --binaries-metadata`.
+
+Single serial measurements before/after the test cleanup at that base:
+
+| Gate workload | Before | After | Full-size coverage |
+| --- | ---: | ---: | --- |
+| Surface depth consumption case | 15.597s | 0.033s | Original parser limits nightly |
+| Narrow-store constant-query scaling | 8.135s | 0.230s | Original 16/64/256/1,024 histories nightly |
+| Separately declared invariant closure | 9.377s audit | 0.089s smoke | Original 8/16/32-declaration counter loop nightly |
+| Balanced/skewed/projection transport scaling | 18.399s combined | Existing small regressions | Original expansion and strict cold replay audits nightly |
+
+The eight selected gate tests took 70.324s before; their four replacements
+and retained tests took 26.689s. These observations measure gate workload;
+the complete suite was not timed again after the cleanup. The unchanged
+library-proof test varied from 13.020s to 17.968s, so use CI measurements to
+judge the overall effect. Measurements precede rebasing onto later upstream
+changes.
+
+`CLICK_TIMINGS=1` on the library-proof test attributed 7.563s to integer
+proofs and 4.979s to formatting proofs across 206 theorem completions. Inspect
+those individual proof scripts before changing the library check's gate
+coverage; the remaining modules together took about half a second.
+
+The complete signed/unsigned order-chain scaling audit (8/16/24/32 edges)
+and proof-if context audit (1/2/4/8 earlier facts, with and without a split)
+also run nightly. Compact order-chain positive and negative fixtures and
+proof-if expansion regressions remain in the gate. The split fixture proves
+its shared nonnegative bound once and uses explicit transitivity for each
+original earlier fact, preserving the symbolic loop variable, C program,
+contract, size range, and context-growth assertion.
+
+### Sharing setup in expansion API tests
+
+The batch runner and inventory macro are visible within the test-only Surface
+module so API test modules can reuse them. Each case still runs on a fresh
+8 MiB thread; only immutable library syntax is shared between cases. The
+inventory checks every annotated case appears exactly once. Tests without
+`fast-gate` still run the original individual cases, and the existing nightly
+cases keep their nightly status.
+
+The signed and unsigned 64-bit expansion tests also avoid proving their sole
+input claim twice. Claim expansion verifies that input itself. Both tests
+still independently verify the generated proof, inspect its bridge steps,
+and reject the proof with its listed overflow bound removed.
+
+Measured on Linux x86-64, Intel Xeon Platinum 8573C, four-CPU quota / 16 GiB,
+with the ordinary unoptimized fast-gate profile, cached binaries and warm tool
+caches. The verifier and expansion API fixtures match `4f614f04e`; the baseline
+binary is the tested #3154 tree (`c7f0572c817bb00db29ebc82f1e3c747a1136329`).
+The following are single observations with four test workers, not full-gate
+or CI timings:
+
+| Expansion API gate selection | nextest entries | Underlying cases | Summed test seconds | Wall time |
+| --- | ---: | ---: | ---: | ---: |
+| Before | 124 | 124 | 99.464 | 26.044s |
+| 69 cases batched, other cases retained | 73 | 124 plus batch inventory | 69.303 | 18.540s |
+| Batching and duplicate input-proof removal | 73 | 124 plus batch inventory | 63.729 | 16.959s |
+
+The first run immediately after linking took 27.933s; use unchanged reruns for
+this execution-floor comparison. The expansion API cleanup preserved gate/nightly coverage; compiler flags,
+work budgets, and timeouts stayed unchanged.
+
+For the two wide-integer cases, retained before/after binaries were run in
+interleaved order, three runs of each with one test worker. Median per-case
+times were 3.102s to 2.326s for `int64` and 2.623s to 2.186s for `uint64`.
+The fixtures each contain one theorem and one ensure, so the expansion's
+selected-claim verification covers the same input as the removed direct call.
+Do not remove a whole-file verification when it checks other declarations or
+claims the selected expansion does not cover.
+
+The expansion API module also loads its five Markdown proof fixtures at
+runtime. They previously appeared in Rust's dependency file through
+`include_str!`; all five disappear from that dependency file after this change.
+In a controlled fixture-only edit (one trailing newline, then restored),
+`scripts/fast-gate-build.sh` took 0.647s, emitted no Rust compilation, and kept
+the executable's modification time unchanged. The fixture's API test still
+passed. This measures the fixture-edit build step, not a complete gate run.
+
+### Distinguish runner waits from test execution
+
+Read job `created_at` and `started_at` separately from the test step's start
+and end when measuring CI. In #3154's merge-queue run `44175737083`, unit
+shard 4/6 waited 374s for a runner, then spent 88s in its test step; markdown
+shard 1/5 waited 353s, then spent 102s in its test step. These observations
+explain why reducing verifier work may have a modest effect on an individual
+workflow's elapsed time under queue pressure. Evaluate shard count and job
+scheduling against those waits as well as test execution, while retaining the
+complete gate coverage.
 
 ### Profiling markdown fixture phases
 
@@ -1293,24 +1432,6 @@ cooperatively interrupts execution, proposition derivation, memory resolution,
 and resource search. Do not wrap Click in an external timeout command; a proof
 search that outlives the CLI limit is a Click tooling bug.
 
-## Artifact reuse rejection ratchet
-
-Ordinary verification completes a proof's retained traces into the checked
-function execution without executing the C body again. Where
-opaque-contract certification cannot reuse a checked artifact, the contract
-fails with the blocking premise kind or entry-state component and the
-reason is counted (`instrumentation::ArtifactReuseRejection`; every pin is zero).
-The fixture harnesses take that census after an unfiltered run and compare
-it with the pinned baselines at the top of `tests/mdtests.rs` and
-`tests/examples.rs`.
-
-The comparison is exact in both directions. A count that rose means an
-artifact that used to be reused no longer is, and that change must not
-land. A count that fell means a rejection cause was removed; lower the pin in
-the same change so the count cannot rise back. A filtered run
-(`MDTEST_FILTER`, `CLICK_EXAMPLE`) or a run with `CLICK_RUN_QUARANTINED=1`
-skips the comparison.
-
 ## Hidden prerequisite ratchet
 
 A simple tactic must close each requirement by an exact or indexed check;
@@ -1319,9 +1440,9 @@ policy. Where checking still derives a prerequisite by a search whose result
 the proof does not retain, it counts the derivation by route and top rule
 (`instrumentation::HiddenPrerequisiteRoute`). The fixture harnesses take
 that census after an unfiltered run and compare it with
-`HIDDEN_PREREQUISITE_BASELINE` in `tests/mdtests.rs` and `tests/examples.rs`,
-exactly as the artifact reuse ratchet does: a count that rose must not land,
-and a count that fell lowers its pin in the same change. A partitioned CI
+`HIDDEN_PREREQUISITE_BASELINE` in `tests/mdtests.rs` and `tests/examples.rs`.
+The comparison is exact: a count that rose must not land, and a count that
+fell lowers its pin in the same change. A partitioned CI
 shard (`MDTEST_PARTITION`, `EXAMPLE_PARTITION`) sees part of the corpus, so it
 fails only when its own count exceeds a whole-corpus pin; an unpartitioned
 run, such as a local `scripts/check.sh`, checks both directions. Library tests read

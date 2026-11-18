@@ -434,30 +434,30 @@ impl<'a> Proof<'a> {
         let goal = next.goal().map(|goal| ("goal", goal));
         for (role, original) in facts.chain(goal) {
             let scope = crate::surface::proof::attempt::search_scope("raise-lower audit");
-            let (outcome, spelling, lowered) = crate::instrumentation::without_charging(|| {
+            let (outcome, raised, lowered) = crate::instrumentation::without_charging(|| {
                 if next.premise_fixed_state_view().is_none() {
                     return (RoundTrip::NoState, String::new(), String::new());
                 }
                 // Raise as goal presentation does: with the path's recorded
                 // points and its entry state, so `at(point, ..)`, `old(..)`
-                // and `<call>.result` spellings are available.
+                // and `<call>.result` forms are available.
                 let Some(surface) = next.structural_proposition_candidate(original) else {
                     return (RoundTrip::Unraised, String::new(), String::new());
                 };
-                let spelling = crate::surface::printing::source_click_proposition(&surface);
+                let raised = crate::surface::printing::source_click_proposition(&surface);
                 let lowered =
                     crate::surface::proof::execution_planning::without_open_obligation_probe(
                         || next.lower_surface_proposition_direct(&surface, "raise-lower audit"),
                     );
                 match lowered {
-                    Err(_) => (RoundTrip::Unlowered, spelling, String::new()),
+                    Err(_) => (RoundTrip::Unlowered, raised, String::new()),
                     Ok(lowered) => match audit::classify(original, &lowered) {
                         RoundTrip::Differs => (
                             RoundTrip::Differs,
-                            spelling,
+                            raised,
                             next.render_diagnostic_proposition(&lowered),
                         ),
-                        outcome => (outcome, spelling, String::new()),
+                        outcome => (outcome, raised, String::new()),
                     },
                 }
             });
@@ -469,7 +469,7 @@ impl<'a> Proof<'a> {
                 self.claim_label(),
                 tactic,
                 &next.render_diagnostic_proposition(original),
-                &spelling,
+                &raised,
                 &lowered,
             );
         }
@@ -486,7 +486,7 @@ impl<'a> Proof<'a> {
         let call = match step {
             ProofStep::StepCall(transport) => transport.to_string(),
             ProofStep::StepContract(application) => format!("step({})", application.name),
-            ProofStep::Step => {
+            ProofStep::Step | ProofStep::StepBind(_) => {
                 let execution = self.execution()?;
                 let (_, _, statement, _) = next_top_level_statement_from_frontier_position(
                     execution.view(context),
@@ -1076,7 +1076,7 @@ impl<'a> Proof<'a> {
             )));
         }
         let replacement = match (c_typed, name.written()) {
-            (true, Some(name)) => ContractExpression::CBinding(name.into()),
+            (true, Some(name)) => ContractExpression::ProgramBinding(name.into()),
             _ => name.reference(),
         };
         let renaming = BTreeMap::from([(binder.clone(), replacement)]);
@@ -1284,7 +1284,7 @@ impl<'a> Proof<'a> {
                         // ambient facts.
                         let value = match (pointer, introduced_pointer) {
                             (true, Some(interface_type)) => {
-                                ProgramValue::typed_pointer(Pointer::symbolic(variable), interface_type).with_pointer_object_class(object_class)
+                                ProgramValue::typed_pointer(Address::symbolic(variable), interface_type).with_pointer_object_class(object_class)
                             }
                             _ => match self.proposition_goal("`intro` requires a proposition goal").expect("intro checked its goal") {
                                 Proposition::ForAll { sort, .. } if sort.machine_integer_type().is_some() => sort.machine_integer_type().unwrap().symbolic_value(variable),
@@ -1582,11 +1582,11 @@ impl<'a> Proof<'a> {
             .map(|premise| self.lower_surface_proposition(premise, "induction premise"))
             .collect::<Result<Vec<_>, _>>()?;
         // The hypothesis is the theorem's own statement, so a range premise
-        // owes its extent halves beside it. Citing a stated range cites both
+        // owes its span halves beside it. Citing a stated range cites both
         // halves, by the one rule every `apply using` shares.
         let mut explicit_premises = Vec::with_capacity(lowered_premises.len());
         for premise in lowered_premises {
-            crate::surface::proof::theorem_application::cite_range_extent_guards(
+            crate::surface::proof::theorem_application::cite_range_span_guards(
                 &premise,
                 &mut explicit_premises,
                 |guard| self.facts().exact_available_across_effects(guard, &[]),

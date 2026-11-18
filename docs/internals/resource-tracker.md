@@ -15,7 +15,7 @@ proof fails with two terms that print alike.
 - **resource** — a piece of mutable state, or part of one. Today: a memory
   cell, a memory block as a pure function reads it through an array argument,
   and one model field of a resource instance. A byte
-  range, a struct extent and a local are the kinds that come next.
+  range, a struct object and a local are the kinds that come next.
 - **program point** — a node a proof path reached, named by the location or
   proof mark passed to `at`. The kernel represents it with `ProgramPoint`,
   for now identified by the interned memory state there. `RecordedStates`
@@ -229,8 +229,8 @@ established.
 
 | Recorded step | A cell | A block, as an array argument | A stated footprint |
 | --- | --- | --- | --- |
-| `Store` | separate on proven-distinct blocks, a common-base offset inequality, checked full-byte separation through a base alias, typed `separate(..)` evidence, an explicit range, general distinctness, or two owned members of one composition | separate **only** on `PointerBlock::proven_distinct` | separate when the written bytes miss every range |
-| `BlockDeclared` | separate under the extended-bridging gate: it writes nothing | separate when the declared object is proven distinct: it has its own `blocks` key, so this block's extent is the entry it was | separate: it writes nothing |
+| `Store` | separate on proven-distinct blocks, a common-base offset inequality, checked full-byte separation through a base alias, typed `separate(..)` evidence, an explicit range, general distinctness, or two owned members of one composition | separate **only** on `AddressBase::proven_distinct` | separate when the written bytes miss every range |
+| `BlockDeclared` | separate under the extended-bridging gate: it writes nothing | separate when the declared object is proven distinct: it has its own `blocks` key, so this block's size is the entry it was | separate: it writes nothing |
 | `HeapAllocationPending` | separate under the extended-bridging gate | separate: a request with no address yet records nothing a read of a block consults | separate: it writes nothing |
 | `ContractAllocationClaimsChanged` | separate under the extended-bridging gate | **stops** | separate: it writes nothing |
 | `ContractAllocationRetired` | separate when the possibly released allocation misses the cell, or, on every path including naming, when the retiring call's own havoc covers the whole allocation | separate when the allocation's object is proven distinct | separate when its bytes miss every range |
@@ -254,7 +254,7 @@ what they concern is what would settle either.
 A contract with undecided allocation continuity records
 `ContractAllocationRetired` for the consumed input. It removes cached cells,
 initialization, and zeroed status under equal pointer forms, while leaving
-definite deallocation unasserted. The edge names the allocation and its extent,
+definite deallocation unasserted. The edge names the allocation and its size,
 so a later memory proof may cross it only for storage shown separate from that
 possible release.
 
@@ -290,7 +290,7 @@ retirement keeps that havoc's forget mark for the same reason
 projections load naming interns agree with the walk. Without this, the
 produced composite's fields were named at the havoc (where the return
 resources are evaluated) and later reads at the retirement, and every further
-reallocating call added one nested heap-extent proof to relate the two.
+reallocating call added one nested allocation-size proof to relate the two.
 
 Where the cell column names a gate, the answer is one a scope decides rather
 than the edge. `extended_dag_bridging_active` and `explicit_dag_check_active`
@@ -333,7 +333,7 @@ use only the kernel's structural separation, because its answer is embedded in a
 name that is shared across proof paths, and the rule enforces that by handing
 the block arm no fact context at all. Where the cell column reads a stated
 `separate(..)`, an offset inequality or a resource composition, the block column
-reads only `PointerBlock::proven_distinct` and the checked write set the edge
+reads only `AddressBase::proven_distinct` and the checked write set the edge
 itself carries — which is path-independent, and so may be read off an interned
 edge.
 
@@ -469,13 +469,13 @@ edge exists. Each decides the same abstract question as the matching arm of
 | Site | Class | Why it differs |
 | --- | --- | --- |
 | `call_havoc_keeps_cell` `src/kernel/primitives/memory_state.rs` | disagrees | For ordinary cells, keeps a cell when plain `ranges_proven_disjoint_from_pointer` proves the declared write set cannot reach it. A cell an owned member of what the caller keeps owning holds (`CallKeptOwnership`) is dropped from the cache too, and that member is recorded on the edge with the premises that place the cell in it, where the rule's `CallHavoc` arm reads it. A local cell whose block has a write-range base in a different form is retained only when the pointer-equality graph does not resolve that base to the cell; this catches assumed aliases while preserving direct same-block construction transitions. The rule's `CallHavoc` arm uses typed range evidence and the `_for_frame` expansion, which looks through composite definitions, so the two remain weaker in different cases. |
-| `Memory::with_call_memory_havoc`, `Memory::matches_call_memory_havoc_result` | disagrees | The producer that applies a call's write set and the checker that re-derives what it would have written. Both now ask `call_havoc_keeps_cell`, so the retain rule is one function: the checker has to stay identical to the producer, not to the rule, and sharing the function is what makes that structural instead of remembered. Both apply it to the typed union views (`union_cells`) as well as the cells: a view is the authoritative answer to an exact typed load, and the producer used to keep every view while the checker dropped them, so a load after a call that wrote through a union member read the pre-call member (`mdtests/call_havoc_drops_a_union_member_view.md`). `click audit` accepted that proof too: a kept view is not a difference between the two states, so no coverage check asked about it. |
+| `SymbolicMemory::with_call_memory_havoc`, `SymbolicMemory::matches_call_memory_havoc_result` | disagrees | The producer that applies a call's write set and the checker that re-derives what it would have written. Both now ask `call_havoc_keeps_cell`, so the retain rule is one function: the checker has to stay identical to the producer, not to the rule, and sharing the function is what makes that structural instead of remembered. Both apply it to the typed union views (`union_cells`) as well as the cells: a view is the authoritative answer to an exact typed load, and the producer used to keep every view while the checker dropped them, so a load after a call that wrote through a union member read the pre-call member (`mdtests/call_havoc_drops_a_union_member_view.md`). `click audit` accepted that proof too: a kept view is not a difference between the two states, so no coverage check asked about it. |
 | `loan_preserving_havoc_keeps_cell` | disagrees | Preserved-block membership **or** bytes `LoanLedger::permits_memory_access` refuses a write through. An ownership question, with fail-open polarity, and no pointer-alias reasoning at all — a loop body or a joined branch arm may write through any pointer it can reach, so separation has nothing to decide. The width it asks the ledger about is the wider of the cell's value and the widest typed overlay recorded there (`union_overlay_widths`), and an unknown width fails closed. |
-| `Memory::with_loop_memory_havoc_preserving_loans`, `Memory::with_interface_memory_havoc_preserving_loans` | disagrees | The loop head and the interface join, which both ask `loan_preserving_havoc_keeps_cell`. The interface join also records a `BranchJoin` edge: the tracker can recover uncached reads by checking every incoming arm, independently of this eager retain rule. The loop head does not record that edge. |
-| `Memory::forget_zeroed_allocations_written_by` | disagrees | The other half of a call's write set: it drops the zeroed reading of every allocation the declared ranges may reach, because "reads as zero where unwritten" is a claim about contents that an unseen write invalidates exactly as it invalidates a stored cell. It drops the status for the whole allocation rather than narrowing it to a prefix, since a write set bounds where a callee may store and not where it did. The rule has no arm for it: a zeroed reading is not a resource the tracker names. |
-| `Memory::without_possible_aliasing_cells` | disagrees | A store's own eager drop, and the one site on this list that shares the rule's byte question: the address ladder is conjoined with `access_byte_overlap`, exactly as the rule's `Store` arm conjoins it, so a ladder that proves two addresses differ may stand in for byte separation only where the gap it establishes clears both accesses. Ahead of the ladder, and before `access_byte_overlap`, it asks ownership through the composition base index (`PureFactContext::access_owned_apart_from_store`, below), including the composition the store statement opens from the held folded instances whose arguments name a cached cell's base (`functions::store_opened_instance_composition`, below); a cell ownership does not place goes down the ladder unchanged. The ladder itself is `pointers_proven_distinct_for_memory_resolution`, **or** `pointers_proven_disjoint_by_explicit_range_for_memory_resolution`, **or** `pointers_directly_disjoint_by_range`, **or** `owned_composition_store_separated_evidence`. The two range rungs are the cross-base pairs offset reasoning cannot decide and the byte question answers `Unknown` for; they are a range-index scan the rule's hot `Store` arm must not pay for. The last is shared with the rule's `Store` arm and the two transport sites, and it has to be here too: a cell this function drops is lost to every later route, because the two states then differ at the read's own address. |
-| `Memory::without_field_cells` | disagrees | Same-block equality and a constant byte interval. Across blocks it removes too little, which for a copy is the safe direction; a completeness difference only. |
-| `heap_allocation_may_contain_pointer`, `Memory::freed_heap_allocation_may_contain` | disagrees | `base.block != pointer.block` answers "not contained", which is fail-open on a representation. The rule's `HeapFreed` arm is two separation ladders instead. Reaching it needs a freed allocation whose base block is not proven distinct from a live cell's block. The second is the same test over every deallocated allocation, and it is what the zeroed drop, the availability check below and contract certification all read, so the comparison by representation is at least in one place. |
+| `SymbolicMemory::with_loop_memory_havoc_preserving_loans`, `SymbolicMemory::with_interface_memory_havoc_preserving_loans` | disagrees | The loop head and the interface join, which both ask `loan_preserving_havoc_keeps_cell`. The interface join also records a `BranchJoin` edge: the tracker can recover uncached reads by checking every incoming arm, independently of this eager retain rule. The loop head does not record that edge. |
+| `SymbolicMemory::forget_zeroed_allocations_written_by` | disagrees | The other half of a call's write set: it drops the zeroed reading of every allocation the declared ranges may reach, because "reads as zero where unwritten" is a claim about contents that an unseen write invalidates exactly as it invalidates a stored cell. It drops the status for the whole allocation rather than narrowing it to a prefix, since a write set bounds where a callee may store and not where it did. The rule has no arm for it: a zeroed reading is not a resource the tracker names. |
+| `SymbolicMemory::without_possible_aliasing_cells` | disagrees | A store's own eager drop, and the one site on this list that shares the rule's byte question: the address ladder is conjoined with `access_byte_overlap`, exactly as the rule's `Store` arm conjoins it, so a ladder that proves two addresses differ may stand in for byte separation only where the gap it establishes clears both accesses. Ahead of the ladder, and before `access_byte_overlap`, it asks ownership through the composition base index (`PureFactContext::access_owned_apart_from_store`, below), including the composition the store statement opens from the held folded instances whose arguments name a cached cell's base (`functions::store_opened_instance_composition`, below); a cell ownership does not place goes down the ladder unchanged. The ladder itself is `pointers_proven_distinct_for_memory_resolution`, **or** `pointers_proven_disjoint_by_explicit_range_for_memory_resolution`, **or** `pointers_directly_disjoint_by_range`, **or** `owned_composition_store_separated_evidence`. The two range rungs are the cross-base pairs offset reasoning cannot decide and the byte question answers `Unknown` for; they are a range-index scan the rule's hot `Store` arm must not pay for. The last is shared with the rule's `Store` arm and the two transport sites, and it has to be here too: a cell this function drops is lost to every later route, because the two states then differ at the read's own address. |
+| `SymbolicMemory::without_field_cells` | disagrees | Same-block equality and a constant byte interval. Across blocks it removes too little, which for a copy is the safe direction; a completeness difference only. |
+| `heap_allocation_may_contain_pointer`, `SymbolicMemory::freed_heap_allocation_may_contain` | disagrees | `base.block != pointer.block` answers "not contained", which is fail-open on a representation. The rule's `HeapFreed` arm is two separation ladders instead. Reaching it needs a freed allocation whose base block is not proven distinct from a live cell's block. The second is the same test over every deallocated allocation, and it is what the zeroed drop, the availability check below and contract certification all read, so the comparison by representation is at least in one place. |
 | loop frame assembly `src/kernel/loops.rs`, `collect_loop_effect_check_obligations`, the multi-exit join | disagrees | Each reinstates or drops cells against the loop's *stated* effect summaries rather than a recorded edge, with a hardcoded `local:` skip. |
 | `memory_diff_is_covered_by_writes`, `memory_diff_is_covered_by_ranges` `src/kernel/proof/execution.rs` | another question | The containment direction: is every observed change *inside* the declared write set. The tracker has no containment question. |
 
@@ -489,9 +489,9 @@ them without losing every pair the DAG does not connect.
 | Site | Class | Note |
 | --- | --- | --- |
 | `memory_load_is_directly_unchanged`, `memories_directly_match_for_pointer_load` `src/kernel/memory_history.rs` | disagrees | The transport rule. It already asks the tracker as one disjunct — two states that name the cell by one point hold the same cell — and the rest reads `MemoryMutatesOnly`, `MemoryEffectSummary` and `HeapAllocationFreed` over *stated* endpoints. Its per-write ladder is the same four predicates the rule's `Store` arm uses, applied to a stated write list. |
-| `memories_match_for_pointer_load` `src/kernel/reasoning/memory_resolution.rs` | disagrees | Assumption-free structural agreement about one load: the same forgotten-source identity; equal extents for every object the load may designate plus equal havoc markers; agreement about retirement tombstones and all load-observable heap lifetime, initialization and implicit-zero metadata; and equal cells and union cells under `observable_by_load`. Decides pairs with no common ancestor. |
+| `memories_match_for_pointer_load` `src/kernel/reasoning/memory_resolution.rs` | disagrees | Assumption-free structural agreement about one load: the same forgotten-source identity; equal sizes for every object the load may designate plus equal havoc markers; agreement about retirement tombstones and all load-observable heap lifetime, initialization and implicit-zero metadata; and equal cells and union cells under `observable_by_load`. Decides pairs with no common ancestor. |
 | `memory_states_match_for_resolution`, `memory_states_proven_equal_at_pointer`, `memories_match_for_pointer_load_bounded_alias`, `memories_match_for_pointer_load_under_assumptions` `src/kernel/reasoning/memory_resolution.rs` | disagrees | The same question with assumptions: every cell the two states differ on must both miss the load's bytes and be proven distinct from the load. All refuse a load whose own block is `local:`, and all select the cells to check with `cell_is_observable_by_load`, the one filter — *not*, as they used to, by dropping every differing `local:` cell unasked. See below. The second is a thin name for the first, so that a caller asking "are these two states one state as far as this pointer is concerned" reads as that question rather than as a resolution internal. |
-| `state_objects_agree`, `retirements_agree_for_load` | separation | The object half, as against the values in the cells: an extent is what says an object is there and how big it is, and a tombstone is the only record that an automatic object's lifetime ended once its cells are gone. The first is the assumption-carrying comparisons' extent check, and the only extents it leaves out are the ones `local_block_no_pointer_can_reach` allows. The second is the tombstone check, which all four comparisons ask, and it allows a difference only where the load's block is proven distinct from the retired object or no pointer value in the program designates it — two exclusions, each catching what the other does not. A load through a stale alias is exactly the load these comparisons are asked about, which is why neither half may be skipped on a representation. |
+| `state_objects_agree`, `retirements_agree_for_load` | separation | The object half, as against the values in the cells: a size is what says an object is there and how big it is, and a tombstone is the only record that an automatic object's lifetime ended once its cells are gone. The first is the assumption-carrying comparisons' size check, and the only sizes it leaves out are the ones `local_block_no_pointer_can_reach` allows. The second is the tombstone check, which all four comparisons ask, and it allows a difference only where the load's block is proven distinct from the retired object or no pointer value in the program designates it — two exclusions, each catching what the other does not. A load through a stale alias is exactly the load these comparisons are asked about, which is why neither half may be skipped on a representation. |
 | `differing_cell_bytes_miss_the_load`, `differing_cell_byte_width` | separation | The byte half, asked of each differing cell before the address ladder may speak. A cell at `p + 1` holding one byte is a different address from `p` and is still the second byte a four-byte read there returns, so an address ladder alone is not an answer. The width is read from whichever side holds a value, the wider where both do and disagree, and the widest scalar where neither does, since over-stating a width can only shrink the separated set. |
 | `memory_matches_effect_summary_endpoint` | disagrees | Whether a recorded effect summary's endpoint is the state in hand: interned identity, else the assumption-free structural agreement above. An endpoint pair has no ancestry to walk, which is the whole reason this section exists. |
 | `memory_load_terms_equal_for_fact_transport` | another question | Whether a fact about one load *term* is a fact about another: the two pointers proven equal, or one recorded offset equality between them, and then the state comparison. A term question that ends in a listed state comparison, not a staleness decision of its own. |
@@ -577,7 +577,7 @@ that a fix lands in one of them rather than beside it.
 
 | Predicate | Home |
 | --- | --- |
-| `PointerBlock::proven_distinct`, `may_alias`, `observable_by_load`; `Pointer::blocks_proven_distinct`; `block_is_never_address_taken_local` | `src/kernel/primitives.rs` |
+| `AddressBase::proven_distinct`, `may_alias`, `observable_by_load`; `Address::blocks_proven_distinct`; `block_is_never_address_taken_local` | `src/kernel/primitives.rs` |
 | `pointers_proven_distinct_for_memory_resolution`, `pointers_distinct_through_one_exact_alias`, `never_address_taken_local_versus_pointer_value`, `pointer_offsets_with_common_base_proven_distinct` and its `_distinctness_condition`, `cell_disjoint_from_load_by_constant_offset`, `cell_is_observable_by_load`, `local_block_no_pointer_can_reach` | `src/kernel/reasoning/memory_resolution.rs` |
 | `range_proven_disjoint_from_pointer`, `ranges_proven_disjoint_from_pointer`, `ranges_directly_disjoint_from_pointer`, `pointers_directly_disjoint_by_range`, `pointers_proven_disjoint_by_explicit_range_for_memory_resolution`, `pointers_proven_disjoint_by_shallow_explicit_range` | `src/kernel/assumptions/memory_reasoning.rs` |
 | `typed_store_separated_ranges_evidence`, `typed_range_disjoint_from_pointer_evidence`, `typed_ranges_disjoint_from_pointer_evidence`, `heap_allocation_proven_separate_from_pointer`, `owned_composition_store_separated_evidence` | `src/kernel/memory_history.rs` |
@@ -601,7 +601,7 @@ It is in this list's neighbourhood rather than in it because it answers about
 accesses and not about resources, and because it has no counterpart for the
 cross-base pairs: two pointers with no common additive base get `Unknown`, and
 those are exactly the pairs the range rungs exist to decide. The rule's `Store`
-arm, `Memory::without_possible_aliasing_cells` and the state comparisons
+arm, `SymbolicMemory::without_possible_aliasing_cells` and the state comparisons
 all conjoin it, which is what keeps one store from being separate at one site
 and overlapping at the next.
 
@@ -725,7 +725,7 @@ The exception is gone, and `observable_by_load` is now `may_alias` for every
 load. Two things were `Symbolic` before, and only one of them still is:
 
 - an object the verifier introduced, today the temporary that holds an
-  aggregate a call returns by value, carries `PointerBlock::Temporary`. It is
+  aggregate a call returns by value, carries `AddressBase::Temporary`. It is
   fresh — the program has no prior pointer into it and C gives it no way to
   take its address — so `proven_distinct` separates it from every other block,
   as it does `Heap`. Its loads keep the structural frame they had, which is why
@@ -784,14 +784,14 @@ answered on the first rung of the ladder rather than skipped.
 (`src/kernel/tests/memory_reasoning_tests.rs`) pins the history directly.
 
 The cells were only half of what these comparisons hold. Beside them sits the
-object map — each block's extent, and the tombstones that say an automatic
+object map — each block's size, and the tombstones that say an automatic
 object's lifetime has ended — and it carried the shortcut in its own form:
-the three assumption-carrying comparisons compared the extent of every block
+the three assumption-carrying comparisons compared the size of every block
 *not* named `local:`, and none of the four compared the tombstones at all. An
-extent is what says an object is there and how big it is, and a tombstone is
+size is what says an object is there and how big it is, and a tombstone is
 the only record left once the object's cells are gone, so two states
 disagreeing about either disagree about what a load through a pointer that may
-designate it reads. The extent check is now `state_objects_agree`, dropping
+designate it reads. The size check is now `state_objects_agree`, dropping
 only what `local_block_no_pointer_can_reach` allows, which is the same thing
 the pointerless equality below spends; the tombstone check is
 `retirements_agree_for_load`, which all four ask, and which allows a difference
@@ -964,7 +964,7 @@ It sits **last**, after every cheaper check, at the four places the
 store-versus-load question is asked: the tracker's `Store` arm, the two
 transport sites in `memory_history` (`memories_directly_match_for_pointer_load`
 and the `MemoryMutatesOnly` arm of `memory_load_is_directly_unchanged`), and
-`Memory::without_possible_aliasing_cells`. The last of those is the one that
+`SymbolicMemory::without_possible_aliasing_cells`. The last of those is the one that
 decides `c_contract_executes_acquire`, and it is not optional: once a store has
 dropped a cell, the two states differ *at the read's own address*, and no
 later framing route can recover it. It is kept beside
@@ -1031,7 +1031,7 @@ projection rebuilt the cells of every other object at every such load.
 `unresolved_load_projection_ignores_earlier_objects_and_hidden_slots`
 (`src/scaling_tests/kernel/reasoning/memory_resolution.rs`) is the regression.
 
-`Memory::without_possible_aliasing_cells` also asks the same law *first*, in
+`SymbolicMemory::without_possible_aliasing_cells` also asks the same law *first*, in
 an indexed form. Every pointer parameter shares the one `ExternalArgument`
 block, so neither `AliasCandidates` nor the block-pair separation index
 narrows a store through one parameter, and every cached cell of every other
@@ -1580,8 +1580,8 @@ permitted stores or a transition that drops the fact:
   through theirs, then among the opened ranges of the cell's block when a
   reloaded base is proven equal to the opened one. The opening costs one
   evaluation of each residual instance's own body per call.
-  The producer (`Memory::with_call_memory_havoc`) and checker
-  (`Memory::matches_call_memory_havoc_result`) use the same candidate
+  The producer (`SymbolicMemory::with_call_memory_havoc`) and checker
+  (`SymbolicMemory::matches_call_memory_havoc_result`) use the same candidate
   selection and `call_havoc_keeps_cell` rule. Whole concrete cells and seeded
   runs structurally contained in a flat owned atomic parameter object stay
   cached without visiting other retained objects. A persistent partition
@@ -1617,7 +1617,7 @@ permitted stores or a transition that drops the fact:
   from contract parameter bindings at entry; invariant borrowed footprints
   and actual allocation origin supply the other explicit transfers.
   Post-call loads do not acquire invariant-borrow authority. Body custody,
-  allocation extent and lifetime checks still apply to executed returns.
+  allocation size and lifetime checks still apply to executed returns.
   Admission uses only the remaining unclassified ownership boundary, so cold
   or symbolic fallback cannot rediscover separation for transferred children.
   Prepared constant-coordinate memory leaves query the frame's address-class
@@ -1627,16 +1627,18 @@ permitted stores or a transition that drops the fact:
   registration when all its owned memory shares the queried block and exact
   symbolic origin. The interval tree retains containing ranges even beside
   nested old intervals. Other blocks and origins remain unsupported on this
-  structural route; loaded-pointer aliases still require the paired namespace.
+  structural route except physical automatic-storage partitions: the maintained
+  automatic-owner index selects one storage block without visiting other locals.
+  Loaded-pointer aliases still require the paired namespace.
   Symbolic narrow query endpoints may use directly indexed constant extrema
   to form a conservative enclosing interval against the supported constant
   owners. A disjoint envelope proves separation; an intersecting envelope is
   unsupported unless both endpoints are exact. Missing bounds stay bounded
   misses, without following order chains. Other
-  symbolic boundary checks retain explicitly named legacy discovery, comparing
-  only each new piece with retained owners. They never install a temporary
-  combined context, revalidate the unchanged frame or the constructed body's
-  internal partition, or scan the frame again to name a conflict. Exclusive
+  symbolic boundary checks use the maintained summaries or retain the exact
+  missing whole-frame separation premise. They never resume discovery, install
+  a temporary combined context, revalidate the unchanged frame or the
+  constructed body's internal partition, or scan the frame to name a conflict. Exclusive
   boundaries select the retained occurrence by resource or instance identity.
   Projections, packaged views and expansion caches reuse the same construction. Flat memory
   and token returns project directly, without generic composite expansion.
@@ -1709,8 +1711,8 @@ permitted stores or a transition that drops the fact:
   nested/recursive matched arms retain
   explicitly classified legacy routes. Specialized producers also return an
   explicit unsupported result for geometry outside the maintained ownership
-  index; that result dispatches to compatibility without invoking discovery
-  inside construction. A conflicting or invalid migrated body refuses the
+  index; family dispatch remains separately classified. Ordinary constructed
+  child partitions refuse unsupported geometry without retrying ownership discovery. A conflicting or invalid migrated body refuses the
   return rather than retrying legacy reconstruction.
   Monotone memory-evidence admission walks a smaller incoming contract or a
   shared persistent delta, without enumerating absent caller facts. Scalar
@@ -1825,65 +1827,212 @@ the final answer there is open.
 
 ## Remaining ownership compatibility inventory
 
-The ownership-return migration is incomplete. The source inventory in
-`build_support/ownership_fallback_edges.tsv` freezes references to the APIs in
-`ownership_fallback_targets.txt`, using the existing proof-search AST walker.
-Both kernel and Surface production modules are checked on every Cargo build;
-test-only modules are excluded. Calls, method references, imports and macro
-identifiers are counted by file, owning type and function. New references,
-changed counts and stale records fail the build. The inventory includes older
-full-composition APIs and generic expansion so indirect routes remain visible.
-It is a dependency inventory, not a list of bugs or a complexity proof. An
-invocation of a compatibility wrapper can complete entirely in its fast path.
+The source inventory in `build_support/ownership_fallback_edges.tsv` freezes
+references to the APIs in `ownership_fallback_targets.txt`, using the existing
+proof-search AST walker. Kernel and Surface production modules are checked on
+every Cargo build; test-only modules are excluded. Calls, method references,
+imports and macro identifiers are counted by file, owning type and function.
+New references, changed counts and stale records fail the build. This is a
+source dependency inventory, not a list of bugs or a complexity proof. A
+compatibility wrapper can complete entirely in its fast path.
 
-The automatic call-return checklist is:
+The incremental ownership-admission routes now use
+`try_compose_checked_ownership_and_occurrences` and `returned_boundary_conflict`.
+Raw output clauses, composite child construction, pending descriptions,
+produced composite frontiers, stable-view recovery, worker completion and
+loop-frame exchange do not resume ownership discovery on unsupported geometry.
+Selected instance unfolds retain each emitted child's custody root. Loop-frame
+restoration reuses that rule only when the selected root belongs to the loop's
+original owned body. Removal withdraws the child's receipt; arbitrary additions
+still require their boundary with the withheld frame. Emitted occurrences survive
+restoration, and nested restores retain the same provenance.
+Constructed groups retain their internal partition; admission checks only new
+relationships to the destination frame. An indexed conflict refuses; a miss
+retains a `ResourceSeparate` proposition naming the new range and actual
+raw-memory frame. Function-call obligations expose that proposition for an
+explicit proof. Existing loop/thread refusal wrappers may report the broader
+exchange failure instead.
 
-| Route | Remaining evidence gap | Condition for removing compatibility |
-| --- | --- | --- |
-| `EvaluatedReturnResources::admit_clause` | Independently evaluated raw output clauses lack a checked partition between their new ownership occurrences. | Construct the output partition incrementally from producer evidence; unsupported geometry refuses promptly or requires explicit separation. |
-| `construct_composite_resource_body` | Constructed child IDs and witnesses survive, but child composition still uses incremental legacy admission; the unselected expansion route uses full composition. | Carry the internal partition with the selected body, using bounded checks only for genuinely new child relationships. |
-| `PreparedReturnComposition::finish` | Pending descriptions retain their established internal composition; the constructor now checks only their boundary against the restored frame and keeps that successor. Unsupported geometry still uses compatibility discovery. | Every pending output has an explicit origin and a bounded boundary check, or a bounded refusal. |
-| `produced_composite_frontier_conflict` | Maintained indexes do not cover every symbolic/alias geometry against retained owners. Unsupported checks call `returned_boundary_conflict_with_legacy_discovery`. | Define the supported geometry and evidence; accept via indexed coordinates/separation, otherwise refuse without searching. |
-| `StableViewTransferPlan::recover_returned_views` | Recovery constructs directly into the actual return residual, admitting each escrow once and carrying recovered hold occurrence IDs to publication. Missing output/escrow geometry still uses legacy admission. | Establish unsupported boundaries from a retained transfer rule or explicit separation, or refuse promptly. |
-| Worker completion and loop-frame exchange | Checked output groups and exit occurrences now survive composition without temporary checked contexts or reinsertion. A boundary with today's parent or withheld loop frame can still require compatibility discovery. | Carry the actual destination relationship or perform a bounded boundary check, with no output-group revalidation. |
-| `project_return_resource_cores` and the legacy arm of `produced_composite_frontier_conflict` | Unconstructed families are expanded from descriptions again. The classifier records `legacy`, rather than a reusable checked body. | Each classifier outcome carries a reusable body/frontier, deliberately opaque ownership, or a bounded refusal. Unsupported language shapes do not all need implementation. |
+The bounded symbolic checker uses producer-published address and interval
+summaries, including at most one selected symbolic neighbor. It checks direct
+bounds for ordinary partitions such as `p[0..n]` beside `p[n..16]` with
+`1 <= n <= 8`. Larger symbolic partitions can retain an explicit whole-frame
+separation premise. Its memory leaves are indexed at fact admission; lookup
+uses the selected range and canonical identity of the current frame, so a
+proof about an earlier subset cannot authorize a new held range. The cached
+frame footprint is prepared by ownership deltas, not by queries.
 
-`try_compose_with_legacy_discovery_and_occurrences` first calls
-`admit_without_discovery`. Only `Unsupported` resumes discovery; indexed
-conflicts already refuse. `PendingOwnershipAdmission::resume_legacy_discovery`
-and the returned/certified-group boundary adapters converge on
-`legacy_memory_boundary_conflict`, which can enumerate ownership candidates
-and reason along aliases. These internal dispatch edges are frozen too.
+| Route | Current status |
+| --- | --- |
+| `EvaluatedReturnResources::admit_clause` | Carries checked entry-borrow and consumed-input selections from the checked call plan, including individually consumed finite input-frontier pieces, and checks them only against newly described outputs. Other outputs use bounded indexed admission. Unsupported geometry refuses; no discovery fallback. |
+| `construct_composite_resource_body` | Held heads retain their selected source, frame and emitted child identities through body construction. Raw descriptions establish their missing boundary; generic composition admits only their new delta. Neither route revalidates the retained frame. |
+| `PreparedReturnComposition::finish` | Consumes an opaque `ReturnedOwnershipPartition`. The producer's partition, including restored borrowed/consumed/fresh outputs, is retained; only pending outputs versus the original retained frame are checked. Returned pieces are not compared with each other again. |
+| `produced_composite_frontier_conflict` | Constructed frontiers use bounded cross-boundary checks. Proven conflicts retain the selected held fact; unsupported geometry refuses. Family dispatch supplies every finite body; this consumer never expands a head. |
+| `recover_candidate_stable_view_resources` | Consumes checked escrow restoration receipts carrying selected occurrences and holds. Restores the entry partition directly; checks only new return ownership against protected escrows and newly released inherited roots. No legacy ownership admission. |
+| Worker completion and loop-frame exchange | Checked output groups and occurrence identities survive composition. Their generic boundary adapters remain separate compatibility consumers. |
+| Family dispatch and `project_return_resource_cores` | Every returned composite or instance carries one constructed finite body or deliberately opaque head with its source occurrence. Unsupported family shapes refuse at dispatch. Boundary checks and projection consume this evidence without definition or memory arguments; neither reconstructs a body. |
 
-A concrete remaining gap is an ordinary valid partition `p[0..n]` beside
-`p[n..16]`, with direct facts `1 <= n <= 8`: a held symbolic range is outside
-the constant-owner index fragment. The raw-output and pending-return probes in
-`src/kernel/functions/mixed_return_resources/fallback_inventory_tests.rs`
-first check successful compatibility admission, then demonstrate the
-`ownership_validity_candidates` discovery entry under `FastOperationScope`.
-A constant adjacent-range control runs successfully inside that scope. These
-are deliberately dependency probes, to be replaced with no-discovery
-regressions as the routes migrate; they do not authorize new discovery.
+Family dispatch has no legacy set or downstream expansion route. Supported
+ordinary, existential, recursive, instance and authority families retain their
+producer's children. Instances outside the specialized constructor fragment
+remain deliberately opaque, retaining their exact occurrence and bindings.
+Generic expansion previously left these instances folded too. A selected
+instance with only logical fields and no body children introduces no hidden
+memory cut point; its exact head and fields remain in the projection. Other
+opaque instances retain their conservative ownership boundary.
+For a nonrecursive matched instance with flat named children, dispatch can
+retain a complete parameter-only envelope of all possible arms. This is boundary
+metadata, not an unfolding: the head, model and child identities remain opaque,
+and no views are published. Repeated alternative leaves are deduplicated; a
+bounded admission constructs the supported envelope. Its leaves reserve the
+same finite checked input supply as other returns, preventing input reuse.
+Constructor-dependent child addresses and unsupported envelopes retain the
+opaque boundary. Consumers never reconstruct this metadata.
+Sealed field-free composites keep their certified finite frontier; seal
+visibility does not erase internal memory boundaries. Iterated ownership is
+carried as one finite descriptor leaf, without enumerating its guarded elements.
+Missing definitions and unsupported field-free shapes refuse before publishing
+a return. Counted bodies without exclusive leaves keep their count semantics;
+a nonunit body exposing exclusive ownership refuses even when its leaves carry
+input custody. Returned views retain their producer's child identities; there
+is no description-only view receipt. Source guards forbid body production inside
+projection and boundary consumers.
+
+A direct `VerifiedFunctionRule` now travels through call preparation as typed
+proof evidence, separately from concrete storage identity and description-only
+interfaces. Its Hoare frame rule constructs the joint returned partition beside
+the checked input reservation's caller frame. Arbitrary-shaped owned outputs,
+including post-state pointer fields without an equality postcondition, need no
+second geometry proof in this path. Normal and exceptional returns retain the
+same rule, and entry escrow recovery uses the resulting partition token.
+Targeted verification and expansion use the same Hoare frame rule under a
+scoped source-contract hypothesis. That capability remains conditional, is
+retired with the verification selection, and never certifies the unselected
+body.
+Named and callback application retains an `EstablishedFunctionContract`: the
+instantiated interface plus the actual contract predicate premise selected for
+that function value. That premise supplies the conditional Hoare frame rule
+through selected direct calls, indirect calls and entry-escrow recovery. Bare
+nominal declarations and discarded template bodies supply no authority, and
+this capability never becomes concrete body-safety evidence. Missing or
+inapplicable callback facts still refuse before application.
+External descriptions and raw return APIs retain bounded admission and explicit
+missing-boundary goals.
+`verified_outputs_retain_the_callers_frame.md` and its expansion/replay test
+contrast a verified callee with an uncertified external-output control.
+`named_contract_outputs_retain_the_callers_frame.md` covers opaque pointer
+outputs through both selected direct and abstract callback application;
+expansion and replay retain the established contract premise.
+
+Contract recipes retain immutable memory leaves from consumed heads as well as
+flat consumed cells. Fixed byte spans can partition one consumed object into
+disjoint field owners; the compiler withdraws each byte from its source interval
+once, preserving bound formats and refusing duplicate fragments. Each selected
+symbolic leaf is used once across all output paths;
+postcondition equalities may connect a returned pointer field to an immutable
+parameter. Model reads do not become parameter-invariant leaves. Typed parameter
+identities and their unambiguous lexical aliases share the declared binder;
+unrelated typed binders are never identified by spelling. Borrowed instances
+reevaluate their model fields while retaining their checked entry custody.
+
+Entry escrow recovery carries the return producer's partition token. Worker
+completion additionally requires the parent ownership revision captured by the
+thread ledger; public ownership changes or compiler-private registry changes
+invalidate that receipt. Private scalar bookkeeping preserves it. Missing
+receipts use ordinary checked admission. Allocation-class counters distinguish
+callee automatic storage from external argument objects without visiting owners.
+
+The old `PendingOwnershipAdmission` resume state and
+`legacy_memory_boundary_conflict` are deleted. Their retired target names stay
+in `ownership_fallback_targets.txt` so new references are rejected. Runtime
+probes in `fallback_inventory_tests.rs` now require successful raw-output and
+pending-return checks under `FastOperationScope`; the ownership-admission
+scaling tests grow owners, aliases, explicit frames and removed-owner history.
+
+Return-family dispatch retains finite bodies or deliberate opaque heads as
+specified above. Unsupported shapes refuse at their classifier; projection and
+boundary consumers never reconstruct a missing body.
 
 The wider dependency perimeter must stay separate from that call-return
 checklist. `ExecutionState::local_scalar_access_resources` and
-`ReservedLocalScalarOwner::restore_into` still admit withheld owners through
-the legacy wrapper. The generic incremental facade also serves exchange
+`ReservedLocalScalarOwner::restore_into` admit withheld owners through
+the checked incremental API. That API also serves exchange
 restoration, certified groups, stable-view recovery, function resource
 context evaluation, instance rewriting, contract refinement, iterated steps,
 loop guards, proof-interface joins and thread joins. The manifest names every
-caller and reference count. Older `try_compose_with_fact(s)` and delaying
-normalization variants still reach `validity_error` over the combined context;
-some also call full normalization. Their presence must not be reported as
-incremental admission merely because an outer operation carries identities.
+caller and reference count. `try_compose_with_fact(s)` and delaying
+normalization variants now use the same bounded incremental admission. The
+retained context is a producer-established partition; explicit `validity_error`
+remains available for validating raw assembled input. Composition does not
+revalidate it. Normalized composition coalesces only changed occurrences and
+bounded nominees from existing exact-resource/shape and constant-neighbor
+indexes, plus a persistent index for symbolic written endpoints. Each
+successful merge consumes a changed occurrence; a missed or loan-bound nominee
+keeps the split representation. It never walks aliases, related resource buckets,
+projection caches or the unchanged frame to find another merge. Untouched
+occurrences, supported projections and loan dependencies keep their identities.
+
+Generic held-composite expansion removes one actual parent occurrence and
+constructs `HeldCompositeBody`, carrying that source, its residual frame and
+its explicit body. Installation uses the held definition's separating-body
+rule. It does not recheck body geometry or search the frame for equal children.
+Viewed children receive only that parent's exact binding on their fresh emitted
+occurrences. Selected return construction preserves raw clause order and
+multiplicity. Optional normalization visits only the explicit body. Arbitrary
+return descriptions still establish their cross-head and caller boundaries;
+they do not acquire the held parent's frame rule merely from a role marker.
 Generic expansion also serves contract entry/certification, folding and
-observations. Removing those general APIs requires auditing these users;
-finishing automatic call returns alone does not justify deleting them.
+observations, whose remaining caller-specific work stays source pinned. Footprint projection
+coalesces the explicit ranges derived from its selected head without admitting
+them again as new ownership; conservative overlapping arm unions remain unions.
+Store framing similarly retains the selected held instance bodies' partition.
+Returned-call recovery collects checked escrow receipts without rebuilding the
+captured entry successor, checks the required output/escrow boundary, then
+installs each receipt directly into the actual return context once.
+
+Surface `unfold` constructs its body delta once before publishing definition
+facts. It retains that successor and its emitted child IDs through publication;
+it neither validates the whole projected context nor normalizes ambient buckets.
+Known directly indexed collisions still refuse before a body fact can conceal
+them. Fresh viewed children receive only the selected parent's binding; equal
+ambient children keep theirs. A body already exposed by the same loan retains
+its existing child occurrences instead of emitting duplicate views. This reuse
+uses bounded exact-child nominees and checks their retained loan authority.
+Control scratch reads and guarded-return entry reads also replace their selected
+held wrapper with its declared children; they do not re-admit those children
+against the caller frame or absorb equal ambient owners.
+Population/control projection, selected callee
+ownership reservations, loop declarations and loop-frame restoration use their
+held or declared partition rather than raw caller-boundary admission. Their
+actual reservation/consumption checks remain responsible for custody. Pointer
+comparison builds its separation witness from the two distinct held flat
+members selected from one resource context. Partial returns spend the input
+frontier's actual fragments: distinct slices may share an original owner ID,
+but the same bytes cannot supply two outputs.
+
+Function completion retains the checked body's resource storage, including
+split quantities, supported projections, loan dependencies and occurrence IDs.
+Ordinary returns, exceptional returns and void fallthrough do not call
+`validity_error` or normalize the entire retained context. The loan sidecar's
+shared-root consistency check is constant work; selected output consumption,
+loan recovery and declared resource effects keep their own construction rules.
+
+Entry/exit certification and definition-fact checking use
+`observable_facts_assuming_valid` on their producer-established partitions.
+They expose the compact observable composition without repeating ownership
+admission. The raw `observable_facts` API still validates an assembled description
+before publishing its facts. It is source-pinned as a raw boundary, so a new
+fast-part caller cannot silently reintroduce whole-context validation.
+The `exit_partition_tests` regressions preserve split occurrences across normal,
+exceptional and fallthrough completion, reject overlapping raw observations,
+and grow owners, related ranges, tokens, aliases and private slots at 4/16/64.
+Existing observable-projection tests cover private filtering and invalidation.
 
 The source tests in `tests/search_boundary.rs` pin the perimeter, including
 new/hidden references and duplicate caller edges. Runtime probes exercise
-raw-output admission and pending-return admission; the other rows are source
-pinned, not independently runtime-probed by this increment. Existing migrated
-fragment tests provide their own no-discovery/scaling evidence. The guard
+raw-output admission and pending-return admission; the broader legacy routes
+remain source pinned. Existing migrated fragment tests provide their own no-discovery/scaling evidence. The guard
 observes registered discovery calls, not arbitrary loops: each future migration
 still needs an operation audit and deterministic scaling checks.
+
+Surface observation retains raw-context validation: entry declarations can still expose contradictory instance bodies. That remaining raw boundary is source-inventoried; only producer-established observations may bypass it. Returned composite requirements consume every written body occurrence, before normalization can collapse duplicate memory clauses.

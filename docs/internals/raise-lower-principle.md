@@ -50,9 +50,10 @@ checked. Each one costs completeness, expansion, or a readable report.
   for a Surface form and fall back to a placeholder, to another renderer, to
   `None`, or to dropping the fact.
 - **Name a value where it is introduced.** A step that introduces a fresh
-  value or memory state (a call result, a havoc, an allocation, a state
-  between recorded points) gives it a name from its origin at that
-  point. Do not recover a name later from whatever locals happen to hold the
+  value or memory state (a call result, a havoc, an allocation) gives it a
+  name from its origin at that point. A fact names only memories a recorded
+  point holds; a memory between recorded points has no name and is a defect
+  to fix where it is made, not one to name. Do not recover a name later from whatever locals happen to hold the
   value. A non-void call's result is `<region>.result`, including calls whose
   source discards the return value. The checked call transition retains the
   exact returned value, and its exit records it by region in
@@ -110,9 +111,12 @@ checked. Each one costs completeness, expansion, or a readable report.
   each integer a memory cell came to hold by the point that recorded it there
   (`cell_points`, filled from the cells each memory changed). The structural
   raiser writes `at(point, ...)` from these indexes for a value no nearer
-  state names. A load or field read made in a memory no point
-  records, inside a call or after the last point, is read at the nearest
-  recorded memory that reads the same bytes.
+  state names. A read names the canonical projection of the memory it
+  reads (`reasoning::memory_resolution`); the kernel records the memory each
+  projection was built from when it builds it (`load_projection_source`), so
+  the read is raised at the point recording that source, in one lookup.
+  The raiser never tries recorded states, nearby memories or candidate
+  forms in turn.
   A local that keeps one value in memory, a borrowed Rust enum or
   type-parameter local (`AggregateLayout::holding_value`), is named by its
   own name: `o` lowers to the read of its object at the point it was last
@@ -335,7 +339,7 @@ than what the verifier enforces today, and an audit that measures the gap.
 
 | Rule | Target | Enforced today | Audit |
 | --- | --- | --- | --- |
-| Lowering undoes raising | `lower(raise(x)) == x` for every term a proof state holds, so a raised spelling needs no checking | Required, but spellers lower each candidate again and drop a mismatch (`surface_lowers_to`, the premise speller's `matches_kernel`) | `scripts/raise-lower.sh` |
+| Lowering undoes raising | `lower(raise(x)) == x` for every term a proof state holds, so a raised Surface form needs no checking | Required, but premise raising lowers each candidate again and drops a mismatch (`surface_lowers_to`, premise raising's `matches_kernel`) | `scripts/raise-lower.sh` |
 | Lowering is fact-stable | Lowering reads no facts: one text, state and set of resources lower to one term | Facts may refuse the term, discharge its obligations, add side facts, or select one of several paths; they may not change the term | `scripts/fact-stability.sh`, `differs` lines |
 | Definedness is an obligation | Lowering returns the term, its definedness obligations and its side facts; checking discharges the obligations | Ordinary arithmetic returns obligations beside the term, but lowering drops one the facts already prove, and some lowerings are refused instead of owing one | `scripts/fact-stability.sh`, `refused` and `paths:N` lines |
 
@@ -350,12 +354,12 @@ form removes them.
 it leaves focused, as goal presentation does
 (`Proof::structural_proposition_candidate`: the step's fixed state, its
 entry state and the path's recorded points, so `at(point, ..)`, `old(..)`
-and `<call>.result` spellings are available), lowers that spelling again,
+and `<call>.result` forms are available), lowers that Surface form again,
 and records `same`, `polarity`
 (the same comparison at the other polarity), `differs`, `unlowered`,
-`unraised`, or `no-state`. It measures the raiser alone, not the premise
-speller, which searches recorded spellings first and keeps only one that
-lowers back. It observes the steps the [census](#measuring-the-gap) does; a
+`unraised`, or `no-state`. It measures the raiser alone, not premise raising,
+which searches recorded Surface forms first and keeps only one that lowers
+back. It observes the steps the [census](#measuring-the-gap) does; a
 fact a `have` publishes to its enclosing proof is not among them.
 
 Baseline (2026-11-16, ordinary mdtest corpus, both runs passing):
@@ -364,22 +368,21 @@ Baseline (2026-11-16, ordinary mdtest corpus, both runs passing):
   fixtures; 338 of them come from
   `mutex_resource_quantity_requires_conservation` (`uint32` comparisons).
 - Round trip (2026-11-17, after the audit raised with recorded points and
-  the entry state, and pointer call results were indexed): 55,023 records.
-  Of the 15,732 spellings the raiser produced, 13,469 were `same`, 696
-  `polarity`, 1,212 `differs` and 355 `unlowered`; 4,321 terms were
-  `unraised` and 34,970 had `no-state` (mostly termination predicates).
-  Integer and other comparisons round-trip about 77% of the time, pointer
-  comparisons about 31%: pointer reads named by the memory they were read in
-  rather than their version point, and pointer values with no recorded
-  origin, account for most of the rest. Before the audit used recorded
+  the entry state, pointer call results were indexed, and closed literal
+  comparisons stopped folding): 55,575 records. Of the 16,046 Surface forms
+  the raiser produced, 13,780 were `same`, 698 `polarity`, 1,201 `differs`
+  and 367 `unlowered`; 4,318 terms were `unraised` and 35,211 had
+  `no-state` (mostly termination predicates). Pointer comparisons account
+  for 367 of the `differs`: pointer reads named by the memory they were read
+  in rather than their version point, addresses raised to a placeholder, and
+  pointer values with no recorded origin. Before the audit used recorded
   points (2026-11-16) it reported 9,343 `same` of 54,642 records, because no
-  `at(point, ..)` or `old(..)` spelling was available to it. Recurring
-  `differs` shapes: an entry read raised through a current name (`old(*result) ==
-  7` spelled `result->value == 7`, lowering to `old(*next) == 7`); a
-  closed literal comparison lowering folds to a constant
-  (`-2147483648i64 == 2147483648i64` to `false`); casts spelled
-  differently on the two sides of an equality; and `to_integer(...)` terms
-  raised as `let` bindings or bare machine arithmetic.
+  `at(point, ..)` or `old(..)` form was available to it. Other recurring
+  `differs` shapes: a C parameter named `result` raised as Click's `result`
+  (`old(*result) == 7` raised as `result->value == 7`, which at function
+  exit lowers to the returned `next`); a reflexive comparison lowering folds
+  (`p == p` to `true`, 75 records); casts raised differently on the two
+  sides of an equality; and reads raised at a neighbouring program point.
 
 ## Lowering is structural
 
@@ -408,40 +411,72 @@ the one the text names.
   choosing a term by known origin. Equalities stay in the equality graph
   and the comparison form, which every check consults.
 
-Closed native comparisons at 8, 16, 32, and 64 bits retain their comparison
-node, format, and literal operands during logical lowering. Their truth is
-established by checking, including when exact rewriting removed the last
-variable before the comparison was printed. This does not change literal
-arithmetic evaluation. Comparisons of
-the same variable at 32/64 bits also retain their comparison node: recognition
-compares the two variable IDs, without consulting facts or walking expression
-trees. Closed 64-bit equalities retain their comparison node at the native
-`Int64` word equality format, with their literal operand payloads.
+Lowering never folds a comparison of two literals.
+
+- Closed native comparisons at 8, 16, 32, and 64 bits, order and equality
+  alike, retain their comparison node, format, and literal operands:
+  `1u64 == 0u64` lowers to that comparison, not to `false`. A closed 64-bit
+  equality is filed at the native `Int64` word equality format, with its
+  literal operand payloads, and is decided by its bits.
+- A comparison of the same variable at 32/64 bits retains its comparison
+  node: recognition compares the two variable IDs, without consulting facts
+  or walking expression trees.
+- A comparison of two `bool` literals, `true == false`, retains a
+  `BoolEqual` of the two constants.
+- A written `true` or `false` is a literal proposition, not `literal ==
+  true`: it lowers directly to the constant condition
+  (`SpecProposition::Truth`). The raiser raises a constant condition to the
+  same literal, so `false` round-trips without a comparison.
+
+Checking decides a closed condition from its literal roots with
+`machine_integer::comparison::closed_condition_value`, including when exact
+rewriting removed the last variable before the comparison was printed. It
+does so in exact matching through the comparison form, including closed
+comparisons nested under connectives and binders (so `contradiction(1 == 0)`
+matches a held `false`), in requirement matching, `normalize`, and
+assumption-free normalization. The fact store records a closed comparison
+that holds without indexing it. A closed goal is false or true whatever the
+facts, so `solve` treats a false one like the goal `false` and refutes the
+path. Regressions: `mdtests/closed_machine_order_comparisons.md`,
+`mdtests/closed_machine_equality_comparisons.md`,
+`mdtests/an_infeasible_path_with_a_closed_order_goal_closes.md`, and the
+`closed_*` and `a_constant_condition_raises_*` unit tests in
+`surface::proof::surface_synthesis`. Literal arithmetic evaluation is
+unchanged, and the shared comparison constructors used by checking still
+fold.
 
 Machine conditionals with closed 32/64-bit order guards, closed 64-bit equality
 guards, or same-variable 32/64-bit comparison guards retain their `if` node and
 guard during logical lowering. Their arm domains remain guarded, including
 unselected reads and invalid shifts. Checking selects the arm when needed.
-The comparison boundary recognizes conditionals guarded by a Boolean variable
-or a 32/64-bit comparison over literal/variable operands, with literal/variable
-arms or one bitwise operation (`&`, `|`, `^`) over literal/variable arm operands,
-as fixed-size native atoms. Bitwise recognition reads only the operation and
-its immediate leaves. Negated Boolean variables use the same guard
-with swapped arms. It retains the comparison family without exporting arithmetic
-DAGs or selecting an arm from ambient facts. Other result families retain their existing
-selected-arm behavior; literal Boolean and closed 32-bit equality guards keep
-their normal forms.
+The comparison boundary recognizes fixed-size native conditionals. The guard can
+be a Boolean variable or a 32/64-bit comparison, and the comparison operands and
+arms can be literal or variable leaves, one bitwise operation (`&`, `|`, `^`, `~`)
+over such leaves, or one right shift or unsigned left shift of a leaf by an
+in-range literal count.
+Standalone comparisons recognize the same operands. Even intrinsically decided
+guards in these forms retain their conditional; checking selects the arm. The
+reader inspects only the operator and its immediate leaves. Negated Boolean
+variables use the same guard with swapped arms. This preserves the comparison
+family without exporting arithmetic DAGs or using ambient facts to select an arm.
+Other result families retain their existing selected-arm behavior; literal Boolean
+and closed 32-bit equality guards keep their normal forms.
+
+Checked rewriting reconstructs native 32-bit comparisons with word-form literal
+operands, matching logical lowering even when selecting a conditional's unsigned
+literal arm. This touches only operand roots, preserves nested arithmetic and the
+comparison node, and leaves truth evaluation to checking.
 
 Generated comparison operands that are negative `int64` literals keep an explicit
 `as int64` cast, including under `old` and `at`. Their printed unary minus would
 otherwise reparse as mathematical Integer arithmetic and change the comparison
-family. Authored and diagnostic spellings keep the ordinary negative literal.
+family. Authored and diagnostic forms keep the ordinary negative literal.
 
-Closed narrow native comparisons spell both operands with explicit `int8`,
+Closed narrow native comparisons raise both operands with explicit `int8`,
 `uint8`, `int16`, or `uint16` casts. This preserves their format after a checked rewrite
 exposes literal operands: converting those literals to mathematical Integer
 observations would erase the width and signedness. Closed narrow logical orders retain that native format. Symbolic comparisons
-keep their existing observation spelling, and mixed-format comparisons and
+keep their existing observation form, and mixed-format comparisons and
 executed C keep their existing integer promotions. Literal order truth is checked without
 changing the retained comparison, including after quantified substitution.
 

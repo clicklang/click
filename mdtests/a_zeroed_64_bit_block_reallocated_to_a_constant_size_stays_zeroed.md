@@ -1,8 +1,8 @@
 # A zeroed 64-bit block reallocated to a constant size stays zeroed
 
-A `calloc` block with the 64-bit extent `n * 4u64` is resized to 16 bytes.
+A `calloc` block with the 64-bit size `n * 4u64` is resized to 16 bytes.
 The facts decide `16 <= n * 4u64` (`4 <= n`), so the new block's zeroed
-prefix is the constant 16, all of it (`design/heap-extents.md`, stage 4). A
+prefix is the constant 16, all of it (`design/heap-allocation-sizes.md`, stage 4). A
 prefix that is not a constant, such as growing this block to `n + 1`
 elements, is not modeled.
 

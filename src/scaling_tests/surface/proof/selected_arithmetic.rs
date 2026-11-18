@@ -36,7 +36,7 @@ fn failed_integer_bridge_does_not_construct_unused_facts() {
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
             integer_values: PersistentBinderMap::default(),
-            memory: Memory::new(),
+            memory: SymbolicMemory::new(),
             values: BTreeMap::from([("x".into(), ProgramValue::Int32(value))]),
             array_refs: BTreeMap::new(),
             requires: facts.clone(),
@@ -172,7 +172,7 @@ fn disequality_refutation_work_ignores_unrelated_facts() {
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
             integer_values: PersistentBinderMap::default(),
-            memory: Memory::new(),
+            memory: SymbolicMemory::new(),
             values: BTreeMap::from([
                 ("k".into(), ProgramValue::Int32(k)),
                 ("j".into(), ProgramValue::Int32(j)),
@@ -279,8 +279,8 @@ fn rewrite_history_keys_share_call_carriers_and_keep_state_authority() {
     let mut samples = Vec::new();
     for depth in [4, 16, 64] {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = Pointer::symbolic(Variable(995941));
-        let before = Memory::new();
+        let pointer = Address::symbolic(Variable(995941));
+        let before = SymbolicMemory::new();
         let after = before
             .clone()
             .store(pointer.clone(), ProgramValue::Int32(7u32.into()));

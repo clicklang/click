@@ -2,9 +2,9 @@ use super::*;
 
 fn memory_range(base: u32, end: u32) -> MemoryRange {
     MemoryRange::new(
-        Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::Constant(0),
+        Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Constant(0),
         },
         MachineTerm::constant(base),
         MachineTerm::constant(end),
@@ -68,16 +68,16 @@ fn owned_entry_footprint_names_memory_owners_and_refuses_unnameable_ones() {
 fn restoring_a_loop_frame_retains_complete_pointer_reads_but_not_written_cells() {
     let _session = crate::kernel::VerificationSession::enter();
     let field = PointerValue::new(
-        Pointer::symbolic(Variable(916_200)),
+        Address::symbolic(Variable(916_200)),
         ProgramType::Int32Pointer,
     );
     let data = PointerValue::new(
-        Pointer::symbolic(Variable(916_201)),
+        Address::symbolic(Variable(916_201)),
         ProgramType::Int32Pointer,
     );
     let field_range = MemoryRange::from_pointer_value(&field, 0u32.into(), 2u32.into(), 4);
     let data_range = MemoryRange::from_pointer_value(&data, 0u32.into(), 4u32.into(), 4);
-    let initial = Memory::new();
+    let initial = SymbolicMemory::new();
     // Restore scalar cache cells covering one complete pointer.
     let memory = initial
         .materialize_symbolic_cell(field.pointer().clone(), ProgramType::Int32)

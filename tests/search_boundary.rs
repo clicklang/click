@@ -330,7 +330,7 @@ fn order_equality_and_access_checks_cannot_restore_candidate_enumeration() {
 fn checked_provenance_cannot_restore_alias_bucket_search() {
     for (function, method) in [
         ("provenance_equal", "direct_aliases"),
-        ("opaque_extents_equal", "direct_aliases"),
+        ("bounds_owners_equal", "direct_aliases"),
         (
             "known_value_of_framed_pointer_read",
             "exact_pointer_aliases",
@@ -1632,7 +1632,7 @@ fn ownership_fallback_inventory_rejects_new_routes_and_hidden_references() {
 }
 
 #[test]
-fn ownership_fallback_inventory_pins_callers_and_reference_counts() {
+fn ownership_boundaries_cannot_restore_discovery() {
     for (path, owner, name, target) in [
         (
             "src/kernel/functions/mixed_return_resources.rs",
@@ -1647,40 +1647,118 @@ fn ownership_fallback_inventory_pins_callers_and_reference_counts() {
             "legacy_memory_boundary_conflict",
         ),
         (
-            "src/kernel/primitives/resource_algebra/legacy_search.rs",
+            "src/kernel/primitives/resource_algebra/ownership_admission.rs",
             "ResourceContext",
             "compose_selected_occurrences",
             "resume_legacy_discovery",
         ),
     ] {
-        let source = format!("impl {owner} {{ fn {name}(c: C) {{ c.{target}(); }} }}");
-        let file = syn::parse_file(&source).unwrap();
         let key = format!("{path}\tlegacy-caller\t{owner}::{name}\t{target}");
-        assert_eq!(proof_search_boundary::inventory(path, &file)[&key], 1);
-        assert_eq!(proof_search_boundary::expected()[&key], 1);
-        let doubled = syn::parse_file(&format!(
-            "impl {owner} {{ fn {name}(c: C) {{ c.{target}(); c.{target}(); }} }}"
+        assert!(!proof_search_boundary::expected().contains_key(&key));
+        let file = syn::parse_file(&format!(
+            "impl {owner} {{ fn {name}(c: C) {{ c.{target}(); }} }}"
         ))
         .unwrap();
         assert!(
-            proof_search_boundary::check(path, &doubled)
+            proof_search_boundary::check(path, &file)
                 .unwrap_err()
                 .iter()
-                .any(|error| error.contains(&key) && error.contains("2 references"))
+                .any(|error| error.contains(&key) && error.contains("unreviewed"))
         );
     }
-    let path = "src/kernel/functions/mixed_return_resources.rs";
-    let target = "try_compose_with_legacy_discovery_and_occurrences";
-    let key = format!("{path}\tlegacy-caller\tPreparedReturnComposition::finish\t{target}");
-    assert!(!proof_search_boundary::expected().contains_key(&key));
-    let file = syn::parse_file(&format!(
-        "impl PreparedReturnComposition {{ fn finish(c: C) {{ c.{target}(); }} }}"
-    ))
-    .unwrap();
+}
+
+#[test]
+fn migrated_return_partitions_and_boundaries_cannot_restore_legacy_search() {
+    for (path, function) in [
+        (
+            "src/kernel/functions/mixed_return_resources.rs",
+            "admit_clause",
+        ),
+        ("src/kernel/functions/mixed_return_resources.rs", "finish"),
+        (
+            "src/kernel/functions/mixed_return_resources.rs",
+            "take_returned_footprint",
+        ),
+        ("src/kernel/functions/mixed_return_resources.rs", "admit"),
+        (
+            "src/kernel/functions/mixed_return_resources.rs",
+            "finish_group",
+        ),
+        (
+            "src/kernel/functions/mixed_return_resources.rs",
+            "retain_frontier",
+        ),
+        (
+            "src/kernel/functions.rs",
+            "construct_composite_resource_body",
+        ),
+        (
+            "src/kernel/functions.rs",
+            "produced_composite_frontier_conflict",
+        ),
+        (
+            "src/kernel/functions.rs",
+            "recover_candidate_stable_view_resources",
+        ),
+        ("src/kernel/loans.rs", "recover_stable_views_impl"),
+    ] {
+        for target in [
+            "try_compose_with_legacy_discovery_and_occurrences",
+            "returned_boundary_conflict_with_legacy_discovery",
+            "resume_legacy_discovery",
+            "legacy_memory_boundary_conflict",
+            "validity_error",
+        ] {
+            for source in [
+                format!("fn {function}(c:C) {{ c.{target}(); }}"),
+                format!("fn {function}(c:C) {{ hidden!(c.{target}()); }}"),
+            ] {
+                assert!(boundary::check_source(path, &source).is_err(), "{source}");
+            }
+        }
+    }
+}
+
+#[test]
+fn ownership_endpoint_checks_cannot_reconstruct_order_paths() {
     assert!(
-        proof_search_boundary::check(path, &file)
-            .unwrap_err()
-            .iter()
-            .any(|error| error.contains(&key) && error.contains("unreviewed"))
+        boundary::check_source(
+            "src/kernel/primitives/memory_equality_index.rs",
+            "fn constant_owned_overlap(c:C) { c.decide(condition); }"
+        )
+        .is_err()
     );
+}
+
+#[test]
+fn returned_family_consumers_cannot_reconstruct_bodies() {
+    for (path, consumer) in [
+        (
+            "src/kernel/functions/mixed_return_resources.rs",
+            "project_return_resource_cores",
+        ),
+        (
+            "src/kernel/functions.rs",
+            "produced_composite_frontier_conflict",
+        ),
+    ] {
+        for producer in [
+            "expand_composite_resource_fact",
+            "expand_composite_resource_fact_with_children",
+            "expand_all_composite_resource_facts",
+            "expand_all_composite_resource_facts_at_state",
+            "construct_composite_resource_body",
+            "try_construct",
+        ] {
+            for statement in [
+                format!("c.{producer}();"),
+                format!("hidden!(c.{producer}());"),
+                format!("let f = C::{producer}; f(c);"),
+            ] {
+                let source = format!("fn {consumer}(c:C) {{ {statement} }}");
+                assert!(boundary::check_source(path, &source).is_err(), "{source}");
+            }
+        }
+    }
 }

@@ -59,12 +59,12 @@ fn model_start_membership_ignores_unrelated_order_bounds() {
 }
 
 #[test]
-fn separated_range_frame_retains_full_access_and_range_extents() {
+fn separated_range_frame_retains_full_access_and_range_spans() {
     let mut samples = Vec::new();
     for size in [16u64, 64, 256, 1024] {
         let _session = crate::kernel::VerificationSession::enter();
-        let data = Pointer::symbolic(Variable(9_901_001));
-        let field = Pointer::symbolic(Variable(9_901_002));
+        let data = Address::symbolic(Variable(9_901_001));
+        let field = Address::symbolic(Variable(9_901_002));
         let backing = MemoryRange::new(data.clone(), 0u32.into(), 2u32.into());
         let descriptor = MemoryRange::new(field.clone(), 0u32.into(), 2u32.into());
         let separate = |left, right| Proposition::ResourceSeparate {
@@ -76,12 +76,12 @@ fn separated_range_frame_retains_full_access_and_range_extents() {
         for index in 0..size {
             context = context.assume_proposition(separate(
                 MemoryRange::new(
-                    Pointer::symbolic(Variable(9_902_000 + index * 2)),
+                    Address::symbolic(Variable(9_902_000 + index * 2)),
                     0u32.into(),
                     2u32.into(),
                 ),
                 MemoryRange::new(
-                    Pointer::symbolic(Variable(9_902_001 + index * 2)),
+                    Address::symbolic(Variable(9_902_001 + index * 2)),
                     0u32.into(),
                     2u32.into(),
                 ),

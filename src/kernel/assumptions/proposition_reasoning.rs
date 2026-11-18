@@ -361,6 +361,7 @@ impl PureFactContext {
                 memory,
                 pointer,
                 value_type,
+                ..
             } => self.proves_memory_read_defined(memory, pointer, *value_type),
             Proposition::MemoryLoadable {
                 memory,
@@ -572,6 +573,7 @@ impl PureFactContext {
                 memory,
                 pointer,
                 value_type,
+                ..
             } => self.proves_memory_read_defined(memory, pointer, *value_type),
             Proposition::MemoryLoadable {
                 memory,
@@ -3564,8 +3566,8 @@ impl PureFactContext {
         condition: &ConditionTerm,
     ) -> BTreeSet<MachineTerm> {
         fn collect_offset_candidates(
-            pattern: &PointerOffsetTerm,
-            target: &PointerOffsetTerm,
+            pattern: &AddressOffset,
+            target: &AddressOffset,
             bound: Variable,
             candidates: &mut BTreeSet<MachineTerm>,
         ) {
@@ -3578,19 +3580,16 @@ impl PureFactContext {
                 candidates.insert(MachineTerm::constant(0));
             }
             match (pattern, target) {
-                (
-                    PointerOffsetTerm::Add(left_a, left_b),
-                    PointerOffsetTerm::Add(right_a, right_b),
-                ) => {
+                (AddressOffset::Add(left_a, left_b), AddressOffset::Add(right_a, right_b)) => {
                     collect_offset_candidates(left_a, right_a, bound, candidates);
                     collect_offset_candidates(left_b, right_b, bound, candidates);
                 }
                 (
-                    PointerOffsetTerm::Int32Scaled {
+                    AddressOffset::Int32Scaled {
                         value: left,
                         byte_width: left_width,
                     },
-                    PointerOffsetTerm::Int32Scaled {
+                    AddressOffset::Int32Scaled {
                         value: right,
                         byte_width: right_width,
                     },
@@ -3603,11 +3602,11 @@ impl PureFactContext {
                     );
                 }
                 (
-                    PointerOffsetTerm::Int32Scaled {
+                    AddressOffset::Int32Scaled {
                         value: left,
                         byte_width,
                     },
-                    PointerOffsetTerm::Constant(bytes),
+                    AddressOffset::Constant(bytes),
                 ) if *byte_width != 0 && bytes % byte_width == 0 => {
                     let elements = bytes / byte_width;
                     collect_index_candidates(
@@ -3620,12 +3619,12 @@ impl PureFactContext {
                     );
                 }
                 (
-                    PointerOffsetTerm::Int64Scaled {
+                    AddressOffset::Int64Scaled {
                         value: left,
                         byte_width: left_width,
                         unsigned: left_unsigned,
                     },
-                    PointerOffsetTerm::Int64Scaled {
+                    AddressOffset::Int64Scaled {
                         value: right,
                         byte_width: right_width,
                         unsigned: right_unsigned,
@@ -3639,12 +3638,12 @@ impl PureFactContext {
                     );
                 }
                 (
-                    PointerOffsetTerm::Int64Scaled {
+                    AddressOffset::Int64Scaled {
                         value: left,
                         byte_width,
                         unsigned,
                     },
-                    PointerOffsetTerm::Constant(bytes),
+                    AddressOffset::Constant(bytes),
                 ) if *byte_width != 0 && bytes % byte_width == 0 => {
                     let elements = bytes / byte_width;
                     let value = if *unsigned {
@@ -3666,12 +3665,12 @@ impl PureFactContext {
             }
         }
         fn collect_pointer_candidates(
-            pattern: &Pointer,
-            target: &Pointer,
+            pattern: &Address,
+            target: &Address,
             bound: Variable,
             candidates: &mut BTreeSet<MachineTerm>,
         ) {
-            if pattern.block == target.block {
+            if pattern.base == target.base {
                 collect_offset_candidates(&pattern.offset, &target.offset, bound, candidates);
             }
         }
@@ -4162,17 +4161,17 @@ impl PureFactContext {
                 let target_left = target_left.as_ref();
                 let target_right = target_right.as_ref();
                 fact_right == target_right
-                    && self.pointer_offset_terms_equal_for_transport(fact_left, target_left)
+                    && self.address_offsets_equal_for_transport(fact_left, target_left)
                     || fact_right == target_left
-                        && self.pointer_offset_terms_equal_for_transport(fact_left, target_right)
+                        && self.address_offsets_equal_for_transport(fact_left, target_right)
                     || fact_left == target_right
-                        && self.pointer_offset_terms_equal_for_transport(fact_right, target_left)
+                        && self.address_offsets_equal_for_transport(fact_right, target_left)
                     || fact_left == target_left
-                        && self.pointer_offset_terms_equal_for_transport(fact_right, target_right)
-                    || self.pointer_offset_terms_state_equivalent(fact_left, target_left)
-                        && self.pointer_offset_terms_state_equivalent(fact_right, target_right)
-                    || self.pointer_offset_terms_state_equivalent(fact_left, target_right)
-                        && self.pointer_offset_terms_state_equivalent(fact_right, target_left)
+                        && self.address_offsets_equal_for_transport(fact_right, target_right)
+                    || self.address_offsets_state_equivalent(fact_left, target_left)
+                        && self.address_offsets_state_equivalent(fact_right, target_right)
+                    || self.address_offsets_state_equivalent(fact_left, target_right)
+                        && self.address_offsets_state_equivalent(fact_right, target_left)
             }
             (
                 ConditionTerm::Overflows {
@@ -4669,10 +4668,10 @@ impl PureFactContext {
         }
     }
 
-    fn pointer_offset_terms_equal_for_transport(
+    fn address_offsets_equal_for_transport(
         &self,
-        left: &PointerOffsetTerm,
-        right: &PointerOffsetTerm,
+        left: &AddressOffset,
+        right: &AddressOffset,
     ) -> bool {
         if left == right {
             return true;
@@ -4680,11 +4679,11 @@ impl PureFactContext {
 
         match (left, right) {
             (
-                PointerOffsetTerm::Int32Scaled {
+                AddressOffset::Int32Scaled {
                     value: left,
                     byte_width: left_width,
                 },
-                PointerOffsetTerm::Int32Scaled {
+                AddressOffset::Int32Scaled {
                     value: right,
                     byte_width: right_width,
                 },
@@ -4695,31 +4694,31 @@ impl PureFactContext {
                         right.operand_view(),
                     )
             }
-            (PointerOffsetTerm::Add(left_a, left_b), PointerOffsetTerm::Add(right_a, right_b)) => {
-                self.pointer_offset_terms_equal_for_transport(left_a, right_a)
-                    && self.pointer_offset_terms_equal_for_transport(left_b, right_b)
-                    || self.pointer_offset_terms_equal_for_transport(left_a, right_b)
-                        && self.pointer_offset_terms_equal_for_transport(left_b, right_a)
+            (AddressOffset::Add(left_a, left_b), AddressOffset::Add(right_a, right_b)) => {
+                self.address_offsets_equal_for_transport(left_a, right_a)
+                    && self.address_offsets_equal_for_transport(left_b, right_b)
+                    || self.address_offsets_equal_for_transport(left_a, right_b)
+                        && self.address_offsets_equal_for_transport(left_b, right_a)
             }
             _ => false,
         }
     }
 
-    fn pointer_offset_terms_state_equivalent(
+    fn address_offsets_state_equivalent(
         &self,
-        left: &PointerOffsetTerm,
-        right: &PointerOffsetTerm,
+        left: &AddressOffset,
+        right: &AddressOffset,
     ) -> bool {
         if left == right {
             return true;
         }
         match (left, right) {
             (
-                PointerOffsetTerm::Int32Scaled {
+                AddressOffset::Int32Scaled {
                     value: left,
                     byte_width: left_width,
                 },
-                PointerOffsetTerm::Int32Scaled {
+                AddressOffset::Int32Scaled {
                     value: right,
                     byte_width: right_width,
                 },
@@ -4727,11 +4726,11 @@ impl PureFactContext {
                 left_width == right_width
                     && self.operands_state_equivalent(left.operand_view(), right.operand_view())
             }
-            (PointerOffsetTerm::Add(left_a, left_b), PointerOffsetTerm::Add(right_a, right_b)) => {
-                self.pointer_offset_terms_state_equivalent(left_a, right_a)
-                    && self.pointer_offset_terms_state_equivalent(left_b, right_b)
-                    || self.pointer_offset_terms_state_equivalent(left_a, right_b)
-                        && self.pointer_offset_terms_state_equivalent(left_b, right_a)
+            (AddressOffset::Add(left_a, left_b), AddressOffset::Add(right_a, right_b)) => {
+                self.address_offsets_state_equivalent(left_a, right_a)
+                    && self.address_offsets_state_equivalent(left_b, right_b)
+                    || self.address_offsets_state_equivalent(left_a, right_b)
+                        && self.address_offsets_state_equivalent(left_b, right_a)
             }
             _ => false,
         }
@@ -4745,8 +4744,8 @@ impl PureFactContext {
 
     pub(in crate::kernel) fn has_pointer_offset_state_fact(
         &self,
-        left: &PointerOffsetTerm,
-        right: &PointerOffsetTerm,
+        left: &AddressOffset,
+        right: &AddressOffset,
     ) -> bool {
         // Keep this deliberately structural and one-hop. Callers use it only
         // to move an already-certified address equality between framed memory
@@ -4755,10 +4754,10 @@ impl PureFactContext {
             let ConditionTerm::PointerOffsetEqual(fact_left, fact_right) = condition else {
                 return false;
             };
-            self.pointer_offset_terms_state_equivalent(fact_left, left)
-                && self.pointer_offset_terms_state_equivalent(fact_right, right)
-                || self.pointer_offset_terms_state_equivalent(fact_left, right)
-                    && self.pointer_offset_terms_state_equivalent(fact_right, left)
+            self.address_offsets_state_equivalent(fact_left, left)
+                && self.address_offsets_state_equivalent(fact_right, right)
+                || self.address_offsets_state_equivalent(fact_left, right)
+                    && self.address_offsets_state_equivalent(fact_right, left)
         };
         // A matching fact has a side state-equivalent to `left`, so it is
         // filed under `left`'s shape.
@@ -5492,10 +5491,10 @@ mod guided_condition_instantiation_tests {
 
     fn array_read(index: MachineTerm, kind: LoadKind) -> MachineTerm {
         MachineTerm::MemoryLoad(
-            ProgramPoint::at(&(crate::kernel::intern_memory(Memory::new()))),
-            Box::new(Pointer {
-                block: "quantified-cells".into(),
-                offset: PointerOffsetTerm::scale_int32(index, 4),
+            ProgramPoint::at(&(crate::kernel::intern_memory(SymbolicMemory::new()))),
+            Box::new(Address {
+                base: "quantified-cells".into(),
+                offset: AddressOffset::scale_int32(index, 4),
             }),
             kind,
         )
@@ -5546,7 +5545,7 @@ mod annotated_alignment_conflict_tests {
 
     #[test]
     fn address_class_annotations_do_not_hide_opposite_alignment_facts() {
-        let pointer = Pointer::symbolic(Variable(970_001));
+        let pointer = Address::symbolic(Variable(970_001));
         let class = crate::kernel::effective_type::CAccessClass::Struct(
             crate::kernel::effective_type::CStructClass::opaque("node"),
         );
@@ -5577,7 +5576,7 @@ mod annotated_alignment_conflict_tests {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
                 left: Box::new(MachineTerm::uint64_bitwise_and(
-                    MachineTerm::object_pointer_address(Pointer::symbolic(Variable(970_001)), None,),
+                    MachineTerm::object_pointer_address(Address::symbolic(Variable(970_001)), None,),
                     MachineTerm::uint64_constant(7),
                 )),
                 right: Box::new(zero.clone())
@@ -5614,8 +5613,8 @@ mod congruent_condition_conflict_tests {
 
     #[test]
     fn equal_address_alignment_conflicts_follow_merges() {
-        let p = Pointer::symbolic(Variable(971_001));
-        let q = Pointer::symbolic(Variable(971_002));
+        let p = Address::symbolic(Variable(971_001));
+        let q = Address::symbolic(Variable(971_002));
         let equality =
             Proposition::ConditionIs(ConditionTerm::pointer_equal(p.clone(), q.clone()), true);
         let aligned = Proposition::ConditionIs(ConditionTerm::pointer_aligned(p, 8), true);
@@ -5667,7 +5666,7 @@ mod comparison_operand_order_tests {
             arguments: (0..size)
                 .map(|index| {
                     PureFunctionArgument::Value(ProgramValue::typed_pointer(
-                        Pointer::symbolic(Variable(9_992_000 + size * 1000 + index)),
+                        Address::symbolic(Variable(9_992_000 + size * 1000 + index)),
                         ProgramType::Int32Pointer,
                     ))
                 })
@@ -5918,7 +5917,7 @@ mod shared_wide_order_evidence_tests {
         let format = MachineIntegerType::UInt64;
         let x = MachineTerm::Variable(Variable(992570));
         let tagged = MachineTerm::uint64_add(
-            MachineTerm::pointer_address(Pointer::symbolic(Variable(992571))),
+            MachineTerm::pointer_address(Address::symbolic(Variable(992571))),
             MachineTerm::uint64_constant(1),
         );
         let source = Proposition::ConditionIs(ConditionTerm::uint64_equal(x.clone(), tagged), true);
@@ -6154,17 +6153,17 @@ mod shared_wide_order_evidence_tests {
     #[test]
     fn wide_order_evidence_connects_mixed_load_syntax_only_at_its_registered_variable() {
         use crate::kernel::{
-            LoadKind, MachineOperandView, Memory, Pointer, PointerOffsetTerm, intern_memory,
+            Address, AddressOffset, LoadKind, MachineOperandView, SymbolicMemory, intern_memory,
         };
         for ty in [MachineIntegerType::Int64, MachineIntegerType::UInt64] {
             let _session = crate::kernel::VerificationSession::enter();
-            let memory = intern_memory(Memory::new().with_block("wide-order", 16));
+            let memory = intern_memory(SymbolicMemory::new().with_block("wide-order", 16));
             let load = |offset| {
                 MachineTerm::MemoryLoad(
                     ProgramPoint::at(&memory),
-                    Box::new(Pointer {
-                        block: "wide-order".into(),
-                        offset: PointerOffsetTerm::Constant(offset),
+                    Box::new(Address {
+                        base: "wide-order".into(),
+                        offset: AddressOffset::Constant(offset),
                     }),
                     LoadKind::Bits64,
                 )

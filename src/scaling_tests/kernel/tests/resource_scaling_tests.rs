@@ -20,14 +20,14 @@ const SIZES: [usize; 4] = [16, 64, 256, 1024];
 /// ones take identities below it.
 const TARGET_HEAP: u64 = 1_000_000;
 
-fn heap_base(identity: u64) -> Pointer {
-    Pointer {
-        block: PointerBlock::Heap(identity),
-        offset: PointerOffsetTerm::Constant(0),
+fn heap_base(identity: u64) -> Address {
+    Address {
+        base: AddressBase::Heap(identity),
+        offset: AddressOffset::Constant(0),
     }
 }
 
-fn owned_range(base: Pointer, start: u32, end: u32) -> ResourceFact {
+fn owned_range(base: Address, start: u32, end: u32) -> ResourceFact {
     ResourceFact::own_memory(MemoryRange::new(
         base,
         MachineTerm::constant(start),
@@ -70,14 +70,14 @@ fn frame_with_unrelated_allocations(unrelated: usize) -> ResourceContext {
         ])
 }
 
-fn pointer_equal(left: Pointer, right: Pointer) -> ConditionTerm {
+fn pointer_equal(left: Address, right: Address) -> ConditionTerm {
     ConditionTerm::PointerEqual(Box::new(left), Box::new(right))
 }
 
-fn symbolic_base(identity: u64) -> Pointer {
-    Pointer {
-        block: PointerBlock::Symbolic(Variable(identity)),
-        offset: PointerOffsetTerm::Constant(0),
+fn symbolic_base(identity: u64) -> Address {
+    Address {
+        base: AddressBase::Symbolic(Variable(identity)),
+        offset: AddressOffset::Constant(0),
     }
 }
 
@@ -228,7 +228,7 @@ fn private_owner_projection_does_not_republish_discarded_pairings() {
         let mut resources = base;
         for index in 0..size {
             resources = resources.unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
-                Memory::local_pointer(format!("hidden_{index}")),
+                SymbolicMemory::local_pointer(format!("hidden_{index}")),
                 0u32.into(),
                 1u32.into(),
             )));
@@ -607,7 +607,7 @@ fn unmatched_instance_body_views_ignore_unrelated_instances() {
             .iter()
             .filter(|fact| {
                 matches!(fact, ResourceFact::View(Resource::Memory(range))
-                    if range.base().block == PointerBlock::Heap(TARGET_HEAP))
+                    if range.base().base == AddressBase::Heap(TARGET_HEAP))
             })
             .count();
         assert_eq!(published, 4, "the target body's four cells are published");
@@ -760,7 +760,7 @@ fn nested_composite_body_views_ignore_unrelated_instances() {
             .iter()
             .filter(|fact| {
                 matches!(fact, ResourceFact::View(Resource::Memory(range))
-                    if range.base().block == PointerBlock::Heap(TARGET_HEAP))
+                    if range.base().base == AddressBase::Heap(TARGET_HEAP))
             })
             .count();
         assert!(
@@ -820,15 +820,15 @@ fn nested_composite_body_views_are_linear_in_the_child_body() {
 fn a_kept_cell_is_placed_without_visiting_unrelated_ranges() {
     // Objects reached through parameters share one block and differ by a
     // symbolic base, as the arena's descriptors do.
-    let object = |identity: u64| Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(identity)), 4),
+    let object = |identity: u64| Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(identity)), 4),
     };
-    let field = |identity: u64, bytes: i64| Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Add(
+    let field = |identity: u64, bytes: i64| Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Add(
             Box::new(object(identity).offset),
-            Box::new(PointerOffsetTerm::Constant(bytes)),
+            Box::new(AddressOffset::Constant(bytes)),
         ),
     };
     let mut samples = Vec::new();
@@ -852,7 +852,7 @@ fn a_kept_cell_is_placed_without_visiting_unrelated_ranges() {
     assert_constant_plus_log_growth("kept cell placement", &samples, 4.0);
 }
 
-fn variable_range(base: Pointer, start: MachineTerm, end: MachineTerm) -> ResourceFact {
+fn variable_range(base: Address, start: MachineTerm, end: MachineTerm) -> ResourceFact {
     ResourceFact::own_memory(MemoryRange::new(base, start, end))
 }
 
@@ -959,7 +959,7 @@ fn retirement_stale_check_ignores_unrelated_kept_resources() {
                 &ResourceContext::new(),
                 &kept,
                 &allocation,
-                &HeapExtent::int32(bytes.clone()),
+                &AllocationSize::int32(bytes.clone()),
                 &assumptions,
             )
             .cloned()
@@ -980,7 +980,7 @@ fn retirement_stale_check_ignores_unrelated_kept_resources() {
                 &ResourceContext::new(),
                 &overlapping,
                 &allocation,
-                &HeapExtent::int32(bytes.clone()),
+                &AllocationSize::int32(bytes.clone()),
                 &assumptions,
             ),
             Some(&owned_range(allocation.clone(), 2, 3)),
@@ -991,10 +991,10 @@ fn retirement_stale_check_ignores_unrelated_kept_resources() {
 
 /// A pointer parameter: every one lives in the single `ExternalArgument`
 /// block, at four times its own index variable.
-fn parameter_base(identity: u64) -> Pointer {
-    Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(identity)), 4),
+fn parameter_base(identity: u64) -> Address {
+    Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(identity)), 4),
     }
 }
 
@@ -1066,6 +1066,15 @@ fn composing_a_parameter_object_ignores_unrelated_parameters() {
         let _session = crate::kernel::VerificationSession::enter();
         let (frame, assumptions) = parameter_frame(size);
         let added = parameter_object(FIRST_PARAMETER + size as u64);
+        // A new pointer parameter has no established relationship to the
+        // existing frame. Supply that explicit input before measuring lookup.
+        let Err(ResourceContextValidityError::UnestablishedOwnedBoundary(required)) = frame
+            .clone()
+            .try_compose_into_valid_context_delaying_normalization([added.clone()], &assumptions)
+        else {
+            panic!("a new parameter requires its frame relationship");
+        };
+        let assumptions = assumptions.assume_proposition(*required);
         let (composed, work) = crate::instrumentation::measure_deterministic_work(|| {
             frame
                 .clone()
@@ -1107,6 +1116,9 @@ fn parameter_validity_still_refuses_related_overlaps() {
     let (frame, _) = parameter_frame(size);
     let target = FIRST_PARAMETER + 5;
     let overlaps = |extra: &ResourceFact, assumptions: &PureFactContext| {
+        // Publish this explicitly supplied equality input at the producer;
+        // admission must not initialize a cold ambient graph itself.
+        frame.synchronize_memory_equalities(assumptions);
         let whole = matches!(
             frame
                 .clone()
@@ -1189,8 +1201,8 @@ fn holding_a_parameter_composition_states_no_pairs() {
         });
         assert_eq!(
             assumptions.memory_separation_candidate_count(
-                &PointerBlock::ExternalArgument,
-                &PointerBlock::ExternalArgument
+                &AddressBase::ExternalArgument,
+                &AddressBase::ExternalArgument
             ),
             0
         );
@@ -1315,11 +1327,11 @@ fn refused_parameter_separation_ignores_unrelated_owned_objects() {
             let Some(range) = fact.memory_own_range() else {
                 continue;
             };
-            let extent = SubobjectExtent {
+            let bounds = SubobjectBounds {
                 start: range.base().clone(),
                 width: 8u32.into(),
             };
-            assumptions = assumptions.assume_proposition(extent.coverage_fact(range));
+            assumptions = assumptions.assume_proposition(bounds.coverage_fact(range));
         }
         let range = |id| {
             Resource::Memory(MemoryRange::new_with_element_width(
@@ -1353,9 +1365,9 @@ fn normalizing_external_ranges_compares_only_related_bases() {
     for size in [8_u64, 16, 32, 64] {
         let mut facts = Vec::new();
         for index in 0..size {
-            let base = Pointer {
-                block: PointerBlock::ExternalArgument,
-                offset: PointerOffsetTerm::scale_int32(
+            let base = Address {
+                base: AddressBase::ExternalArgument,
+                offset: AddressOffset::scale_int32(
                     MachineTerm::Variable(Variable(9 * TARGET_HEAP + index)),
                     4,
                 ),
@@ -1543,11 +1555,11 @@ fn a_recursive_footprint_is_constant_in_live_nodes() {
     let mut samples = Vec::new();
     for nodes in SIZES {
         // The live nodes: a known cell at each of them.
-        let memory = (0..nodes).fold(Memory::new(), |memory, node| {
+        let memory = (0..nodes).fold(SymbolicMemory::new(), |memory, node| {
             memory.store(
-                Pointer {
-                    block: PointerBlock::Heap(TARGET_HEAP),
-                    offset: PointerOffsetTerm::Constant(4 * node as i64),
+                Address {
+                    base: AddressBase::Heap(TARGET_HEAP),
+                    offset: AddressOffset::Constant(4 * node as i64),
                 },
                 int32(node as u32),
             )
@@ -1621,18 +1633,18 @@ fn slot_definitions() -> Vec<CompositeResourceDefinition> {
     ]
 }
 
-fn external_descriptor(identity: u64) -> Pointer {
-    Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(identity)), 4),
+fn external_descriptor(identity: u64) -> Address {
+    Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(identity)), 4),
     }
 }
 
 /// The pointer a load of `cell` reads in `source`, as execution materializes
 /// it: the value named by that read.
-fn materialized_pointer(source: &Memory, cell: &Pointer) -> ProgramValue {
+fn materialized_pointer(source: &SymbolicMemory, cell: &Address) -> ProgramValue {
     ProgramValue::Pointer(PointerValue::from_read(
-        Pointer::loaded(&MachineTerm::MemoryLoad(
+        Address::loaded(&MachineTerm::MemoryLoad(
             ProgramPoint::at(&(crate::kernel::intern_memory_ref(source))),
             Box::new(cell.clone()),
             crate::kernel::LoadKind::Int32,
@@ -1658,7 +1670,7 @@ fn unfold_beside_descriptors_of_its_type_ignores_unrelated_descriptors() {
         let definitions = slot_definitions();
         let region = external_descriptor(100_000);
         let other = external_descriptor(100_001);
-        let entry = Memory::new();
+        let entry = SymbolicMemory::new();
         let pool = match materialized_pointer(&entry, &region) {
             ProgramValue::Pointer(value) => value,
             _ => unreachable!("a pointer cell is materialized as a pointer"),
@@ -1762,7 +1774,7 @@ const STORE_KEPT_PARAMETER: u64 = 97_001;
 /// Frames one store at the written parameter's object as the store
 /// statement does: the opened composition first, then the cached cells. It
 /// returns the charged work and how many of `kept` cached cells survived.
-fn framed_store_beside_instances(state: &ExecutionState, kept: &[Pointer]) -> (usize, usize) {
+fn framed_store_beside_instances(state: &ExecutionState, kept: &[Address]) -> (usize, usize) {
     let write = parameter_base(STORE_WRITTEN_PARAMETER);
     let assumptions = PureFactContext::new()
         .assume_proposition(Proposition::ResourceComposition(state.resources().clone()));
@@ -1817,7 +1829,7 @@ fn a_store_opens_no_folded_instance_whose_arguments_name_no_cached_cell() {
                 parameter_window_instance(STORE_KEPT_PARAMETER, 3 * TARGET_HEAP),
             ]);
         let memory = (0..size)
-            .fold(Memory::new(), |memory, index| {
+            .fold(SymbolicMemory::new(), |memory, index| {
                 memory.store(heap_base(index as u64 + 1), int32(index as u32))
             })
             .store(kept.clone(), int32(5));
@@ -1851,7 +1863,7 @@ fn a_store_opens_folded_instances_in_work_linear_in_the_aliasing_ones() {
         let cells = (0..size)
             .map(|index| parameter_base(FIRST_PARAMETER + index as u64))
             .collect::<Vec<_>>();
-        let memory = cells.iter().fold(Memory::new(), |memory, cell| {
+        let memory = cells.iter().fold(SymbolicMemory::new(), |memory, cell| {
             memory.store(cell.clone(), int32(5))
         });
         let state = ExecutionState::new()
@@ -1886,7 +1898,7 @@ fn a_store_forgets_a_folded_instance_cell_it_does_not_open() {
     ]);
     let state = ExecutionState::new()
         .with_resource_context(frame)
-        .with_memory(Memory::new().store(kept.clone(), int32(5)));
+        .with_memory(SymbolicMemory::new().store(kept.clone(), int32(5)));
     // No definitions armed: nothing can be opened.
     let (_, survived) = framed_store_beside_instances(&state, std::slice::from_ref(&kept));
     assert_eq!(survived, 0, "an unopened instance keeps nothing");
@@ -1950,7 +1962,9 @@ fn shared_view_offset_alias_lookup_is_indexed_and_preserves_occurrences() {
 
 #[test]
 fn observable_projection_reuses_private_local_deltas_and_unchanged_queries() {
-    for size in [4, 16, 64, 256] {
+    let mut insert_samples = Vec::new();
+    let mut remove_samples = Vec::new();
+    for size in [4_usize, 16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         crate::kernel::set_never_address_taken_locals(
             (0..size)
@@ -1965,20 +1979,30 @@ fn observable_projection_reuses_private_local_deltas_and_unchanged_queries() {
         ]);
         let expected = base.observable_composition();
         let mut resources = base;
-        let (_, sequence_work) = crate::instrumentation::measure_deterministic_work(|| {
-            for index in 0..size {
-                resources = resources.clone().unchecked_with_fact(owned_range(
-                    Memory::local_pointer(format!("hidden_{index}")),
+        let mut sequence_work = 0;
+        let mut insertion_work = 0;
+        for index in 0..size {
+            let (next, work) = crate::instrumentation::measure_deterministic_work(|| {
+                resources.clone().unchecked_with_fact(owned_range(
+                    SymbolicMemory::local_pointer(format!("hidden_{index}")),
                     0,
                     4,
-                ));
+                ))
+            });
+            resources = next;
+            insertion_work += work;
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 let observed = resources.observable_composition();
                 assert!(std::sync::Arc::ptr_eq(&observed.storage, &expected.storage));
-            }
-        });
+            });
+            sequence_work += work;
+        }
+        // Ownership publication maintains a cached proof footprint in O(log N).
+        // Projection still ignores private deltas and retains its constant work.
+        insert_samples.push((size, insertion_work.div_ceil(size)));
         assert!(
             sequence_work <= size * 8 + 16,
-            "private insertion/projection N={size}: {sequence_work}"
+            "private projection N={size}: {sequence_work}"
         );
         let (_, query_work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..16 {
@@ -1989,10 +2013,10 @@ fn observable_projection_reuses_private_local_deltas_and_unchanged_queries() {
             }
         });
         assert!(query_work <= 32, "unchanged queries N={size}: {query_work}");
+        resources = resources
+            .clone()
+            .unchecked_with_fact(owned_range(heap_base(3), 0, 4));
         let (_, addressed_work) = crate::instrumentation::measure_deterministic_work(|| {
-            resources = resources
-                .clone()
-                .unchecked_with_fact(owned_range(heap_base(3), 0, 4));
             assert_eq!(resources.observable_composition().facts().len(), 3);
         });
         assert!(
@@ -2003,23 +2027,31 @@ fn observable_projection_reuses_private_local_deltas_and_unchanged_queries() {
             .without_exact_representation(&owned_range(heap_base(3), 0, 4))
             .unwrap();
         let removal_root = resources.observable_composition();
-        let (_, removal_work) = crate::instrumentation::measure_deterministic_work(|| {
-            for index in 0..size {
-                resources = resources
+        let mut removal_work = 0;
+        let mut withdrawal_work = 0;
+        for index in 0..size {
+            let (next, work) = crate::instrumentation::measure_deterministic_work(|| {
+                resources
                     .clone()
                     .without_exact_representation(&owned_range(
-                        Memory::local_pointer(format!("hidden_{index}")),
+                        SymbolicMemory::local_pointer(format!("hidden_{index}")),
                         0,
                         4,
                     ))
-                    .unwrap();
+                    .unwrap()
+            });
+            resources = next;
+            withdrawal_work += work;
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 assert!(std::sync::Arc::ptr_eq(
                     &resources.observable_composition().storage,
-                    &removal_root.storage
+                    &removal_root.storage,
                 ));
                 assert_eq!(resources.observable_composition(), expected);
-            }
-        });
+            });
+            removal_work += work;
+        }
+        remove_samples.push((size, withdrawal_work.div_ceil(size)));
         assert!(
             removal_work <= size * 12 + 16,
             "private removal/projection N={size}: {removal_work}"
@@ -2028,6 +2060,16 @@ fn observable_projection_reuses_private_local_deltas_and_unchanged_queries() {
             "observable projection N={size}: insert={sequence_work}, queries={query_work}, addressed={addressed_work}, remove={removal_work}"
         );
     }
+    assert_constant_plus_log_growth(
+        "private ownership publication per delta",
+        &insert_samples,
+        8.0,
+    );
+    assert_constant_plus_log_growth(
+        "private ownership withdrawal per delta",
+        &remove_samples,
+        8.0,
+    );
 }
 
 #[test]
@@ -2070,17 +2112,20 @@ fn observable_projection_shares_first_projection_across_cold_forks() {
                 .map(Into::into)
                 .collect(),
         );
-        let root =
-            ResourceContext::new().unchecked_with_facts(
-                [
-                    owned_range(heap_base(1), 0, 4),
-                    owned_range(heap_base(2), 0, 4),
-                ]
-                .into_iter()
-                .chain((0..size).map(|index| {
-                    owned_range(Memory::local_pointer(format!("hidden_{index}")), 0, 4)
-                })),
-            );
+        let root = ResourceContext::new().unchecked_with_facts(
+            [
+                owned_range(heap_base(1), 0, 4),
+                owned_range(heap_base(2), 0, 4),
+            ]
+            .into_iter()
+            .chain((0..size).map(|index| {
+                owned_range(
+                    SymbolicMemory::local_pointer(format!("hidden_{index}")),
+                    0,
+                    4,
+                )
+            })),
+        );
         let forks = [root.clone(), root.clone(), root.clone()];
         let expected = root.observable_composition();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -2124,7 +2169,7 @@ fn observable_projection_reuses_local_edits_across_sibling_paths() {
         ]);
         for i in 0..size {
             source = source.unchecked_with_fact(owned_range(
-                Memory::local_pointer(format!("hidden_{i}")),
+                SymbolicMemory::local_pointer(format!("hidden_{i}")),
                 0,
                 4,
             ));
@@ -2174,7 +2219,7 @@ fn observable_projection_tracks_supported_views_caches_and_owner_retirement() {
             .unchecked_with_facts([owner.clone(), owned_range(heap_base(2), 0, 4)]);
         for i in 0..size {
             source = source.unchecked_with_fact(owned_range(
-                Memory::local_pointer(format!("hidden_{i}")),
+                SymbolicMemory::local_pointer(format!("hidden_{i}")),
                 0,
                 4,
             ));
@@ -2203,9 +2248,9 @@ fn observable_projection_tracks_supported_views_caches_and_owner_retirement() {
             !retired.contains_exact_representation(&view),
             "a cached view cannot survive its owner"
         );
-        let hidden_owner = owned_range(Memory::local_pointer("hidden_0"), 0, 4);
+        let hidden_owner = owned_range(SymbolicMemory::local_pointer("hidden_0"), 0, 4);
         let hidden_view = ResourceFact::view_memory(MemoryRange::new(
-            Memory::local_pointer("hidden_0"),
+            SymbolicMemory::local_pointer("hidden_0"),
             0u32.into(),
             2u32.into(),
         ));
@@ -2219,10 +2264,10 @@ fn observable_projection_tracks_supported_views_caches_and_owner_retirement() {
     }
 }
 
-fn argument_base(variable: u64) -> Pointer {
-    Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(variable)), 4),
+fn argument_base(variable: u64) -> Address {
+    Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(variable)), 4),
     }
 }
 
@@ -2280,6 +2325,15 @@ fn footprint_composition_does_not_decide_every_alias_pair() {
                     pointer_equal(argument_base(ARRAY), argument_base(996_000 + index)),
                     true,
                 )
+        });
+        let frame = footprint[..3]
+            .iter()
+            .map(|fact| fact.resource().clone())
+            .reduce(Resource::star)
+            .unwrap();
+        let assumptions = assumptions.assume_proposition(Proposition::ResourceSeparate {
+            left: Box::new(footprint[3].resource().clone()),
+            right: Box::new(frame),
         });
         let (composed, work) = crate::instrumentation::measure_deterministic_work(|| {
             ResourceContext::new().try_compose_with_facts(footprint.iter().cloned(), &assumptions)
@@ -2343,15 +2397,15 @@ fn selected_ownership_overlap_ignores_ambient_aliases() {
 /// as a `malloc` that succeeded leaves it: the allocation token and complete
 /// byte access, both owned.
 fn with_live_allocation(
-    (memory, resources): (Memory, ResourceContext),
+    (memory, resources): (SymbolicMemory, ResourceContext),
     identity: u64,
     bytes: u32,
-) -> (Memory, ResourceContext) {
+) -> (SymbolicMemory, ResourceContext) {
     let pending = symbolic_base(identity);
     let (memory, _, base) = memory
         .with_pending_heap_allocation(
             pending.clone(),
-            HeapExtent::int32(MachineTerm::constant(bytes)),
+            AllocationSize::int32(MachineTerm::constant(bytes)),
             false,
         )
         .resolve_pending_heap_allocation(&pending, true)
@@ -2390,7 +2444,7 @@ fn caller_beside_unrelated_allocations(unrelated: usize) -> ExecutionState {
             .collect(),
     );
     let (mut memory, mut resources) = locals.iter().fold(
-        (Memory::new(), ResourceContext::new()),
+        (SymbolicMemory::new(), ResourceContext::new()),
         |caller, (_, identity)| with_live_allocation(caller, *identity, 16),
     );
     // Writing the `int` retyped its bytes: the caller owns them as one
@@ -2404,7 +2458,7 @@ fn caller_beside_unrelated_allocations(unrelated: usize) -> ExecutionState {
     );
     let pending = symbolic_base(WRITTEN_INT_HEAP);
     let (written_memory, _, _) = memory
-        .with_pending_heap_allocation(pending.clone(), HeapExtent::int32(4), false)
+        .with_pending_heap_allocation(pending.clone(), AllocationSize::int32(4), false)
         .resolve_pending_heap_allocation(&pending, true)
         .expect("the pending allocation resolves");
     memory = written_memory.store(heap_base(WRITTEN_INT_HEAP), int32(7));
@@ -2418,9 +2472,9 @@ fn caller_beside_unrelated_allocations(unrelated: usize) -> ExecutionState {
         .with_cached_supported_expansion(&written_owner, vec![written_owner.clone()]);
     let mut state = ExecutionState::new().with_population_creation_tracking();
     for (name, identity) in &locals {
-        let slot = Memory::local_pointer(name);
+        let slot = SymbolicMemory::local_pointer(name);
         memory = memory
-            .with_block(slot.block.clone(), 8)
+            .with_block(slot.base.clone(), 8)
             .store(slot.clone(), ProgramValue::pointer(heap_base(*identity)));
         resources = resources.unchecked_with_fact(owned_range(slot, 0, 8));
         state = state.with_local(name.clone(), ProgramValue::pointer(heap_base(*identity)));
@@ -2682,9 +2736,9 @@ fn respelling_a_wide_struct_range_is_logarithmic_in_unrelated_and_same_block_ran
     // A struct range at a symbolic element of the target block.
     let same_block = |index: u64| {
         MemoryRange::new_wide(
-            Pointer {
-                block: PointerBlock::Heap(TARGET_HEAP),
-                offset: PointerOffsetTerm::scaled_int64_node(
+            Address {
+                base: AddressBase::Heap(TARGET_HEAP),
+                offset: AddressOffset::scaled_int64_node(
                     MachineTerm::Variable(Variable((1 << 41) + index)),
                     8,
                     true,
@@ -2719,15 +2773,15 @@ fn respelling_a_wide_struct_range_is_logarithmic_in_unrelated_and_same_block_ran
         resources.synchronize_memory_equalities(assumptions);
         resources
     };
-    let field = Pointer {
-        block: PointerBlock::Heap(TARGET_HEAP),
-        offset: PointerOffsetTerm::Add(
-            Box::new(PointerOffsetTerm::scaled_int64_node(
+    let field = Address {
+        base: AddressBase::Heap(TARGET_HEAP),
+        offset: AddressOffset::Add(
+            Box::new(AddressOffset::scaled_int64_node(
                 MachineTerm::int64_multiply(index.clone(), MachineTerm::int64_constant(8)),
                 1,
                 false,
             )),
-            Box::new(PointerOffsetTerm::Constant(4)),
+            Box::new(AddressOffset::Constant(4)),
         ),
     };
     let mut take = Vec::new();

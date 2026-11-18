@@ -232,7 +232,7 @@ impl ConstructorTypes {
             .then(|| ClickType::Algebraic(algebraic_type.clone())),
             ContractExpression::ResourceField(access) => access.click_type.clone(),
             ContractExpression::Binding(name)
-            | ContractExpression::CBinding(name)
+            | ContractExpression::ProgramBinding(name)
             | ContractExpression::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(name),
             )) => self.variables.borrow().get(name).cloned().flatten(),

@@ -6,7 +6,7 @@
 //! same up to the names of bound variables (`docs/internals/raise-lower-principle.md`).
 //! A lowering that rewrites through a fact, such as `f(a)` to `g(b)` because
 //! `f(a) == g(b)` is known, yields a term no other context lowers to, so the
-//! fact holding it cannot be spelled.
+//! fact holding it has no Surface form.
 //!
 //! Setting `CLICK_FACT_STABILITY=<path>` lowers every checked proof
 //! proposition a second time with the same policy and no facts, and appends
@@ -179,12 +179,12 @@ int32 id(int32 x) {
             var,
             sort: crate::kernel::Sort::ProgramInt32,
             body: Box::new(Proposition::MemoryLoadable {
-                memory: crate::kernel::Memory::new().with_declared_scalar_block(
+                memory: crate::kernel::SymbolicMemory::new().with_declared_scalar_block(
                     "local:word".into(),
                     4,
                     crate::kernel::ProgramType::Int32,
                 ),
-                base: crate::kernel::Pointer::symbolic(Variable(700)),
+                base: crate::kernel::Address::symbolic(Variable(700)),
                 bytes: MachineTerm::Variable(var),
                 wide: false,
             }),

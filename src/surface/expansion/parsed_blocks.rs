@@ -239,7 +239,14 @@ impl ParsedBlocks {
         let mut returned = None;
         let mut threw = None;
         for (open, close) in self.child_blocks(range) {
-            match open.checked_sub(2).map(|label| tokens[label].text.as_str()) {
+            let label = open.checked_sub(2).and_then(|index| {
+                if tokens[index].text == ")" {
+                    index.checked_sub(3)
+                } else {
+                    Some(index)
+                }
+            });
+            match label.map(|index| tokens[index].text.as_str()) {
                 Some("returned") => returned = Some((open, close)),
                 Some("threw") => threw = Some((open, close)),
                 _ => {}

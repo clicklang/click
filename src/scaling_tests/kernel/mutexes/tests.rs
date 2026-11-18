@@ -158,12 +158,12 @@ fn automatic_storage_query_does_not_scan_unrelated_initializations() {
             context = context.initialize_empty(mutex(index), 40).unwrap();
         }
         let (result, unrelated_work) = crate::instrumentation::measure_deterministic_work(|| {
-            automatic_storage_refusal(context.state(), "holder", &address.block)
+            automatic_storage_refusal(context.state(), "holder", &address.base)
         });
         assert!(result.is_none());
         context = context.initialize_empty(address.clone(), 40).unwrap();
         let (result, overlapping_work) = crate::instrumentation::measure_deterministic_work(|| {
-            automatic_storage_refusal(context.state(), "holder", &address.block)
+            automatic_storage_refusal(context.state(), "holder", &address.base)
         });
         assert!(result.is_some());
         samples.push((size, unrelated_work, overlapping_work));
@@ -274,9 +274,9 @@ fn reservation_index_queries_same_object_in_logarithmic_work() {
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn initialization_storage_lookup_is_indexed_within_one_object() {
     use super::super::super::*;
-    let base = Pointer {
-        block: PointerBlock::Heap(91_001),
-        offset: PointerOffsetTerm::Constant(0),
+    let base = Address {
+        base: AddressBase::Heap(91_001),
+        offset: AddressOffset::Constant(0),
     };
     let mut samples = vec![];
     for size in [16usize, 64, 256, 1024] {
@@ -340,27 +340,27 @@ fn retirement_alias_index_skips_unrelated_objects_at_multiple_sizes() {
         let mut context = MutexContext::new(ExecutionState::new());
         for index in 0..size {
             for block in [
-                PointerBlock::Heap(index as u64),
-                PointerBlock::Concrete(format!("local:{index}")),
+                AddressBase::Heap(index as u64),
+                AddressBase::Concrete(format!("local:{index}")),
             ] {
                 context = context
                     .initialize_empty(
-                        Pointer {
-                            block,
-                            offset: PointerOffsetTerm::constant(0),
+                        Address {
+                            base: block,
+                            offset: AddressOffset::constant(0),
                         },
                         40,
                     )
                     .unwrap();
             }
         }
-        let queries = [PointerBlock::Heap(90_000), PointerBlock::ExternalArgument];
+        let queries = [AddressBase::Heap(90_000), AddressBase::ExternalArgument];
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for block in &queries {
                 let range = allocation_range(
-                    Pointer {
-                        block: block.clone(),
-                        offset: PointerOffsetTerm::constant(0),
+                    Address {
+                        base: block.clone(),
+                        offset: AddressOffset::constant(0),
                     },
                     48,
                 );
@@ -369,14 +369,14 @@ fn retirement_alias_index_skips_unrelated_objects_at_multiple_sizes() {
                 );
             }
         });
-        let symbolic = Pointer::symbolic(Variable(90_001));
+        let symbolic = Address::symbolic(Variable(90_001));
         let context = context.initialize_empty(symbolic, 40).unwrap();
         let (_, ambiguous_work) = crate::instrumentation::measure_deterministic_work(|| {
             for block in queries {
                 let range = allocation_range(
-                    Pointer {
-                        block,
-                        offset: PointerOffsetTerm::constant(0),
+                    Address {
+                        base: block,
+                        offset: AddressOffset::constant(0),
                     },
                     48,
                 );

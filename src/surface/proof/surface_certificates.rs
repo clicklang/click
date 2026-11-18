@@ -73,7 +73,7 @@ pub(super) fn surface_logical_children(
     }
 }
 
-/// Flatten only explicit sequence syntax. Memory state wrappers apply to each
+/// Flatten only explicit sequence syntax. SymbolicMemory state wrappers apply to each
 /// element; no value evaluation or fact-dependent simplification participates.
 fn written_sequence_elements(expression: &ContractExpression) -> Option<Vec<ContractExpression>> {
     let mut pending = vec![(expression, Vec::<Option<ProgramPointSelector>>::new())];
@@ -4519,7 +4519,7 @@ pub(super) fn plan_pointer_advanced_load_equality(
         } else {
             continue;
         };
-        if fact_array_pointer.block != right_pointer.block {
+        if fact_array_pointer.base != right_pointer.base {
             continue;
         }
         let (source_index, target_index) =
@@ -4557,14 +4557,14 @@ pub(super) fn plan_pointer_advanced_load_equality(
     None
 }
 
-fn registered_load_pointer(term: &MachineTerm) -> Option<Pointer> {
+fn registered_load_pointer(term: &MachineTerm) -> Option<Address> {
     crate::kernel::scalar_read_observation(crate::kernel::MachineOperandView::Legacy(term))
         .map(|read| read.pointer)
 }
 
 fn pointer_array_index_pair(
-    source: &PointerOffsetTerm,
-    target: &PointerOffsetTerm,
+    source: &AddressOffset,
+    target: &AddressOffset,
 ) -> Option<(MachineTerm, MachineTerm)> {
     let source = pointer_offset_addends(source)?;
     let target = pointer_offset_addends(target)?;
@@ -4583,10 +4583,10 @@ fn pointer_array_index_pair(
     Some((source_index, target_index))
 }
 
-fn pointer_offset_addends(offset: &PointerOffsetTerm) -> Option<Vec<PointerOffsetTerm>> {
+fn pointer_offset_addends(offset: &AddressOffset) -> Option<Vec<AddressOffset>> {
     match offset {
-        PointerOffsetTerm::Constant(0) => Some(Vec::new()),
-        PointerOffsetTerm::Add(left, right) => {
+        AddressOffset::Constant(0) => Some(Vec::new()),
+        AddressOffset::Add(left, right) => {
             let mut addends = pointer_offset_addends(left)?;
             addends.extend(pointer_offset_addends(right)?);
             Some(addends)
@@ -4595,8 +4595,8 @@ fn pointer_offset_addends(offset: &PointerOffsetTerm) -> Option<Vec<PointerOffse
     }
 }
 
-fn pointer_int32_scaled_value(offset: &PointerOffsetTerm) -> Option<MachineTerm> {
-    let PointerOffsetTerm::Int32Scaled { value, byte_width } = offset else {
+fn pointer_int32_scaled_value(offset: &AddressOffset) -> Option<MachineTerm> {
+    let AddressOffset::Int32Scaled { value, byte_width } = offset else {
         return None;
     };
     (*byte_width == 4).then(|| value.structural_value().clone())
@@ -5033,8 +5033,11 @@ pub(super) fn lower_surface_candidate_in_state_with_assumptions(
 ) -> Result<Proposition, ClickError> {
     check_verification_deadline()?;
     let values = parameter_values(parameter_binding)?;
-    let array_refs =
-        array_refs_for_parameters(parameter_binding.parameters, &values, state.memory());
+    let array_refs = array_refs_for_parameters(
+        parameter_binding.parameters,
+        &values,
+        &state.program_point(),
+    );
     let (values, array_refs) = contract_environment_at_state(&values, &array_refs, state);
     let assumptions = assumptions.clone().allow_symbolic_contract_loads();
     lower_fixed_state_proposition_through_kernel(
@@ -5133,7 +5136,7 @@ pub(super) fn contract_expression_mentions_program_local(
             contract_expression_mentions_program_local(left, parameter_names)
                 || contract_expression_mentions_program_local(right, parameter_names)
         }
-        ContractExpression::CBinding(_) | ContractExpression::ResourceWildcard => false,
+        ContractExpression::ProgramBinding(_) | ContractExpression::ResourceWildcard => false,
         ContractExpression::ResourceCount(resource) => match resource.as_ref() {
             ResourceClause::Declared { arguments, .. } => arguments.iter().any(|argument| {
                 contract_expression_mentions_program_local(argument, parameter_names)
@@ -5212,7 +5215,7 @@ pub(super) fn contract_expression_mentions_program_local(
 #[cfg(test)]
 mod selected_premise_tests {
     use super::*;
-    use crate::kernel::{PointerBlock, PointerOffsetTerm};
+    use crate::kernel::{AddressBase, AddressOffset};
 
     #[test]
     fn loadability_planning_does_not_repeat_search_after_its_budget_is_spent() {
@@ -5222,10 +5225,10 @@ mod selected_premise_tests {
         };
 
         let goal = Proposition::MemoryLoadable {
-            memory: Memory::new(),
-            base: Pointer {
-                block: PointerBlock::ExternalArgument,
-                offset: PointerOffsetTerm::Constant(0),
+            memory: SymbolicMemory::new(),
+            base: Address {
+                base: AddressBase::ExternalArgument,
+                offset: AddressOffset::Constant(0),
             },
             bytes: MachineTerm::constant(4),
             wide: false,

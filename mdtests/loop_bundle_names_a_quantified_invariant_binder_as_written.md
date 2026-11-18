@@ -2,7 +2,7 @@
 
 The back edge of
 [`loop_initialize_narrows_a_held_range_under_a_universal.md`](loop_initialize_narrows_a_held_range_under_a_universal.md)
-owes the extent bound of `viewable(a[0..k])` for every `k` the quantified
+owes the span bound of `viewable(a[0..k])` for every `k` the quantified
 invariant covers, as its own bundle member
 `forall (k: int32) { 0 <= k and k <= n implies (k as uint32) <= 1073741823u32 }`.
 The kernel builds that member, so nothing written spells it; the closer

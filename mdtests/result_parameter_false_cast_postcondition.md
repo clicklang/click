@@ -5,8 +5,8 @@ int32 seven(int32 result) { return 7; }
 ```click
 verifying "seven.c";
 int32 seven(int32 result) {
-    requires 0 <= c(result) and c(result) <= 100;
-    ensures (c(result) as int32) == 7;
+    requires 0 <= program::result and program::result <= 100;
+    ensures (program::result as int32) == 7;
 }
 ```
 ```expect

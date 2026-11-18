@@ -130,7 +130,7 @@ fn wide_address_arrays_use_sixteen_byte_stride_and_preserve_endpoint_values() {
             unreachable!()
         };
         assert_eq!(
-            state.memory.block_size(&base.block).unwrap().as_const(),
+            state.memory.block_size(&base.base).unwrap().as_const(),
             Some(48)
         );
         assert_eq!(array_ty.abi_alignment(), 16);
@@ -139,7 +139,7 @@ fn wide_address_arrays_use_sixteen_byte_stride_and_preserve_endpoint_values() {
         let ProgramValue::Pointer(last) = last else {
             unreachable!()
         };
-        assert_eq!(last.offset, PointerOffsetTerm::Constant(32));
+        assert_eq!(last.offset, AddressOffset::Constant(32));
         assert_eq!(
             value(
                 &state,
@@ -171,7 +171,7 @@ fn wide_address_arrays_use_sixteen_byte_stride_and_preserve_endpoint_values() {
         let ProgramValue::Pointer(past) = past else {
             unreachable!()
         };
-        assert_eq!(past.offset, PointerOffsetTerm::Constant(48));
+        assert_eq!(past.offset, AddressOffset::Constant(48));
         let read_past = crate::kernel::program_expression::typed_load(
             ProgramExpression::Value(ProgramValue::Pointer(past)),
             ty,
@@ -231,7 +231,7 @@ fn wide_address_pointer_arrays_scale_slots_by_eight_and_pointees_by_sixteen() {
             unreachable!()
         };
         assert_eq!(slot.program_type(), pointer_ty.pointer_to().unwrap());
-        assert_eq!(slot.offset, PointerOffsetTerm::Constant(8));
+        assert_eq!(slot.offset, AddressOffset::Constant(8));
         assert_eq!(
             value(
                 &state,
@@ -253,17 +253,17 @@ fn wide_address_pointer_arrays_scale_slots_by_eight_and_pointees_by_sixteen() {
 
 #[test]
 fn wide_address_pointer_slot_read_needs_eight_bytes_but_pointee_read_needs_sixteen() {
-    let slot = Pointer {
-        block: "wide-slot-external".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let slot = Address {
+        base: "wide-slot-external".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let pointee = Pointer {
-        block: "wide-pointee-external".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointee = Address {
+        base: "wide-pointee-external".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let memory = Memory::new()
-        .with_block(slot.block.clone(), 8)
-        .with_block(pointee.block.clone(), 16)
+    let memory = SymbolicMemory::new()
+        .with_block(slot.base.clone(), 8)
+        .with_block(pointee.base.clone(), 16)
         .store(
             slot.clone(),
             ProgramValue::typed_pointer(pointee.clone(), ProgramType::UInt128Pointer),
@@ -319,13 +319,13 @@ fn wide_address_pointer_slot_read_needs_eight_bytes_but_pointee_read_needs_sixte
 #[test]
 fn wide_address_symbolic_pointer_slot_reads_keep_eight_byte_access_identity() {
     for pointer_ty in [ProgramType::Int128Pointer, ProgramType::UInt128Pointer] {
-        let slot = Pointer {
-            block: "wide-symbolic-slot".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let slot = Address {
+            base: "wide-symbolic-slot".into(),
+            offset: AddressOffset::Constant(0),
         };
         for bytes in [7, 8] {
             let state = ExecutionState::new()
-                .with_memory(Memory::new().with_block(slot.block.clone(), 8))
+                .with_memory(SymbolicMemory::new().with_block(slot.base.clone(), 8))
                 .with_resource_context(ResourceContext::new().unchecked_with_facts([
                     ResourceFact::view_memory(MemoryRange::new_with_element_width(
                         slot.clone(),
@@ -389,8 +389,9 @@ fn wide_address_static_array_startup_and_entry_keep_initializer_authority_separa
             3,
             ArrayContents::new(3, zero.clone(), [(2, endpoint.clone())]),
         )]);
-        let at =
-            |index: u32| Memory::static_pointer("wide_static", "items").offset_by_bytes(index * 16);
+        let at = |index: u32| {
+            SymbolicMemory::static_pointer("wide_static", "items").offset_by_bytes(index * 16)
+        };
         let startup =
             crate::kernel::initialize_program_program_storage([function.clone()]).unwrap();
         assert_eq!(startup.memory.known_value(&at(0)), Some(zero));
@@ -420,11 +421,11 @@ fn wide_address_static_array_startup_and_entry_keep_initializer_authority_separa
 
 #[test]
 fn wide_address_narrow_array_copy_refuses_a_wide_cell_overlapping_its_prefix() {
-    let at = |offset| Pointer {
-        block: "local:wide-prefix".into(),
-        offset: PointerOffsetTerm::Constant(offset),
+    let at = |offset| Address {
+        base: "local:wide-prefix".into(),
+        offset: AddressOffset::Constant(offset),
     };
-    let mut memory = Memory::new()
+    let mut memory = SymbolicMemory::new()
         .with_block("local:wide-prefix", 16)
         .with_block("local:wide-target", 8)
         .with_initialized_object(&at(0), 16)
@@ -443,9 +444,9 @@ fn wide_address_narrow_array_copy_refuses_a_wide_cell_overlapping_its_prefix() {
     assert!(
         memory
             .write_scalar_array_region(
-                &Pointer {
-                    block: "local:wide-target".into(),
-                    offset: PointerOffsetTerm::Constant(0),
+                &Address {
+                    base: "local:wide-target".into(),
+                    offset: AddressOffset::Constant(0),
                 },
                 ProgramType::UInt8,
                 8,
@@ -512,7 +513,7 @@ fn checked_object_address_rejects_one_past_while_c_address_cancellation_preserve
             crate::kernel::program_expression::checked_object_address(
                 crate::kernel::program_expression::typed_load(
                     ProgramExpression::Value(ProgramValue::typed_pointer(
-                        Pointer::null(),
+                        Address::null(),
                         ProgramType::Int32Pointer
                     )),
                     ProgramType::Int32
@@ -535,7 +536,7 @@ fn checked_object_address_rejects_storage_after_its_local_lifetime_ends() {
     };
     let retired = state
         .clone()
-        .with_memory(state.memory().without_local_block(&pointer.pointer().block));
+        .with_memory(state.memory().without_local_block(&pointer.pointer().base));
     assert!(matches!(
         outcome(
             &retired,
@@ -552,10 +553,10 @@ fn checked_object_address_rejects_storage_after_its_local_lifetime_ends() {
 
 #[test]
 fn wide_pointer_subtraction_preserves_unsigned_magnitude_and_bounds() {
-    let state = ExecutionState::new().with_memory(Memory::new().with_block("offsets", 16));
-    let at = |offset| Pointer {
-        block: "offsets".into(),
-        offset: PointerOffsetTerm::Constant(offset),
+    let state = ExecutionState::new().with_memory(SymbolicMemory::new().with_block("offsets", 16));
+    let at = |offset| Address {
+        base: "offsets".into(),
+        offset: AddressOffset::Constant(offset),
     };
     for ty in [
         ProgramType::VoidPointer,
@@ -685,7 +686,7 @@ fn checked_byte_array_address_cast_preserves_retirement_checks() {
     };
     let retired = state
         .clone()
-        .with_memory(state.memory().without_local_block(&pointer.pointer().block));
+        .with_memory(state.memory().without_local_block(&pointer.pointer().base));
     let checked = crate::kernel::program_expression::checked_object_address(
         crate::kernel::program_expression::typed_load(
             ProgramExpression::Value(address),

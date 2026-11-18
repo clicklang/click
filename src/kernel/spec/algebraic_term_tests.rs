@@ -387,9 +387,9 @@ fn cached_pointer_read_equations_do_not_escape_symbolic_match_arms() {
             value_type, variants,
         )]))),
     };
-    let address = Pointer::symbolic(Variable(71_040));
-    let value = Pointer::symbolic(Variable(71_041));
-    let memory = Memory::new().store(
+    let address = Address::symbolic(Variable(71_040));
+    let value = Address::symbolic(Variable(71_041));
+    let memory = SymbolicMemory::new().store(
         address.clone(),
         ProgramValue::typed_pointer(value, ProgramType::Int64Pointer),
     );
@@ -398,7 +398,7 @@ fn cached_pointer_read_equations_do_not_escape_symbolic_match_arms() {
         node: SpecAlgebraicExpressionNode::Constructor {
             variant: "Box".into(),
             fields: vec![SpecAlgebraicValue::Program(SpecExpression::MemoryLoad {
-                memory: SpecMemory::Fixed(memory.clone()),
+                point: SpecPoint::At(ProgramPoint::of_memory(&memory)),
                 pointer: Box::new(SpecExpression::Value(ProgramValue::typed_pointer(
                     address.clone(),
                     ProgramType::Int64PointerPointer,
@@ -768,8 +768,8 @@ fn pure_pointer_result_preserves_type_and_unsupported_results_are_explicit() {
                 panic!("lost pointer sort")
             };
             assert!(matches!(
-                pointer.block,
-                PointerBlock::PureFunctionApplication(_)
+                pointer.base,
+                AddressBase::PureFunctionApplication(_)
             ));
             assert!(paths[0].facts.is_empty());
             assert!(paths[0].obligations.is_empty());
@@ -912,7 +912,7 @@ fn nominal_pointer_constructor_matches_preserve_the_checked_payload() {
     ] {
         let valid = actual_class.as_ref() == Some(&class);
         let payload =
-            ProgramValue::typed_pointer(Pointer::symbolic(Variable(44)), ProgramType::Int32Pointer)
+            ProgramValue::typed_pointer(Address::symbolic(Variable(44)), ProgramType::Int32Pointer)
                 .with_pointer_object_class(actual_class);
         let constructor = SpecAlgebraicExpression {
             algebraic_type: ty.clone(),
@@ -1138,8 +1138,8 @@ fn algebraic_read_result_preserves_native_state_and_type() {
     let native = AlgebraicTerm {
         algebraic_type: ty.clone(),
         node: AlgebraicTermNode::MemoryLoad {
-            memory: intern_memory(Memory::new()),
-            pointer: Box::new(Pointer::symbolic(Variable(999749))),
+            memory: intern_memory(SymbolicMemory::new()),
+            pointer: Box::new(Address::symbolic(Variable(999749))),
         },
     };
     let expression = SpecAlgebraicExpression {

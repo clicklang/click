@@ -1351,7 +1351,7 @@ fn verifies_fill3_c_source_with_sidecar_specification() {
     let first = base.clone();
     let second = offset_pointer_by_int32_elements(base.clone(), MachineTerm::constant(1));
     let third = offset_pointer_by_int32_elements(base.clone(), MachineTerm::constant(2));
-    let local_i_block = crate::kernel::PointerBlock::AutomaticLocal {
+    let local_i_block = crate::kernel::AddressBase::AutomaticLocal {
         binding: crate::kernel::LocalBindingId::new(
             crate::kernel::LocalFunctionId::new(Some("fill3.c".into()), "fill3".into()),
             false,
@@ -1360,12 +1360,12 @@ fn verifies_fill3_c_source_with_sidecar_specification() {
         ),
         instance: crate::kernel::LocalStorageInstance::Implicit,
     };
-    let local_i = Pointer {
-        block: local_i_block.clone(),
-        offset: PointerOffsetTerm::Constant(0),
+    let local_i = Address {
+        base: local_i_block.clone(),
+        offset: AddressOffset::Constant(0),
     };
     let initial_memory = memory_with_symbolic_loadable_cells(
-        Memory::new(),
+        SymbolicMemory::new(),
         &std::collections::BTreeMap::from([(
             "p".to_string(),
             ConcreteMemoryRangeSeed {
@@ -1453,7 +1453,7 @@ fn verifies_fill3_c_source_with_sidecar_specification() {
                     else {
                         panic!("fill3 suffix should start with a loop");
                     };
-                    let condition = test.execution_parts().0.clone();
+                    let condition = test.source_condition().expect("pure fixture test").clone();
                     program_function(
                         ProgramType::Int32,
                         "fill3",
@@ -1516,7 +1516,7 @@ fn verifies_fill3_c_source_with_sidecar_specification() {
                 )
                 .with_contract(
                     vec![SpecProposition::MemoryLoadable {
-                        memory: SpecMemory::Current,
+                        point: SpecPoint::Current,
                         base: SpecExpression::ProgramExpression(ProgramExpression::Variable(
                             parameter_binding.clone(),
                         )),
@@ -2590,9 +2590,11 @@ test_batches! {
 /// is found by its own path's point, whatever the memories hold.
 #[test]
 fn recorded_points_are_named_by_the_point_each_path_reached() {
-    let start = ExecutionState::new().with_memory(crate::kernel::Memory::new());
-    let left = start.clone().with_memory(crate::kernel::Memory::new());
-    let right = start.with_memory(crate::kernel::Memory::new());
+    let start = ExecutionState::new().with_memory(crate::kernel::SymbolicMemory::new());
+    let left = start
+        .clone()
+        .with_memory(crate::kernel::SymbolicMemory::new());
+    let right = start.with_memory(crate::kernel::SymbolicMemory::new());
     assert_eq!(left, right);
     let mut states = RecordedStates::default();
     states.insert(ProgramPointSelector::Mark("left".into()), left.clone());
@@ -2605,5 +2607,31 @@ fn recorded_points_are_named_by_the_point_each_path_reached() {
     assert_eq!(
         name(&right),
         Some(&ProgramPointSelector::Mark("right".into()))
+    );
+}
+
+#[test]
+#[ignore = "nightly: 0.58s in the parallel gate; source-point separation stays in the fast layout test"]
+fn a_loop_test_does_not_publish_the_whole_loops_exit_state() {
+    let c_source = r#"
+        int32 count_two() {
+            int32 i;
+            i = 0;
+            while (i < 2) { i = i + 1; }
+            return i;
+        }
+    "#;
+    let source = r#"
+        verifying "count_two.c";
+        int32 count_two() {
+            ensures result == 2 by {
+                step(); step(); step();
+                have at(statement(2).exit, i) == 0 by known();
+            }
+        }
+    "#;
+    assert!(
+        verify_c_sources(source, &[("count_two.c", c_source)]).is_err(),
+        "a successful head test must not establish the later whole-loop exit"
     );
 }

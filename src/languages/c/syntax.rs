@@ -39,6 +39,7 @@ pub const C_PUBLIC_FORMS: &[&str] = &[
     "type.local-array",
     "type.struct-array-parameter",
     "type.struct-value",
+    "type.local-integer-bit-field-record",
     "type.function-pointer",
     "type.struct-pointer",
     "type.typeof",
@@ -108,6 +109,7 @@ pub const C_PUBLIC_FORMS: &[&str] = &[
     "expression.assignment",
     "expression.conditional",
     "expression.statement-expression",
+    "expression.struct-compound-literal",
     "expression.builtin-expect",
     "expression.builtin-types-compatible",
     "expression.builtin-offsetof",
@@ -146,11 +148,11 @@ pub const C_PUBLIC_FORMS: &[&str] = &[
 
 #[derive(Clone, Debug)]
 struct StaticAddress {
-    pointer: crate::kernel::Pointer,
+    pointer: crate::kernel::Address,
     interface_type: InterfaceType,
     constant: bool,
     /// The member subobject the address selects, if any.
-    extent: Option<crate::kernel::SubobjectExtent>,
+    bounds: Option<crate::kernel::SubobjectBounds>,
 }
 
 /// One string literal occurrence, with static storage and a source identity.
@@ -577,11 +579,6 @@ impl CGlobalArray {
 
     pub fn is_incomplete(&self) -> bool {
         self.length.is_none()
-    }
-
-    pub fn interface_type(&self) -> InterfaceType {
-        self.complete_c_type()
-            .expect("incomplete external array has no C type")
     }
 
     pub(crate) fn complete_c_type(&self) -> Option<InterfaceType> {
@@ -1096,7 +1093,7 @@ fn kernel_integer_literal_value(
             if matches!(initializer, CExpression::Int32Literal(0)) =>
         {
             crate::kernel::ProgramValue::typed_pointer(
-                crate::kernel::Pointer::null(),
+                crate::kernel::Address::null(),
                 interface_type.to_kernel_type(),
             )
         }
@@ -1127,7 +1124,7 @@ fn kernel_integer_literal_value(
             if matches!(initializer, CExpression::Int32Literal(0)) =>
         {
             crate::kernel::ProgramValue::typed_pointer(
-                crate::kernel::Pointer::null(),
+                crate::kernel::Address::null(),
                 interface_type.to_kernel_type(),
             )
         }
@@ -1153,7 +1150,7 @@ fn kernel_aggregate_initializer_value(
             if matches!(initializer, CExpression::Int32Literal(0)) =>
         {
             Some(crate::kernel::ProgramValue::typed_pointer(
-                crate::kernel::Pointer::null(),
+                crate::kernel::Address::null(),
                 interface_type.to_kernel_type(),
             ))
         }
@@ -1163,11 +1160,11 @@ fn kernel_aggregate_initializer_value(
         // writing the cell, so a later load dispatches to the concrete target.
         InterfaceType::FunctionPointer(_) => match initializer {
             CExpression::Int32Literal(0) => Some(crate::kernel::ProgramValue::typed_pointer(
-                crate::kernel::Pointer::null(),
+                crate::kernel::Address::null(),
                 interface_type.to_kernel_type(),
             )),
             CExpression::FunctionAddress(name) => Some(crate::kernel::ProgramValue::typed_pointer(
-                crate::kernel::Pointer::function(name.clone()),
+                crate::kernel::Address::function(name.clone()),
                 interface_type.to_kernel_type(),
             )),
             _ => None,
@@ -1504,11 +1501,6 @@ impl CArrayInitializer {
         self.length
     }
 
-    /// The value of every element the initializer does not list.
-    pub fn zero(&self) -> &CExpression {
-        &self.zero
-    }
-
     /// The listed elements, ascending by index.
     pub fn elements(&self) -> &[(u32, CExpression)] {
         &self.elements
@@ -1805,10 +1797,6 @@ impl CStaticAggregateArray {
         &self.struct_name
     }
 
-    pub fn layout(&self) -> &RecordLayout {
-        &self.layout
-    }
-
     pub fn length(&self) -> u32 {
         self.length
     }
@@ -2098,10 +2086,6 @@ impl CFieldSourceId {
 impl CFieldSource {
     pub fn id(&self) -> &CFieldSourceId {
         &self.id
-    }
-
-    pub fn position(&self) -> &SourcePosition {
-        &self.position
     }
 
     pub fn field_name(&self) -> &str {
@@ -2476,9 +2460,6 @@ impl CStatementSite {
     pub(crate) fn source_bindings(&self) -> Option<&CSourceBindings> {
         self.source_bindings.as_deref()
     }
-    pub fn position(&self) -> &SourcePosition {
-        &self.position
-    }
 
     /// The statement's place among the statements as written; see the field.
     pub fn source_path(&self) -> Option<&[u32]> {
@@ -2506,6 +2487,7 @@ impl CStatementSite {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CStatement {
     EndAggregateLifetimes {
+        names: Vec<BindingName>,
         steps: Vec<u32>,
         site: CSite,
     },
@@ -2912,11 +2894,18 @@ pub enum CExpression {
         then_branch: Box<CExpression>,
         else_branch: Box<CExpression>,
     },
-    /// A GNU statement expression before it is lowered to ordinary C
-    /// statements. Keeping the compound body attached to the value makes its
-    /// sequencing and side effects explicit instead of relying on a textual
-    /// rewrite.
+    /// A sequenced body and value before lowering to ordinary C statements.
+    /// GNU statement expressions yield a scalar after their inner block;
+    /// compound literals initialize an aggregate place in the enclosing block.
+    /// Keeping the body attached preserves conditional evaluation and effects.
     StatementExpression {
+        /// True for the place produced by a block-scope compound literal.
+        aggregate_lvalue: bool,
+        /// Effects of a literal initializer, retained for enclosing C order checks.
+        initializer_call: Option<SourcePosition>,
+        initializer_assignment: Option<SourcePosition>,
+        /// Objects owned by a GNU expression's inner block, retired after its value.
+        scope_lifetimes: Vec<BindingName>,
         body: Box<CStatement>,
         value: Box<CExpression>,
         interface_type: InterfaceType,
@@ -3004,7 +2993,7 @@ pub enum CExpression {
         struct_name: String,
     },
     /// A struct member's address narrowed to the member's `width` bytes
-    /// (`design/pointer-subobject-extents.md`); lowers to the kernel's
+    /// (`design/pointer-subobject-bounds.md`); lowers to the kernel's
     /// `ProgramExpression::Subobject`.
     Subobject {
         pointer: Box<CExpression>,
@@ -3128,8 +3117,8 @@ impl ImportedFunction {
             .find(|global| name.is_named(global.name()) || global.kernel_name() == name)
         {
             return Some(StaticAddress {
-                extent: None,
-                pointer: crate::kernel::Memory::global_pointer(global.kernel_name()),
+                bounds: None,
+                pointer: crate::kernel::SymbolicMemory::global_pointer(global.kernel_name()),
                 interface_type: global.interface_type(),
                 constant: global.is_constant(),
             });
@@ -3141,8 +3130,8 @@ impl ImportedFunction {
         {
             let interface_type = global_array.complete_c_type()?;
             return Some(StaticAddress {
-                extent: None,
-                pointer: crate::kernel::Memory::global_pointer(global_array.kernel_name()),
+                bounds: None,
+                pointer: crate::kernel::SymbolicMemory::global_pointer(global_array.kernel_name()),
                 interface_type,
                 constant: global_array.is_constant(),
             });
@@ -3153,8 +3142,10 @@ impl ImportedFunction {
             .find(|global| name.is_named(global.name()) || global.kernel_name() == name)
         {
             return Some(StaticAddress {
-                extent: None,
-                pointer: crate::kernel::Memory::global_pointer(global_aggregate.kernel_name()),
+                bounds: None,
+                pointer: crate::kernel::SymbolicMemory::global_pointer(
+                    global_aggregate.kernel_name(),
+                ),
                 interface_type: record_value_type(global_aggregate.layout()),
                 constant: global_aggregate.is_constant(),
             });
@@ -3166,8 +3157,8 @@ impl ImportedFunction {
         {
             let interface_type = global_aggregate_array.complete_c_type()?;
             return Some(StaticAddress {
-                extent: None,
-                pointer: crate::kernel::Memory::global_pointer(
+                bounds: None,
+                pointer: crate::kernel::SymbolicMemory::global_pointer(
                     global_aggregate_array.kernel_name(),
                 ),
                 interface_type,
@@ -3178,8 +3169,8 @@ impl ImportedFunction {
             name.is_named(static_local.name()) || static_local.kernel_name() == name
         }) {
             return Some(StaticAddress {
-                extent: None,
-                pointer: crate::kernel::Memory::static_pointer(
+                bounds: None,
+                pointer: crate::kernel::SymbolicMemory::static_pointer(
                     &self.name,
                     static_local.kernel_name(),
                 ),
@@ -3191,8 +3182,8 @@ impl ImportedFunction {
             name.is_named(static_array.name()) || static_array.kernel_name() == name
         }) {
             return Some(StaticAddress {
-                extent: None,
-                pointer: crate::kernel::Memory::static_pointer(
+                bounds: None,
+                pointer: crate::kernel::SymbolicMemory::static_pointer(
                     &self.name,
                     static_array.kernel_name(),
                 ),
@@ -3204,8 +3195,8 @@ impl ImportedFunction {
             name.is_named(static_aggregate.name()) || static_aggregate.kernel_name() == name
         }) {
             return Some(StaticAddress {
-                extent: None,
-                pointer: crate::kernel::Memory::static_pointer(
+                bounds: None,
+                pointer: crate::kernel::SymbolicMemory::static_pointer(
                     &self.name,
                     static_aggregate.kernel_name(),
                 ),
@@ -3220,8 +3211,8 @@ impl ImportedFunction {
                     || static_aggregate_array.kernel_name() == name
             })
             .map(|static_aggregate_array| StaticAddress {
-                extent: None,
-                pointer: crate::kernel::Memory::static_pointer(
+                bounds: None,
+                pointer: crate::kernel::SymbolicMemory::static_pointer(
                     &self.name,
                     static_aggregate_array.kernel_name(),
                 ),
@@ -3233,7 +3224,7 @@ impl ImportedFunction {
     fn static_address_expression(&self, expression: &CExpression) -> Option<StaticAddress> {
         match expression {
             CExpression::StringLiteral(literal) => Some(StaticAddress {
-                pointer: crate::kernel::Memory::string_literal_pointer(
+                pointer: crate::kernel::SymbolicMemory::string_literal_pointer(
                     literal.identity()?,
                     literal.bytes(),
                 ),
@@ -3242,7 +3233,7 @@ impl ImportedFunction {
                     u32::try_from(literal.bytes().len()).expect("literal length fits u32"),
                 ),
                 constant: false,
-                extent: None,
+                bounds: None,
             }),
             CExpression::Variable(name) => self.static_object_address(name),
             CExpression::Field {
@@ -3275,7 +3266,7 @@ impl ImportedFunction {
             }
             CExpression::Subobject { pointer, width } => {
                 let mut address = self.static_address_expression(pointer)?;
-                address.extent = Some(crate::kernel::SubobjectExtent::constant(
+                address.bounds = Some(crate::kernel::SubobjectBounds::constant(
                     address.pointer.clone(),
                     *width,
                 ));
@@ -3334,7 +3325,7 @@ impl ImportedFunction {
         Some(crate::kernel::ProgramValue::Pointer(
             crate::kernel::PointerValue::new(address.pointer, declared_type.to_kernel_type())
                 .with_pointee_constant(declared_pointee_constant)
-                .with_extent(address.extent),
+                .with_bounds(address.bounds),
         ))
     }
 
@@ -3769,10 +3760,6 @@ impl CEnumDefinition {
     pub fn value(&self, name: &str) -> Option<i64> {
         self.values.get(name).copied()
     }
-
-    pub fn compatible_type(&self) -> InterfaceType {
-        self.compatible_type
-    }
 }
 
 impl CUnionLayout {
@@ -3804,10 +3791,6 @@ impl CUnionField {
 
     pub fn pointee_is_constant(&self) -> bool {
         self.pointee_constant
-    }
-
-    pub fn enum_name(&self) -> Option<&str> {
-        self.enum_name.as_deref()
     }
 
     pub fn offset_bytes(&self) -> u32 {
@@ -4123,9 +4106,9 @@ impl CStatement {
                 value_type: interface_type.map(|interface_type| interface_type.to_kernel_type()),
                 pointee_constant: *pointee_constant,
             },
-            Self::EndAggregateLifetimes { steps, .. } => {
+            Self::EndAggregateLifetimes { names, steps, .. } => {
                 crate::kernel::ProgramStatement::EndAutomaticLifetimes {
-                    names: Vec::new(),
+                    names: names.clone(),
                     steps: steps.clone(),
                 }
             }
@@ -6453,7 +6436,7 @@ fn align_up(offset: u32, alignment: u32) -> Option<u32> {
 }
 
 /// The address of `field` within the struct at `base`. The member is its own
-/// subobject (`design/pointer-subobject-extents.md`): arithmetic from its
+/// subobject (`design/pointer-subobject-bounds.md`): arithmetic from its
 /// address stays inside it, and an access through it may not reach a sibling
 /// at an adjacent address. A union member is not narrowed; union members
 /// overlap by design.
@@ -7283,6 +7266,11 @@ struct Parser {
     /// so a site quotes the expansion site rather than the replacement.
     written_lines: std::sync::Arc<BTreeMap<usize, std::sync::Arc<str>>>,
     position: usize,
+    // Bit-field records are admitted only through their private local lowering.
+    bit_field_records: BTreeMap<String, std::sync::Arc<bit_fields::BitFieldRecord>>,
+    local_bit_fields: BTreeMap<BindingName, bit_fields::LocalBitFields>,
+    bit_field_forbidden_operand: bool,
+    function_has_bit_fields: bool,
     structs: DeclarationMap<RecordLayout>,
     enums: DeclarationMap<CEnumDefinition>,
     enum_constants: BTreeMap<String, CExpression>,
@@ -7315,6 +7303,12 @@ struct Parser {
     /// instead of silently overwriting the outer object. Sibling scopes may
     /// reuse a name because the earlier object is dead.
     scopes: Vec<Vec<ScopeBinding>>,
+    /// Storage introduced by literal occurrences in each open scope. The
+    /// initializer stays in its expression; only allocation is at block entry.
+    compound_literal_declarations: Vec<Vec<CStatement>>,
+    repeatable_compound_literal_scope: Option<usize>,
+    function_has_compound_literals: bool,
+    function_has_goto: bool,
     visible_bindings: CSourceBindings,
     loop_source_bindings: BTreeMap<usize, std::sync::Arc<CSourceBindings>>,
     binding_function: Option<LocalFunctionId>,
@@ -7890,6 +7884,10 @@ impl Parser {
             written_lines: std::sync::Arc::default(),
             position: 0,
             structs: DeclarationMap::new(),
+            bit_field_records: BTreeMap::new(),
+            local_bit_fields: BTreeMap::new(),
+            bit_field_forbidden_operand: false,
+            function_has_bit_fields: false,
             enums: DeclarationMap::new(),
             enum_constants: BTreeMap::new(),
             typedefs: BTreeMap::new(),
@@ -7909,6 +7907,10 @@ impl Parser {
             variable_pointee_constants: BTreeSet::new(),
             unions: DeclarationMap::new(),
             scopes: Vec::new(),
+            compound_literal_declarations: Vec::new(),
+            repeatable_compound_literal_scope: None,
+            function_has_compound_literals: false,
+            function_has_goto: false,
             visible_bindings: CSourceBindings::new(),
             loop_source_bindings: BTreeMap::new(),
             binding_function: None,
@@ -7967,11 +7969,13 @@ impl Parser {
 
     fn push_scope(&mut self) {
         self.scopes.push(Vec::new());
+        self.compound_literal_declarations.push(Vec::new());
     }
 
     /// Closes the innermost scope; its names, and any struct layouts they
     /// carried, are no longer visible.
     fn pop_scope(&mut self) {
+        self.compound_literal_declarations.pop();
         let depth = self.scopes.len();
         while let Some((declared_depth, _)) = self.block_function_declarations.last()
             && *declared_depth >= depth
@@ -7993,6 +7997,7 @@ impl Parser {
                     self.visible_bindings.remove(source_name);
                 }
             }
+            self.local_bit_fields.remove(&binding.kernel_name);
             self.variable_structs.remove(&binding.kernel_name);
             self.variable_struct_values.remove(&binding.kernel_name);
             self.variable_array_shapes.remove(&binding.kernel_name);
@@ -8223,7 +8228,11 @@ impl Parser {
             | CExpression::UnionAddress { pointer, .. } => {
                 self.expression_is_constant_lvalue(pointer)
             }
-            CExpression::StatementExpression { .. } => false,
+            CExpression::StatementExpression {
+                aggregate_lvalue: true,
+                pointee_constant,
+                ..
+            } => *pointee_constant,
             _ => false,
         }
     }
@@ -9354,7 +9363,14 @@ impl Parser {
             &mut self.source_regions,
             vec![Some((std::sync::Arc::from([]), 0))],
         );
+        let previous_literal_flag =
+            std::mem::replace(&mut self.function_has_compound_literals, false);
+        let previous_goto_flag = std::mem::replace(&mut self.function_has_goto, false);
+        let previous_bit_field_flag = std::mem::replace(&mut self.function_has_bit_fields, false);
         let body_result = self.parse_block_statement();
+        self.function_has_compound_literals = previous_literal_flag;
+        self.function_has_goto = previous_goto_flag;
+        self.function_has_bit_fields = previous_bit_field_flag;
         self.source_regions = previous_source_regions;
         let callback_statement_sources = std::mem::replace(
             &mut self.callback_statement_sources,
@@ -10071,7 +10087,7 @@ impl Parser {
                     array_element_width: None,
                     pointee_struct_class: None,
                     slice_length_parameter: None,
-                    fixed_reference_extent: None,
+                    fixed_reference_bounds: None,
                 });
                 if self.peek() != Some(&Token::Comma) {
                     return Ok(parameters);
@@ -10206,7 +10222,7 @@ impl Parser {
                         array_element_width: None,
                         pointee_struct_class: None,
                         slice_length_parameter: None,
-                        fixed_reference_extent: None,
+                        fixed_reference_bounds: None,
                     });
                     if self.peek() != Some(&Token::Comma) {
                         return Ok(parameters);
@@ -10246,7 +10262,7 @@ impl Parser {
                         array_element_width: Some(element_width),
                         pointee_struct_class: None,
                         slice_length_parameter: None,
-                        fixed_reference_extent: None,
+                        fixed_reference_bounds: None,
                     });
                     if self.peek() != Some(&Token::Comma) {
                         return Ok(parameters);
@@ -10259,7 +10275,7 @@ impl Parser {
                 interface_type,
                 name: kernel_name,
                 slice_length_parameter: None,
-                fixed_reference_extent: None,
+                fixed_reference_bounds: None,
                 volatile: object_volatile,
                 pointee_volatile,
                 constant: object_constant,
@@ -10353,12 +10369,12 @@ impl Parser {
                             self.source_identity.as_deref().unwrap_or("source"),
                             self.position
                         );
-                        self.parse_struct_body(name.clone())?;
+                        self.parse_struct_body(name.clone(), false)?;
                         name
                     } else {
                         let name = self.expect_ident("struct name")?;
                         if allow_anonymous_struct && self.peek() == Some(&Token::LBrace) {
-                            self.parse_struct_body(name.clone())?;
+                            self.parse_struct_body(name.clone(), false)?;
                         }
                         name
                     },
@@ -10683,6 +10699,10 @@ impl Parser {
         // Layout origin can survive a pointer cast, but GNU type
         // compatibility asks for the C type of the expression itself.
         match expression {
+            CExpression::StatementExpression {
+                aggregate_lvalue: true,
+                ..
+            } => true,
             CExpression::Variable(name) => self.variable_struct_values.contains_key(name),
             CExpression::Field {
                 field_type: InterfaceType::Int32,
@@ -10737,7 +10757,8 @@ impl Parser {
             return Ok(parsed);
         }
 
-        let expression = self.parse_expression_allow_direct_aggregate()?;
+        let expression =
+            self.without_bit_field_operands(Self::parse_expression_allow_direct_aggregate)?;
         self.expect(Token::RParen)?;
         if let CExpression::Variable(name) = &expression
             && self.incomplete_array_names.contains(name)
@@ -11122,6 +11143,23 @@ impl Parser {
                 }
                 incomplete = true;
                 0
+            } else if self.peek_ident() == Some("sizeof") {
+                let length = match self.parse_primary()? {
+                    CExpression::SizeOfStruct { bytes, .. }
+                    | CExpression::SizeOfUnion { bytes, .. }
+                    | CExpression::SizeOfType { bytes, .. } => bytes,
+                    CExpression::UInt64Literal(bytes) => u32::try_from(bytes)
+                        .map_err(|_| self.error_here("array length is out of range"))?,
+                    _ => {
+                        return Err(
+                            self.error_here("expected a constant sizeof as the array length")
+                        );
+                    }
+                };
+                if length == 0 {
+                    return Err(self.error_here("local arrays must have positive length"));
+                }
+                length
             } else {
                 match self.next() {
                     Some(Token::Number(number)) => {
@@ -11241,6 +11279,7 @@ impl Parser {
         self.expect(Token::RBrace)?;
         let body = balanced_statement_sequence(statements).unwrap_or(CStatement::Skip);
         let body = self.lower_call_expressions(body)?;
+        let body = self.finish_compound_literal_block(body);
         self.pop_scope();
         if self.current_function_source_name.is_some() {
             self.function_block_depth -= 1;
@@ -11332,7 +11371,16 @@ impl Parser {
             });
         }
         self.expect(Token::RBrace)?;
+        let declarations = std::mem::take(
+            self.compound_literal_declarations
+                .last_mut()
+                .expect("switch body scope"),
+        );
         self.pop_scope();
+        self.compound_literal_declarations
+            .last_mut()
+            .expect("switch statement scope")
+            .extend(declarations);
         if cases.is_empty() {
             return Err(self.error_here("a `switch` body must contain a `case` or `default` label"));
         }
@@ -11344,6 +11392,7 @@ impl Parser {
     /// remain valid only as block items in a compound statement.
     fn parse_controlled_statement(&mut self, construct: &str) -> Result<CStatement, CSyntaxError> {
         self.controlled_statement_depth += 1;
+        self.push_scope();
         let result = if self.peek() == Some(&Token::LBrace) {
             self.parse_block_statement()
         } else if self.is_type_start() {
@@ -11354,6 +11403,8 @@ impl Parser {
             self.parse_statement()
         };
         self.controlled_statement_depth -= 1;
+        let result = result.map(|body| self.finish_compound_literal_block(body));
+        self.pop_scope();
         result
     }
 
@@ -11406,7 +11457,18 @@ impl Parser {
         // out of expression parsing's small-stack callers.
         let start = self.position;
         let path = self.begin_source_statement();
+        let control_scope = matches!(self.peek_ident(), Some("while" | "do" | "for" | "switch"));
+        if control_scope {
+            self.push_scope();
+        }
         let statement = self.parse_statement_unsited();
+        let statement = if control_scope {
+            let result = statement.map(|body| self.finish_compound_literal_block(body));
+            self.pop_scope();
+            result
+        } else {
+            statement
+        };
         self.end_source_statement();
         let mut statement = statement?;
         let site = self
@@ -11425,6 +11487,7 @@ impl Parser {
             Parse(Option<&'static str>),
             Site(usize, Option<std::sync::Arc<[u32]>>),
             Controlled,
+            ControlScope,
             Block(Vec<CStatement>, bool),
             BlockChild(Vec<CStatement>, bool),
             Then(Box<CExpression>),
@@ -11438,6 +11501,7 @@ impl Parser {
                 Task::Parse(controlled) => {
                     if let Some(construct) = controlled {
                         self.controlled_statement_depth += 1;
+                        self.push_scope();
                         tasks.push(Task::Controlled);
                         if self.peek() != Some(&Token::LBrace) && self.is_type_start() {
                             return Err(self.error_here(format!(
@@ -11451,6 +11515,13 @@ impl Parser {
                     if controlled.is_none() || self.peek() != Some(&Token::LBrace) {
                         let path = self.begin_source_statement();
                         tasks.push(Task::Site(self.position, path));
+                    }
+                    if matches!(
+                        self.peek_ident(),
+                        Some("if" | "while" | "do" | "for" | "switch")
+                    ) {
+                        self.push_scope();
+                        tasks.push(Task::ControlScope);
                     }
                     if self.peek() == Some(&Token::LBrace) {
                         self.expect(Token::LBrace)?;
@@ -11481,7 +11552,16 @@ impl Parser {
                     fill_missing_sites(&mut statement, &site);
                     results.push((statement, lowerable));
                 }
-                Task::Controlled => self.controlled_statement_depth -= 1,
+                Task::Controlled | Task::ControlScope => {
+                    let controlled = matches!(task, Task::Controlled);
+                    let (body, lowerable) = results.pop().expect("controlled statement");
+                    let body = self.finish_compound_literal_block(body);
+                    self.pop_scope();
+                    if controlled {
+                        self.controlled_statement_depth -= 1;
+                    }
+                    results.push((body, lowerable));
+                }
                 Task::Block(statements, lowerable) => {
                     if self.peek() == Some(&Token::RBrace) {
                         self.expect(Token::RBrace)?;
@@ -11492,6 +11572,7 @@ impl Parser {
                         } else {
                             body
                         };
+                        let body = self.finish_compound_literal_block(body);
                         self.pop_scope();
                         if self.current_function_source_name.is_some() {
                             self.function_block_depth -= 1;
@@ -11624,6 +11705,11 @@ impl Parser {
     /// This matters for callers that deliberately parse on a small stack.
     #[inline(never)]
     fn parse_statement_unsited(&mut self) -> Result<CStatement, CSyntaxError> {
+        if !self.local_bit_fields.is_empty()
+            && let Some(store) = self.parse_local_bit_field_store()?
+        {
+            return Ok(store);
+        }
         if self.peek_ident() == Some("return") {
             return self.parse_return_statement();
         }
@@ -11942,6 +12028,17 @@ impl Parser {
                 Some("break") => self.parse_loop_control_statement(false),
                 Some("continue") => self.parse_loop_control_statement(true),
                 Some("goto") => {
+                    if self.function_has_bit_fields {
+                        return Err(self.error_here(
+                            "bit-field objects and goto in one function are not supported",
+                        ));
+                    }
+                    if self.function_has_compound_literals {
+                        return Err(self.error_here(
+                            "compound literals and goto in one function are not supported",
+                        ));
+                    }
+                    self.function_has_goto = true;
                     let position = self.here();
                     self.position += 1;
                     let target = self.expect_ident("goto target")?;
@@ -11980,7 +12077,11 @@ impl Parser {
                     );
                     self.position += 1;
                     self.expect(Token::LParen)?;
+                    let previous_repeatable_scope = self
+                        .repeatable_compound_literal_scope
+                        .replace(self.scopes.len());
                     let condition = self.parse_expression()?;
+                    self.repeatable_compound_literal_scope = previous_repeatable_scope;
                     self.expect(Token::RParen)?;
                     self.loop_contexts.push(CLoopContext::While);
                     let body = Box::new(self.parse_controlled_statement("while")?);
@@ -12020,7 +12121,11 @@ impl Parser {
                     }
                     self.position += 1;
                     self.expect(Token::LParen)?;
+                    let previous_repeatable_scope = self
+                        .repeatable_compound_literal_scope
+                        .replace(self.scopes.len());
                     let condition = self.parse_expression()?;
+                    self.repeatable_compound_literal_scope = previous_repeatable_scope;
                     self.expect(Token::RParen)?;
                     self.expect(Token::Semicolon)?;
                     Ok(CStatement::DoWhile {
@@ -12043,6 +12148,9 @@ impl Parser {
                         std::sync::Arc::new(self.visible_bindings.clone()),
                     );
                     self.expect(Token::Semicolon)?;
+                    let previous_repeatable_scope = self
+                        .repeatable_compound_literal_scope
+                        .replace(self.scopes.len());
                     let condition = if self.peek() == Some(&Token::Semicolon) {
                         CExpression::Int32Literal(1)
                     } else {
@@ -12050,10 +12158,17 @@ impl Parser {
                     };
                     self.expect(Token::Semicolon)?;
                     let step = self.parse_for_step()?;
+                    self.repeatable_compound_literal_scope = previous_repeatable_scope;
                     self.expect(Token::RParen)?;
                     self.loop_contexts.push(CLoopContext::For);
                     let body = self.parse_controlled_statement("for")?;
                     self.loop_contexts.pop();
+                    let declarations = std::mem::take(
+                        self.compound_literal_declarations
+                            .last_mut()
+                            .expect("for scope"),
+                    );
+                    let init = prepend_statements(declarations, init);
                     self.pop_for_scope();
                     Ok(CStatement::For {
                         test: None,
@@ -12144,6 +12259,13 @@ impl Parser {
 
     fn parse_local_declaration(&mut self) -> Result<CStatement, CSyntaxError> {
         let parsed_type = self.parse_type()?;
+        if parsed_type
+            .struct_name
+            .as_ref()
+            .is_some_and(|tag| self.bit_field_records.contains_key(tag))
+        {
+            return self.parse_local_bit_field_record(&parsed_type);
+        }
         if parsed_type.union_name.is_some() {
             return Err(self.error_here(
                     "tagged union locals are not supported; access an active scalar member through a struct pointer",
@@ -12969,6 +13091,7 @@ impl Parser {
             CStatement::Seq(
                 Box::new(lowered),
                 Box::new(CStatement::EndAggregateLifetimes {
+                    names: Vec::new(),
                     steps,
                     site: CSite::NONE,
                 }),
@@ -13786,6 +13909,7 @@ impl Parser {
                 });
                 let steps = self.aggregate_expression_steps.drain(start..).collect();
                 prefix.push(CStatement::EndAggregateLifetimes {
+                    names: Vec::new(),
                     steps,
                     site: CSite::NONE,
                 });
@@ -14053,7 +14177,11 @@ impl Parser {
                 ..
             } => struct_name.clone(),
             CExpression::StepResult { .. } => None,
-            CExpression::Variable(name) => self.variable_struct_values.get(name).cloned(),
+            CExpression::Variable(name) => self
+                .variable_struct_values
+                .get(name)
+                .cloned()
+                .or_else(|| self.local_struct_values.get(name).cloned().flatten()),
             CExpression::Call { function_name, .. } => self
                 .function_declaration(function_name)
                 .and_then(|function| function.return_struct_name.clone()),
@@ -14714,6 +14842,7 @@ impl Parser {
                     } else {
                         CStatement::Seq(
                             Box::new(CStatement::EndAggregateLifetimes {
+                                names: Vec::new(),
                                 steps: steps.clone(),
                                 site: CSite::NONE,
                             }),
@@ -14868,6 +14997,7 @@ impl Parser {
                                 } else {
                                     CStatement::Seq(
                                         Box::new(CStatement::EndAggregateLifetimes {
+                                            names: Vec::new(),
                                             steps: steps.clone(),
                                             site: CSite::NONE,
                                         }),
@@ -14891,7 +15021,11 @@ impl Parser {
                 } else {
                     CStatement::Seq(
                         Box::new(lowered),
-                        Box::new(CStatement::EndAggregateLifetimes { steps, site }),
+                        Box::new(CStatement::EndAggregateLifetimes {
+                            names: Vec::new(),
+                            steps,
+                            site,
+                        }),
                     )
                 })
             }
@@ -14919,7 +15053,11 @@ impl Parser {
         }
         Ok(CStatement::Seq(
             Box::new(lowered),
-            Box::new(CStatement::EndAggregateLifetimes { steps, site }),
+            Box::new(CStatement::EndAggregateLifetimes {
+                names: Vec::new(),
+                steps,
+                site,
+            }),
         ))
     }
 
@@ -15330,6 +15468,13 @@ impl Parser {
         assigned: &[BindingName],
     ) -> bool {
         match expression {
+            // Taking an object's address does not read its stored value,
+            // even when an unsequenced operand updates a scalar local.
+            CExpression::AddressOf(target)
+                if matches!(target.as_ref(), CExpression::Variable(_)) =>
+            {
+                true
+            }
             CExpression::Int32Literal(_)
             | CExpression::UInt8Literal(_)
             | CExpression::UInt32Literal(_)
@@ -15574,6 +15719,9 @@ impl Parser {
         let Some(position) = first_assignment_position(expression) else {
             return Ok(());
         };
+        if Self::compound_literal_storage_address(expression) {
+            return Ok(());
+        }
         let Some(targets) = assignment_chain_targets(expression) else {
             return Err(self.error_at_position(Some(position),
                 "an expression update and a potentially aliased memory read require a separation model"));
@@ -15886,6 +16034,8 @@ impl Parser {
                 ))
             }
             CExpression::StatementExpression {
+                aggregate_lvalue,
+                scope_lifetimes,
                 body,
                 value,
                 interface_type,
@@ -15893,6 +16043,9 @@ impl Parser {
                 pointee_constant,
                 ..
             } => {
+                if aggregate_lvalue {
+                    return Ok((vec![self.lower_statement_calls(*body)?], *value));
+                }
                 // The body runs, then the value is a step the rest of the
                 // expression reads: `S.region(j).result`.
                 let body = self.lower_statement_calls(*body)?;
@@ -15909,6 +16062,13 @@ impl Parser {
                     pointee_constant,
                     site: CSite::NONE,
                 });
+                if !scope_lifetimes.is_empty() {
+                    prefix.push(CStatement::EndAggregateLifetimes {
+                        names: scope_lifetimes,
+                        steps: Vec::new(),
+                        site: CSite::NONE,
+                    });
+                }
                 Ok((
                     prefix,
                     CExpression::StepResult {
@@ -15938,8 +16098,32 @@ impl Parser {
                 ))
             }
             CExpression::AddressOf(expression) => {
+                let literal_struct = match expression.as_ref() {
+                    CExpression::StatementExpression {
+                        aggregate_lvalue: true,
+                        struct_name,
+                        ..
+                    } => struct_name.clone(),
+                    _ => None,
+                };
                 let (prefix, expression) = self.lower_expression_calls(*expression)?;
-                Ok((prefix, CExpression::AddressOf(Box::new(expression))))
+                let address = CExpression::AddressOf(Box::new(expression));
+                // Aggregate storage is byte-backed; the C value of &literal
+                // has the nominal struct-pointer interface, including inside
+                // value-producing conditional branches.
+                let address = if let Some(struct_name) = literal_struct {
+                    CExpression::Cast {
+                        expression: Box::new(address),
+                        interface_type: InterfaceType::Int32Pointer,
+                        struct_name: Some(struct_name),
+                        pointee_volatile: false,
+                        pointee_constant: false,
+                        explicit_qualification: false,
+                    }
+                } else {
+                    address
+                };
+                Ok((prefix, address))
             }
             CExpression::PointerOffsetBytes { pointer, bytes } => {
                 let (prefix, pointer) = self.lower_expression_calls(*pointer)?;
@@ -16418,7 +16602,7 @@ impl Parser {
     /// The modeled memory functions describe their native `void *` arguments
     /// as byte ranges. Retag an object pointer for that contract after the
     /// native call's qualifier checks. This is an implicit conversion: it
-    /// retains the argument's provenance, subobject extent and qualifiers.
+    /// retains the argument's provenance, subobject bounds and qualifiers.
     /// Ordinary functions, indirect calls and internal-linkage names keep
     /// their own declared interfaces.
     fn adapt_library_memory_argument(
@@ -17227,6 +17411,10 @@ impl Parser {
         self.position += 1;
         let parsed_type = self.parse_type()?;
         self.expect(Token::RParen)?;
+        if self.peek() == Some(&Token::LBrace) {
+            let literal = self.parse_struct_compound_literal(parsed_type)?;
+            return self.parse_postfix_tail(literal, true);
+        }
         let volatile_pointer_object_cast = parsed_type.pointee_is_volatile()
             && parsed_type
                 .interface_type
@@ -17350,6 +17538,17 @@ impl Parser {
 
         if self.peek() == Some(&Token::Amp) {
             self.position += 1;
+            if let Some(object) = self.local_bit_field_object()
+                && !object.is_pointer()
+                && !matches!(
+                    self.peek_next(),
+                    Some(Token::Dot | Token::Arrow | Token::LBracket | Token::LParen)
+                )
+            {
+                let pointer = object.source_pointer();
+                self.position += 1;
+                return Ok(pointer);
+            }
             if let Some(Token::Ident(name)) = self.peek().cloned()
                 && !self.variable_types.contains_key(&self.resolve_name(&name))
             {
@@ -17364,7 +17563,7 @@ impl Parser {
                     self.resolve_function_name(&name),
                 ));
             }
-            let target = self.parse_unary()?;
+            let target = self.without_bit_field_operands(Self::parse_unary)?;
             if matches!(target, CExpression::ScalarUpdate { .. }) {
                 return Err(self.error_here("an expression update result is not an lvalue"));
             }
@@ -17711,7 +17910,15 @@ impl Parser {
         &mut self,
         allow_updates: bool,
     ) -> Result<CExpression, CSyntaxError> {
-        let mut expression = self.parse_primary()?;
+        let expression = self.parse_primary()?;
+        self.parse_postfix_tail(expression, allow_updates)
+    }
+
+    fn parse_postfix_tail(
+        &mut self,
+        mut expression: CExpression,
+        allow_updates: bool,
+    ) -> Result<CExpression, CSyntaxError> {
         loop {
             match self.peek() {
                 Some(Token::PlusPlus | Token::MinusMinus) if !allow_updates => {
@@ -18243,6 +18450,22 @@ impl Parser {
 
     fn struct_pointer_name(&self, expression: &CExpression) -> Option<String> {
         match expression {
+            CExpression::Assignment {
+                interface_type,
+                struct_name,
+                ..
+            }
+            | CExpression::ScalarUpdate {
+                interface_type,
+                struct_name,
+                ..
+            } if interface_type.is_object_pointer()
+                && !interface_type
+                    .pointee_type()
+                    .is_some_and(InterfaceType::is_pointer) =>
+            {
+                struct_name.clone()
+            }
             CExpression::StepResult { struct_name, .. } => struct_name.clone(),
             CExpression::Variable(name)
                 if matches!(
@@ -18299,6 +18522,10 @@ impl Parser {
             | CExpression::SequentialWrite { struct_name, .. } => struct_name.clone(),
             CExpression::AddressOf(target) => match target.as_ref() {
                 CExpression::AggregateAddress { struct_name, .. } => Some(struct_name.clone()),
+                CExpression::StatementExpression {
+                    aggregate_lvalue: true,
+                    ..
+                } => self.aggregate_struct_name(target),
                 CExpression::Variable(name) => self.variable_struct_values.get(name).cloned(),
                 _ => None,
             },
@@ -18845,9 +19072,16 @@ impl Parser {
             && actual != expected
             && actual_struct_name.is_none()
             && expected_struct_name.is_none();
+        // C character pointers inspect a local bit-field record's object
+        // representation. Retyping to any wider scalar remains restricted.
+        let bit_field_representation_cast = one_byte_pointer(expected)
+            && actual_struct_name
+                .as_ref()
+                .is_some_and(|name| self.bit_field_records.contains_key(name));
         if expected == InterfaceType::VoidPointer
             || actual == InterfaceType::VoidPointer
             || signedness_cast
+            || bit_field_representation_cast
         {
             return Ok(());
         }
@@ -19026,6 +19260,7 @@ impl Parser {
         CSyntaxError,
     > {
         let (struct_name, union_name) = match base {
+            CExpression::Assignment { .. } => (self.struct_pointer_name(base), None),
             CExpression::Call { .. }
             | CExpression::IndirectCall { .. }
             | CExpression::Ternary { .. }
@@ -19329,6 +19564,16 @@ impl Parser {
     }
 
     fn parse_primary(&mut self) -> Result<CExpression, CSyntaxError> {
+        if let Some(object) = self.local_bit_field_object().cloned() {
+            if object.is_pointer()
+                && !self.bit_field_forbidden_operand
+                && self.peek_next() != Some(&object.member_operator())
+            {
+                self.position += 1;
+                return Ok(object.source_pointer());
+            }
+            return self.parse_local_bit_field_read(object);
+        }
         if self.peek_ident() == Some("__builtin_offsetof") {
             return self.parse_builtin_offsetof();
         }
@@ -19352,8 +19597,15 @@ impl Parser {
                 let bytes = self
                     .structs
                     .get(&name)
-                    .ok_or_else(|| self.error_here(format!("unknown struct declaration `{name}`")))?
-                    .size_bytes;
+                    .map(|layout| layout.size_bytes)
+                    .or_else(|| {
+                        self.bit_field_records
+                            .get(&name)
+                            .map(|record| record.size_bytes())
+                    })
+                    .ok_or_else(|| {
+                        self.error_here(format!("unknown struct declaration `{name}`"))
+                    })?;
                 return Ok(CExpression::SizeOfStruct { name, bytes });
             }
             if self.peek_ident() == Some("union") {
@@ -19367,10 +19619,22 @@ impl Parser {
                     .size_bytes;
                 return Ok(CExpression::SizeOfUnion { name, bytes });
             }
+            if let Some(object) = self.local_bit_field_object()
+                && self.peek_next() == Some(&Token::RParen)
+            {
+                let bytes = if object.is_pointer() {
+                    8
+                } else {
+                    object.size_bytes()
+                };
+                self.position += 2;
+                return Ok(CExpression::UInt64Literal(u64::from(bytes)));
+            }
             if !self.is_type_start() {
                 // `sizeof(expression)`: the operand is not evaluated; only
                 // its type is used, as for GNU `typeof`.
-                let operand = self.parse_expression_allow_direct_aggregate()?;
+                let operand =
+                    self.without_bit_field_operands(Self::parse_expression_allow_direct_aggregate)?;
                 self.expect(Token::RParen)?;
                 if let CExpression::Variable(name) = &operand
                     && self.incomplete_array_names.contains(name)
@@ -19392,6 +19656,14 @@ impl Parser {
                         struct_name: None,
                         bytes: interface_type.abi_size_bytes(),
                     });
+                }
+                if let Some(name) = self.aggregate_struct_name(&operand) {
+                    let bytes = self
+                        .structs
+                        .get(&name)
+                        .expect("aggregate operand has a layout")
+                        .size_bytes;
+                    return Ok(CExpression::SizeOfStruct { name, bytes });
                 }
                 let interface_type = self
                     .source_expression_type(&operand)
@@ -19563,8 +19835,13 @@ impl Parser {
                     ));
                 }
                 let body = self.lower_call_expressions(body)?;
+                let (body, scope_lifetimes) = self.compound_literal_block_storage(body);
                 self.pop_scope();
                 return Ok(CExpression::StatementExpression {
+                    aggregate_lvalue: false,
+                    initializer_call: None,
+                    initializer_assignment: None,
+                    scope_lifetimes,
                     body: Box::new(body),
                     value: Box::new(value),
                     interface_type,
@@ -19687,6 +19964,9 @@ impl Parser {
     }
 }
 
+mod bit_field_layout;
+mod bit_fields;
+mod compound_literals;
 mod initializers;
 
 mod type_declarations;
@@ -20539,9 +20819,14 @@ fn first_embedded_call_position(expression: &CExpression) -> Option<SourcePositi
             .clone()
             .or_else(|| first_embedded_call_position(function))
             .or_else(|| arguments.iter().find_map(first_embedded_call_position)),
-        CExpression::StatementExpression { value, .. } | CExpression::Assignment { value, .. } => {
-            first_embedded_call_position(value)
-        }
+        CExpression::StatementExpression {
+            initializer_call,
+            value,
+            ..
+        } => initializer_call
+            .clone()
+            .or_else(|| first_embedded_call_position(value)),
+        CExpression::Assignment { value, .. } => first_embedded_call_position(value),
         CExpression::Cast { expression, .. }
         | CExpression::FloatNegate(expression)
         | CExpression::FloatClassification { expression, .. }
@@ -20636,8 +20921,14 @@ fn first_assignment_position(expression: &CExpression) -> Option<SourcePosition>
             ..
         } => first_assignment_position(function)
             .or_else(|| arguments.iter().find_map(first_assignment_position)),
-        CExpression::StatementExpression { value, .. }
-        | CExpression::Cast {
+        CExpression::StatementExpression {
+            initializer_assignment,
+            value,
+            ..
+        } => initializer_assignment
+            .clone()
+            .or_else(|| first_assignment_position(value)),
+        CExpression::Cast {
             expression: value, ..
         }
         | CExpression::FloatNegate(value)
@@ -21036,8 +21327,8 @@ impl ImportedParameter {
         if let Some(index) = self.slice_length_parameter {
             parameter = parameter.with_slice_length_parameter(index);
         }
-        if let Some(bytes) = self.fixed_reference_extent {
-            parameter = parameter.with_fixed_reference_extent(bytes);
+        if let Some(bytes) = self.fixed_reference_bounds {
+            parameter = parameter.with_fixed_reference_bounds(bytes);
         }
         parameter
     }
@@ -21248,7 +21539,7 @@ mod scope_metadata_tests {
     }
 
     #[test]
-    fn explicit_scalar_array_fields_preserve_extent_and_check_full_layout() {
+    fn explicit_scalar_array_fields_preserve_length_and_check_full_layout() {
         for length in [1, 1024, 1_000_000] {
             let width = length * 4;
             let fields = vec![

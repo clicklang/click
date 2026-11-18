@@ -58,6 +58,10 @@ id = "c.type.struct-value"
 path = "reference/language/c.md#struct-subset"
 
 [[item]]
+id = "c.type.local-integer-bit-field-record"
+path = "reference/language/c.md#local-integer-bit-fields"
+
+[[item]]
 id = "c.type.function-pointer"
 path = "reference/language/c.md#supported-types"
 
@@ -342,6 +346,10 @@ id = "c.expression.statement-expression"
 path = "reference/language/c.md#supported-expressions-and-statements"
 
 [[item]]
+id = "c.expression.struct-compound-literal"
+path = "reference/language/c.md#block-scope-struct-compound-literals"
+
+[[item]]
 id = "c.expression.builtin-types-compatible"
 path = "reference/language/c.md#supported-expressions-and-statements"
 
@@ -479,7 +487,7 @@ id = "language.word.import"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
-id = "language.word.rust"
+id = "language.word.program"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
@@ -544,10 +552,6 @@ path = "reference/language/grammar.md#word-index"
 
 [[item]]
 id = "language.word.byte_offset"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
-id = "language.word.c"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
@@ -1179,7 +1183,7 @@ path = "reference/language/index.md#old"
 
 [[item]]
 id = "language.c-fragment"
-path = "reference/language/index.md#c"
+path = "reference/language/index.md#program-and-qualified-names"
 
 [[item]]
 id = "language.at-expression"
@@ -2301,6 +2305,22 @@ path = "reference/library/index.md#bytescontains"
 [[item]]
 id = "library.predicate.bytes::all_not_equal"
 path = "reference/library/index.md#bytesall_not_equal"
+
+[[item]]
+id = "library.predicate.bytes::comparison"
+path = "reference/library/index.md#bytescomparison"
+
+[[item]]
+id = "library.theorem.bytes::comparison_negative_after_prefix"
+path = "reference/library/index.md#bytescomparison_negative_after_prefix"
+
+[[item]]
+id = "library.theorem.bytes::comparison_positive_after_prefix"
+path = "reference/library/index.md#bytescomparison_positive_after_prefix"
+
+[[item]]
+id = "library.theorem.bytes::comparison_zero_when_equal"
+path = "reference/library/index.md#bytescomparison_zero_when_equal"
 
 [[item]]
 id = "library.predicate.cstr::prefix"

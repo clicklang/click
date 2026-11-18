@@ -22,10 +22,13 @@ theorem nested_universal_body(n: int32) {
         have 0 <= k;
         have k < n;
         both {
-            known();
-        } and {
-            have k < n by known();
-            known();
+            left => {
+                known();
+            }
+            right => {
+                have k < n by known();
+                known();
+            }
         }
     }
 }

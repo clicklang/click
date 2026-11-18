@@ -86,7 +86,7 @@ fn exact_automatic_storage_instances_have_a_surface_spelling() {
             panic!("storage pointer")
         };
         assert!(
-            matches!(&pointer.pointer().block, crate::kernel::PointerBlock::AutomaticLocal { instance: actual, .. } if actual == &instance)
+            matches!(&pointer.pointer().base, crate::kernel::AddressBase::AutomaticLocal { instance: actual, .. } if actual == &instance)
         );
         let rendered = crate::surface::diagnostics::describe_contract_expression(&expression);
         let reparsed = parse_binding_expression(&rendered, source).unwrap();
@@ -153,8 +153,8 @@ fn function_statics_keep_types_and_exact_storage_spelling() {
         panic!("static address");
     };
     assert!(matches!(
-        pointer.pointer().block,
-        crate::kernel::PointerBlock::StaticObject { .. }
+        pointer.pointer().base,
+        crate::kernel::AddressBase::StaticObject { .. }
     ));
     assert_eq!(
         crate::surface::diagnostics::describe_pointer(
@@ -275,10 +275,10 @@ fn contract_result_slot_has_an_exact_surface_spelling() {
         panic!("a typed result slot pointer")
     };
     assert_eq!(
-        pointer.pointer().block,
-        crate::kernel::PointerBlock::ContractResult
+        pointer.pointer().base,
+        crate::kernel::AddressBase::ContractResult
     );
-    assert_eq!(pointer.pointer().block.to_string(), "result.storage()");
+    assert_eq!(pointer.pointer().base.to_string(), "result.storage()");
     let text = crate::surface::diagnostics::describe_pointer(
         pointer.pointer(),
         crate::surface::ParameterBinding::default(),
@@ -303,10 +303,10 @@ fn contract_exception_slot_has_an_exact_surface_spelling() {
         panic!("a typed exception slot pointer")
     };
     assert_eq!(
-        pointer.pointer().block,
-        crate::kernel::PointerBlock::ContractException
+        pointer.pointer().base,
+        crate::kernel::AddressBase::ContractException
     );
-    assert_eq!(pointer.pointer().block.to_string(), "exception.storage()");
+    assert_eq!(pointer.pointer().base.to_string(), "exception.storage()");
     let text = crate::surface::diagnostics::describe_pointer(
         pointer.pointer(),
         crate::surface::ParameterBinding::default(),
@@ -344,14 +344,14 @@ fn aggregate_return_storage_round_trips_the_full_frame_identity() {
             panic!("typed return storage")
         };
         assert_eq!(
-            pointer.pointer().block,
-            crate::kernel::PointerBlock::AggregateReturn { frame }
+            pointer.pointer().base,
+            crate::kernel::AddressBase::AggregateReturn { frame }
         );
         assert_ne!(
-            pointer.pointer().block,
-            crate::kernel::PointerBlock::ContractResult
+            pointer.pointer().base,
+            crate::kernel::AddressBase::ContractResult
         );
-        assert_eq!(pointer.pointer().block.to_string(), text);
+        assert_eq!(pointer.pointer().base.to_string(), text);
         let raised = crate::surface::diagnostics::describe_pointer(
             pointer.pointer(),
             crate::surface::ParameterBinding::default(),

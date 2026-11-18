@@ -2,9 +2,9 @@
 //! The trace is diagnostic only; no recorded text participates in checking.
 
 use crate::kernel::proof::BranchId;
+use crate::kernel::{Address, ConditionTerm, MachineTerm, Proposition, SharedMemory};
 #[cfg(test)]
 use crate::kernel::{CompareRelation, MachineIntegerType};
-use crate::kernel::{ConditionTerm, MachineTerm, Pointer, Proposition, SharedMemory};
 use crate::source::SourcePosition;
 use crate::surface::proof_diagnostics::ProofDiagnosticState;
 use crate::surface::proof_diagnostics::render::{self, MemoryStateLabels};
@@ -160,8 +160,8 @@ pub(super) struct TraceStep {
 /// memory delta, the same bounded inspection the implicit tail's store
 /// search makes; the store itself records nothing.
 pub(super) struct TraceForgottenCell {
-    pub cell: Pointer,
-    pub store: Pointer,
+    pub cell: Address,
+    pub store: Address,
     /// The two cells as the statement's C locals spelled them, `q[0]`.
     pub spelled: [Option<String>; 2],
     pub indices_differ: Proposition,
@@ -235,10 +235,10 @@ impl PointerTraceView {
 pub(super) struct ChildArgumentTrace {
     child: String,
     index: usize,
-    actual: Pointer,
-    required: Pointer,
-    related: Vec<Pointer>,
-    views: HashMap<Pointer, PointerTraceView>,
+    actual: Address,
+    required: Address,
+    related: Vec<Address>,
+    views: HashMap<Address, PointerTraceView>,
 }
 
 impl ChildArgumentTrace {
@@ -278,7 +278,7 @@ impl ChildArgumentTrace {
 
     pub(super) fn name_values(
         &mut self,
-        mut name: impl FnMut(&Pointer, &Pointer) -> Option<[PointerTraceView; 2]>,
+        mut name: impl FnMut(&Address, &Address) -> Option<[PointerTraceView; 2]>,
     ) {
         for other in std::iter::once(&self.required).chain(&self.related) {
             if let Some([actual, required]) = name(&self.actual, other) {
@@ -288,10 +288,10 @@ impl ChildArgumentTrace {
         }
     }
 
-    fn value(&self, pointer: &Pointer, labels: &mut MemoryStateLabels) -> String {
+    fn value(&self, pointer: &Address, labels: &mut MemoryStateLabels) -> String {
         if let Some(view) = self.views.get(pointer) {
             view.render(labels)
-        } else if pointer == &Pointer::null() {
+        } else if pointer == &Address::null() {
             "0 (null pointer)".into()
         } else if let Some(MachineTerm::MemoryLoad(memory, address, _)) =
             pointer_definition(pointer)
@@ -343,10 +343,10 @@ impl ChildArgumentTrace {
     }
 }
 
-pub(super) fn pointer_definition(pointer: &Pointer) -> Option<MachineTerm> {
+pub(super) fn pointer_definition(pointer: &Address) -> Option<MachineTerm> {
     crate::kernel::logical_pointer_read_term(pointer).or_else(|| {
         let read = pointer.as_loaded_value()?;
-        (read.displacement == crate::kernel::PointerOffsetTerm::Constant(0)).then(|| {
+        (read.displacement == crate::kernel::AddressOffset::Constant(0)).then(|| {
             MachineTerm::MemoryLoad(
                 crate::kernel::ProgramPoint::at(&read.defining_memory),
                 Box::new(read.defining_address),
@@ -1298,14 +1298,14 @@ fn trace_text(text: &str, max_bytes: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::{MachineTerm, Memory, Pointer, PointerBlock, PointerOffsetTerm};
+    use crate::kernel::{Address, AddressBase, AddressOffset, MachineTerm, SymbolicMemory};
 
     #[test]
     fn admitted_read_equalities_share_the_fact_printer_and_read_labels() {
-        let address = Pointer::symbolic(crate::kernel::Variable(303_000));
-        let memory = crate::kernel::intern_memory(Memory::new());
-        let read = Pointer::loaded_value(&memory, &address);
-        let target = Pointer::function("callback");
+        let address = Address::symbolic(crate::kernel::Variable(303_000));
+        let memory = crate::kernel::intern_memory(SymbolicMemory::new());
+        let read = Address::loaded_value(&memory, &address);
+        let target = Address::function("callback");
         let fact = TraceFact {
             kernel: Proposition::ConditionIs(ConditionTerm::pointer_equal(read, target), true),
         };
@@ -1334,7 +1334,7 @@ mod tests {
     #[test]
     fn legend_preserves_long_trace_and_line_boundaries() {
         let mut labels = MemoryStateLabels::default();
-        labels.pointer_value_name(&Pointer::null());
+        labels.pointer_value_name(&Address::null());
         let mut text = "é".repeat(64 * 1024);
         text.push_str("\nfailed child argument comparison\nrequired: value#1");
         let original = text.clone();
@@ -1347,15 +1347,15 @@ mod tests {
     // refusal must reuse the same value labels as the preceding facts.
     #[test]
     fn child_comparison_keeps_read_values_distinct_from_source_spelling() {
-        let address = Pointer::symbolic(crate::kernel::Variable(700_001));
-        let first = crate::kernel::intern_memory(Memory::new());
-        let second = crate::kernel::intern_memory(Memory::new().store(
+        let address = Address::symbolic(crate::kernel::Variable(700_001));
+        let first = crate::kernel::intern_memory(SymbolicMemory::new());
+        let second = crate::kernel::intern_memory(SymbolicMemory::new().store(
             address.clone(),
             crate::kernel::ProgramValue::Int32(MachineTerm::constant(1)),
         ));
-        let a = Pointer::loaded_value(&first, &address);
-        let b = Pointer::loaded_value(&second, &address);
-        let rid = Pointer::symbolic(crate::kernel::Variable(700_002));
+        let a = Address::loaded_value(&first, &address);
+        let b = Address::loaded_value(&second, &address);
+        let rid = Address::symbolic(crate::kernel::Variable(700_002));
         let facts = [a.clone(), b.clone()].map(|value| TraceFact {
             kernel: Proposition::ConditionIs(
                 ConditionTerm::pointer_equal(value, rid.clone()),
@@ -1396,8 +1396,8 @@ mod tests {
         let comparison = ChildArgumentTrace {
             child: "λ".repeat(64 * 1024),
             index: 0,
-            actual: Pointer::null(),
-            required: Pointer::null(),
+            actual: Address::null(),
+            required: Address::null(),
             related: vec![],
             views: HashMap::new(),
         };
@@ -1454,8 +1454,8 @@ mod tests {
                 1
             }
         }
-        let pointer = Pointer::symbolic(Variable(782001));
-        let first = Memory::new();
+        let pointer = Address::symbolic(Variable(782001));
+        let first = SymbolicMemory::new();
         let second = first.clone().store(
             pointer.clone(),
             ProgramValue::UInt64(MachineTerm::uint64_constant(9)),
@@ -1533,12 +1533,12 @@ mod tests {
         );
     }
 
-    fn loadable_at(memory: Memory) -> Proposition {
+    fn loadable_at(memory: SymbolicMemory) -> Proposition {
         Proposition::MemoryLoadable {
             memory,
-            base: Pointer {
-                block: PointerBlock::ExternalArgument,
-                offset: PointerOffsetTerm::Constant(0),
+            base: Address {
+                base: AddressBase::ExternalArgument,
+                offset: AddressOffset::Constant(0),
             },
             bytes: MachineTerm::constant(1),
             wide: false,
@@ -1548,8 +1548,8 @@ mod tests {
     #[test]
     fn trace_and_goal_share_state_labels_without_conflating_distinct_memories() {
         with_proof_trace("f", || {
-            let first = Memory::default();
-            let second = Memory::new().with_block("different", 1);
+            let first = SymbolicMemory::default();
+            let second = SymbolicMemory::new().with_block("different", 1);
             record(
                 1,
                 TraceStep {
@@ -1704,10 +1704,10 @@ mod tests {
 
     #[test]
     fn trace_omits_generated_load_binding_beside_surface_branch_fact() {
-        let memory = crate::kernel::intern_memory(Memory::new());
-        let pointer = Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::Constant(0),
+        let memory = crate::kernel::intern_memory(SymbolicMemory::new());
+        let pointer = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Constant(0),
         };
         let variable = crate::kernel::load_variable_for_term(&MachineTerm::MemoryLoad(
             crate::kernel::ProgramPoint::at(&memory),
@@ -1985,11 +1985,11 @@ mod tests {
                     facts: vec![TraceFact {
                         kernel: Proposition::ConditionIs(
                             ConditionTerm::pointer_equal(
-                                Pointer::loaded_value(
-                                    &crate::kernel::intern_memory(Memory::new()),
-                                    &Pointer::null(),
+                                Address::loaded_value(
+                                    &crate::kernel::intern_memory(SymbolicMemory::new()),
+                                    &Address::null(),
                                 ),
-                                Pointer::null(),
+                                Address::null(),
                             ),
                             true,
                         ),
@@ -2109,7 +2109,7 @@ mod tests {
                 None,
             );
             let mut shared_labels = MemoryStateLabels::default();
-            let rejected_address = Pointer::symbolic(crate::kernel::Variable(987_771));
+            let rejected_address = Address::symbolic(crate::kernel::Variable(987_771));
             shared_labels.immutable_pointer_name(&rejected_address, "rejected_fact_address");
             shared_labels.pointer_value_name(&rejected_address);
             let failed_prefix = render_accepted(

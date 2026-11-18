@@ -36,7 +36,7 @@
 //! initial values, and each iteration sees the same accumulator, index and
 //! cell). Framing guarantees those cells hold the same bytes at both
 //! states. Pointer offsets are exact `i64` sums of sign-extended scaled
-//! `int32` terms (`PointerOffsetTerm::Int32Scaled`), so the cells occupy the
+//! `int32` terms (`AddressOffset::Int32Scaled`), so the cells occupy the
 //! contiguous bytes `[p + 4*start, p + 4*end)` with no wraparound, and a write
 //! misses them exactly when it ends at or below the first byte or starts at or
 //! above the last one. Emptiness is used only when a fact or the syntax proves
@@ -81,10 +81,6 @@ impl FoldReadDefinition {
             parameters,
             body,
         }
-    }
-
-    pub fn name(&self) -> &str {
-        &self.name
     }
 
     fn fingerprint(&self) -> u64 {
@@ -176,8 +172,8 @@ impl std::fmt::Display for FoldReadDecline {
 /// `base + element_width * k` for `start <= k < end`, read at `memory`.
 #[derive(Clone, Debug)]
 pub(crate) struct FoldReadInterval {
-    pub(crate) memory: Memory,
-    pub(crate) base: Pointer,
+    pub(crate) memory: SymbolicMemory,
+    pub(crate) base: Address,
     pub(crate) start: SharedMachineIntegerTerm,
     pub(crate) end: SharedMachineIntegerTerm,
     pub(crate) element_width: u32,
@@ -284,10 +280,6 @@ impl CheckedFoldReadSummary {
             accumulator: *accumulator,
             item: *item,
         })
-    }
-
-    pub fn name(&self) -> &str {
-        &self.name
     }
 
     /// The support of one application of this function, or `None` when the
@@ -544,14 +536,14 @@ impl BodyChecker<'_> {
                 Err(Self::unsupported("an unlowered C expression"))
             }
             SpecExpression::MemoryLoad {
-                memory,
+                point: memory,
                 pointer,
                 value_type,
             } => {
                 if scope != Scope::Body {
                     return Err(FoldReadDecline::ReadOutsideFoldIndex);
                 }
-                if *memory != SpecMemory::Current {
+                if *memory != SpecPoint::Current {
                     return Err(Self::unsupported("a read at another program point"));
                 }
                 if *value_type != self.element_type || !self.is_exact_array_cell(pointer) {
@@ -943,7 +935,7 @@ pub(crate) fn frame_fold_applications(
     if left_state == right_state {
         return Ok(0);
     }
-    // Memory states are content-addressed and each records its first derivation,
+    // SymbolicMemory states are content-addressed and each records its first derivation,
     // so the later state's recorded history need not pass through the
     // earlier one: a second store to one cell re-derives from the state
     // before the first. Walk both back to a common state, always stepping
@@ -1000,7 +992,7 @@ fn step_misses_interval(
         step_effect::affects(
             step,
             produced,
-            TrackedResource::Block(&interval.base.block),
+            TrackedResource::Block(&interval.base.base),
             &step_effect::Evidence {
                 assumptions: &PureFactContext::new(),
                 cross_loop_havoc: false,
@@ -1084,21 +1076,21 @@ enum OffsetAtom {
 }
 
 impl LinearOffset {
-    fn of(offset: &PointerOffsetTerm) -> Self {
+    fn of(offset: &AddressOffset) -> Self {
         let mut linear = Self::default();
         let mut pending = vec![(offset, 1i128)];
         while let Some((offset, sign)) = pending.pop() {
             crate::instrumentation::record_deterministic_work(1);
             match offset {
-                PointerOffsetTerm::Constant(value) => linear.constant += sign * i128::from(*value),
-                PointerOffsetTerm::Variable(variable) => {
+                AddressOffset::Constant(value) => linear.constant += sign * i128::from(*value),
+                AddressOffset::Variable(variable) => {
                     linear.add_atom(OffsetAtom::Variable(*variable), sign)
                 }
-                PointerOffsetTerm::Add(left, right) => {
+                AddressOffset::Add(left, right) => {
                     pending.push((left, sign));
                     pending.push((right, sign));
                 }
-                PointerOffsetTerm::Int32Scaled { value, byte_width } => {
+                AddressOffset::Int32Scaled { value, byte_width } => {
                     match value.operand_view().word32_constant() {
                         Some(value) => {
                             linear.constant +=
@@ -1110,7 +1102,7 @@ impl LinearOffset {
                         ),
                     }
                 }
-                PointerOffsetTerm::Int64Scaled {
+                AddressOffset::Int64Scaled {
                     value,
                     byte_width,
                     unsigned,
@@ -1177,11 +1169,11 @@ impl LinearOffset {
 /// `element_width * sext(index) + constant` for `pointer` relative to `base`,
 /// when both are in one block and the delta has that exact form.
 fn scaled_index_from(
-    pointer: &Pointer,
-    base: &Pointer,
+    pointer: &Address,
+    base: &Address,
     element_width: u32,
 ) -> Option<(SharedMachineIntegerTerm, i128)> {
-    if pointer.block != base.block {
+    if pointer.base != base.base {
         return None;
     }
     LinearOffset::of(&pointer.offset)
@@ -1261,7 +1253,7 @@ fn interval_proven_empty(interval: &FoldReadInterval, assumptions: &PureFactCont
 
 /// Whether the `bytes` bytes at `pointer` miss every cell of the interval.
 fn access_misses_interval(
-    pointer: &Pointer,
+    pointer: &Address,
     bytes: u32,
     interval: &FoldReadInterval,
     assumptions: &PureFactContext,
@@ -1296,8 +1288,8 @@ fn access_misses_interval(
     separated_by_stated_fact(
         |range| range_contains_interval(range, interval, assumptions),
         |range| range_contains_access(range, pointer, bytes, assumptions),
-        &interval.base.block,
-        &pointer.block,
+        &interval.base.base,
+        &pointer.base,
         assumptions,
     )
 }
@@ -1312,7 +1304,7 @@ fn range_misses_interval(
     if written.base().blocks_proven_distinct(&interval.base) {
         return true;
     }
-    // Same-block arithmetic uses signed indices; native extents are undecided.
+    // Same-block arithmetic uses signed indices; native spans are undecided.
     if written.wide_bounds().is_some() {
         return false;
     }
@@ -1342,8 +1334,8 @@ fn range_misses_interval(
     separated_by_stated_fact(
         |range| range_contains_interval(range, interval, assumptions),
         |range| range_contains_range(range, written, assumptions),
-        &interval.base.block,
-        &written.base().block,
+        &interval.base.base,
+        &written.base().base,
         assumptions,
     )
 }
@@ -1353,8 +1345,8 @@ fn range_misses_interval(
 fn separated_by_stated_fact(
     holds_interval: impl Fn(&MemoryRange) -> bool,
     holds_write: impl Fn(&MemoryRange) -> bool,
-    interval_block: &PointerBlock,
-    write_block: &PointerBlock,
+    interval_block: &AddressBase,
+    write_block: &AddressBase,
     assumptions: &PureFactContext,
 ) -> bool {
     assumptions
@@ -1402,7 +1394,7 @@ fn range_contains_interval(
 /// The `bytes` bytes at `pointer` lie inside one cell of `range`.
 fn range_contains_access(
     range: &MemoryRange,
-    pointer: &Pointer,
+    pointer: &Address,
     bytes: u32,
     assumptions: &PureFactContext,
 ) -> bool {

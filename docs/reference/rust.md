@@ -1276,9 +1276,11 @@ A `return` from a loop body, from any depth, runs straight to the function's
 exit as a C `return` does, so the loop's invariants are not owed on that path
 and the contract is checked there. A labeled `break 'outer` or `continue
 'outer` from an inner loop leaves each loop it crosses: the inner loop exits
-with the escape recorded in a flag, `__rust_loop_escape_ID`, that the enclosing
-loop tests to `break` or `continue` itself. In a written `preserve`, a body
-branch that returns is a proof-level `if` whose returning arm steps to
+with the escape recorded in a typed temporary that the enclosing loop tests
+to `break` or `continue` itself. Its identity uses the function and MIR loop
+header. Proofs can name it with the function's `.temporary(ID)` selector. In
+a written `preserve`, a body branch that returns is a proof-level `if` whose
+returning arm steps to
 `function.exit`
 ([`design/charon-trial/early-exits`](https://github.com/clicklang/click/blob/master/design/charon-trial/early-exits/exits.click)).
 General iterators remain unsupported; the slice, array, range and `enumerate`
@@ -1308,8 +1310,8 @@ safety of every intermediate addition. It covers empty input and supports
 profiling, audit, and expanded-proof reverification.
 
 A loop's clauses read its pass count as `iterations`, and a Rust local of
-that name as `rust(iterations)`: in a Rust sidecar `rust(name)` names a
-program binding a Click name shadows, where a C sidecar writes `c(name)`
+that name as `program::iterations`: `program::name` names a program binding a
+Click name shadows, in Rust as in C
 ([`design/charon-trial/program-bindings`](https://github.com/clicklang/click/blob/master/design/charon-trial/program-bindings/bindings.click)).
 
 ## Slice iterator loops
@@ -1424,19 +1426,19 @@ ranks the loop, and after it the exit guard gives `iter.start >= iter.end`.
 verifies counts over `u32`, `i32` `a..b` and `i64` ranges, the last byte a
 loop over `0..bytes.len()` reads, and nested ranges.
 
-An inclusive range `a..=b`, which the compiler builds with
-`RangeInclusive::new`, is read through `RangeInclusive`'s own `iter.start()`
-and `iter.end()`; its state also holds `iter_done`, whether it has yielded
-`b`, which its proofs still name while it awaits a Rust form.
-It yields while `iter_done == 0 and iter_start <= iter_end`; each iteration
-yields `iter_start` and then, as an ordinary branch of the loop body,
-advances it while `iter_start < iter_end` and sets `iter_done` at
-`iter_end`, so `iter_start` never passes the end, even at the type's
-maximum. `decreases iter_end - iter_start + 1 - iter_done` ranks the loop,
-and `total == iter_start + iter_done` is the count of values yielded
-([`design/charon-trial/inclusive-ranges`](https://github.com/clicklang/click/blob/master/design/charon-trial/inclusive-ranges/inclusive.click),
-including `0u8..=255`). `.rev()`, `.step_by()` and other range adapters
-remain later work.
+For an inclusive range `a..=b`, proofs use `iter.is_empty()` to tell
+whether there is another item, and `iter.start()` and `iter.end()` to
+read the bounds while the range is nonempty. A reversed range starts
+empty. A nonempty range becomes empty after yielding its endpoint, even
+when that endpoint is the largest value of the integer type.
+
+The counting proofs in
+[`design/charon-trial/inclusive-ranges`](https://github.com/clicklang/click/blob/master/design/charon-trial/inclusive-ranges/inclusive.click)
+rank the loop by the original length minus the number counted. While the
+range is nonempty, its start is the next value to count. Once it is
+empty, the count equals the original length. This also covers
+`0u8..=255`, whose count is 256. `.rev()`, `.step_by()` and other range
+adapters remain later work.
 
 ## Primitive unsigned conversions
 

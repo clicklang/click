@@ -737,7 +737,7 @@ impl<'a> Proof<'a> {
             }
             // Citing a stated range cites both of its halves, exactly as in
             // a fixed-state `apply using`.
-            crate::surface::proof::theorem_application::cite_range_extent_guards(
+            crate::surface::proof::theorem_application::cite_range_span_guards(
                 premise,
                 &mut explicit_premises,
                 |guard| self.facts().exact_available_across_effects(guard, &[]),
@@ -957,11 +957,6 @@ impl<'a> Proof<'a> {
         if let ProofContext::Pure(context) = self.context.as_ref() {
             let index = match &choice.source {
                 ProofFactSource::Requirement(index) => *index,
-                ProofFactSource::Invariant(_) => {
-                    return Err(
-                        self.step_error("pure `choose` does not have a loop invariant source")
-                    );
-                }
             };
             if matches!(
                 context.theorem_context.requires.get(index),
@@ -1002,10 +997,6 @@ impl<'a> Proof<'a> {
             return Err(self.step_error(format!("`{}` is already in scope", choice.name)));
         }
 
-        if let ProofFactSource::Invariant(index) = choice.source {
-            return self.apply_fixed_state_invariant_choose(choice, &view, index);
-        }
-
         let source_ordinal = match &choice.source {
             ProofFactSource::Requirement(index) => {
                 if *index >= view.original_requirements.len() {
@@ -1016,7 +1007,6 @@ impl<'a> Proof<'a> {
                 }
                 *index
             }
-            ProofFactSource::Invariant(_) => unreachable!("handled above"),
         };
         // A caller source always names the immutable entry vector from which
         // its principal fact index was minted, including at function exit.
@@ -1260,18 +1250,41 @@ impl<'a> Proof<'a> {
         // The opened body is spelled as written, under the names just bound,
         // for premise lookups; see `ProofLocals::surface_facts`.
         let mut written_body = Some(&binding.proposition);
-        for _ in &binding.bindings {
+        let mut substitutions = BTreeMap::new();
+        for (output, click_type) in &binding.bindings {
             written_body = match written_body {
-                Some(ClickProposition::Exists { body, .. }) => Some(body.as_ref()),
+                Some(ClickProposition::Exists { name, body, .. }) => {
+                    if name.written() == Some(output) {
+                        substitutions.remove(name);
+                    } else {
+                        let replacement = match click_type {
+                            ClickType::Program(_) | ClickType::CObjectPointer { .. } => {
+                                ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                                    output.clone().into(),
+                                ))
+                            }
+                            _ => ContractExpression::Binding(output.clone()),
+                        };
+                        substitutions.insert(name.clone(), replacement);
+                    }
+                    Some(body.as_ref())
+                }
                 _ => None,
             };
         }
-        // A spelling is an index, not authority: a body whose written shape
-        // does not record is left unspelled rather than failing the step.
         if let (Some(written_body), Some(body)) = (written_body, checked.last()) {
-            let mut spelled = locals.surface_facts.clone();
-            if spelled.record_lowering(written_body, body).is_ok() {
-                locals.surface_facts = spelled;
+            let renamed;
+            let spelling = if substitutions.is_empty() {
+                Some(written_body)
+            } else {
+                renamed = substitute_click_proposition(written_body, &substitutions).ok();
+                renamed.as_ref()
+            };
+            if let Some(spelling) = spelling {
+                let mut spelled = locals.surface_facts.clone();
+                if spelled.record_lowering(spelling, body).is_ok() {
+                    locals.surface_facts = spelled;
+                }
             }
         }
         let mut transition = self.checked_fact_transition(locals, facts, false, added, checked);
@@ -1410,96 +1423,6 @@ impl<'a> Proof<'a> {
         }))
     }
 
-    fn apply_fixed_state_invariant_choose(
-        &self,
-        choice: &ProofChoice,
-        view: &FixedStateOperationView<'_>,
-        index: usize,
-    ) -> Result<CheckedFocusedTransition, ClickError> {
-        let ProofContext::Execution(context) = self.context.as_ref() else {
-            return Err(self.step_error(
-                "`choose(... from invariant N)` is available only in a loop preservation proof",
-            ));
-        };
-        let bundle = context
-            .constants
-            .invariant_body_context
-            .as_deref()
-            .ok_or_else(|| {
-                self.step_error(
-                    "`choose(... from invariant N)` is available only in a loop preservation proof",
-                )
-            })?;
-        if index >= bundle.declared_invariant_surfaces.len() {
-            return Err(self.step_error(format!(
-                "invariant {index} is out of range; loop has {} invariant(s)",
-                bundle.declared_invariant_surfaces.len()
-            )));
-        }
-        let iteration_index = bundle.declared_invariant_surfaces.len() + index;
-        let surface = bundle
-            .loop_head_premises
-            .get(iteration_index)
-            .ok_or_else(|| {
-                self.step_error(format!(
-                    "invariant {index} has no retained iteration-entry spelling"
-                ))
-            })?;
-        let source = view
-            .surface_propositions
-            .available_kernel_matching(surface, |kernel| self.facts().contains_top_level(kernel))
-            .cloned()
-            .ok_or_else(|| {
-                self.step_error(format!(
-                    "invariant {index} is not available at this proof point"
-                ))
-            })?;
-        let Proposition::Exists {
-            var,
-            sort: Sort::Algebraic(algebraic_type),
-            body,
-            ..
-        } = source
-        else {
-            return Err(self.step_error(
-                "`choose(... from invariant N)` currently requires an algebraic existential invariant",
-            ));
-        };
-        let chosen_variable = self
-            .state
-            .fresh_existential_witness(&body, Variable(self.state().locals().next_choice_variable))
-            .map_err(|_| self.step_error("`choose` could not allocate a fresh witness"))?;
-        let chosen = crate::kernel::AlgebraicTerm {
-            algebraic_type: algebraic_type.clone(),
-            node: crate::kernel::AlgebraicTermNode::Variable(chosen_variable),
-        };
-        let fact = crate::kernel::reasoning::substitute_algebraic_variable_in_proposition(
-            &body, var, &chosen,
-        );
-        let mut locals = self.state().locals().clone();
-        locals.set_values(locals.values.with_inserted(
-            choice.name.clone(),
-            ContractExpression::Binding(choice.name.clone()),
-        ));
-        locals.set_algebraic_values(locals.algebraic_values.with_inserted(
-            choice.name.clone(),
-            crate::kernel::SpecAlgebraicExpression {
-                algebraic_type,
-                node: crate::kernel::SpecAlgebraicExpressionNode::Variable(chosen_variable),
-            },
-        ));
-        locals.next_choice_variable = chosen_variable.0.saturating_add(1);
-        let added = (!self.facts().contains_top_level(&fact))
-            .then(|| fact.clone())
-            .into_iter()
-            .collect();
-        let facts = self
-            .facts()
-            .with_kernel_checked_fact(fact.clone())
-            .with_reserved_variables([chosen_variable]);
-        Ok(self.checked_fact_transition(locals, facts, false, added, vec![fact]))
-    }
-
     fn apply_pure_integer_choose(
         &self,
         choice: &ProofChoice,
@@ -1525,9 +1448,6 @@ impl<'a> Proof<'a> {
         }
         let index = match &choice.source {
             ProofFactSource::Requirement(index) => *index,
-            ProofFactSource::Invariant(_) => {
-                return Err(self.step_error("pure `choose` does not have a loop invariant source"));
-            }
         };
         let source = context
             .theorem_context
@@ -1601,9 +1521,6 @@ impl<'a> Proof<'a> {
         }
         let index = match &choice.source {
             ProofFactSource::Requirement(index) => *index,
-            ProofFactSource::Invariant(_) => {
-                return Err(self.step_error("pure `choose` does not have a loop invariant source"));
-            }
         };
         let source = context
             .theorem_context
@@ -1718,7 +1635,7 @@ impl<'a> Proof<'a> {
         let array_refs = array_refs_for_parameters(
             view.parameter_binding.parameters,
             &values,
-            view.fixed_state.state.memory(),
+            &view.fixed_state.state.program_point(),
         );
         let (values, array_refs) =
             contract_environment_at_state(&values, &array_refs, view.fixed_state.state);
@@ -2346,7 +2263,7 @@ impl<'a> Proof<'a> {
             let array_refs = array_refs_for_parameters(
                 view.parameter_binding.parameters,
                 &parameter_values,
-                view.fixed_state.state.memory(),
+                &view.fixed_state.state.program_point(),
             );
             let (values, array_refs) = contract_environment_at_state(
                 &parameter_values,
@@ -2427,7 +2344,7 @@ impl<'a> Proof<'a> {
         let array_refs = array_refs_for_parameters(
             view.parameter_binding.parameters,
             &parameter_values,
-            view.fixed_state.state.memory(),
+            &view.fixed_state.state.program_point(),
         );
         let (values, array_refs) =
             contract_environment_at_state(&parameter_values, &array_refs, view.fixed_state.state);
@@ -2957,12 +2874,12 @@ impl<'a> Proof<'a> {
     /// inside the outermost one. The labels were derived from the exact
     /// source shape and checked outcome when the outcome goal was created,
     /// not from a user assertion.
-    pub(in crate::surface::proof) fn checked_call_returned(
+    pub(in crate::surface::proof) fn checked_call_outcome(
         &self,
         depth: usize,
-    ) -> Result<bool, ClickError> {
+    ) -> Result<&CallOutcomeEdge, ClickError> {
         self.focused_outcome_data()
-            .and_then(|data| data.call_routes.get(depth).copied())
+            .and_then(|data| data.call_routes.get(depth))
             .ok_or_else(|| {
                 self.step_error("`outcomes` requires a checked returned/threw call edge")
             })
@@ -3270,7 +3187,7 @@ impl<'a> Proof<'a> {
 
     /// Report the actual native checker result separately from source proof
     /// construction. Search-stage failures are retained by the solve driver;
-    /// absence of a certificate is not evidence of a missing extent premise.
+    /// absence of a certificate is not evidence of a missing span premise.
     pub(in crate::surface::proof) fn unproved_loadable_range_goal_reason(&self) -> Option<String> {
         let goal = self.surface_goal()?;
         loadable_surface_range_endpoints(goal)?;

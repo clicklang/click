@@ -45,7 +45,7 @@ int32 use_probe(int32 *cell) {
     mark before_probe;
     step();
     step();
-    if c(r) == 0 {
+    if program::r == 0 {
         have cell[0] == 0 and cell[1] == at(before_probe, cell[0]);
     } else {
         have cell[0] == 0 and cell[1] == at(before_probe, cell[0]);

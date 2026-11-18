@@ -766,7 +766,7 @@ fn source_range_universal_is_supported(proposition: &Proposition) -> bool {
         return false;
     };
     *sort == Sort::ProgramInt32
-        && matches!(base.block, crate::kernel::PointerBlock::ExternalArgument)
+        && matches!(base.base, crate::kernel::AddressBase::ExternalArgument)
         && is_one_byte_external_range(bytes)
 }
 
@@ -803,8 +803,7 @@ fn has_explicit_existential_byte_range(proposition: &Proposition) -> bool {
                 work.push(right);
             }
             Proposition::MemoryLoadable { base, bytes, .. }
-                if base.block == crate::kernel::PointerBlock::ExternalArgument
-                    && *bytes == width =>
+                if base.base == crate::kernel::AddressBase::ExternalArgument && *bytes == width =>
             {
                 return true;
             }
@@ -868,7 +867,7 @@ pub(in crate::surface) fn source_backed_requirement_is_supported(
         Condition(&'a ConditionTerm),
         Bitvector(&'a MachineTerm),
         Shared(&'a crate::kernel::KernelTerm),
-        PointerOffset(&'a PointerOffsetTerm),
+        PointerOffset(&'a AddressOffset),
     }
     let mut work = vec![Work::Proposition(proposition, 0)];
     let mut visited = 0;
@@ -920,7 +919,7 @@ pub(in crate::surface) fn source_backed_requirement_is_supported(
             }
             Work::Proposition(Proposition::MemoryLoadable { base, bytes, .. }, _)
                 if quantified_external_range
-                    && matches!(base.block, crate::kernel::PointerBlock::ExternalArgument)
+                    && matches!(base.base, crate::kernel::AddressBase::ExternalArgument)
                     && (is_one_byte_external_range(bytes) || explicit_range) =>
             {
                 saw_external_range = true;
@@ -935,7 +934,7 @@ pub(in crate::surface) fn source_backed_requirement_is_supported(
                 },
                 _,
             ) if explicit_range
-                && matches!(pointer.block, crate::kernel::PointerBlock::ExternalArgument) =>
+                && matches!(pointer.base, crate::kernel::AddressBase::ExternalArgument) =>
             {
                 work.push(Work::PointerOffset(&pointer.offset));
             }
@@ -1029,20 +1028,20 @@ pub(in crate::surface) fn source_backed_requirement_is_supported(
                 work.push(Work::Bitvector(body));
             }
             Work::Bitvector(_) => return Ok(false),
-            Work::PointerOffset(PointerOffsetTerm::Constant(_)) => {}
-            Work::PointerOffset(PointerOffsetTerm::Variable(variable)) => {
+            Work::PointerOffset(AddressOffset::Constant(_)) => {}
+            Work::PointerOffset(AddressOffset::Variable(variable)) => {
                 if crate::kernel::is_load_variable(variable)
                     && crate::kernel::registered_load_for_variable(variable).is_none()
                 {
                     return Ok(false);
                 }
             }
-            Work::PointerOffset(PointerOffsetTerm::Add(left, right)) => {
+            Work::PointerOffset(AddressOffset::Add(left, right)) => {
                 work.push(Work::PointerOffset(right));
                 work.push(Work::PointerOffset(left));
             }
-            Work::PointerOffset(PointerOffsetTerm::Int32Scaled { value, .. })
-            | Work::PointerOffset(PointerOffsetTerm::Int64Scaled { value, .. }) => {
+            Work::PointerOffset(AddressOffset::Int32Scaled { value, .. })
+            | Work::PointerOffset(AddressOffset::Int64Scaled { value, .. }) => {
                 if let Some(root) = value.shared_operand() {
                     work.push(Work::Shared(root));
                 } else {
@@ -1088,9 +1087,9 @@ fn registered_static_load_matches_state(
         return false;
     }
     matches!(
-        pointer.block,
-        crate::kernel::PointerBlock::Concrete(ref block)
-            if PointerBlock::is_static_name(block) || PointerBlock::is_global_name(block)
+        pointer.base,
+        crate::kernel::AddressBase::Concrete(ref block)
+            if AddressBase::is_static_name(block) || AddressBase::is_global_name(block)
     )
 }
 
@@ -1107,9 +1106,9 @@ fn registered_static_memory_load_matches_state(
         return false;
     };
     crate::kernel::MemoryStateIdentity::of(origin.memory()) == source_memory_state
-        && matches!(read.pointer.block,
-            PointerBlock::Concrete(ref block)
-                if PointerBlock::is_static_name(block) || PointerBlock::is_global_name(block))
+        && matches!(read.pointer.base,
+            AddressBase::Concrete(ref block)
+                if AddressBase::is_static_name(block) || AddressBase::is_global_name(block))
 }
 
 /// Whether this non-assumable call obligation is eligible for the
@@ -1117,7 +1116,7 @@ fn registered_static_memory_load_matches_state(
 /// this gate so neither route can silently derive the same source requirement.
 pub(in crate::surface) fn source_backed_requirement_should_intercept(
     obligation: &ProofObligation,
-    current_memory: &crate::kernel::Memory,
+    current_memory: &crate::kernel::SymbolicMemory,
 ) -> Result<bool, ClickError> {
     if obligation.is_assumable() {
         return Ok(false);
@@ -1256,11 +1255,11 @@ mod tests {
     #[test]
     fn static_load_capability_requires_registered_origin_epoch() {
         let memory = crate::kernel::intern_memory(
-            crate::kernel::Memory::new().with_block("static:test:values#static0", 16),
+            crate::kernel::SymbolicMemory::new().with_block("static:test:values#static0", 16),
         );
-        let pointer = crate::kernel::Pointer {
-            block: crate::kernel::PointerBlock::Concrete("static:test:values#static0".into()),
-            offset: crate::kernel::PointerOffsetTerm::Constant(0),
+        let pointer = crate::kernel::Address {
+            base: crate::kernel::AddressBase::Concrete("static:test:values#static0".into()),
+            offset: crate::kernel::AddressOffset::Constant(0),
         };
         // The named form has to be the same read as the spelled `MemoryLoad`
         // alternative below: its kind, and the width that term's naming
@@ -1314,9 +1313,9 @@ mod tests {
             .unwrap()
         );
 
-        let dynamic_pointer = crate::kernel::Pointer {
-            block: crate::kernel::PointerBlock::Concrete("heap:test".into()),
-            offset: crate::kernel::PointerOffsetTerm::Constant(0),
+        let dynamic_pointer = crate::kernel::Address {
+            base: crate::kernel::AddressBase::Concrete("heap:test".into()),
+            offset: crate::kernel::AddressOffset::Constant(0),
         };
         let dynamic_variable = crate::kernel::load_variable_for_cell_with_origin(
             &memory,
@@ -1365,13 +1364,13 @@ mod tests {
 
     #[test]
     fn quantified_external_range_capability_is_frontier_exact() {
-        let memory = crate::kernel::Memory::new();
-        let pointer = crate::kernel::Pointer {
-            block: crate::kernel::PointerBlock::ExternalArgument,
-            offset: crate::kernel::PointerOffsetTerm::Constant(0),
+        let memory = crate::kernel::SymbolicMemory::new();
+        let pointer = crate::kernel::Address {
+            base: crate::kernel::AddressBase::ExternalArgument,
+            offset: crate::kernel::AddressOffset::Constant(0),
         };
         let range = Proposition::MemoryLoadable {
-            memory: crate::kernel::Memory::new(),
+            memory: crate::kernel::SymbolicMemory::new(),
             base: pointer,
             bytes: MachineTerm::constant(1),
             wide: false,
@@ -1521,7 +1520,7 @@ mod tests {
             && let Proposition::MemoryLoadable { base, .. } = consequent.as_mut()
         {
             base.offset =
-                PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(1 << 40)), 1);
+                AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(1 << 40)), 1);
         }
         let unregistered_guarded = Proposition::Exists {
             name: "len".to_string(),

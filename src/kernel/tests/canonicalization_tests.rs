@@ -31,12 +31,12 @@ fn collect_offset_load_variables_from_value(
 
 #[test]
 fn floating_values_keep_their_declared_width_and_opaque_payload() {
-    let float_pointer = Pointer {
-        block: "float-storage".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let float_pointer = Address {
+        base: "float-storage".into(),
+        offset: AddressOffset::Constant(0),
     };
     let float_value = ProgramValue::Float32(MachineTerm::constant(0x8000_0000));
-    let float_memory = Memory::new()
+    let float_memory = SymbolicMemory::new()
         .with_block("float-storage", 4)
         .store(float_pointer.clone(), float_value.clone());
     assert_eq!(float_value.program_type(), ProgramType::Float32);
@@ -53,12 +53,12 @@ fn floating_values_keep_their_declared_width_and_opaque_payload() {
         ProgramType::Float32
     );
 
-    let double_pointer = Pointer {
-        block: "double-storage".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let double_pointer = Address {
+        base: "double-storage".into(),
+        offset: AddressOffset::Constant(0),
     };
     let double_value = ProgramValue::Float64(MachineTerm::uint64_constant(0x7ff8_0000_0000_0001));
-    let double_memory = Memory::new()
+    let double_memory = SymbolicMemory::new()
         .with_block("double-storage", 8)
         .store(double_pointer.clone(), double_value.clone());
     assert_eq!(double_value.program_type(), ProgramType::Float64);
@@ -136,17 +136,16 @@ fn collect_offset_load_variables_from_term(
 }
 
 fn collect_offset_load_variables_from_offset(
-    offset: &PointerOffsetTerm,
+    offset: &AddressOffset,
     load_variables: &mut BTreeSet<Variable>,
 ) {
     match offset {
-        PointerOffsetTerm::Constant(_) | PointerOffsetTerm::Variable(_) => {}
-        PointerOffsetTerm::Add(left, right) => {
+        AddressOffset::Constant(_) | AddressOffset::Variable(_) => {}
+        AddressOffset::Add(left, right) => {
             collect_offset_load_variables_from_offset(left, load_variables);
             collect_offset_load_variables_from_offset(right, load_variables);
         }
-        PointerOffsetTerm::Int32Scaled { value, .. }
-        | PointerOffsetTerm::Int64Scaled { value, .. } => {
+        AddressOffset::Int32Scaled { value, .. } | AddressOffset::Int64Scaled { value, .. } => {
             assert_scaled_index_free_of_raw_loads(value.structural_value(), load_variables);
         }
     }
@@ -251,15 +250,17 @@ fn assert_load_variables_have_defining_facts(
 /// the fact stream, is what ties a load variable to its cell.
 #[test]
 fn index_loaded_from_an_opaque_cell_takes_a_canonical_offset() {
-    let len_cell = Pointer {
-        block: "len".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let len_cell = Address {
+        base: "len".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let data = Pointer {
-        block: "data".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let data = Address {
+        base: "data".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let memory = Memory::new().with_block("len", 4).with_block("data", 64);
+    let memory = SymbolicMemory::new()
+        .with_block("len", 4)
+        .with_block("data", 64);
     let state = ExecutionState::new()
         .with_local("len_ptr", ProgramValue::pointer(len_cell.clone()))
         .with_local("data", ProgramValue::pointer(data))
@@ -306,11 +307,11 @@ fn index_loaded_from_an_opaque_cell_takes_a_canonical_offset() {
 /// offset.
 #[test]
 fn pointer_loaded_from_an_opaque_cell_is_named_by_its_read() {
-    let cell = Pointer {
-        block: "pp".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let cell = Address {
+        base: "pp".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let memory = Memory::new().with_block("pp", 4);
+    let memory = SymbolicMemory::new().with_block("pp", 4);
     let state = ExecutionState::new()
         .with_local("pp", ProgramValue::pointer(cell.clone()))
         .with_memory(memory)
@@ -339,7 +340,7 @@ fn pointer_loaded_from_an_opaque_cell_is_named_by_its_read() {
             && let Some(read) = pointer.pointer().as_loaded_value()
         {
             assert_eq!(read.defining_address, cell);
-            assert_eq!(read.displacement, PointerOffsetTerm::Constant(0));
+            assert_eq!(read.displacement, AddressOffset::Constant(0));
             saw_a_named_read = true;
         }
     }
@@ -352,12 +353,12 @@ fn pointer_loaded_from_an_opaque_cell_is_named_by_its_read() {
 // --- canonical form: determinism and idempotence --------------------------
 
 fn unresolved_canonicalization_test_load() -> MachineTerm {
-    let memory = Memory::new().with_block("canonical-shapes", 8);
+    let memory = SymbolicMemory::new().with_block("canonical-shapes", 8);
     MachineTerm::MemoryLoad(
         ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
-        Box::new(Pointer {
-            block: "canonical-shapes".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        Box::new(Address {
+            base: "canonical-shapes".into(),
+            offset: AddressOffset::Constant(0),
         }),
         crate::kernel::LoadKind::Int32,
     )
@@ -561,11 +562,11 @@ fn canonical_term_is_independent_of_contextual_equalities() {
 
 #[test]
 fn canonical_term_resolves_equal_loads_to_one_form() {
-    let pointer = Pointer {
-        block: "cells".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: "cells".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let base = Memory::new().with_block("cells", 4);
+    let base = SymbolicMemory::new().with_block("cells", 4);
     // The same unresolved load, read from two states that differ only by
     // a block this load cannot observe.
     let drifted = base.clone().with_block("unrelated", 4);
@@ -608,14 +609,16 @@ fn canonical_term_resolves_equal_loads_to_one_form() {
 
 #[test]
 fn atomic_canonicalization_reaches_loads_in_every_condition_region() {
-    let pointer = Pointer {
-        block: "condition-cells".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: "condition-cells".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let memory = Memory::new().with_block("condition-cells", 4).store(
-        pointer.clone(),
-        ProgramValue::Int32(MachineTerm::constant(7)),
-    );
+    let memory = SymbolicMemory::new()
+        .with_block("condition-cells", 4)
+        .store(
+            pointer.clone(),
+            ProgramValue::Int32(MachineTerm::constant(7)),
+        );
     let load = MachineTerm::MemoryLoad(
         ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
         Box::new(pointer),
@@ -633,8 +636,8 @@ fn atomic_canonicalization_reaches_loads_in_every_condition_region() {
     };
     let pointer_offset = MachineTerm::If {
         condition: Box::new(ConditionTerm::PointerOffsetEqual(
-            Box::new(PointerOffsetTerm::scaled_int32_node(load.clone(), 4)),
-            Box::new(PointerOffsetTerm::Constant(28)),
+            Box::new(AddressOffset::scaled_int32_node(load.clone(), 4)),
+            Box::new(AddressOffset::Constant(28)),
         )),
         then_term: Box::new(MachineTerm::constant(4)),
         else_term: Box::new(MachineTerm::constant(5)),
@@ -657,17 +660,17 @@ fn atomic_canonicalization_reaches_loads_in_every_condition_region() {
     assert!(matches!(
         condition.as_ref(),
         ConditionTerm::PointerOffsetEqual(left, _)
-            if left.as_ref() == &PointerOffsetTerm::scaled_int32_node(load.clone(), 4)
+            if left.as_ref() == &AddressOffset::scaled_int32_node(load.clone(), 4)
     ));
 }
 
 #[test]
 fn representational_load_equality_holds_beyond_the_former_depth_preflight() {
-    let pointer = Pointer {
-        block: "deep-cells".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: "deep-cells".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let base = Memory::new().with_block("deep-cells", 4);
+    let base = SymbolicMemory::new().with_block("deep-cells", 4);
     let drifted = base.clone().with_block("unrelated", 4);
     let mut left = MachineTerm::MemoryLoad(
         ProgramPoint::at(&(crate::kernel::intern_memory(base))),
@@ -714,14 +717,14 @@ fn representational_load_equality_holds_beyond_the_former_depth_preflight() {
 
 #[test]
 fn shared_offsets_retain_state_identity_through_canonicalization() {
-    let pointer = Pointer {
-        block: "cells".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let pointer = Address {
+        base: "cells".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let base = Memory::new().with_block("cells", 4);
+    let base = SymbolicMemory::new().with_block("cells", 4);
     let drifted = base.clone().with_block("unrelated", 4);
-    let scaled = |memory: Memory| {
-        PointerOffsetTerm::scaled_int32_node(
+    let scaled = |memory: SymbolicMemory| {
+        AddressOffset::scaled_int32_node(
             MachineTerm::MemoryLoad(
                 ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                 Box::new(pointer.clone()),
@@ -739,11 +742,11 @@ fn shared_offsets_retain_state_identity_through_canonicalization() {
     let retained = crate::kernel::eval::canonical_offset_term(&scaled(base.clone()));
     assert_eq!(retained, scaled(base.clone()));
     // Distinct cells stay distinct.
-    let other = Pointer {
-        block: "cells".into(),
-        offset: PointerOffsetTerm::Constant(4),
+    let other = Address {
+        base: "cells".into(),
+        offset: AddressOffset::Constant(4),
     };
-    let other_scaled = PointerOffsetTerm::scaled_int32_node(
+    let other_scaled = AddressOffset::scaled_int32_node(
         MachineTerm::MemoryLoad(
             ProgramPoint::at(&(crate::kernel::intern_memory(base.clone()))),
             Box::new(other),
@@ -761,10 +764,9 @@ fn shared_offsets_retain_state_identity_through_canonicalization() {
 fn canonical_offset_term_is_complete_and_idempotent_at_multiple_depths() {
     for depth in [64, 128, 256] {
         let mut offset =
-            PointerOffsetTerm::scaled_int32_node(unresolved_canonicalization_test_load(), 4);
+            AddressOffset::scaled_int32_node(unresolved_canonicalization_test_load(), 4);
         for _ in 0..depth {
-            offset =
-                PointerOffsetTerm::Add(Box::new(offset), Box::new(PointerOffsetTerm::Constant(1)));
+            offset = AddressOffset::Add(Box::new(offset), Box::new(AddressOffset::Constant(1)));
         }
 
         let canonical = crate::kernel::eval::canonical_offset_term(&offset);
@@ -774,13 +776,13 @@ fn canonical_offset_term_is_complete_and_idempotent_at_multiple_depths() {
             "offset canonicalization was not idempotent at depth {depth}",
         );
         let mut leaf = &canonical;
-        while let PointerOffsetTerm::Add(left, _) = leaf {
+        while let AddressOffset::Add(left, _) = leaf {
             leaf = left;
         }
         assert!(
             matches!(
                 leaf,
-                PointerOffsetTerm::Int32Scaled { value, .. }
+                AddressOffset::Int32Scaled { value, .. }
                     if value.structural_value() == &unresolved_canonicalization_test_load()
             ),
             "the deepest scaled index should retain its read at depth {depth}: {leaf:?}",
@@ -790,12 +792,12 @@ fn canonical_offset_term_is_complete_and_idempotent_at_multiple_depths() {
 
 #[test]
 fn pointer_offset_add_coalesces_nested_constant_displacements() {
-    let base = PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(17)), 4);
-    let nested = PointerOffsetTerm::add(
-        PointerOffsetTerm::add(base.clone(), PointerOffsetTerm::Constant(4)),
-        PointerOffsetTerm::Constant(4),
+    let base = AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(17)), 4);
+    let nested = AddressOffset::add(
+        AddressOffset::add(base.clone(), AddressOffset::Constant(4)),
+        AddressOffset::Constant(4),
     );
-    let flat = PointerOffsetTerm::add(base, PointerOffsetTerm::Constant(8));
+    let flat = AddressOffset::add(base, AddressOffset::Constant(8));
 
     assert_eq!(nested, flat);
 }
@@ -805,21 +807,21 @@ fn load_variables_are_congruent_through_ground_index_equalities() {
     // `data[index]` with `index == 0` in scope is the cell `data[0]`: the
     // two structural reads retain different addresses. Congruence in the
     // equality graph identifies them only with the required index equality.
-    let memory = crate::kernel::intern_memory(Memory::new().with_block("data", 8));
+    let memory = crate::kernel::intern_memory(SymbolicMemory::new().with_block("data", 8));
     let index = MachineTerm::Variable(Variable(7));
     let indexed = MachineTerm::MemoryLoad(
         ProgramPoint::at(&memory),
-        Box::new(Pointer {
-            block: "data".into(),
-            offset: PointerOffsetTerm::scaled_int32_node(index.clone(), 4),
+        Box::new(Address {
+            base: "data".into(),
+            offset: AddressOffset::scaled_int32_node(index.clone(), 4),
         }),
         crate::kernel::LoadKind::Int32,
     );
     let first = MachineTerm::MemoryLoad(
         ProgramPoint::at(&memory),
-        Box::new(Pointer {
-            block: "data".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        Box::new(Address {
+            base: "data".into(),
+            offset: AddressOffset::Constant(0),
         }),
         crate::kernel::LoadKind::Int32,
     );
@@ -859,9 +861,9 @@ fn load_variables_are_congruent_through_ground_index_equalities() {
     let other_epoch = crate::kernel::intern_memory(memory.as_ref().clone().with_call_memory_havoc(
         Variable(8),
         &[MemoryRange::new(
-            Pointer {
-                block: "data".into(),
-                offset: PointerOffsetTerm::Constant(0),
+            Address {
+                base: "data".into(),
+                offset: AddressOffset::Constant(0),
             },
             MachineTerm::constant(0),
             MachineTerm::constant(1),
@@ -871,9 +873,9 @@ fn load_variables_are_congruent_through_ground_index_equalities() {
     ));
     let other_epoch_load = crate::kernel::eval::canonical_term(&MachineTerm::MemoryLoad(
         ProgramPoint::at(&other_epoch),
-        Box::new(Pointer {
-            block: "data".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        Box::new(Address {
+            base: "data".into(),
+            offset: AddressOffset::Constant(0),
         }),
         crate::kernel::LoadKind::Int32,
     ));
@@ -891,9 +893,9 @@ fn load_variables_are_congruent_through_ground_index_equalities() {
 
     let other_block_load = crate::kernel::eval::canonical_term(&MachineTerm::MemoryLoad(
         ProgramPoint::at(&memory),
-        Box::new(Pointer {
-            block: "other-data".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        Box::new(Address {
+            base: "other-data".into(),
+            offset: AddressOffset::Constant(0),
         }),
         crate::kernel::LoadKind::Int32,
     ));
@@ -916,20 +918,20 @@ fn substitution_reaches_through_a_load_variable_with_a_bound_index() {
     // the load variable's address. Instantiating `k := 0` must reach through
     // the load variable and produce the load variable used by a direct read
     // of `p[0]`.
-    let memory = crate::kernel::intern_memory(Memory::new().with_block("p", 12));
+    let memory = crate::kernel::intern_memory(SymbolicMemory::new().with_block("p", 12));
     let bound = Variable(3_000_000);
-    let cell = |offset: PointerOffsetTerm| {
+    let cell = |offset: AddressOffset| {
         MachineTerm::MemoryLoad(
             ProgramPoint::at(&memory),
-            Box::new(Pointer {
-                block: "p".into(),
+            Box::new(Address {
+                base: "p".into(),
                 offset,
             }),
             crate::kernel::LoadKind::Int32,
         )
     };
     let indexed_load_variable = crate::kernel::eval::canonical_term(&cell(
-        PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(bound), 4),
+        AddressOffset::scaled_int32_node(MachineTerm::Variable(bound), 4),
     ));
     assert!(matches!(indexed_load_variable, MachineTerm::MemoryLoad(..)));
     let instantiated = crate::kernel::reasoning::substitute_bitvector_variable(
@@ -939,7 +941,7 @@ fn substitution_reaches_through_a_load_variable_with_a_bound_index() {
     );
     assert_eq!(
         instantiated,
-        crate::kernel::eval::canonical_term(&cell(PointerOffsetTerm::Constant(0)))
+        crate::kernel::eval::canonical_term(&cell(AddressOffset::Constant(0)))
     );
     // Substituting an unrelated variable leaves the load variable untouched.
     assert_eq!(
@@ -957,20 +959,20 @@ fn load_variables_compare_as_loads_under_bounds_pinned_indices() {
     // `p[j]` and `p[2]` are one cell when `j <= 2` and `not (j < 2)`: no
     // recorded equality mentions the index, so the comparison must view the
     // load variables as their loads and decide the addresses from bounds.
-    let memory = crate::kernel::intern_memory(Memory::new().with_block("p", 12));
+    let memory = crate::kernel::intern_memory(SymbolicMemory::new().with_block("p", 12));
     let j = MachineTerm::Variable(Variable(7));
-    let cell = |offset: PointerOffsetTerm| {
+    let cell = |offset: AddressOffset| {
         crate::kernel::eval::canonical_term(&MachineTerm::MemoryLoad(
             ProgramPoint::at(&memory),
-            Box::new(Pointer {
-                block: "p".into(),
+            Box::new(Address {
+                base: "p".into(),
                 offset,
             }),
             crate::kernel::LoadKind::Int32,
         ))
     };
-    let indexed = cell(PointerOffsetTerm::scaled_int32_node(j.clone(), 4));
-    let third = cell(PointerOffsetTerm::Constant(8));
+    let indexed = cell(AddressOffset::scaled_int32_node(j.clone(), 4));
+    let third = cell(AddressOffset::Constant(8));
     assert_ne!(indexed, third);
     // The index is a free variable of the load variable's denotation.
     let mut variables = BTreeSet::new();
@@ -996,18 +998,18 @@ fn load_variable_free_variables_include_its_state_cells() {
     // denotes a term mentioning that counter: goal-directed substitutions
     // and other variable-sensitive rules must see it through the load.
     let counter = Variable(11);
-    let written = Memory::new().with_block("p", 12).store(
-        Pointer {
-            block: "p".into(),
-            offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(counter), 4),
+    let written = SymbolicMemory::new().with_block("p", 12).store(
+        Address {
+            base: "p".into(),
+            offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(counter), 4),
         },
         ProgramValue::Int32(MachineTerm::constant(5)),
     );
     let load_variable = crate::kernel::eval::canonical_term(&MachineTerm::MemoryLoad(
         ProgramPoint::at(&(crate::kernel::intern_memory(written))),
-        Box::new(Pointer {
-            block: "p".into(),
-            offset: PointerOffsetTerm::Constant(8),
+        Box::new(Address {
+            base: "p".into(),
+            offset: AddressOffset::Constant(8),
         }),
         crate::kernel::LoadKind::Int32,
     ));
@@ -1020,13 +1022,13 @@ fn load_variable_free_variables_include_its_state_cells() {
 #[test]
 fn symbolic_memory_block_sizes_are_free_and_substitutable() {
     let size_variable = Variable(12_345);
-    let block = PointerBlock::Concrete("symbolic-size".to_string());
-    let memory = Memory {
+    let block = AddressBase::Concrete("symbolic-size".to_string());
+    let memory = SymbolicMemory {
         construction: None,
         pending_steps: None,
         blocks: std::sync::Arc::new(MemoryBlocks::from_iter([(
             block.clone(),
-            MemoryBlock::with_symbolic_size(HeapExtent::int32(MachineTerm::Variable(
+            MemoryBlock::with_symbolic_size(AllocationSize::int32(MachineTerm::Variable(
                 size_variable,
             ))),
         )])),
@@ -1064,18 +1066,18 @@ fn nested_state_load(depth: usize) -> MachineTerm {
 /// [`nested_state_load`] with each cell holding `name(load)`: the load
 /// itself, or the load variable that names it.
 fn nested_state_load_named(depth: usize, name: impl Fn(MachineTerm) -> MachineTerm) -> MachineTerm {
-    let block = PointerBlock::Concrete("retained_state-chain".to_string());
-    let at = |offset: i64| Pointer {
-        block: block.clone(),
-        offset: PointerOffsetTerm::Constant(offset),
+    let block = AddressBase::Concrete("retained_state-chain".to_string());
+    let at = |offset: i64| Address {
+        base: block.clone(),
+        offset: AddressOffset::Constant(offset),
     };
     let blocks = std::sync::Arc::new(MemoryBlocks::from_iter([(
         block.clone(),
-        MemoryBlock::with_symbolic_size(HeapExtent::int32(MachineTerm::constant(
+        MemoryBlock::with_symbolic_size(AllocationSize::int32(MachineTerm::constant(
             8 * depth as u32 + 16,
         ))),
     )]));
-    let level_memory = |cells| Memory {
+    let level_memory = |cells| SymbolicMemory {
         construction: None,
         pending_steps: None,
         blocks: blocks.clone(),
@@ -1111,17 +1113,18 @@ fn nested_state_load_named(depth: usize, name: impl Fn(MachineTerm) -> MachineTe
 /// a store into the run and a store that brings back an overwritten value.
 #[test]
 fn a_live_memorys_counted_variables_are_its_walked_variables() {
-    let block = PointerBlock::Symbolic(Variable(7_950_000));
-    let at = |offset: i64| Pointer {
-        block: block.clone(),
-        offset: PointerOffsetTerm::add(
-            PointerOffsetTerm::Variable(Variable(7_950_001)),
-            PointerOffsetTerm::Constant(offset),
+    let block = AddressBase::Symbolic(Variable(7_950_000));
+    let at = |offset: i64| Address {
+        base: block.clone(),
+        offset: AddressOffset::add(
+            AddressOffset::Variable(Variable(7_950_001)),
+            AddressOffset::Constant(offset),
         ),
     };
     let value = |variable: u64| ProgramValue::Int32(MachineTerm::Variable(Variable(variable)));
-    let source = crate::kernel::intern_memory(Memory::new().with_block("counted-source", 64));
-    let mut memory = Memory::new();
+    let source =
+        crate::kernel::intern_memory(SymbolicMemory::new().with_block("counted-source", 64));
+    let mut memory = SymbolicMemory::new();
     let mut states = Vec::new();
     for (offset, variable) in [(0, 7_950_010), (4, 7_950_011)] {
         memory = memory.store(at(offset), value(variable));
@@ -1239,23 +1242,23 @@ fn variable_substitution_visits_each_state_once_per_rewrite() {
 /// load of this cell and keeps the walk's name.
 #[test]
 fn a_materialized_pointer_cell_is_named_by_the_load_it_holds() {
-    let field = Pointer {
-        block: "fields".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let field = Address {
+        base: "fields".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let other = Pointer {
-        block: "fields".into(),
-        offset: PointerOffsetTerm::Constant(8),
+    let other = Address {
+        base: "fields".into(),
+        offset: AddressOffset::Constant(8),
     };
-    let entry = Memory::new().with_block("fields", 16);
+    let entry = SymbolicMemory::new().with_block("fields", 16);
     let loaded = crate::kernel::eval::canonical_cell_load(
         intern_memory(entry.clone()),
         field.clone(),
         ProgramType::Int32Pointer,
     );
-    let read = Pointer::loaded(&loaded).expect("the cell's structural read");
-    let pointer_at = |value: Pointer| ProgramValue::typed_pointer(value, ProgramType::Int32Pointer);
-    let name_at = |memory: Memory, cell: &Pointer| {
+    let read = Address::loaded(&loaded).expect("the cell's structural read");
+    let pointer_at = |value: Address| ProgramValue::typed_pointer(value, ProgramType::Int32Pointer);
+    let name_at = |memory: SymbolicMemory, cell: &Address| {
         crate::kernel::eval::canonical_cell_load(
             intern_memory(memory),
             cell.clone(),
@@ -1302,16 +1305,16 @@ fn a_materialized_pointer_cell_is_named_by_the_load_it_holds() {
 #[test]
 fn a_scaled_index_sum_is_one_atom_and_a_constant_index_is_a_shift() {
     let u = MachineTerm::Variable(Variable(7_960_000));
-    let scaled = |value: MachineTerm| PointerOffsetTerm::scaled_int32_node(value, 4);
+    let scaled = |value: MachineTerm| AddressOffset::scaled_int32_node(value, 4);
     let wrapping = scaled(binary_node!(
         Int32,
         Add,
         Box::new(u.clone()),
         Box::new(MachineTerm::constant(0x8000_0000)),
     ));
-    let offset = PointerOffsetTerm::Add(
+    let offset = AddressOffset::Add(
         Box::new(wrapping.clone()),
-        Box::new(PointerOffsetTerm::Constant(8)),
+        Box::new(AddressOffset::Constant(8)),
     );
     assert_eq!(
         crate::kernel::reasoning::offset_atoms_and_constant(&offset),
@@ -1336,13 +1339,13 @@ fn a_scaled_index_sum_is_one_atom_and_a_constant_index_is_a_shift() {
 #[test]
 fn a_store_through_a_wrapping_index_sum_is_placed_by_the_word_itself() {
     use crate::kernel::primitives::{AliasCandidates, SlotSet};
-    let block = PointerBlock::Symbolic(Variable(7_960_100));
-    let source = crate::kernel::intern_memory(Memory::new().with_block("wrap-source", 64));
-    let base = Pointer {
-        block: block.clone(),
-        offset: PointerOffsetTerm::Constant(0),
+    let block = AddressBase::Symbolic(Variable(7_960_100));
+    let source = crate::kernel::intern_memory(SymbolicMemory::new().with_block("wrap-source", 64));
+    let base = Address {
+        base: block.clone(),
+        offset: AddressOffset::Constant(0),
     };
-    let memory = Memory::new().with_seeded_cells(base, 4, ProgramType::Int32, 0, 8, source);
+    let memory = SymbolicMemory::new().with_seeded_cells(base, 4, ProgramType::Int32, 0, 8, source);
     let run = memory
         .cells
         .candidate_runs(&AliasCandidates::of_block(&block))
@@ -1360,9 +1363,9 @@ fn a_store_through_a_wrapping_index_sum_is_placed_by_the_word_itself() {
                 true,
             )
     };
-    let store_at = |word: &MachineTerm| Pointer {
-        block: block.clone(),
-        offset: PointerOffsetTerm::scaled_int32_node(word.clone(), 4),
+    let store_at = |word: &MachineTerm| Address {
+        base: block.clone(),
+        offset: AddressOffset::scaled_int32_node(word.clone(), 4),
     };
 
     let wrapping = binary_node!(

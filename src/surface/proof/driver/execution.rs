@@ -973,6 +973,7 @@ fn deferred_post_execution_region(
             InternalProofNode::CallOutcomes {
                 index,
                 source_index,
+                payload_bindings,
                 returned_branch,
                 threw_branch,
                 continuation,
@@ -982,6 +983,7 @@ fn deferred_post_execution_region(
                     tactic_index: *index,
                     source_index: *source_index,
                     tactic: PostExecutionTactic::CallOutcomes {
+                        payload_bindings: payload_bindings.clone(),
                         returned_tactics: deferred_post_execution_region(returned_branch)?,
                         threw_tactics: deferred_post_execution_region(threw_branch)?,
                     },
@@ -1134,7 +1136,7 @@ fn apply_frontier_source_tactic<'a>(
     let next = if matches!(indexed.tactic, ProofTactic::CloseInvariants) {
         proof
             .driver()
-            .apply_close_invariants_body(&[ProofTactic::Solve])?
+            .apply_close_invariants_body(&[ProofTactic::Solve], None)?
     } else if let Some(step) = SourceContext::ExecutionFrontier.leaf_step(&indexed.tactic) {
         proof
             .driver()
@@ -1151,7 +1153,7 @@ fn apply_frontier_source_tactic<'a>(
     {
         apply_source_step_proofs(&proof, step, step_proof, indexed.index)?
     } else if let ProofTactic::CloseInvariantsBy(body) = &indexed.tactic {
-        proof.driver().apply_close_invariants_body(body)?
+        proof.driver().apply_close_invariants_body(body, None)?
     } else if let ProofTactic::Choose(choice) = &indexed.tactic {
         proof
             .driver()
@@ -1895,7 +1897,6 @@ fn try_check_structural_function_proof_inner<'a>(
                 index,
                 source_index,
                 resource,
-                close_proof,
                 body,
                 continuation,
             } => {
@@ -1904,8 +1905,7 @@ fn try_check_structural_function_proof_inner<'a>(
                 }
                 saw_structure = true;
                 proof = proof.with_execution_tactic_index(*index)?;
-                let scope =
-                    proof.begin_open(resource.clone(), *source_index, close_proof.clone())?;
+                let scope = proof.begin_open(resource.clone(), *source_index)?;
                 let scope = driven!(advance_checked_open_scope(
                     scope,
                     body,
@@ -1981,6 +1981,7 @@ fn try_check_structural_function_proof_inner<'a>(
             InternalProofNode::CallOutcomes {
                 index,
                 source_index,
+                payload_bindings,
                 returned_branch,
                 threw_branch,
                 continuation,
@@ -1988,7 +1989,9 @@ fn try_check_structural_function_proof_inner<'a>(
                 if !proof.is_at_function_exit() {
                     let owner = proof.clone();
                     let proof_at_call = proof.with_execution_tactic_index(*index)?;
-                    let Some((split, record)) = proof_at_call.split_focused_call_outcomes()? else {
+                    let Some((split, record)) =
+                        proof_at_call.split_focused_call_outcomes(payload_bindings.clone())?
+                    else {
                         return decline();
                     };
                     let mut advanced = split;
@@ -1996,14 +1999,9 @@ fn try_check_structural_function_proof_inner<'a>(
                         (true, returned_branch.as_ref()),
                         (false, threw_branch.as_ref()),
                     ] {
-                        let Some(leading) = execution_region_leading_tactic(region) else {
-                            return decline();
-                        };
-                        if !matches!(leading.tactic, ProofTactic::Step) {
-                            return decline();
-                        }
-                        let focused = advanced.focus_split_arm(&record, take_returned)?;
-                        let next = driven!(advance_focused_execution_region_after_leading_tactic(
+                        let focused =
+                            advanced.focus_call_outcome_arm(&record, take_returned, &owner)?;
+                        let next = driven!(advance_focused_execution_region(
                             focused,
                             Some(&record),
                             region,
@@ -2012,7 +2010,7 @@ fn try_check_structural_function_proof_inner<'a>(
                             owning_source_index,
                             1,
                         ));
-                        advanced = next;
+                        advanced = next.leave_call_outcome_arm(&owner);
                     }
                     if !advanced.is_at_function_exit() {
                         return decline();
@@ -2034,6 +2032,7 @@ fn try_check_structural_function_proof_inner<'a>(
                     *index,
                     *source_index,
                     PostExecutionTactic::CallOutcomes {
+                        payload_bindings: payload_bindings.clone(),
                         returned_tactics,
                         threw_tactics,
                     },
@@ -3123,13 +3122,11 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a, 'node>(
                 index,
                 source_index,
                 resource,
-                close_proof,
                 body,
                 continuation,
             } => {
                 proof = proof.with_execution_tactic_index(*index)?;
-                let scope =
-                    proof.begin_open(resource.clone(), *source_index, close_proof.clone())?;
+                let scope = proof.begin_open(resource.clone(), *source_index)?;
                 let Ok(scope) = advance_checked_open_scope(
                     scope,
                     body,
@@ -4058,14 +4055,12 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                 index,
                 source_index,
                 resource,
-                close_proof,
                 body,
                 continuation,
             } => {
                 let owner = proof.clone();
                 let opened = proof.with_execution_tactic_index(*index)?;
-                let scope =
-                    opened.begin_open(resource.clone(), *source_index, close_proof.clone())?;
+                let scope = opened.begin_open(resource.clone(), *source_index)?;
                 let scope = driven!(advance_checked_open_scope(
                     scope,
                     body,
@@ -4083,6 +4078,7 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
             InternalProofNode::CallOutcomes {
                 index,
                 source_index,
+                payload_bindings,
                 returned_branch,
                 threw_branch,
                 continuation,
@@ -4090,7 +4086,9 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                 if !proof.is_at_function_exit() {
                     let owner = proof.clone();
                     let at_outcomes = proof.with_execution_tactic_index(*index)?;
-                    let Some((split, record)) = at_outcomes.split_focused_call_outcomes()? else {
+                    let Some((split, record)) =
+                        at_outcomes.split_focused_call_outcomes(payload_bindings.clone())?
+                    else {
                         return decline();
                     };
                     let mut advanced = split;
@@ -4098,14 +4096,9 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                         (true, returned_branch.as_ref()),
                         (false, threw_branch.as_ref()),
                     ] {
-                        let Some(leading) = execution_region_leading_tactic(region) else {
-                            return decline();
-                        };
-                        if !matches!(leading.tactic, ProofTactic::Step) {
-                            return decline();
-                        }
-                        let focused = advanced.focus_split_arm(&record, take_returned)?;
-                        let next = driven!(advance_focused_execution_region_after_leading_tactic(
+                        let focused =
+                            advanced.focus_call_outcome_arm(&record, take_returned, &owner)?;
+                        let next = driven!(advance_focused_execution_region(
                             focused,
                             Some(&record),
                             region,
@@ -4114,7 +4107,7 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                             owning_source_index,
                             depth + 1,
                         ));
-                        advanced = next;
+                        advanced = next.leave_call_outcome_arm(&owner);
                     }
                     let returned_exit = advanced.arm_at_function_exit(&record, true);
                     let threw_exit = advanced.arm_at_function_exit(&record, false);
@@ -4170,6 +4163,7 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                     *index,
                     *source_index,
                     PostExecutionTactic::CallOutcomes {
+                        payload_bindings: payload_bindings.clone(),
                         returned_tactics,
                         threw_tactics,
                     },
@@ -5157,13 +5151,12 @@ fn advance_checked_open_scope<'a>(
         index,
         source_index,
         resource,
-        close_proof,
         body: nested_body,
         continuation,
     } = body
     {
         let scope = scope.with_execution_tactic_index(*index)?;
-        let nested = scope.begin_open(resource.clone(), *source_index, close_proof.clone())?;
+        let nested = scope.begin_open(resource.clone(), *source_index)?;
         let nested = driven!(advance_checked_open_scope(
             nested,
             nested_body,

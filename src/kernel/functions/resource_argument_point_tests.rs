@@ -3,7 +3,7 @@ use super::*;
 #[test]
 fn entry_arguments_use_the_frame_at_the_entry_point() {
     let _session = crate::kernel::VerificationSession::enter();
-    let entry = ExecutionState::new().with_memory(Memory::new());
+    let entry = ExecutionState::new().with_memory(SymbolicMemory::new());
     let frame = ExecutionState::at_state(&entry).with_local("frame_binding", int32(7));
     assert!(entry.program_point_id().is_some());
     assert_eq!(entry.program_point_id(), frame.program_point_id());
@@ -16,7 +16,7 @@ fn entry_arguments_use_the_frame_at_the_entry_point() {
 #[test]
 fn equal_memory_at_a_later_point_does_not_supply_entry_arguments() {
     let _session = crate::kernel::VerificationSession::enter();
-    let entry = ExecutionState::new().with_memory(Memory::new());
+    let entry = ExecutionState::new().with_memory(SymbolicMemory::new());
     let later = entry.clone().with_memory(entry.memory().clone());
     assert_eq!(entry.memory(), later.memory());
     assert_ne!(entry.program_point_id(), later.program_point_id());

@@ -137,7 +137,7 @@ impl ContractClosingContext {
                             &state,
                             self.function.resource_requires(),
                             self.function.composite_resource_definitions(),
-                            &self.entry_assumptions.clone().assume_entry_clause_extents(),
+                            &self.entry_assumptions.clone().assume_entry_clause_spans(),
                             &mut budget,
                         )
                         .map_err(|limit| limit.describe().to_string())?
@@ -205,39 +205,8 @@ impl ClosedContractExit {
     }
 
     #[cfg(test)]
-    pub(in crate::kernel) fn path_index(&self) -> usize {
-        self.path_index
-    }
-    #[cfg(test)]
     pub(in crate::kernel) fn matches_path(&self, path: &SymbolicExecutionPath) -> bool {
         Arc::ptr_eq(&self.origin.proposition, &path.theorem.proposition)
-    }
-    pub(in crate::kernel) fn covers(&self, claim: &FunctionContractClaim) -> bool {
-        match claim.target() {
-            FunctionContractClaimTarget::EnsureResource(_) => self.resources.contains(claim.key()),
-            FunctionContractClaimTarget::BodySafety => self.complete_boundary,
-            FunctionContractClaimTarget::Effect => true,
-            _ => false,
-        }
-    }
-
-    #[cfg(test)]
-    pub(super) fn fixture(path_index: usize, path: &SymbolicExecutionPath) -> Self {
-        Self::fixture_for_claims(path_index, path, [])
-    }
-
-    #[cfg(test)]
-    pub(super) fn fixture_for_claims(
-        path_index: usize,
-        path: &SymbolicExecutionPath,
-        claims: impl IntoIterator<Item = FunctionContractClaimKey>,
-    ) -> Self {
-        Self {
-            path_index,
-            origin: path.theorem.clone(),
-            resources: Arc::new(claims.into_iter().collect()),
-            complete_boundary: true,
-        }
     }
 }
 
@@ -246,7 +215,7 @@ pub(crate) enum ContractClosingRefusal {
     Resource(String),
     Claim(FunctionContractClaimKey),
     Runtime(RuntimeError),
-    Write(Pointer),
+    Write(Address),
     Range(MemoryRange),
     Storage(Vec<crate::kernel::functions::StorageWriteOutsideFootprint>),
     #[cfg(test)]
@@ -786,8 +755,8 @@ impl ContractExitObligations {
             || !function.resource_requires().is_empty()
             || function.resource_derived_mutable_frame()
         {
-            let has_storage_write = crate::kernel::memory_effect_write_pointers(effects).iter().any(|pointer| pointer.block.is_static_storage_block())
-                || effects.iter().any(|fact| matches!(fact.proposition(), Proposition::MemoryEffectSummary { mutable_ranges, .. } if mutable_ranges.iter().any(|range| range.base().block.is_static_storage_block())));
+            let has_storage_write = crate::kernel::memory_effect_write_pointers(effects).iter().any(|pointer| pointer.base.is_static_storage_block())
+                || effects.iter().any(|fact| matches!(fact.proposition(), Proposition::MemoryEffectSummary { mutable_ranges, .. } if mutable_ranges.iter().any(|range| range.base().base.is_static_storage_block())));
             if has_storage_write {
                 let entry = context.entry()?;
                 match storage_writes_outside_owned_footprint(
@@ -855,11 +824,11 @@ pub(crate) fn check_empty_footprint(
 }
 
 fn preexisting_write(
-    pointer: &Pointer,
+    pointer: &Address,
     caller: &ExecutionState,
     assumptions: &PureFactContext,
 ) -> bool {
-    if pointer.block.is_local_block() || pointer.block.is_havoc_block() {
+    if pointer.base.is_local_block() || pointer.base.is_havoc_block() {
         return false;
     }
     // A descriptor can retain a loaded spelling of this function's local.
@@ -868,14 +837,14 @@ fn preexisting_write(
     if assumptions
         .equality_graph
         .storage_address(pointer)
-        .block
+        .base
         .is_local_block()
     {
         return false;
     }
     if !matches!(
-        pointer.block,
-        PointerBlock::Heap(_) | PointerBlock::Symbolic(_)
+        pointer.base,
+        AddressBase::Heap(_) | AddressBase::Symbolic(_)
     ) {
         return true;
     }
@@ -892,9 +861,9 @@ fn preexisting_write(
         if !seen.insert(candidate.clone()) {
             continue;
         }
-        if !candidate.block.is_local_block()
-            && !candidate.block.is_havoc_block()
-            && (memory.has_block(&candidate.block)
+        if !candidate.base.is_local_block()
+            && !candidate.base.is_havoc_block()
+            && (memory.has_block(&candidate.base)
                 || memory.is_live_heap_address(&candidate, assumptions))
         {
             return true;
@@ -913,22 +882,22 @@ mod tests {
         size: u32,
     ) -> (ExecutionState, ExecutionFacts, PureFactContext) {
         let anchor = if local {
-            Memory::local_pointer("private-output")
+            SymbolicMemory::local_pointer("private-output")
         } else {
-            Pointer {
-                block: "global:public-output".into(),
-                offset: PointerOffsetTerm::Constant(0),
+            Address {
+                base: "global:public-output".into(),
+                offset: AddressOffset::Constant(0),
             }
         };
-        let mut memory = Memory::new().with_block(anchor.block.clone(), 4);
-        let alias = Pointer::loaded_value(
+        let mut memory = SymbolicMemory::new().with_block(anchor.base.clone(), 4);
+        let alias = Address::loaded_value(
             &crate::kernel::intern_memory(memory.clone()),
-            &Pointer::symbolic(Variable(988_000)),
+            &Address::symbolic(Variable(988_000)),
         );
         let mut assumptions = PureFactContext::new();
         let mut previous = alias.clone();
         for i in 0..size {
-            let next = Pointer::symbolic(Variable(988_001 + u64::from(i)));
+            let next = Address::symbolic(Variable(988_001 + u64::from(i)));
             assumptions = assumptions
                 .assume_condition(ConditionTerm::pointer_equal(previous, next.clone()), true);
             previous = next;

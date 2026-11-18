@@ -28,14 +28,14 @@ fn havoc_write_set_identity_scales_near_linearly_with_term_size() {
 
 #[test]
 fn call_frame_retains_a_view_without_scanning_other_views() {
-    let pointer = |index| Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(index)), 1),
+    let pointer = |index| Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(index)), 1),
     };
     let target = pointer(900_000);
     crate::kernel::eval::declare_load_access_width(&target, 4);
-    let before = Memory::new();
-    let load = |memory: &Memory| {
+    let before = SymbolicMemory::new();
+    let load = |memory: &SymbolicMemory| {
         MachineTerm::MemoryLoad(
             ProgramPoint::at(&(crate::kernel::intern_memory_ref(memory))),
             Box::new(target.clone()),

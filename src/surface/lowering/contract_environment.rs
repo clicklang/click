@@ -8,9 +8,9 @@ use super::*;
 use crate::kernel::{bits32_constant, constant_u32};
 use crate::surface::diagnostics::describe_program_point_ref;
 
-pub(in crate::surface) fn array_refs_with_memory(
+pub(in crate::surface) fn array_refs_at_point(
     array_refs: &ClickArrayRefs,
-    memory: &Memory,
+    point: &crate::kernel::ProgramPoint,
 ) -> ClickArrayRefs {
     array_refs
         .iter()
@@ -18,7 +18,7 @@ pub(in crate::surface) fn array_refs_with_memory(
             (
                 name.clone(),
                 ClickArrayRef {
-                    memory: memory.clone(),
+                    point: point.clone(),
                     pointer: array_ref.pointer.clone(),
                     element_type: array_ref.element_type,
                 },
@@ -40,7 +40,8 @@ pub(in crate::surface) fn contract_environment_at_state(
         ))
     }));
 
-    let mut state_array_refs = array_refs_with_memory(array_refs, state.memory());
+    let point = state.program_point();
+    let mut state_array_refs = array_refs_at_point(array_refs, &point);
     // A parameter's array reference is read through the variable, exactly as
     // its value is above. `array_refs` was built from the caller's arguments,
     // so after the body assigns a pointer parameter it still holds the entry
@@ -66,14 +67,14 @@ pub(in crate::surface) fn contract_environment_at_state(
         };
         // File-scope arrays remain in the state even when a parameter hides
         // their name. They must not replace that parameter's current value.
-        if pointer.block.is_global_block() && parameter_values.contains_key(source_name) {
+        if pointer.base.is_global_block() && parameter_values.contains_key(source_name) {
             continue;
         }
         values.insert(source_name.to_owned(), value);
         state_array_refs.insert(
             source_name.to_owned(),
             ClickArrayRef {
-                memory: state.memory().clone(),
+                point: point.clone(),
                 pointer: pointer.pointer().clone(),
                 element_type,
             },
@@ -92,7 +93,8 @@ pub(in crate::surface) fn contract_environment_for_names(
     state: &ExecutionState,
 ) -> Result<(BTreeMap<String, ProgramValue>, ClickArrayRefs), ClickError> {
     let mut values = parameter_values_named(parameter_binding, names)?;
-    let mut array_refs = array_refs_for_values(parameter_binding, &values, state.memory());
+    let point = state.program_point();
+    let mut array_refs = array_refs_for_values(parameter_binding, &values, &point);
     for name in names {
         crate::instrumentation::record_deterministic_work(1);
         if let Some(value) = state.locals().get(name) {
@@ -108,13 +110,13 @@ pub(in crate::surface) fn contract_environment_for_names(
             let ProgramValue::Pointer(pointer) = &value else {
                 unreachable!("local array values are pointers")
             };
-            if pointer.block.is_global_block() && values.contains_key(name) {
+            if pointer.base.is_global_block() && values.contains_key(name) {
                 continue;
             }
             array_refs.insert(
                 name.clone(),
                 ClickArrayRef {
-                    memory: state.memory().clone(),
+                    point: point.clone(),
                     pointer: pointer.pointer().clone(),
                     element_type,
                 },
@@ -190,7 +192,7 @@ pub(in crate::surface) fn contract_array_ref_element_type(
         | ContractExpression::ProgramExpression(ProgramExpression::Variable(
             crate::kernel::BindingName::Named(name),
         ))
-        | ContractExpression::CBinding(name) => {
+        | ContractExpression::ProgramBinding(name) => {
             array_refs.get(name).map(|array_ref| array_ref.element_type)
         }
         ContractExpression::Old(expression) => {
@@ -250,9 +252,9 @@ pub(in crate::surface) fn program_value_matches_allocation_pointer(value: &Progr
     )
 }
 
-/// An `allocation` byte count: an `int32` or a `uint64` heap extent
-/// (`design/heap-extents.md`, D4).
-pub(in crate::surface) fn program_value_matches_allocation_extent(value: &ProgramValue) -> bool {
+/// An `allocation` byte count: an `int32` or a `uint64` allocation size
+/// (`design/heap-allocation-sizes.md`, D4).
+pub(in crate::surface) fn program_value_matches_allocation_size(value: &ProgramValue) -> bool {
     matches!(
         value.numeric_value(),
         ProgramValue::Int32(_) | ProgramValue::UInt64(_)
@@ -261,24 +263,24 @@ pub(in crate::surface) fn program_value_matches_allocation_extent(value: &Progra
 
 #[cfg(test)]
 pub(in crate::surface) fn offset_pointer_by_int32_elements(
-    pointer: Pointer,
+    pointer: Address,
     elements: MachineTerm,
-) -> Pointer {
+) -> Address {
     offset_pointer_by_elements(pointer, elements, 4)
 }
 
 pub(in crate::surface) fn offset_pointer_by_elements(
-    pointer: Pointer,
+    pointer: Address,
     elements: MachineTerm,
     element_width: u32,
-) -> Pointer {
+) -> Address {
     // Contract and execution indices retain the same shared structure,
     // including a loaded index's state and read kind. The common producer
     // unwraps transitional registered names before constructing that index.
     let mut discarded_facts = crate::kernel::ExecutionFacts::new();
     let elements = crate::kernel::canonicalized_offset_index_term(elements, &mut discarded_facts);
-    Pointer {
-        block: pointer.block,
+    Address {
+        base: pointer.base,
         offset: add_pointer_offset(
             pointer.offset,
             scale_int32_offset(elements, i64::from(element_width)),
@@ -287,28 +289,25 @@ pub(in crate::surface) fn offset_pointer_by_elements(
 }
 
 pub(in crate::surface) fn add_pointer_offset(
-    left: PointerOffsetTerm,
-    right: PointerOffsetTerm,
-) -> PointerOffsetTerm {
+    left: AddressOffset,
+    right: AddressOffset,
+) -> AddressOffset {
     match (&left, &right) {
-        (PointerOffsetTerm::Constant(left), PointerOffsetTerm::Constant(right)) => {
-            PointerOffsetTerm::Constant(left + right)
+        (AddressOffset::Constant(left), AddressOffset::Constant(right)) => {
+            AddressOffset::Constant(left + right)
         }
-        (PointerOffsetTerm::Constant(0), _) => right,
-        (_, PointerOffsetTerm::Constant(0)) => left,
-        _ => PointerOffsetTerm::Add(Box::new(left), Box::new(right)),
+        (AddressOffset::Constant(0), _) => right,
+        (_, AddressOffset::Constant(0)) => left,
+        _ => AddressOffset::Add(Box::new(left), Box::new(right)),
     }
 }
 
-pub(in crate::surface) fn scale_int32_offset(
-    value: MachineTerm,
-    byte_width: i64,
-) -> PointerOffsetTerm {
+pub(in crate::surface) fn scale_int32_offset(value: MachineTerm, byte_width: i64) -> AddressOffset {
     match value {
         bits32_constant!(value) => {
-            PointerOffsetTerm::Constant((constant_u32(value) as i32 as i64) * byte_width)
+            AddressOffset::Constant((constant_u32(value) as i32 as i64) * byte_width)
         }
-        value => PointerOffsetTerm::scaled_int32_node(value, byte_width),
+        value => AddressOffset::scaled_int32_node(value, byte_width),
     }
 }
 
@@ -357,9 +356,9 @@ mod tests {
     fn parameter_array_binding_hides_global_and_follows_reassignment() {
         let state = globals(0);
         let value = ProgramValue::typed_pointer(
-            Pointer {
-                block: "parameter-bytes".into(),
-                offset: PointerOffsetTerm::Constant(0),
+            Address {
+                base: "parameter-bytes".into(),
+                offset: AddressOffset::Constant(0),
             },
             ProgramType::Int32Pointer,
         );
@@ -371,12 +370,12 @@ mod tests {
         let arguments = [ProgramExpression::Value(value.clone())];
         let binding = ParameterBinding::new(&parameters, &arguments);
         let values = BTreeMap::from([("bytes".to_string(), value.clone())]);
-        let arrays = array_refs_for_parameters(&parameters, &values, state.memory());
+        let arrays = array_refs_for_parameters(&parameters, &values, &state.program_point());
         let names = BTreeSet::from(["bytes".to_string()]);
         let reassigned = ProgramValue::typed_pointer(
-            Pointer {
-                block: "reassigned-bytes".into(),
-                offset: PointerOffsetTerm::Constant(0),
+            Address {
+                base: "reassigned-bytes".into(),
+                offset: AddressOffset::Constant(0),
             },
             ProgramType::Int32Pointer,
         );
@@ -394,8 +393,10 @@ mod tests {
             assert_bytes(&named_values, &named_arrays, &expected, ProgramType::Int32);
         }
         // Without a shadowing parameter, the same name still denotes the global.
-        let expected =
-            ProgramValue::typed_pointer(Memory::global_pointer("bytes"), ProgramType::UInt8Pointer);
+        let expected = ProgramValue::typed_pointer(
+            SymbolicMemory::global_pointer("bytes"),
+            ProgramType::UInt8Pointer,
+        );
         let (values, arrays) =
             contract_environment_at_state(&BTreeMap::new(), &BTreeMap::new(), &state);
         assert_bytes(&values, &arrays, &expected, ProgramType::UInt8);

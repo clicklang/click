@@ -768,15 +768,15 @@ fn call_passes_witness_child(
         .prefer_symbolic_external_loads()
         // This scope compares symbolic child identities. The ordinary
         // contract execution separately checks the call and its accesses.
-        .assume_entry_clause_extents();
+        .assume_entry_clause_spans();
     let mut parameter_state = ExecutionState::new();
     for (index, parameter) in function.parameters().iter().enumerate() {
         let variable = Variable(PARAMETER_VARIABLE_BASE + index as u64);
         let value = if parameter.program_type().is_pointer() {
             ProgramValue::typed_pointer(
-                Pointer {
-                    block: PointerBlock::ExternalArgument,
-                    offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(variable), 1),
+                Address {
+                    base: AddressBase::ExternalArgument,
+                    offset: AddressOffset::scale_int32(MachineTerm::Variable(variable), 1),
                 },
                 parameter.program_type(),
             )
@@ -815,7 +815,7 @@ fn call_passes_witness_child(
             );
         }
         for (index, witness) in definition.witnesses().iter().enumerate() {
-            let pointer = Pointer::symbolic(Variable(WITNESS_VARIABLE_BASE + index as u64));
+            let pointer = Address::symbolic(Variable(WITNESS_VARIABLE_BASE + index as u64));
             body_state.locals.set_typed(
                 witness.name().to_string(),
                 ProgramValue::typed_pointer(pointer, witness.program_type()),
@@ -1455,8 +1455,11 @@ fn collect_address_taken_locals(statement: &ProgramStatement, names: &mut BTreeS
             body,
             ..
         } => {
-            let (condition, _, test) = loop_test.execution_parts();
-            escapes(condition);
+            let condition = loop_test.source_condition();
+            let test = loop_test.source_region();
+            if let Some(condition) = condition {
+                escapes(condition);
+            }
             collect_address_taken_locals(body, names);
             if let Some(test) = test {
                 collect_address_taken_locals(&test.statement, names);
@@ -1487,22 +1490,6 @@ fn reject_address_escaped_measure(
             "termination measure `{measure}` in `{function_name}` has its address taken; a store \
              through that pointer could change the measure without a ranked update"
         )));
-    }
-    Ok(())
-}
-
-/// Rejects a loop `decreases` component naming a variable whose address
-/// escapes, before the back-edge bundle is built. A store through that
-/// pointer, here or inside a callee, could change the component without a
-/// ranked update, so the declaration is refused rather than proved.
-pub(super) fn program_reject_address_escaped_loop_measures(
-    function_name: &str,
-    measures: &[RankingComponent],
-    addressed: &BTreeSet<BindingName>,
-) -> Result<(), String> {
-    for measure in measures {
-        reject_address_escaped_ranking_component(function_name, measure, addressed)
-            .map_err(|error| error.message)?;
     }
     Ok(())
 }
@@ -1802,7 +1789,7 @@ fn statement_calls_visiting(
             body,
             ..
         } => {
-            let (_, _, test) = loop_test.execution_parts();
+            let test = loop_test.source_region();
             statement_calls_visiting(body, calls, visit);
             if let Some(test) = test {
                 statement_calls_visiting(&test.statement, calls, visit);
@@ -1896,7 +1883,7 @@ fn statement_declared_variables(statement: &ProgramStatement, names: &mut BTreeS
             body,
             ..
         } => {
-            let (_, _, test) = loop_test.execution_parts();
+            let test = loop_test.source_region();
             statement_declared_variables(body, names);
             if let Some(test) = test {
                 statement_declared_variables(&test.statement, names);
@@ -2124,14 +2111,18 @@ fn walk_termination_paths<W: TerminationWalk>(
             body,
             ..
         } => {
-            let (condition, _, test) = loop_test.execution_parts();
+            let condition = loop_test.source_condition();
+            let test = loop_test.source_region();
             // A `break` in the body lands where the loop's own exit lands,
             // carrying what the incoming paths already carry, so it is
             // covered by the incoming paths this returns.
             if let Some(test) = test {
                 descend(&test.statement, paths.clone())?;
             }
-            let entered = walk.refine(condition, true, paths.clone());
+            let entered = condition.map_or_else(
+                || paths.clone(),
+                |condition| walk.refine(condition, true, paths.clone()),
+            );
             let body_paths = descend(body, entered.clone())?;
             if let Some(update) = update {
                 descend(update, body_paths.continuing)?;
@@ -2644,7 +2635,7 @@ fn pure_integer_ranking_measure_term(
     };
     reader.reads.obligations.extend(path.obligations.clone());
     reader.reads.facts.extend_shared(&path.facts);
-    Ok(path.value.clone())
+    Ok(path.value.clone().into_native_compat())
 }
 
 /// The kernel term for one pure `decreases` component at one C state.
@@ -3583,7 +3574,7 @@ fn collect_loops_in_order<'a>(
             body,
             ..
         } => {
-            let (_, _, test) = loop_test.execution_parts();
+            let test = loop_test.source_region();
             loops.push(statement);
             for region in program_loop_regions(body, update.as_deref(), test) {
                 collect_loops_in_order(region, loops);
@@ -3858,7 +3849,7 @@ fn collect_loops<'a>(statement: &'a ProgramStatement, loops: &mut Vec<&'a Progra
             body,
             ..
         } => {
-            let (_, _, test) = loop_test.execution_parts();
+            let test = loop_test.source_region();
             loops.push(statement);
             for region in program_loop_regions(body, update.as_deref(), test) {
                 collect_loops(region, loops);
@@ -4135,7 +4126,7 @@ fn visit_loop_obligations(
             body,
             ..
         } => {
-            let (_, _, test) = loop_test.execution_parts();
+            let test = loop_test.source_region();
             let index = *next_index;
             *next_index += 1;
             for region in program_loop_regions(body, update.as_deref(), test) {
@@ -4344,8 +4335,8 @@ fn value_function_address(value: &ProgramValue) -> Option<&str> {
     let ProgramValue::Pointer(pointer) = value else {
         return None;
     };
-    match &pointer.pointer().block {
-        PointerBlock::Function(name) => Some(name),
+    match &pointer.pointer().base {
+        AddressBase::Function(name) => Some(name),
         _ => None,
     }
 }
@@ -4514,8 +4505,11 @@ fn statement_function_addresses(statement: &ProgramStatement, taken: &mut BTreeS
             body,
             ..
         } => {
-            let (condition, _, test) = loop_test.execution_parts();
-            visit(condition);
+            let condition = loop_test.source_condition();
+            let test = loop_test.source_region();
+            if let Some(condition) = condition {
+                visit(condition);
+            }
             statement_function_addresses(body, taken);
             if let Some(test) = test {
                 statement_function_addresses(&test.statement, taken);
@@ -4776,7 +4770,7 @@ fn self_call_loop_indices(
             body,
             ..
         } => {
-            let (_, _, test) = loop_test.execution_parts();
+            let test = loop_test.source_region();
             let index = *next_index;
             *next_index += 1;
             enclosing.push(index);
@@ -5332,18 +5326,18 @@ mod ranking_member_tests {
         );
     }
 
-    fn int32_cell(name: &str) -> Pointer {
-        Pointer {
-            block: PointerBlock::Concrete(name.to_string()),
-            offset: PointerOffsetTerm::Constant(0),
+    fn int32_cell(name: &str) -> Address {
+        Address {
+            base: AddressBase::Concrete(name.to_string()),
+            offset: AddressOffset::Constant(0),
         }
     }
 
     /// A pure component that reads memory: the load is against the state the
     /// component is read at, not a state the surface named.
-    fn current_load(cell: &Pointer) -> SpecExpression {
+    fn current_load(cell: &Address) -> SpecExpression {
         SpecExpression::MemoryLoad {
-            memory: SpecMemory::Current,
+            point: SpecPoint::Current,
             pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(
                 PointerValue::new(cell.clone(), ProgramType::Int32Pointer),
             ))),
@@ -5361,9 +5355,11 @@ mod ranking_member_tests {
         let value = MachineTerm::Variable(Variable(11));
         let post = MachineTerm::subtract(value.clone(), MachineTerm::constant(1));
         let mut entry = ExecutionState::new();
-        entry.memory = Memory::new().store(cell.clone(), ProgramValue::Int32(value.clone()));
+        entry.memory =
+            SymbolicMemory::new().store(cell.clone(), ProgramValue::Int32(value.clone()));
         let mut back_edge = ExecutionState::new();
-        back_edge.memory = Memory::new().store(cell.clone(), ProgramValue::Int32(post.clone()));
+        back_edge.memory =
+            SymbolicMemory::new().store(cell.clone(), ProgramValue::Int32(post.clone()));
         let measures = vec![RankingComponent::Pure {
             source: "count(counter)".to_string(),
             expression: current_load(&cell),
@@ -6282,14 +6278,12 @@ mod local_descent_tests {
                 diverging_contracts: &BTreeSet::new(),
                 has_unselected_functions: false,
             })
-            .and_then(|proof| proof.prove_implicitly());
-        assert!(matches!(
-            result,
-            Err(ProgramContractFailure::Obligation {
-                goal: ProgramContractGoal::CallbackSafety,
-                ..
-            })
-        ));
+            .map_err(|_| "termination generation failed".to_string())
+            .and_then(|proof| proof.prove_through_native_root());
+        let error = result
+            .err()
+            .expect("callback safety must close before completion");
+        assert_eq!(error, "the checked termination facts do not close the root");
     }
 
     /// `spin` hands itself to `apply`. No direct call closes the cycle, and

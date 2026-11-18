@@ -1,7 +1,7 @@
 use super::*;
 
 fn pointer(id: u64) -> PointerValue {
-    PointerValue::new(Pointer::symbolic(Variable(id)), ProgramType::Int32Pointer)
+    PointerValue::new(Address::symbolic(Variable(id)), ProgramType::Int32Pointer)
 }
 
 fn view(value: &PointerValue, start: u32, end: u32) -> ResourceFact {
@@ -29,7 +29,7 @@ fn permits(
 
 fn permits_at(
     value: &PointerValue,
-    position: &Pointer,
+    position: &Address,
     facts: &PureFactContext,
     resources: &ResourceContext,
 ) -> bool {
@@ -123,7 +123,7 @@ fn member_coverage_does_not_follow_numeric_aliases() {
     assert!(!permits(&p, 8, &uncovered, &empty));
     let member = p
         .clone()
-        .with_extent(Some(SubobjectExtent::constant(p.pointer().clone(), 4)));
+        .with_bounds(Some(SubobjectBounds::constant(p.pointer().clone(), 4)));
     assert!(!permits(&member, 8, &full, &empty));
 }
 
@@ -136,7 +136,8 @@ mod scaling_tests {
 fn allocation_bounds_require_positive_ownership_and_grant_no_read_permission() {
     let _session = crate::kernel::VerificationSession::enter();
     let p = pointer(930_400);
-    let allocation = ResourceFact::own_designated_allocation(p.clone(), &HeapExtent::int32(12u32));
+    let allocation =
+        ResourceFact::own_designated_allocation(p.clone(), &AllocationSize::int32(12u32));
     let root = PureFactContext::new();
     let coverage = allocation.allocation_bounds_fact(&root).unwrap();
     let context = root.clone().assume_proposition(coverage);
@@ -174,7 +175,7 @@ fn slice_entry_bounds_allow_formation_without_read_authority() {
             ProgramExpression::Value(ProgramValue::Pointer(p.clone())),
             ProgramExpression::Value(
                 ProgramValue::UInt64(MachineTerm::uint64_constant(2))
-                    .complete_word(Pointer::symbolic(Variable(930_451))),
+                    .complete_word(Address::symbolic(Variable(930_451))),
             ),
         ],
     )
@@ -202,7 +203,7 @@ fn fixed_array_reference_bounds_allow_formation_without_read_authority() {
             "array_metadata",
             vec![
                 program_parameter("p", ProgramType::Int32Pointer)
-                    .with_fixed_reference_extent(bytes),
+                    .with_fixed_reference_bounds(bytes),
             ],
             program_skip(),
         );
@@ -237,9 +238,9 @@ fn well_formed_range_terms_do_not_establish_an_opaque_domain() {
                 context.assume_proposition(fact)
             })
     };
-    let numeric = state(crate::kernel::memory_range_extent_guard_spellings(&range));
+    let numeric = state(crate::kernel::memory_range_span_guard_spellings(&range));
     assert!(!permits(&p, 4, &numeric, &ResourceContext::new()));
-    let admitted = state(crate::kernel::admitted_memory_range_extent_facts(&range));
+    let admitted = state(crate::kernel::admitted_memory_range_span_facts(&range));
     assert!(permits(&p, 12, &admitted, &ResourceContext::new()));
     assert!(!permits(&p, 16, &admitted, &ResourceContext::new()));
 }
@@ -284,15 +285,15 @@ fn native_coverage_keeps_high_bits_and_interior_bytes() {
 
 fn split_formation_fixture() -> (
     PointerValue,
-    Pointer,
+    Address,
     PureFactContext,
     ResourceContext,
     ResourceFact,
 ) {
     let p = PointerValue::new(
-        Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(930_999)), 4),
+        Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(930_999)), 4),
         },
         ProgramType::Int32Pointer,
     );
@@ -400,7 +401,7 @@ fn null_pointer_zero_offsets_use_scalar_evidence_and_preserve_refusals() {
         for (facts, expected_zero) in cases {
             let result = pointer_offset_by_elements_paths(
                 &ExecutionState::new(),
-                PointerValue::new(Pointer::null(), ProgramType::Int32Pointer),
+                PointerValue::new(Address::null(), ProgramType::Int32Pointer),
                 offset.clone(),
                 4,
                 unsigned,
@@ -416,7 +417,7 @@ fn null_pointer_zero_offsets_use_scalar_evidence_and_preserve_refusals() {
                 assert!(matches!(&result[0].outcome,
                     ExpressionOutcome::Value(ProgramValue::Pointer(value))
                         if value.pointer().is_in_null_block()
-                            && value.pointer() != &Pointer::null()));
+                            && value.pointer() != &Address::null()));
             } else {
                 assert!(matches!(
                     &result[0].outcome,
@@ -430,8 +431,8 @@ fn null_pointer_zero_offsets_use_scalar_evidence_and_preserve_refusals() {
 #[test]
 fn a_registered_zero_index_permits_null_pointer_formation() {
     let _session = crate::kernel::VerificationSession::enter();
-    let memory = crate::kernel::intern_memory(Memory::new());
-    let address = Pointer::symbolic(Variable(933_100));
+    let memory = crate::kernel::intern_memory(SymbolicMemory::new());
+    let address = Address::symbolic(Variable(933_100));
     let load =
         crate::kernel::eval::load_variable_for_exact_cell(&memory, &address, LoadKind::Int32, 4);
     let facts = PureFactContext::new().assume_condition(
@@ -440,7 +441,7 @@ fn a_registered_zero_index_permits_null_pointer_formation() {
     );
     let result = pointer_offset_by_elements_paths(
         &ExecutionState::new(),
-        PointerValue::new(Pointer::null(), ProgramType::Int32Pointer),
+        PointerValue::new(Address::null(), ProgramType::Int32Pointer),
         MachineTerm::MemoryLoad(
             ProgramPoint::at(&memory),
             Box::new(address),

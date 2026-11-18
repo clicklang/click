@@ -70,6 +70,68 @@ impl Boundary<'_> {
         {
             self.errors.push(format!("{}: legacy loop preparation belongs only to the explicit independent-input adapter", self.path));
         }
+        if self.path == "src/kernel/loans.rs"
+            && matches!(
+                self.function.as_str(),
+                "recover_stable_views_impl"
+                    | "recover_returned_views"
+                    | "recover_suspended_views"
+                    | "restore_returned_escrows"
+            )
+            && matches!(
+                name,
+                "try_compose_into_valid_context_delaying_normalization"
+                    | "try_compose_with_legacy_discovery_and_occurrences"
+                    | "returned_boundary_conflict_with_legacy_discovery"
+                    | "resume_legacy_discovery"
+                    | "legacy_memory_boundary_conflict"
+                    | "validity_error"
+                    | "owned_occurrences_for_fact"
+                    | "permitted_descriptions"
+            )
+        {
+            self.errors.push(format!(
+                "{}: escrow recovery must consume checked restoration evidence ({name})",
+                self.path
+            ));
+        }
+        if self.path == "src/kernel/primitives/memory_equality_index.rs"
+            && self.function == "constant_owned_overlap"
+            && name == "decide"
+        {
+            self.errors.push(format!(
+                "{}: ownership endpoints require exact facts or direct indexed bounds",
+                self.path
+            ));
+        }
+        if ((self.path == "src/kernel/functions/mixed_return_resources.rs"
+            && matches!(
+                self.function.as_str(),
+                "admit_clause"
+                    | "finish"
+                    | "take_returned_footprint"
+                    | "admit"
+                    | "finish_group"
+                    | "retain_frontier"
+            ))
+            || (self.path == "src/kernel/functions.rs"
+                && matches!(
+                    self.function.as_str(),
+                    "produced_composite_frontier_conflict"
+                        | "construct_composite_resource_body"
+                        | "recover_candidate_stable_view_resources"
+                )))
+            && matches!(
+                name,
+                "try_compose_with_legacy_discovery_and_occurrences"
+                    | "returned_boundary_conflict_with_legacy_discovery"
+                    | "resume_legacy_discovery"
+                    | "legacy_memory_boundary_conflict"
+                    | "validity_error"
+            )
+        {
+            self.errors.push(format!("{}: {} must construct ownership partitions and check only bounded boundaries ({name})", self.path, self.function));
+        }
         if (self.path == "src/kernel/functions/mixed_return_resources.rs"
             && self.function == "build"
             && name == "normalized")
@@ -87,6 +149,25 @@ impl Boundary<'_> {
                 ))
         {
             self.errors.push(format!("{}: {} must consume selected return evidence without ownership rediscovery ({name})", self.path, self.function));
+        }
+        if ((self.path == "src/kernel/functions/mixed_return_resources.rs"
+            && self.function == "project_return_resource_cores")
+            || (self.path == "src/kernel/functions.rs"
+                && self.function == "produced_composite_frontier_conflict"))
+            && matches!(
+                name,
+                "expand_composite_resource_fact"
+                    | "expand_composite_resource_fact_with_children"
+                    | "expand_all_composite_resource_facts"
+                    | "expand_all_composite_resource_facts_at_state"
+                    | "construct_composite_resource_body"
+                    | "try_construct"
+            )
+        {
+            self.errors.push(format!(
+                "{}: {} must consume carried family evidence without reconstructing a returned body ({name})",
+                self.path, self.function
+            ));
         }
         if self.path == "src/kernel/functions/mixed_return_resources.rs"
             && self.function == "project_return_resource_cores"
@@ -688,7 +769,7 @@ impl Boundary<'_> {
         if self.path == "src/kernel/assumptions.rs"
             && ((matches!(
                 self.function.as_str(),
-                "provenance_equal" | "opaque_extents_equal"
+                "provenance_equal" | "bounds_owners_equal"
             ) && name == "direct_aliases")
                 || (self.function == "known_value_of_framed_pointer_read"
                     && name == "exact_pointer_aliases"))

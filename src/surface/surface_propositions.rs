@@ -15,8 +15,8 @@ use super::{
     ClickError, ClickProposition, ClickType, ContractExpression, ProgramPointSelector,
     SurfaceBinder, clone_click_proposition_iteratively, proof,
 };
+use crate::kernel::{Address, ConditionTerm, MachineTerm, Proposition, Sort, Variable};
 use crate::kernel::{CompareRelation, MachineIntegerType};
-use crate::kernel::{ConditionTerm, MachineTerm, Pointer, Proposition, Sort, Variable};
 use crate::persistent::{PersistentMap, PersistentSet};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -32,7 +32,7 @@ pub struct SurfacePropositionMap {
 pub(in crate::surface) struct SurfacePropositionStorage {
     /// Source names for qualified storage reads, independent of the heap
     /// state. These are synthesis hints, never evidence of a fact.
-    pub(in crate::surface) qualified_load_sources: PersistentMap<Pointer, ContractExpression>,
+    pub(in crate::surface) qualified_load_sources: PersistentMap<Address, ContractExpression>,
     /// Every interned kernel node: an atom by value, a connective by its
     /// payload and children's identities.
     kernel_atoms: PersistentMap<Arc<Proposition>, (NodeId, Arc<Proposition>)>,

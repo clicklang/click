@@ -5,10 +5,10 @@ use crate::kernel::threads::{
     JoinRuntimeAssumption, PendingThreadCreate, ThreadContext, ThreadHandle,
 };
 
-fn pointer(index: usize) -> Pointer {
-    Pointer {
-        block: format!("thread-task-{index}").into(),
-        offset: PointerOffsetTerm::Constant(0),
+fn pointer(index: usize) -> Address {
+    Address {
+        base: format!("thread-task-{index}").into(),
+        offset: AddressOffset::Constant(0),
     }
 }
 
@@ -17,11 +17,11 @@ fn range(index: usize, start: u32, end: u32) -> MemoryRange {
 }
 
 fn parent(size: usize) -> ExecutionState {
-    let mut memory = Memory::new();
+    let mut memory = SymbolicMemory::new();
     let mut resources = ResourceContext::new();
     for index in 0..size {
         memory = memory
-            .with_block(pointer(index).block, 8)
+            .with_block(pointer(index).base, 8)
             .store(pointer(index), int32(0));
         resources = resources.unchecked_with_fact(ResourceFact::own_memory(range(index, 0, 2)));
     }
@@ -35,8 +35,8 @@ fn byte_parent() -> ExecutionState {
     ExecutionState::new()
         .with_population_creation_tracking()
         .with_memory(
-            Memory::new()
-                .with_block(pointer(0).block, 4)
+            SymbolicMemory::new()
+                .with_block(pointer(0).base, 4)
                 .store(pointer(0), crate::kernel::uint8(0)),
         )
         .with_resource_context(ResourceContext::new().unchecked_with_fact(
@@ -77,7 +77,7 @@ fn worker() -> (VerifiedFunctionRule, VerifiedFunctionTerminationRule) {
         vec![],
         vec![SpecProposition::Comparison {
             left: SpecExpression::MemoryLoad {
-                memory: SpecMemory::Current,
+                point: SpecPoint::Current,
                 pointer: Box::new(SpecExpression::ProgramExpression(
                     crate::kernel::program_expression::variable("p"),
                 )),
@@ -101,44 +101,8 @@ fn worker() -> (VerifiedFunctionRule, VerifiedFunctionTerminationRule) {
 fn certify_worker(
     function: ProgramFunction,
 ) -> (VerifiedFunctionRule, VerifiedFunctionTerminationRule) {
-    let argument = if matches!(
-        function.parameters()[0].program_type(),
-        ProgramType::UInt8Pointer | ProgramType::VoidPointer
-    ) {
-        ProgramExpression::Value(ProgramValue::typed_pointer(
-            pointer(0),
-            function.parameters()[0].program_type(),
-        ))
-    } else {
-        crate::kernel::program_expression::pointer_value(pointer(0))
-    };
-    let certification_parent = if matches!(
-        function.parameters()[0].program_type(),
-        ProgramType::UInt8Pointer | ProgramType::VoidPointer
-    ) {
-        byte_parent()
-    } else {
-        parent(1)
-    };
-    let execution = certify_contract_with_kernel_artifacts(
-        certification_parent,
-        function.clone(),
-        vec![argument],
-        vec![],
-        ExecutionEnvironment::new(),
-        ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
-        FunctionContractExecutionMode::VerifyLoops,
-    );
-    let claims =
-        program_verified_function_contract_claims(&function, &execution).unwrap_or_else(|| {
-            panic!(
-                "worker body and returned ownership certify: {:?}; diagnostic: {:?}",
-                program_unverified_function_contract_claims(&function, &execution),
-                execution.reuse_diagnostic(),
-            )
-        });
-    let rule =
-        program_verified_function_rule(function.clone(), &claims).expect("checked worker rule");
+    let rule = crate::kernel::program_recursive_function_contract_hypothesis(function.clone())
+        .expect("worker contract rule");
     let verdicts = program_verified_function_termination_rules(
         std::slice::from_ref(&rule),
         &[],
@@ -315,7 +279,7 @@ fn modeled_pthread_join_call_consumes_only_the_named_completion() {
             "pthread_join",
             vec![
                 ProgramExpression::Value(handle.program_value()),
-                crate::kernel::program_expression::pointer_value(Pointer::null()),
+                crate::kernel::program_expression::pointer_value(Address::null()),
             ],
         )
     };
@@ -330,7 +294,7 @@ fn modeled_pthread_join_call_consumes_only_the_named_completion() {
             "pthread_join",
             vec![
                 crate::kernel::program_expression::uint64_literal(1),
-                crate::kernel::program_expression::pointer_value(Pointer::null()),
+                crate::kernel::program_expression::pointer_value(Address::null()),
             ],
         ),
         &PureFactContext::new(),
@@ -350,7 +314,7 @@ fn modeled_pthread_join_call_consumes_only_the_named_completion() {
             "pthread_join",
             vec![
                 crate::kernel::program_expression::variable("copied_handle"),
-                crate::kernel::program_expression::pointer_value(Pointer::null()),
+                crate::kernel::program_expression::pointer_value(Address::null()),
             ],
         ),
         &PureFactContext::new(),
@@ -373,7 +337,7 @@ fn modeled_pthread_join_call_consumes_only_the_named_completion() {
                 "pthread_join",
                 vec![
                     crate::kernel::program_expression::variable("copied_handle"),
-                    crate::kernel::program_expression::pointer_value(Pointer::null()),
+                    crate::kernel::program_expression::pointer_value(Address::null()),
                 ],
             ),
             PureFactContext::new(),
@@ -439,7 +403,7 @@ fn modeled_pthread_create_status_selects_the_checked_c_outcome() {
                 crate::kernel::program_expression::uint8_literal(77),
             ),
             program_return(ProgramExpression::Value(ProgramValue::typed_pointer(
-                Pointer::null(),
+                Address::null(),
                 ProgramType::VoidPointer,
             ))),
         ),
@@ -474,7 +438,7 @@ fn modeled_pthread_create_status_selects_the_checked_c_outcome() {
         state
             .memory()
             .clone()
-            .with_block(pointer(1).block, 4)
+            .with_block(pointer(1).base, 4)
             .store(pointer(1), int32(0)),
     );
     for declaration in [
@@ -515,7 +479,7 @@ fn modeled_pthread_create_status_selects_the_checked_c_outcome() {
         "pthread_create",
         vec![
             crate::kernel::program_expression::addr_of("thread"),
-            crate::kernel::program_expression::pointer_value(Pointer::null()),
+            crate::kernel::program_expression::pointer_value(Address::null()),
             crate::kernel::program_expression::function_address("byte_worker"),
             ProgramExpression::Value(ProgramValue::typed_pointer(
                 pointer(0),
@@ -751,7 +715,7 @@ fn modeled_pthread_create_status_selects_the_checked_c_outcome() {
         "pthread_join",
         vec![
             crate::kernel::program_expression::variable("thread"),
-            crate::kernel::program_expression::pointer_value(Pointer::null()),
+            crate::kernel::program_expression::pointer_value(Address::null()),
         ],
     );
     let joined = execute_execution_statement_paths(
@@ -771,13 +735,13 @@ fn modeled_pthread_create_status_selects_the_checked_c_outcome() {
     assert_eq!(after_join.resources().facts().len(), 4);
     for fact in [
         ResourceFact::own_memory(MemoryRange::new_with_element_width(
-            Memory::local_pointer("thread"),
+            SymbolicMemory::local_pointer("thread"),
             0.into(),
             8.into(),
             1,
         )),
         ResourceFact::own_memory(MemoryRange::new_with_element_width(
-            Memory::local_pointer("rc"),
+            SymbolicMemory::local_pointer("rc"),
             0.into(),
             4.into(),
             1,
@@ -847,7 +811,7 @@ fn modeled_pthread_create_refuses_a_wrong_worker_abi() {
             "pthread_create",
             vec![
                 crate::kernel::program_expression::addr_of("thread"),
-                crate::kernel::program_expression::pointer_value(Pointer::null()),
+                crate::kernel::program_expression::pointer_value(Address::null()),
                 crate::kernel::program_expression::function_address("thread_worker"),
                 crate::kernel::program_expression::pointer_value(pointer(0)),
             ],
@@ -1269,16 +1233,16 @@ fn two_workers_share_one_implicit_local_root_until_both_join() {
         true,
     );
     let (reader, termination) = certify_worker(function);
-    let local = Pointer {
-        block: "local:shared-reader".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let local = Address {
+        base: "local:shared-reader".into(),
+        offset: AddressOffset::Constant(0),
     };
     let view = ResourceFact::view_memory(MemoryRange::new(local.clone(), 0.into(), 1.into()));
     let state = ExecutionState::new()
         .with_population_creation_tracking()
         .with_memory(
-            Memory::new()
-                .with_block(local.block.clone(), 4)
+            SymbolicMemory::new()
+                .with_block(local.base.clone(), 4)
                 .store(local.clone(), int32(7)),
         );
     let original = ThreadContext::new(state).unwrap();
@@ -1649,13 +1613,13 @@ fn thread_parent_c_access_requires_join_and_implicit_storage_transfers_refuse() 
         "global:thread-output",
         "static:thread-output",
     ] {
-        let local = Pointer {
-            block: block.into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let local = Address {
+            base: block.into(),
+            offset: AddressOffset::Constant(0),
         };
         let state = ExecutionState::new()
             .with_population_creation_tracking()
-            .with_memory(Memory::new().with_block(local.block.clone(), 8))
+            .with_memory(SymbolicMemory::new().with_block(local.base.clone(), 8))
             .with_resource_context(ResourceContext::new().unchecked_with_fact(
                 ResourceFact::own_memory(MemoryRange::new(local.clone(), 0.into(), 2.into())),
             ));
@@ -1751,7 +1715,7 @@ fn thread_local_view_blocks_writes_and_all_scope_exits_until_join() {
     let [kept] = owned.as_slice() else {
         panic!("lending a local must not invent explicit ownership");
     };
-    assert_eq!(kept.base().block, declared_range.base().block);
+    assert_eq!(kept.base().base, declared_range.base().base);
     assert_eq!(
         (kept.constant_start(), kept.constant_end()),
         (Some(4), Some(8)),
@@ -1845,7 +1809,7 @@ fn thread_local_view_blocks_writes_and_all_scope_exits_until_join() {
         .iter()
         .map(|fact| match fact {
             ResourceFact::Own(Resource::Memory(range), _) => {
-                assert_eq!(range.base().block, declared_range.base().block);
+                assert_eq!(range.base().base, declared_range.base().base);
                 let width = range.element_width();
                 (
                     range.constant_start().unwrap() * width,

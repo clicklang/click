@@ -4,9 +4,9 @@ fn rebased_wide_bounds_retain_cold_coordinate_dags() {
     for size in [16, 64, 256] {
         let _session = VerificationSession::enter();
         let ty = MachineIntegerType::UInt64;
-        let base = Pointer {
-            block: "wide_bound_scaling".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let base = Address {
+            base: "wide_bound_scaling".into(),
+            offset: AddressOffset::Constant(0),
         };
         let mut root =
             KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(1018502));
@@ -16,9 +16,9 @@ fn rebased_wide_bounds_retain_cold_coordinate_dags() {
         }
         let index = MachineOperandView::Shared(&root).retain(ty);
         let range = MemoryRange::new_wide(
-            Pointer {
-                block: base.block.clone(),
-                offset: PointerOffsetTerm::Int64Scaled {
+            Address {
+                base: base.base.clone(),
+                offset: AddressOffset::Int64Scaled {
                     value: index.clone(),
                     byte_width: 8,
                     unsigned: true,
@@ -63,11 +63,11 @@ fn wide_normalization_candidates_keep_shared_endpoint_keys() {
                 KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [root.clone(), root]);
         }
         let index = MachineOperandView::Shared(&root).retain(MachineIntegerType::Int64);
-        let base = Pointer {
-            block: "normalization-shared-index".into(),
-            offset: PointerOffsetTerm::Add(
-                Box::new(PointerOffsetTerm::Constant(7)),
-                Box::new(PointerOffsetTerm::Int64Scaled {
+        let base = Address {
+            base: "normalization-shared-index".into(),
+            offset: AddressOffset::Add(
+                Box::new(AddressOffset::Constant(7)),
+                Box::new(AddressOffset::Int64Scaled {
                     value: index.clone(),
                     byte_width: 8,
                     unsigned: true,

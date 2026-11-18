@@ -5,7 +5,7 @@ owned as the byte range `p[0u64..n * 8u64]`. The callee's `owns p[0..n]` is
 the range `p[0u64..n]` of 8-byte structs: the call takes it from the byte
 range, and the return gives it back, because the facts decide that `n * 8`
 does not wrap, so both spellings name the same bytes
-(`design/heap-extents.md`). The callee reads `p->value` and writes
+(`design/heap-allocation-sizes.md`). The callee reads `p->value` and writes
 `p[n - 1].value`, each placed over the struct count `n`; the caller reads
 the field back and frees the block, whose byte range is the returned struct
 range again.

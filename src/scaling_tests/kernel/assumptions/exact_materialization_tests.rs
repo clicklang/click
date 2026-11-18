@@ -53,7 +53,7 @@ fn retained_materialization_equality_keeps_growing_indices_shared() {
                     MachineBinaryOp::Add,
                     [b.clone(), b.clone()],
                 );
-                let offset = |root| PointerOffsetTerm::Int32Scaled {
+                let offset = |root| AddressOffset::Int32Scaled {
                     value: SharedMachineIntegerTerm::from_shared(format, root).unwrap(),
                     byte_width: 4,
                 };

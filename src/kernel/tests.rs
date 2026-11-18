@@ -5,9 +5,9 @@ mod callback_signature_tests;
 mod one_byte_one_name_tests;
 
 fn checked_memory_load_equality(
-    left: &Memory,
-    right: &Memory,
-    pointer: &Pointer,
+    left: &SymbolicMemory,
+    right: &SymbolicMemory,
+    pointer: &Address,
     assumptions: &PureFactContext,
 ) -> bool {
     checked_atomic_load_equality(
@@ -27,7 +27,7 @@ fn checked_memory_load_equality(
 
 /// Instantiate the explicit elements law and discharge its written premise.
 pub(in crate::kernel) fn explicit_signed_elements(
-    base: Pointer,
+    base: Address,
     ty: ProgramType,
     i: MachineTerm,
     j: MachineTerm,
@@ -57,9 +57,9 @@ pub(in crate::kernel) fn explicit_signed_elements(
 /// certificate. Tests supply the selected transition and prove its separation;
 /// the logical read producers provide both observations without reconstruction.
 pub(in crate::kernel) fn explicit_frame(
-    before: &Memory,
-    after: &Memory,
-    address: &Pointer,
+    before: &SymbolicMemory,
+    after: &SymbolicMemory,
+    address: &Address,
     ty: ProgramType,
     effects: &[Proposition],
     facts: &PureFactContext,
@@ -109,7 +109,7 @@ pub(in crate::kernel) fn explicit_frame(
         right: Box::new(kept),
     };
     let _reads = ReadScope::enter();
-    let observe = |memory: &Memory| {
+    let observe = |memory: &SymbolicMemory| {
         let paths = crate::kernel::eval::evaluate_logical_memory_load_paths(
             memory,
             address.clone(),
@@ -171,62 +171,6 @@ mod wide_division_tests;
 mod wide_multiply_tests;
 mod wide_scalar_tests;
 mod wide_storage_tests;
-
-/// Certifies a contract from the kernel's own checked executions of the
-/// function, one per resource-guard case, the way the surface certifies a
-/// proof's artifacts: certification itself never executes a body.
-/// The supplied state and arguments come from the test, not Surface entry
-/// lowering. This helper does not establish that they represent the complete
-/// input domain needed when packaging a reusable function rule.
-fn certify_contract_with_kernel_artifacts(
-    state: ExecutionState,
-    function: ProgramFunction,
-    arguments: Vec<ProgramExpression>,
-    derived_entry_facts: Vec<Proposition>,
-    environment: ExecutionEnvironment,
-    execution_semantics: ExecutionSemantics,
-    mode: FunctionContractExecutionMode,
-) -> FunctionContractExecution {
-    let assume_all = |facts: &[Proposition]| {
-        facts
-            .iter()
-            .fold(PureFactContext::new(), |assumptions, fact| {
-                assumptions.assume_proposition(fact.clone())
-            })
-    };
-    let cases = crate::kernel::api::contract_certification::contract_resource_condition_cases(
-        &state,
-        &function,
-        &arguments,
-        &assume_all(&derived_entry_facts),
-    )
-    .unwrap_or_else(|| vec![Vec::new()]);
-    let artifacts = cases
-        .iter()
-        .map(|case_facts| {
-            let mut facts = derived_entry_facts.clone();
-            facts.extend(case_facts.iter().cloned());
-            prove_checked_program_function_execution_with_environment(
-                state.clone(),
-                function.clone(),
-                arguments.clone(),
-                assume_all(&facts),
-                environment.clone(),
-                execution_semantics,
-                mode,
-            )
-        })
-        .collect::<Vec<_>>();
-    prove_program_function_contract_execution_paths_with_checked_artifacts(
-        state,
-        function,
-        arguments,
-        environment,
-        execution_semantics,
-        mode,
-        &artifacts,
-    )
-}
 
 /// Contract certification calls no general prover: every proposition it
 /// certifies is decided by an exact rule of its own, a completion match,
@@ -317,7 +261,7 @@ fn kernel_source_reads_no_environment_variable() {
 }
 
 fn memory_range(
-    base: Pointer,
+    base: Address,
     start: impl Into<MachineTerm>,
     end: impl Into<MachineTerm>,
 ) -> MemoryRange {
@@ -325,7 +269,7 @@ fn memory_range(
 }
 
 fn view_memory_fact(
-    base: Pointer,
+    base: Address,
     start: impl Into<MachineTerm>,
     end: impl Into<MachineTerm>,
 ) -> ResourceFact {
@@ -333,7 +277,7 @@ fn view_memory_fact(
 }
 
 fn own_memory_fact(
-    base: Pointer,
+    base: Address,
     start: impl Into<MachineTerm>,
     end: impl Into<MachineTerm>,
 ) -> ResourceFact {
@@ -341,7 +285,7 @@ fn own_memory_fact(
 }
 
 fn view_memory_context(
-    base: Pointer,
+    base: Address,
     start: impl Into<MachineTerm>,
     end: impl Into<MachineTerm>,
 ) -> ResourceContext {
@@ -349,7 +293,7 @@ fn view_memory_context(
 }
 
 fn own_memory_context(
-    base: Pointer,
+    base: Address,
     start: impl Into<MachineTerm>,
     end: impl Into<MachineTerm>,
 ) -> ResourceContext {
@@ -367,10 +311,10 @@ fn assert_checkable_derivation(assumptions: &PureFactContext, proposition: &Prop
     );
 }
 
-fn arc_pointer(offset: i64) -> Pointer {
-    Pointer {
-        block: "arg-memory".into(),
-        offset: PointerOffsetTerm::Constant(offset),
+fn arc_pointer(offset: i64) -> Address {
+    Address {
+        base: "arg-memory".into(),
+        offset: AddressOffset::Constant(offset),
     }
 }
 

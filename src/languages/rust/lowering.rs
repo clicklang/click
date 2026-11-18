@@ -258,6 +258,22 @@ fn no_effect(statement: &ProgramStatement) -> bool {
     }
 }
 
+/// The slice local `slice` reads: the local itself, or a shared borrow of it,
+/// `&bytes`, which has the same pointer and length.
+pub(super) fn shared_slice_local(slice: &E) -> Option<&String> {
+    match slice {
+        E::Local { name } => Some(name),
+        E::Borrow {
+            place,
+            value_type: Type::ByteSlice { mutable: false },
+        } => match place.as_ref() {
+            E::Local { name } => Some(name),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 fn scalar_type(t: &Type) -> Result<InterfaceType, String> {
     match t {
         Type::Enum { name } => Ok(InterfaceType::Parameter(EnumTypes::get(name)?)),
@@ -337,7 +353,7 @@ fn fn_pointer_signature(t: &Type) -> Result<CallbackInterface, String> {
     }
     Ok(CallbackInterface::new(result, None, parameters, false))
 }
-// Embedded arrays retain one ABI field and their concrete extent. Never
+// Embedded arrays retain one ABI field and their concrete length. Never
 // flatten a field into one layout entry per element.
 fn record_field_type(t: &Type) -> Result<InterfaceType, String> {
     let Type::Array { element, length } = t else {
@@ -722,9 +738,9 @@ fn lower_function(
             .with_pointee_constant(constant);
         if let Some((length, element, _)) = arrays.get(&p.name) {
             let bytes = u32::try_from(*length * u64::from(element.byte_width()))
-                .expect("validated fixed array extent");
-            parameter = parameter.with_fixed_reference_extent(bytes);
-            kernel_parameter = kernel_parameter.with_fixed_reference_extent(bytes);
+                .expect("validated fixed array length");
+            parameter = parameter.with_fixed_reference_bounds(bytes);
+            kernel_parameter = kernel_parameter.with_fixed_reference_bounds(bytes);
         }
         parameters.push(parameter);
         kernel_parameters.push(kernel_parameter);
@@ -1193,7 +1209,7 @@ impl Context<'_> {
         if left.name == right.name {
             return Err("split_at results require distinct slice slots".into());
         }
-        let E::Local { name } = slice else {
+        let Some(name) = shared_slice_local(slice) else {
             return Err("split_at requires a shared byte-slice local".into());
         };
         if !self.slices.get(name).is_some_and(|(_, constant)| *constant) {

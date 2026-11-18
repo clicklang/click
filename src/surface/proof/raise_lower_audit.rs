@@ -6,7 +6,7 @@
 //! goal it leaves focused, with the canonical raiser goal presentation uses
 //! (`Proof::structural_proposition_candidate`: the step's fixed state, its
 //! entry state and the path's recorded points). It lowers
-//! that spelling again in the same proof and appends one line saying how the
+//! that Surface form again in the same proof and appends one line saying how the
 //! round trip ended. `scripts/raise-lower.sh` runs the corpus under it.
 //!
 //! This checks the canonical Surface form. The raise-lower census separately
@@ -61,7 +61,7 @@ pub(super) fn enabled() -> bool {
 /// How one round trip ended.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum RoundTrip {
-    /// The spelling lowered back to the same term, up to bound names.
+    /// The raised form lowered back to the same term, up to bound names.
     Same,
     /// It lowered to the same comparison stated with the other polarity,
     /// such as `a < b` held false for `a >= b`: a normalization, not the
@@ -69,9 +69,9 @@ pub(super) enum RoundTrip {
     Polarity,
     /// It lowered to a different term.
     Differs,
-    /// The spelling did not lower.
+    /// The raised form did not lower.
     Unlowered,
-    /// The raiser produced no spelling.
+    /// The raiser produced no Surface form.
     Unraised,
     /// The proof state has no fixed state to raise at (a pure theorem).
     NoState,
@@ -90,7 +90,7 @@ impl RoundTrip {
     }
 }
 
-/// Classifies the lowering of a raised spelling against the original term.
+/// Classifies the lowering of a raised form against the original term.
 pub(super) fn classify(
     original: &crate::kernel::Proposition,
     lowered: &crate::kernel::Proposition,
@@ -106,7 +106,7 @@ pub(super) fn classify(
 
 /// Appends one audit line: the outcome, the role (`fact` or `goal`), the
 /// census kind, the claim, the tactic, the origin (`written` or `smart`),
-/// the original term's diagnostic rendering, the spelling, and for
+/// the original term's diagnostic rendering, the raised form, and for
 /// `differs` the lowered term's rendering.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn record(
@@ -116,7 +116,7 @@ pub(super) fn record(
     claim: &str,
     tactic: &str,
     original: &str,
-    spelling: &str,
+    raised: &str,
     lowered: &str,
 ) {
     if !enabled() {
@@ -137,7 +137,7 @@ pub(super) fn record(
         "{}\t{role}\t{kind}\t{claim}\t{tactic}\t{origin}\t{}\t{}\t{}\n",
         outcome.tag(),
         field(original),
-        field(spelling),
+        field(raised),
         field(lowered),
     );
     #[cfg(test)]
@@ -250,6 +250,41 @@ mod tests {
         let fact = "statement(0).call(add, 0).result == click::integer::uint64_wrapping_add(a, b)";
         assert!(
             lines.contains(&("same".to_string(), fact.to_string())),
+            "{lines:#?}"
+        );
+    }
+
+    /// A read in a 64-bit equality raises as the read as written, not as a
+    /// typed word read at the equality's signedness (`load_int64(..)`),
+    /// which lowers to a different read: `left()`'s result equals the
+    /// counter it read after the call.
+    #[test]
+    fn a_wide_read_equality_round_trips_as_the_written_read() {
+        let lines = round_trips(
+            "private_state_mutation_reset.md",
+            include_str!("../../../mdtests/private_state_mutation_reset.md"),
+        );
+        let fact = "statement(4).call(left, 0).result == at(<state A>, state[0])";
+        assert!(
+            lines
+                .iter()
+                .any(|(outcome, original)| outcome == "same" && original.starts_with(fact)),
+            "{lines:#?}"
+        );
+    }
+
+    /// A parameter named `result` raises as `program::result`, so a read
+    /// through it lowers back to that parameter, not to the returned
+    /// pointer that bare `result` names after the return.
+    #[test]
+    fn a_parameter_named_result_round_trips_as_program_result() {
+        let lines = round_trips(
+            "result_parameter_false_field_postcondition.md",
+            include_str!("../../../mdtests/result_parameter_false_field_postcondition.md"),
+        );
+        assert!(!lines.is_empty());
+        assert!(
+            lines.iter().all(|(outcome, _)| outcome == "same"),
             "{lines:#?}"
         );
     }

@@ -4,7 +4,7 @@ use crate::kernel::binary_term;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::surface) struct EvaluatedContractSegment {
     pub(in crate::surface) source: ContractSegment,
-    pub(in crate::surface) base: Pointer,
+    pub(in crate::surface) base: Address,
     pub(in crate::surface) start: MachineTerm,
     pub(in crate::surface) end: MachineTerm,
     pub(in crate::surface) element_width: u32,
@@ -27,8 +27,11 @@ pub(in crate::surface) fn evaluate_requirement_segment(
         &crate::surface::lowering::contract_segment_referenced_names(segment),
     )
     .map_err(|error| error.message)?;
-    let array_refs =
-        array_refs_for_values(parameter_binding, &parameter_values, entry_state.memory());
+    let array_refs = array_refs_for_values(
+        parameter_binding,
+        &parameter_values,
+        &entry_state.program_point(),
+    );
     evaluate_segment_bounds(
         segment,
         &PureFactContext::new(),
@@ -44,14 +47,17 @@ pub(in crate::surface) fn evaluate_requirement_segment_base(
     parameter_binding: ParameterBinding<'_>,
     entry_state: &ExecutionState,
     segment: &ContractSegment,
-) -> Result<Pointer, String> {
+) -> Result<Address, String> {
     let parameter_values = parameter_values_named(
         parameter_binding,
         &crate::surface::lowering::contract_segment_referenced_names(segment),
     )
     .map_err(|error| error.message)?;
-    let array_refs =
-        array_refs_for_values(parameter_binding, &parameter_values, entry_state.memory());
+    let array_refs = array_refs_for_values(
+        parameter_binding,
+        &parameter_values,
+        &entry_state.program_point(),
+    );
     let ProgramValue::Pointer(base) =
         crate::surface::proof::evaluate_program_expression_through_kernel(
             &segment.base,
@@ -105,7 +111,7 @@ fn evaluate_segment_bounds(
 
 pub(in crate::surface) fn segment_contains_pointer(
     segment: &EvaluatedContractSegment,
-    pointer: &Pointer,
+    pointer: &Address,
     assumptions: &PureFactContext,
 ) -> bool {
     let Some(index) = pointer_element_index_from_base_with_width(
@@ -129,20 +135,20 @@ pub(in crate::surface) fn segment_contains_pointer(
 }
 #[cfg(test)]
 pub(in crate::surface) fn pointer_element_index_from_base(
-    pointer: &Pointer,
-    base: &Pointer,
+    pointer: &Address,
+    base: &Address,
     assumptions: &PureFactContext,
 ) -> Option<MachineTerm> {
     pointer_element_index_from_base_with_width(pointer, base, 4, assumptions)
 }
 
 fn pointer_element_index_from_base_with_width(
-    pointer: &Pointer,
-    base: &Pointer,
+    pointer: &Address,
+    base: &Address,
     element_width: u32,
     assumptions: &PureFactContext,
 ) -> Option<MachineTerm> {
-    if pointer.block != base.block {
+    if pointer.base != base.base {
         return None;
     }
 
@@ -152,18 +158,18 @@ fn pointer_element_index_from_base_with_width(
         return Some(MachineTerm::constant(0));
     }
 
-    if base.offset == PointerOffsetTerm::Constant(0) {
+    if base.offset == AddressOffset::Constant(0) {
         return element_index_from_pointer_offset(&pointer.offset, element_width);
     }
 
     match &pointer.offset {
-        PointerOffsetTerm::Add(left, right)
+        AddressOffset::Add(left, right)
             if left.as_ref() == &base.offset
                 || pointer_offsets_equal_for_effect(left, &base.offset, assumptions) =>
         {
             element_index_from_pointer_offset(right, element_width)
         }
-        PointerOffsetTerm::Add(left, right)
+        AddressOffset::Add(left, right)
             if right.as_ref() == &base.offset
                 || pointer_offsets_equal_for_effect(right, &base.offset, assumptions) =>
         {
@@ -183,44 +189,42 @@ fn pointer_element_index_from_base_with_width(
 }
 
 fn pointer_offsets_equal_for_effect(
-    left: &PointerOffsetTerm,
-    right: &PointerOffsetTerm,
+    left: &AddressOffset,
+    right: &AddressOffset,
     assumptions: &PureFactContext,
 ) -> bool {
     program_pointer_offsets_proven_equal_for_effect(left, right, assumptions)
 }
 
 fn element_index_from_pointer_offset(
-    offset: &PointerOffsetTerm,
+    offset: &AddressOffset,
     element_width: u32,
 ) -> Option<MachineTerm> {
     if element_width == 0 {
         return None;
     }
     match offset {
-        PointerOffsetTerm::Constant(offset) if offset % i64::from(element_width) == 0 => {
+        AddressOffset::Constant(offset) if offset % i64::from(element_width) == 0 => {
             let index = offset / i64::from(element_width);
             (i32::MIN as i64..=i32::MAX as i64)
                 .contains(&index)
                 .then_some(MachineTerm::constant((index as i32) as u32))
         }
-        PointerOffsetTerm::Int32Scaled { value, byte_width }
+        AddressOffset::Int32Scaled { value, byte_width }
             if *byte_width == i64::from(element_width) =>
         {
             Some(value.structural_value().clone())
         }
-        PointerOffsetTerm::Int64Scaled {
+        AddressOffset::Int64Scaled {
             value, byte_width, ..
         } if *byte_width == i64::from(element_width) => Some(value.structural_value().clone()),
-        PointerOffsetTerm::Add(left, right) if left.as_ref() == &PointerOffsetTerm::Constant(0) => {
+        AddressOffset::Add(left, right) if left.as_ref() == &AddressOffset::Constant(0) => {
             element_index_from_pointer_offset(right, element_width)
         }
-        PointerOffsetTerm::Add(left, right)
-            if right.as_ref() == &PointerOffsetTerm::Constant(0) =>
-        {
+        AddressOffset::Add(left, right) if right.as_ref() == &AddressOffset::Constant(0) => {
             element_index_from_pointer_offset(left, element_width)
         }
-        PointerOffsetTerm::Add(left, right) => Some(bitvector32_add(
+        AddressOffset::Add(left, right) => Some(bitvector32_add(
             element_index_from_pointer_offset(left, element_width)?,
             element_index_from_pointer_offset(right, element_width)?,
         )),

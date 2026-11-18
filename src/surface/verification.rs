@@ -464,9 +464,6 @@ fn collect_applied_theorems(tactics: &[ProofTactic], names: &mut BTreeSet<String
             }
             ProofTactic::Open(proof_open) => {
                 collect_applied_theorems(&proof_open.tactics, names);
-                if let Some(close_proof) = &proof_open.close_proof {
-                    collect_applied_theorems(close_proof, names);
-                }
             }
             ProofTactic::If(proof_if) => {
                 collect_applied_theorems(&proof_if.then_tactics, names);
@@ -716,72 +713,6 @@ pub fn verify_standard_library() -> Result<Vec<VerifiedPureTheorem>, ClickError>
         &ResourceEnvironment::new(&combined_resource_definitions(&empty)?),
         function_source_registry,
     )
-}
-
-#[cfg(test)]
-pub(in crate::surface) fn verify_click_theorems_with_program_sources(
-    click_source: &str,
-    c_sources: &[(&str, &str)],
-) -> Result<Vec<VerifiedPureTheorem>, ClickError> {
-    let sources = ProgramSourceContext::bundle(c_sources);
-    verify_click_theorems_with_context(click_source, &sources)
-}
-
-#[cfg(test)]
-pub(in crate::surface) fn verify_click_theorems_with_context(
-    click_source: &str,
-    sources: &ProgramSourceContext<'_>,
-) -> Result<Vec<VerifiedPureTheorem>, ClickError> {
-    let layouts = parse_c_layouts(click_source, sources)?;
-    let resource_struct_layouts = layouts.struct_layouts.clone();
-    let file = parser::parse_with_layouts_and_aggregate_objects(
-        &sources.with_library_contracts(click_source),
-        layouts,
-    )?;
-    modules::reject_theorem_justification_cycles(&file)?;
-    let parsed_sources = parse_verified_sources_context(&file, sources)?;
-    let (file, parsed_sources) = with_tactic_procedures(file, parsed_sources)?;
-    let predicate_definitions = combined_predicate_definitions(&file)?;
-    let click_function_definitions = combined_click_function_definitions(&file)?;
-    let resource_definitions = combined_resource_definitions(&file)?;
-    let predicate_environment = PredicateEnvironment::new(&predicate_definitions)
-        .with_contracts(file.contract_definitions(), &file.program_function_names);
-    let click_function_environment = ClickFunctionEnvironment::with_algebraic_types(
-        &click_function_definitions,
-        &combined_algebraic_type_definitions(&file)?,
-    );
-    let resource_environment =
-        ResourceEnvironment::with_struct_layouts(&resource_definitions, &resource_struct_layouts);
-    let external_and_user_function_blocks = combined_external_function_blocks(&file)?;
-    let mut function_environment = build_function_environment(
-        &parsed_sources,
-        &external_and_user_function_blocks,
-        file.contract_definitions(),
-        SpecDefinitions::new(&predicate_environment, &click_function_environment)
-            .with_struct_sizes(&file.struct_sizes),
-        &resource_environment,
-    )?
-    .with_byte_order(file.selected_c_target().byte_order());
-    function_environment = with_unselected_tactic_interfaces(&file, function_environment);
-    let refinement_targets = file
-        .theorem_definitions()
-        .iter()
-        .flat_map(|theorem| contract_refinement_targets(&file, theorem.name()))
-        .collect::<BTreeSet<_>>();
-    for target in refinement_targets {
-        let Some(function) = function_environment
-            .get_function(file.program_function_names.get(&target).unwrap_or(&target))
-            .cloned()
-        else {
-            continue;
-        };
-        if let Some(hypothesis) =
-            crate::kernel::program_recursive_function_contract_hypothesis(function)
-        {
-            function_environment = function_environment.with_verified_function_rule(hypothesis);
-        }
-    }
-    verify_click_file_theorems_with_environment(&file, Some(&function_environment))
 }
 
 pub(in crate::surface) fn verify_click_theorem_context(
@@ -1813,12 +1744,6 @@ impl ProgramVerificationSession {
     pub fn function_termination_is_verified(&self, name: &str) -> bool {
         self.verified_function_environment
             .has_verified_function_termination(name)
-    }
-
-    /// Identity of the immutable inputs and resource semantics used by this
-    /// reusable verification session.
-    pub fn environment_identity(&self) -> ProofArtifactIdentity {
-        self.environment_identity
     }
 
     /// Refuses to reuse the retained environment once another verification
@@ -4384,7 +4309,7 @@ pub(in crate::surface) fn termination_measure_source(expression: &ContractExpres
     match expression {
         ContractExpression::IntegerLiteral(literal) => literal.clone(),
         ContractExpression::Binding(name)
-        | ContractExpression::CBinding(name)
+        | ContractExpression::ProgramBinding(name)
         | ContractExpression::QualifiedC { name, .. } => name.clone(),
         ContractExpression::ProgramExpression(expression) => {
             crate::kernel::ranking_measure_identity(
@@ -4458,7 +4383,7 @@ fn termination_measure_binder_name(measure: &TerminationMeasure) -> Option<&str>
     };
     match component {
         ContractExpression::Binding(name)
-        | ContractExpression::CBinding(name)
+        | ContractExpression::ProgramBinding(name)
         | ContractExpression::ProgramExpression(ProgramExpression::Variable(
             crate::kernel::BindingName::Named(name),
         )) => Some(name),
@@ -7132,7 +7057,7 @@ pub(in crate::surface) fn substitute_contract_segment(
         surface => surface.clone(),
     };
     // Preserve resolved C spellings unless a component actually refers to
-    // the return name. Its surface form then distinguishes `c(result)`.
+    // the return name. Its surface form then distinguishes `program::result`.
     if substitutions.is_contract_result_binding()
         && let ContractSegmentSurface::Range { base, start, end }
         | ContractSegmentSurface::StructRange {
@@ -7275,6 +7200,15 @@ pub(in crate::surface) fn check_signature(
     if signature.returns_reference() != parsed_function.returns_reference() {
         return Err(ClickError::new(format!(
             "signature mismatch for `{}` in `{source_path}`: reference and pointer results are distinct",
+            signature.name()
+        )).with_kind(ClickErrorKind::Type));
+    }
+
+    if signature.returns_reference()
+        && signature.return_struct_name.as_deref() != parsed_function.return_pointer_struct_name()
+    {
+        return Err(ClickError::new(format!(
+            "signature mismatch for `{}` in `{source_path}`: reference result must retain its nominal record type",
             signature.name()
         )).with_kind(ClickErrorKind::Type));
     }
@@ -8243,7 +8177,7 @@ int32 reader(int32 p[]) {
     /// write-authority check that precedes the ledger names the missing
     /// owner exactly. The ledger-level aggregate witness, an owner-authorized
     /// copy over a lent field, is
-    /// `owner_authorized_aggregate_copy_into_a_lent_range_is_refused`.
+    /// `owner_authorized_aggregate_copy_into_a_lent_range_requires_separation`.
     #[test]
     fn root_view_refuses_an_aggregate_copy_into_it() {
         let click = r#"
@@ -8752,14 +8686,6 @@ pub(in crate::surface) fn program_contract_failure(
             let name = name.split_once('#').map_or(name.as_str(), |(name, _)| name);
             ClickError::new(format!(
                 "contract proof for `{name}` still owes its body obligations"
-            ))
-            .at_declaration(name)
-        }
-        #[cfg(test)]
-        ProgramContractFailure::MissingReturnEvidence(name) => {
-            let name = name.split_once('#').map_or(name.as_str(), |(name, _)| name);
-            ClickError::new(format!(
-                "contract proof for `{name}` still owes its program termination obligation"
             ))
             .at_declaration(name)
         }

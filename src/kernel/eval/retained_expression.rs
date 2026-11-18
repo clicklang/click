@@ -683,7 +683,7 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = ProgramExpression::Value(ProgramValue::Pointer(
             PointerValue::new(
-                Pointer::symbolic(Variable(1024100)),
+                Address::symbolic(Variable(1024100)),
                 ProgramType::Int32Pointer,
             )
             .with_pointee_constant(true)
@@ -704,7 +704,7 @@ mod tests {
             expressions.push(cast(ProgramExpression::FunctionAddress("f".into()), ty));
             expressions.push(cast(
                 ProgramExpression::Value(ProgramValue::typed_pointer(
-                    Pointer::null(),
+                    Address::null(),
                     ProgramType::Int32Pointer,
                 )),
                 ty,
@@ -721,7 +721,7 @@ mod tests {
         expressions.push(ProgramExpression::Subtract(
             Box::new(pointer),
             Box::new(ProgramExpression::Value(ProgramValue::typed_pointer(
-                Pointer::symbolic(Variable(1024101)),
+                Address::symbolic(Variable(1024101)),
                 ProgramType::Int32Pointer,
             ))),
         ));
@@ -761,7 +761,7 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = ProgramExpression::Value(ProgramValue::Pointer(
             PointerValue::new(
-                Pointer::symbolic(Variable(1023000)),
+                Address::symbolic(Variable(1023000)),
                 ProgramType::Int32Pointer,
             )
             .with_pointee_constant(true)
@@ -794,7 +794,7 @@ mod tests {
             },
             ProgramExpression::Add(
                 Box::new(ProgramExpression::Value(ProgramValue::typed_pointer(
-                    Pointer::null(),
+                    Address::null(),
                     ProgramType::Int32Pointer,
                 ))),
                 Box::new(ProgramExpression::Value(ProgramValue::Int32(
@@ -854,13 +854,13 @@ mod tests {
         state
             .locals
             .set("x", ProgramValue::Int32(MachineTerm::constant(7)));
-        let array = Pointer::symbolic(Variable(1022001));
+        let array = Address::symbolic(Variable(1022001));
         state
             .locals
             .set_array_object_at("array", ProgramType::Int32, 4, array.clone());
-        state.set_memory(Memory::new().with_block(array.block, 16));
+        state.set_memory(SymbolicMemory::new().with_block(array.base, 16));
         let pointer = PointerValue::new(
-            Pointer::symbolic(Variable(1022000)),
+            Address::symbolic(Variable(1022000)),
             ProgramType::Int32Pointer,
         )
         .with_pointee_constant(true)
@@ -868,7 +868,7 @@ mod tests {
         let source = ProgramExpression::Value(ProgramValue::Pointer(pointer));
         let mut expressions = vec![
             ProgramExpression::Value(ProgramValue::typed_pointer(
-                Pointer::null(),
+                Address::null(),
                 ProgramType::VoidPointer,
             )),
             source.clone(),
@@ -939,9 +939,9 @@ mod tests {
     #[test]
     fn retained_pointer_reads_preserve_freed_value_refusal() {
         let _session = crate::kernel::VerificationSession::enter();
-        let cell = Pointer::symbolic(Variable(1021001));
+        let cell = Address::symbolic(Variable(1021001));
         let assumptions = PureFactContext::new();
-        let memory = Memory::new();
+        let memory = SymbolicMemory::new();
         let native = memory.symbolic_pointer_load(&cell, ProgramType::Int32Pointer);
         let ProgramValue::Pointer(pointer) = &native else {
             unreachable!()
@@ -955,7 +955,7 @@ mod tests {
             Some(KernelTermNode::PointerRead { .. })
         ));
         let memory = memory
-            .with_heap_allocation_claim(base.clone(), HeapExtent::int32(4))
+            .with_heap_allocation_claim(base.clone(), AllocationSize::int32(4))
             .unwrap();
         let freed = memory.free_heap_block(&base, &assumptions).unwrap();
         let state = ExecutionState::new().with_memory(freed);
@@ -1030,13 +1030,10 @@ mod tests {
                     panic!("a static array must decay to its address: {native:?}");
                 };
                 assert_eq!(
-                    pointer.pointer().block,
-                    Memory::global_pointer(binding).block
+                    pointer.pointer().base,
+                    SymbolicMemory::global_pointer(binding).base
                 );
-                assert_eq!(
-                    pointer.pointer().offset,
-                    PointerOffsetTerm::Constant(offset)
-                );
+                assert_eq!(pointer.pointer().offset, AddressOffset::Constant(offset));
             }
         }
     }
@@ -1127,14 +1124,14 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let left = ProgramValue::Pointer(
             PointerValue::new(
-                Pointer::symbolic(Variable(1026200)),
+                Address::symbolic(Variable(1026200)),
                 ProgramType::Int32Pointer,
             )
             .with_pointee_constant(true),
         );
         let right = ProgramValue::Pointer(
             PointerValue::new(
-                Pointer::symbolic(Variable(1026201)),
+                Address::symbolic(Variable(1026201)),
                 ProgramType::Int32Pointer,
             )
             .with_pointee_volatile(true),
@@ -1921,9 +1918,9 @@ mod tests {
                 panic!()
             };
             assert_eq!(value.shared(), Some(&root));
-            let address = Memory::local_pointer("boolean_step_cell");
-            let memory = Memory::new()
-                .with_block(address.block.clone(), 1)
+            let address = SymbolicMemory::local_pointer("boolean_step_cell");
+            let memory = SymbolicMemory::new()
+                .with_block(address.base.clone(), 1)
                 .store_retained(address.clone(), value.clone());
             let loaded = super::super::memory_loads::evaluate_retained_memory_load_paths(
                 &memory,
@@ -1942,8 +1939,8 @@ mod tests {
             };
             assert_eq!(loaded.shared(), Some(&root));
             let mut store_state = (*after).clone();
-            let address = Memory::local_pointer("boolean_statement_cell");
-            store_state.set_memory(Memory::new().with_block(address.block.clone(), 1));
+            let address = SymbolicMemory::local_pointer("boolean_statement_cell");
+            store_state.set_memory(SymbolicMemory::new().with_block(address.base.clone(), 1));
             let statement = ProgramStatement::TypedStore {
                 pointer: ProgramExpression::Value(ProgramValue::typed_pointer(
                     address.clone(),
@@ -1979,8 +1976,8 @@ mod tests {
     #[test]
     fn pointer_steps_keep_nested_read_call_and_arithmetic_roots_through_storage() {
         let _session = crate::kernel::VerificationSession::enter();
-        let source_memory = Memory::new();
-        let source_address = Pointer::symbolic(Variable(1027900));
+        let source_memory = SymbolicMemory::new();
+        let source_address = Address::symbolic(Variable(1027900));
         let read = ExecutionValue::retain_native(
             source_memory.symbolic_pointer_load(&source_address, ProgramType::Int32Pointer),
         );
@@ -1992,14 +1989,15 @@ mod tests {
                 vec![read_root.clone()],
             ),
             SharedPointerValue::import(&PointerValue::new(
-                Memory::local_pointer("pointer_step_pointee"),
+                SymbolicMemory::local_pointer("pointer_step_pointee"),
                 ProgramType::Int32Pointer,
             )),
         );
         let mut state = ExecutionState::new();
-        state.set_memory(
-            Memory::new().with_block(Memory::local_pointer("pointer_step_pointee").block, 16),
-        );
+        state.set_memory(SymbolicMemory::new().with_block(
+            SymbolicMemory::local_pointer("pointer_step_pointee").base,
+            16,
+        ));
         state.locals.set_retained_typed_with_all_qualifiers(
             "p",
             ExecutionValue::Shared(call_root.clone()),
@@ -2061,11 +2059,11 @@ mod tests {
             panic!("state read")
         };
         assert_eq!(memory, &crate::kernel::intern_memory_ref(&source_memory));
-        let address = Memory::local_pointer("pointer_step_cell");
+        let address = SymbolicMemory::local_pointer("pointer_step_cell");
         let stored = after
             .memory
             .clone()
-            .with_block(address.block.clone(), 8)
+            .with_block(address.base.clone(), 8)
             .store_retained(address.clone(), value.clone());
         let loaded = super::super::memory_loads::evaluate_retained_memory_load_paths(
             &stored,

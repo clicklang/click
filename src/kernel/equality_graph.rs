@@ -313,23 +313,23 @@ impl AffineOffset {
 
     /// Normalize the explicit offset in one iterative traversal. Building a
     /// fresh form at every Add node would copy a growing prefix quadratically.
-    pub(in crate::kernel) fn of(offset: &PointerOffsetTerm) -> Option<Self> {
+    pub(in crate::kernel) fn of(offset: &AddressOffset) -> Option<Self> {
         let mut result = Self::default();
         let mut pending = vec![offset];
         while let Some(offset) = pending.pop() {
             crate::instrumentation::record_deterministic_work(1);
             match offset {
-                PointerOffsetTerm::Constant(value) => {
+                AddressOffset::Constant(value) => {
                     result.constant = result.constant.checked_add(i128::from(*value))?;
                 }
-                PointerOffsetTerm::Variable(variable) => {
+                AddressOffset::Variable(variable) => {
                     result.add_atom(OffsetAtom::Variable(*variable), 1)?;
                 }
-                PointerOffsetTerm::Add(left, right) => {
+                AddressOffset::Add(left, right) => {
                     pending.push(right);
                     pending.push(left);
                 }
-                PointerOffsetTerm::Int32Scaled { value, byte_width } => {
+                AddressOffset::Int32Scaled { value, byte_width } => {
                     let width = i128::from(*byte_width);
                     if let Some(value) = value.operand_view().word32_constant() {
                         result.constant = result
@@ -345,7 +345,7 @@ impl AffineOffset {
                         )?;
                     }
                 }
-                PointerOffsetTerm::Int64Scaled {
+                AddressOffset::Int64Scaled {
                     value,
                     byte_width,
                     unsigned,
@@ -412,8 +412,8 @@ impl AffineOffset {
     /// The offset term this form denotes, or `None` when an atom's
     /// coefficient has no offset spelling (a variable scaled by anything but
     /// one) or a value leaves `i64`.
-    pub(in crate::kernel) fn to_offset_term(&self) -> Option<PointerOffsetTerm> {
-        let mut term = PointerOffsetTerm::Constant(i64::try_from(self.constant).ok()?);
+    pub(in crate::kernel) fn to_offset_term(&self) -> Option<AddressOffset> {
+        let mut term = AddressOffset::Constant(i64::try_from(self.constant).ok()?);
         // Compact IDs depend on interning order. Legacy spelling output must
         // retain structural order so proof routes do not depend on that order.
         let mut terms: Vec<_> = self.terms.iter().collect();
@@ -422,19 +422,17 @@ impl AffineOffset {
             let coefficient = i64::try_from(*coefficient).ok()?;
             let addend = match atom {
                 OffsetAtom::Variable(variable) if coefficient == 1 => {
-                    PointerOffsetTerm::Variable(*variable)
+                    AddressOffset::Variable(*variable)
                 }
                 OffsetAtom::Variable(_) => return None,
                 OffsetAtom::Int32(value) => {
-                    PointerOffsetTerm::scaled_int32_node(value.value().clone(), coefficient)
+                    AddressOffset::scaled_int32_node(value.value().clone(), coefficient)
                 }
-                OffsetAtom::Int64 { value, unsigned } => PointerOffsetTerm::scaled_int64_node(
-                    value.value().clone(),
-                    coefficient,
-                    *unsigned,
-                ),
+                OffsetAtom::Int64 { value, unsigned } => {
+                    AddressOffset::scaled_int64_node(value.value().clone(), coefficient, *unsigned)
+                }
             };
-            term = PointerOffsetTerm::add(term, addend);
+            term = AddressOffset::add(term, addend);
         }
         Some(term)
     }
@@ -444,7 +442,7 @@ impl AffineOffset {
 /// address's offset from that representative's base.
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub(in crate::kernel) struct CanonicalPointer {
-    pub(in crate::kernel) representative: PointerBlock,
+    pub(in crate::kernel) representative: AddressBase,
     pub(in crate::kernel) offset: AffineOffset,
 }
 
@@ -467,7 +465,7 @@ pub(in crate::kernel) struct EqualityGraph {
 
 #[derive(Clone, Default)]
 struct LogicalPointerReads {
-    definitions: crate::persistent::PersistentMap<Pointer, (Pointer, Pointer)>,
+    definitions: crate::persistent::PersistentMap<Address, (Address, Address)>,
     generation: u64,
 }
 
@@ -521,9 +519,9 @@ pub(in crate::kernel) fn clear_logical_pointer_reads() {
 
 /// The defining load of a producer-retained typed pointer value. The
 /// definition is term metadata, not a hypothesis about the loaded address.
-pub(crate) fn logical_pointer_read_term(value: &Pointer) -> Option<MachineTerm> {
+pub(crate) fn logical_pointer_read_term(value: &Address) -> Option<MachineTerm> {
     if let Some(read) = value.as_loaded_value() {
-        return (read.displacement == PointerOffsetTerm::Constant(0)).then(|| {
+        return (read.displacement == AddressOffset::Constant(0)).then(|| {
             MachineTerm::MemoryLoad(
                 ProgramPoint::at(&read.defining_memory),
                 Box::new(read.defining_address),
@@ -544,8 +542,8 @@ pub(crate) fn logical_pointer_read_term(value: &Pointer) -> Option<MachineTerm> 
         // A function read's value is exactly its load variable. Recover its
         // original definition when a restored table predates the read, while
         // preserving any producer definition already retained for the value.
-        return match (&value.block, &value.offset) {
-            (PointerBlock::FunctionSymbolic(variable), PointerOffsetTerm::Constant(0)) => {
+        return match (&value.base, &value.offset) {
+            (AddressBase::FunctionSymbolic(variable), AddressOffset::Constant(0)) => {
                 crate::kernel::registered_load_term_for_variable(variable)
             }
             _ => None,
@@ -608,7 +606,7 @@ impl std::fmt::Debug for EqualityGraph {
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 struct LoadSignature {
     memory: (u32, u32),
-    address_block: PointerBlock,
+    address_block: AddressBase,
     address_offset: u64,
     kind: crate::kernel::LoadKind,
 }
@@ -616,7 +614,7 @@ struct LoadSignature {
 #[derive(Clone)]
 struct LoadApplication {
     memory: (u32, u32),
-    address_block: PointerBlock,
+    address_block: AddressBase,
     address_offset: AffineOffset,
     /// Two reads of one address are one value only when they are one kind.
     kind: crate::kernel::LoadKind,
@@ -641,40 +639,40 @@ struct EqualityGraphState {
     has_scalar_inputs: bool,
     terms: terms::TermClasses,
     input_history: Option<std::sync::Arc<inputs::History>>,
-    logical_values: crate::persistent::PersistentSet<Pointer>,
+    logical_values: crate::persistent::PersistentSet<Address>,
     /// Definitions consumed for this selected read. New observations may
     /// name an existing version; seeing the value once does not freeze them.
     logical_pointer_sources:
-        crate::persistent::PersistentMap<Pointer, [Option<crate::kernel::SharedMemory>; 3]>,
+        crate::persistent::PersistentMap<Address, [Option<crate::kernel::SharedMemory>; 3]>,
     /// Compound query dependencies already registered at this metadata
     /// generation. Later producer definitions invalidate a miss lazily.
-    logical_query_dependencies: crate::persistent::PersistentMap<Pointer, u64>,
-    typed_reads: crate::persistent::PersistentSet<PointerBlock>,
+    logical_query_dependencies: crate::persistent::PersistentMap<Address, u64>,
+    typed_reads: crate::persistent::PersistentSet<AddressBase>,
     checked_read_generation: u64,
     /// The exact class-merge delta stream. A consumer with a persistent
     /// class-keyed index can update only entries in the moved class. Clones
     /// share the prefix; a rebuilt (restricted) graph has a new origin.
     merge_origin: std::sync::Arc<()>,
     merge_history: Option<std::sync::Arc<PointerMergeHistory>>,
-    parent: crate::persistent::PersistentMap<PointerBlock, (PointerBlock, AffineOffset)>,
+    parent: crate::persistent::PersistentMap<AddressBase, (AddressBase, AffineOffset)>,
     members: crate::persistent::PersistentMap<
-        PointerBlock,
-        crate::persistent::PersistentMap<PointerBlock, AffineOffset>,
+        AddressBase,
+        crate::persistent::PersistentMap<AddressBase, AffineOffset>,
     >,
     // Weight includes application uses, so repeatedly joining a fresh block
     // to one with many parents never reindexes the large side.
-    weights: crate::persistent::PersistentMap<PointerBlock, usize>,
+    weights: crate::persistent::PersistentMap<AddressBase, usize>,
     // A storage coordinate is retained evidence, not the union-find root.
     // None records an ambiguous class. Append-only merges cannot regain a
     // unique anchor; no member enumeration is needed to answer a query.
-    storage_anchors: crate::persistent::PersistentMap<PointerBlock, Option<PointerBlock>>,
-    loads: crate::persistent::PersistentMap<PointerBlock, LoadApplication>,
+    storage_anchors: crate::persistent::PersistentMap<AddressBase, Option<AddressBase>>,
+    loads: crate::persistent::PersistentMap<AddressBase, LoadApplication>,
     uses: crate::persistent::PersistentMap<
-        PointerBlock,
-        crate::persistent::PersistentSet<PointerBlock>,
+        AddressBase,
+        crate::persistent::PersistentSet<AddressBase>,
     >,
-    signatures: crate::persistent::PersistentMap<LoadSignature, PointerBlock>,
-    load_signatures: crate::persistent::PersistentMap<PointerBlock, LoadSignature>,
+    signatures: crate::persistent::PersistentMap<LoadSignature, AddressBase>,
+    load_signatures: crate::persistent::PersistentMap<AddressBase, LoadSignature>,
     offset_parts: crate::persistent::PersistentMap<OffsetPart, u64>,
 }
 
@@ -683,8 +681,8 @@ struct EqualityGraphState {
 /// this delta; the record is an index update, not independent evidence.
 #[derive(Clone, Debug)]
 pub(in crate::kernel) struct PointerClassMerge {
-    pub(in crate::kernel) moved: PointerBlock,
-    pub(in crate::kernel) kept: PointerBlock,
+    pub(in crate::kernel) moved: AddressBase,
+    pub(in crate::kernel) kept: AddressBase,
     pub(in crate::kernel) moved_from_kept: AffineOffset,
 }
 
@@ -702,15 +700,15 @@ impl EqualityGraph {
     /// address. Never recover this equation by decoding pointer arithmetic.
     pub(in crate::kernel) fn register_pointer_read_definition(
         &self,
-        value: &Pointer,
+        value: &Address,
         memory: &crate::kernel::SharedMemory,
-        address: &Pointer,
+        address: &Address,
     ) {
         // A loaded-pointer identity is its own definition.
         if value.as_loaded_value().is_some() {
             return;
         }
-        let application = Pointer::loaded_value(memory, address);
+        let application = Address::loaded_value(memory, address);
         let mut reads = self.logical_reads.lock().expect("logical pointer reads");
         if let Some(existing) = reads.definitions.get(value) {
             assert_eq!(
@@ -753,10 +751,10 @@ impl EqualityGraph {
     /// Admit an equality checked by a read producer into this branch's graph.
     /// Register definitions before closing it, so all consumers see the same
     /// congruence consequences. Memos made before a new union are invalidated.
-    pub(in crate::kernel) fn add_checked_read_equality(&self, left: &Pointer, right: &Pointer) {
+    pub(in crate::kernel) fn add_checked_read_equality(&self, left: &Address, right: &Address) {
         let mut state = self.state.lock().expect("equality graph");
         self.register_logical_read_values(&mut state, [left, right]);
-        state.register_blocks([left.block.clone(), right.block.clone()]);
+        state.register_blocks([left.base.clone(), right.base.clone()]);
         let left_address = state.register_pointer_address(left);
         let right_address = state.register_pointer_address(right);
         let address_changed = state
@@ -789,11 +787,11 @@ impl EqualityGraph {
     }
 
     /// Whole pointer reads linked by the selected memory producer share
-    /// their origin and opaque extent, independently of the eventual type.
+    /// their origin and opaque bounds, independently of the eventual type.
     pub(in crate::kernel) fn add_checked_pointer_read_equality(
         &self,
-        left: &Pointer,
-        right: &Pointer,
+        left: &Address,
+        right: &Address,
     ) {
         self.add_checked_read_equality(left, right);
         let mut state = self.state.lock().expect("equality graph");
@@ -805,22 +803,36 @@ impl EqualityGraph {
         state.close(Vec::new());
     }
 
-    pub(in crate::kernel) fn opaque_extent_is_root(&self, origin: &Pointer) -> bool {
-        let mut state = self.state.lock().expect("equality graph");
-        self.register_logical_read_values(&mut state, [origin]);
-        state.terms.opaque_extent_is_root(origin)
+    /// Cached domain knowledge only: no congruence closure, registration or
+    /// memory-read recovery is performed on the query path.
+    pub(in crate::kernel) fn opaque_pointer_domain(
+        &self,
+        origin: &Address,
+    ) -> crate::kernel::assumptions::PointerDomain {
+        self.state
+            .lock()
+            .expect("equality graph")
+            .terms
+            .opaque_pointer_domain(origin)
     }
 
-    pub(in crate::kernel) fn opaque_extents_equal(&self, left: &Pointer, right: &Pointer) -> bool {
+    #[cfg(test)]
+    pub(in crate::kernel) fn bounds_owner_is_root(&self, origin: &Address) -> bool {
+        let mut state = self.state.lock().expect("equality graph");
+        self.register_logical_read_values(&mut state, [origin]);
+        state.terms.bounds_owner_is_root(origin)
+    }
+
+    pub(in crate::kernel) fn bounds_owners_equal(&self, left: &Address, right: &Address) -> bool {
         let mut state = self.state.lock().expect("equality graph");
         self.register_logical_read_values(&mut state, [left, right]);
-        state.terms.opaque_extents_equal(left, right)
+        state.terms.bounds_owners_equal(left, right)
     }
 
     fn register_logical_read_values<'a>(
         &self,
         state: &mut EqualityGraphState,
-        values: impl IntoIterator<Item = &'a Pointer>,
+        values: impl IntoIterator<Item = &'a Address>,
     ) {
         let mut reads = self.logical_reads.lock().expect("logical pointer reads");
         let mut pending: Vec<_> = values.into_iter().cloned().collect();
@@ -858,11 +870,11 @@ impl EqualityGraph {
             // read's address (the read-over-write authority): memory records
             // it, so it is term metadata like a definition, never a fact.
             if self.resolve_stored_values
-                && let PointerBlock::LoadedPointer(_) = &value.block
+                && let AddressBase::LoadedPointer(_) = &value.base
             {
-                let read = Pointer {
-                    block: value.block.clone(),
-                    offset: PointerOffsetTerm::Constant(0),
+                let read = Address {
+                    base: value.base.clone(),
+                    offset: AddressOffset::Constant(0),
                 };
                 if !state.logical_values.contains(&read) {
                     state.logical_values = state.logical_values.with_value(read.clone());
@@ -889,9 +901,9 @@ impl EqualityGraph {
                     .logical_pointer_sources
                     .with_inserted(value.clone(), sources.clone());
                 for source in sources.into_iter().flatten() {
-                    let source_read = Pointer::loaded_value(&source, &load.defining_address);
-                    let application = Pointer {
-                        block: source_read.block,
+                    let source_read = Address::loaded_value(&source, &load.defining_address);
+                    let application = Address {
+                        base: source_read.base,
                         offset: load.displacement.clone(),
                     };
                     pending.push(application.clone());
@@ -904,7 +916,7 @@ impl EqualityGraph {
                 continue;
             }
             let Some((application, address)) = reads.definitions.get(&value) else {
-                if matches!(value.offset, PointerOffsetTerm::Add(..)) {
+                if matches!(value.offset, AddressOffset::Add(..)) {
                     if state.logical_query_dependencies.get(&value) == Some(&reads.generation) {
                         continue;
                     }
@@ -916,12 +928,12 @@ impl EqualityGraph {
                 // expression. The lookup identifies an original definition;
                 // it does not assert that arbitrary scaled arithmetic is a
                 // pointer load, nor manufacture a shifted equality premise.
-                if matches!(value.block, PointerBlock::Symbolic(_))
-                    && value.offset != PointerOffsetTerm::Constant(0)
+                if matches!(value.base, AddressBase::Symbolic(_))
+                    && value.offset != AddressOffset::Constant(0)
                 {
-                    let base = Pointer {
-                        block: value.block.clone(),
-                        offset: PointerOffsetTerm::Constant(0),
+                    let base = Address {
+                        base: value.base.clone(),
+                        offset: AddressOffset::Constant(0),
                     };
                     if reads.definitions.contains_key(&base) {
                         pending.push(base);
@@ -945,13 +957,13 @@ impl EqualityGraph {
                     address,
                 )
             {
-                definitions.push((application.clone(), Pointer::loaded_value(&source, address)));
+                definitions.push((application.clone(), Address::loaded_value(&source, address)));
             }
             crate::instrumentation::record_deterministic_work(1);
         }
         drop(reads);
         for (value, application) in &definitions {
-            state.register_blocks([value.block.clone(), application.block.clone()]);
+            state.register_blocks([value.base.clone(), application.base.clone()]);
         }
         for (value, application) in &definitions {
             let value = state.register_pointer_address(value);
@@ -959,7 +971,7 @@ impl EqualityGraph {
             state.terms.add_address_equality(value, application);
         }
         // Projection and selected-width naming preserve the complete pointer
-        // read, including its object and extent, not only its address.
+        // read, including its object and bounds, not only its address.
         for (read, source) in read_domains {
             state.terms.merge_pointer_read_domains(&read, &source);
         }
@@ -1017,7 +1029,7 @@ impl EqualityGraph {
     /// Retain an explicit alignment premise on its typed address class. Only
     /// power-of-two alignments enter; merging keeps the strongest source in
     /// constant work and never infers alignment from a pointee type.
-    pub(in crate::kernel) fn register_alignment(&self, pointer: &Pointer, alignment: u64) {
+    pub(in crate::kernel) fn register_alignment(&self, pointer: &Address, alignment: u64) {
         if !alignment.is_power_of_two() {
             return;
         }
@@ -1027,7 +1039,7 @@ impl EqualityGraph {
         state.terms.retain_alignment(id, alignment, pointer);
     }
 
-    pub(in crate::kernel) fn alignment_witness(&self, pointer: &Pointer) -> Option<(u64, Pointer)> {
+    pub(in crate::kernel) fn alignment_witness(&self, pointer: &Address) -> Option<(u64, Address)> {
         self.address_class(pointer)?;
         let mut state = self.state.lock().expect("equality graph");
         let id = state.register_pointer_address(pointer);
@@ -1037,13 +1049,13 @@ impl EqualityGraph {
     /// Typed address applications share the graph's offset closure. This is
     /// trusted index registration, not an additional premise or a new pointer
     /// representation. Only registered addresses are propagated by merges.
-    pub(in crate::kernel) fn address_class(&self, pointer: &Pointer) -> Option<u64> {
+    pub(in crate::kernel) fn address_class(&self, pointer: &Address) -> Option<u64> {
         let mut state = self.state.lock().expect("equality graph");
         // Class lookup and equality must see the same producer definitions.
         // Register only this term's retained dependencies; never recover them
         // by scanning premises, resources, or other logical reads.
         self.register_logical_read_values(&mut state, [pointer]);
-        state.register_blocks([pointer.block.clone()]);
+        state.register_blocks([pointer.base.clone()]);
         // Keep one stable raw application for this explicit address. Its
         // checked affine projection joins the same class; later coordinate
         // changes must not strand a resource payload on an older projection.
@@ -1055,7 +1067,7 @@ impl EqualityGraph {
     /// does not manufacture a native pointer or any ownership evidence.
     pub(in crate::kernel) fn indexed_address_class(
         &self,
-        base: &Pointer,
+        base: &Address,
         index: crate::kernel::MachineOperandView<'_>,
         successor: bool,
         width: u32,
@@ -1090,9 +1102,9 @@ impl EqualityGraph {
         let mut state = self.state.lock().expect("equality graph");
         self.register_expression_operands(&mut state, [], [], [&observation]);
         self.register_logical_read_values(&mut state, [base]);
-        state.register_blocks([base.block.clone()]);
+        state.register_blocks([base.base.clone()]);
         state.register_pointer_address(base);
-        let (representative, delta) = state.find(&base.block);
+        let (representative, delta) = state.find(&base.base);
         Some(
             state
                 .terms
@@ -1102,15 +1114,15 @@ impl EqualityGraph {
 
     /// An explicit additive address already registered in this address's
     /// checked class. It selects a base, never bounds or access authority.
-    pub(in crate::kernel) fn additive_address(&self, pointer: &Pointer) -> Option<Pointer> {
+    pub(in crate::kernel) fn additive_address(&self, pointer: &Address) -> Option<Address> {
         let id = self.address_class(pointer)?;
         let mut state = self.state.lock().expect("equality graph");
         state.terms.additive_address(id).or_else(|| {
             state
                 .terms
                 .additive_offset(&pointer.offset, false)
-                .map(|offset| Pointer {
-                    block: pointer.block.clone(),
+                .map(|offset| Address {
+                    base: pointer.base.clone(),
                     offset,
                 })
         })
@@ -1118,14 +1130,14 @@ impl EqualityGraph {
 
     /// The same checked address in a retained wide-index coordinate, when
     /// the supplying range carries wide bounds. This adds no bound or authority.
-    fn wide_additive_address(&self, pointer: &Pointer) -> Option<Pointer> {
+    fn wide_additive_address(&self, pointer: &Address) -> Option<Address> {
         let id = self.address_class(pointer)?;
         let mut state = self.state.lock().expect("equality graph");
         state
             .terms
             .additive_offset(&pointer.offset, true)
-            .map(|offset| Pointer {
-                block: pointer.block.clone(),
+            .map(|offset| Address {
+                base: pointer.base.clone(),
                 offset,
             })
             .or_else(|| state.terms.wide_additive_address(id))
@@ -1138,8 +1150,8 @@ impl EqualityGraph {
                 // never enumerate aliases in either equality class.
                 let spelling = state.terms.additive_address(id)?;
                 let offset = state.terms.additive_offset(&spelling.offset, true)?;
-                Some(Pointer {
-                    block: spelling.block,
+                Some(Address {
+                    base: spelling.base,
                     offset,
                 })
             })
@@ -1186,7 +1198,7 @@ impl EqualityGraph {
     /// Read the class coordinate without registering new applications.
     pub(in crate::kernel) fn canonical_pointer(
         &self,
-        pointer: &Pointer,
+        pointer: &Address,
     ) -> Option<CanonicalPointer> {
         self.state
             .lock()
@@ -1198,8 +1210,8 @@ impl EqualityGraph {
     /// anchor. Re-expression uses the checked affine class relation, never an
     /// arbitrary representative or an alias walk. This does not establish
     /// object provenance, lifetime, bounds, ownership, or writability.
-    pub(in crate::kernel) fn storage_address(&self, pointer: &Pointer) -> Pointer {
-        if EqualityGraphState::is_storage_block(&pointer.block) {
+    pub(in crate::kernel) fn storage_address(&self, pointer: &Address) -> Address {
+        if EqualityGraphState::is_storage_block(&pointer.base) {
             return pointer.clone();
         }
         self.address_class(pointer);
@@ -1222,8 +1234,8 @@ impl EqualityGraph {
                     .and_then(|delta| delta.checked_add(&AffineOffset::of(&storage.offset)?))
                     .and_then(|offset| offset.to_offset_term())
             {
-                return Pointer {
-                    block: storage.block,
+                return Address {
+                    base: storage.base,
                     offset,
                 };
             }
@@ -1242,7 +1254,10 @@ impl EqualityGraph {
             .offset
             .checked_sub(&delta)
             .and_then(|offset| offset.to_offset_term())
-            .map(|offset| Pointer { block, offset })
+            .map(|offset| Address {
+                base: block,
+                offset,
+            })
             .unwrap_or_else(|| pointer.clone())
     }
 
@@ -1250,17 +1265,17 @@ impl EqualityGraph {
     /// uses the trusted affine class relation, never enumerates class members.
     pub(in crate::kernel) fn pointer_in_block(
         &self,
-        pointer: &Pointer,
-        block: &PointerBlock,
-    ) -> Option<Pointer> {
+        pointer: &Address,
+        block: &AddressBase,
+    ) -> Option<Address> {
         let state = self.state.lock().expect("equality graph");
         let pointer = state.canonical(pointer)?;
         let (representative, delta) = state.find(block);
         if pointer.representative != representative {
             return None;
         }
-        Some(Pointer {
-            block: block.clone(),
+        Some(Address {
+            base: block.clone(),
             offset: pointer.offset.checked_sub(&delta)?.to_offset_term()?,
         })
     }
@@ -1270,9 +1285,9 @@ impl EqualityGraph {
     /// keeping the base first also preserves external-argument object tokens.
     pub(in crate::kernel) fn pointer_at_constant_base(
         &self,
-        pointer: &Pointer,
-        base: &Pointer,
-    ) -> Option<Pointer> {
+        pointer: &Address,
+        base: &Address,
+    ) -> Option<Address> {
         let state = self.state.lock().expect("equality graph");
         let point = state.canonical(pointer)?;
         let origin = state.canonical(base)?;
@@ -1280,12 +1295,9 @@ impl EqualityGraph {
             return None;
         }
         let displacement = i64::try_from(point.offset.constant_difference(&origin.offset)?).ok()?;
-        Some(Pointer {
-            block: base.block.clone(),
-            offset: PointerOffsetTerm::add(
-                base.offset.clone(),
-                PointerOffsetTerm::Constant(displacement),
-            ),
+        Some(Address {
+            base: base.base.clone(),
+            offset: AddressOffset::add(base.offset.clone(), AddressOffset::Constant(displacement)),
         })
     }
 
@@ -1295,9 +1307,9 @@ impl EqualityGraph {
     /// bounded by the queried expression; no class members are enumerated.
     pub(in crate::kernel) fn pointer_at_base(
         &self,
-        pointer: &Pointer,
-        base: &Pointer,
-    ) -> Option<Pointer> {
+        pointer: &Address,
+        base: &Address,
+    ) -> Option<Address> {
         self.pointer_at_base_with_spelling(pointer, base, true)
     }
 
@@ -1305,29 +1317,29 @@ impl EqualityGraph {
     /// The class retains at most one producer per width; no aliases are searched.
     pub(in crate::kernel) fn pointer_at_base_with_wide_index(
         &self,
-        pointer: &Pointer,
-        base: &Pointer,
-    ) -> Option<Pointer> {
+        pointer: &Address,
+        base: &Address,
+    ) -> Option<Address> {
         // A native step from a captured cursor has its own wide offset,
         // but aligning that offset alone can select a narrow spelling of
         // the cursor. Retain the cursor's native producer before adding
         // the original step. Bounds still apply to the complete result.
-        if pointer.block != base.block
+        if pointer.base != base.base
             && matches!(
                 pointer.offset,
-                PointerOffsetTerm::Int64Scaled { unsigned: true, .. }
+                AddressOffset::Int64Scaled { unsigned: true, .. }
             )
         {
-            let cursor = Pointer {
-                block: pointer.block.clone(),
-                offset: PointerOffsetTerm::Constant(0),
+            let cursor = Address {
+                base: pointer.base.clone(),
+                offset: AddressOffset::Constant(0),
             };
             if let Some(spelling) = self.wide_additive_address(&cursor)
                 && let Some(aligned) = self.pointer_at_base_with_spelling(&spelling, base, false)
             {
-                return Some(Pointer {
-                    block: aligned.block,
-                    offset: PointerOffsetTerm::add(aligned.offset, pointer.offset.clone()),
+                return Some(Address {
+                    base: aligned.base,
+                    offset: AddressOffset::add(aligned.offset, pointer.offset.clone()),
                 });
             }
         }
@@ -1341,19 +1353,16 @@ impl EqualityGraph {
         // then restore the exact byte displacement. Containment still checks
         // the resulting native index and its non-wrapping addition.
         if let Some(bytes) = pointer.offset.as_const().filter(|bytes| *bytes != 0) {
-            let cursor = Pointer {
-                block: pointer.block.clone(),
-                offset: PointerOffsetTerm::Constant(0),
+            let cursor = Address {
+                base: pointer.base.clone(),
+                offset: AddressOffset::Constant(0),
             };
             if let Some(spelling) = self.wide_additive_address(&cursor)
                 && let Some(aligned) = self.pointer_at_base_with_spelling(&spelling, base, false)
             {
-                return Some(Pointer {
-                    block: aligned.block,
-                    offset: PointerOffsetTerm::add(
-                        aligned.offset,
-                        PointerOffsetTerm::Constant(bytes),
-                    ),
+                return Some(Address {
+                    base: aligned.base,
+                    offset: AddressOffset::add(aligned.offset, AddressOffset::Constant(bytes)),
                 });
             }
         }
@@ -1362,17 +1371,17 @@ impl EqualityGraph {
 
     fn pointer_at_base_with_spelling(
         &self,
-        pointer: &Pointer,
-        base: &Pointer,
+        pointer: &Address,
+        base: &Address,
         allow_spelling: bool,
-    ) -> Option<Pointer> {
+    ) -> Option<Address> {
         if self.are_equal(pointer, base) {
             return Some(base.clone());
         }
-        if let PointerOffsetTerm::Add(left, right) = &pointer.offset {
+        if let AddressOffset::Add(left, right) = &pointer.offset {
             for (part, rest) in [(left, right), (right, left)] {
-                let part = Pointer {
-                    block: pointer.block.clone(),
+                let part = Address {
+                    base: pointer.base.clone(),
                     offset: part.as_ref().clone(),
                 };
                 if let Some(aligned) =
@@ -1382,9 +1391,9 @@ impl EqualityGraph {
                     // changes coordinates. Adding the original rest preserves
                     // the exact byte displacement and its no-wrap obligations.
                     if aligned.offset == base.offset {
-                        return Some(Pointer {
-                            block: aligned.block,
-                            offset: PointerOffsetTerm::add(aligned.offset, rest.as_ref().clone()),
+                        return Some(Address {
+                            base: aligned.base,
+                            offset: AddressOffset::add(aligned.offset, rest.as_ref().clone()),
                         });
                     }
                 }
@@ -1392,7 +1401,7 @@ impl EqualityGraph {
             // Keep an explicit additive query in its original coordinates when
             // neither operand is the supplier base. Reassociating a shifted
             // range here would hide the source index from its checked bounds.
-            return self.pointer_in_block(pointer, &base.block);
+            return self.pointer_in_block(pointer, &base.base);
         }
         // A captured interior pointer has no additive spine of its own.
         // Its class's retained producer expression carries that spine without
@@ -1415,9 +1424,9 @@ impl EqualityGraph {
         // coordinates and retain the supplier base instead of flattening it
         // into unrelated opaque pointer-read tokens in the containing block.
         let displacement = point.offset.checked_sub(&origin.offset)?.to_offset_term()?;
-        Some(Pointer {
-            block: base.block.clone(),
-            offset: PointerOffsetTerm::add(base.offset.clone(), displacement),
+        Some(Address {
+            base: base.base.clone(),
+            offset: AddressOffset::add(base.offset.clone(), displacement),
         })
     }
 
@@ -1472,7 +1481,7 @@ impl EqualityGraph {
     /// described by affine coordinates. A false answer means unknown coverage,
     /// not disequality. Metadata follows term dependencies and pointer relabels;
     /// unrelated scalar classes do not disable the query's interval fragment.
-    pub(in crate::kernel) fn affine_addresses_complete(&self, block: &PointerBlock) -> bool {
+    pub(in crate::kernel) fn affine_addresses_complete(&self, block: &AddressBase) -> bool {
         let state = self.state.lock().expect("equality graph");
         let (block, _) = state.find(block);
         state.terms.affine_addresses_complete(&block)
@@ -1481,7 +1490,7 @@ impl EqualityGraph {
     /// Query the maintained closure, registering supported load applications
     /// on demand. A false answer means equality is not established here,
     /// not that the operands are unequal. No frame or heuristic search runs.
-    pub(in crate::kernel) fn are_equal(&self, left: &Pointer, right: &Pointer) -> bool {
+    pub(in crate::kernel) fn are_equal(&self, left: &Address, right: &Address) -> bool {
         if left == right {
             return true;
         }
@@ -1490,15 +1499,15 @@ impl EqualityGraph {
         // At an unclassed ordinary base, equality is just offset equality.
         // Avoid registering pointer/address nodes for unrelated field checks.
         // Load blocks still need application registration and congruence.
-        let is_load_block = match &left.block {
-            PointerBlock::LoadedPointer(_) => true,
-            PointerBlock::Symbolic(variable) => crate::kernel::is_load_variable(variable),
+        let is_load_block = match &left.base {
+            AddressBase::LoadedPointer(_) => true,
+            AddressBase::Symbolic(variable) => crate::kernel::is_load_variable(variable),
             _ => false,
         };
-        if left.block == right.block
+        if left.base == right.base
             && !is_load_block
-            && !state.parent.contains_key(&left.block)
-            && !state.members.contains_key(&left.block)
+            && !state.parent.contains_key(&left.base)
+            && !state.members.contains_key(&left.base)
         {
             // With no offset merges, known equality is only reflexivity
             // (handled above). Explicit offset normalization remains available
@@ -1507,12 +1516,12 @@ impl EqualityGraph {
             return state.terms.has_equivalences()
                 && state.terms.are_equal(&left.offset, &right.offset);
         }
-        state.register_blocks([left.block.clone(), right.block.clone()]);
+        state.register_blocks([left.base.clone(), right.base.clone()]);
         // Different classes cannot meet by offset normalization. In
         // particular, do not traverse an unrelated allocation's offset just
         // to discover that its block has no equality with the query's block.
-        let (left_rep, left_delta) = state.find(&left.block);
-        let (right_rep, right_delta) = state.find(&right.block);
+        let (left_rep, left_delta) = state.find(&left.base);
+        let (right_rep, right_delta) = state.find(&right.base);
         if left_rep != right_rep {
             return false;
         }
@@ -1550,12 +1559,12 @@ impl EqualityGraph {
     pub(in crate::kernel) fn are_pointer_loads_equal(
         &self,
         memory: &crate::kernel::SharedMemory,
-        left_address: &Pointer,
-        right_address: &Pointer,
+        left_address: &Address,
+        right_address: &Address,
     ) -> bool {
         self.are_equal(
-            &Pointer::loaded_value(memory, left_address),
-            &Pointer::loaded_value(memory, right_address),
+            &Address::loaded_value(memory, left_address),
+            &Address::loaded_value(memory, right_address),
         )
     }
 
@@ -1563,8 +1572,8 @@ impl EqualityGraph {
     /// This fragment does not solve arithmetic or perform cancellation.
     pub(in crate::kernel) fn are_offsets_equal(
         &self,
-        left: &PointerOffsetTerm,
-        right: &PointerOffsetTerm,
+        left: &AddressOffset,
+        right: &AddressOffset,
     ) -> bool {
         if left == right {
             return true;
@@ -1608,13 +1617,13 @@ impl EqualityGraph {
         equal
     }
 
-    pub(in crate::kernel) fn provenance_equal(&self, left: &Pointer, right: &Pointer) -> bool {
+    pub(in crate::kernel) fn provenance_equal(&self, left: &Address, right: &Address) -> bool {
         if left == right {
             return true;
         }
         let mut state = self.state.lock().expect("equality graph");
         self.register_logical_read_values(&mut state, [left, right]);
-        state.register_blocks([left.block.clone(), right.block.clone()]);
+        state.register_blocks([left.base.clone(), right.base.clone()]);
         let equal = state.terms.provenance_equal(left, right);
         state.close(Vec::new());
         equal
@@ -1626,7 +1635,7 @@ impl EqualityGraph {
     ) -> PointerValue {
         let mut state = self.state.lock().expect("equality graph");
         self.register_logical_read_values(&mut state, value.pointers());
-        state.register_blocks(value.pointers().map(|p| p.block.clone()));
+        state.register_blocks(value.pointers().map(|p| p.base.clone()));
         state.close(Vec::new());
         state.terms.pointer_value_representative(value)
     }
@@ -1637,7 +1646,7 @@ impl EqualityGraph {
         right: &PointerValue,
     ) {
         self.add_equality(left.pointer(), right.pointer());
-        if left.pointer().block == right.pointer().block {
+        if left.pointer().base == right.pointer().base {
             self.add_offset_equality(&left.pointer().offset, &right.pointer().offset);
         }
         let mut state = self.state.lock().expect("equality graph");
@@ -1785,7 +1794,7 @@ impl EqualityGraph {
         integer: impl IntoIterator<Item = &'a crate::kernel::IntegerTerm>,
         pointer_calls: impl IntoIterator<Item = &'a SharedPureApplication>,
         shared_seen: &mut crate::persistent::PersistentSet<u64>,
-    ) -> Vec<Pointer> {
+    ) -> Vec<Address> {
         enum Work<'a> {
             SharedMachine(&'a crate::kernel::KernelTerm),
             Machine(&'a MachineTerm),
@@ -2001,7 +2010,7 @@ impl EqualityGraph {
             return;
         }
         self.register_logical_read_values(state, pointers.iter());
-        state.register_blocks(pointers.iter().map(|pointer| pointer.block.clone()));
+        state.register_blocks(pointers.iter().map(|pointer| pointer.base.clone()));
         for pointer in pointers {
             state.register_pointer_address(&pointer);
         }
@@ -2112,9 +2121,9 @@ impl EqualityGraph {
     /// These spellings authorize byte comparisons, not pointer conversions.
     pub(in crate::kernel) fn numeric_address_spellings(
         &self,
-        left: &Pointer,
-        right: &Pointer,
-    ) -> (Pointer, Pointer) {
+        left: &Address,
+        right: &Address,
+    ) -> (Address, Address) {
         let a = MachineTerm::pointer_address(left.clone());
         let b = MachineTerm::pointer_address(right.clone());
         let mut state = self.state.lock().expect("equality graph");
@@ -2300,7 +2309,7 @@ impl EqualityGraph {
             }
             ConditionTerm::PointerValueEqual(a, b) => {
                 self.register_logical_read_values(state, a.pointers().chain(b.pointers()));
-                state.register_blocks(a.pointers().chain(b.pointers()).map(|p| p.block.clone()));
+                state.register_blocks(a.pointers().chain(b.pointers()).map(|p| p.base.clone()));
                 // Late value queries need the current address-class bridges,
                 // just as raw pointer equality queries do.
                 state.register_pointer_address(a.pointer());
@@ -2309,7 +2318,7 @@ impl EqualityGraph {
             }
             ConditionTerm::PointerEqual(a, b) => {
                 self.register_logical_read_values(state, [a.as_ref(), b.as_ref()]);
-                state.register_blocks([a.block.clone(), b.block.clone()]);
+                state.register_blocks([a.base.clone(), b.base.clone()]);
                 state.register_pointer_address(a);
                 state.register_pointer_address(b);
                 state.close(Vec::new());
@@ -2515,8 +2524,8 @@ impl EqualityGraph {
     /// Admit an already established offset equality in this proof context.
     pub(in crate::kernel) fn add_offset_equality(
         &mut self,
-        left: &PointerOffsetTerm,
-        right: &PointerOffsetTerm,
+        left: &AddressOffset,
+        right: &AddressOffset,
     ) -> bool {
         let state = self.state.get_mut().expect("equality graph");
         let changed = state.terms.add_equality(left, right);
@@ -2531,14 +2540,14 @@ impl EqualityGraph {
     /// propagate its supported congruence consequences. A same-block premise
     /// also equates its whole offsets. Returns whether any class merge
     /// occurred, not whether the supplied equality is valid.
-    pub(in crate::kernel) fn add_equality(&mut self, left: &Pointer, right: &Pointer) -> bool {
+    pub(in crate::kernel) fn add_equality(&mut self, left: &Address, right: &Address) -> bool {
         let mut state = self.state.lock().expect("equality graph");
         // A read used by a checked premise is a dependency of later queries,
         // even when those queries name only another member of its class.
         // Register these two explicit operands now; never search the ambient
         // classes for read spellings when answering a transitive query.
         self.register_logical_read_values(&mut state, [left, right]);
-        state.register_blocks([left.block.clone(), right.block.clone()]);
+        state.register_blocks([left.base.clone(), right.base.clone()]);
         // The affine fragment already carries spellable base displacements.
         // Retain raw address applications only for relations whose symbolic
         // displacement cannot be expressed as a whole offset term. Without
@@ -2558,12 +2567,12 @@ impl EqualityGraph {
         // External C pointers share a block. Preserve their raw addresses
         // so a transitive chain can equate two offsets in that original
         // block, independently of the affine representative's coordinates.
-        let address_changed = if left.block != right.block
+        let address_changed = if left.base != right.base
             && (needs_raw_addresses
-                || matches!(left.block, PointerBlock::ExternalArgument)
-                || matches!(right.block, PointerBlock::ExternalArgument)
-                || EqualityGraphState::is_storage_block(&left.block)
-                || EqualityGraphState::is_storage_block(&right.block))
+                || matches!(left.base, AddressBase::ExternalArgument)
+                || matches!(right.base, AddressBase::ExternalArgument)
+                || EqualityGraphState::is_storage_block(&left.base)
+                || EqualityGraphState::is_storage_block(&right.base))
         {
             let left_address = state.register_pointer_address(left);
             let right_address = state.register_pointer_address(right);
@@ -2574,10 +2583,10 @@ impl EqualityGraph {
             false
         };
         let offset_changed =
-            left.block == right.block && state.terms.add_equality(&left.offset, &right.offset);
+            left.base == right.base && state.terms.add_equality(&left.offset, &right.offset);
         let pointer_changed = state.close(vec![(left.clone(), right.clone())]);
-        if EqualityGraphState::is_storage_block(&left.block)
-            || EqualityGraphState::is_storage_block(&right.block)
+        if EqualityGraphState::is_storage_block(&left.base)
+            || EqualityGraphState::is_storage_block(&right.base)
         {
             let left_address = state.register_pointer_address(left);
             let right_address = state.register_pointer_address(right);
@@ -2596,7 +2605,7 @@ impl EqualityGraph {
 /// Pointer-specific compatibility queries for consumers not yet indexed by
 /// equality. These enumerate spellings separately from `are_equal`.
 impl EqualityGraph {
-    pub(in crate::kernel) fn pointer_is_classed(&self, block: &PointerBlock) -> bool {
+    pub(in crate::kernel) fn pointer_is_classed(&self, block: &AddressBase) -> bool {
         let mut state = self.state.lock().expect("equality graph");
         state.register_blocks([block.clone()]);
         state.parent.contains_key(block) || state.members.contains_key(block)
@@ -2607,7 +2616,7 @@ impl EqualityGraph {
     /// view; published indexes retain their incremental merge protocol.
     pub(in crate::kernel) fn pointer_merges_for_block(
         &self,
-        block: &PointerBlock,
+        block: &AddressBase,
     ) -> Vec<PointerClassMerge> {
         let mut state = self.state.lock().expect("equality graph");
         state.register_blocks([block.clone()]);
@@ -2631,10 +2640,7 @@ impl EqualityGraph {
     /// The blocks of `block`'s affine class, itself included: the blocks
     /// `pointer_in_block` can move a pointer of this block into. Charged one
     /// unit per member.
-    pub(in crate::kernel) fn pointer_class_blocks(
-        &self,
-        block: &PointerBlock,
-    ) -> Vec<PointerBlock> {
+    pub(in crate::kernel) fn pointer_class_blocks(&self, block: &AddressBase) -> Vec<AddressBase> {
         let mut state = self.state.lock().expect("equality graph");
         state.register_blocks([block.clone()]);
         let (representative, _) = state.find(block);
@@ -2650,12 +2656,12 @@ impl EqualityGraph {
 
     /// Transitional resource consumers still enumerate spellings. This is
     /// deliberately separate from congruence lookup, which never enumerates.
-    fn pointer_class_members(&self, block: &PointerBlock) -> Vec<(PointerBlock, AffineOffset)> {
+    fn pointer_class_members(&self, block: &AddressBase) -> Vec<(AddressBase, AffineOffset)> {
         let mut state = self.state.lock().expect("equality graph");
         state.register_blocks([block.clone()]);
         let (representative, own) = state.find(block);
         let mut blocks = Vec::new();
-        let mut push = |member: &PointerBlock, delta: &AffineOffset| {
+        let mut push = |member: &AddressBase, delta: &AffineOffset| {
             if let Some(delta) = own.checked_sub(delta) {
                 blocks.push((member.clone(), delta));
             }
@@ -2673,19 +2679,16 @@ impl EqualityGraph {
     /// Seek the concrete `local:` key interval instead of enumerating opaque
     /// pointer loads in the same class. Offset representability is checked
     /// exactly as in `pointer_spellings`; this only selects blocks to refresh.
-    pub(in crate::kernel) fn local_slot_alias_blocks(
-        &self,
-        pointer: &Pointer,
-    ) -> Vec<PointerBlock> {
+    pub(in crate::kernel) fn local_slot_alias_blocks(&self, pointer: &Address) -> Vec<AddressBase> {
         let Some(offset) = AffineOffset::of(&pointer.offset) else {
             return Vec::new();
         };
         let mut state = self.state.lock().expect("equality graph");
-        state.register_blocks([pointer.block.clone()]);
-        let (representative, own) = state.find(&pointer.block);
+        state.register_blocks([pointer.base.clone()]);
+        let (representative, own) = state.find(&pointer.base);
         let mut blocks = Vec::new();
-        let mut push = |member: &PointerBlock, delta: &AffineOffset| {
-            if member != &pointer.block
+        let mut push = |member: &AddressBase, delta: &AffineOffset| {
+            if member != &pointer.base
                 && member.is_local_block()
                 && own
                     .checked_sub(delta)
@@ -2698,7 +2701,7 @@ impl EqualityGraph {
         };
         push(&representative, &AffineOffset::default());
         if let Some(members) = state.members.get(&representative) {
-            let first = PointerBlock::Concrete("local:".into());
+            let first = AddressBase::Concrete("local:".into());
             let mut next = members
                 .get(&first)
                 .map(|value| (&first, value))
@@ -2713,10 +2716,10 @@ impl EqualityGraph {
             // Seek the AutomaticLocal interval immediately after Temporary,
             // without visiting
             // unrelated opaque pointer members of the same equality class.
-            let mut next = members.get_greater_than(&PointerBlock::Temporary(u64::MAX));
+            let mut next = members.get_greater_than(&AddressBase::Temporary(u64::MAX));
             while let Some((
-                member @ (PointerBlock::AutomaticLocal { .. }
-                | PointerBlock::ReferenceCarrier { .. }),
+                member
+                @ (AddressBase::AutomaticLocal { .. } | AddressBase::ReferenceCarrier { .. }),
                 delta,
             )) = next
             {
@@ -2727,19 +2730,19 @@ impl EqualityGraph {
         blocks
     }
 
-    pub(in crate::kernel) fn pointer_spellings(&self, pointer: &Pointer) -> Vec<Pointer> {
-        if !self.pointer_is_classed(&pointer.block) {
+    pub(in crate::kernel) fn pointer_spellings(&self, pointer: &Address) -> Vec<Address> {
+        if !self.pointer_is_classed(&pointer.base) {
             return Vec::new();
         }
         let Some(offset) = AffineOffset::of(&pointer.offset) else {
             return Vec::new();
         };
-        self.pointer_class_members(&pointer.block)
+        self.pointer_class_members(&pointer.base)
             .into_iter()
-            .filter(|(member, _)| member != &pointer.block)
+            .filter(|(member, _)| member != &pointer.base)
             .filter_map(|(member, delta)| {
-                Some(Pointer {
-                    block: member,
+                Some(Address {
+                    base: member,
                     // Cancel inverse symbolic displacements before querying
                     // a cell map keyed by the address's structural spelling.
                     offset: offset.checked_add(&delta)?.to_offset_term()?,
@@ -2750,7 +2753,7 @@ impl EqualityGraph {
 }
 
 impl EqualityGraphState {
-    fn find(&self, block: &PointerBlock) -> (PointerBlock, AffineOffset) {
+    fn find(&self, block: &AddressBase) -> (AddressBase, AffineOffset) {
         crate::instrumentation::record_deterministic_work(1);
         self.parent
             .get(block)
@@ -2758,16 +2761,16 @@ impl EqualityGraphState {
             .unwrap_or_else(|| (block.clone(), AffineOffset::default()))
     }
 
-    fn canonical(&self, pointer: &Pointer) -> Option<CanonicalPointer> {
+    fn canonical(&self, pointer: &Address) -> Option<CanonicalPointer> {
         let offset = AffineOffset::of(&pointer.offset)?;
-        let (representative, delta) = self.find(&pointer.block);
+        let (representative, delta) = self.find(&pointer.base);
         Some(CanonicalPointer {
             representative,
             offset: delta.checked_add(&offset)?,
         })
     }
 
-    fn weight(&self, block: &PointerBlock) -> usize {
+    fn weight(&self, block: &AddressBase) -> usize {
         self.weights.get(block).copied().unwrap_or(1)
     }
 
@@ -2793,10 +2796,10 @@ impl EqualityGraphState {
 
     /// Register the explicit roots and their load-address dependencies once,
     /// with an iterative traversal rather than a semantic nesting limit.
-    fn register_blocks(&mut self, roots: impl IntoIterator<Item = PointerBlock>) {
-        let is_application = |block: &PointerBlock| match block {
-            PointerBlock::LoadedPointer(_) | PointerBlock::PureFunctionApplication(_) => true,
-            PointerBlock::Symbolic(variable) | PointerBlock::FunctionSymbolic(variable) => {
+    fn register_blocks(&mut self, roots: impl IntoIterator<Item = AddressBase>) {
+        let is_application = |block: &AddressBase| match block {
+            AddressBase::LoadedPointer(_) | AddressBase::PureFunctionApplication(_) => true,
+            AddressBase::Symbolic(variable) | AddressBase::FunctionSymbolic(variable) => {
                 crate::kernel::is_load_variable(variable)
             }
             _ => false,
@@ -2809,7 +2812,7 @@ impl EqualityGraphState {
             if self.loads.contains_key(&block) || self.typed_reads.contains(&block) {
                 continue;
             }
-            if let PointerBlock::PureFunctionApplication(application) = &block {
+            if let AddressBase::PureFunctionApplication(application) = &block {
                 if !calls_seen.insert(application.clone()) {
                     continue;
                 }
@@ -2821,24 +2824,24 @@ impl EqualityGraphState {
                     &mut Default::default(),
                 ) {
                     self.register_pointer_address(&pointer);
-                    if is_application(&pointer.block) {
-                        pending.push(pointer.block);
+                    if is_application(&pointer.base) {
+                        pending.push(pointer.base);
                     }
                 }
-                self.register_pointer_address(&Pointer {
-                    block,
-                    offset: PointerOffsetTerm::Constant(0),
+                self.register_pointer_address(&Address {
+                    base: block,
+                    offset: AddressOffset::Constant(0),
                 });
                 continue;
             }
             let definition = match &block {
-                PointerBlock::LoadedPointer(identity) => {
+                AddressBase::LoadedPointer(identity) => {
                     crate::kernel::eval::registered_pointer_load(*identity)
                         .map(|(memory, address)| (memory, address, crate::kernel::LoadKind::Int32))
                 }
                 // A function pointer read is a typed read of its address,
                 // like a loaded data pointer.
-                PointerBlock::FunctionSymbolic(variable)
+                AddressBase::FunctionSymbolic(variable)
                     if crate::kernel::is_load_variable(variable) =>
                 {
                     crate::kernel::registered_load_for_variable(variable).and_then(
@@ -2848,7 +2851,7 @@ impl EqualityGraphState {
                         },
                     )
                 }
-                PointerBlock::Symbolic(variable)
+                AddressBase::Symbolic(variable)
                     if crate::kernel::is_load_variable(variable)
                         && crate::kernel::registered_load_bytes_for_variable(variable)
                             == Some(8) =>
@@ -2867,13 +2870,13 @@ impl EqualityGraphState {
             };
             if matches!(
                 block,
-                PointerBlock::LoadedPointer(_) | PointerBlock::FunctionSymbolic(_)
+                AddressBase::LoadedPointer(_) | AddressBase::FunctionSymbolic(_)
             ) {
                 self.typed_reads = self.typed_reads.with_value(block.clone());
                 let address_term = self.register_pointer_address(&address);
-                let value_term = self.register_pointer_address(&Pointer {
-                    block: block.clone(),
-                    offset: PointerOffsetTerm::Constant(0),
+                let value_term = self.register_pointer_address(&Address {
+                    base: block.clone(),
+                    offset: AddressOffset::Constant(0),
                 });
                 self.terms.pointer_read(
                     memory.read_identity(),
@@ -2882,8 +2885,8 @@ impl EqualityGraphState {
                     value_term,
                     block.clone(),
                 );
-                if is_application(&address.block) {
-                    pending.push(address.block);
+                if is_application(&address.base) {
+                    pending.push(address.base);
                 }
                 continue;
             }
@@ -2894,26 +2897,26 @@ impl EqualityGraphState {
                 block.clone(),
                 LoadApplication {
                     memory: memory.read_identity(),
-                    address_block: address.block.clone(),
+                    address_block: address.base.clone(),
                     address_offset,
                     kind,
                 },
             );
-            let users = self.uses.get(&address.block).cloned().unwrap_or_default();
+            let users = self.uses.get(&address.base).cloned().unwrap_or_default();
             self.uses
-                .insert(address.block.clone(), users.with_value(block.clone()));
-            let (representative, _) = self.find(&address.block);
+                .insert(address.base.clone(), users.with_value(block.clone()));
+            let (representative, _) = self.find(&address.base);
             self.weights
                 .insert(representative.clone(), self.weight(&representative) + 1);
             self.reindex_load(&block, &mut equalities);
-            if is_application(&address.block) {
-                pending.push(address.block);
+            if is_application(&address.base) {
+                pending.push(address.base);
             }
         }
         self.close(equalities);
     }
 
-    fn reindex_load(&mut self, block: &PointerBlock, equalities: &mut Vec<(Pointer, Pointer)>) {
+    fn reindex_load(&mut self, block: &AddressBase, equalities: &mut Vec<(Address, Address)>) {
         crate::instrumentation::record_deterministic_work(1);
         if let Some(old) = self.load_signatures.get(block).cloned() {
             if self.signatures.get(&old) == Some(block) {
@@ -2935,13 +2938,13 @@ impl EqualityGraphState {
         if let Some(other) = self.signatures.get(&signature) {
             if other != block {
                 equalities.push((
-                    Pointer {
-                        block: block.clone(),
-                        offset: PointerOffsetTerm::Constant(0),
+                    Address {
+                        base: block.clone(),
+                        offset: AddressOffset::Constant(0),
                     },
-                    Pointer {
-                        block: other.clone(),
-                        offset: PointerOffsetTerm::Constant(0),
+                    Address {
+                        base: other.clone(),
+                        offset: AddressOffset::Constant(0),
                     },
                 ));
             }
@@ -2955,8 +2958,8 @@ impl EqualityGraphState {
     /// This queries selected terms only; no cancellation or class walk runs.
     fn offsets_equal_in_class(
         &mut self,
-        left: &Pointer,
-        right: &Pointer,
+        left: &Address,
+        right: &Address,
         left_delta: &AffineOffset,
         right_delta: &AffineOffset,
     ) -> bool {
@@ -2980,13 +2983,12 @@ impl EqualityGraphState {
         // whole offsets directly; a constant displacement can be added to
         // either side. Query both spellings so the answer is symmetric even
         // when only one translated equality was explicitly stated.
-        if (left.block == right.block
-            || (left_delta == right_delta && self.terms.has_equivalences()))
+        if (left.base == right.base || (left_delta == right_delta && self.terms.has_equivalences()))
             && self.terms.are_equal(&left.offset, &right.offset)
         {
             return true;
         }
-        if left.block == right.block
+        if left.base == right.base
             || !self.terms.has_equivalences()
             || !left_delta.terms.is_empty()
             || !right_delta.terms.is_empty()
@@ -3002,13 +3004,13 @@ impl EqualityGraphState {
         let Some(reverse) = displacement.checked_neg() else {
             return false;
         };
-        let shifted_left = PointerOffsetTerm::Add(
+        let shifted_left = AddressOffset::Add(
             Box::new(left.offset.clone()),
-            Box::new(PointerOffsetTerm::Constant(displacement)),
+            Box::new(AddressOffset::Constant(displacement)),
         );
-        let shifted_right = PointerOffsetTerm::Add(
+        let shifted_right = AddressOffset::Add(
             Box::new(right.offset.clone()),
-            Box::new(PointerOffsetTerm::Constant(reverse)),
+            Box::new(AddressOffset::Constant(reverse)),
         );
         self.terms.are_equal(&shifted_left, &right.offset)
             || self.terms.are_equal(&left.offset, &shifted_right)
@@ -3017,12 +3019,12 @@ impl EqualityGraphState {
     /// Register one address and its affine class coordinate, when spellable.
     /// Exact pointer premises can always refer to the raw address application.
     /// Work is in the selected offset and new parent uses, never class members.
-    fn register_pointer_address(&mut self, pointer: &Pointer) -> u64 {
-        let (representative, delta) = self.find(&pointer.block);
+    fn register_pointer_address(&mut self, pointer: &Address) -> u64 {
+        let (representative, delta) = self.find(&pointer.base);
         let (raw, new) = self
             .terms
-            .address(pointer.block.clone(), pointer.offset.clone());
-        if Self::is_storage_block(&pointer.block) {
+            .address(pointer.base.clone(), pointer.offset.clone());
+        if Self::is_storage_block(&pointer.base) {
             self.terms.retain_storage_address(raw, pointer);
         }
         self.terms.retain_additive_address(raw, pointer);
@@ -3030,11 +3032,10 @@ impl EqualityGraphState {
             self.weights
                 .insert(representative.clone(), self.weight(&representative) + 1);
         }
-        if representative != pointer.block
+        if representative != pointer.base
             && let Some(delta) = delta.to_offset_term()
         {
-            let translated =
-                PointerOffsetTerm::Add(Box::new(pointer.offset.clone()), Box::new(delta));
+            let translated = AddressOffset::Add(Box::new(pointer.offset.clone()), Box::new(delta));
             let (canonical, new) = self.terms.address(representative.clone(), translated);
             if new {
                 self.weights
@@ -3045,19 +3046,19 @@ impl EqualityGraphState {
         raw
     }
 
-    fn close(&mut self, mut equalities: Vec<(Pointer, Pointer)>) -> bool {
+    fn close(&mut self, mut equalities: Vec<(Address, Address)>) -> bool {
         let mut changed = false;
         loop {
             equalities.extend(self.terms.take_pointer_value_merges().into_iter().map(
                 |(left, right)| {
                     (
-                        Pointer {
-                            block: left,
-                            offset: PointerOffsetTerm::Constant(0),
+                        Address {
+                            base: left,
+                            offset: AddressOffset::Constant(0),
                         },
-                        Pointer {
-                            block: right,
-                            offset: PointerOffsetTerm::Constant(0),
+                        Address {
+                            base: right,
+                            offset: AddressOffset::Constant(0),
                         },
                     )
                 },
@@ -3094,19 +3095,19 @@ impl EqualityGraphState {
         changed
     }
 
-    fn is_storage_block(block: &PointerBlock) -> bool {
+    fn is_storage_block(block: &AddressBase) -> bool {
         matches!(
             block,
-            PointerBlock::Heap(_)
-                | PointerBlock::Temporary(_)
-                | PointerBlock::StringLiteral { .. }
-                | PointerBlock::StaticObject { .. }
-                | PointerBlock::AutomaticLocal { .. }
-                | PointerBlock::ReferenceCarrier { .. }
-        ) || matches!(block, PointerBlock::Concrete(name) if name != "null")
+            AddressBase::Heap(_)
+                | AddressBase::Temporary(_)
+                | AddressBase::StringLiteral { .. }
+                | AddressBase::StaticObject { .. }
+                | AddressBase::AutomaticLocal { .. }
+                | AddressBase::ReferenceCarrier { .. }
+        ) || matches!(block, AddressBase::Concrete(name) if name != "null")
     }
 
-    fn storage_anchor(&self, root: &PointerBlock) -> Option<PointerBlock> {
+    fn storage_anchor(&self, root: &AddressBase) -> Option<AddressBase> {
         self.storage_anchors
             .get(root)
             .cloned()
@@ -3115,10 +3116,10 @@ impl EqualityGraphState {
 
     fn relabel(
         &mut self,
-        moved: PointerBlock,
-        kept: PointerBlock,
+        moved: AddressBase,
+        kept: AddressBase,
         moved_from_kept: AffineOffset,
-        equalities: &mut Vec<(Pointer, Pointer)>,
+        equalities: &mut Vec<(Address, Address)>,
     ) -> bool {
         let anchors = match (self.storage_anchor(&moved), self.storage_anchor(&kept)) {
             (Some(left), Some(right)) if left == right => Some(left),
@@ -3404,11 +3405,11 @@ mod tests {
     #[test]
     fn pointer_fact_search_uses_admission_order_across_allocations_and_rebuilds() {
         let domain = crate::kernel::PointerValue::new(
-            Pointer::symbolic(Variable(985_000)),
+            Address::symbolic(Variable(985_000)),
             crate::kernel::ProgramType::Int32Pointer,
         );
         let origin = domain
-            .opaque_extent()
+            .bounds_owner()
             .expect("an unseen pointer has an opaque domain")
             .clone();
         let mut sources = (1..=4)
@@ -3453,14 +3454,14 @@ mod tests {
         assert_eq!(graph.subobject_coverage_facts(&origin), expected);
     }
 
-    fn symbolic(id: u64) -> PointerBlock {
-        PointerBlock::Symbolic(Variable(id))
+    fn symbolic(id: u64) -> AddressBase {
+        AddressBase::Symbolic(Variable(id))
     }
 
-    fn at(block: PointerBlock, offset: i64) -> Pointer {
-        Pointer {
-            block,
-            offset: PointerOffsetTerm::Constant(offset),
+    fn at(block: AddressBase, offset: i64) -> Address {
+        Address {
+            base: block,
+            offset: AddressOffset::Constant(offset),
         }
     }
 
@@ -3473,20 +3474,20 @@ mod tests {
     #[test]
     fn additive_spelling_alignment_is_bounded_when_its_base_is_equal() {
         let mut graph = EqualityGraph::default();
-        let base = Pointer::symbolic(Variable(999_101));
+        let base = Address::symbolic(Variable(999_101));
         let index = MachineTerm::Variable(Variable(999_102));
         let address = base.offset_by_elements(index, 4);
         assert!(graph.add_equality(&base, &address));
-        let unrelated = Pointer::symbolic(Variable(999_103));
+        let unrelated = Address::symbolic(Variable(999_103));
         assert!(graph.pointer_at_base(&base, &unrelated).is_none());
     }
 
     #[test]
     fn wide_borrow_alignment_uses_native_displacement_after_a_mixed_prefix() {
         let mut graph = EqualityGraph::default();
-        let bytes = Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::scale_int32(index(999_400), 1),
+        let bytes = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::scale_int32(index(999_400), 1),
         };
         let mixed = bytes
             .offset_by_typed_elements(index(999_401), 1, true, true)
@@ -3500,10 +3501,10 @@ mod tests {
     }
 
     #[test]
-    fn retained_offset_spelling_does_not_identify_unrelated_pointer_blocks() {
+    fn retained_offset_spelling_does_not_identify_unrelated_address_bases() {
         let mut graph = EqualityGraph::default();
-        let base = Pointer::symbolic(Variable(999_300));
-        let bytes = Pointer::symbolic(Variable(999_301));
+        let base = Address::symbolic(Variable(999_300));
+        let bytes = Address::symbolic(Variable(999_301));
         let computed = base.offset_by_elements(index(999_302), 1);
         let wide = bytes.offset_by_typed_elements(index(999_303), 1, true, true);
         assert!(graph.add_offset_equality(&computed.offset, &wide.offset));
@@ -3517,28 +3518,28 @@ mod tests {
 
     #[test]
     fn offsets_spelled_differently_share_one_normal_form() {
-        let nested = PointerOffsetTerm::Add(
-            Box::new(PointerOffsetTerm::Add(
-                Box::new(PointerOffsetTerm::scaled_int32_node(index(7), 4)),
-                Box::new(PointerOffsetTerm::Constant(4)),
+        let nested = AddressOffset::Add(
+            Box::new(AddressOffset::Add(
+                Box::new(AddressOffset::scaled_int32_node(index(7), 4)),
+                Box::new(AddressOffset::Constant(4)),
             )),
-            Box::new(PointerOffsetTerm::Constant(4)),
+            Box::new(AddressOffset::Constant(4)),
         );
-        let flat = PointerOffsetTerm::Add(
-            Box::new(PointerOffsetTerm::Constant(8)),
-            Box::new(PointerOffsetTerm::scaled_int32_node(index(7), 4)),
+        let flat = AddressOffset::Add(
+            Box::new(AddressOffset::Constant(8)),
+            Box::new(AddressOffset::scaled_int32_node(index(7), 4)),
         );
         assert_eq!(AffineOffset::of(&nested), AffineOffset::of(&flat));
-        let other_index = PointerOffsetTerm::Add(
-            Box::new(PointerOffsetTerm::Constant(8)),
-            Box::new(PointerOffsetTerm::scaled_int32_node(index(8), 4)),
+        let other_index = AddressOffset::Add(
+            Box::new(AddressOffset::Constant(8)),
+            Box::new(AddressOffset::scaled_int32_node(index(8), 4)),
         );
         assert_ne!(AffineOffset::of(&flat), AffineOffset::of(&other_index));
     }
 
     #[test]
     fn a_constant_index_folds_with_its_sign() {
-        let minus_one = PointerOffsetTerm::scaled_int32_node(MachineTerm::constant(u32::MAX), 8);
+        let minus_one = AddressOffset::scaled_int32_node(MachineTerm::constant(u32::MAX), 8);
         assert_eq!(
             AffineOffset::of(&minus_one),
             Some(AffineOffset::constant(-8))
@@ -3574,8 +3575,8 @@ mod tests {
                 .expect("constant displacement has a pointer spelling");
             assert!(left.are_equal(
                 &at(merge.moved.clone(), 0),
-                &Pointer {
-                    block: merge.kept.clone(),
+                &Address {
+                    base: merge.kept.clone(),
                     offset: displaced,
                 },
             ));
@@ -3593,26 +3594,27 @@ mod tests {
         );
     }
 
-    fn at_offset(block: PointerBlock, offset: PointerOffsetTerm) -> Pointer {
-        Pointer { block, offset }
+    fn at_offset(block: AddressBase, offset: AddressOffset) -> Address {
+        Address {
+            base: block,
+            offset,
+        }
     }
 
     #[test]
     fn affine_offset_equality_reaches_same_block_solve() {
         let base = symbolic(11_080);
-        let x = PointerOffsetTerm::Variable(Variable(11_081));
-        let nested = PointerOffsetTerm::Add(
-            Box::new(PointerOffsetTerm::Add(
+        let x = AddressOffset::Variable(Variable(11_081));
+        let nested = AddressOffset::Add(
+            Box::new(AddressOffset::Add(
                 Box::new(x.clone()),
-                Box::new(PointerOffsetTerm::Constant(4)),
+                Box::new(AddressOffset::Constant(4)),
             )),
-            Box::new(PointerOffsetTerm::Constant(4)),
+            Box::new(AddressOffset::Constant(4)),
         );
-        let reordered = PointerOffsetTerm::Add(
-            Box::new(PointerOffsetTerm::Constant(8)),
-            Box::new(x.clone()),
-        );
-        let wrong = PointerOffsetTerm::add(x, PointerOffsetTerm::Constant(9));
+        let reordered =
+            AddressOffset::Add(Box::new(AddressOffset::Constant(8)), Box::new(x.clone()));
+        let wrong = AddressOffset::add(x, AddressOffset::Constant(9));
         let context = PureFactContext::new();
         assert!(
             context
@@ -3647,8 +3649,8 @@ mod tests {
 
     #[test]
     fn same_block_pointer_query_uses_exact_offset_classes() {
-        let left_offset = PointerOffsetTerm::Variable(Variable(11_001));
-        let right_offset = PointerOffsetTerm::Variable(Variable(11_002));
+        let left_offset = AddressOffset::Variable(Variable(11_001));
+        let right_offset = AddressOffset::Variable(Variable(11_002));
         let base = symbolic(11_003);
         let left = at_offset(base.clone(), left_offset.clone());
         let right = at_offset(base.clone(), right_offset.clone());
@@ -3665,9 +3667,9 @@ mod tests {
     #[test]
     fn same_block_pointer_premise_joins_offsets_and_survives_only_in_its_context() {
         let block = symbolic(11_020);
-        let x = PointerOffsetTerm::Variable(Variable(11_021));
-        let y = PointerOffsetTerm::Variable(Variable(11_022));
-        let z = PointerOffsetTerm::Variable(Variable(11_023));
+        let x = AddressOffset::Variable(Variable(11_021));
+        let y = AddressOffset::Variable(Variable(11_022));
+        let z = AddressOffset::Variable(Variable(11_023));
         let left = at_offset(block.clone(), x.clone());
         let middle = at_offset(block, y.clone());
         let pointer_fact = ConditionTerm::pointer_equal(left.clone(), middle.clone());
@@ -3678,12 +3680,12 @@ mod tests {
         assert!(branch.equality_graph.are_offsets_equal(&x, &z));
         assert!(branch.equality_graph.are_equal(
             &at_offset(
-                left.block.clone(),
-                PointerOffsetTerm::add(x.clone(), PointerOffsetTerm::Constant(8))
+                left.base.clone(),
+                AddressOffset::add(x.clone(), AddressOffset::Constant(8))
             ),
             &at_offset(
-                left.block.clone(),
-                PointerOffsetTerm::add(z.clone(), PointerOffsetTerm::Constant(8))
+                left.base.clone(),
+                AddressOffset::add(z.clone(), AddressOffset::Constant(8))
             ),
         ));
         let restricted = branch.restricted_to_facts(&[(offset_fact, true)], &[]);
@@ -3699,8 +3701,8 @@ mod tests {
         let a = symbolic(11_040);
         let b = symbolic(11_041);
         let c = symbolic(11_042);
-        let x = PointerOffsetTerm::Variable(Variable(11_043));
-        let y = PointerOffsetTerm::Variable(Variable(11_044));
+        let x = AddressOffset::Variable(Variable(11_043));
+        let y = AddressOffset::Variable(Variable(11_044));
         let offset_fact = ConditionTerm::pointer_offset_equal(x.clone(), y.clone());
         let ab = ConditionTerm::pointer_equal(at(a.clone(), 0), at(b.clone(), 0));
         let bc = ConditionTerm::pointer_equal(at(b.clone(), 0), at(c.clone(), 0));
@@ -3726,9 +3728,9 @@ mod tests {
     fn constant_displacement_uses_only_a_stated_translated_offset_equality() {
         let a = symbolic(11_060);
         let b = symbolic(11_061);
-        let x = PointerOffsetTerm::Variable(Variable(11_062));
-        let y = PointerOffsetTerm::Variable(Variable(11_063));
-        let translated = PointerOffsetTerm::add(x.clone(), PointerOffsetTerm::Constant(8));
+        let x = AddressOffset::Variable(Variable(11_062));
+        let y = AddressOffset::Variable(Variable(11_063));
+        let translated = AddressOffset::add(x.clone(), AddressOffset::Constant(8));
         let offset_fact = ConditionTerm::pointer_offset_equal(translated, y.clone());
         let pointer_fact = ConditionTerm::pointer_equal(at(a.clone(), 0), at(b.clone(), 8));
         let trunk = PureFactContext::new().assume_condition(offset_fact.clone(), true);
@@ -3754,7 +3756,7 @@ mod tests {
         other_spelling.add_equality(&at(a.clone(), 0), &at(b.clone(), 8));
         other_spelling.add_offset_equality(
             &x,
-            &PointerOffsetTerm::add(y.clone(), PointerOffsetTerm::Constant(-8)),
+            &AddressOffset::add(y.clone(), AddressOffset::Constant(-8)),
         );
         assert!(other_spelling.are_equal(&left, &right));
         assert!(other_spelling.are_equal(&right, &left));
@@ -3762,9 +3764,9 @@ mod tests {
         let mut unraisable = EqualityGraph::default();
         unraisable.add_equality(&at(a, 0), &at(b, i64::MIN));
         unraisable.add_offset_equality(
-            &PointerOffsetTerm::Add(
+            &AddressOffset::Add(
                 Box::new(x.clone()),
-                Box::new(PointerOffsetTerm::Constant(i64::MIN)),
+                Box::new(AddressOffset::Constant(i64::MIN)),
             ),
             &y,
         );
@@ -3778,12 +3780,12 @@ mod tests {
     #[test]
     fn mixed_offset_and_block_premises_compose_in_any_order() {
         let x = at_offset(
-            PointerBlock::ExternalArgument,
-            PointerOffsetTerm::Variable(Variable(930_001)),
+            AddressBase::ExternalArgument,
+            AddressOffset::Variable(Variable(930_001)),
         );
         let y = at_offset(
-            PointerBlock::ExternalArgument,
-            PointerOffsetTerm::Variable(Variable(930_002)),
+            AddressBase::ExternalArgument,
+            AddressOffset::Variable(Variable(930_002)),
         );
         let z = at(symbolic(930_003), 0);
         for order in [
@@ -3804,14 +3806,14 @@ mod tests {
                         graph.add_equality(&y, &z);
                     }
                     2 => {
-                        graph.add_equality(&z, &Pointer::null());
+                        graph.add_equality(&z, &Address::null());
                     }
                     _ => unreachable!(),
                 }
             }
-            assert!(graph.are_equal(&x, &Pointer::null()), "order={order:?}");
-            assert!(graph.are_equal(&Pointer::null(), &x), "order={order:?}");
-            assert!(!graph.are_equal(&x, &Pointer::null().offset_by_bytes(1)));
+            assert!(graph.are_equal(&x, &Address::null()), "order={order:?}");
+            assert!(graph.are_equal(&Address::null(), &x), "order={order:?}");
+            assert!(!graph.are_equal(&x, &Address::null().offset_by_bytes(1)));
         }
     }
 
@@ -3819,18 +3821,18 @@ mod tests {
     fn same_block_pointer_query_uses_scaled_int32_congruence() {
         let base = symbolic(11_010);
         let offset = |id| {
-            PointerOffsetTerm::add(
-                PointerOffsetTerm::scale_int32(index(id), 4),
-                PointerOffsetTerm::Constant(8),
+            AddressOffset::add(
+                AddressOffset::scale_int32(index(id), 4),
+                AddressOffset::Constant(8),
             )
         };
         let left = at_offset(base.clone(), offset(11_011));
         let right = at_offset(base.clone(), offset(11_012));
         let wrong_width = at_offset(
             base.clone(),
-            PointerOffsetTerm::add(
-                PointerOffsetTerm::scale_int32(index(11_012), 8),
-                PointerOffsetTerm::Constant(8),
+            AddressOffset::add(
+                AddressOffset::scale_int32(index(11_012), 8),
+                AddressOffset::Constant(8),
             ),
         );
         let mut graph = EqualityGraph::default();
@@ -3847,16 +3849,13 @@ mod tests {
         let max = MachineTerm::constant(i32::MAX as u32);
         let wrapped = at_offset(
             base.clone(),
-            PointerOffsetTerm::scale_int32(
-                MachineTerm::add(max.clone(), MachineTerm::constant(1)),
-                4,
-            ),
+            AddressOffset::scale_int32(MachineTerm::add(max.clone(), MachineTerm::constant(1)), 4),
         );
         let exact_sum = at_offset(
             base,
-            PointerOffsetTerm::add(
-                PointerOffsetTerm::scale_int32(max, 4),
-                PointerOffsetTerm::Constant(4),
+            AddressOffset::add(
+                AddressOffset::scale_int32(max, 4),
+                AddressOffset::Constant(4),
             ),
         );
         assert!(!EqualityGraph::default().are_equal(&wrapped, &exact_sum));
@@ -3865,16 +3864,16 @@ mod tests {
     #[test]
     fn a_symbolic_displacement_carries_through_the_class() {
         let mut classes = EqualityGraph::default();
-        let element = Pointer {
-            block: symbolic(2),
-            offset: PointerOffsetTerm::scaled_int32_node(index(9), 4),
+        let element = Address {
+            base: symbolic(2),
+            offset: AddressOffset::scaled_int32_node(index(9), 4),
         };
         classes.add_equality(&at(symbolic(1), 0), &element);
-        let next = Pointer {
-            block: symbolic(2),
-            offset: PointerOffsetTerm::Add(
-                Box::new(PointerOffsetTerm::scaled_int32_node(index(9), 4)),
-                Box::new(PointerOffsetTerm::Constant(4)),
+        let next = Address {
+            base: symbolic(2),
+            offset: AddressOffset::Add(
+                Box::new(AddressOffset::scaled_int32_node(index(9), 4)),
+                Box::new(AddressOffset::Constant(4)),
             ),
         };
         assert!(classes.are_equal(&at(symbolic(1), 4), &next));
@@ -3885,7 +3884,7 @@ mod tests {
     fn an_equality_inside_one_class_records_its_exact_offset() {
         let mut classes = EqualityGraph::default();
         classes.add_equality(&at(symbolic(1), 0), &at(symbolic(2), 0));
-        let indexed = at_offset(symbolic(2), PointerOffsetTerm::scale_int32(index(91), 4));
+        let indexed = at_offset(symbolic(2), AddressOffset::scale_int32(index(91), 4));
         assert!(classes.add_equality(&at(symbolic(1), 0), &indexed));
         assert!(classes.are_equal(&at(symbolic(1), 0), &at(symbolic(2), 0)));
         assert!(classes.are_equal(&at(symbolic(1), 0), &indexed));
@@ -3900,9 +3899,9 @@ mod tests {
         let blocks = classes.pointer_class_members(&symbolic(1));
         assert_eq!(blocks.len(), 3);
         for (member, delta) in blocks {
-            let restated = Pointer {
-                block: member,
-                offset: PointerOffsetTerm::Constant(
+            let restated = Address {
+                base: member,
+                offset: AddressOffset::Constant(
                     i64::try_from(delta.constant).expect("small constant"),
                 ),
             };
@@ -3915,16 +3914,16 @@ mod tests {
     fn pointer_spellings_name_the_same_address_in_each_member() {
         let mut classes = EqualityGraph::default();
         assert!(classes.pointer_spellings(&at(symbolic(1), 4)).is_empty());
-        let element = Pointer {
-            block: symbolic(2),
-            offset: PointerOffsetTerm::scaled_int32_node(index(9), 8),
+        let element = Address {
+            base: symbolic(2),
+            offset: AddressOffset::scaled_int32_node(index(9), 8),
         };
         classes.add_equality(&at(symbolic(1), 0), &element);
         classes.add_equality(&at(symbolic(3), 16), &at(symbolic(1), 0));
         let spellings = classes.pointer_spellings(&at(symbolic(1), 4));
         assert_eq!(spellings.len(), 2);
         for spelling in &spellings {
-            assert_ne!(spelling.block, symbolic(1));
+            assert_ne!(spelling.base, symbolic(1));
             assert!(classes.are_equal(spelling, &at(symbolic(1), 4)));
         }
         assert!(spellings.contains(&at(symbolic(3), 20)));
@@ -3940,17 +3939,18 @@ mod tests {
     fn explicit_pointer_load_identity_is_typed_and_congruent() {
         let p = at(symbolic(51_100), 0);
         let q = at(symbolic(51_101), 0);
-        let memory = crate::kernel::intern_memory(Memory::new().with_block(p.block.clone(), 8));
+        let memory =
+            crate::kernel::intern_memory(SymbolicMemory::new().with_block(p.base.clone(), 8));
         let later = crate::kernel::intern_memory(
             memory
                 .memory()
                 .clone()
                 .store(p.clone(), ProgramValue::Int32(MachineTerm::constant(7))),
         );
-        let from_p = Pointer::loaded_value(&memory, &p);
-        let from_p_again = Pointer::loaded_value(&memory, &p);
-        let from_q = Pointer::loaded_value(&memory, &q);
-        let from_later = Pointer::loaded_value(&later, &p);
+        let from_p = Address::loaded_value(&memory, &p);
+        let from_p_again = Address::loaded_value(&memory, &p);
+        let from_q = Address::loaded_value(&memory, &q);
+        let from_later = Address::loaded_value(&later, &p);
         assert_eq!(from_p, from_p_again);
         assert_ne!(from_p, from_q);
         assert_ne!(from_p, from_later);
@@ -3967,7 +3967,7 @@ mod tests {
         let displaced = from_p.offset_by_bytes(8);
         assert_eq!(
             displaced.as_loaded_value().unwrap().displacement,
-            PointerOffsetTerm::Constant(8)
+            AddressOffset::Constant(8)
         );
         assert!(from_p.has_symbolic_block());
         let cell_bits = MachineTerm::MemoryLoad(
@@ -3977,11 +3977,11 @@ mod tests {
         );
         // A pointer read of the cell names the typed read, whatever the
         // pointee width; an address indexed by the cell's scalar does not.
-        let named_read = Pointer::loaded(&cell_bits.clone()).unwrap();
-        assert_eq!(Pointer::loaded(&cell_bits.clone()).unwrap(), named_read);
+        let named_read = Address::loaded(&cell_bits.clone()).unwrap();
+        assert_eq!(Address::loaded(&cell_bits.clone()).unwrap(), named_read);
         let read = named_read.as_loaded_value().expect("a typed pointer read");
         assert_eq!(read.defining_address, p);
-        assert_eq!(read.displacement, PointerOffsetTerm::Constant(0));
+        assert_eq!(read.displacement, AddressOffset::Constant(0));
         let scalar_indexed_address = p.offset_by_elements(cell_bits, 8);
         assert!(scalar_indexed_address.as_loaded_value().is_none());
         assert_ne!(scalar_indexed_address, named_read);
@@ -4016,11 +4016,11 @@ mod tests {
 
     #[test]
     fn explicit_pointer_load_congruence_is_branch_local_and_order_independent() {
-        let memory = crate::kernel::intern_memory(Memory::new());
+        let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let p = at(symbolic(51_201), 0);
         let q = at(symbolic(51_202), 0);
-        let left = Pointer::loaded_value(&memory, &p);
-        let right = Pointer::loaded_value(&memory, &q);
+        let left = Address::loaded_value(&memory, &p);
+        let right = Address::loaded_value(&memory, &q);
         let x = at(symbolic(51_203), 0);
         let y = at(symbolic(51_204), 0);
         for address_first in [false, true] {
@@ -4051,17 +4051,17 @@ mod tests {
     // must nevertheless see it, including when learned after registration.
     #[test]
     fn typed_reads_follow_whole_address_congruence() {
-        let memory = crate::kernel::intern_memory(Memory::new());
+        let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let p = at_offset(
             symbolic(910_001),
-            PointerOffsetTerm::scale_int32(index(910_002), 8),
+            AddressOffset::scale_int32(index(910_002), 8),
         );
         let q = at_offset(
             symbolic(910_001),
-            PointerOffsetTerm::scale_int32(index(910_003), 8),
+            AddressOffset::scale_int32(index(910_003), 8),
         );
-        let left = Pointer::loaded_value(&memory, &p);
-        let right = Pointer::loaded_value(&memory, &q);
+        let left = Address::loaded_value(&memory, &p);
+        let right = Address::loaded_value(&memory, &q);
         for early in [false, true] {
             let mut graph = EqualityGraph::default();
             let sibling = graph.clone();
@@ -4074,7 +4074,7 @@ mod tests {
             assert!(!sibling.are_equal(&left, &right));
             assert!(!graph.are_equal(
                 &left,
-                &Pointer::loaded_value(&memory, &q.offset_by_bytes(8))
+                &Address::loaded_value(&memory, &q.offset_by_bytes(8))
             ));
             let changed = crate::kernel::intern_memory(
                 memory
@@ -4082,21 +4082,22 @@ mod tests {
                     .clone()
                     .store(p.clone(), ProgramValue::Int32(MachineTerm::constant(7))),
             );
-            assert!(!graph.are_equal(&left, &Pointer::loaded_value(&changed, &q)));
+            assert!(!graph.are_equal(&left, &Address::loaded_value(&changed, &q)));
         }
     }
 
     #[test]
     fn loads_at_equal_pointers_of_one_state_are_one_value() {
-        let memory =
-            crate::kernel::intern_memory(crate::kernel::Memory::new().with_block(symbolic(51), 16));
+        let memory = crate::kernel::intern_memory(
+            crate::kernel::SymbolicMemory::new().with_block(symbolic(51), 16),
+        );
         // A later state where the cell `p` addresses was written.
         let other_memory = crate::kernel::intern_memory(memory.memory().clone().store(
             at(symbolic(41), 0),
             ProgramValue::Int32(MachineTerm::constant(7)),
         ));
-        let name = |memory: &crate::kernel::SharedMemory, address: Pointer| {
-            PointerBlock::Symbolic(crate::kernel::load_variable_for_cell_with_origin(
+        let name = |memory: &crate::kernel::SharedMemory, address: Address| {
+            AddressBase::Symbolic(crate::kernel::load_variable_for_cell_with_origin(
                 memory,
                 &address,
                 crate::kernel::LoadKind::Int32,
@@ -4125,13 +4126,13 @@ mod tests {
     #[test]
     fn congruent_loads_merge_their_existing_explicit_classes() {
         let memory = crate::kernel::intern_memory(
-            crate::kernel::Memory::new().with_block(symbolic(101), 16),
+            crate::kernel::SymbolicMemory::new().with_block(symbolic(101), 16),
         );
         let p = at(symbolic(102), 0);
         let q = at(symbolic(103), 0);
-        let load = |address: &Pointer| {
+        let load = |address: &Address| {
             at(
-                PointerBlock::Symbolic(crate::kernel::load_variable_for_cell_with_origin(
+                AddressBase::Symbolic(crate::kernel::load_variable_for_cell_with_origin(
                     &memory,
                     address,
                     crate::kernel::LoadKind::Int32,
@@ -4159,18 +4160,18 @@ mod tests {
         // The store goes through a pointer structure cannot separate from the
         // cell; only a stated disequality does. The two reads therefore get
         // different names, and only the path's facts make them one value.
-        let cell = Pointer {
-            block: PointerBlock::Heap(95_001),
-            offset: PointerOffsetTerm::Constant(0),
+        let cell = Address {
+            base: AddressBase::Heap(95_001),
+            offset: AddressOffset::Constant(0),
         };
         let other = at(symbolic(95_003), 0);
-        let before = crate::kernel::Memory::new().with_block(PointerBlock::Heap(95_001), 16);
+        let before = crate::kernel::SymbolicMemory::new().with_block(AddressBase::Heap(95_001), 16);
         let after = before
             .clone()
             .store(other.clone(), ProgramValue::Int32(MachineTerm::constant(3)));
-        let name = |memory: &crate::kernel::Memory| {
+        let name = |memory: &crate::kernel::SymbolicMemory| {
             let memory = crate::kernel::intern_memory(memory.clone());
-            PointerBlock::Symbolic(crate::kernel::load_variable_for_cell_with_origin(
+            AddressBase::Symbolic(crate::kernel::load_variable_for_cell_with_origin(
                 &memory,
                 &cell,
                 crate::kernel::LoadKind::Int32,
@@ -4188,8 +4189,8 @@ mod tests {
         assert!(!classes.are_equal(&left, &right));
         let separated = PureFactContext::new()
             .assume_condition(ConditionTerm::pointer_equal(other, cell.clone()), false);
-        let load = |pointer: &Pointer| {
-            let PointerBlock::Symbolic(variable) = &pointer.block else {
+        let load = |pointer: &Address| {
+            let AddressBase::Symbolic(variable) = &pointer.base else {
                 unreachable!()
             };
             let (memory, address) =
@@ -4226,9 +4227,9 @@ mod tests {
         assert!(!trunk.are_equal(&at(symbolic(1), 0), &at(symbolic(3), 0)));
     }
 
-    fn named_load(memory: &SharedMemory, address: &Pointer) -> Pointer {
+    fn named_load(memory: &SharedMemory, address: &Address) -> Address {
         at(
-            PointerBlock::Symbolic(crate::kernel::load_variable_for_cell_with_origin(
+            AddressBase::Symbolic(crate::kernel::load_variable_for_cell_with_origin(
                 memory,
                 address,
                 crate::kernel::LoadKind::Int32,
@@ -4241,17 +4242,18 @@ mod tests {
 
     #[test]
     fn load_congruence_is_independent_of_equality_insertion_order() {
-        let memory = crate::kernel::intern_memory(Memory::new().with_block(symbolic(201), 16));
+        let memory =
+            crate::kernel::intern_memory(SymbolicMemory::new().with_block(symbolic(201), 16));
         let p = at(symbolic(202), 0);
         let q = at(symbolic(203), 16);
-        let lp = named_load(&memory, &at(p.block.clone(), 8));
-        let lq = named_load(&memory, &at(q.block.clone(), 24));
+        let lp = named_load(&memory, &at(p.base.clone(), 8));
+        let lq = named_load(&memory, &at(q.base.clone(), 24));
         let x = at(symbolic(204), 0);
         let y = at(symbolic(205), 0);
         let equations = [
             (p, q),
-            (at(lp.block.clone(), 4), x.clone()),
-            (at(lq.block.clone(), 12), y.clone()),
+            (at(lp.base.clone(), 4), x.clone()),
+            (at(lq.base.clone(), 12), y.clone()),
         ];
         for order in [
             [0, 1, 2],
@@ -4267,7 +4269,7 @@ mod tests {
                 classes.add_equality(&equations[index].0, &equations[index].1);
             }
             assert!(classes.are_equal(&lp, &lq), "{order:?}");
-            assert!(classes.are_equal(&at(x.block.clone(), 8), &y), "{order:?}");
+            assert!(classes.are_equal(&at(x.base.clone(), 8), &y), "{order:?}");
             assert!(!classes.are_equal(&x, &y), "different load displacements");
             classes.add_equality(&at(symbolic(206), 0), &at(symbolic(207), 0));
             assert!(
@@ -4279,7 +4281,8 @@ mod tests {
 
     #[test]
     fn nested_load_congruence_propagates_a_late_merge_without_a_depth_cutoff() {
-        let memory = crate::kernel::intern_memory(Memory::new().with_block(symbolic(301), 16));
+        let memory =
+            crate::kernel::intern_memory(SymbolicMemory::new().with_block(symbolic(301), 16));
         let p = at(symbolic(302), 0);
         let q = at(symbolic(303), 0);
         let mut left = p.clone();
@@ -4293,14 +4296,15 @@ mod tests {
         classes.add_equality(&p, &q);
         assert!(classes.are_equal(&left, &right));
         // A newly named parent after closure must see the existing congruence.
-        let later_left = named_load(&memory, &at(left.block, 8));
-        let later_right = named_load(&memory, &at(right.block, 8));
+        let later_left = named_load(&memory, &at(left.base, 8));
+        let later_right = named_load(&memory, &at(right.base, 8));
         assert!(classes.are_equal(&later_left, &later_right));
     }
 
     #[test]
     fn congruence_registration_and_merges_are_isolated_between_branches() {
-        let memory = crate::kernel::intern_memory(Memory::new().with_block(symbolic(401), 16));
+        let memory =
+            crate::kernel::intern_memory(SymbolicMemory::new().with_block(symbolic(401), 16));
         let p = at(symbolic(402), 0);
         let q = at(symbolic(403), 0);
         let lp = named_load(&memory, &p);
@@ -4321,7 +4325,8 @@ mod tests {
 
     #[test]
     fn restricted_context_drops_derived_load_equalities() {
-        let memory = crate::kernel::intern_memory(Memory::new().with_block(symbolic(801), 16));
+        let memory =
+            crate::kernel::intern_memory(SymbolicMemory::new().with_block(symbolic(801), 16));
         let p = at(symbolic(802), 0);
         let q = at(symbolic(803), 0);
         let x = at(symbolic(804), 0);
@@ -4345,11 +4350,12 @@ mod tests {
 
     #[test]
     fn a_small_load_is_not_a_pointer_load_and_can_later_be_registered_as_one() {
-        let memory = crate::kernel::intern_memory(Memory::new().with_block(symbolic(901), 16));
+        let memory =
+            crate::kernel::intern_memory(SymbolicMemory::new().with_block(symbolic(901), 16));
         let p = at(symbolic(902), 0);
         let q = at(symbolic(903), 0);
         let small = at(
-            PointerBlock::Symbolic(crate::kernel::load_variable_for_cell_with_origin(
+            AddressBase::Symbolic(crate::kernel::load_variable_for_cell_with_origin(
                 &memory,
                 &p,
                 crate::kernel::LoadKind::Int32,
@@ -4369,15 +4375,15 @@ mod tests {
 
     #[test]
     fn affine_spelling_order_does_not_depend_on_atom_interning_order() {
-        let high = PointerOffsetTerm::scaled_int32_node(index(987_002), 4);
-        let low = PointerOffsetTerm::scaled_int32_node(index(987_001), 4);
+        let high = AddressOffset::scaled_int32_node(index(987_002), 4);
+        let low = AddressOffset::scaled_int32_node(index(987_001), 4);
         let high_form = AffineOffset::of(&high).unwrap();
         let low_form = AffineOffset::of(&low).unwrap();
         let sum = high_form.checked_add(&low_form).unwrap();
         assert_eq!(
             sum.to_offset_term(),
-            Some(PointerOffsetTerm::add(
-                PointerOffsetTerm::add(PointerOffsetTerm::Constant(0), low),
+            Some(AddressOffset::add(
+                AddressOffset::add(AddressOffset::Constant(0), low),
                 high,
             ))
         );
@@ -4385,17 +4391,17 @@ mod tests {
 
     #[test]
     fn shifted_raw_pointer_reads_import_only_exact_retained_dependencies() {
-        let base = Pointer::symbolic(Variable(51_401));
+        let base = Address::symbolic(Variable(51_401));
         let address = base.offset_by_bytes(8);
-        let memory = crate::kernel::intern_memory(Memory::new());
+        let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let ProgramValue::Pointer(raw) = memory
             .memory()
             .symbolic_pointer_load(&address, ProgramType::Int32Pointer)
         else {
             panic!("typed pointer read");
         };
-        let named = Pointer::loaded_value(&memory, &address);
-        let model = Pointer::symbolic(Variable(51_402));
+        let named = Address::loaded_value(&memory, &address);
+        let model = Address::symbolic(Variable(51_402));
         let mut graph = EqualityGraph::default();
         let sibling = graph.clone();
         graph.add_equality(&named, &model);
@@ -4415,7 +4421,7 @@ mod tests {
             crate::kernel::LoadKind::Int32,
         );
         // The pointee width does not enter a read's identity; displacement does.
-        let other_stride = Pointer::loaded(&cell_bits.clone()).unwrap();
+        let other_stride = Address::loaded(&cell_bits.clone()).unwrap();
         assert_eq!(&other_stride, raw.pointer());
         assert!(!graph.are_equal(
             &other_stride.offset_by_bytes(16),
@@ -4446,17 +4452,17 @@ mod tests {
 
     #[test]
     fn scalar_read_congruence_imports_shifted_raw_pointer_dependencies() {
-        let address = Pointer::symbolic(Variable(51_411)).offset_by_bytes(8);
-        let memory = crate::kernel::intern_memory(Memory::new());
+        let address = Address::symbolic(Variable(51_411)).offset_by_bytes(8);
+        let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let ProgramValue::Pointer(raw) = memory
             .memory()
             .symbolic_pointer_load(&address, ProgramType::Int32Pointer)
         else {
             panic!("typed pointer read");
         };
-        let named = Pointer::loaded_value(&memory, &address);
-        let model = Pointer::symbolic(Variable(51_412));
-        let read = |pointer: &Pointer| {
+        let named = Address::loaded_value(&memory, &address);
+        let model = Address::symbolic(Variable(51_412));
+        let read = |pointer: &Address| {
             crate::kernel::eval::declare_load_access_width(pointer, 4);
             crate::kernel::canonical_term(&MachineTerm::MemoryLoad(
                 ProgramPoint::at(&memory),
@@ -4505,8 +4511,8 @@ mod boolean_cast_dependency_tests {
         let native = MachineTerm::bool_cast(
             MachineIntegerType::Int32,
             ConditionTerm::PointerEqual(
-                Box::new(Pointer::symbolic(Variable(999462))),
-                Box::new(Pointer::symbolic(Variable(999463))),
+                Box::new(Address::symbolic(Variable(999462))),
+                Box::new(Address::symbolic(Variable(999463))),
             ),
         );
         let root = KernelTermImport::default()

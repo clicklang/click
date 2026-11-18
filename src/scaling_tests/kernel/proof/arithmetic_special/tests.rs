@@ -68,15 +68,15 @@ fn unsigned_widening_identity_work_scales_with_operand_payload() {
 
 #[test]
 fn arithmetic_read_atoms_keep_state_identity_without_scanning_storage() {
-    use crate::kernel::{LoadKind, Memory, ProgramValue, Variable, intern_memory};
+    use crate::kernel::{LoadKind, ProgramValue, SymbolicMemory, Variable, intern_memory};
     let mut samples = Vec::new();
     for size in [8, 64, 512] {
         let _session = crate::kernel::VerificationSession::enter();
-        let address = Pointer::symbolic(Variable(894_000));
-        let mut memory = Memory::new();
+        let address = Address::symbolic(Variable(894_000));
+        let mut memory = SymbolicMemory::new();
         for index in 0..size {
             memory = memory.store(
-                Pointer::symbolic(Variable(895_000 + index)),
+                Address::symbolic(Variable(895_000 + index)),
                 ProgramValue::Int32(MachineTerm::constant(7)),
             );
         }
@@ -127,7 +127,7 @@ fn shared_tagged_word_certificates_preserve_bounds_without_exports() {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::UInt64;
         let address = MachineTerm::PointerAddress(
-            Box::new(pointer(PointerOffsetTerm::Constant(0))),
+            Box::new(pointer(AddressOffset::Constant(0))),
             crate::kernel::AddressObjectClass::NONE,
         );
         let mut root = KernelTerm::retained_machine_operand(format, View::Legacy(&address));

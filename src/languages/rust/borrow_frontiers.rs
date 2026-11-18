@@ -46,18 +46,14 @@ pub struct CheckedExecutedScalarReferenceAccess<'a, 'e> {
 /// A completed borrow assignment and its checked store ending on one selected
 /// execution path. This is an execution record, not a loan-recovery right.
 #[derive(Debug)]
-pub struct CheckedExecutedScalarReferenceEnd<'a, 'e> {
-    certificate: &'a CheckedScalarReferenceEnd<'a>,
-    pointer: &'e crate::kernel::Pointer,
+pub struct CheckedExecutedScalarReferenceEnd<'e> {
+    pointer: &'e crate::kernel::Address,
     ending: crate::kernel::ExecutedReferenceAccess<'e>,
     execution: &'e crate::kernel::SymbolicExecution,
     path_index: usize,
 }
-impl CheckedExecutedScalarReferenceEnd<'_, '_> {
-    pub fn source_certificate(&self) -> &CheckedScalarReferenceEnd<'_> {
-        self.certificate
-    }
-    pub fn pointer(&self) -> &crate::kernel::Pointer {
+impl CheckedExecutedScalarReferenceEnd<'_> {
+    pub fn pointer(&self) -> &crate::kernel::Address {
         self.pointer
     }
     pub fn execution(&self) -> &crate::kernel::SymbolicExecution {
@@ -66,7 +62,7 @@ impl CheckedExecutedScalarReferenceEnd<'_, '_> {
     pub fn path_index(&self) -> usize {
         self.path_index
     }
-    pub fn ending_pointer(&self) -> &crate::kernel::Pointer {
+    pub fn ending_pointer(&self) -> &crate::kernel::Address {
         self.ending.pointer()
     }
 }
@@ -74,7 +70,7 @@ impl CheckedExecutedScalarReferenceAccess<'_, '_> {
     pub fn source_access(&self) -> &CheckedScalarReferenceAccess<'_> {
         self.access
     }
-    pub fn pointer(&self) -> &crate::kernel::Pointer {
+    pub fn pointer(&self) -> &crate::kernel::Address {
         self.event.pointer()
     }
     pub fn execution(&self) -> &crate::kernel::SymbolicExecution {
@@ -138,11 +134,11 @@ impl CheckedScalarReferenceEnd<'_> {
     pub fn bind_executed_endings<'a, 'e>(
         &'a self,
         execution: &'e crate::kernel::SymbolicExecution,
-    ) -> Vec<CheckedExecutedScalarReferenceEnd<'a, 'e>> {
+    ) -> Vec<CheckedExecutedScalarReferenceEnd<'e>> {
         use crate::kernel::ExecutedReferenceBoundary;
         #[derive(Default)]
         struct Candidate<'e> {
-            birth: Option<(&'e crate::kernel::Pointer, usize)>,
+            birth: Option<(&'e crate::kernel::Address, usize)>,
             ending: Option<(crate::kernel::ExecutedReferenceAccess<'e>, usize)>,
             births: usize,
             endings: usize,
@@ -216,7 +212,6 @@ impl CheckedScalarReferenceEnd<'_> {
                 let (ending, end_order) = candidate.ending?;
                 (birth_order < end_order && pointer == ending.pointer()).then_some(
                     CheckedExecutedScalarReferenceEnd {
-                        certificate: self,
                         pointer,
                         ending,
                         execution,
@@ -1196,12 +1191,12 @@ mod tests {
         use crate::kernel::*;
         let (functions, _) =
             super::super::lowering::lower_with_identity(export, Some(identity)).unwrap();
-        let pointer = Pointer {
-            block: "executed-child".into(),
-            offset: crate::kernel::PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: "executed-child".into(),
+            offset: crate::kernel::AddressOffset::Constant(0),
         };
-        let memory = Memory::new()
-            .with_block(pointer.block.clone(), if owned { 4 } else { 0 })
+        let memory = SymbolicMemory::new()
+            .with_block(pointer.base.clone(), if owned { 4 } else { 0 })
             .store(pointer.clone(), int32(4));
         let state = ExecutionState::new()
             .with_memory(memory)
@@ -1279,9 +1274,9 @@ mod tests {
         for binding in bindings {
             assert_eq!(
                 binding.pointer(),
-                &crate::kernel::Pointer {
-                    block: "executed-child".into(),
-                    offset: crate::kernel::PointerOffsetTerm::Constant(0)
+                &crate::kernel::Address {
+                    base: "executed-child".into(),
+                    offset: crate::kernel::AddressOffset::Constant(0)
                 }
             );
             assert!(std::ptr::eq(binding.execution(), &execution));

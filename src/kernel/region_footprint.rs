@@ -12,8 +12,10 @@ static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 pub struct RegionFootprint {
     id: u64,
     pub(crate) source: String,
-    pub(crate) before: Memory,
-    pub(crate) after: Memory,
+    pub(crate) before: SymbolicMemory,
+    pub(crate) after: SymbolicMemory,
+    pub(crate) before_point: ProgramPoint,
+    pub(crate) after_point: ProgramPoint,
     pub(crate) before_resources: ResourceContext,
     pub(crate) after_resources: ResourceContext,
     pub(crate) members: imbl::Vector<Resource>,
@@ -124,10 +126,12 @@ impl RegionFootprint {
                         continue;
                     }
                     extra_effect = true;
-                    members.push_back(Resource::Memory(contents.extent().byte_range(Pointer {
-                        block: block.clone(),
-                        offset: PointerOffsetTerm::Constant(0),
-                    })));
+                    members.push_back(Resource::Memory(contents.allocation_size().byte_range(
+                        Address {
+                            base: block.clone(),
+                            offset: AddressOffset::Constant(0),
+                        },
+                    )));
                 }
             }
         }
@@ -166,6 +170,8 @@ impl RegionFootprint {
             id: NEXT_ID.fetch_add(1, Ordering::Relaxed),
             before: before.memory().clone(),
             after: after.memory().clone(),
+            before_point: before.program_point(),
+            after_point: after.program_point(),
             before_resources: before.resources().clone(),
             after_resources: after.resources().clone(),
             members,
@@ -185,6 +191,8 @@ impl RegionFootprint {
             source: statement.source.clone(),
             before: statement.before.clone(),
             after: cleanup.after.clone(),
+            before_point: statement.before_point.clone(),
+            after_point: cleanup.after_point.clone(),
             before_resources: statement.before_resources.clone(),
             after_resources: cleanup.after_resources.clone(),
             members,
@@ -207,6 +215,8 @@ impl RegionFootprint {
             id: NEXT_ID.fetch_add(1, Ordering::Relaxed),
             before: before.memory().clone(),
             after: after.memory().clone(),
+            before_point: before.program_point(),
+            after_point: after.program_point(),
             before_resources: before.resources().clone(),
             after_resources: after.resources().clone(),
             members,
@@ -248,7 +258,7 @@ pub(crate) fn separate_using(left: &Resource, right: &Resource, facts: &PureFact
                 pending.extend(fp.members.iter().map(|member| (member, other)));
             }
             // Primitive tokens contain no bytes. Releasing an allocation
-            // still records its memory extent separately above.
+            // still records its memory range separately above.
             (Resource::Token { .. }, Resource::Memory(_))
             | (Resource::Memory(_), Resource::Token { .. }) => {}
             (Resource::Memory(left), Resource::Memory(right))
@@ -266,7 +276,7 @@ pub(crate) fn separate_using(left: &Resource, right: &Resource, facts: &PureFact
                     right: Box::new(left),
                 };
                 // Parent/child restriction is explicit. Exact physical spans
-                // use the maintained address-class/extent index, never an
+                // use the maintained address-class/span index, never an
                 // alias or separation-fact search per member.
                 if !facts.contains_known(&forward) && !facts.contains_known(&reverse) {
                     return false;

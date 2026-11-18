@@ -68,7 +68,7 @@ impl MemoryStateLabels {
         self.range_collisions = None;
     }
 
-    fn range_object_identity(&mut self, pointer: &Pointer) -> String {
+    fn range_object_identity(&mut self, pointer: &Address) -> String {
         if let Some((parameters, arguments)) = self.naming.as_deref() {
             for (parameter, argument) in parameters.iter().zip(arguments).take(128) {
                 if let crate::kernel::ProgramExpression::Value(
@@ -98,15 +98,15 @@ impl MemoryStateLabels {
             let (provenance, opaque, known) = range.diagnostic_pointer_metadata();
             let provenance = self.range_object_identity(provenance);
             let bounds = match (known, opaque) {
-                (true, None) => "known object extent".to_owned(),
+                (true, None) => "known object bounds".to_owned(),
                 (true, Some(origin)) => format!(
-                    "known extent; retained extent identity = {}",
+                    "known bounds; retained bounds identity = {}",
                     self.range_object_identity(origin)
                 ),
                 (false, Some(origin)) => {
-                    format!("opaque extent from {}", self.range_object_identity(origin))
+                    format!("opaque bounds from {}", self.range_object_identity(origin))
                 }
-                (false, None) => "unknown extent".to_owned(),
+                (false, None) => "unknown bounds".to_owned(),
             };
             // Keep the legend bounded even for large symbolic pointer terms.
             let bounded = |text: String| {
@@ -134,12 +134,12 @@ impl MemoryStateLabels {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::{PointerBlock, PointerValue, ProgramType};
+    use crate::kernel::{AddressBase, PointerValue, ProgramType};
 
     fn range(origin: u64) -> MemoryRange {
-        let base = Pointer::symbolic(Variable(987_800));
+        let base = Address::symbolic(Variable(987_800));
         let value = PointerValue::new(
-            Pointer::symbolic(Variable(origin)),
+            Address::symbolic(Variable(origin)),
             ProgramType::Int32Pointer,
         )
         .with_address(base);
@@ -207,9 +207,9 @@ mod tests {
         }
         // Keep a concrete object in the metadata coverage too.
         let value = PointerValue::new(
-            Pointer {
-                block: PointerBlock::Concrete("global:table".into()),
-                offset: PointerOffsetTerm::Constant(0),
+            Address {
+                base: AddressBase::Concrete("global:table".into()),
+                offset: AddressOffset::Constant(0),
             },
             ProgramType::Int32Pointer,
         );

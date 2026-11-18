@@ -2,7 +2,7 @@
 //!
 //! A [`ProgramPoint`] carries the memory state there and its place on the
 //! path: an identity minted at each memory transition, linked to the point or
-//! points it was reached from. Memory states are interned by content, so two
+//! points it was reached from. SymbolicMemory states are interned by content, so two
 //! paths that reach equal memory share one state; their points are still two.
 //!
 //! Surface records the name of each point it records a state at
@@ -11,14 +11,15 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use super::{Memory, MemoryDerivation, SharedMemory, intern_memory, intern_memory_ref};
+use super::{MemoryDerivation, SharedMemory, SymbolicMemory, intern_memory, intern_memory_ref};
 
 /// The identity of one point an execution path reached.
 ///
 /// Identities are unique within a process and carry no order: no decision
-/// may depend on comparing two of them other than for equality.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
-pub(crate) struct ProgramPointId(u64);
+/// may depend on comparing two of them other than for equality. Ordering is
+/// provided solely for exact fact keys.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct ProgramPointId(u64);
 
 static NEXT_PROGRAM_POINT_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -305,9 +306,9 @@ impl ProgramPoint {
         }
     }
 
-    /// The point a `Memory` value stands at, interning it first. Callers
+    /// The point a `SymbolicMemory` value stands at, interning it first. Callers
     /// that already hold an interned state use [`ProgramPoint::at`].
-    pub(crate) fn of_memory(memory: &Memory) -> Self {
+    pub(crate) fn of_memory(memory: &SymbolicMemory) -> Self {
         Self::at(&intern_memory(memory.clone()))
     }
 
@@ -316,11 +317,12 @@ impl ProgramPoint {
     /// The point a state with `memory` stands at, `path` being the last
     /// point it reached. Steps the state has taken since, still in the
     /// memory's log, are a point of their own after that one, so the point
-    /// handed out holds the memory it names.
-    pub(super) fn of_state(memory: &Memory, path: &PathLink) -> Self {
+    /// handed out holds the memory it names. The log determines the
+    /// successor even when the steps return to the predecessor's contents.
+    pub(super) fn of_state(memory: &SymbolicMemory, path: &PathLink) -> Self {
         let shared = intern_memory_ref(memory);
         let path = match &memory.pending_steps {
-            Some(steps) if path.memory() != Some(&shared) => pending_point(path, steps, &shared),
+            Some(steps) => pending_point(path, steps, &shared),
             _ => path.clone(),
         };
         Self {
@@ -333,6 +335,15 @@ impl ProgramPoint {
         &self.memory
     }
 
+    /// This point with its memory's values renamed: the same place on the
+    /// path, its memory spelled with substituted variables.
+    pub(crate) fn with_renamed_memory(&self, memory: SymbolicMemory) -> Self {
+        Self {
+            memory: intern_memory(memory),
+            path: self.path.clone(),
+        }
+    }
+
     /// Where on its path this point is.
     pub(super) fn path_link(&self) -> &PathLink {
         &self.path
@@ -343,7 +354,7 @@ impl ProgramPoint {
         self.memory
     }
 
-    pub(crate) fn memory(&self) -> &Memory {
+    pub(crate) fn memory(&self) -> &SymbolicMemory {
         self.memory.memory()
     }
 
@@ -361,7 +372,7 @@ impl ProgramPoint {
     }
 
     /// True when this point is later in the recorded history than `other`.
-    /// Memory state ids strictly increase along derivation edges, so comparing
+    /// SymbolicMemory state ids strictly increase along derivation edges, so comparing
     /// them orders two points of one arena without walking.
     pub(crate) fn is_later_than(&self, other: &Self) -> bool {
         let (arena, id) = self.memory.arena_id();
@@ -375,21 +386,21 @@ mod tests {
     use super::super::*;
     use super::PathLink;
 
-    fn memory_holding(value: u32) -> Memory {
-        let block: PointerBlock = "local:slot".into();
-        let slot = Pointer {
-            block: block.clone(),
-            offset: PointerOffsetTerm::Constant(0),
+    fn memory_holding(value: u32) -> SymbolicMemory {
+        let block: AddressBase = "local:slot".into();
+        let slot = Address {
+            base: block.clone(),
+            offset: AddressOffset::Constant(0),
         };
-        Memory::new()
+        SymbolicMemory::new()
             .with_block(block, 4)
             .store(slot, ProgramValue::Int32(MachineTerm::constant(value)))
     }
 
-    fn slot() -> Pointer {
-        Pointer {
-            block: "local:slot".into(),
-            offset: PointerOffsetTerm::Constant(0),
+    fn slot() -> Address {
+        Address {
+            base: "local:slot".into(),
+            offset: AddressOffset::Constant(0),
         }
     }
 
@@ -484,6 +495,40 @@ mod tests {
         assert!(frame.memory().same_storage_roots(moved.memory()));
     }
 
+    /// Recorded steps reach a new point even when their net contents match
+    /// the predecessor. Looking up that pending successor, or making a frame
+    /// there, must retain the same point identity.
+    #[test]
+    fn pending_steps_returning_to_equal_memory_reach_a_stable_successor() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let start = ExecutionState::default().with_memory(memory_holding(0));
+        let memory = start
+            .memory()
+            .clone()
+            .store(slot(), ProgramValue::Int32(MachineTerm::constant(1)))
+            .store(slot(), ProgramValue::Int32(MachineTerm::constant(0)));
+        assert!(memory.pending_steps.is_some());
+        let moved = start.clone().with_materialized_memory(memory);
+        assert_eq!(start.memory(), moved.memory());
+        let point = moved.program_point();
+        assert_ne!(point.id(), start.program_point().id());
+        assert_eq!(
+            point.predecessor_ids(),
+            vec![start.program_point().id().unwrap()]
+        );
+        assert_eq!(moved.program_point().id(), point.id());
+        assert_eq!(point.path_link().memory(), Some(point.shared_memory()));
+        let frame = ExecutionState::at_state(&moved);
+        assert_eq!(frame.program_point().id(), point.id());
+        assert!(frame.memory().pending_steps.is_none());
+        assert_eq!(frame.program_point().id(), point.id());
+        // A frame without pending steps stays at the predecessor.
+        assert_eq!(
+            ExecutionState::at_state(&start).program_point().id(),
+            start.program_point().id()
+        );
+    }
+
     /// A state that takes another state's memory continues that state's
     /// path, through the steps that made the memory, not its own.
     #[test]
@@ -511,7 +556,7 @@ mod tests {
     /// once per link.
     #[test]
     fn a_long_path_drops_without_recursing_per_point() {
-        let memory = intern_memory(Memory::new());
+        let memory = intern_memory(SymbolicMemory::new());
         let mut point = PathLink::default();
         for _ in 0..200_000 {
             point = point.after(memory.clone(), None);
@@ -551,5 +596,8 @@ mod tests {
                 right.program_point().id().unwrap()
             ]
         );
+    }
+    mod scaling_tests {
+        include!("../../scaling_tests/kernel/primitives/program_point.rs");
     }
 }

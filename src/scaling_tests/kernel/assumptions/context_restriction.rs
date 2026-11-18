@@ -10,9 +10,9 @@ fn selected_context_does_not_withdraw_ambient_pointer_facts() {
                 name: "pointer_fact".into(),
                 arguments: vec![Term::ProgramValue(ProgramValue::Pointer(
                     PointerValue::new(
-                        Pointer {
-                            block: format!("ambient_{index}").into(),
-                            offset: PointerOffsetTerm::Constant(0),
+                        Address {
+                            base: format!("ambient_{index}").into(),
+                            offset: AddressOffset::Constant(0),
                         },
                         ProgramType::Int32Pointer,
                     ),
@@ -39,10 +39,10 @@ fn memory_view_miss_does_not_scan_other_bases_in_one_block() {
     let mut samples = Vec::new();
     for size in [8u64, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
-        let memory = Memory::new();
-        let pointer = |id| Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(id)), 4),
+        let memory = SymbolicMemory::new();
+        let pointer = |id| Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(id)), 4),
         };
         let mut context = PureFactContext::new();
         for index in 0..size {
@@ -107,18 +107,18 @@ fn adjacent_view_looks_up_its_suffix_beside_unrelated_cells_and_ranges() {
     let mut samples = Vec::new();
     for size in [8u64, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
-        let base = Pointer {
-            block: "adjacent".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let base = Address {
+            base: "adjacent".into(),
+            offset: AddressOffset::Constant(0),
         };
         let prefix = Proposition::MemoryLoadable {
-            memory: Memory::new(),
+            memory: SymbolicMemory::new(),
             base: base.clone(),
             bytes: 8.into(),
             wide: false,
         };
         let suffix = Proposition::MemoryLoadable {
-            memory: Memory::new(),
+            memory: SymbolicMemory::new(),
             base: base.offset_by_bytes(8),
             bytes: 4.into(),
             wide: false,
@@ -126,11 +126,11 @@ fn adjacent_view_looks_up_its_suffix_beside_unrelated_cells_and_ranges() {
         let mut context = PureFactContext::new()
             .assume_proposition(prefix.clone())
             .assume_proposition(suffix.clone());
-        let mut memory = Memory::new();
+        let mut memory = SymbolicMemory::new();
         for index in 0..size {
             let other = base.offset_by_bytes(1000 + index as u32 * 4);
             context = context.assume_proposition(Proposition::MemoryLoadable {
-                memory: Memory::new(),
+                memory: SymbolicMemory::new(),
                 base: other.clone(),
                 bytes: 4.into(),
                 wide: false,
@@ -138,7 +138,7 @@ fn adjacent_view_looks_up_its_suffix_beside_unrelated_cells_and_ranges() {
             memory = memory.store(other, ProgramValue::Int32(7.into()));
         }
         let (facts, work) = crate::instrumentation::measure_deterministic_work(|| {
-            context.adjacent_loadable_region_facts(&Memory::new(), &base, &12.into())
+            context.adjacent_loadable_region_facts(&SymbolicMemory::new(), &base, &12.into())
         });
         assert_eq!(facts.unwrap(), vec![prefix.clone(), suffix]);
         let selected = PureFactContext::new().assume_proposition(prefix.clone());
@@ -165,9 +165,9 @@ fn exact_view_candidate_does_not_prepare_its_alias_class() {
     let mut samples = Vec::new();
     for size in [8u64, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
-        let base = Pointer::symbolic(Variable(770_000));
+        let base = Address::symbolic(Variable(770_000));
         let fact = Proposition::MemoryLoadable {
-            memory: Memory::new(),
+            memory: SymbolicMemory::new(),
             base: base.clone(),
             bytes: 8.into(),
             wide: false,
@@ -176,7 +176,7 @@ fn exact_view_candidate_does_not_prepare_its_alias_class() {
         for index in 0..size {
             context
                 .equality_graph
-                .add_equality(&base, &Pointer::symbolic(Variable(770_001 + index)));
+                .add_equality(&base, &Address::symbolic(Variable(770_001 + index)));
         }
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..4 {
@@ -196,18 +196,18 @@ fn exact_view_candidate_does_not_prepare_its_alias_class() {
 }
 
 #[test]
-fn memory_view_miss_does_not_scan_same_address_extents() {
+fn memory_view_miss_does_not_scan_same_address_spans() {
     let mut samples = Vec::new();
     for size in [8u32, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
-        let memory = Memory::new();
-        let base = Pointer::symbolic(Variable(780_000));
+        let memory = SymbolicMemory::new();
+        let base = Address::symbolic(Variable(780_000));
         let mut context = PureFactContext::new();
-        for extent in 1..=size {
+        for span in 1..=size {
             context = context.assume_proposition(Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: base.clone(),
-                bytes: extent.into(),
+                bytes: span.into(),
                 wide: false,
             });
         }
@@ -235,9 +235,9 @@ fn ambiguous_view_buckets_keep_exact_and_selected_evidence() {
             let mut selected_work = Vec::new();
             for size in [8u32, 32, 128] {
                 let _session = crate::kernel::VerificationSession::enter();
-                let memory = Memory::new();
-                let base = Pointer::symbolic(Variable(790_000));
-                let extent = |n: u32| {
+                let memory = SymbolicMemory::new();
+                let base = Address::symbolic(Variable(790_000));
+                let span = |n: u32| {
                     if wide {
                         MachineTerm::uint64_constant(u64::from(n))
                     } else {
@@ -249,7 +249,7 @@ fn ambiguous_view_buckets_keep_exact_and_selected_evidence() {
                 for index in 1..=size {
                     let source = if retained_states {
                         memory.clone().store(
-                            Pointer::symbolic(Variable(790_001 + u64::from(index))),
+                            Address::symbolic(Variable(790_001 + u64::from(index))),
                             ProgramValue::Int32(7.into()),
                         )
                     } else {
@@ -258,7 +258,7 @@ fn ambiguous_view_buckets_keep_exact_and_selected_evidence() {
                     let fact = Proposition::MemoryLoadable {
                         memory: source,
                         base: base.clone(),
-                        bytes: extent(index * 4),
+                        bytes: span(index * 4),
                         wide,
                     };
                     if index == size / 2 {
@@ -276,7 +276,7 @@ fn ambiguous_view_buckets_keep_exact_and_selected_evidence() {
                 };
                 let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                     for _ in 0..4 {
-                        assert!(!proves(&context, &extent(4096)));
+                        assert!(!proves(&context, &span(4096)));
                     }
                 });
                 misses.push(work);
@@ -294,18 +294,18 @@ fn ambiguous_view_buckets_keep_exact_and_selected_evidence() {
                 });
                 assert!(work >= 4, "exact view lookups must charge work");
                 hits.push(work);
-                // Six bytes is a valid subrange, but no asserted extent is six.
+                // Six bytes is a valid subrange, but no asserted span is six.
                 // Ambiguity is a refusal, not an arbitrary premise choice.
-                assert!(!proves(&context, &extent(6)));
+                assert!(!proves(&context, &span(6)));
                 let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                     let selected_context = crate::kernel::SelectedFacts::from_propositions(
                         std::slice::from_ref(&selected),
                     );
-                    assert!(proves(&selected_context, &extent(6)));
-                    assert!(!proves(&selected_context, &extent(4096)));
+                    assert!(proves(&selected_context, &span(6)));
+                    assert!(!proves(&selected_context, &span(4096)));
                 });
                 selected_work.push(work);
-                assert!(!proves(&PureFactContext::new(), &extent(6)));
+                assert!(!proves(&PureFactContext::new(), &span(6)));
             }
             eprintln!(
                 "view buckets wide={wide} states={retained_states}: misses={misses:?}, hits={hits:?}, selected={selected_work:?}"
@@ -326,8 +326,8 @@ fn atomic_view_miss_cannot_reopen_coverage_bucket_scans() {
         let mut samples = Vec::new();
         for size in [8u32, 32, 128] {
             let _session = crate::kernel::VerificationSession::enter();
-            let memory = Memory::new();
-            let base = Pointer::symbolic(Variable(796_000));
+            let memory = SymbolicMemory::new();
+            let base = Address::symbolic(Variable(796_000));
             let mut context = PureFactContext::new();
             for index in 1..=size {
                 context = context.assume_proposition(Proposition::MemoryLoadable {

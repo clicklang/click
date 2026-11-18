@@ -2477,7 +2477,7 @@ fn ensure_comparison(
 // explicitly with --ignored. See `docs/internals/testing.md`, "Batching short
 // tests".
 #[cfg(feature = "fast-gate")]
-fn run_test_batch(cases: &[(&str, fn())]) {
+pub(super) fn run_test_batch(cases: &[(&str, fn())]) {
     for &(name, test) in cases {
         eprintln!("batched case {name} started");
         let started = std::time::Instant::now();
@@ -2534,6 +2534,9 @@ macro_rules! test_batches {
         }
     };
 }
+
+#[cfg(feature = "fast-gate")]
+pub(super) use test_batches;
 
 mod authority_private_body_tests;
 mod authority_transfer_wrapper_tests;
@@ -2818,12 +2821,12 @@ fn resource_contract_regressions_expand_and_check() {
         ("aggregate_parameter_pointee_resource", "touch"),
         ("aggregate_parameter_old_pointee", "dispose"),
         ("const_callback_table_abstract", "caller"),
-        ("separation_extent_bounded_goal", "identity"),
-        ("separation_extent_assumption", "identity"),
-        ("separation_extent_call", "caller"),
-        ("separation_extent_borrowed_call", "caller"),
-        ("separation_extent_composite_bounds", "length"),
-        ("separation_extent_composite_split_bounds", "split_length"),
+        ("separation_span_bounded_goal", "identity"),
+        ("separation_span_assumption", "identity"),
+        ("separation_span_call", "caller"),
+        ("separation_span_borrowed_call", "caller"),
+        ("separation_span_composite_bounds", "length"),
+        ("separation_span_composite_split_bounds", "split_length"),
         ("owned_symbolic_separation_certificate", "attach"),
     ] {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))

@@ -47,7 +47,7 @@ pub(super) fn raise_match(
 // Declarations name a single typed variable. Read that declaration directly;
 // neither arm bodies nor pointer producer metadata participate in its name.
 fn shared_declaration_variable(term: &KernelTerm) -> Option<(BindingCarrier, Variable)> {
-    use crate::kernel::{KernelMachineLiteral, KernelPointerOffset, KernelTermNode as N};
+    use crate::kernel::{KernelAddressOffset, KernelMachineLiteral, KernelTermNode as N};
     crate::instrumentation::record_deterministic_work(1);
     let term = match term.node() {
         N::ProgramParameter { operand } => operand,
@@ -81,11 +81,11 @@ fn shared_declaration_variable(term: &KernelTerm) -> Option<(BindingCarrier, Var
         | N::PointerArithmetic { value, .. }
         | N::PointerCall { value, .. } => {
             let address = value.node().address.node();
-            if !matches!(address.offset.node(), KernelPointerOffset::Constant(0)) {
+            if !matches!(address.offset.node(), KernelAddressOffset::Constant(0)) {
                 return None;
             }
-            match address.block.native_atom() {
-                PointerBlock::Symbolic(variable) | PointerBlock::FunctionSymbolic(variable) => {
+            match address.base.native_atom() {
+                AddressBase::Symbolic(variable) | AddressBase::FunctionSymbolic(variable) => {
                     *variable
                 }
                 _ => return None,
@@ -233,7 +233,7 @@ mod tests {
             ProgramValue::Int128(word.clone()),
             ProgramValue::Float32(word.clone()),
             ProgramValue::Bool(word.clone()),
-            ProgramValue::typed_pointer(Pointer::symbolic(variable), ProgramType::Int32Pointer),
+            ProgramValue::typed_pointer(Address::symbolic(variable), ProgramType::Int32Pointer),
             ProgramValue::Int32(MachineTerm::constant(0)),
         ];
         for format in [MachineIntegerType::Int32, MachineIntegerType::UInt32] {

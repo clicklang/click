@@ -11,7 +11,7 @@ skill is the procedure for applying them.
 Use **program point** for the location passed to `at`, **version point**
 for a read's identity selected by the assumption-free memory walk, and
 **recorded symbolic state** for an `ExecutionState` retained on a proof path.
-A `Memory` or `SharedMemory` value is a **memory state**, which can contain
+A `SymbolicMemory` or `SharedMemory` value is a **memory state**, which can contain
 partial or abstract information. See the vocabulary in
 `docs/concepts/memory-model.md`.
 Externally defined API symbols and opaque import-profile identifiers retain
@@ -125,10 +125,10 @@ branches, and excluded-value runs, including hits, misses and branch isolation. 
 of its provenance, quantity or coverage check is final. Keep explicit footprint
 composition separate, and grow overlapping supplier buckets on refusal as well
 as success. Object-provenance lookup selects an indexed witness; it does not
-filter its object bucket. Provenance/extent fallbacks use singleton direct
+filter its object bucket. Provenance/bounds fallbacks use singleton direct
 aliases; framed pointer recovery requires a singleton full-pointer source.
 Grow same-address state buckets and direct-alias stars, keeping exact class
-hits and stale-read/extent refusals.
+hits and stale-read/bounds refusals.
 Run the boundary regressions with `test(gate_tests::search_boundary::)` in the
 fast-gate binary. This enforcement does not replace deterministic scaling tests.
 

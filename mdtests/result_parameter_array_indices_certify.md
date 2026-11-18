@@ -9,14 +9,14 @@ int32 zero(int32 result, struct object* p) {
     views p->values[0][0];
     views p->values[1][0];
     views p->single[1..2];
-    requires c(result) == 1;
+    requires program::result == 1;
     requires p->values[0][0] == 3 and p->values[1][0] == 7;
     requires p->single[1] == 9;
-    ensures p->values[c(result)][0] == 7;
-    ensures old(p)->values[c(result)][0] == 7;
-    ensures p->values[c(result) + result][0] == 7;
+    ensures p->values[program::result][0] == 7;
+    ensures old(p)->values[program::result][0] == 7;
+    ensures p->values[program::result + result][0] == 7;
     ensures p->values[result][0] == 3;
-    ensures p->single[c(result)] == 9;
+    ensures p->single[program::result] == 9;
 }
 ```
 ```expect

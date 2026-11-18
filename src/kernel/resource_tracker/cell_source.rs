@@ -3,7 +3,7 @@
 //!
 //! The walk answers two different questions with one traversal. The tracker
 //! asks "is this cell the same at these two program points", and takes only
-//! the node the walk stopped at. Memory-load reasoning asks "are these two
+//! the node the walk stopped at. SymbolicMemory-load reasoning asks "are these two
 //! loads equal", and takes the whole path as retained evidence. Both live
 //! here because they read the same recorded edges under the same rules; see
 //! `docs/internals/resource-tracker.md` and `docs/internals/memory-dag.md`.
@@ -100,7 +100,7 @@ pub(in crate::kernel) enum MemoryDagHopJustification {
     /// The store's full address equals `write` in this checking context;
     /// exact byte geometry at that spelling misses the complete read.
     StoreAliasedByteSeparation {
-        write: Pointer,
+        write: Address,
     },
     StoreCommonBaseUnequalConstants {
         condition: ConditionTerm,
@@ -215,17 +215,17 @@ pub(in crate::kernel) enum PointerInRangeEvidence {
     /// One spelling at the selected range's base, justified by the current
     /// maintained graph. Checking never searches other aliases or history.
     GraphAlias {
-        alias: Pointer,
+        alias: Address,
         membership: Box<PointerInRangeEvidence>,
     },
     ExactAlias {
-        alias: Pointer,
+        alias: Address,
         condition: ConditionTerm,
         membership: Box<PointerInRangeEvidence>,
     },
     ShiftedExactAlias {
-        base: Pointer,
-        alias: Pointer,
+        base: Address,
+        alias: Address,
         bytes: u32,
         membership: Box<PointerInRangeEvidence>,
     },
@@ -259,7 +259,7 @@ pub(in crate::kernel) enum PointerInRangeEvidence {
 /// non-negative constant. The answer is built from the terms in hand; a
 /// caller asks the context for each candidate by exact lookup.
 pub(in crate::kernel) fn unsigned_index_in_range(
-    pointer: &Pointer,
+    pointer: &Address,
     range: &MemoryRange,
 ) -> Option<(SharedMachineIntegerTerm, Vec<ConditionTerm>)> {
     crate::instrumentation::record_deterministic_work(1);
@@ -271,10 +271,10 @@ pub(in crate::kernel) fn unsigned_index_in_range(
     }
     let (index_offset, base_rest) =
         crate::kernel::reasoning::common_base_index_offsets(pointer, range.base())?;
-    if base_rest != PointerOffsetTerm::Constant(0) {
+    if base_rest != AddressOffset::Constant(0) {
         return None;
     }
-    let PointerOffsetTerm::Int64Scaled {
+    let AddressOffset::Int64Scaled {
         value,
         byte_width,
         unsigned: true,
@@ -341,7 +341,7 @@ pub(in crate::kernel) struct AccessInRangeEvidence {
 
 impl AccessInRangeEvidence {
     pub(in crate::kernel) fn for_access(
-        pointer: &Pointer,
+        pointer: &Address,
         bytes: u32,
         range: &MemoryRange,
         assumptions: &PureFactContext,
@@ -368,7 +368,7 @@ impl AccessInRangeEvidence {
 
     fn checks(
         &self,
-        pointer: &Pointer,
+        pointer: &Address,
         bytes: u32,
         range: &MemoryRange,
         assumptions: &PureFactContext,
@@ -437,7 +437,7 @@ impl SeparatedRangeEvidence {
     fn checks(
         &self,
         range: &MemoryRange,
-        pointer: &Pointer,
+        pointer: &Address,
         bytes: u32,
         assumptions: &PureFactContext,
     ) -> bool {
@@ -474,7 +474,7 @@ impl BorrowPartitionRangeEvidence {
     fn checks(
         &self,
         range: &MemoryRange,
-        pointer: &Pointer,
+        pointer: &Address,
         bytes: u32,
         assumptions: &PureFactContext,
     ) -> bool {
@@ -523,33 +523,26 @@ impl MemoryDagHopJustification {
     pub(in crate::kernel) fn checks(
         &self,
         derivation: &MemoryDerivation,
-        pointer: &Pointer,
+        pointer: &Address,
         bytes: u32,
         assumptions: &PureFactContext,
     ) -> bool {
         match self {
-            Self::StoreDistinctBlocks => matches!(
-                derivation,
-                MemoryDerivation::Store { pointer: write, .. }
-                    if write.blocks_proven_distinct(pointer)
-            ),
+            Self::StoreDistinctBlocks => derivation
+                .single_write()
+                .is_some_and(|(write, _)| write.blocks_proven_distinct(pointer)),
             Self::StoreAddressByteSeparation => {
-                let MemoryDerivation::Store {
-                    pointer: write,
-                    value,
-                    ..
-                } = derivation
-                else {
+                let Some((write, write_bytes)) = derivation.single_write() else {
                     return false;
                 };
                 assumptions
-                    .numeric_access_byte_overlap(write, value.byte_width(), pointer, bytes)
+                    .numeric_access_byte_overlap(write, write_bytes, pointer, bytes)
                     .or_else(|| {
-                        (write.block == pointer.block)
+                        (write.base == pointer.base)
                             .then(|| {
                                 crate::kernel::reasoning::exact_access_byte_overlap(
                                     write,
-                                    value.byte_width(),
+                                    write_bytes,
                                     pointer,
                                     bytes,
                                 )
@@ -559,25 +552,20 @@ impl MemoryDagHopJustification {
                     == Some(crate::kernel::reasoning::AccessByteOverlap::Separate)
             }
             Self::StoreAliasedByteSeparation { write: aligned } => {
-                let MemoryDerivation::Store {
-                    pointer: write,
-                    value,
-                    ..
-                } = derivation
-                else {
+                let Some((write, write_bytes)) = derivation.single_write() else {
                     return false;
                 };
                 !write.blocks_proven_distinct(aligned)
                     && assumptions.pointers_known_equal(write, aligned)
                     && crate::kernel::reasoning::exact_access_byte_overlap(
                         aligned,
-                        value.byte_width(),
+                        write_bytes,
                         pointer,
                         bytes,
                     ) == Some(crate::kernel::reasoning::AccessByteOverlap::Separate)
             }
             Self::StoreCommonBaseUnequalConstants { condition } => {
-                let MemoryDerivation::Store { pointer: write, .. } = derivation else {
+                let Some((write, _)) = derivation.single_write() else {
                     return false;
                 };
                 pointer_offsets_with_common_base_distinctness_condition(write, pointer)
@@ -585,7 +573,7 @@ impl MemoryDagHopJustification {
                     && condition == &ConditionTerm::Constant(false)
             }
             Self::StoreCommonBaseExactInequality { condition } => {
-                let MemoryDerivation::Store { pointer: write, .. } = derivation else {
+                let Some((write, _)) = derivation.single_write() else {
                     return false;
                 };
                 pointer_offsets_with_common_base_distinctness_condition(write, pointer)
@@ -597,7 +585,7 @@ impl MemoryDagHopJustification {
                 path,
                 reversed,
             } => {
-                let MemoryDerivation::Store { pointer: write, .. } = derivation else {
+                let Some((write, _)) = derivation.single_write() else {
                     return false;
                 };
                 let Some(ConditionTerm::Compare {
@@ -649,26 +637,28 @@ impl MemoryDagHopJustification {
             } => {
                 let retired;
                 let (write, write_bytes) = match (self, derivation) {
-                    (
-                        Self::StoreSeparatedRanges { .. },
-                        MemoryDerivation::Store { pointer, value, .. },
-                    ) => (pointer, value.byte_width()),
+                    (Self::StoreSeparatedRanges { .. }, _) => {
+                        let Some(write) = derivation.single_write() else {
+                            return false;
+                        };
+                        write
+                    }
                     (
                         Self::LocalLifetimeEndedSeparatedRanges { .. },
                         MemoryDerivation::LocalLifetimeEnded { base, block },
                     ) => {
-                        if !block.is_local_block() || pointer.block == *block {
+                        if !block.is_local_block() || pointer.base == *block {
                             return false;
                         }
-                        let Some(extent) = base.block_size(block).and_then(|size| size.as_const())
+                        let Some(size) = base.block_size(block).and_then(|size| size.as_const())
                         else {
                             return false;
                         };
-                        retired = Pointer {
-                            block: block.clone(),
-                            offset: PointerOffsetTerm::Constant(0),
+                        retired = Address {
+                            base: block.clone(),
+                            offset: AddressOffset::Constant(0),
                         };
-                        (&retired, extent)
+                        (&retired, size)
                     }
                     _ => return false,
                 };
@@ -718,14 +708,14 @@ impl MemoryDagHopJustification {
             ),
             Self::AllocationOfOtherBlock => matches!(
                 derivation,
-                MemoryDerivation::HeapAllocated { block, .. } if pointer.block != *block
+                MemoryDerivation::HeapAllocated { block, .. } if pointer.base != *block
             ),
             Self::LocalLifetimeEndedOfOtherBlock => matches!(
                 derivation,
                 MemoryDerivation::LocalLifetimeEnded { block, .. }
-                    if pointer.blocks_proven_distinct(&Pointer {
-                        block: block.clone(),
-                        offset: PointerOffsetTerm::Constant(0),
+                    if pointer.blocks_proven_distinct(&Address {
+                        base: block.clone(),
+                        offset: AddressOffset::Constant(0),
                     })
             ),
             Self::HeapFreeOfDistinctBlock => matches!(
@@ -810,7 +800,7 @@ impl MemoryDagHopJustification {
                     ..
                 } if mutable_ranges
                     .iter()
-                    .all(|range| range.base().block.proven_distinct(&pointer.block))
+                    .all(|range| range.base().base.proven_distinct(&pointer.base))
             ),
             Self::SeededLoadsOfBase => super::step_effect::seeded_loads_preserve_base(derivation),
             Self::SeededStoresDistinctBlock => matches!(
@@ -915,7 +905,7 @@ impl RangeDisjointFromPointerEvidence {
     pub(in crate::kernel) fn checks(
         &self,
         range: &MemoryRange,
-        pointer: &Pointer,
+        pointer: &Address,
         bytes: u32,
         assumptions: &PureFactContext,
     ) -> bool {
@@ -987,7 +977,7 @@ impl MemoryDagCell {
     /// the read's width but the other signedness is another number.
     pub(in crate::kernel) fn resolved_value(
         &self,
-        pointer: &Pointer,
+        pointer: &Address,
         kind: LoadKind,
     ) -> Option<ProgramValue> {
         match self {
@@ -999,7 +989,7 @@ impl MemoryDagCell {
     pub(in crate::kernel) fn checks_walk_from(
         &self,
         memory: &SharedMemory,
-        pointer: &Pointer,
+        pointer: &Address,
         bytes: u32,
         assumptions: &PureFactContext,
     ) -> bool {
@@ -1041,7 +1031,7 @@ impl MemoryDagCell {
 // memoized.
 thread_local! {
     static CELL_LOOKUPS_IN_PROGRESS: std::cell::RefCell<
-        std::collections::BTreeSet<((u32, u32), Pointer)>,
+        std::collections::BTreeSet<((u32, u32), Address)>,
     > = const { std::cell::RefCell::new(std::collections::BTreeSet::new()) };
     static CELL_LOOKUP_REFUSALS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 }
@@ -1055,11 +1045,11 @@ pub(in crate::kernel) fn memory_dag_cell_lookup_refusals() -> u64 {
 }
 
 pub(in crate::kernel) struct CellLookupGuard {
-    key: ((u32, u32), Pointer),
+    key: ((u32, u32), Address),
 }
 
 impl CellLookupGuard {
-    pub(in crate::kernel) fn enter(memory: &SharedMemory, pointer: &Pointer) -> Option<Self> {
+    pub(in crate::kernel) fn enter(memory: &SharedMemory, pointer: &Address) -> Option<Self> {
         let key = (memory.arena_id(), pointer.clone());
         // `then`, not `then_some`: a guard built eagerly and discarded on
         // the cycle path would run `drop` and unregister the outer lookup.
@@ -1215,7 +1205,7 @@ impl RangeBoundEvidence {
 
 impl PointerInRangeEvidence {
     pub(in crate::kernel) fn for_pointer(
-        pointer: &Pointer,
+        pointer: &Address,
         range: &MemoryRange,
         assumptions: &PureFactContext,
     ) -> Option<Self> {
@@ -1286,7 +1276,7 @@ impl PointerInRangeEvidence {
     }
 
     fn for_model_start_alias(
-        pointer: &Pointer,
+        pointer: &Address,
         range: &MemoryRange,
         assumptions: &PureFactContext,
     ) -> Option<Self> {
@@ -1339,7 +1329,7 @@ impl PointerInRangeEvidence {
     }
 
     fn for_pointer_direct(
-        pointer: &Pointer,
+        pointer: &Address,
         range: &MemoryRange,
         assumptions: &PureFactContext,
     ) -> Option<Self> {
@@ -1382,7 +1372,7 @@ impl PointerInRangeEvidence {
 
     pub(in crate::kernel) fn checks(
         &self,
-        pointer: &Pointer,
+        pointer: &Address,
         range: &MemoryRange,
         assumptions: &PureFactContext,
     ) -> bool {
@@ -1520,7 +1510,7 @@ pub(in crate::kernel) fn retirement_inside_its_call_havoc(step: &MemoryDerivatio
 
 /// Whether a retirement of `allocation_base[0..bytes]` taken from `base` may
 /// keep `base`'s forget mark rather than marking itself forgotten from
-/// `base` ([`Memory::mark_forgotten_from`]).
+/// `base` ([`SymbolicMemory::mark_forgotten_from`]).
 ///
 /// The mark exists so a state that dropped knowledge cannot re-intern as
 /// the one it forgot from, or as anything older. A retirement inside its
@@ -1540,7 +1530,7 @@ pub(in crate::kernel) fn retirement_inside_its_call_havoc(step: &MemoryDerivatio
 /// block question the retirement would have stopped for this allocation.
 pub(in crate::kernel) fn retirement_keeps_its_call_havocs_forget_mark(
     base: &SharedMemory,
-    allocation_base: &Pointer,
+    allocation_base: &Address,
     bytes: &MachineTerm,
 ) -> bool {
     retired_allocation_inside_call_havoc(base, allocation_base, bytes)
@@ -1548,7 +1538,7 @@ pub(in crate::kernel) fn retirement_keeps_its_call_havocs_forget_mark(
 
 fn retired_allocation_inside_call_havoc(
     base: &SharedMemory,
-    allocation_base: &Pointer,
+    allocation_base: &Address,
     bytes: &MachineTerm,
 ) -> bool {
     let mut current = base.clone();
@@ -1571,7 +1561,7 @@ fn retired_allocation_inside_call_havoc(
 
 fn range_structurally_covers_allocation(
     range: &MemoryRange,
-    allocation_base: &Pointer,
+    allocation_base: &Address,
     bytes: &MachineTerm,
 ) -> bool {
     // This arithmetic rule uses signed 32-bit indices; wide ranges are undecided.
@@ -1589,9 +1579,9 @@ fn range_structurally_covers_allocation(
     if &covered == bytes {
         return true;
     }
-    // Both extents constant: the range covers the allocation when it spans at
+    // Both sizes constant: the range covers the allocation when it spans at
     // least as many bytes. A count that does not fit a non-negative `i32` is
-    // not read as an extent.
+    // not read as a size.
     match (
         signed_bitvector_constant(&covered),
         signed_bitvector_constant(bytes),
@@ -1620,22 +1610,22 @@ fn range_structurally_covers_allocation(
 /// other signedness stops the walk here and supplies nothing, because an
 /// `int8` value's term is sign-extended where a `uint8` read's is not.
 pub(in crate::kernel) fn write_supplies_read(
-    write: &Pointer,
+    write: &Address,
     value: &ProgramValue,
-    pointer: &Pointer,
+    pointer: &Address,
     bytes: u32,
     assumptions: &PureFactContext,
 ) -> bool {
     value.byte_width() == bytes
         && (super::step_effect::write_is_at_read_address(write, pointer, assumptions)
-            || write.block == pointer.block
+            || write.base == pointer.base
                 && crate::kernel::reasoning::memory_resolution::constant_byte_shift(write, pointer)
                     == Some(0))
 }
 
 pub(in crate::kernel) fn memory_dag_cell_source(
     memory: &SharedMemory,
-    pointer: &Pointer,
+    pointer: &Address,
     bytes: u32,
     assumptions: &PureFactContext,
     cross_loop_havoc: bool,
@@ -1651,7 +1641,7 @@ pub(in crate::kernel) fn memory_dag_cell_source(
 /// any earlier transition.
 pub(in crate::kernel) fn memory_dag_cell_source_with_stop(
     memory: &SharedMemory,
-    pointer: &Pointer,
+    pointer: &Address,
     bytes: u32,
     assumptions: &PureFactContext,
     cross_loop_havoc: bool,
@@ -1674,7 +1664,7 @@ pub(in crate::kernel) fn memory_dag_cell_source_with_stop(
 /// the read. This prevents a simple normalization from scanning a whole path.
 pub(in crate::kernel) fn memory_dag_cell_source_with_hop_limit(
     memory: &SharedMemory,
-    pointer: &Pointer,
+    pointer: &Address,
     bytes: u32,
     assumptions: &PureFactContext,
     max_hops: usize,
@@ -1685,7 +1675,7 @@ pub(in crate::kernel) fn memory_dag_cell_source_with_hop_limit(
 
 pub(in crate::kernel) fn memory_dag_cell_source_with_hop_limit_and_stop(
     memory: &SharedMemory,
-    pointer: &Pointer,
+    pointer: &Address,
     bytes: u32,
     assumptions: &PureFactContext,
     max_hops: usize,
@@ -1703,7 +1693,7 @@ pub(in crate::kernel) fn memory_dag_cell_source_with_hop_limit_and_stop(
 
 fn memory_dag_cell_source_walk(
     memory: &SharedMemory,
-    pointer: &Pointer,
+    pointer: &Address,
     bytes: u32,
     assumptions: &PureFactContext,
     cross_loop_havoc: bool,
@@ -1723,7 +1713,7 @@ fn memory_dag_cell_source_walk(
 
 fn memory_dag_cell_source_walk_inner(
     memory: &SharedMemory,
-    pointer: &Pointer,
+    pointer: &Address,
     bytes: u32,
     assumptions: &PureFactContext,
     cross_loop_havoc: bool,
@@ -1884,7 +1874,7 @@ fn memory_dag_cell_source_walk_inner(
 pub(in crate::kernel) fn join_read_agreement(
     base: &SharedMemory,
     incoming: &SharedMemory,
-    pointer: &Pointer,
+    pointer: &Address,
     bytes: u32,
     evidence: &super::step_effect::Evidence<'_>,
 ) -> Option<(MemoryDagCell, MemoryDagCell)> {
@@ -1941,7 +1931,7 @@ mod wide_range_reader_tests {
     // its base and the low words of its bounds agree.
     #[test]
     fn wide_ranges_refuse_signed_allocation_and_index_certificates() {
-        let base = Pointer::symbolic(Variable(984_300));
+        let base = Address::symbolic(Variable(984_300));
         let wide = MemoryRange::new_wide(
             base.clone(),
             MachineTerm::uint64_constant(0),
@@ -1998,9 +1988,9 @@ mod separated_range_frame_tests {
     use crate::kernel::{Proposition, PureFactContext, Variable};
 
     fn model_start_frame() -> (
-        Pointer,
-        Pointer,
-        Pointer,
+        Address,
+        Address,
+        Address,
         SharedMemory,
         PureFactContext,
         Vec<Proposition>,
@@ -2014,13 +2004,13 @@ mod separated_range_frame_tests {
             binary_node!(Int32, Add, Box::new(start.clone()), Box::new(index.clone()));
         let actual_index =
             binary_node!(Int32, Add, Box::new(loaded_start.clone()), Box::new(index));
-        let field = Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::Constant(0),
+        let field = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Constant(0),
         };
-        let data = Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::scaled_int32_node(word(9_941_005), 4),
+        let data = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::scaled_int32_node(word(9_941_005), 4),
         };
         let backing = MemoryRange::new(data.clone(), start.clone(), end.clone());
         let descriptor = MemoryRange::new(field.clone(), 0u32.into(), 4u32.into());
@@ -2045,15 +2035,15 @@ mod separated_range_frame_tests {
             .iter()
             .cloned()
             .fold(PureFactContext::new(), PureFactContext::assume_proposition);
-        let initial = Memory::new();
+        let initial = SymbolicMemory::new();
         let before = crate::kernel::intern_memory_ref(&initial);
         let after = crate::kernel::intern_memory(initial.store(
             data.offset_by_elements(actual_index, 4),
             ProgramValue::Int32(1u32.into()),
         ));
         (
-            Pointer::loaded_value(&before, &field),
-            Pointer::loaded_value(&after, &field),
+            Address::loaded_value(&before, &field),
+            Address::loaded_value(&after, &field),
             field,
             before,
             context,
@@ -2089,7 +2079,7 @@ mod separated_range_frame_tests {
                 .clone()
                 .store(field.offset_by_bytes(4), ProgramValue::Int32(2u32.into())),
         );
-        let overwritten = Pointer::loaded_value(&partial, &field);
+        let overwritten = Address::loaded_value(&partial, &field);
         assert!(
             !crate::kernel::memory_history::complete_pointer_reads_equal_across_frame(
                 &before,
@@ -2102,9 +2092,9 @@ mod separated_range_frame_tests {
 
     #[test]
     fn separated_read_start_does_not_frame_an_overlapping_wide_read() {
-        let field = Pointer {
-            block: "separated-frame".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let field = Address {
+            base: "separated-frame".into(),
+            offset: AddressOffset::Constant(0),
         };
         let backing = MemoryRange::new(field.offset_by_bytes(8), 0u32.into(), 1u32.into());
         let descriptor = MemoryRange::new(field.clone(), 0u32.into(), 2u32.into());
@@ -2140,10 +2130,10 @@ mod unsigned_index_membership_tests {
     use crate::kernel::{PureFactContext, Variable};
 
     /// `base[k]` for an unsigned 64-bit `k`, one byte per element.
-    fn byte_at(base: &Pointer, index: Variable) -> Pointer {
-        Pointer {
-            block: base.block.clone(),
-            offset: PointerOffsetTerm::scaled_int64_node(MachineTerm::Variable(index), 1, true),
+    fn byte_at(base: &Address, index: Variable) -> Address {
+        Address {
+            base: base.base.clone(),
+            offset: AddressOffset::scaled_int64_node(MachineTerm::Variable(index), 1, true),
         }
     }
 
@@ -2156,13 +2146,13 @@ mod unsigned_index_membership_tests {
         }
     }
 
-    fn bytes(base: &Pointer, end: u32) -> MemoryRange {
+    fn bytes(base: &Address, end: u32) -> MemoryRange {
         MemoryRange::new_with_element_width(base.clone(), 0u32.into(), end.into(), 1)
     }
 
     #[test]
     fn a_guarded_unsigned_index_is_inside_the_range() {
-        let base = Pointer::symbolic(Variable(984_400));
+        let base = Address::symbolic(Variable(984_400));
         let k = Variable(984_401);
         let read = byte_at(&base, k);
         let range = bytes(&base, 4);
@@ -2191,7 +2181,7 @@ mod unsigned_index_membership_tests {
 
     #[test]
     fn an_index_bounded_past_the_end_is_refused() {
-        let base = Pointer::symbolic(Variable(984_410));
+        let base = Address::symbolic(Variable(984_410));
         let k = Variable(984_411);
         let read = byte_at(&base, k);
         let range = bytes(&base, 4);
@@ -2210,8 +2200,8 @@ mod unsigned_index_membership_tests {
 
     #[test]
     fn an_index_on_another_base_is_refused() {
-        let base = Pointer::symbolic(Variable(984_420));
-        let other = Pointer::symbolic(Variable(984_421));
+        let base = Address::symbolic(Variable(984_420));
+        let other = Address::symbolic(Variable(984_421));
         let k = Variable(984_422);
         let range = bytes(&base, 4);
         let context = PureFactContext::new().assume_condition(below(k, 4), true);
@@ -2223,9 +2213,9 @@ mod unsigned_index_membership_tests {
         assert!(!membership.checks(&elsewhere, &range, &context));
         // One block at another origin is another base too: `base + 8 + k`.
         let shifted_base = base.offset_by_bytes(8);
-        let shifted = Pointer {
-            block: base.block.clone(),
-            offset: PointerOffsetTerm::Add(
+        let shifted = Address {
+            base: base.base.clone(),
+            offset: AddressOffset::Add(
                 Box::new(shifted_base.offset.clone()),
                 Box::new(byte_at(&base, k).offset),
             ),
@@ -2235,20 +2225,20 @@ mod unsigned_index_membership_tests {
 
     #[test]
     fn a_signed_or_wider_element_index_is_refused() {
-        let base = Pointer::symbolic(Variable(984_430));
+        let base = Address::symbolic(Variable(984_430));
         let k = Variable(984_431);
         let range = bytes(&base, 4);
         let context = PureFactContext::new().assume_condition(below(k, 4), true);
-        let signed = Pointer {
-            block: base.block.clone(),
-            offset: PointerOffsetTerm::scaled_int64_node(MachineTerm::Variable(k), 1, false),
+        let signed = Address {
+            base: base.base.clone(),
+            offset: AddressOffset::scaled_int64_node(MachineTerm::Variable(k), 1, false),
         };
         assert!(unsigned_index_in_range(&signed, &range).is_none());
         // Four-byte elements of a one-byte range: the scale is not the
         // range's element width.
-        let wide = Pointer {
-            block: base.block.clone(),
-            offset: PointerOffsetTerm::scaled_int64_node(MachineTerm::Variable(k), 4, true),
+        let wide = Address {
+            base: base.base.clone(),
+            offset: AddressOffset::scaled_int64_node(MachineTerm::Variable(k), 4, true),
         };
         assert!(unsigned_index_in_range(&wide, &range).is_none());
         assert!(PointerInRangeEvidence::for_pointer(&wide, &range, &context).is_none());
@@ -2268,7 +2258,7 @@ mod empty_range_frame_tests {
     #[test]
     fn empty_frames_cover_every_access_width_but_not_nonempty_ranges() {
         let _session = crate::kernel::VerificationSession::enter();
-        let base = Pointer::symbolic(Variable(9_951_000));
+        let base = Address::symbolic(Variable(9_951_000));
         let bound = MachineTerm::Variable(Variable(9_951_001));
         let context = PureFactContext::new();
         let ranges = [
@@ -2315,12 +2305,12 @@ mod cache_independence_tests {
     fn bounded_cell_source_is_independent_of_history_cache() {
         for stores in [2, 8, 32] {
             let _session = crate::kernel::VerificationSession::enter();
-            let address = Pointer {
-                block: "bounded-cache-independence".into(),
-                offset: PointerOffsetTerm::Constant(0),
+            let address = Address {
+                base: "bounded-cache-independence".into(),
+                offset: AddressOffset::Constant(0),
             };
             let before = crate::kernel::intern_memory(
-                Memory::new().store(address.clone(), crate::kernel::int32(7)),
+                SymbolicMemory::new().store(address.clone(), crate::kernel::int32(7)),
             );
             let mut memory = before.memory().clone();
             for index in 0..stores {

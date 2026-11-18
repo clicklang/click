@@ -558,8 +558,19 @@ a mutable alias need ownership, and const aliases continue to observe writes
 through a separately authorized mutable alias. Ending a reference binding does
 not destroy its backing object. Pointer-based binding checks the complete
 record's live byte footprint without reading or initializing its fields.
-Record-reference call results, rvalue references and temporary lifetime
-extension remain outside this slice. A record-reference name shared with a
+
+Struct/class lvalue-reference results use `Widget&` or `const Widget&` in
+sidecar heads. `result.field` reads the returned record and `&result` names
+its address. Functions may return an existing reference or supported object
+lvalue, a nested record member, a record-pointer dereference, or forward a
+matching reference-result call. Reference locals bind matching direct call
+results as well as existing object lvalues. These calls preserve record
+identity, const qualification, subobject bounds and backing authority; the
+returned address grants no ownership or initialization. A dangling address
+under an alias-only claim does not promise live backing; later accesses still
+check storage lifetime and permissions. Direct member access on a call result,
+rvalue references and temporary lifetime extension remain outside this slice.
+A record-reference name shared with a
 different record layout or a non-reference object in another scope is refused,
 rather than assigning its proof fields an ambiguous layout.
 
@@ -570,7 +581,7 @@ write. Binding a reference is not an assignment, so `assignment(r, N)` is
 refused; a store through `r` is selected by its statement.
 
 A reference argument bound to a native scalar field keeps that field's selected
-extent, matching the complete pointer value of `&object.field` in a contract.
+bounds, matching the complete pointer value of `&object.field` in a contract.
 An access beyond the member remains invalid even when a sibling field is also
 available. See the checked
 [member-reference equality](https://github.com/clicklang/click/blob/master/mdtests/cpp_a_member_reference_parameter_retains_its_member_equality.md)
@@ -593,7 +604,7 @@ currently by-value `bool` or signed/unsigned 32/64/128-bit integers, native elem
 `int*`, `unsigned int*` or `unsigned char*` (also pointers to const elements), one `const` signed-64 reference, and mutable or const references
 to supported simple record types with distinct proof-facing names. Selected functions return `int`,
 signed/unsigned 64/128-bit integers, `unsigned int`, `unsigned char`, `bool`, mutable `int*`, `unsigned int*` or `unsigned char*`,
-native element references, or `void`.
+native element references, supported record references, or `void`.
 
 Free and ordinary member functions also admit mutable by-value simple-record
 parameters with trivial copying and destruction, without base subobjects.
@@ -1595,7 +1606,7 @@ in explicitly locked project headers. Their spans retain that header's identity;
 each function body and its field-use spans belong to that function's definition source.
 
 Embedded mutable records with trivial destruction retain nominal child
-identities and exact ABI extents, offsets and alignment. Contracts can describe
+identities and exact ABI sizes, offsets and alignment. Contracts can describe
 nested fields using C's existing struct metadata, as the `nested-record` fixture
 shows when an outer scalar update preserves fields in two separate child
 objects. Declaration validation follows embedded-field reachability and rejects
@@ -1638,7 +1649,7 @@ resizes the parent allocation nor initializes siblings. Repeated initialization
 outside the prefix, mismatched nominal constructor targets, base construction,
 and nontrivial embedded destruction remain refused. Constructor proof entries
 describe unwritten object footprints without fixing their containing allocation's
-extent. Ordinary, expanded and retained checks cover an automatic descriptor
+size. Ordinary, expanded and retained checks cover an automatic descriptor
 with a pointer field and a nested uint64 extent while preserving backing memory.
 A nested self-pointer regression also constructs a child at a nonzero parent
 offset and reads through the pointer to that child's own field.

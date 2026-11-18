@@ -58,7 +58,7 @@ regressions, not an assertion that every operation in the same category works.
 
 | Obligation | Implementation inspected | Named evidence / boundary |
 | --- | --- | --- |
-| Pointer identity and rewriting | `kernel/primitives.rs`, `kernel/proof/term_rewrite.rs`, `kernel/proof/term_rewrite/pointer_application_tests.rs` | Numeric rewrites preserve origin/extent; full rewrites do not adopt unrelated read carriers; shared-DAG scaling controls exist. |
+| Pointer identity and rewriting | `kernel/primitives.rs`, `kernel/proof/term_rewrite.rs`, `kernel/proof/term_rewrite/pointer_application_tests.rs` | Numeric rewrites preserve origin/bounds; full rewrites do not adopt unrelated read carriers; shared-DAG scaling controls exist. |
 | Formation and subobject access | `kernel/eval/operators.rs`, `kernel/eval/memory_loads.rs`, `languages/cpp/lowering.rs` | `cpp_forming_a_pointer_two_past_a_scalar_member_is_refused.md`, `cpp_a_member_reference_parameter_keeps_its_subobject.md`, `cpp_an_unknown_pointer_needs_bounds_even_without_a_dereference.md`. Bounds apply before dereference. |
 | Pointer fields and calls | `surface/proof/resources.rs`, shared memory observation and call transitions | `stored_pointer_identity_survives_resource_call.md`, `a_stored_member_pointer_keeps_its_subobject.md`, `a_member_pointer_returned_by_a_call_keeps_its_subobject.md`; original rbtree report remains separate. |
 | Raw and reference results | `languages/cpp/lowering.rs`, `kernel/functions/call_arguments.rs` | `cpp_pointer_returns_preserve_identity_and_modular_results_offline`, `cpp_native_reference_results_preserve_aliases_and_require_backing_authority_offline`. A returned address does not grant backing authority. |
@@ -67,12 +67,12 @@ regressions, not an assertion that every operation in the same category works.
 | Modular initialization | `surface/parser.rs`, `surface/lowering/resource_lowering.rs`, `kernel/functions/call_initialization.rs`, produced-memory transfer in `kernel/functions.rs` | `an_initializer_produces_the_memory_it_initialized.md`, `produces_refuses_memory_the_function_did_not_write.md`, `verified_call_initialization_tests`, and the new `cpp_initializer_produces_written_memory.md`. |
 | Lifetime and backing | `languages/cpp/lifetime.rs`, construction retirement and allocation generations | `cpp_reference_into_destroyed_local_backing_cannot_be_read_offline` passes. `cpp_external_backing_reference_survives_descriptor_destruction_offline` failed at the getter call before destruction on the original baseline and passes after the metadata repair below. Its writable counterpart passes too. |
 | Typed/byte values | `kernel/eval/byte_view.rs`, `kernel/tests/byte_view_tests.rs`, byte-representation design | Complete declared uint32 assembly, partial-write refusals, same-state observations and no byte forging of pointer cells. This is a selected target rule, not arbitrary retyping. |
-| Native type admission | `languages/cpp/schema.rs`, `languages/cpp/validity.rs`, `languages/cpp/scalar.rs`, parameter lowering | Checked record identities and layouts, supported reference/pointer forms, authenticated `std::byte`, restricted casts; `cpp_native_pointer_artifacts_reject_pointee_substitution_offline` and `nested_record_artifacts_reject_wrong_identity_extent_constness_and_cycles`. The completed interface matrix below distinguishes entry and actual-call evidence. |
+| Native type admission | `languages/cpp/schema.rs`, `languages/cpp/validity.rs`, `languages/cpp/scalar.rs`, parameter lowering | Checked record identities and layouts, supported reference/pointer forms, authenticated `std::byte`, restricted casts; `cpp_native_pointer_artifacts_reject_pointee_substitution_offline` and `nested_record_artifacts_reject_wrong_identity_size_constness_and_cycles`. The completed interface matrix below distinguishes entry and actual-call evidence. |
 
 All source paths in the table are relative to `src/`; Markdown witnesses are
 in `mdtests/`, and named C++ tests are in `tests/cpp_import.rs` unless stated
 otherwise. `design/aggregate-construction.md`,
-`design/pointer-subobject-extents.md`, and
+`design/pointer-subobject-bounds.md`, and
 `docs/internals/byte-representation.md` describe the delivered bounded rules.
 
 ## Constructed-view getter: baseline failure and repair
@@ -370,7 +370,7 @@ The reader spells each store's footprint separation and carries source bytes,
 previously written output bytes and the remaining count through individual
 transitions. Footprint normalization retains scoped address congruence while
 accepting resource separation only from its selected premises; controls cover
-missing separation, missing aliases and insufficient extents. Deterministic
+missing separation, missing aliases and insufficient spans. Deterministic
 scaling grows alias and separation buckets.
 
 Composition also requires unsigned-word pointer fields to survive by-value
@@ -399,7 +399,7 @@ The delivered prerequisites are narrower:
 - Const native pointer arithmetic and byte reads support the fixture's input.
   Write-through-const restrictions are unchanged.
 - Stated fixed-span separation survives pointer copies through an exact
-  address-class/byte-extent index. It preserves width orientation on class
+  address-class/byte-span index. It preserves width orientation on class
   merges and refuses overlap. A resource prerequisite naming a loaded pointer
   field uses that field's declared pointer type, including byte pointers.
 
@@ -428,10 +428,10 @@ are in `tests/cpp_import.rs`; Markdown witnesses are in `mdtests/`.
 | Interface | Source admission and symbolic body entry | Actual caller boundary | Evidence |
 | --- | --- | --- | --- |
 | Scalar reference | `languages/cpp/{schema,scalar,interface,lowering}.rs` check the resolved reference type and constness, retain a separate address carrier and expose the referent under its source name. Binding supplies an address, not an initialized value or owner. Ordinary `views`/`owns` clauses promise initialized input; explicit unwritten storage does not. | `CheckedObjectAddress` in `kernel/eval/expression.rs` checks the complete referent's bounds and live storage without reading its value. Call-resource transfer and `functions/call_initialization.rs` check the resources and initialized input the callee actually requires. A later read still needs initialization; writes need mutable authority. | R1, R2, R3 below. |
-| Record reference / receiver | `languages/cpp/schema.rs` checks record declaration identity, layout, field paths, callee signature and root constness. `interface.rs::function_interface` retains record/layout metadata; `lowering.rs` projects fields with their subobject extents. The int32-pointer execution carrier is not the record's footprint. Entry field resources, not the carrier width, justify accesses. | A projected method/reference argument retains the selected child or scalar extent. The caller must establish the callee's leaf resources, guards and sibling separation. A readable sibling or numerically equal address cannot replace the selected field. Const roots cannot become mutable receivers. | O1, O2 below and R3. |
+| Record reference / receiver | `languages/cpp/schema.rs` checks record declaration identity, layout, field paths, callee signature and root constness. `interface.rs::function_interface` retains record/layout metadata; `lowering.rs` projects fields with their subobject bounds. The int32-pointer execution carrier is not the record's footprint. Entry field resources, not the carrier width, justify accesses. | A projected method/reference argument retains the selected child or scalar extent. The caller must establish the callee's leaf resources, guards and sibling separation. A readable sibling or numerically equal address cannot replace the selected field. Const roots cannot become mutable receivers. | O1, O2 below and R3. |
 | Raw pointer | `languages/cpp/{schema,scalar,interface}.rs` check the supported pointee/profile and preserve pointer identity. A raw pointer argument may be null and can be forwarded without any backing resource. Its signature alone promises no dereferenceable storage. | `kernel/eval/operators.rs` checks pointer arithmetic's domain before a dereference; `eval/expression.rs`, memory loads and call-resource transfer check bounds, backing lifetime and permissions at access. Return identity is not a backing grant. | P1, P2 below. |
 | By-value record | Only the admitted trivial copy profile is used; nontrivial copy/move bodies and unsupported prvalues are refused. `lowering.rs` retains the aggregate layout; `functions/call_arguments.rs` gives symbolic entry an independent evaluated field image with private field storage. Pointer fields remain values pointing at their original backing. | `functions/globals_and_aggregates.rs::aggregate_argument_read_refusal` checks the source's full extent, field read permissions and initialization before binding the callee's private copy. Even a source field the callee does not inspect is copied and must be readable. Copy ownership grants no ownership of pointees. | V1, V2 below. |
-| Constructor destination | `languages/cpp/schema.rs` requires the checked member-initializer prefix in declaration order, complete value-field initialization and the correct embedded constructor identity. `lowering.rs` marks the construction parameter and layout. Constructor entry receives the selected raw destination; field ownership there does not pretend its values are already written. | `functions/construction_return.rs::{destination,bind,complete_parameter}` checks original destination, layout, alignment, extent, lifetime and writable value fields. Completion checks that original storage even if the parameter is reassigned. It does not initialize padding or resize the containing allocation. Parent fields and backing remain independently framed. | C1, C2 below. |
+| Constructor destination | `languages/cpp/schema.rs` requires the checked member-initializer prefix in declaration order, complete value-field initialization and the correct embedded constructor identity. `lowering.rs` marks the construction parameter and layout. Constructor entry receives the selected raw destination; field ownership there does not pretend its values are already written. | `functions/construction_return.rs::{destination,bind,complete_parameter}` checks original destination, layout, alignment, size, lifetime and writable value fields. Completion checks that original storage even if the parameter is reassigned. It does not initialize padding or resize the containing allocation. Parent fields and backing remain independently framed. | C1, C2 below. |
 | Pointer/reference result | `languages/cpp/{schema,interface,lowering}.rs` retain the result category, native type and qualification. Shared call/result handling carries the complete pointer identity and provenance, rather than inventing a pointee from its address. | The caller independently justifies reference formation and every subsequent access. Returned member bounds survive calls. Destroying a local descriptor does not retire its external backing; destroying the actual backing prevents a read. A dangling alias may escape under an alias-only/trivial claim, so a reference result is not an unconditional promise of live backing. | T1, T2 below and R3. |
 
 ### Named positive and rejection pairs
@@ -449,6 +449,15 @@ are in `tests/cpp_import.rs`; Markdown witnesses are in `mdtests/`.
   `cpp_native_reference_results_preserve_aliases_and_require_backing_authority_offline`
   cover aliasing, read permissions, qualification mismatch and forged result
   metadata. An alias-only contract cannot prove a referent value.
+- **Record reference results:** `cpp_record_reference_results_*` cover direct
+  and forwarded nominal record references, mutable and const call-result local
+  aliases, result fields, nested member identity, pointer-backed results and
+  forged call-capture types. They check ordinary verification, expansion,
+  strict cold checking and retained replay; returned addresses grant no
+  authority or lifetime extension. The nested getter and forwarding fixture
+  writes through the returned reference while preserving a sibling view.
+  Its proof uses the returned pointer's retained identity and the checked
+  domain supplied by the getter's equality.
 - **R3 — member boundaries at actual calls:**
   `cpp_reference_formation_rejects_one_past_even_under_trivial_postconditions`
   pairs a one-past refusal with a larger-backed positive.
@@ -460,7 +469,7 @@ are in `tests/cpp_import.rs`; Markdown witnesses are in `mdtests/`.
   `nested_record_declarations_preserve_layout_identity_and_offline_field_frames`
   and `projected_record_calls_and_reference_arguments_verify_offline` check
   nested records, method receivers and scalar/record reference arguments.
-  `nested_record_artifacts_reject_wrong_identity_extent_constness_and_cycles`
+  `nested_record_artifacts_reject_wrong_identity_size_constness_and_cycles`
   and `projected_call_artifacts_check_target_identity_and_root_constness`
   reject consistently rehashed nominal/layout/callee/qualification forgeries.
 - **O2 — caller authority and frames:**
@@ -519,7 +528,7 @@ are in `tests/cpp_import.rs`; Markdown witnesses are in `mdtests/`.
   modular pointer/reference returns and false identity/value claims.
   `cpp_field_reference_results_preserve_addresses_and_backing_authority_offline`
   checks an actual caller writing through a returned field reference; R3 checks
-  the returned member extent.
+  the returned member bounds.
 - **T2 — independently live backing:**
   `cpp_external_backing_reference_survives_descriptor_destruction_offline` and
   its writable counterpart keep external backing after descriptor cleanup.

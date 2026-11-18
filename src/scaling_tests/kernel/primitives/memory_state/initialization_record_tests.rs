@@ -9,16 +9,16 @@ fn unwritten_output_preserves_external_runs_without_expanding_their_slots() {
     let mut samples = Vec::new();
     for count in [8u32, 32, 128, 512, 65536] {
         let _session = crate::kernel::VerificationSession::enter();
-        let field = Pointer::symbolic(Variable(924_050));
-        let output = Pointer::symbolic(Variable(924_051));
-        let before = Memory::new()
+        let field = Address::symbolic(Variable(924_050));
+        let output = Address::symbolic(Variable(924_051));
+        let before = SymbolicMemory::new()
             .with_seeded_cells(
                 field.clone(),
                 1,
                 ProgramType::UInt8,
                 0,
                 count,
-                intern_memory(Memory::new()),
+                intern_memory(SymbolicMemory::new()),
             )
             .with_uninitialized_object(output.clone(), 4);
         let (after, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -63,7 +63,7 @@ fn a_covering_query_scales_with_the_cells_it_crosses() {
     for count in [64i64, 512, 4096] {
         let block = format!("local:record-cells-{count}");
         let mut memory =
-            Memory::new().with_block(block.as_str(), u32::try_from(4 * count).unwrap());
+            SymbolicMemory::new().with_block(block.as_str(), u32::try_from(4 * count).unwrap());
         for index in 0..count {
             memory = memory.store(
                 element(&block, index),
@@ -71,9 +71,9 @@ fn a_covering_query_scales_with_the_cells_it_crosses() {
             );
         }
         let index = MachineTerm::Variable(Variable(924_008));
-        let read = Pointer {
-            block: PointerBlock::from(block.as_str()),
-            offset: PointerOffsetTerm::scale_int32(index.clone(), 4),
+        let read = Address {
+            base: AddressBase::from(block.as_str()),
+            offset: AddressOffset::scale_int32(index.clone(), 4),
         };
         let assumptions = index_between(&index, 7, 8);
         let (covered, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -93,16 +93,17 @@ fn forgotten_external_initialization_does_not_scan_unrelated_cached_cells() {
     let mut samples = Vec::new();
     for count in [16u32, 64, 256, 1024] {
         let _session = crate::kernel::VerificationSession::enter();
-        let field = Pointer::symbolic(Variable(924_052));
-        let output = Pointer {
-            block: PointerBlock::Heap(924_053),
-            offset: PointerOffsetTerm::Constant(0),
+        let field = Address::symbolic(Variable(924_052));
+        let output = Address {
+            base: AddressBase::Heap(924_053),
+            offset: AddressOffset::Constant(0),
         };
-        let background = |index| Pointer {
-            block: PointerBlock::Heap(925_000 + u64::from(index)),
-            offset: PointerOffsetTerm::Constant(0),
+        let background = |index| Address {
+            base: AddressBase::Heap(925_000 + u64::from(index)),
+            offset: AddressOffset::Constant(0),
         };
-        let mut before = Memory::new().store(field.clone(), ProgramValue::pointer(Pointer::null()));
+        let mut before =
+            SymbolicMemory::new().store(field.clone(), ProgramValue::pointer(Address::null()));
         for index in 0..count {
             before = before.store(
                 background(index),

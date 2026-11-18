@@ -83,10 +83,10 @@ pub(super) struct TheoremApplicationContext<'a> {
     pub(super) pointer_element_widths: BTreeMap<String, u32>,
 }
 
-/// Adds a cited range premise's extent guards to an explicit evidence list.
+/// Adds a cited range premise's span guards to an explicit evidence list.
 ///
 /// Citing a stated range cites what the range says: `loadable(p[a..b])`
-/// means `a..b` is a valid 32-bit byte extent and those bytes are loadable,
+/// means `a..b` is a valid 32-bit byte span and those bytes are loadable,
 /// and theorem instantiation asks the application for both halves. A `using`
 /// list that names the range has therefore named both, and the endpoint
 /// spelling of the `fits` half is an unsigned comparison the surface cannot
@@ -97,33 +97,33 @@ pub(super) struct TheoremApplicationContext<'a> {
 /// Every checker that turns a `using` list into evidence (`apply using` in
 /// pure and fixed-state proofs, `transport using`) calls this one rule, and
 /// smart theorem selection proposes a range premise only when
-/// [`missing_theorem_extent_guard`] finds nothing this rule would leave out.
-pub(super) fn cite_range_extent_guards(
+/// [`missing_theorem_span_guard`] finds nothing this rule would leave out.
+pub(super) fn cite_range_span_guards(
     premise: &Proposition,
     evidence: &mut Vec<Proposition>,
     available: impl Fn(&Proposition) -> bool,
 ) {
-    for guard in crate::kernel::stated_loadable_extent_guard_spellings(premise) {
+    for guard in crate::kernel::stated_loadable_span_guard_spellings(premise) {
         if !evidence.contains(&guard) && available(&guard) {
             evidence.push(guard);
         }
     }
 }
 
-/// The first extent guard a theorem requirement owes that an application
+/// The first span guard a theorem requirement owes that an application
 /// citing the requirement cannot supply.
 ///
 /// This is the search-side mirror of the check in
 /// `instantiate_theorem_application_with_assumptions`: that check asks for
-/// each count-form guard among the evidence, and [`cite_range_extent_guards`]
+/// each count-form guard among the evidence, and [`cite_range_span_guards`]
 /// puts it there exactly when it is available. A selector that lists the
 /// range requirement therefore owes nothing more when this returns `None`,
 /// and would be refused by the checker when it returns a guard.
-pub(super) fn missing_theorem_extent_guard(
+pub(super) fn missing_theorem_span_guard(
     requirement: &Proposition,
     available: impl Fn(&Proposition) -> bool,
 ) -> Option<Proposition> {
-    crate::kernel::stated_loadable_extent_guards(requirement)
+    crate::kernel::stated_loadable_span_guards(requirement)
         .into_iter()
         .find(|guard| {
             !available(guard)
@@ -294,9 +294,9 @@ pub(super) fn instantiate_theorem_application_with_assumptions(
                         format!("theorem `{}` premise", theorem.name()),
                     ),
             )?;
-            for guard in crate::kernel::stated_loadable_extent_guards(&lowered) {
+            for guard in crate::kernel::stated_loadable_span_guards(&lowered) {
                 crate::surface::proof::execution_planning::refuse_or_record_open_obligation(
-                    ClickError::new("theorem range requires a valid extent")
+                    ClickError::new("theorem range requires a valid span")
                         .with_unresolved_requirement(&ProofObligation::verification_condition(
                             guard,
                         )),
@@ -342,12 +342,12 @@ pub(super) fn instantiate_theorem_application_with_assumptions(
             );
         }
         // A range premise states two things, and the theorem's own proof
-        // assumed both: that `a..b` is a valid 32-bit byte extent, and that
+        // assumed both: that `a..b` is a valid 32-bit byte span, and that
         // those bytes are loadable. Applying it owes both, or a range that is
-        // vacuously loadable because its extent wrapped would hand the theorem
-        // the valid-extent fact it never established. The guards are spelled
+        // vacuously loadable because its span wrapped would hand the theorem
+        // the valid-span fact it never established. The guards are spelled
         // over the element count, which is the spelling a proof can write.
-        for guard in crate::kernel::stated_loadable_extent_guards(&lowered) {
+        for guard in crate::kernel::stated_loadable_span_guards(&lowered) {
             if listed_comparison_fact_is_available(&guard, available)
                 || matches!(normalize_proposition(&guard), NormalizedProposition::True)
             {
@@ -365,8 +365,8 @@ pub(super) fn instantiate_theorem_application_with_assumptions(
                         crate::surface::diagnostics::value_naming_tables(context.values);
                     format!(
                         "theorem `{}` requirement {} `{}` states a memory range, so applying it \
-                         needs that range to be a valid 32-bit byte extent here: `{}` is not an \
-                         available fact. A range's extent is `(end - start) * width` in 32-bit \
+                         needs that range to be a valid 32-bit byte span here: `{}` is not an \
+                         available fact. A range's span is `(end - start) * width` in 32-bit \
                          arithmetic, and without that bound it can wrap to fewer bytes than its \
                          element count names",
                         theorem.name(),
@@ -1232,15 +1232,15 @@ pub(super) fn theorem_application_bindings(
         // parent (`parent_consistent(t, 0)`).
         if crate::surface::lowering::argument_is_null_pointer_constant(argument, parameter_type) {
             let pointer = ProgramValue::typed_pointer(
-                crate::kernel::Pointer::null(),
+                crate::kernel::Address::null(),
                 parameter_type.to_kernel_type(),
             );
             if let Some(element_type) = click_array_element_type(parameter_type) {
                 array_refs.insert(
                     parameter.name().to_string(),
                     ClickArrayRef {
-                        memory: context.post_state.memory().clone(),
-                        pointer: crate::kernel::Pointer::null(),
+                        point: context.post_state.program_point(),
+                        pointer: crate::kernel::Address::null(),
                         element_type,
                     },
                 );
@@ -1413,7 +1413,7 @@ pub(in crate::surface::proof) fn theorem_application_bound_array_memories(
     theorem: &TheoremDefinition,
     application: &TheoremApplication,
     array_refs: &ClickArrayRefs,
-) -> BTreeMap<String, SpecMemory> {
+) -> BTreeMap<String, SpecPoint> {
     theorem
         .parameters()
         .iter()
@@ -1428,7 +1428,7 @@ pub(in crate::surface::proof) fn theorem_application_bound_array_memories(
             let array_ref = array_refs.get(parameter.name())?;
             Some((
                 parameter.name().to_string(),
-                SpecMemory::Fixed(array_ref.memory.clone()),
+                SpecPoint::At(array_ref.point.clone()),
             ))
         })
         .collect()
@@ -1443,7 +1443,7 @@ fn pointer_element_width_for_argument(
     known: &BTreeMap<String, u32>,
 ) -> Option<u32> {
     match argument {
-        ContractExpression::Binding(name) | ContractExpression::CBinding(name) => {
+        ContractExpression::Binding(name) | ContractExpression::ProgramBinding(name) => {
             known.get(name).copied()
         }
         ContractExpression::ProgramExpression(expression)
@@ -1925,7 +1925,7 @@ pub(in crate::surface::proof) fn observe_machine_parameters(
     // A side the comparison reads natively: a machine parameter or a literal.
     let parameter = |side: &ContractExpression| match side {
         ContractExpression::Binding(name)
-        | ContractExpression::CBinding(name)
+        | ContractExpression::ProgramBinding(name)
         | ContractExpression::ProgramExpression(ProgramExpression::Variable(
             crate::kernel::BindingName::Named(name),
         )) if machine.contains(name.as_str()) => Some(name.clone()),
@@ -2061,7 +2061,7 @@ pub(super) fn theorem_resource_argument_bindings(
             },
         )?;
         let Proposition::ResourceContains { parent, .. } = lowered else {
-            return Err("resource argument has unresolved extent requirements".into());
+            return Err("resource argument has unresolved span requirements".into());
         };
         bindings.insert(
             parameter.name().to_string(),

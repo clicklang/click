@@ -400,6 +400,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
     pub(in crate::surface::proof) fn apply_close_invariants_body(
         &self,
         body: &[ProofTactic],
+        boundary: Option<&LoopBoundary>,
     ) -> Result<Proof<'a>, ClickError> {
         let driver_proof = self.proof;
         driver_proof.require_execution_frontier("`close_invariants() by`")?;
@@ -439,6 +440,53 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             return Err(driver_proof
                 .step_error("the invariant bundle was closed more than once on one path"));
         }
+        // Internal closure certificates can be replayed on their own. The
+        // normal preservation driver already supplies its checked boundary.
+        let replay_boundary = if boundary.is_none()
+            && !bundle.ranking_measures.is_empty()
+            && let Some(condition) = bundle.entry_guard.as_deref()
+        {
+            Some(driver_proof.check_loop_boundary(
+                &bundle.loop_entry_state,
+                &bundle.iteration_entry_state,
+                bundle.iterations.as_ref().ok_or_else(|| {
+                    driver_proof.step_error("loop invariant bundle lost its pass count")
+                })?,
+                Some(condition),
+                &bundle.checks,
+                &bundle.binders,
+                bundle.structural_measure.as_deref(),
+                context.function.composite_resource_definitions(),
+            )?)
+        } else {
+            None
+        };
+        let ranking_measures = boundary
+            .or(replay_boundary.as_ref())
+            .map_or(bundle.ranking_measures.as_slice(), |boundary| {
+                boundary.required_ranking_measures(&bundle.ranking_measures)
+            });
+        let closure_context = if ranking_measures.len() == bundle.ranking_measures.len() {
+            driver_proof.context.clone()
+        } else {
+            let mut context = context.with_tactic_index(context.tactic_index);
+            let bundle = Arc::make_mut(&mut context.constants)
+                .invariant_body_context
+                .as_mut()
+                .expect("closure owns its bundle");
+            let bundle = Arc::make_mut(bundle);
+            bundle.ranking_measures.clear();
+            bundle.ranking_surfaces.clear();
+            Arc::new(ProofContext::Execution(context))
+        };
+        let ProofContext::Execution(closure) = closure_context.as_ref() else {
+            unreachable!("closure has an execution context");
+        };
+        let bundle = closure
+            .constants
+            .invariant_body_context
+            .as_deref()
+            .expect("closure owns its bundle");
         // The C branches this path took, recorded when it took them. They are
         // read here, before the bundle scope opens, so the closer names this
         // path's decisions and no sibling arm's.
@@ -536,7 +584,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         drop(prepare_timing);
         let root = Proof {
             site: driver_proof.site.clone(),
-            context: driver_proof.context.clone(),
+            context: closure_context.clone(),
             state,
             node: Arc::new(ProofNode {
                 path_memo: Default::default(),
@@ -790,143 +838,51 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         Ok(result)
     }
 
-    /// Closes an `open(resource)` scope by `close`, its closing fold, with a
-    /// proof of the one body fact the fold leaves open: `written`, from the
-    /// source's `open(r) { ... } by { ... }`, or else the implicit `solve`,
-    /// returned so that expansion prints it as that `by`. This Proof is
-    /// where the scope closes; `close` closes it from this Proof or from one
-    /// that has proved the fact. A close that leaves several facts open, or
-    /// one that cannot be spelled or that `solve` does not prove, is refused
-    /// with the fold's own diagnostic. Without a written `by`, a close that
-    /// leaves several facts open has the implicit `solve` prove each as a
-    /// `have` at the end of the block, the form a written proof uses.
+    /// Close an open resource, retaining any proofs of its restoration facts
+    /// as ordinary `have` steps at the end of the block.
     pub(in crate::surface::proof) fn close_scope_with_body_fact_proof<T>(
         &self,
         resource: &ResourceClause,
-        written: Option<&[ProofTactic]>,
         close: &dyn Fn(&Proof<'a>) -> Result<T, ClickError>,
-    ) -> Result<(T, Option<crate::surface::proof::ScopeCloseProof>), ClickError> {
+    ) -> Result<(T, Option<ProofCertificate>), ClickError> {
         let driver_proof = self.proof;
-        if written.is_none() && implicit_solve_disabled() {
+        if implicit_solve_disabled() {
             return Ok((close(driver_proof)?, None));
         }
-        let scope = format!(
-            "closing `open({})`",
-            crate::surface::printing::format_resource_call(resource)
-        );
         let (probe, recorded) = probe_open_obligations(|| close(driver_proof));
         if recorded.recorded.is_empty() {
-            let closed = probe?;
-            if written.is_some() {
-                return Err(driver_proof.step_error(format!(
-                    "the `by` after `open` is superfluous: {scope} leaves no body fact open; write the `open` without it"
-                )));
-            }
-            return Ok((closed, None));
+            return Ok((probe?, None));
         }
-        let refusals = recorded.refusals;
-        let recorded = recorded.recorded;
-        let open = distinct_requirements(recorded.clone());
+        let open = distinct_requirements(recorded.recorded.clone());
+        let open = open.iter().collect::<Vec<_>>();
         let step = ProofStep::FoldResource(resource.clone());
-        // The fold's own diagnostic for an open fact.
-        let refused = |requirement: &UnresolvedRequirement| {
-            let position = recorded
-                .iter()
-                .position(|recorded| {
-                    crate::kernel::proof::propositions_are_alpha_equal(
-                        &recorded.proposition,
-                        &requirement.proposition,
-                    )
-                })
-                .unwrap_or(0);
-            refusals[position].clone()
-        };
-        // Without a written proof, the implicit `solve` proves each open fact
-        // or the close is refused at the first it misses.
-        let proved_by_solve = match written {
-            Some(_) => None,
-            None => {
-                let open = open.iter().collect::<Vec<_>>();
-                match driver_proof
-                    .driver()
-                    .prove_obligations_by_solve_or_name_the_first_missed(&step, &open)?
-                {
-                    Ok(proved) => Some(proved),
-                    Err(missed) => return Err(refused(open[missed])),
-                }
-            }
-        };
-        // The implicit `solve` proved every open fact; with several, each is
-        // a `have` at the end of the block, the form the refusal below asks
-        // a written proof for, and the scope closes after them.
-        if let Some((proved, entries)) = &proved_by_solve
-            && entries.len() > 1
+        let (proved, entries) = match driver_proof
+            .driver()
+            .prove_obligations_by_solve_or_name_the_first_missed(&step, &open)?
         {
-            let haves = entries
-                .iter()
-                .map(|entry| ProofStep::Have {
-                    proposition: entry.proposition.clone(),
-                    proof: Box::new(entry.proof.clone()),
-                })
-                .collect();
-            return Ok((
-                close(proved)?,
-                Some(crate::surface::proof::ScopeCloseProof::BlockTail(Box::new(
-                    ProofCertificate::from_steps(haves)?,
-                ))),
-            ));
-        }
-        let [requirement] = open.as_slice() else {
-            let facts = open
-                .iter()
-                .map(|requirement| {
-                    Ok(
-                        match driver_proof.requirement_surface(requirement, &step)? {
-                            Some(spelling) => format!(
-                                "`{}`",
-                                crate::surface::printing::source_click_proposition(
-                                    &spelling.surface
-                                )
-                            ),
-                            None => format!("{:?}", requirement.proposition),
-                        },
-                    )
-                })
-                .collect::<Result<Vec<_>, ClickError>>()?
-                .join(", ");
-            return Err(driver_proof.step_error(format!(
-                "{scope} leaves {} body facts open ({facts}), but its `by` proves one; prove the others with `have` in the block",
-                open.len()
-            )));
-        };
-        let (proved, body) = match written {
-            Some(body) => {
-                let Some(spelling) = driver_proof.requirement_surface(requirement, &step)? else {
-                    return Err(refused(requirement));
-                };
-                let checkpoint = driver_proof.checkpoint();
-                let proved = driver_proof
-                    .driver().open_have(spelling.surface.clone())?.driver().try_authoritative_linear_script(body)?
-                    .ok_or_else(|| {
-                        driver_proof.step_error(format!(
-                            "the `by` after `open` does not prove `{}`, the body fact {scope} leaves open",
-                            crate::surface::printing::source_click_proposition(&spelling.surface)
-                        ))
-                    })?
-                    .join()?;
-                let body = retained_have_body(&proved.certificate_since(&checkpoint)?)?;
-                (proved, body)
-            }
-            None => {
-                let (proved, mut entries) =
-                    proved_by_solve.expect("the implicit closer proved every open fact");
-                (proved, entries.pop().expect("one entry").proof)
+            Ok(proved) => proved,
+            Err(missed) => {
+                let position = recorded
+                    .recorded
+                    .iter()
+                    .position(|requirement| {
+                        crate::kernel::proof::propositions_are_alpha_equal(
+                            &requirement.proposition,
+                            &open[missed].proposition,
+                        )
+                    })
+                    .unwrap_or(0);
+                return Err(recorded.refusals[position].clone());
             }
         };
-        Ok((
-            close(&proved)?,
-            Some(crate::surface::proof::ScopeCloseProof::By(Box::new(body))),
-        ))
+        let haves = entries
+            .into_iter()
+            .map(|entry| ProofStep::Have {
+                proposition: entry.proposition,
+                proof: Box::new(entry.proof),
+            })
+            .collect();
+        Ok((close(&proved)?, Some(ProofCertificate::from_steps(haves)?)))
     }
 
     /// Discharge a theorem's retained entry requirements before its main
@@ -1010,7 +966,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
     }
 
     /// Prepare complete back-edge lowering evidence for the loop planner.
-    /// `None` denotes a checked do-while exit with no continuing back edge.
+    /// Return the checked boundary with the proof that closes its bundle.
     ///
     /// An exact completed closure body supplies both value and safety
     /// evidence. Automatic preservation plans that body through checked
@@ -1021,17 +977,16 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         loop_entry_state: &ExecutionState,
         loop_head_state: &ExecutionState,
         head_iterations: &crate::kernel::IntegerTerm,
-        condition: &ProgramExpression,
+        condition: Option<&ProgramExpression>,
         invariant_checks: &[LoopInvariantCheck],
         ranking_measures: &[crate::kernel::RankingComponent],
         structural_measure: Option<&str>,
         invariant_surfaces: &[ClickProposition],
         binders: &[crate::kernel::LoopBinder],
         composite_resource_definitions: &[CompositeResourceDefinition],
-        do_while: bool,
-    ) -> Result<Option<Proof<'a>>, ClickError> {
+    ) -> Result<(Proof<'a>, LoopBoundary), ClickError> {
         let driver_proof = self.proof;
-        driver_proof.check_loop_state_join(
+        let boundary = driver_proof.check_loop_boundary(
             loop_entry_state,
             loop_head_state,
             head_iterations,
@@ -1056,19 +1011,6 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             );
         }
 
-        if do_while {
-            let condition_may_continue = crate::kernel::loop_condition_may_continue(
-                &execution.core.state,
-                condition,
-                &driver_proof.back_edge_assumptions(execution),
-            )
-            .map_err(|message| {
-                driver_proof.step_error(format!("loop condition classification: {message}"))
-            })?;
-            if !condition_may_continue {
-                return Ok(None);
-            }
-        }
         if invariant_surfaces.len() != invariant_checks.len() {
             return Err(driver_proof.step_error(
                 "explicit invariant evidence does not align with the invariant bundle",
@@ -1079,10 +1021,13 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         } else {
             driver_proof
                 .driver()
-                .apply_close_invariants_body(&[ProofTactic::Solve])?
+                .apply_close_invariants_body(&[ProofTactic::Solve], Some(&boundary))?
         };
-        proof.validate_loop_invariant_bundle(invariant_checks, ranking_measures)?;
-        Ok(Some(proof))
+        proof.validate_loop_invariant_bundle(
+            invariant_checks,
+            boundary.required_ranking_measures(ranking_measures),
+        )?;
+        Ok((proof, boundary))
     }
 }
 

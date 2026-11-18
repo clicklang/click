@@ -391,7 +391,7 @@ fn nested_conjunction_body_parsing_uses_small_frames_and_linear_work() {
             let samples = [2, 4, 8, 16].map(|depth| {
                 let mut body = "have 0 == 0 by { normalize(); } normalize();".to_string();
                 for _ in 0..depth {
-                    body = format!("both {{ {body} }} and {{ normalize(); }}");
+                    body = format!("both {{ left => {{ {body} }} right => {{ normalize(); }} }}");
                 }
                 let source = format!("theorem nested() {{ ensures 0 == 0 by {{ {body} }} }}");
                 let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -1980,18 +1980,18 @@ fn condition_premise_selection_walks_a_reversed_chain_once() {
 fn loadable_candidate_selection_ignores_facts_about_other_objects() {
     use crate::kernel::search::proposition_search::{candidate_visits, reset_candidate_visits};
     use crate::kernel::{
-        MachineTerm, Memory, Pointer, PointerOffsetTerm, Proposition, PureFactContext, Variable,
+        Address, AddressOffset, MachineTerm, Proposition, PureFactContext, SymbolicMemory, Variable,
     };
 
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     let at = |block: &str, element: u32| {
-        Pointer {
-            block: block.into(),
-            offset: PointerOffsetTerm::Variable(Variable(450_000)),
+        Address {
+            base: block.into(),
+            offset: AddressOffset::Variable(Variable(450_000)),
         }
         .offset_by_bytes(4 * element)
     };
-    let loadable = |base: Pointer, bytes: u32| Proposition::MemoryLoadable {
+    let loadable = |base: Address, bytes: u32| Proposition::MemoryLoadable {
         memory: memory.clone(),
         base,
         bytes: MachineTerm::constant(bytes),
@@ -2099,21 +2099,22 @@ fn loadable_candidate_selection_ignores_facts_about_other_objects() {
 fn read_defined_and_separation_selection_try_indexed_sources_first() {
     use crate::kernel::search::proposition_search::{candidate_visits, reset_candidate_visits};
     use crate::kernel::{
-        ConditionTerm, MachineTerm, Memory, MemoryRange, Pointer, PointerOffsetTerm, ProgramType,
-        Proposition, PureFactContext, Resource, Variable,
+        Address, AddressOffset, ConditionTerm, MachineTerm, MemoryRange, ProgramType, Proposition,
+        PureFactContext, Resource, SymbolicMemory, Variable,
     };
 
-    let memory = Memory::new().with_block("goal", 64);
-    let read_defined = |pointer: Pointer| Proposition::MemoryReadDefined {
+    let memory = SymbolicMemory::new().with_block("goal", 64);
+    let read_defined = |pointer: Address| Proposition::MemoryReadDefined {
+        at: None,
         memory: memory.clone(),
         pointer,
         value_type: ProgramType::Int32,
     };
-    let at = |block: String, variable: u64| Pointer {
-        block: block.as_str().into(),
-        offset: PointerOffsetTerm::Variable(Variable(variable)),
+    let at = |block: String, variable: u64| Address {
+        base: block.as_str().into(),
+        offset: AddressOffset::Variable(Variable(variable)),
     };
-    let range = |base: Pointer, start: u32, end: u32| {
+    let range = |base: Address, start: u32, end: u32| {
         Resource::Memory(MemoryRange::new(
             base,
             MachineTerm::constant(start),
@@ -2125,11 +2126,11 @@ fn read_defined_and_separation_selection_try_indexed_sources_first() {
             left: Box::new(range(at(block.clone(), variable), start, end)),
             right: Box::new(range(at(block, variable + 1), start, end)),
         };
-    let address = Pointer {
-        block: "goal".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let address = Address {
+        base: "goal".into(),
+        offset: AddressOffset::Constant(0),
     };
-    let alias = Pointer::symbolic(Variable(460_000));
+    let alias = Address::symbolic(Variable(460_000));
     let cases: [(
         &str,
         Vec<Proposition>,
@@ -2147,9 +2148,9 @@ fn read_defined_and_separation_selection_try_indexed_sources_first() {
             ],
             read_defined(alias),
             &|index| {
-                read_defined(Pointer {
-                    block: format!("other{index}").as_str().into(),
-                    offset: PointerOffsetTerm::Constant(0),
+                read_defined(Address {
+                    base: format!("other{index}").as_str().into(),
+                    offset: AddressOffset::Constant(0),
                 })
             },
         ),
@@ -2760,6 +2761,7 @@ fn separately_declared_member_bundle(declarations: usize) -> (String, String) {
 /// each time, and 28 declarations of a real proof exhausted the smart budget
 /// with every member already an available fact.
 #[test]
+#[ignore = "nightly: 22s focused, separately declared invariant scaling audit"]
 fn back_edge_closure_over_separately_declared_invariants_is_bounded_by_the_bundle() {
     let closer = [8, 16, 32]
         .into_iter()
@@ -3576,9 +3578,9 @@ fn stores_beside_many_owned_size_t_ranges_scale_near_linearly() {
 }
 
 /// [`stores_beside_many_owned_size_t_ranges`] with the stored array a heap
-/// block of 64-bit extent: the function also owns
+/// block of 64-bit size: the function also owns
 /// `allocation(value, length * 4u64)`, so its range is the block's wide
-/// range beside its `uint64` token (`design/heap-extents.md`, stage 3).
+/// range beside its `uint64` token (`design/heap-allocation-sizes.md`, stage 3).
 fn stores_beside_many_owned_64_bit_blocks(size: usize) -> (String, String) {
     let (c_source, click_source) = stores_beside_many_owned_size_t_ranges(size);
     let click_source = click_source.replace(
@@ -3611,10 +3613,10 @@ fn stores_beside_many_owned_64_bit_blocks_scale_near_linearly() {
     assert_near_linear_scaling("stores beside many owned 64-bit blocks", &samples);
 }
 
-/// One function that allocates a block of 64-bit extent, lends it to
+/// One function that allocates a block of 64-bit size, lends it to
 /// `calls` calls that each borrow and return its `uint64` token
 /// (`owns allocation(p, n * 4u64)`), and frees it: every call decides the
-/// token's extent and the allocation's continuity.
+/// token's size and the allocation's continuity.
 fn calls_borrowing_a_64_bit_block(calls: usize) -> (String, String) {
     let mut c_source = String::from(
         "void *malloc(unsigned long size);\nvoid free(void *ptr);\n\nvoid keep(int *p, unsigned long n) {\n}\n\nint f(unsigned long n) {\n    int *p = malloc(n * sizeof(int));\n    if (p == 0) {\n        return 0;\n    }\n",
@@ -3895,7 +3897,7 @@ fn expanded_roundtrip_samples(sizes: &[usize]) -> Vec<[(usize, ScalingSample); 2
 /// the largest family member the checked proof drivers' nesting bound admits
 /// (see [`EXPANDED_ROUNDTRIP_MAX_UNRELATED`]). Measured marginals on
 /// 2026-09-23 for 1 through 7 allocations: 912, 912, 912, 912, 916, 920, and
-/// 920 units. The only growth is two `Memory::eq_relative_to` comparisons
+/// 920 units. The only growth is two `SymbolicMemory::eq_relative_to` comparisons
 /// at each path's end (`proof completion`, re-deriving the memory without
 /// the function's local block), whose persistent-map walk deepens with the
 /// heap. Before finalization visited a grouped proof's shared execution once,
@@ -5823,7 +5825,7 @@ fn bounded_size_t_index_stores(stores: usize) -> (String, String) {
 
 /// [`stores_to_bounded_unordered_indices_are_near_linear`] over a range with
 /// 64-bit bounds. Each store is placed in `a[0..n]` by the wide membership
-/// rule, which decides `ck < n` and the range's extent limit by keyed
+/// rule, which decides `ck < n` and the range's span limit by keyed
 /// lookups, and drops the earlier cells it may alias, none of which is
 /// ordered against it. Neither may scan the other indices' bounds.
 #[test]
@@ -6180,6 +6182,7 @@ fn entry_resource_clauses_do_not_rebuild_every_parameter() {
 /// The closers `solve() using` tries before arithmetic cost an unsigned chain
 /// more than a signed one, so the two chains' peaks are not compared.
 #[test]
+#[ignore = "nightly: signed and unsigned order-chain scaling across eight complete proofs"]
 fn listed_order_chain_arithmetic_is_near_linear_in_the_chain() {
     for (value_type, bound) in [("int32", "4"), ("uint32", "4u32")] {
         let samples = [8usize, 16, 24, 32].map(|edges| {
@@ -6825,17 +6828,17 @@ fn the_automatic_loop_closer_joins_c_branches_instead_of_walking_every_path() {
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn atomic_memory_evidence_cites_only_connected_conditions() {
     use crate::kernel::{
-        ConditionTerm, MachineTerm, Memory, Pointer, PointerOffsetTerm, Proposition,
-        PureFactContext, Variable,
+        Address, AddressOffset, ConditionTerm, MachineTerm, Proposition, PureFactContext,
+        SymbolicMemory, Variable,
     };
 
-    let memory = Memory::new();
+    let memory = SymbolicMemory::new();
     // The address of element `variable` of the goal's array.
-    let at = |variable: u64| Pointer {
-        block: "goal".into(),
-        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(variable)), 4),
+    let at = |variable: u64| Address {
+        base: "goal".into(),
+        offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(variable)), 4),
     };
-    let loadable = |base: Pointer, bytes: u32| Proposition::MemoryLoadable {
+    let loadable = |base: Address, bytes: u32| Proposition::MemoryLoadable {
         memory: memory.clone(),
         base,
         bytes: MachineTerm::constant(bytes),
@@ -6863,16 +6866,16 @@ fn atomic_memory_evidence_cites_only_connected_conditions() {
         (
             "a non-null source without other non-null objects",
             vec![
-                loadable(Pointer::symbolic(Variable(470_002)), 16),
+                loadable(Address::symbolic(Variable(470_002)), 16),
                 Proposition::ConditionIs(
                     ConditionTerm::pointer_equal(
-                        Pointer::symbolic(Variable(470_002)),
-                        Pointer::null(),
+                        Address::symbolic(Variable(470_002)),
+                        Address::null(),
                     ),
                     false,
                 ),
             ],
-            loadable(Pointer::symbolic(Variable(470_002)).offset_by_bytes(4), 4),
+            loadable(Address::symbolic(Variable(470_002)).offset_by_bytes(4), 4),
             Some(1),
         ),
         (
@@ -6898,16 +6901,16 @@ fn atomic_memory_evidence_cites_only_connected_conditions() {
                         .assume_proposition(equal(471_000 + 2 * index, 471_001 + 2 * index))
                         .assume_proposition(Proposition::ConditionIs(
                             ConditionTerm::pointer_equal(
-                                Pointer::symbolic(Variable(475_000 + index)),
-                                Pointer::null(),
+                                Address::symbolic(Variable(475_000 + index)),
+                                Address::null(),
                             ),
                             false,
                         ))
                         .assume_proposition(Proposition::MemoryLoadable {
                             memory: memory.clone(),
-                            base: Pointer {
-                                block: format!("other{index}").as_str().into(),
-                                offset: PointerOffsetTerm::Constant(0),
+                            base: Address {
+                                base: format!("other{index}").as_str().into(),
+                                offset: AddressOffset::Constant(0),
                             },
                             bytes: MachineTerm::constant(16),
                             wide: false,
@@ -6982,13 +6985,13 @@ fn atomic_memory_evidence_cites_only_connected_conditions() {
 #[test]
 fn atomic_load_dependencies_ignore_other_state_cells() {
     use crate::kernel::{
-        ConditionTerm, MachineTerm, Memory, Pointer, PointerOffsetTerm, ProgramValue, Proposition,
-        PureFactContext, Variable,
+        Address, AddressOffset, ConditionTerm, MachineTerm, ProgramValue, Proposition,
+        PureFactContext, SymbolicMemory, Variable,
     };
 
-    let index_cell = Pointer {
-        block: "selected-index".into(),
-        offset: PointerOffsetTerm::Constant(0),
+    let index_cell = Address {
+        base: "selected-index".into(),
+        offset: AddressOffset::Constant(0),
     };
     let index = MachineTerm::Variable(Variable(490_000));
     let equality = Proposition::ConditionIs(
@@ -7003,14 +7006,14 @@ fn atomic_load_dependencies_ignore_other_state_cells() {
     let mut samples = Vec::new();
     for size in [8usize, 16, 32, 64] {
         let mut memory =
-            Memory::new().store(index_cell.clone(), ProgramValue::Int32(index.clone()));
+            SymbolicMemory::new().store(index_cell.clone(), ProgramValue::Int32(index.clone()));
         let mut context = PureFactContext::new();
         for i in 0..size {
             let value = MachineTerm::Variable(Variable(491_000 + i as u64));
             memory = memory.store(
-                Pointer {
-                    block: format!("other-cell-{i}").as_str().into(),
-                    offset: PointerOffsetTerm::Constant(0),
+                Address {
+                    base: format!("other-cell-{i}").as_str().into(),
+                    offset: AddressOffset::Constant(0),
                 },
                 ProgramValue::Int32(value.clone()),
             );
@@ -7024,9 +7027,9 @@ fn atomic_load_dependencies_ignore_other_state_cells() {
                 true,
             ));
         }
-        let at = |value| Pointer {
-            block: "selected-array".into(),
-            offset: PointerOffsetTerm::scaled_int32_node(value, 4),
+        let at = |value| Address {
+            base: "selected-array".into(),
+            offset: AddressOffset::scaled_int32_node(value, 4),
         };
         let source = Proposition::MemoryLoadable {
             memory: memory.clone(),
@@ -7078,16 +7081,16 @@ fn atomic_load_dependencies_ignore_other_state_cells() {
 #[test]
 fn atomic_evidence_without_one_source_cites_connected_facts() {
     use crate::kernel::{
-        ConditionTerm, MachineTerm, Memory, Pointer, PointerOffsetTerm, Proposition,
-        PureFactContext, Sort, Variable,
+        Address, AddressOffset, ConditionTerm, MachineTerm, Proposition, PureFactContext, Sort,
+        SymbolicMemory, Variable,
     };
 
-    let memory = Memory::new();
-    let load = |offset: PointerOffsetTerm| {
+    let memory = SymbolicMemory::new();
+    let load = |offset: AddressOffset| {
         MachineTerm::MemoryLoad(
             crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
-            Box::new(Pointer {
-                block: "data".into(),
+            Box::new(Address {
+                base: "data".into(),
                 offset,
             }),
             crate::kernel::LoadKind::Int32,
@@ -7125,17 +7128,14 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
         body: Box::new(Proposition::Implies(
             Box::new(less(variable(480_000), variable(480_001), true)),
             Box::new(equal(
-                load(PointerOffsetTerm::scaled_int32_node(variable(480_000), 4)),
+                load(AddressOffset::scaled_int32_node(variable(480_000), 4)),
                 variable(480_000),
             )),
         )),
     };
     // not (exit < 3), so index 2 is below exit.
     let bound = less(variable(480_001), MachineTerm::constant(3), false);
-    let goal = equal(
-        load(PointerOffsetTerm::Constant(8)),
-        MachineTerm::constant(2),
-    );
+    let goal = equal(load(AddressOffset::Constant(8)), MachineTerm::constant(2));
     let context = |unrelated: u64, with_bound: bool| {
         let mut context = PureFactContext::new();
         for index in 0..unrelated {
@@ -7147,9 +7147,9 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
                 ))
                 .assume_proposition(Proposition::MemoryLoadable {
                     memory: memory.clone(),
-                    base: Pointer {
-                        block: format!("other{index}").as_str().into(),
-                        offset: PointerOffsetTerm::scaled_int32_node(variable(482_000 + index), 4),
+                    base: Address {
+                        base: format!("other{index}").as_str().into(),
+                        offset: AddressOffset::scaled_int32_node(variable(482_000 + index), 4),
                     },
                     bytes: MachineTerm::constant(16),
                     wide: false,
@@ -7226,9 +7226,9 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
                     ))
                     .assume_proposition(Proposition::MemoryLoadable {
                         memory: memory.clone(),
-                        base: Pointer {
-                            block: format!("extension{step}").as_str().into(),
-                            offset: PointerOffsetTerm::Constant(0),
+                        base: Address {
+                            base: format!("extension{step}").as_str().into(),
+                            offset: AddressOffset::Constant(0),
                         },
                         bytes: MachineTerm::constant(16),
                         wide: false,
@@ -7819,7 +7819,7 @@ fn long_proof_else_spines_parse_on_a_small_stack_and_restore_block_bindings() {
         .spawn(|| {
             let mut body = "normalize();".to_string();
             for index in 0..64 {
-                body = format!("if 0 == 0 {{ normalize(); }} else {{ obtain (v{index}: Integer) {{ v{index} == v{index} }} {body} }} obtain (v{index}: int32) {{ v{index} == v{index} }}");
+                body = format!("if 0 == 0 {{ normalize(); }} else {{ let v{index} = obtain(exists (k: Integer) {{ k == k }}); {body} }} let v{index} = obtain(exists (k: int32) {{ k == k }});");
             }
             parser::parse_file_items(&format!("theorem spine() {{ ensures 0 == 0 by {{ {body} }} }}"))
                 .expect("else scopes restore their existential bindings before later tactics");
@@ -7921,66 +7921,6 @@ fn a_linear_goal_costs_a_constant_per_equality_connected_to_its_atoms() {
 }
 
 #[test]
-fn nearest_statement_states_are_lazy_ordered_and_logarithmic() {
-    let point = |index, kind| ProgramPointRef {
-        region: CodeRegionRef::Region(index),
-        kind,
-    };
-    for size in [16usize, 64, 256, 1024, 4096] {
-        let mut retained_states = RecordedStates::new();
-        for index in 0..size {
-            retained_states.insert(point(index, ProgramPointKind::Entry), ExecutionState::new());
-            retained_states.insert(point(index, ProgramPointKind::Exit), ExecutionState::new());
-        }
-        retained_states.insert(
-            ProgramPointSelector::Mark("unrelated".into()),
-            ExecutionState::new(),
-        );
-        let anchor = size / 2;
-        let (nearest, work) = crate::instrumentation::measure_deterministic_work(|| {
-            retained_states
-                .statement_entries_nearest(anchor)
-                .take(3)
-                .map(|(p, _)| p.clone())
-                .collect::<Vec<_>>()
-        });
-        assert_eq!(
-            nearest,
-            (anchor - 2..=anchor)
-                .rev()
-                .map(|i| point(i, ProgramPointKind::Entry))
-                .collect::<Vec<_>>()
-        );
-        let height = usize::BITS - size.leading_zeros();
-        assert!(
-            work <= 16 * height as usize + 32,
-            "size {size}: {work} tree work"
-        );
-        let all = retained_states
-            .statement_entries_nearest(anchor)
-            .map(|(p, _)| p.clone())
-            .collect::<Vec<_>>();
-        assert_eq!(
-            all,
-            (0..=anchor)
-                .rev()
-                .chain(anchor + 1..size)
-                .map(|i| point(i, ProgramPointKind::Entry))
-                .collect::<Vec<_>>()
-        );
-        retained_states.remove(&point(anchor, ProgramPointKind::Entry));
-        assert_eq!(
-            retained_states
-                .statement_entries_nearest(anchor)
-                .next()
-                .unwrap()
-                .0,
-            &point(anchor - 1, ProgramPointKind::Entry)
-        );
-    }
-}
-
-#[test]
 fn recorded_value_names_index_only_the_locals_each_point_changes() {
     use crate::kernel::{MachineTerm, Variable};
     let point = |index| ProgramPointRef {
@@ -7993,14 +7933,14 @@ fn recorded_value_names_index_only_the_locals_each_point_changes() {
         crate::kernel::ResourceFieldType::Program(ProgramType::Int32),
     )])
     .unwrap();
-    let block_pointer = |index: usize| crate::kernel::Pointer {
-        block: crate::kernel::PointerBlock::Symbolic(Variable(800_000 + index as u64)),
-        offset: crate::kernel::PointerOffsetTerm::Constant(0),
+    let block_pointer = |index: usize| crate::kernel::Address {
+        base: crate::kernel::AddressBase::Symbolic(Variable(800_000 + index as u64)),
+        offset: crate::kernel::AddressOffset::Constant(0),
     };
     for size in [16usize, 64, 256, 1024] {
         let mut retained_states = RecordedStates::new();
         let mut state = ExecutionState::new()
-            .with_memory(crate::kernel::Memory::new().with_block("cells", 4 * size as u32));
+            .with_memory(crate::kernel::SymbolicMemory::new().with_block("cells", 4 * size as u32));
         let mut insert_work = Vec::new();
         for index in 0..size {
             // Each point binds one new local, and from the second on also
@@ -8041,9 +7981,9 @@ fn recorded_value_names_index_only_the_locals_each_point_changes() {
             state = state.with_resource_context(resources);
             // And one memory cell a new value.
             let memory = state.memory().clone().store(
-                crate::kernel::Pointer {
-                    block: crate::kernel::PointerBlock::Concrete("cells".into()),
-                    offset: crate::kernel::PointerOffsetTerm::Constant(4 * index as i64),
+                crate::kernel::Address {
+                    base: crate::kernel::AddressBase::Concrete("cells".into()),
+                    offset: crate::kernel::AddressOffset::Constant(4 * index as i64),
                 },
                 ProgramValue::Int32(value(6 * size + index)),
             );
@@ -8085,7 +8025,7 @@ fn recorded_value_names_index_only_the_locals_each_point_changes() {
         let first = block_pointer(0);
         let (points, work) = crate::instrumentation::measure_deterministic_work(|| {
             retained_states
-                .points_holding_pointer_block(&first.block)
+                .points_holding_address_base(&first.base)
                 .map(|(selector, _)| selector.clone())
                 .collect::<Vec<_>>()
         });
@@ -8104,28 +8044,6 @@ fn recorded_value_names_index_only_the_locals_each_point_changes() {
             "size {size}: naming one cell value did {work} work"
         );
     }
-}
-
-#[test]
-fn nearest_statement_states_stop_at_an_exhausted_deadline() {
-    let mut retained_states = RecordedStates::new();
-    for index in 0..256 {
-        retained_states.insert(
-            ProgramPointRef {
-                region: CodeRegionRef::Region(index),
-                kind: ProgramPointKind::Entry,
-            },
-            ExecutionState::new(),
-        );
-    }
-    let mut entries = retained_states.statement_entries_nearest(128);
-    crate::instrumentation::with_deadline(std::time::Duration::ZERO, || {
-        assert!(entries.next().is_none());
-    });
-    assert!(
-        entries.next().is_none(),
-        "a cancelled traversal must stay stopped"
-    );
 }
 
 #[test]
@@ -9311,10 +9229,21 @@ fn pointer_field_call_branch_join_scales_with_unrelated_caller_facts() {
 /// adds
 /// (`context_rebuild_entries` with the split minus without it).
 #[test]
+#[ignore = "nightly: proof-if context scaling compares eight complete loop proofs"]
 fn proof_if_split_ignores_earlier_unrelated_facts() {
     fn rebuild_entries(size: usize, split: bool) -> usize {
+        // Establish the shared lower bound once; each distinct earlier fact
+        // then needs one explicit transitivity application instead of a new
+        // arithmetic search. Keep i symbolic so these remain distinct facts.
         let haves = (1..=size)
-            .map(|k| format!("            have i >= 0 - {k} by solve();\n"))
+            .map(|k| {
+                format!(
+                    "            have i >= 0 - {k} by {{\n\
+                     \x20               apply(click::integer::le_transitive(0 - {k}, 0, to_integer(i))) using {{\n\
+                     \x20                   0 - {k} <= 0; 0 <= to_integer(i);\n\
+                     \x20               }};\n            }}\n"
+                )
+            })
             .collect::<String>();
         // Arms that each close the iteration have no continuation to rejoin,
         // so the split is taken rather than tried as a straight-line join.
@@ -9326,11 +9255,32 @@ fn proof_if_split_ignores_earlier_unrelated_facts() {
             ""
         };
         let click_source = format!(
-            "verifying \"split.c\";\n\n\
-             int32 count_once(int32 flag) {{\n    ensures result == 1;\n}} by {{\n    \
-             step();\n    step();\n    loop {{\n        decreases 1 - i;\n        invariant i >= 0;\n        \
-             invariant i <= 1;\n        initialize by solve();\n        preserve by {{\n            \
-             step();\n{haves}{close}        }}\n    }}\n    step();\n    solve();\n}}\n"
+            r#"verifying "split.c";
+int32 count_once(int32 flag) {{
+    ensures result == 1;
+}} by {{
+    step();
+    step();
+    loop {{
+        decreases 1 - i;
+        invariant i >= 0;
+        invariant i <= 1;
+        initialize by {{ normalize(); }}
+        preserve by {{
+            mark before_increment;
+            step();
+            have 0 <= to_integer(i) by {{
+                solve() using {{
+                    at(before_increment, i) >= 0;
+                    at(before_increment, i) <= 1;
+                }};
+            }}
+{haves}{close}        }}
+    }}
+    step();
+    solve();
+}}
+"#
         );
         let c_source = "int32 count_once(int32 flag) {\n    int32 i;\n    i = 0;\n    \
                         while (i < 1) { i = i + 1; }\n    return i;\n}\n";
@@ -9915,12 +9865,12 @@ fn post_return_function_equations_scale_with_explicit_unfolds() {
 /// call's exit removes the spelling.
 #[test]
 fn recorded_pointer_call_results_scale_and_follow_replacement() {
-    use crate::kernel::{Pointer, ProgramType, Variable};
+    use crate::kernel::{Address, ProgramType, Variable};
     for size in [16usize, 64, 256, 1024] {
         let mut retained_states = RecordedStates::new();
         let value = |index: u64| {
             ProgramValue::typed_pointer(
-                Pointer::symbolic(Variable(710_000 + index)),
+                Address::symbolic(Variable(710_000 + index)),
                 ProgramType::Int32Pointer,
             )
         };
@@ -9930,7 +9880,7 @@ fn recorded_pointer_call_results_scale_and_follow_replacement() {
             });
             assert!(work <= 2, "{size}: insertion {work}");
         }
-        let first = Pointer::symbolic(Variable(710_000));
+        let first = Address::symbolic(Variable(710_000));
         let (region, work) = crate::instrumentation::measure_deterministic_work(|| {
             retained_states.call_result_naming_pointer(&first)
         });
@@ -10417,11 +10367,13 @@ fn conjunction_transport_replay_scales_with_explicit_links() {
 }
 
 #[test]
+#[ignore = "nightly: full skewed conjunction expansion and cold replay scaling audit"]
 fn nested_conjunction_transport_scales_with_written_leaves() {
     nested_conjunction_transport_scaling(false);
 }
 
 #[test]
+#[ignore = "nightly: 13s focused, balanced conjunction expansion and cold replay scaling audit"]
 fn balanced_nested_conjunction_transport_scales_with_written_leaves() {
     nested_conjunction_transport_scaling(true);
 }
@@ -10504,6 +10456,7 @@ fn nested_conjunction_transport_scaling(balanced: bool) {
 }
 
 #[test]
+#[ignore = "nightly: full conjunction projection expansion and cold replay scaling audit"]
 fn conjunction_projection_transport_scales_with_written_source() {
     fn balanced(leaves: &[String]) -> String {
         if leaves.len() == 1 {

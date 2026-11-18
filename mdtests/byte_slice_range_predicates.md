@@ -2,7 +2,7 @@
 
 This checks byte-slice predicates that are useful before committing to a full
 C-string abstraction. `bytes::contains` is existential for symbolic ranges, so
-proof scripts can open it with `obtain (...)` after unfolding. `bytes::all_not_equal`
+proof scripts can open it with `let ... = obtain(...)` after unfolding. `bytes::all_not_equal`
 is universal and can be used as a finite range fact after unfolding. A byte
 range is measured as C measures it, in `size_t`, so the C `int32` length `n`
 is converted where it is passed: `n as uint64`.
@@ -27,9 +27,9 @@ int32 byte_slice_range_predicates(uint8 p[], int32 n) {
     ensures opened_contains: bytes::contains(p, 0, n as uint64, 'x') by {
         step_until(function.exit);
         unfold(bytes::contains(p, 0, n as uint64, 'x'));
-        obtain (found: uint64) {
+        let found = obtain(exists (found: uint64) {
             0u64 <= found and found < n as uint64 and p[found] == 'x'
-        }
+        });
         witness(found);
         solve();
     }

@@ -88,6 +88,37 @@ pub(super) struct Proof<'a> {
     site: ProofStepSite,
 }
 
+/// The rebound state and guard decisions produced by the loop-state join.
+/// Closure may add facts; it does not repeat this source-state construction.
+pub(super) struct LoopBoundary {
+    state: ExecutionState,
+    guard: crate::kernel::LoopConditionFeasibility,
+    head_compatible: bool,
+}
+
+impl LoopBoundary {
+    pub(super) fn state(&self) -> &ExecutionState {
+        &self.state
+    }
+
+    pub(super) fn may_exit(&self) -> bool {
+        self.guard.may_exit()
+    }
+
+    pub(super) fn required_ranking_measures<'m>(
+        &self,
+        declared: &'m [crate::kernel::RankingComponent],
+    ) -> &'m [crate::kernel::RankingComponent] {
+        self.guard.required_ranking_measures(declared)
+    }
+
+    /// Compatible exits are covered by the invariant-head abstraction.
+    /// A distinct partition is retained only for an established false guard.
+    pub(super) fn explicit_exit_state(&self) -> Option<&ExecutionState> {
+        (self.may_exit() && !self.head_compatible).then_some(self.state())
+    }
+}
+
 /// Feasible arms of one checked C `if` frontier.
 ///
 /// Entering the container performs the audited condition transition and C
@@ -108,6 +139,7 @@ pub(super) struct ExecutionSplitData<'a> {
     arm_branches: [Option<BranchId>; 2],
     condition_theorems: [Option<Theorem>; 2],
     checked_split: CheckedExecutionSplit,
+    call_outcomes: Option<CallOutcomeSplitPresentation>,
     base_facts: [Option<PureFactStore>; 2],
     base_executions: [Option<Arc<ExecutionProofState>>; 2],
     path_facts: [Option<Vec<Proposition>>; 2],
@@ -128,6 +160,27 @@ pub(super) struct ExecutionSplitData<'a> {
 pub(super) enum CheckedExecutionSplit {
     Branch(CheckedBranchSplit),
     CallOutcomes(CheckedCallOutcomeSplit),
+}
+
+struct CallOutcomeSplitPresentation {
+    payload_bindings: [Option<String>; 2],
+    payloads: [Option<StoredExecutionValue>; 2],
+}
+
+/// The selected checked call edge and its payload, if the transition exposes one.
+#[derive(Clone)]
+pub(super) struct CallOutcomeEdge {
+    pub(super) returned: bool,
+    pub(super) payload: Option<StoredExecutionValue>,
+}
+
+impl CallOutcomeEdge {
+    fn from_payloads(returned: bool, payloads: &[Option<StoredExecutionValue>; 2]) -> Self {
+        Self {
+            returned,
+            payload: payloads[usize::from(!returned)].clone(),
+        }
+    }
 }
 
 /// What a proof-level case split splits on, as written. A proof `if P`
@@ -426,9 +479,6 @@ enum ProofScopeStructure {
         resource: ResourceClause,
         source_index: usize,
         preserve_exposed_body: bool,
-        /// The source's `open(r) { ... } by { ... }` proof of the body fact
-        /// the closing fold leaves open.
-        written_close_proof: Option<Vec<ProofTactic>>,
     },
 }
 
@@ -572,6 +622,9 @@ pub(in crate::surface::proof) struct ExecutionProofPresentation {
     /// split. This is path-routing presentation, not proof evidence: each
     /// selected outcome retains its own kernel-checked theorem and goal.
     pub(in crate::surface::proof) call_outcome_edges: Option<Vec<bool>>,
+    /// Payloads of a call that a single statement step finished together with
+    /// its terminal continuation, in returned/threw order.
+    pub(in crate::surface::proof) terminal_call_payloads: [Option<StoredExecutionValue>; 2],
     /// The path's surface record: certificate-visible certificate facts, the
     /// premise anchor, and proof-level case choices.
     pub(in crate::surface::proof) surface_record: SurfaceRecord,
@@ -660,11 +713,11 @@ pub(in crate::surface::proof) struct StoreSeparationMiss {
     /// The statement that ran, as a proof names it (`statement(5)`).
     pub(in crate::surface::proof) statement: String,
     /// The cached cell the store dropped.
-    pub(in crate::surface::proof) cell: crate::kernel::Pointer,
+    pub(in crate::surface::proof) cell: crate::kernel::Address,
     /// The dropped cell as the statement's C locals spell it, `q[0]`.
     pub(in crate::surface::proof) cell_text: Option<String>,
     /// The cell the store wrote.
-    pub(in crate::surface::proof) store: crate::kernel::Pointer,
+    pub(in crate::surface::proof) store: crate::kernel::Address,
     /// The spelled disequality the search tried at the statement's pre-state.
     pub(in crate::surface::proof) fact: ClickProposition,
 }
@@ -849,6 +902,7 @@ impl ExecutionProofState {
                 post_execution_tactics: PersistentSequence::default(),
                 partitioned_post_execution_tactics: PersistentSequence::default(),
                 call_outcome_edges: None,
+                terminal_call_payloads: [None, None],
                 surface_record: SurfaceRecord::default(),
                 invariant_closer_step: Default::default(),
                 region_solve: None,
@@ -1258,7 +1312,7 @@ impl ProofExecutionView<'_> {
                     )
                 }
                 ProofTactic::CallOutcomes(outcomes) => {
-                    let returned = *call_routes.next()?;
+                    let returned = call_routes.next()?.returned;
                     (
                         returned,
                         if returned {
@@ -1345,10 +1399,10 @@ struct OutcomeEvidence {
     checked_leaf_facts: Option<Arc<CheckedLeafFacts>>,
     loop_return: Option<Arc<LoopReturnProof>>,
     /// The checked call edges selected on this terminal path, outermost
-    /// `outcomes` first; `true` is `returned`. A surrounding branch can add
+    /// `outcomes` first, with their checked call payloads. A surrounding branch can add
     /// paths that never visited a call, so this belongs to each outcome
     /// rather than to the joined frontier as one flat vector.
-    call_routes: Vec<bool>,
+    call_routes: Vec<CallOutcomeEdge>,
     branch_decisions: ExecutionBranchDecisions,
     match_arms: OutcomeMatchArms,
     /// Ordinary exhaustiveness proofs completed before either case arm.
@@ -1508,10 +1562,10 @@ impl Proof<'_> {
                     Some(*variable)
                 }
                 ProgramValue::Pointer(pointer) => {
-                    match (&pointer.pointer().block, &pointer.pointer().offset) {
+                    match (&pointer.pointer().base, &pointer.pointer().offset) {
                         (
-                            crate::kernel::PointerBlock::Symbolic(variable),
-                            PointerOffsetTerm::Constant(0),
+                            crate::kernel::AddressBase::Symbolic(variable),
+                            AddressOffset::Constant(0),
                         ) => Some(*variable),
                         _ => None,
                     }
@@ -1587,12 +1641,11 @@ fn diagnostic_value_variable(value: &ProgramValue) -> Option<Variable> {
             _ => None,
         },
         ProgramValue::Pointer(pointer) => match &pointer.pointer().offset {
-            PointerOffsetTerm::Variable(variable) => Some(*variable),
+            AddressOffset::Variable(variable) => Some(*variable),
             // C pointers to sized elements keep their direct symbolic offset
             // in element units. An added displacement is composite and does
             // not identify the pointer local itself.
-            PointerOffsetTerm::Int32Scaled { value, .. }
-            | PointerOffsetTerm::Int64Scaled { value, .. } => {
+            AddressOffset::Int32Scaled { value, .. } | AddressOffset::Int64Scaled { value, .. } => {
                 value.operand_view().variable().copied()
             }
             _ => None,
@@ -2494,8 +2547,8 @@ pub(in crate::surface::proof) struct OutcomeProofPresentation {
         Arc<PersistentMap<Proposition, ClickProposition>>,
     branch_decisions: ExecutionBranchDecisions,
     /// The checked call edges this outcome took, outermost `outcomes`
-    /// first. `true` is `returned`; `false` is `threw`.
-    pub(in crate::surface::proof) call_routes: Vec<bool>,
+    /// first, with their checked call payloads.
+    pub(in crate::surface::proof) call_routes: Vec<CallOutcomeEdge>,
     /// The arm each `match` deferred after execution took on this path, by
     /// the match's source occurrence, with that arm's field bindings.
     pub(in crate::surface::proof) match_arms: OutcomeMatchArms,

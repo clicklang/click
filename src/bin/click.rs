@@ -900,7 +900,7 @@ mod tests {
         let sidecar = directory.join("f.click");
         fs::write(
             &sidecar,
-            "verifying \"f.c\";\nint32 f() { ensures result == 1; } by {\n    step();\n    have exists (x: int32) { x == 0 } by {\n        obtain (x: int32) {\n            x == 0\n        };\n    }\n    solve();\n}\n",
+            "verifying \"f.c\";\nint32 f() { ensures result == 1; } by {\n    step();\n    have exists (x: int32) { x == 0 } by {\n        let x = obtain(\n            exists (k: int32) { k == 0 }\n        );\n    }\n    solve();\n}\n",
         )
         .unwrap();
         let traced = entry([
@@ -912,20 +912,21 @@ mod tests {
         .unwrap_err();
         assert!(!traced.contains("prove it with `have` first"), "{traced}");
         assert!(
-            traced.contains("requirement `exists (x: int32) { x == 0 }` not satisfied"),
+            traced.contains("requirement `exists (k: int32) { k == 0 }` not satisfied"),
             "{traced}"
         );
         assert!(
-            traced.contains("requires: exists (x: int32) { x == 0 }"),
+            traced.contains("requires: exists (k: int32) { k == 0 }"),
             "{traced}"
         );
         assert_eq!(traced.matches("\ngoal:").count(), 1, "{traced}");
         assert!(
-            traced.contains("tactic@5:\n  obtain (x: int32) {\n      x == 0\n  };"),
+            traced
+                .contains("tactic@5:\n  let x = obtain(\n      exists (k: int32) { k == 0 }\n  );"),
             "{traced}"
         );
         assert!(!traced.contains("\nstep: "), "{traced}");
-        assert!(traced.contains("obtain (x: int32) {\n"), "{traced}");
+        assert!(traced.contains("let x = obtain(\n"), "{traced}");
         fs::remove_dir_all(directory).unwrap();
     }
 
@@ -1982,7 +1983,8 @@ int32 f() { ensures result == 2; } by { step(); solve(); }
         let mut proof_body = String::from("normalize();");
         for _ in 0..STRUCTURAL_NESTING_LIMIT - 2 {
             proof_goal.push_str(" and 0 == 0");
-            proof_body = format!("both {{ {proof_body} }} and {{ normalize(); }}");
+            proof_body =
+                format!("both {{ left => {{ {proof_body} }} right => {{ normalize(); }} }}");
         }
         verify_and_profile_supported_boundary(
             "proof",
@@ -2099,7 +2101,7 @@ int32 f() { ensures result == 2; } by { step(); solve(); }
                 format!(
                     "theorem too_deep_proof() {{ ensures 0 == 0 by {{ {} }} }}\n",
                     (0..=STRUCTURAL_LIMIT).fold("normalize();".to_string(), |body, _| format!(
-                        "both {{ {body} }} and {{ normalize(); }}"
+                        "both {{ left => {{ {body} }} right => {{ normalize(); }} }}"
                     ))
                 ),
                 "too_deep_proof.ensures_0",

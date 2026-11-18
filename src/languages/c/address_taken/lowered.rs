@@ -128,8 +128,11 @@ pub(super) fn summarize(function: &ProgramFunction, summary: &mut AddressTakenSu
                 body,
                 ..
             } => {
-                let (condition, _, test) = loop_test.execution_parts();
-                expressions.push((condition, false));
+                let condition = loop_test.source_condition();
+                let test = loop_test.source_region();
+                if let Some(condition) = condition {
+                    expressions.push((condition, false));
+                }
                 statements.push(body);
                 if let Some(test) = test {
                     statements.push(&test.statement);
@@ -144,7 +147,7 @@ pub(super) fn summarize(function: &ProgramFunction, summary: &mut AddressTakenSu
         crate::instrumentation::record_deterministic_work(1);
         match expression {
             ProgramExpression::Value(value) => {
-                if matches!(value, ProgramValue::Pointer(pointer) if pointer.pointer() != &crate::kernel::Pointer::null())
+                if matches!(value, ProgramValue::Pointer(pointer) if pointer.pointer() != &crate::kernel::Address::null())
                 {
                     return false;
                 }
@@ -244,9 +247,9 @@ mod tests {
     fn opaque_imported_pointer_literals_disable_the_bundle_summary() {
         let function = imported(program_seq(
             program_declare("capture", ProgramType::Int32),
-            program_return(crate::kernel::program_expression::pointer_value(Pointer {
-                block: "local:capture".into(),
-                offset: PointerOffsetTerm::Constant(0),
+            program_return(crate::kernel::program_expression::pointer_value(Address {
+                base: "local:capture".into(),
+                offset: AddressOffset::Constant(0),
             })),
         ));
         assert!(

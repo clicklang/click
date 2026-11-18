@@ -231,12 +231,12 @@ signed-overflow fixture filters passed with zero fact-stability differences.
 
 Complete pointer equality now reads only the retained address and declared type
 needed by the existing spelling policy. It does not export qualifiers, evidence
-or subobject extents to construct an intermediate native condition. Raw address
+or subobject bounds to construct an intermediate native condition. Raw address
 and offset comparisons use explicit selected presentation adapters; those native
 adapters remain intentional. Exact pointer call-argument naming is unchanged.
 
 Validation: native/shared complete-pointer, raw-address and null-comparison
-spelling parity; growing unused extent payloads incur constant rendering work
+spelling parity; growing unused bounds payloads incur constant rendering work
 and zero machine exports. All 1,850 Surface/scaling tests and quality checks
 passed. The pointer-address-equality fixture passed with zero fact-stability
 differences.
@@ -337,16 +337,16 @@ Specification pointer values and resource fields retain complete shared payloads
 C-expression handoffs preserve supported pointer producer roots. Removing a
 constructor field's `const` qualifier now updates metadata through the existing
 pointer payload API, preserving the address, call/read producer, historical memory,
-other qualifiers, extents and object/local-reference evidence. Native nominal
+other qualifiers, bounds and object/local-reference evidence. Native nominal
 object-class refinement remains an explicit checker boundary. Explicit pointer
 casts still run the existing metadata rules before retaining their result: even
-a same-type `void*` cast clears the selected extent, while byte-to-byte casts
+a same-type `void*` cast clears the selected bounds, while byte-to-byte casts
 preserve it.
 
 Validation: exact producer/payload parity and unchanged facts/obligations passed.
 Qualifier updates on growing pointer indices take constant work with zero machine
 exports. All 2,129 API, specification, execution-value, expression and scaling
-tests passed, including the reproduced cast regression and retained/native extent
+tests passed, including the reproduced cast regression and retained/native bounds
 parity. Quality checks and all 575 regular pointer fixtures passed; the audit reported zero fact
 stability differences. A broad fixture selector also selected 23 nightly cases;
 the ten failures were identical before 9o and were left outside this task.
@@ -439,11 +439,11 @@ Complete pointer and captured-array arguments borrow their native/shared
 payloads. Address roles and scaled indices use one written-syntax traversal;
 shared address DAGs are not expanded into native trees. Algebraic read comparison
 retains exact memory identity and reads its shared addresses directly. A common
-metadata projection preserves type, cv qualifiers, known extent, declared class,
+metadata projection preserves type, cv qualifiers, known bounds, declared class,
 unchecked evidence and local-reference identity, including equivalent default
 qualifier storage shapes.
 
-The selected extent-width adapter remains native because this route's width
+The selected bounds-width adapter remains native because this route's width
 admission is native-syntax based; common-root identity would accept additional
 widths. Opaque index leaves keep the native reading used by the old exporter.
 No address aliasing, proof rules, search indexes or budgets changed.
@@ -541,7 +541,7 @@ CI and the merge queue also check each delivered slice.
 | `spec.rs` / `spec/result.rs`: Integer fold endpoints/results, algebraic match/field bindings, sequence/predicate/resource payloads, proposition outputs | Native result and domain schemas still require selected compatibility values. 9n, 9q and 9r retain supported argument/body roots before those outputs. Logical Boolean outputs remain distinct from raw C Boolean words; float classification and algebraic equality still produce native proposition descriptors. |
 | `SpecCallArgument::into_payload`, disabled-retention evaluation and unsupported/native scalar branches | Typed shared call assembly uses `into_typed_call_operand`; native call consumers and parity controls keep explicit payload conversion. Unsupported forms retain their established refusal, rather than gaining inferred types or new semantics. 9l–9q cover retained/native parity, conversion bounds, raw words and complete pointer casts. |
 | `retained_syntax.rs`: mixed algebraic Call/Read arguments | Selected imports preserve the existing common-root argument comparison, which differs from native syntax comparison. 9t explicitly tests that distinction and constant-work refusal of unsupported growing payloads. |
-| `retained_syntax/pointers.rs`: extent widths and opaque index leaves | Width certification preserves native-syntax admission; opaque leaves preserve the old exporter's reading. 9u tests complete metadata, captured memory, unsupported width/index refusal and shared-address DAG scaling. |
+| `retained_syntax/pointers.rs`: bounds widths and opaque index leaves | Width certification preserves native-syntax admission; opaque leaves preserve the old exporter's reading. 9u tests complete metadata, captured memory, unsupported width/index refusal and shared-address DAG scaling. |
 | `contract_claims.rs`, `execution_value.rs`: memory/history equality, exceptional-signature checks, exact outcome refresh | These selected consumers retain their existing native equality/admission policies. Storage identity is not substituted for exact native syntax. 9v–9w cover native binding parity, exact refresh refusal, publication ownership and constant-work retained result handoffs. |
 | `FixedStateFrame`, fixed-state/resource lowering and native theorem bindings | Frames borrow the retained carrier; native allocation/resource/embedded-value consumers request a compatibility view. 9w–9x cover unchanged native outputs, guards, explicit expansion/replay and zero-export retained capture. |
 | `program_evaluate_speprogram_expression_at_state`, strict resource evaluation, resource-field storage | The public native API retains its signature. Strict resource evaluation keeps its distinct checked-load contract. 9y removes the superseded private capture entry point after the final resource-field caller uses the common path, preserving obligations and wrong-type refusal. |
@@ -566,6 +566,62 @@ Authorized sequences: 10a–10e and 10f–10j, one PR per slice. Inventory basel
 `efa44df78`. The package-9 closure table remains the boundary inventory;
 this inventory assigns the storage behind those boundaries. Later slices are
 provisional until their consumers are inspected.
+
+### Active sequence and durable checkpoint
+
+Package 10 removes remaining native expression storage and obsolete compatibility
+caches after their consumers migrate to shared `KernelTerm` operands. Surface
+raising/lowering and its fact-stability contract must continue to hold. Legitimate
+memory, allocation, binder, function and type identities are not expression
+payloads to eliminate. Snapshot architecture is outside this package's current
+storage-cleanup slices.
+
+This section is the authoritative package-10 sequence. Preserve the chunk IDs
+across sessions; read it before selecting work, and update status, evidence,
+remaining consumers and PR links in the same PR as each completed slice. Record
+any scope split or changed dependency here before proceeding. Conversation
+history and temporary session notes are not the plan's durable record.
+
+Checkpoint: 10a–10g have landed; 10f is [PR #3075](https://github.com/clicklang/click/pull/3075)
+and 10g is [PR #3080](https://github.com/clicklang/click/pull/3080).
+10l landed in [PR #3160](https://github.com/clicklang/click/pull/3160); all five
+pushed commits were verified on upstream and the clean primary was advanced
+through Git.
+10k landed in [PR #3151](https://github.com/clicklang/click/pull/3151); all eight
+pushed commits were verified on upstream and the clean primary was advanced
+through Git.
+10i landed in [PR #3117](https://github.com/clicklang/click/pull/3117); all four
+pushed commits were verified on upstream. Its approved hash-encoding change
+supersedes the historical native-hash-stream requirement below. The original
+10h scope/completion evidence has not been recovered; do not infer completion
+from the later 10i merge. The user restored the complete remaining 10j–10t
+sequence below. These rows record planned scope, not completed implementation.
+
+| Slice | Scope | Acceptance / dependency | Status |
+| --- | --- | --- | --- |
+| 10j | Remove redundant native payloads from stored execution and memory values. | Audit actual wrapper-owned and reachable duplicate payloads first; remove demonstrated redundancy while preserving producer, storage and exact-refresh contracts. Account for live compatibility readers. | Audit complete; wrapper field duplication already absent; live dependencies below remain. |
+| 10k | Migrate native Integer result storage. | Integer results retain shared roots through result handoffs; exact native output is an explicit boundary. | Landed in [PR #3151](https://github.com/clicklang/click/pull/3151); all eight pushed commits verified on upstream. Evidence below. |
+| 10l | Migrate deferred Integer bindings and fold endpoints. | Deferred bindings and endpoints retain shared operands through substitution and evaluation with unchanged fold behavior. | Landed in [PR #3160](https://github.com/clicklang/click/pull/3160); all five pushed commits verified on upstream. |
+| 10m | Migrate algebraic field and match-result storage. | Fields and match results retain shared values with existing constructor/arm identity and producer metadata. | Implemented and locally validated; [PR #3169](https://github.com/clicklang/click/pull/3169) has auto-merge requested. Integration pending. |
+| 10n | Migrate theorem argument and recorded-state value storage. | Stored arguments and recorded values retain shared operands with unchanged substitution and state selection. | Planned. |
+| 10o | Migrate program-valued resource-field storage. | Program-valued fields retain shared operands while preserving resource identity and substitution. | Planned. |
+| 10p | Migrate remaining expression payloads in sequence/resource descriptors. | Inventory and subdivide independent families before implementation; preserve legitimate opaque descriptor identities. | Planned; family split may be needed. |
+| 10q | Migrate remaining native expression payloads in proposition outputs. | Proposition outputs retain shared operands with unchanged fact identity, raising/lowering and proof admission. | Planned. |
+| 10r | Remove obsolete machine compatibility caches and reverse bridges. | Remove only after their live readers migrate; account for any retained reader and reason. | Planned; after affected consumers. |
+| 10s | Remove obsolete Boolean, float and algebraic compatibility caches. | Remove only after their live readers migrate; preserve explicit native input/output boundaries. | Planned; after affected consumers. |
+| 10t | Closure audit: account for every remaining native adapter and remove dead APIs. | Inventory every remaining adapter/cache/native expression field with a live consumer and reason, remove dead APIs, and report any unresolved migration gaps. | Planned; final audit. |
+
+Keep one PR per coherent slice; subdivide when actual consumers warrant it.
+Do not invent implementation work to satisfy an old title. In particular,
+`ExecutionValue` already chooses native input or one shared root, and both
+stored wrappers currently hold one `ExecutionValue` plus a lazy structural key.
+Thus 10j is not permission to assume a second enclosing native field exists or
+to delete caches assigned to 10r–10s before their readers migrate. Any remaining
+native numeric memory-carrier policy requires an explicit consumer inventory;
+local machine observation equivalence must not replace memory structural
+identity. Stop and discuss changes to proof semantics, syntax or snapshot
+architecture; representation cleanup must not require proof rewrites, new
+search indexes or increased budgets.
 
 ### 10a Storage inventory and completion criteria
 
@@ -696,8 +752,8 @@ was not run.
 ### 10g Shared complete-pointer storage keys
 
 Local/outcome pointer keys preserve the complete native identity tuple:
-address, provenance, view type, volatility, extent-known status, conditional
-opaque extent and subobject extent. Const/evidence annotations remain exact on
+address, provenance, view type, volatility, bounds-known status, conditional
+opaque bounds and subobject bounds. Const/evidence annotations remain exact on
 producer payloads and ignored only where native pointer equality ignores them.
 Key operations no longer request the enclosing native pointer descriptor.
 
@@ -743,6 +799,156 @@ All 8,508 nonignored library checks passed, including all 1,855 scaling checks.
 The full regular mdtest corpus and examples passed unchanged. Corpus-wide
 fact-stability auditing recorded zero changed terms, zero fact-selected paths
 and 371 refusals without facts. Quality checks passed; Nightly was not run.
+
+### 10j Audit: stored execution and memory payloads
+
+Audited source baseline: `95696b5cf` (the restored plan on `959ad5f90`).
+This is a source/ownership audit, not a runtime allocation measurement or a
+claim that the full storage migration is complete. No implementation changes
+were made for this audit.
+
+**Finding:** there is no independent enclosing native-value field to delete
+from either stored wrapper. `ExecutionValue` is an enum selecting
+`Native(ProgramValue)` or `Shared(KernelTerm)`; `StoredValueData` and
+`StoredMemoryData` each own one such value and a `OnceLock<StoredKey>`.
+Their immutable clones share the enclosing `Arc`; `into_value` unwraps that
+allocation or clones its selected value. Persistent cell maps/indexes can hold
+several handles to the same wrapper without copying an enclosing native tree.
+The field-deletion part of 10j is already satisfied by the current layout.
+
+That does not make all reachable native payloads redundant or removable:
+
+| Remaining storage / reader | Source evidence and reason | Disposition |
+| --- | --- | --- |
+| Native numeric memory carrier | `execution_value.rs`: `From<ExecutionValue> for StoredMemoryValue` converts shared machine roots back to native values. Numeric identity/hash remains native structural syntax. `memory_numeric_keys_keep_native_syntax_instead_of_local_observations` proves that native versus shared call-argument carriers can be distinct memory keys while equal local keys. | Real unresolved storage boundary. Inventory its exact structural key and native readers before any producer switch; do not substitute local observation identity. This is not covered merely by migrating mathematical Integer result storage in 10k. |
+| Native local inputs and their machine observation keys | `StoredKey::for_value` passes a native word clone to `SharedMachineIntegerTerm::intern`. `integer.rs` may retain that written input in `boxed` or `ExactLegacy` alongside a shared observation. It preserves producer input independently of normalized local equality. | Reachable compatibility duplication remains; coordinate reader migration with 10r, rather than removing the stored producer or treating its observation key as exact producer syntax. |
+| Root-owned native compatibility caches | `kernel_term.rs::TermData` owns `argument_leaf`, `machine_leaf` and the weak Integer reverse bridge. `boolean/storage.rs`, `float.rs`, `algebraic.rs` and `pointers.rs` build their native readings through these caches. `ExecutionValue::native`, `native_payload`, `pointer`, `into_native` and `StoredMemoryValue::native` reach them. | Not wrapper-owned duplicate fields. Cache removal remains 10r–10s after the listed readers migrate. Pointer descriptor compatibility also needs explicit accounting in the final audit. |
+| Exact outcome refresh | `StoredExecutionValue::same_native_value` falls back to native comparisons when exact roots differ; `surface/proof/proof_object/outcomes_and_focus.rs::refresh_outcome_from` uses it to prevent changing a checked result. | A live exact comparison consumer, distinct from local observation equality. Preserve its contract when eliminating its compatibility read. |
+| Native cell/local APIs and rewriting | `cell_store.rs`: `native_cell`/`NativeCellIter`, `explicitly_stored_value`, `get`, `remove`, `map_cells_preserving_runs`; `memory_state.rs`: `Locals::get_native`, `scalar_local_value`, `local_cell_values`, union-view and cache readers. Retained counterparts exist for some but not all reads. | Migrate consumers before removing the borrowed/owned native output routes. `CellStore`'s compressed `RunValueMode::Constant(ProgramValue)` is additional native storage outside the two wrappers. |
+| Store admission and heap effective-type records | `memory_state.rs::store_with_effective_type` supplies `value.native()` as the eagerly evaluated debug subject to `debug_assert_widths`; the native borrow is requested even when the callee skips its debug-only body. The heap effective-type path also passes a native value to `HeapEffectiveTypes::record`. `heap_effective_types.rs::HeapEffectiveType` retains `value: ProgramValue`, clones it on record and compares it with the current cell in `class_at`. | A stored shared root can still populate its compatibility cache outside key operations. The effective-type value is live validity evidence, not dead data: migrate its value carrier and confirmation/substitution consumers together. This schema needs explicit closure accounting; it is not removed by 10i. |
+| Selected native fragments inside structural keys | `storage_keys.rs` retains raw Boolean words; `storage_keys/float.rs` retains opaque atoms/nonfloat arguments; `storage_keys/algebraic.rs` retains selected scalar arguments and read addresses; `storage_keys/pointer.rs` exports subobject widths and retains existing offset-index handles. | Keys are derived identity projections, not interchangeable producer values. These selected fragments remain native boundaries even though supported family keys no longer export their enclosing value. |
+
+In particular, the 10i scaling regressions establish the shared **key** route,
+not a claim that every actual memory store avoids native materialization.
+Existing tests also cover immutable carrier retention, exact-refresh versus
+local equality, mixed-carrier order/hash classes, signed-zero/NaN distinctions
+and forced outer hash collisions. This audit inspected those contracts; it did
+not rerun the implementation/scaling suites or weaken any of them.
+
+Recommended disposition: do not schedule a speculative wrapper-field deletion
+PR. The remaining work is consumer migration, with the numeric memory carrier,
+native store/admission readers and effective-type value record called out
+explicitly before deleting compatibility storage. Keep 10j's overall cleanup
+status qualified until those dependencies are assigned and resolved; do not
+silently declare them covered by 10k or by the later cache-removal titles.
+10k–10q remain the saved consumer sequence, and 10r–10s remain dependent cache
+cleanup. Splitting or reassigning the newly explicit memory dependencies is a
+plan decision to discuss, not an implementation change made by this audit.
+
+### 10k Integer result storage
+
+`SpecIntegerPath` now retains `IntegerResult`, which owns only a `KernelTerm`.
+Arithmetic, conditionals and fold initial/body handoffs retain common children.
+Conditional construction preserves native literal-guard and equal-arm behavior,
+including the original left producer when common roots distinguish metadata
+that native equality ignores. No proof rules, search indexes or budgets change.
+
+Growing conditional production exposed a prefix-export regression: work at
+8/32/128 levels was 238/1,702/19,077 with the first storage-only prototype;
+common construction reduces it to 144/552/2,184. Fold body production likewise
+fell from 111/819/9,411 to 20/68/260. Tests cover native-source release,
+constant-cost root handoffs, shared DAGs and native equality classes.
+
+Native comparison, capture, ranking, match rewriting and pure-call descriptors
+remain explicit compatibility outputs. Deferred Integer bindings and fold
+endpoints belong to 10l; algebraic matches/fields to 10m; theorem arguments to
+10n; proposition output schemas to 10q. Native machine memory carriers found
+by 10j are not mathematical Integer result storage and remain unresolved.
+
+The changed-endpoint negative fold fixture previously asserted failure for a
+true zero-count equality: storing one adds zero to that count. An accepted
+trace unfolds the calls, splits off that zero contribution, and transports
+only the unchanged prefix. Preserve that source as a positive fixture with
+expansion/replay coverage; the negative now counts ones, making its unchanged
+endpoint claim false (already for index zero in a one-element range). The C
+program and tactic steps are unchanged. No proof weakening was needed.
+
+Validation: 30 focused Integer checks; 2,294 Spec/API/termination/documentation
+and scaling checks (including all 1,881 scaling cases). One narrow-cast case
+hit its unchanged 30-second limit in the first concurrent run; all four sizes
+passed in isolation, and the remaining selection passed with two workers.
+The workspace reconnect lost that latter runner handle; its completed log
+reports all 2,288 selected cases passing. The regular mdtest corpus, fact
+stability (zero changed terms/paths), regular examples and quality checks
+passed before the final direct-fold producer adjustment; after integrating upstream `2ba6b3961`, all 509 Spec/API/termination checks,
+the fold-read fixture selection, named expansion/replay with implicit solving
+disabled, and quality checks passed (combined script exit zero). Full nightly was not
+run.
+
+### 10l Deferred Integer bindings and evaluated fold endpoints
+
+`SpecEvaluation::integer_bindings` and the loop-iteration scope now retain
+`IntegerResult` common roots. A selected retained Integer field binds directly;
+variable substitution returns that same producer root. Nested scopes restore
+previous bindings on success or refusal. Compound native specification inputs
+still use the existing selected typed-rewrite compatibility boundary; its
+native temporaries are not evaluator storage.
+
+`IntegerFoldIndexResult` stores the evaluated index kind and two common bounds.
+Integer bounds flow directly from Integer results; machine bounds retain their
+selected typed program roots. Fold construction now passes all four common
+children directly to `KernelFold`. Literal empty-range checks inspect operand
+views. Item guards preserve signed/unsigned orientation and the existing
+Integer proposition-output compatibility boundary (10q). The native
+`IntegerRangeFoldIndex` schema remains an explicit native input/checking DTO;
+this slice does not replace existing fold checking or binder-capture rules.
+
+Tests cover native-child release, nested binding restoration on refusal,
+exact endpoint/root retention, existing fold carrier guards, and constant work
+for deferred variable/endpoint handoffs over growing shared DAGs. Local
+validation passed: 512 Spec/API/termination checks, all 1,886 scaling cases
+(six isolated, 1,880 with two workers), the fold-read selection, both
+loop-iteration fixtures, named fold expansion/replay with implicit solving
+disabled, and quality checks (script exit zero). The new scaling assertion
+compares costs across sizes; it does not prescribe a particular accounting
+count. Full nightly was not run. Upstream integration and PR delivery remain
+pending. After integrating upstream `4f614f04e`, all 512 focused checks,
+the fold-read and loop-iteration selections, and quality checks passed again
+(script exit zero). The subsequent `5a58b73d3` integration adds the merged 10k
+commits already present in this implementation.
+
+### 10m Algebraic fields and match-result storage
+
+Both origins of `AlgebraicResult` and `AlgebraicFieldResult` now store a
+`KernelTerm`. The imported/retained tag preserves the previous checking and
+producer handoffs, constructor classification, scope binding behavior and
+separate equality classes. Imported equality still follows the native output
+contract; retained equality keeps exact common producer identity. This is
+origin metadata, not a second expression representation or native payload.
+
+Pointer field refinement owns a temporary native pointer reading and retains
+the checked metadata back into its root; field storage no longer becomes a
+mutable native value. Lowered Integer match arms retain common bodies and
+`KernelMatchArm` declarations. Symbolic result construction passes them directly
+to `KernelMatch`, preserving arm order, binder identities and written names.
+Native constructor/iota readings, selected typed rewriting, legacy lexical
+bindings and native output schemas remain explicit live compatibility readers.
+Their cache cleanup still depends on 10r–10s; this slice does not erase them.
+
+Regression coverage checks the two origin/equality contracts, native-child
+release, raw Boolean word preservation, logical versus program-parameter
+fields, and growing-DAG import with constant-cost result/field root handoffs.
+Existing constructor, read, match, pointer-metadata, scope and scaling checks
+remain unchanged. Local validation passed: 516 Spec/API/termination checks,
+all 1,889 scaling cases, the full regular mdtest corpus, fact-stability
+recording (121 refused lowerings, zero changed terms or paths), and quality
+checks (script exit zero). An incremental compiler fingerprint error was
+resolved by clearing only the failed crate cache and rebuilding with unchanged
+settings. The old private native Integer-match factory has no remaining
+callers and is removed. After integrating upstream `affad43dd`, all 516
+focused checks and quality checks passed again (script exit zero). PR delivery
+is pending.
+Full nightly was not run.
 
 ## Chunk 3: machine-valued pure-function results
 
@@ -859,7 +1065,7 @@ changes before implementing them.
 | 8f | Boolean identity and fact keys | Preserve native/common matching and comparison-format equivalences. |
 | 8g | Pointer-offset equality | Retain shared offset operands. |
 | 8h | Raw pointer equality | Retain shared address operands. |
-| 8i | Complete-pointer equality | Preserve provenance, extent and complete-payload distinctions. |
+| 8i | Complete-pointer equality | Preserve provenance, bounds and complete-payload distinctions. |
 | 8j | Overflow conditions | Retain typed operands and existing operation/width rules. |
 | 8k | Boolean reads | Retain state and shared address. |
 | 8l | Boolean pure calls | Retain common arguments and result structure. |
@@ -1018,14 +1224,14 @@ load authority, read ordering, dependency modes and frame transport. The
 CI-quality check passed.
 
 8i (merged [PR #2818](https://github.com/clicklang/click/pull/2818)) retains complete-pointer equality operands, including provenance, opaque
-extent, explicit extent and exact qualifiers/evidence. Its observation identity
+bounds, explicit bounds and exact qualifiers/evidence. Its observation identity
 uses the native logical fields without changing the producer payload. Memory state
-selectors and dependency readers use shared address roles directly; extent widths
+selectors and dependency readers use shared address roles directly; bounds widths
 retain each reader's existing admission policy. Load matching still accepts exact
 identity only. Framed condition transport reuses the existing complete-pointer
 transporter, preserving its reconstructed-word provenance policy.
 
-Bitvector substitution maps addresses while preserving extent widths. Formal
+Bitvector substitution maps addresses while preserving bounds widths. Formal
 pointer substitution keeps the native complete-value provenance and opaque-domain
 replacement rules, followed by the existing address canonicalization and equality
 constructor reductions. Surface output keeps its explicit compatibility adapter.
@@ -1034,7 +1240,7 @@ Validation: all 1,723 selected tests passed on current upstream, including every
 scaling test, native constructor/substitution/transport parity, complete-domain
 state keys, dependency admission, read order and observation identity. Exact
 producer metadata stays retained while logical keys preserve the native const,
-volatile, type and extent distinctions. The CI-quality check passed.
+volatile, type and bounds distinctions. The CI-quality check passed.
 
 8j (merged [PR #2821](https://github.com/clicklang/click/pull/2821)) retains overflow conditions as typed numeric operand pairs with their exact
 format and operation. Identity, observation normalization, program point selectors,
@@ -1549,12 +1755,12 @@ Routine ordering refinements do not change this scope.
 | --- | --- | --- |
 | 7a | Shared offsets | Preserve constant/variable/addition shape, scale, index width and signedness; retain shared numeric children. |
 | 7b | Shared addresses | Retain block identity and shared displacement without a parallel native address tree. |
-| 7c | Complete pointer payloads | Preserve provenance, opaque extent, qualifiers, subobject bounds and evidence, including metadata ignored by logical equality. |
+| 7c | Complete pointer payloads | Preserve provenance, opaque bounds, qualifiers, subobject bounds and evidence, including metadata ignored by logical equality. |
 | 7d | Dependency readers | Collect variables, capture and memory dependencies through shared children. |
 | 7e | Substitution | Rewrite selected children with capture and metadata preservation. |
 | 7f | Memory state transport | Retain historical read and state identity during transport. |
 | 7g | Identity and fact keys | Preserve existing matching keys while separating exact payload identity from logical equality. |
-| 7h | Checking consumers | Preserve equality, provenance, extent and access evidence requirements. |
+| 7h | Checking consumers | Preserve equality, provenance, bounds and access evidence requirements. |
 | 7i | Address Surface boundary | Raise/lower offsets in their address context using existing syntax. |
 | 7j | Complete-pointer Surface boundary | Existing names and spellings retain complete metadata and historical identity. |
 | 7k | Scalar read addresses | Numeric loads retain common addresses. |
@@ -1582,7 +1788,7 @@ remains in 7p. Address identity compares only handles; explicit native output
 preserves the original address shape. Producers remain inactive in this slice.
 
 7c prepares complete pointer payloads with shared addresses and common numeric
-subobject widths. Qualifiers, provenance, opaque extent, object-type evidence
+subobject widths. Qualifiers, provenance, opaque bounds, object-type evidence
 and local-reference custody survive explicit round trips, including metadata
 ignored by logical pointer equality. Exact producer handles do not coalesce
 those payloads. Persistent evidence is retained without premise traversal;
@@ -1616,9 +1822,9 @@ state and refusal policies. Matching keys do not coalesce exact pointer
 payloads or supply access evidence. Live pointer producer activation remains in
 the later slices.
 
-7h shares the existing origin, extent, access and complete-read fallback policy
+7h shares the existing origin, bounds, access and complete-read fallback policy
 between native and common pointer views. Existing checked relations remain the
-authority; numeric address aliases cannot supply provenance or root-extent
+authority; numeric address aliases cannot supply provenance or root-bounds
 evidence. Shared load-atom comparison visits offset pairs once, preserves the
 narrow/wide distinction, and consults load authority even for identical narrow
 read roots. Native graph/read adapters remain at the producer compatibility
@@ -1633,7 +1839,7 @@ selection and lowering remain unchanged; offsets gain no standalone syntax.
 
 7j retains complete shared pointer payloads in proof-local source bindings and
 raises those bindings through the common-term boundary. Source matching is
-separate from logical pointer equality: qualifiers, opaque extents, historical
+separate from logical pointer equality: qualifiers, opaque bounds, historical
 reads and retained evidence must agree. Matching compares shared children and
 persistent evidence identity without exporting numeric trees or walking premises.
 Other native source/state readers remain at the producer compatibility
@@ -3198,7 +3404,7 @@ model; states and resources need not become expression nodes.
 | Mathematical Integer | `SharedIntegerNode` retains `IntegerTerm` plus a cached `KernelTerm`. Arithmetic, calls and conditionals have common children. Folds and algebraic matches still need typed common children and binder metadata. Remove the parallel native node storage after its readers migrate. |
 | Machine values | `MachineTerm` and native `CValue` payloads remain producer/result carriers. Shared arithmetic, casts, machine conditionals and read descriptors are common nodes; fold, application, algebraic-match, pointer-address and floating payloads still use generic bridges on some routes. |
 | Logical Bool | Comparisons, calls, equality and conditionals have common nodes. `LegacyBool` still carries pointer/offset/complete-pointer comparisons, algebraic equality, overflow and floating conditions, and Boolean loads. |
-| Complete pointers and read addresses | Keep address, provenance, opaque extent, qualifiers, subobject extent and access/evidence metadata. Expression children must migrate; state, allocation and execution-event identities may remain semantic atoms. A wrapper around the existing complete pointer tree is not closure. |
+| Complete pointers and read addresses | Keep address, provenance, opaque bounds, qualifiers, subobject bounds and access/evidence metadata. Expression children must migrate; state, allocation and execution-event identities may remain semantic atoms. A wrapper around the existing complete pointer tree is not closure. |
 | Algebraic values and array references | `KernelTermImport::argument` still uses the generic legacy argument boundary. Constructors, matches and scalar children need typed common nodes; array-reference state identity remains an atom. |
 | Raising/lowering | `raise_kernel_term` visits common arithmetic, casts, observations, machine/Integer conditionals and Boolean children directly. Shared arithmetic uses the existing local-name index before expanding children; it preserves current-local spelling without exporting the query or scanning unrelated locals. Legacy payload dispatch, native fact/goal synthesis, certificate-only lowering and the general evaluator-backed lowering path remain distinct boundaries until consolidated. |
 

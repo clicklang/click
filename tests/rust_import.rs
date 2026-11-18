@@ -3525,31 +3525,34 @@ fn charon_bool_flag_claims_meet_their_tests() {
 const PROGRAM_BINDING_SIDECAR: &str =
     include_str!("../design/charon-trial/program-bindings/bindings.click");
 
-// A Rust local named like a Click value is `rust(name)`: here the local
-// `iterations` beside the loop's pass count `iterations`. `c(name)` is the
-// C spelling and is refused in a Rust sidecar.
+// A Rust local named like a Click value is `program::name`: here the local
+// `iterations` beside the loop's pass count `iterations`. The earlier
+// language-named forms, `rust(name)` and `c(name)`, are refused with that
+// replacement.
 #[test]
-fn charon_program_bindings_are_written_rust_name() {
+fn charon_program_bindings_are_written_program_name() {
     let p = Project::from_fixture("design/charon-trial/program-bindings");
     fs::write(p.root.join("borrow.click"), PROGRAM_BINDING_SIDECAR).unwrap();
     let prepared = p.prepared().unwrap();
     ProgramVerificationSession::new_program_prepared(PROGRAM_BINDING_SIDECAR, &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
-    let c_spelling = PROGRAM_BINDING_SIDECAR.replacen(
-        "invariant rust(iterations) <= n;",
-        "invariant c(iterations) <= n;",
-        1,
-    );
-    assert_ne!(c_spelling, PROGRAM_BINDING_SIDECAR);
-    let error = ProgramVerificationSession::new_program_prepared(&c_spelling, &prepared)
-        .err()
-        .expect("`c(name)` is refused in a Rust sidecar");
-    assert!(
-        error
-            .to_string()
-            .contains("a Rust source's is `rust(iterations)`"),
-        "{error}"
-    );
+    for old in ["rust", "c"] {
+        let old_form = PROGRAM_BINDING_SIDECAR.replacen(
+            "invariant program::iterations <= n;",
+            &format!("invariant {old}(iterations) <= n;"),
+            1,
+        );
+        assert_ne!(old_form, PROGRAM_BINDING_SIDECAR);
+        let error = ProgramVerificationSession::new_program_prepared(&old_form, &prepared)
+            .err()
+            .expect("the language-named form is refused");
+        assert!(
+            error
+                .to_string()
+                .contains("a program binding is `program::iterations`"),
+            "{error}"
+        );
+    }
 }
 
 // A refused back-edge member of a Rust loop prints the incremented value as
@@ -3559,8 +3562,8 @@ fn charon_program_bindings_are_written_rust_name() {
 fn charon_refused_loop_member_names_no_compiler_temporary() {
     let p = Project::from_fixture("design/charon-trial/program-bindings");
     let doubled = PROGRAM_BINDING_SIDECAR.replacen(
-        "invariant rust(iterations) == iterations;",
-        "invariant rust(iterations) == 2 * iterations;",
+        "invariant program::iterations == iterations;",
+        "invariant program::iterations == 2 * iterations;",
         1,
     );
     assert_ne!(doubled, PROGRAM_BINDING_SIDECAR);

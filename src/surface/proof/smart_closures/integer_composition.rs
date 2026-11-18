@@ -1526,7 +1526,7 @@ mod tests {
         let mut context = PureTheoremContext {
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
-            memory: Memory::new(),
+            memory: SymbolicMemory::new(),
             values: BTreeMap::new(),
             integer_values: PersistentBinderMap::default(),
             array_refs: BTreeMap::new(),
@@ -1818,7 +1818,7 @@ mod tests {
     #[test]
     #[ignore = "nightly: two composed branches and replay"]
     fn integer_composition_closes_its_focused_conjunction_branch() {
-        let source = "theorem composition(x: Integer) { requires x <= 3; ensures 2 * x <= 6 and 3 * x <= 9 by { both { solve() using { x <= 3; }; } and { solve() using { x <= 3; }; } } }";
+        let source = "theorem composition(x: Integer) { requires x <= 3; ensures 2 * x <= 6 and 3 * x <= 9 by { both { left => { solve() using { x <= 3; }; } right => { solve() using { x <= 3; }; } } } }";
         let expanded =
             expand_c_claim_source_by_label(source, &[], "composition.ensures_0").unwrap();
         assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");

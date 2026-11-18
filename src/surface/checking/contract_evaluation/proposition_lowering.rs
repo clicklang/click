@@ -33,8 +33,11 @@ pub(in crate::surface) fn lower_outcome_proposition_with_auxiliary_facts(
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<(Proposition, Vec<Proposition>), String> {
     let values = parameter_values(parameter_binding).map_err(|error| error.message)?;
-    let array_refs =
-        array_refs_for_parameters(parameter_binding.parameters, &values, post_state.memory());
+    let array_refs = array_refs_for_parameters(
+        parameter_binding.parameters,
+        &values,
+        &post_state.program_point(),
+    );
     crate::surface::proof::lower_fixed_state_proposition_through_kernel_with_facts(
         proposition,
         assumptions,
@@ -69,7 +72,7 @@ pub(in crate::surface) fn lower_outcome_proposition_with_assumptions(
     let array_refs = crate::surface::lowering::array_refs_for_values(
         parameter_binding,
         &values,
-        post_state.memory(),
+        &post_state.program_point(),
     );
     crate::surface::proof::lower_fixed_state_proposition_through_kernel(
         proposition,
@@ -92,8 +95,11 @@ pub(in crate::surface) fn lower_outcome_proposition_with_recorded_states(
     recorded_states: &RecordedStates,
 ) -> Result<Proposition, String> {
     let values = parameter_values(parameter_binding).map_err(|error| error.message)?;
-    let array_refs =
-        array_refs_for_parameters(parameter_binding.parameters, &values, post_state.memory());
+    let array_refs = array_refs_for_parameters(
+        parameter_binding.parameters,
+        &values,
+        &post_state.program_point(),
+    );
     let assumptions = assumptions_from_propositions(available_pure_facts);
     crate::surface::proof::lower_fixed_state_proposition_through_kernel(
         proposition,

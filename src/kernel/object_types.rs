@@ -130,37 +130,6 @@ impl std::hash::Hash for ObjectTypeEvidence {
     }
 }
 
-pub(super) fn merge_pointer_results<'a>(
-    results: impl Iterator<Item = Option<&'a PurePointerResult>>,
-) -> Option<Arc<PurePointerResult>> {
-    let mut merged = PurePointerResult {
-        classes: BTreeSet::new(),
-        arguments: BTreeSet::new(),
-    };
-    let mut seen = std::collections::HashSet::new();
-    for result in results {
-        let result = result?;
-        if !seen.insert(result as *const PurePointerResult) {
-            continue;
-        }
-        merged.classes.extend(result.classes.iter().cloned());
-        merged.arguments.extend(&result.arguments);
-    }
-    Some(Arc::new(merged))
-}
-
-pub(super) fn execution_pointer_result(
-    cases: &[Vec<ContractPathSet>],
-) -> Option<Arc<PurePointerResult>> {
-    pointer_result_from_outcomes(
-        cases
-            .iter()
-            .flatten()
-            .flat_map(|set| &set.paths)
-            .map(super::api::path_function_outcome),
-    )
-}
-
 /// Native function proofs retain their producer's outcomes. Reading them
 /// does not parse or re-check the theorem that the same producer emitted.
 pub(in crate::kernel) fn published_execution_pointer_result<'a>(
@@ -192,7 +161,7 @@ fn pointer_result_from_outcomes<'a>(
             continue;
         }
         let evidence = pointer.object_origin_evidence().cloned().or_else(|| {
-            (pointer.offset == PointerOffsetTerm::Constant(0))
+            (pointer.offset == AddressOffset::Constant(0))
                 .then(|| {
                     state
                         .memory()
@@ -220,7 +189,7 @@ pub(super) fn check_requirements(
     parameters: &[ProgramParameter],
     requirements: &ObjectTypeRequirements,
     values: &mut [ProgramValue],
-    memory: &Memory,
+    memory: &SymbolicMemory,
     assumptions: &PureFactContext,
 ) -> Option<RuntimeError> {
     check_requirement_slice(
@@ -238,7 +207,7 @@ pub(super) fn check_value_requirements(
     name: &str,
     interface: &FunctionContractInterface,
     values: &mut [ProgramValue],
-    memory: &Memory,
+    memory: &SymbolicMemory,
     assumptions: &PureFactContext,
 ) -> Option<RuntimeError> {
     check_requirement_slice(
@@ -257,7 +226,7 @@ fn check_requirement_slice(
     parameters: &[ProgramParameter],
     requirements: &ObjectTypeRequirements,
     values: &mut [ProgramValue],
-    memory: &Memory,
+    memory: &SymbolicMemory,
     assumptions: &PureFactContext,
     offset: usize,
 ) -> Option<RuntimeError> {
@@ -293,14 +262,15 @@ mod tests {
     }
     #[test]
     fn declared_provenance_supply_type_evidence_without_changing_pointer_views() {
-        let object = Pointer {
-            block: "declared_node".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let object = Address {
+            base: "declared_node".into(),
+            offset: AddressOffset::Constant(0),
         };
-        let memory = Memory::new().with_classed_block(object.block.clone(), Some(class()), 8);
+        let memory =
+            SymbolicMemory::new().with_classed_block(object.base.clone(), Some(class()), 8);
         let make = |provenance| {
             let ProgramValue::Pointer(pointer) = ProgramValue::typed_pointer(
-                Pointer::symbolic(Variable(900_010)),
+                Address::symbolic(Variable(900_010)),
                 ProgramType::Int32Pointer,
             ) else {
                 unreachable!()
@@ -322,16 +292,16 @@ mod tests {
         assert!(after.supports_object_class(&class()));
         assert_eq!(after.pointer(), before.pointer());
         assert_eq!(after.provenance(), before.provenance());
-        assert_eq!(after.extent(), before.extent());
-        assert_eq!(after.extent_is_known(), before.extent_is_known());
-        assert_eq!(after.opaque_extent(), before.opaque_extent());
+        assert_eq!(after.bounds(), before.bounds());
+        assert_eq!(after.bounds_are_known(), before.bounds_are_known());
+        assert_eq!(after.bounds_owner(), before.bounds_owner());
 
         let other = CAccessClass::Struct(CStructClass::opaque("other"));
         for (mut value, declared) in [
-            (original.clone(), Memory::new()),
+            (original.clone(), SymbolicMemory::new()),
             (
-                make(Pointer {
-                    offset: PointerOffsetTerm::Constant(4),
+                make(Address {
+                    offset: AddressOffset::Constant(4),
                     ..object
                 }),
                 memory.clone(),
@@ -353,7 +323,7 @@ mod tests {
     #[test]
     fn unrequired_formal_origins_survive_pointer_words_without_becoming_type_evidence() {
         let value = ProgramValue::typed_pointer(
-            Pointer::symbolic(Variable(900_001)),
+            Address::symbolic(Variable(900_001)),
             ProgramType::Int32Pointer,
         )
         .with_contract_pointer_object_class(Some(class()), None, 0, 42);
@@ -392,7 +362,7 @@ mod tests {
     fn numeric_address_annotations_cannot_manufacture_nominal_type_evidence() {
         let _session = crate::kernel::VerificationSession::enter();
         let original = ProgramValue::typed_pointer(
-            Pointer::symbolic(Variable(900_002)),
+            Address::symbolic(Variable(900_002)),
             ProgramType::Int32Pointer,
         )
         .with_pointer_object_class(Some(class()));
@@ -419,7 +389,7 @@ mod tests {
         assert!(refine_object_pointer_argument(
             &mut decoded,
             &class(),
-            &Memory::new(),
+            &SymbolicMemory::new(),
             &facts
         ));
         let word = super::super::eval::cast_program_value_to_type(
@@ -449,7 +419,7 @@ mod tests {
             .map(|index| {
                 PureFunctionArgument::Value(
                     ProgramValue::typed_pointer(
-                        Pointer::symbolic(Variable(900_002 + index as u64)),
+                        Address::symbolic(Variable(900_002 + index as u64)),
                         ProgramType::Int32Pointer,
                     )
                     .with_contract_pointer_object_class(

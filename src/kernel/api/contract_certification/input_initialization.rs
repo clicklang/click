@@ -95,6 +95,7 @@ pub(super) fn initialized_input_range_fact(
     );
     let wide = format == MachineIntegerType::UInt64;
     let defined = Proposition::MemoryReadDefined {
+        at: state.observation_point_id(),
         memory: state.memory().clone(),
         pointer: range
             .base()
@@ -114,9 +115,9 @@ mod tests {
     use super::*;
 
     fn fixture() -> (ExecutionState, ProgramFunction, MemorySegment, MemoryRange) {
-        let base = Pointer {
-            block: PointerBlock::Concrete("initialized-input".into()),
-            offset: PointerOffsetTerm::Constant(0),
+        let base = Address {
+            base: AddressBase::Concrete("initialized-input".into()),
+            offset: AddressOffset::Constant(0),
         };
         let state = ExecutionState::new().with_local(
             "p",

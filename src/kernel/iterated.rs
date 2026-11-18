@@ -65,7 +65,7 @@ fn terms_distinct(assumptions: &PureFactContext, left: &MachineTerm, right: &Mac
         ) == Some(false)
 }
 
-fn pointers_equal(assumptions: &PureFactContext, left: &Pointer, right: &Pointer) -> bool {
+fn pointers_equal(assumptions: &PureFactContext, left: &Address, right: &Address) -> bool {
     // Resource selection asks whether these reads name the same address;
     // use the shared checked state/read comparison, not just pure facts.
     crate::kernel::prelude::pointers_proven_equal_for_memory_resolution(left, right, assumptions)
@@ -260,13 +260,13 @@ pub(crate) fn iterated_separate_from_range(
 
 fn owned_iterated_candidates(
     resources: &ResourceContext,
-    block: PointerBlock,
+    block: AddressBase,
 ) -> impl Iterator<Item = (&ResourceFact, &IteratedMemory)> {
     resources
         .iterated_facts_in_block(&block)
         .filter_map(move |fact| match fact {
             ResourceFact::Own(Resource::Iterated(iterated), quantity)
-                if quantity.as_const() == Some(1) && iterated.element_base().block == block =>
+                if quantity.as_const() == Some(1) && iterated.element_base().base == block =>
             {
                 Some((fact, iterated.as_ref()))
             }
@@ -281,7 +281,7 @@ fn iterated_fact_for_element<'a>(
     assumptions: &PureFactContext,
 ) -> Result<(&'a ResourceFact, &'a IteratedMemory), String> {
     let mut found = None;
-    for (fact, iterated) in owned_iterated_candidates(resources, element.base().block.clone()) {
+    for (fact, iterated) in owned_iterated_candidates(resources, element.base().base.clone()) {
         if iterated.element_width() != element.element_width()
             || !pointers_equal(assumptions, iterated.element_base(), element.base())
         {
@@ -631,11 +631,11 @@ pub(crate) fn frame_out_iterated_facts_written_by_loop(
         let Resource::Iterated(iterated) = fact.resource() else {
             continue;
         };
-        let guard_block = &iterated.guard().base().block;
+        let guard_block = &iterated.guard().base().base;
         let written_here = written.is_none_or(|ranges| {
             ranges.iter().any(|range| {
-                &range.base().block == guard_block
-                    || !range.base().block.proven_distinct(guard_block)
+                &range.base().base == guard_block
+                    || !range.base().base.proven_distinct(guard_block)
                         && (range.base().has_symbolic_block()
                             || iterated.guard().base().has_symbolic_block())
             })
@@ -711,7 +711,7 @@ impl IteratedStorePlan {
 /// fact may still hold is refused: it would silently change the fact.
 pub(crate) fn plan_iterated_guard_store(
     state: &ExecutionState,
-    pointer: &Pointer,
+    pointer: &Address,
     value: &ProgramValue,
     assumptions: &PureFactContext,
 ) -> Result<IteratedStorePlan, String> {
@@ -720,11 +720,11 @@ pub(crate) fn plan_iterated_guard_store(
     if !resources.has_iterated_facts() {
         return Ok(IteratedStorePlan { replacements });
     }
-    for fact in resources.iterated_facts_in_block(&pointer.block) {
+    for fact in resources.iterated_facts_in_block(&pointer.base) {
         let ResourceFact::Own(Resource::Iterated(iterated), _) = fact else {
             continue;
         };
-        if iterated.guard().base().block != pointer.block {
+        if iterated.guard().base().base != pointer.base {
             continue;
         }
         // Owned memory is a partition: a cell one owned range authorizes
@@ -814,7 +814,7 @@ mod wide_range_reader_tests {
     // Native requested elements are refused by both signed iterated rules.
     #[test]
     fn wide_elements_do_not_enter_iterated_index_arithmetic() {
-        let base = Pointer::symbolic(Variable(984_900));
+        let base = Address::symbolic(Variable(984_900));
         let iterated = IteratedMemory::new(
             "items",
             base.clone(),

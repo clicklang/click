@@ -1089,8 +1089,8 @@ mod tests {
     #[test]
     fn opaque_sources_match_canonical_reads_without_export() {
         let _session = VerificationSession::enter();
-        let memory = intern_memory(Memory::new().with_block("opaque-canonical", 16));
-        let pointer = Memory::global_pointer("opaque-canonical");
+        let memory = intern_memory(SymbolicMemory::new().with_block("opaque-canonical", 16));
+        let pointer = SymbolicMemory::global_pointer("opaque-canonical");
         let later = intern_memory(memory.memory().clone().store(
             pointer.clone(),
             ProgramValue::Int32(MachineTerm::Variable(Variable(1006433))),
@@ -1132,7 +1132,7 @@ mod tests {
     #[test]
     fn opaque_address_sources_keep_the_native_mask_matching_rule() {
         let _session = VerificationSession::enter();
-        let pointer = Pointer::symbolic(Variable(1006440));
+        let pointer = Address::symbolic(Variable(1006440));
         let plain = MachineTerm::pointer_address(pointer.clone());
         let annotated = MachineTerm::object_pointer_address(
             pointer,
@@ -1326,8 +1326,8 @@ mod tests {
     #[test]
     fn exact_rewrite_shared_reads_match_canonical_sources_and_retain_addresses() {
         let _session = VerificationSession::enter();
-        let pointer = Memory::global_pointer("shared-exact-load");
-        let memory = intern_memory(Memory::new().with_block("shared-exact-load", 16));
+        let pointer = SymbolicMemory::global_pointer("shared-exact-load");
+        let memory = intern_memory(SymbolicMemory::new().with_block("shared-exact-load", 16));
         let raw = MachineTerm::MemoryLoad(
             ProgramPoint::at(&memory),
             Box::new(pointer.clone()),

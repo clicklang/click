@@ -12,8 +12,8 @@ fn pointer_index_dependency_comparison_and_hashing_visit_each_dag_node_once() {
                 KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [root.clone(), root]);
         }
         let index = offset(SharedMachineIntegerTerm::from_shared(ty, root).unwrap());
-        let pointer = Pointer {
-            block: PointerBlock::Concrete("r7-scaling".into()),
+        let pointer = Address {
+            base: AddressBase::Concrete("r7-scaling".into()),
             offset: index.clone(),
         };
         let before = KernelTermExport::machine_export_count();
@@ -21,7 +21,7 @@ fn pointer_index_dependency_comparison_and_hashing_visit_each_dag_node_once() {
             let mut loads = Vec::new();
             collect_pointer_offset_memory_loads(
                 &index,
-                &Memory::new(),
+                &SymbolicMemory::new(),
                 &mut loads,
                 &mut BTreeSet::new(),
             )
@@ -55,8 +55,8 @@ fn growing_pointer_index_fingerprints_reuse_shared_prefixes() {
                     MachineBinaryOp::Add,
                     [root.clone(), root],
                 );
-                let pointer = Pointer {
-                    block: PointerBlock::Concrete("r7-prefix".into()),
+                let pointer = Address {
+                    base: AddressBase::Concrete("r7-prefix".into()),
                     offset: offset(
                         SharedMachineIntegerTerm::from_shared(ty, root.clone()).unwrap(),
                     ),

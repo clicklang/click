@@ -6,9 +6,9 @@ use super::*;
 
 #[test]
 fn normalize_using_graph_work_ignores_unrelated_ambient_equalities() {
-    let a = Pointer::symbolic(Variable(96_120));
-    let b = Pointer::symbolic(Variable(96_121));
-    let c = Pointer::symbolic(Variable(96_122));
+    let a = Address::symbolic(Variable(96_120));
+    let b = Address::symbolic(Variable(96_121));
+    let c = Address::symbolic(Variable(96_122));
     let goal = normalization_pointer_equality(&a, &c);
     let mut curve = Vec::new();
     for size in [16, 64, 256] {
@@ -19,8 +19,8 @@ fn normalize_using_graph_work_ignores_unrelated_ambient_equalities() {
         ]);
         for i in 0..size {
             facts = facts.with_fact(normalization_pointer_equality(
-                &Pointer::symbolic(Variable(100_000 + i * 2)),
-                &Pointer::symbolic(Variable(100_001 + i * 2)),
+                &Address::symbolic(Variable(100_000 + i * 2)),
+                &Address::symbolic(Variable(100_001 + i * 2)),
             ));
         }
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -33,5 +33,58 @@ fn normalize_using_graph_work_ignores_unrelated_ambient_equalities() {
     assert!(
         curve.iter().all(|work| *work == curve[0]),
         "ambient equality work: {curve:?}"
+    );
+}
+
+#[test]
+fn listed_loaded_fold_matching_tracks_explicit_premises_not_memory_history() {
+    let mut fixed = Vec::new();
+    let mut selected = Vec::new();
+    for size in [16u32, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer = Address {
+            base: "listed-fold".into(),
+            offset: AddressOffset::Constant(0),
+        };
+        let mut memory = SymbolicMemory::new().with_block("listed-fold", size * 4);
+        for index in 0..size {
+            memory = memory.store(
+                pointer.offset_by_bytes(index * 4),
+                ProgramValue::Int32(MachineTerm::constant(index)),
+            );
+        }
+        let memory = crate::kernel::intern_memory(memory);
+        let required = listed_loaded_fold(&memory, 981_000, 989_000);
+        let matching = listed_loaded_fold(&memory, 982_000, 989_000);
+        let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+            listed_comparison_fact_is_available(&required, std::slice::from_ref(&matching))
+        });
+        assert!(result);
+        fixed.push(work);
+        let mut premises = (0..size)
+            .map(|index| {
+                listed_loaded_fold(
+                    &memory,
+                    983_000 + u64::from(index) * 4,
+                    990_000 + u64::from(index),
+                )
+            })
+            .collect::<Vec<_>>();
+        premises.insert(0, matching);
+        let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+            listed_comparison_fact_is_available(&required, &premises)
+        });
+        assert!(result);
+        selected.push(work);
+    }
+    assert!(
+        fixed[0] > 0 && fixed.iter().all(|work| *work == fixed[0]),
+        "{fixed:?}"
+    );
+    assert!(
+        selected
+            .windows(2)
+            .all(|pair| pair[1] <= pair[0] * 5 + 1024),
+        "{selected:?}"
     );
 }

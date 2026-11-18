@@ -12,8 +12,8 @@ verifying "select.c";
 struct object* select(struct object* result, struct object* next) {
     views result->value;
     views next->value;
-    requires c(result)->value == 3 and next->value == 7;
-    ensures c(result)->value == 3 and result->value == 7;
+    requires program::result->value == 3 and next->value == 7;
+    ensures program::result->value == 3 and result->value == 7;
 }
 ```
 

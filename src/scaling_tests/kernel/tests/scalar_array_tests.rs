@@ -76,7 +76,7 @@ fn scalar_array_copy_after_call_captures_unknown_initialized_values_compactly() 
             None,
         );
         assert!(after_call.has_initialized_bytes_at(&source, count * 4));
-        assert_eq!(after_call.cells.runs_in_block(&source.block).count(), 0);
+        assert_eq!(after_call.cells.runs_in_block(&source.base).count(), 0);
         let retained_state = intern_memory_ref(&after_call);
         let (copied, work) = crate::instrumentation::measure_deterministic_work(|| {
             after_call
@@ -89,14 +89,14 @@ fn scalar_array_copy_after_call_captures_unknown_initialized_values_compactly() 
                 )
                 .unwrap()
         });
-        let run = copied.cells.runs_in_block(&target.block).next().unwrap();
+        let run = copied.cells.runs_in_block(&target.base).next().unwrap();
         assert_eq!(run.source(), &retained_state);
         assert!(
             matches!(run.value_mode(), crate::kernel::primitives::RunValueMode::Copy {
             source_base
         } if source_base == &source)
         );
-        assert_eq!(copied.cells.runs_in_block(&target.block).count(), 1);
+        assert_eq!(copied.cells.runs_in_block(&target.base).count(), 1);
         assert_eq!(copied.cells.concrete().len(), 0);
         for index in [0, count - 1] {
             let at = pointer("local:array-target", i64::from(index) * 4);
@@ -135,9 +135,9 @@ fn compact_array_regions_copy_and_overwrite_preserve_neighbors_and_scale() {
         let target = pointer("local:region-target", 4);
         let context = PureFactContext::new();
         let (memory, work) = crate::instrumentation::measure_deterministic_work(|| {
-            let memory = Memory::new()
-                .with_block(source.block.clone(), bytes + 8)
-                .with_block(target.block.clone(), bytes + 8)
+            let memory = SymbolicMemory::new()
+                .with_block(source.base.clone(), bytes + 8)
+                .with_block(target.base.clone(), bytes + 8)
                 .store(
                     pointer("local:region-target", 0),
                     ProgramValue::UInt32(11u32.into()),
@@ -190,7 +190,7 @@ fn compact_array_regions_copy_and_overwrite_preserve_neighbors_and_scale() {
             );
         }
         assert_eq!(memory.cells.concrete().len(), 2);
-        assert_eq!(memory.cells.runs_in_block(&target.block).count(), 1);
+        assert_eq!(memory.cells.runs_in_block(&target.base).count(), 1);
         assert!(memory.has_initialized_bytes_at(&target, bytes));
         let mutated = memory.store(source, ProgramValue::UInt32(101u32.into()));
         assert_eq!(
@@ -206,7 +206,7 @@ fn compact_array_regions_copy_and_overwrite_preserve_neighbors_and_scale() {
 }
 
 #[test]
-fn scalar_array_states_preserve_sparse_lanes_without_extent_work() {
+fn scalar_array_states_preserve_sparse_lanes_without_length_work() {
     let mut samples = Vec::new();
     for count in [8, 1024, 1_000_000] {
         let _session = crate::kernel::VerificationSession::enter();
@@ -229,7 +229,7 @@ fn scalar_array_states_preserve_sparse_lanes_without_extent_work() {
                 .unwrap()
         });
         assert_eq!(copied.cells.concrete().len(), 4);
-        assert_eq!(copied.cells.runs_in_block(&target.block).count(), 1);
+        assert_eq!(copied.cells.runs_in_block(&target.base).count(), 1);
         assert_eq!(copied.load(&target), ExpressionOutcome::Value(lane.clone()));
         assert_eq!(
             copied.load(&pointer("local:array-target", i64::from(count - 1) * 4)),
@@ -264,9 +264,9 @@ fn scalar_array_state_region_does_not_scan_unrelated_sibling_cells() {
         let _session = crate::kernel::VerificationSession::enter();
         let source = pointer("local:siblings", 4);
         let target = pointer("local:target", 0);
-        let mut memory = Memory::new()
-            .with_block(source.block.clone(), (siblings + 5) * 4)
-            .with_block(target.block.clone(), 16)
+        let mut memory = SymbolicMemory::new()
+            .with_block(source.base.clone(), (siblings + 5) * 4)
+            .with_block(target.base.clone(), 16)
             .write_scalar_array_region(
                 &source,
                 ProgramType::UInt32,

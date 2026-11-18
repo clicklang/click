@@ -11,33 +11,30 @@ fn retained(ty: MachineIntegerType, term: &MachineTerm) -> SharedMachineIntegerT
     )
     .unwrap()
 }
-fn offset(value: SharedMachineIntegerTerm, width: i64, unsigned: bool) -> PointerOffsetTerm {
+fn offset(value: SharedMachineIntegerTerm, width: i64, unsigned: bool) -> AddressOffset {
     if matches!(
         value.ty(),
         MachineIntegerType::Int32 | MachineIntegerType::UInt32
     ) {
-        PointerOffsetTerm::Int32Scaled {
+        AddressOffset::Int32Scaled {
             value,
             byte_width: width,
         }
     } else {
-        PointerOffsetTerm::Int64Scaled {
+        AddressOffset::Int64Scaled {
             value,
             byte_width: width,
             unsigned,
         }
     }
 }
-fn fact(offset: PointerOffsetTerm) -> Proposition {
+fn fact(offset: AddressOffset) -> Proposition {
     Proposition::ConditionIs(
-        ConditionTerm::PointerOffsetEqual(
-            Box::new(offset),
-            Box::new(PointerOffsetTerm::Constant(0)),
-        ),
+        ConditionTerm::PointerOffsetEqual(Box::new(offset), Box::new(AddressOffset::Constant(0))),
         true,
     )
 }
-fn quantified(variable: Variable, offset: PointerOffsetTerm) -> Proposition {
+fn quantified(variable: Variable, offset: AddressOffset) -> Proposition {
     Proposition::ForAll {
         var: variable,
         name: crate::kernel::BinderName::written("index"),
@@ -187,8 +184,8 @@ fn pointer_index_keys_preserve_quantifiers_free_variables_and_stride() {
 #[test]
 fn pointer_index_keys_erase_states_only_for_candidate_selection() {
     let _session = VerificationSession::enter();
-    let pointer = crate::kernel::Memory::global_pointer("key-read");
-    let before = crate::kernel::Memory::new().with_block("key-read", 16);
+    let pointer = crate::kernel::SymbolicMemory::global_pointer("key-read");
+    let before = crate::kernel::SymbolicMemory::new().with_block("key-read", 16);
     let after = before.clone().store(
         pointer.clone(),
         ProgramValue::Int32(MachineTerm::constant(7)),

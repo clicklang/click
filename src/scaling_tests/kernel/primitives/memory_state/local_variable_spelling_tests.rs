@@ -41,9 +41,9 @@ fn local_variable_spelling_does_not_traverse_unrelated_symbolic_values_or_heap_r
             )
         });
         let state = scalar(ExecutionState::new(), "noise", ProgramValue::Int32(nested));
-        let base = Pointer {
-            block: "unrelated-heap".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let base = Address {
+            base: "unrelated-heap".into(),
+            offset: AddressOffset::Constant(0),
         };
         let memory = state.memory().clone().with_seeded_cells(
             base,
@@ -51,7 +51,7 @@ fn local_variable_spelling_does_not_traverse_unrelated_symbolic_values_or_heap_r
             ProgramType::Int32,
             0,
             1_000_000,
-            Memory::new().into(),
+            SymbolicMemory::new().into(),
         );
         let state = state.with_memory(memory);
         let (name, work) = crate::instrumentation::measure_deterministic_work(|| {

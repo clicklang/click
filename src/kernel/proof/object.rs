@@ -1291,9 +1291,9 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
                 | Sort::ProgramObjectPointer(program_type, _) => {
                     let pointer =
                         if matches!(program_type, crate::kernel::ProgramType::FunctionPointer(_)) {
-                            crate::kernel::Pointer::symbolic_function(chosen)
+                            crate::kernel::Address::symbolic_function(chosen)
                         } else {
-                            crate::kernel::Pointer::symbolic(chosen)
+                            crate::kernel::Address::symbolic(chosen)
                         };
                     crate::kernel::substitute_pointer_variable_in_proposition(&body, var, &pointer)
                 }
@@ -3249,7 +3249,7 @@ mod tests {
     }
 
     /// The pointer-sorted introduction takes its witness from the same range,
-    /// for the same reason: `Pointer::symbolic(v)` over a C identity is a
+    /// for the same reason: `Address::symbolic(v)` over a C identity is a
     /// pointer the function already has a name for.
     #[test]
     fn a_freshened_pointer_witness_never_takes_a_program_identity() {
@@ -3280,8 +3280,9 @@ mod tests {
             ExecutionFrontier, ExecutionProofCore, ExecutionRegionKind, FrontierPosition,
         };
         use crate::kernel::{
-            ConditionTerm, ExecutionState, IntegerRangeFoldIndex, IntegerTerm, MachineIntegerType,
-            Memory, Pointer, PointerOffsetTerm, ProgramValue, SharedIntegerRangeEndpoint,
+            Address, AddressOffset, ConditionTerm, ExecutionState, IntegerRangeFoldIndex,
+            IntegerTerm, MachineIntegerType, ProgramValue, SharedIntegerRangeEndpoint,
+            SymbolicMemory,
         };
         type TestProof = ProofObject<
             (),
@@ -3310,8 +3311,8 @@ mod tests {
                 ),
             )
         };
-        let before = Memory::new().with_block("alpha", 16);
-        let loadable = |memory: Memory, variable| Proposition::ForAll {
+        let before = SymbolicMemory::new().with_block("alpha", 16);
+        let loadable = |memory: SymbolicMemory, variable| Proposition::ForAll {
             name: Default::default(),
             var: variable,
             sort: Sort::ProgramInt32,
@@ -3338,9 +3339,9 @@ mod tests {
                 )),
                 Box::new(Proposition::MemoryLoadable {
                     memory,
-                    base: Pointer {
-                        block: "alpha".into(),
-                        offset: PointerOffsetTerm::Constant(0),
+                    base: Address {
+                        base: "alpha".into(),
+                        offset: AddressOffset::Constant(0),
                     },
                     bytes: MachineTerm::Variable(variable),
                     wide: false,
@@ -3411,9 +3412,9 @@ mod tests {
         );
 
         let changed = before.clone().store(
-            Pointer {
-                block: "alpha".into(),
-                offset: PointerOffsetTerm::Constant(0),
+            Address {
+                base: "alpha".into(),
+                offset: AddressOffset::Constant(0),
             },
             ProgramValue::Int32(MachineTerm::constant(7)),
         );
@@ -3433,8 +3434,8 @@ mod tests {
             ExecutionFrontier, ExecutionProofCore, ExecutionRegionKind, FrontierPosition,
         };
         use crate::kernel::{
-            ExecutionState, LoopInvariantCheck, Pointer, PointerOffsetTerm, ProgramType,
-            ProgramValue, SpecExpression, SpecMemory, SpecProposition,
+            Address, AddressOffset, ExecutionState, LoopInvariantCheck, ProgramType, ProgramValue,
+            SpecExpression, SpecPoint, SpecProposition,
         };
         type TestProof = ProofObject<
             (),
@@ -3442,12 +3443,12 @@ mod tests {
             ProofExecutionState<()>,
         >;
         let load = SpecExpression::MemoryLoad {
-            memory: SpecMemory::Current,
+            point: SpecPoint::Current,
             pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(
                 crate::kernel::PointerValue::new(
-                    Pointer {
-                        block: "unallocated".into(),
-                        offset: PointerOffsetTerm::Constant(0),
+                    Address {
+                        base: "unallocated".into(),
+                        offset: AddressOffset::Constant(0),
                     },
                     ProgramType::Int32Pointer,
                 ),

@@ -4,21 +4,21 @@ fn executed_body_return_axis(axis: &str) {
     let mut samples = Vec::new();
     for count in [4_u64, 16, 64] {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = Pointer {
-            block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(100)), 4),
+        let pointer = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(100)), 4),
         };
         let other = |index| {
             if axis == "same-block aliases" {
-                Pointer {
-                    block: PointerBlock::ExternalArgument,
-                    offset: PointerOffsetTerm::scale_int32(
+                Address {
+                    base: AddressBase::ExternalArgument,
+                    offset: AddressOffset::scale_int32(
                         MachineTerm::Variable(Variable(9_910_000 + index)),
                         4,
                     ),
                 }
             } else {
-                Pointer::symbolic(Variable(9_910_000 + index))
+                Address::symbolic(Variable(9_910_000 + index))
             }
         };
         let neighbor = other(0);
@@ -149,7 +149,7 @@ fn executed_body_return_construction_scales_with_selected_splits() {
     for count in [4u32, 16, 64] {
         let _session = crate::kernel::VerificationSession::enter();
         let facts = PureFactContext::new();
-        let pointer = Pointer::symbolic(Variable(9_930_000));
+        let pointer = Address::symbolic(Variable(9_930_000));
         let owner =
             ResourceFact::own_memory(MemoryRange::new(pointer.clone(), 0u32.into(), count.into()));
         let source =
@@ -213,11 +213,11 @@ fn early_return_group_alias_work(symbolic_end: bool) -> Vec<[usize; 3]> {
     for overlap in [false, true] {
         let samples = [4_u64, 16, 64].map(|count| {
             let _session = crate::kernel::VerificationSession::enter();
-            let pointer = Pointer {
-                block: PointerBlock::ExternalArgument,
-                offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(100)), 4),
+            let pointer = Address {
+                base: AddressBase::ExternalArgument,
+                offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(100)), 4),
             };
-            let neighbor = Pointer::symbolic(Variable(9_810_000));
+            let neighbor = Address::symbolic(Variable(9_810_000));
             let mut facts = PureFactContext::new();
             let end = MachineTerm::Variable(Variable(9_820_000));
             if symbolic_end {
@@ -235,7 +235,7 @@ fn early_return_group_alias_work(symbolic_end: bool) -> Vec<[usize; 3]> {
                 facts = facts.assume_condition(
                     ConditionTerm::pointer_equal(
                         pointer.clone(),
-                        Pointer::symbolic(Variable(9_810_000 + index)),
+                        Address::symbolic(Variable(9_810_000 + index)),
                     ),
                     true,
                 );
@@ -297,11 +297,11 @@ fn mixed_return_composition_ignores_related_aliases_and_retained_owners() {
         let mut samples = Vec::new();
         for count in [4_u32, 16, 64] {
             let _session = crate::kernel::VerificationSession::enter();
-            let pointer = Pointer {
-                block: PointerBlock::ExternalArgument,
-                offset: PointerOffsetTerm::Variable(Variable(8_820_000)),
+            let pointer = Address {
+                base: AddressBase::ExternalArgument,
+                offset: AddressOffset::Variable(Variable(8_820_000)),
             };
-            let other = |id: u32| Pointer::symbolic(Variable(8_830_000 + u64::from(id)));
+            let other = |id: u32| Address::symbolic(Variable(8_830_000 + u64::from(id)));
             let owner = |base, start: u32| {
                 ResourceFact::own_memory(MemoryRange::new(base, start.into(), (start + 1).into()))
             };
@@ -388,7 +388,6 @@ fn projecting_equal_return_descriptions_uses_selected_occurrences() {
             .unwrap()
             .finish(&facts)
             .unwrap();
-        let state = ExecutionState::new();
         let ((projected, work), maps) = crate::persistent::measure_persistent_work(|| {
             crate::instrumentation::measure_deterministic_work(|| {
                 let _operation = crate::kernel::search::FastOperationScope::enter(
@@ -398,12 +397,9 @@ fn projecting_equal_return_descriptions_uses_selected_occurrences() {
                     &evaluated.resources,
                     &transfers,
                     &ConstructedReturnBodies::default(),
-                    &[],
-                    &state,
                     &facts,
                     &destination,
                 )
-                .unwrap()
             })
         });
         assert_eq!(projected.len(), count);
@@ -434,18 +430,18 @@ fn consumed_scalar_return_ignores_aliases_and_retained_owners() {
         let mut samples = Vec::new();
         for count in [4_u32, 16, 64] {
             let _session = crate::kernel::VerificationSession::enter();
-            let pointer = Pointer {
-                block: PointerBlock::ExternalArgument,
-                offset: PointerOffsetTerm::Variable(Variable(8_870_000)),
+            let pointer = Address {
+                base: AddressBase::ExternalArgument,
+                offset: AddressOffset::Variable(Variable(8_870_000)),
             };
             let other = |id| {
                 if axis == "same block aliases" {
-                    Pointer {
-                        block: pointer.block.clone(),
-                        offset: PointerOffsetTerm::Variable(Variable(8_870_001 + u64::from(id))),
+                    Address {
+                        base: pointer.base.clone(),
+                        offset: AddressOffset::Variable(Variable(8_870_001 + u64::from(id))),
                     }
                 } else {
-                    Pointer::symbolic(Variable(8_870_001 + u64::from(id)))
+                    Address::symbolic(Variable(8_870_001 + u64::from(id)))
                 }
             };
             let owner = |base, start: u32| {
@@ -552,11 +548,11 @@ fn mixed_occurrence_transfers_ignore_ambient_aliases_and_owners() {
             let state = super::tests::mixed_scalar_state();
             let mut facts = PureFactContext::new();
             let transfer = super::tests::prepare_mixed_scalar(&function, &state, &facts);
-            let pointer = Pointer::symbolic(Variable(8_880_000));
+            let pointer = Address::symbolic(Variable(8_880_000));
             let mut caller = state.resources().clone();
             let mut frame = transfer.caller_resources_after_requirements.clone();
             for index in 0..count {
-                let other = Pointer::symbolic(Variable(8_890_000 + u64::from(index)));
+                let other = Address::symbolic(Variable(8_890_000 + u64::from(index)));
                 if axis == "owners" {
                     let fact =
                         ResourceFact::own_memory(MemoryRange::new(other, 0u32.into(), 1u32.into()));
@@ -564,11 +560,9 @@ fn mixed_occurrence_transfers_ignore_ambient_aliases_and_owners() {
                     frame = frame.unchecked_with_fact(fact);
                 } else {
                     let alias = if axis == "same block aliases" {
-                        Pointer {
-                            block: pointer.block.clone(),
-                            offset: PointerOffsetTerm::Variable(Variable(
-                                8_890_000 + u64::from(index),
-                            )),
+                        Address {
+                            base: pointer.base.clone(),
+                            offset: AddressOffset::Variable(Variable(8_890_000 + u64::from(index))),
                         }
                     } else {
                         other
@@ -635,7 +629,7 @@ fn selected_scalar_transfers_scale_with_the_return_delta() {
             int32_literal(0),
             int32_literal(1),
         ));
-        let pointer = Pointer::symbolic(Variable(8_900_000));
+        let pointer = Address::symbolic(Variable(8_900_000));
         let owner =
             |pointer| ResourceFact::own_memory(MemoryRange::new(pointer, 0u32.into(), 1u32.into()));
         let mut plan = super::tests::prepare_scalar_transfer(
@@ -664,7 +658,7 @@ fn selected_scalar_transfers_scale_with_the_return_delta() {
                     .with_role(ResourceTransferRole::Produce)
                     .with_state_source(ResourceStateSource::Post),
             );
-            pieces.push(owner(Pointer::symbolic(Variable(8_901_000 + index as u64))));
+            pieces.push(owner(Address::symbolic(Variable(8_901_000 + index as u64))));
         }
         let function = program_function(
             ProgramType::Void,
@@ -697,6 +691,9 @@ fn selected_scalar_transfers_scale_with_the_return_delta() {
             .unchecked_with_facts_and_occurrences(pieces);
         let mut evaluated = EvaluatedReturnResources {
             body: None,
+            unclassified: ResourceContext::new_with_equalities(&facts),
+            selected_inputs: BTreeSet::new(),
+            checked_frontier: None,
             resources,
             occurrences: emitted
                 .into_iter()
@@ -762,7 +759,7 @@ fn fixed_range_transfer_work_ignores_length_aliases_and_retained_owners() {
         for count in [4_u32, 16, 64] {
             let _session = crate::kernel::VerificationSession::enter();
             let mut facts = PureFactContext::new();
-            let pointer = Pointer::symbolic(Variable(8_920_000));
+            let pointer = Address::symbolic(Variable(8_920_000));
             let base = super::tests::scalar_transfer_contract(MemorySegment::new(
                 variable("p"),
                 int32_literal(0),
@@ -807,15 +804,15 @@ fn fixed_range_transfer_work_ignores_length_aliases_and_retained_owners() {
             // The selected reservation is this explicit interval difference.
             // Legacy entry discovery is outside the operation being measured.
             for index in 0..count {
-                let other = Pointer::symbolic(Variable(8_921_000 + u64::from(index)));
+                let other = Address::symbolic(Variable(8_921_000 + u64::from(index)));
                 match axis {
                     "aliases" | "same block aliases" => {
                         let alias = if axis == "aliases" {
                             other
                         } else {
-                            Pointer {
-                                block: pointer.block.clone(),
-                                offset: PointerOffsetTerm::Variable(Variable(
+                            Address {
+                                base: pointer.base.clone(),
+                                offset: AddressOffset::Variable(Variable(
                                     8_921_000 + u64::from(index),
                                 )),
                             }
@@ -846,6 +843,9 @@ fn fixed_range_transfer_work_ignores_length_aliases_and_retained_owners() {
                 .unchecked_with_facts_and_occurrences([output.clone()]);
             let mut evaluated = EvaluatedReturnResources {
                 body: None,
+                unclassified: ResourceContext::new_with_equalities(&facts),
+                selected_inputs: BTreeSet::new(),
+                checked_frontier: None,
                 resources,
                 occurrences: vec![EvaluatedReturnOccurrence {
                     clause: None,
@@ -904,13 +904,13 @@ fn fresh_allocation_returns_ignore_creation_history_aliases_and_retained_owners(
             for index in 0..count {
                 match axis {
                     "history" => {
-                        events = events.created(PointerBlock::Heap(8_940_000 + u64::from(index)))
+                        events = events.created(AddressBase::Heap(8_940_000 + u64::from(index)))
                     }
                     "aliases" => {
                         facts = facts.assume_condition(
                             ConditionTerm::pointer_equal(
                                 pointer.clone(),
-                                Pointer::symbolic(Variable(8_940_000 + u64::from(index))),
+                                Address::symbolic(Variable(8_940_000 + u64::from(index))),
                             ),
                             true,
                         )
@@ -918,7 +918,7 @@ fn fresh_allocation_returns_ignore_creation_history_aliases_and_retained_owners(
                     _ => {
                         frame =
                             frame.unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
-                                Pointer::symbolic(Variable(8_940_000 + u64::from(index))),
+                                Address::symbolic(Variable(8_940_000 + u64::from(index))),
                                 0u32.into(),
                                 1u32.into(),
                             )))
@@ -1014,6 +1014,9 @@ fn fresh_allocation_return_work_scales_with_selected_return_pieces() {
             .unchecked_with_facts_and_occurrences(pieces);
         let mut evaluated = EvaluatedReturnResources {
             body: None,
+            unclassified: ResourceContext::new_with_equalities(&facts),
+            selected_inputs: BTreeSet::new(),
+            checked_frontier: None,
             resources,
             occurrences: inserted
                 .iter()
@@ -1076,7 +1079,7 @@ fn flat_return_body_consumers_scale_with_output_and_ignore_ambient_state() {
         let mut samples = Vec::new();
         for count in [4_u32, 16, 64] {
             let _session = crate::kernel::VerificationSession::enter();
-            let pointer = Pointer::symbolic(Variable(8_839_001));
+            let pointer = Address::symbolic(Variable(8_839_001));
             let mut facts = PureFactContext::new();
             let mut frame = ResourceContext::new();
             let mut definitions = vec![tests::flat_body_definition(
@@ -1085,7 +1088,7 @@ fn flat_return_body_consumers_scale_with_output_and_ignore_ambient_state() {
                 if axis == "outputs" { count } else { 1 },
             )];
             for index in 0..count {
-                let other = Pointer::symbolic(Variable(8_839_100 + u64::from(index)));
+                let other = Address::symbolic(Variable(8_839_100 + u64::from(index)));
                 match axis {
                     "owners" => {
                         frame = frame.unchecked_with_fact(ResourceFact::own_memory(
@@ -1134,12 +1137,9 @@ fn flat_return_body_consumers_scale_with_output_and_ignore_ambient_state() {
                     &evaluated.resources,
                     &transfers,
                     &bodies,
-                    &[],
-                    &state,
                     &facts,
                     &destination,
                 )
-                .unwrap()
             });
             assert_eq!(
                 projected[0].expansion.len(),
@@ -1169,7 +1169,7 @@ fn flat_body_admission_ignores_retained_owners_and_aliases_on_hits_refusals_and_
             let mut samples = Vec::new();
             for count in [4_u32, 16, 64] {
                 let _session = crate::kernel::VerificationSession::enter();
-                let pointer = Pointer::symbolic(Variable(8_839_500));
+                let pointer = Address::symbolic(Variable(8_839_500));
                 let mut facts = PureFactContext::new();
                 let owner = |base, start: u32| {
                     ResourceFact::own_memory(MemoryRange::new(
@@ -1181,7 +1181,7 @@ fn flat_body_admission_ignores_retained_owners_and_aliases_on_hits_refusals_and_
                 let mut frame =
                     ResourceContext::new().unchecked_with_fact(owner(pointer.clone(), 4));
                 for index in 0..count {
-                    let other = Pointer::symbolic(Variable(8_839_600 + u64::from(index)));
+                    let other = Address::symbolic(Variable(8_839_600 + u64::from(index)));
                     match axis {
                         "aliases" => {
                             facts = facts.assume_condition(
@@ -1202,7 +1202,7 @@ fn flat_body_admission_ignores_retained_owners_and_aliases_on_hits_refusals_and_
                 if axis == "general" {
                     frame = frame.unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
                         pointer.clone(),
-                        1000u32.into(),
+                        0u32.into(),
                         MachineTerm::Variable(Variable(8_839_599)),
                     )));
                 }
@@ -1217,9 +1217,9 @@ fn flat_body_admission_ignores_retained_owners_and_aliases_on_hits_refusals_and_
                     let _fast = crate::kernel::search::FastOperationScope::enter(
                         "indexed flat composite frontier",
                     );
-                    let result = frame.admit_returned_flat_body(body, &facts);
-                    if axis == "cold" || axis == "general" {
-                        assert!(matches!(result, FlatBodyAdmission::Unsupported));
+                    let result = frame.admit_returned_frontier(body.boundary(), &facts);
+                    if (axis == "cold" || axis == "general") && !overlap {
+                        assert!(matches!(result, FlatBodyAdmission::Unestablished(_)));
                     } else {
                         assert!(matches!(result, FlatBodyAdmission::Conflict { .. }) == overlap);
                         if !overlap {
@@ -1234,8 +1234,6 @@ fn flat_body_admission_ignores_retained_owners_and_aliases_on_hits_refusals_and_
                                     .unwrap(),
                                 Some(body),
                             )),
-                            &[],
-                            &Memory::new(),
                             &facts,
                         );
                         assert_eq!(error.is_some(), overlap);
@@ -1257,7 +1255,7 @@ fn flat_body_admission_scales_with_the_constructed_frontier() {
     for count in [4_u32, 16, 64] {
         let _session = crate::kernel::VerificationSession::enter();
         let facts = PureFactContext::new();
-        let pointer = Pointer::symbolic(Variable(8_839_800));
+        let pointer = Address::symbolic(Variable(8_839_800));
         let frame = ResourceContext::new_with_equalities(&facts).unchecked_with_fact(
             ResourceFact::own_memory(MemoryRange::new(
                 pointer.clone(),
@@ -1269,7 +1267,7 @@ fn flat_body_admission_scales_with_the_constructed_frontier() {
         let (evaluated, bodies) = super::tests::constructed_flat_return(&pointer, count, &facts);
         let body = bodies.get(evaluated.occurrences[0].source).unwrap();
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-            frame.admit_returned_flat_body(body, &facts)
+            frame.admit_returned_frontier(body.boundary(), &facts)
         });
         assert!(matches!(result, FlatBodyAdmission::Admitted));
         samples.push(work);
@@ -1283,7 +1281,7 @@ fn nested_consumed_transfer_planning_and_construction_scale_with_the_selected_tr
     for depth in [4_usize, 16, 64] {
         let _session = crate::kernel::VerificationSession::enter();
         let facts = PureFactContext::new();
-        let pointer = Pointer::symbolic(Variable(8_840_500));
+        let pointer = Address::symbolic(Variable(8_840_500));
         let function = super::tests::nested_transfer_function(depth);
         let caller = ResourceContext::new_with_equalities(&facts).unchecked_with_fact(
             ResourceFact::own_memory(MemoryRange::new(pointer.clone(), 0u32.into(), 1u32.into())),
@@ -1328,12 +1326,12 @@ fn composite_transfer_consumers_ignore_unrelated_inputs_aliases_and_creation_his
             let mut facts = PureFactContext::new();
             let mut frame = caller.resources().clone();
             for index in 0..count {
-                events = events.created(PointerBlock::Heap(8_960_000 + u64::from(index)));
-                let alias = Pointer::symbolic(Variable(8_841_000 + u64::from(index)));
+                events = events.created(AddressBase::Heap(8_960_000 + u64::from(index)));
+                let alias = Address::symbolic(Variable(8_841_000 + u64::from(index)));
                 facts = facts
                     .assume_condition(ConditionTerm::pointer_equal(pointer.clone(), alias), true);
                 frame = frame.unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
-                    Pointer::symbolic(Variable(8_842_000 + u64::from(index))),
+                    Address::symbolic(Variable(8_842_000 + u64::from(index))),
                     0u32.into(),
                     1u32.into(),
                 )));
@@ -1372,7 +1370,7 @@ fn composite_transfer_consumers_ignore_unrelated_inputs_aliases_and_creation_his
                     "explicit composite child transfers",
                 );
                 assert!(matches!(
-                    frame.admit_returned_flat_body(body, &facts),
+                    frame.admit_returned_frontier(body.boundary(), &facts),
                     FlatBodyAdmission::Admitted
                 ));
             });
@@ -1406,15 +1404,26 @@ fn selected_view_child_expansion_ignores_equal_head_occurrences_and_bindings() {
                 let _fast = crate::kernel::search::FastOperationScope::enter(
                     "selected viewed child expansion",
                 );
-                construct_composite_resource_body(
-                    &context,
-                    &head,
-                    &definitions,
-                    &crate::kernel::ProgramPoint::of_memory(&memory),
-                    &facts,
-                    Some(selected),
-                )
-                .unwrap()
+                let mut result = None;
+                for choice in [Some(selected), None] {
+                    let body = construct_composite_resource_body(
+                        &context,
+                        &head,
+                        &definitions,
+                        &crate::kernel::ProgramPoint::of_memory(&memory),
+                        &facts,
+                        choice,
+                        None,
+                    )
+                    .unwrap();
+                    let child = body.occurrences[0].1;
+                    assert_eq!(
+                        body.expanded.loan_dependency(child).unwrap().loan,
+                        binding.loan
+                    );
+                    result = Some(body);
+                }
+                result.unwrap()
             });
             let (piece, source) = &body.occurrences[0];
             assert!(piece.is_view());
@@ -1436,8 +1445,8 @@ fn viewed_child_tree_construction_scales_with_the_explicit_depth() {
     let mut samples = Vec::new();
     for depth in [4_usize, 16, 64] {
         let _session = crate::kernel::VerificationSession::enter();
-        let own = Pointer::symbolic(Variable(8_843_000));
-        let data = Pointer::symbolic(Variable(8_843_001));
+        let own = Address::symbolic(Variable(8_843_000));
+        let data = Address::symbolic(Variable(8_843_001));
         let facts = PureFactContext::new();
         let definitions = super::tests::viewed_child_definitions(data, depth);
         let evaluated = EvaluatedReturnResources::new(&facts)
@@ -1557,7 +1566,7 @@ fn unsupported_body_boundary_does_not_revalidate_the_retained_frame() {
             let mut samples = Vec::new();
             for count in [4_u32, 16, 64] {
                 let _session = crate::kernel::VerificationSession::enter();
-                let pointer = Pointer::symbolic(Variable(8_849_000));
+                let pointer = Address::symbolic(Variable(8_849_000));
                 let facts = PureFactContext::new();
                 let owner = |base, start: u32| {
                     ResourceFact::own_memory(MemoryRange::new(
@@ -1571,14 +1580,14 @@ fn unsupported_body_boundary_does_not_revalidate_the_retained_frame() {
                     let base = if axis == "cold related" {
                         pointer.clone()
                     } else {
-                        Pointer::symbolic(Variable(8_849_100 + u64::from(index)))
+                        Address::symbolic(Variable(8_849_100 + u64::from(index)))
                     };
                     frame = frame.unchecked_with_fact(owner(base, index * 2 + 10));
                 }
                 if axis == "general unrelated" {
                     frame = frame.unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
                         pointer.clone(),
-                        1000u32.into(),
+                        0u32.into(),
                         MachineTerm::Variable(Variable(8_849_001)),
                     )));
                     frame.synchronize_memory_equalities(&facts);
@@ -1591,14 +1600,16 @@ fn unsupported_body_boundary_does_not_revalidate_the_retained_frame() {
                     super::tests::constructed_flat_return(&pointer, 1, &facts);
                 let source = evaluated.occurrences[0].source;
                 let body = bodies.get(source).unwrap();
-                let admission = frame.admit_returned_flat_body(body, &facts);
+                let admission = frame.admit_returned_frontier(body.boundary(), &facts);
                 if axis == "cold related" {
                     assert_eq!(
                         matches!(admission, FlatBodyAdmission::Conflict { .. }),
                         overlap
                     );
+                } else if overlap {
+                    assert!(matches!(admission, FlatBodyAdmission::Conflict { .. }));
                 } else {
-                    assert!(matches!(admission, FlatBodyAdmission::Unsupported));
+                    assert!(matches!(admission, FlatBodyAdmission::Unestablished(_)));
                 }
                 let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                     let error = produced_composite_frontier_conflict(
@@ -1610,11 +1621,14 @@ fn unsupported_body_boundary_does_not_revalidate_the_retained_frame() {
                                 .unwrap(),
                             Some(body),
                         )),
-                        &[],
-                        &Memory::new(),
                         &facts,
                     );
-                    if overlap {
+                    if axis != "cold related" && !overlap {
+                        assert!(matches!(
+                            error,
+                            Some(RuntimeError::PendingCallObligations(_))
+                        ));
+                    } else if overlap {
                         let Some(RuntimeError::ProducedCompositeOverlapsHeldResource {
                             piece,
                             held: selected,
@@ -1653,7 +1667,7 @@ fn existential_return_construction_scales_with_its_body_and_ignores_ambient_stat
         let mut samples = Vec::new();
         for count in [4_u32, 16, 64] {
             let _session = crate::kernel::VerificationSession::enter();
-            let pointer = Pointer::symbolic(Variable(8_851_000));
+            let pointer = Address::symbolic(Variable(8_851_000));
             let mut facts = PureFactContext::new();
             let mut frame = ResourceContext::new();
             let mut definitions = vec![existential_definition(if axis == "body" {
@@ -1662,7 +1676,7 @@ fn existential_return_construction_scales_with_its_body_and_ignores_ambient_stat
                 1
             })];
             for index in 0..count {
-                let other = Pointer::symbolic(Variable(8_851_100 + u64::from(index)));
+                let other = Address::symbolic(Variable(8_851_100 + u64::from(index)));
                 match axis {
                     "aliases" => {
                         facts = facts.assume_condition(
@@ -1703,7 +1717,6 @@ fn existential_return_construction_scales_with_its_body_and_ignores_ambient_stat
                 );
                 ConstructedReturnBodies::construct(&evaluated, &definitions, &state, &facts)
             });
-            assert!(bodies.1.is_empty());
             assert_eq!(
                 bodies.0.len(),
                 if axis == "returns" { count as usize } else { 1 }
@@ -1747,12 +1760,12 @@ fn recursive_return_frontiers_ignore_depth_aliases_and_retained_state() {
             let mut samples = Vec::new();
             for count in [4_u32, 16, 64] {
                 let _session = crate::kernel::VerificationSession::enter();
-                let pointer = Pointer::symbolic(Variable(8_861_000));
+                let pointer = Address::symbolic(Variable(8_861_000));
                 let mut facts = PureFactContext::new();
                 let mut frame = ResourceContext::new();
                 let mut definitions = vec![recursive_definition()];
                 for index in 0..count {
-                    let other = Pointer::symbolic(Variable(8_861_100 + u64::from(index)));
+                    let other = Address::symbolic(Variable(8_861_100 + u64::from(index)));
                     match axis {
                         "aliases" => {
                             facts = facts.assume_condition(
@@ -1810,7 +1823,6 @@ fn recursive_return_frontiers_ignore_depth_aliases_and_retained_state() {
                         &state,
                         &facts,
                     );
-                    assert!(bodies.1.is_empty());
                     let body = bodies.get(source).unwrap();
                     assert_eq!(body.expansion.len(), 2);
                     assert_eq!(body.folded.len(), 1);
@@ -1824,8 +1836,6 @@ fn recursive_return_frontiers_ignore_depth_aliases_and_retained_state() {
                                 .unwrap(),
                             Some(body),
                         )),
-                        &[],
-                        state.memory(),
                         &facts,
                     );
                     assert_eq!(error.is_some(), overlap);
@@ -1848,7 +1858,7 @@ fn recursive_call_preparation_does_not_deepen_a_decided_tail() {
     for depth in [4_u32, 16, 64] {
         let _session = crate::kernel::VerificationSession::enter();
         let facts = PureFactContext::new();
-        let pointer = Pointer::symbolic(Variable(8_862_000));
+        let pointer = Address::symbolic(Variable(8_862_000));
         let clause = ResourceSpec::declared(
             ResourceFamily::Composite,
             ResourceAccessMode::Own,
@@ -1902,12 +1912,12 @@ fn specialized_return_producers_ignore_retained_state_and_scale_with_their_bodie
                     let pointer = if external {
                         anchor(8_880_000)
                     } else if family == "control" {
-                        Pointer {
-                            block: PointerBlock::ExternalArgument,
-                            offset: PointerOffsetTerm::Constant(0),
+                        Address {
+                            base: AddressBase::ExternalArgument,
+                            offset: AddressOffset::Constant(0),
                         }
                     } else {
-                        Pointer::symbolic(Variable(8_880_000))
+                        Address::symbolic(Variable(8_880_000))
                     };
                     let mut facts = PureFactContext::new();
                     let (head, mut definition) = match family {
@@ -1989,23 +1999,23 @@ fn specialized_return_producers_ignore_retained_state_and_scale_with_their_bodie
                         let _fast = crate::kernel::search::FastOperationScope::enter(
                             "selected specialized return construction",
                         );
-                        let bodies = ConstructedReturnBodies::construct(
+                        let bodies = ConstructedReturnBodies::try_construct(
                             &outputs,
                             &definitions,
                             &state,
+                            ReturnResourceComposition::ValidateDescriptions,
                             &facts,
                         );
-                        if bodies.1.contains(&source) {
+                        let Some(bodies) = bodies else {
                             assert!(
                                 external
                                     || (family == "control" && axis == "body")
                                     || (family == "matched" && axis == "aliases"),
                                 "unexpected geometry miss: {family}, {axis}, {count}"
                             );
-                            assert!(bodies.get(source).is_none());
                             return;
-                        }
-                        assert!(bodies.1.is_empty());
+                        };
+                        assert!(!bodies.0.is_empty());
                         let body = bodies.get(source).unwrap();
                         assert!(body.specialized.is_some());
                         assert_eq!(
@@ -2016,8 +2026,10 @@ fn specialized_return_producers_ignore_retained_state_and_scale_with_their_bodie
                         // General external-address frames remain an explicit
                         // geometry miss. This producer test must not invoke their
                         // legacy discovery or call a miss established separation.
-                        match frame.admit_returned_flat_body(body, &facts) {
-                            FlatBodyAdmission::Admitted | FlatBodyAdmission::Unsupported => {}
+                        match frame.admit_returned_frontier(body.boundary(), &facts) {
+                            FlatBodyAdmission::Admitted
+                            | FlatBodyAdmission::Unestablished(_)
+                            | FlatBodyAdmission::Unsupported => {}
                             FlatBodyAdmission::Conflict { .. } => {
                                 panic!("fixture has no stated overlap")
                             }
@@ -2078,7 +2090,7 @@ fn matched_return_constructor_hits_and_opaque_misses_do_not_walk_model_aliases()
             if known {
                 facts = facts.assume_proposition(Proposition::Equal(
                     Term::Algebraic(model.clone()),
-                    Term::Algebraic(constructor(Pointer::symbolic(Variable(8_884_000)))),
+                    Term::Algebraic(constructor(Address::symbolic(Variable(8_884_000)))),
                 ));
             }
             let (head, definition) = matched(model, 8_884_001);
@@ -2120,7 +2132,7 @@ fn multiple_returned_witnesses_and_nested_children_scale_with_the_selected_body(
         for count in [4_u32, 16, 64] {
             let _session = crate::kernel::VerificationSession::enter();
             let facts = PureFactContext::new();
-            let p = Pointer::symbolic(Variable(8_885_000));
+            let p = Address::symbolic(Variable(8_885_000));
             let mut outer = existential_definition(0);
             let mut definitions = vec![CompositeResourceDefinition::new(
                 "leaf",
@@ -2146,7 +2158,7 @@ fn multiple_returned_witnesses_and_nested_children_scale_with_the_selected_body(
             for index in 0..count {
                 frame = frame.unchecked_with_fact(ResourceFact::own_composite(
                     "leaf".into(),
-                    vec![ProgramValue::pointer(Pointer::symbolic(Variable(
+                    vec![ProgramValue::pointer(Address::symbolic(Variable(
                         8_885_100 + u64::from(index),
                     )))],
                 ));
@@ -2186,13 +2198,13 @@ fn ordinary_return_construction_and_normalization_ignore_alias_history() {
         let mut samples = Vec::new();
         for count in [4u32, 16, 64] {
             let _session = crate::kernel::VerificationSession::enter();
-            let p = Pointer::symbolic(Variable(8_914_000));
+            let p = Address::symbolic(Variable(8_914_000));
             let mut facts = PureFactContext::new();
             for index in 0..count {
                 facts = facts.assume_condition(
                     ConditionTerm::pointer_equal(
                         p.clone(),
-                        Pointer::symbolic(Variable(8_914_100 + u64::from(index))),
+                        Address::symbolic(Variable(8_914_100 + u64::from(index))),
                     ),
                     true,
                 );
@@ -2250,12 +2262,12 @@ fn summary_transfer_construction_scales_with_clauses_not_retained_owners_or_alia
             let mut owners = vec![first.clone()];
             for index in 0..count {
                 let pointer = if axis == "same-block aliases" {
-                    Pointer {
-                        block: first.memory_own_range().unwrap().base().block.clone(),
-                        offset: PointerOffsetTerm::Variable(Variable(9_950_000 + index)),
+                    Address {
+                        base: first.memory_own_range().unwrap().base().base.clone(),
+                        offset: AddressOffset::Variable(Variable(9_950_000 + index)),
                     }
                 } else {
-                    Pointer::symbolic(Variable(9_950_000 + index))
+                    Address::symbolic(Variable(9_950_000 + index))
                 };
                 match axis {
                     "aliases" | "same-block aliases" => {
@@ -2293,7 +2305,7 @@ fn summary_transfer_construction_scales_with_clauses_not_retained_owners_or_alia
                         let memory = state
                             .memory()
                             .clone()
-                            .with_block(pointer.block.clone(), 1024);
+                            .with_block(pointer.base.clone(), 1024);
                         state = state
                             .with_memory(memory)
                             .with_local(name, ProgramValue::pointer(pointer.clone()));
@@ -2394,12 +2406,12 @@ fn composite_parameter_footprints_scale_with_parts_not_the_frame_or_alias_classe
             let mut types = vec![ProgramType::Int32Pointer, ProgramType::Int32];
             for index in 0..count {
                 let pointer = if axis == "same-block aliases" {
-                    Pointer {
-                        block: first.memory_own_range().unwrap().base().block.clone(),
-                        offset: PointerOffsetTerm::Variable(Variable(9_960_000 + index)),
+                    Address {
+                        base: first.memory_own_range().unwrap().base().base.clone(),
+                        offset: AddressOffset::Variable(Variable(9_960_000 + index)),
                     }
                 } else {
-                    Pointer::symbolic(Variable(9_960_000 + index))
+                    Address::symbolic(Variable(9_960_000 + index))
                 };
                 match axis {
                     "aliases" | "same-block aliases" => {
@@ -2442,7 +2454,7 @@ fn composite_parameter_footprints_scale_with_parts_not_the_frame_or_alias_classe
                         let memory = state
                             .memory()
                             .clone()
-                            .with_block(pointer.block.clone(), 1024);
+                            .with_block(pointer.base.clone(), 1024);
                         state = state
                             .with_memory(memory)
                             .with_local(name, ProgramValue::pointer(pointer.clone()));
@@ -2517,6 +2529,581 @@ fn composite_parameter_footprints_scale_with_parts_not_the_frame_or_alias_classe
                 samples.iter().all(|work| *work <= samples[0] + 64),
                 "{axis}: {samples:?}"
             );
+        }
+    }
+}
+
+#[test]
+fn verified_output_partition_does_not_discover_the_callers_frame() {
+    for aliases in [false, true] {
+        let mut samples = Vec::new();
+        for count in [4_u64, 16, 64] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let rule = super::summary_transfer_tests::opaque_pointer_return_rule();
+            let transfers = ConsumedCellReturns::default();
+            let composition = ReturnResourceComposition::for_rule(
+                Some(FramedCallRule::Verified { _rule: &rule }),
+                &transfers,
+            );
+            let pointer = Address::symbolic(Variable(9_999_000));
+            let output = ResourceFact::own_memory(MemoryRange::new(
+                pointer.clone(),
+                0u32.into(),
+                1u32.into(),
+            ));
+            let mut facts = PureFactContext::new();
+            let mut frame = ResourceContext::new();
+            for i in 0..count {
+                let other = Address::symbolic(Variable(9_999_100 + i));
+                if aliases {
+                    facts = facts.assume_condition(
+                        ConditionTerm::pointer_equal(pointer.clone(), other),
+                        true,
+                    );
+                } else {
+                    frame = frame.unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
+                        other,
+                        0u32.into(),
+                        1u32.into(),
+                    )));
+                }
+            }
+            let (returned, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let _fast = crate::kernel::search::FastOperationScope::enter(
+                    "verified output frame construction",
+                );
+                EvaluatedReturnResources::for_composition(composition, &facts)
+                    .construct_clause(
+                        output.clone(),
+                        ReturnOwnershipOrigin::Description,
+                        Some(0),
+                        composition,
+                        rule.function.contract_interface(),
+                        &facts,
+                    )
+                    .unwrap()
+                    .restore_entry_borrows(frame.clone(), composition, &facts)
+                    .unwrap()
+                    .finish(&facts)
+                    .unwrap()
+                    .0
+            });
+            assert!(returned.contains_exact_representation(&output));
+            samples.push(work);
+        }
+        assert!(
+            samples.iter().all(|work| *work <= samples[0] + 48),
+            "aliases={aliases}: {samples:?}"
+        );
+    }
+}
+
+#[test]
+fn fixed_input_partition_recipe_scales_with_its_declared_fields() {
+    let mut samples = Vec::new();
+    for count in [4_u32, 16, 64] {
+        let function = super::summary_transfer_tests::partitioned_input_contract(count, false);
+        let (rule, work) = crate::instrumentation::measure_deterministic_work(|| {
+            summary_transfer::SummaryResourceTransferRule::compile(function.contract_interface())
+        });
+        assert_eq!(rule.projected_inputs.len(), count as usize);
+        samples.push(work);
+    }
+    assert!(
+        samples[2] <= 6 * samples[1] + 32,
+        "partition recipes: {samples:?}"
+    );
+}
+
+#[test]
+fn selected_input_frontier_queries_do_not_scan_related_or_unrelated_pieces() {
+    for related in [false, true] {
+        let mut samples = Vec::new();
+        for count in [4u64, 16, 64] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let facts = PureFactContext::new();
+            let pointer = Address::symbolic(Variable(9_970_000));
+            let ranges = (0..count)
+                .map(|index| {
+                    let base = if related {
+                        pointer.clone()
+                    } else {
+                        Address::symbolic(Variable(9_970_000 + index))
+                    };
+                    let start = if related { index as u32 * 4 } else { 0 };
+                    MemoryRange::new(base, start.into(), (start + 1).into())
+                })
+                .collect::<Vec<_>>();
+            let mut plan = ConsumedCellReturns::default();
+            plan.retain_frontier(ranges.clone(), &facts);
+            let composition = ReturnResourceComposition::ApplyTransfers(&plan);
+            let query = ResourceFact::own_memory(ranges[0].clone());
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let _fast = crate::kernel::search::FastOperationScope::enter(
+                    "finite input frontier selection",
+                );
+                let first = EvaluatedReturnResources::for_composition(composition, &facts)
+                    .admit_clause(
+                        query.clone(),
+                        ReturnOwnershipOrigin::Description,
+                        Some(0),
+                        Some(&plan),
+                        &facts,
+                    )?;
+                assert!(matches!(
+                    first.occurrences[0].origin,
+                    ReturnOwnershipOrigin::ConsumedCell(_)
+                ));
+                assert!(
+                    first
+                        .admit_clause(
+                            query.clone(),
+                            ReturnOwnershipOrigin::Description,
+                            Some(1),
+                            Some(&plan),
+                            &facts
+                        )
+                        .is_err()
+                );
+                Ok::<_, ResourceContextValidityError>(())
+            });
+            result.unwrap();
+            samples.push(work);
+        }
+        assert!(
+            samples[2] <= samples[0] * 3 + 100,
+            "related={related}: {samples:?}"
+        );
+    }
+}
+
+#[test]
+fn bounded_body_boundary_does_not_revalidate_the_retained_frame() {
+    for axis in ["cold unrelated", "cold related", "general unrelated"] {
+        for overlap in [false, true] {
+            let mut samples = Vec::new();
+            for count in [4_u32, 16, 64] {
+                let _session = crate::kernel::VerificationSession::enter();
+                let pointer = Address::symbolic(Variable(8_849_000));
+                let facts = PureFactContext::new();
+                let owner = |base, start: u32| {
+                    ResourceFact::own_memory(MemoryRange::new(
+                        base,
+                        start.into(),
+                        (start + 1).into(),
+                    ))
+                };
+                let mut frame = ResourceContext::new();
+                for index in 0..count {
+                    let base = if axis == "cold related" {
+                        pointer.clone()
+                    } else {
+                        Address::symbolic(Variable(8_849_100 + u64::from(index)))
+                    };
+                    frame = frame.unchecked_with_fact(owner(base, index * 2 + 10));
+                }
+                if axis == "general unrelated" {
+                    frame = frame.unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
+                        pointer.clone(),
+                        1000u32.into(),
+                        MachineTerm::Variable(Variable(8_849_001)),
+                    )));
+                    frame.synchronize_memory_equalities(&facts);
+                }
+                let held = owner(pointer.clone(), 0);
+                if overlap {
+                    frame = frame.unchecked_with_fact(held.clone());
+                }
+                let (evaluated, bodies) =
+                    super::tests::constructed_flat_return(&pointer, 1, &facts);
+                let source = evaluated.occurrences[0].source;
+                let body = bodies.get(source).unwrap();
+                let admission = frame.admit_returned_frontier(body.boundary(), &facts);
+                if overlap {
+                    assert!(matches!(admission, FlatBodyAdmission::Conflict { .. }));
+                } else if axis == "cold unrelated" {
+                    assert!(matches!(admission, FlatBodyAdmission::Unestablished(_)));
+                } else {
+                    // The prepared class nominates the one symbolic owner:
+                    // the query ends at 1, before its written start at 1000.
+                    assert!(matches!(admission, FlatBodyAdmission::Admitted));
+                }
+                let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    let error = produced_composite_frontier_conflict(
+                        &frame,
+                        std::iter::once((
+                            evaluated
+                                .resources
+                                .owned_fact_for_occurrence(source)
+                                .unwrap(),
+                            Some(body),
+                        )),
+                        &facts,
+                    );
+                    if axis == "cold unrelated" && !overlap {
+                        assert!(
+                            matches!(error, Some(RuntimeError::PendingCallObligations(ref obligations)) if obligations.len() == 1 && matches!(obligations[0].proposition(), Proposition::ResourceSeparate { .. }))
+                        );
+                    } else if overlap {
+                        let Some(RuntimeError::ProducedCompositeOverlapsHeldResource {
+                            piece,
+                            held: selected,
+                            ..
+                        }) = error
+                        else {
+                            panic!("missing boundary conflict");
+                        };
+                        assert_eq!(*piece, held);
+                        assert_eq!(*selected, held);
+                    } else {
+                        assert!(error.is_none());
+                    }
+                });
+                samples.push(work);
+            }
+            assert!(
+                samples.iter().all(|work| *work <= samples[0] + 64),
+                "{axis}, overlap={overlap}: {samples:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn output_partitions_and_caller_admission_scale_with_the_delta_not_history() {
+    for axis in ["outputs", "owners", "bounds", "aliases"] {
+        let mut samples = Vec::new();
+        for count in [4u32, 16, 64] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let p = Address::symbolic(Variable(8_916_000));
+            let n = MachineTerm::Variable(Variable(8_916_001));
+            let mut facts = PureFactContext::new()
+                .assume_condition(
+                    ConditionTerm::signed_less_equal(1u32.into(), n.clone()),
+                    true,
+                )
+                .assume_condition(
+                    ConditionTerm::signed_less_equal(n.clone(), 8u32.into()),
+                    true,
+                );
+            for index in 0..count {
+                if axis == "bounds" {
+                    facts = facts.assume_condition(
+                        ConditionTerm::signed_less_equal(n.clone(), (100 + index).into()),
+                        true,
+                    );
+                } else if axis == "aliases" {
+                    facts = facts.assume_condition(
+                        ConditionTerm::pointer_equal(
+                            p.clone(),
+                            Address::symbolic(Variable(8_916_100 + u64::from(index))),
+                        ),
+                        true,
+                    );
+                }
+            }
+            let owner = |start, end| {
+                ResourceFact::own_memory(MemoryRange::new_with_element_width(
+                    p.clone(),
+                    start,
+                    end,
+                    1,
+                ))
+            };
+            let mut frame = ResourceContext::new_with_equalities(&facts);
+            for index in 0..if axis == "owners" { count } else { 1 } {
+                frame = frame.unchecked_with_fact(owner(
+                    (1000 + index * 4).into(),
+                    (1002 + index * 4).into(),
+                ));
+            }
+            frame.synchronize_memory_equalities(&facts);
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let _fast = crate::kernel::search::FastOperationScope::enter(
+                    "bounded output partition delta",
+                );
+                let mut outputs = EvaluatedReturnResources::new(&facts);
+                if axis == "outputs" {
+                    for index in 0..count {
+                        outputs = outputs
+                            .admit(
+                                owner((index * 2).into(), (index * 2 + 1).into()),
+                                ReturnOwnershipOrigin::Description,
+                                &facts,
+                            )
+                            .unwrap();
+                    }
+                } else {
+                    outputs = outputs
+                        .admit(
+                            owner(0u32.into(), n.clone()),
+                            ReturnOwnershipOrigin::Description,
+                            &facts,
+                        )
+                        .unwrap()
+                        .admit(
+                            owner(n.clone(), 16u32.into()),
+                            ReturnOwnershipOrigin::Description,
+                            &facts,
+                        )
+                        .unwrap();
+                }
+                let prepared = outputs
+                    .restore_entry_borrows(
+                        frame.clone(),
+                        ReturnResourceComposition::ValidateDescriptions,
+                        &facts,
+                    )
+                    .unwrap();
+                let (joined, transfers) = prepared.finish(&facts).unwrap();
+                assert_eq!(
+                    transfers.len(),
+                    if axis == "outputs" { count as usize } else { 2 }
+                );
+                assert_eq!(joined.facts().len(), frame.facts().len() + transfers.len());
+            });
+            samples.push(work);
+        }
+        if axis == "outputs" {
+            assert!(samples[2] <= samples[0] * 24 + 128, "{axis}: {samples:?}");
+        } else {
+            assert!(
+                samples.iter().all(|work| *work <= samples[0] + 64),
+                "{axis}: {samples:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn pending_return_refusal_does_not_walk_symbolic_owners() {
+    let mut samples = Vec::new();
+    for count in [4u32, 16, 64] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let p = Address::symbolic(Variable(8_917_000));
+        let facts = PureFactContext::new();
+        let mut frame = ResourceContext::new_with_equalities(&facts);
+        for index in 0..count {
+            frame = frame.unchecked_with_fact(ResourceFact::own_memory(
+                MemoryRange::new_with_element_width(
+                    p.clone(),
+                    (index * 4 + 100).into(),
+                    MachineTerm::Variable(Variable(8_917_100 + u64::from(index))),
+                    1,
+                ),
+            ));
+        }
+        let output = ResourceFact::own_memory(MemoryRange::new_with_element_width(
+            p,
+            0u32.into(),
+            1u32.into(),
+            1,
+        ));
+        let outputs = EvaluatedReturnResources::new(&facts)
+            .admit(output, ReturnOwnershipOrigin::Description, &facts)
+            .unwrap();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let _fast =
+                crate::kernel::search::FastOperationScope::enter("bounded symbolic frame refusal");
+            let prepared = outputs
+                .restore_entry_borrows(
+                    frame.clone(),
+                    ReturnResourceComposition::ValidateDescriptions,
+                    &facts,
+                )
+                .unwrap();
+            assert!(matches!(
+                prepared.finish(&facts),
+                Err(ResourceContextValidityError::UnestablishedOwnedBoundary(_))
+            ));
+        });
+        assert_eq!(frame.facts().len(), count as usize);
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 32),
+        "{samples:?}"
+    );
+}
+
+#[test]
+fn opaque_and_refused_family_dispatch_ignore_ambient_owners_and_aliases() {
+    use super::tests::flat_body_definition;
+    for sealed in [false, true] {
+        for axis in ["owners", "aliases", "definitions", "body"] {
+            let mut samples = Vec::new();
+            for count in [4_u32, 16, 64] {
+                let _session = crate::kernel::VerificationSession::enter();
+                let p = Address::symbolic(Variable(8_916_000));
+                let mut facts = PureFactContext::new();
+                let mut resources = ResourceContext::new();
+                let mut definitions = Vec::new();
+                for index in 0..count {
+                    let q = Address::symbolic(Variable(8_917_000 + index as u64));
+                    match axis {
+                        "owners" => {
+                            resources = resources.unchecked_with_fact(ResourceFact::own_memory(
+                                MemoryRange::new(q, 0u32.into(), 1u32.into()),
+                            ))
+                        }
+                        "aliases" => {
+                            facts = facts
+                                .assume_condition(ConditionTerm::pointer_equal(p.clone(), q), true)
+                        }
+                        "definitions" => definitions.push(CompositeResourceDefinition::new(
+                            format!("unused_{index:04}"),
+                            vec![],
+                            None,
+                            false,
+                            vec![],
+                            vec![],
+                        )),
+                        _ => {}
+                    }
+                }
+                let (head, mut selected) = if sealed {
+                    let (head, mut definition) =
+                        super::specialized_return_tests::named(p.clone(), 8_916_001);
+                    definition.contains =
+                        flat_body_definition("unused", &p, if axis == "body" { count } else { 1 })
+                            .contains;
+                    definition.sealed = true;
+                    (head, definition)
+                } else {
+                    (
+                        ResourceFact::own_composite("selected".into(), vec![]),
+                        flat_body_definition(
+                            "selected",
+                            &p,
+                            if axis == "body" { count } else { 1 },
+                        ),
+                    )
+                };
+                if !sealed {
+                    selected
+                        .witnesses
+                        .push(program_parameter("unsupported", ProgramType::Int32));
+                }
+                definitions.push(selected);
+                definitions.sort_by(|a, b| a.name().cmp(b.name()));
+                let outputs = EvaluatedReturnResources::new(&facts)
+                    .admit(head, ReturnOwnershipOrigin::Description, &facts)
+                    .unwrap();
+                let state = ExecutionState::new().with_resource_context(resources);
+                let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    let _fast =
+                        crate::kernel::search::FastOperationScope::enter("bounded family dispatch");
+                    ConstructedReturnBodies::try_construct(
+                        &outputs,
+                        &definitions,
+                        &state,
+                        ReturnResourceComposition::ValidateDescriptions,
+                        &facts,
+                    )
+                });
+                if sealed {
+                    let bodies = result.unwrap();
+                    let source = outputs.occurrences[0].source;
+                    let body = bodies.get(source).unwrap();
+                    assert!(body.frontier.is_empty());
+                    assert_eq!(body.folded[0].1, source);
+                } else {
+                    assert!(result.is_none());
+                }
+                samples.push(work);
+            }
+            assert!(
+                samples.iter().all(|work| *work <= samples[0] + 128),
+                "sealed={sealed}, {axis}: {samples:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn opaque_matched_envelopes_scale_with_selected_leaves_not_ambient_state() {
+    use crate::kernel::program_expression::variable;
+    for unsupported in [false, true] {
+        for axis in ["owners", "aliases", "definitions", "leaves"] {
+            let mut samples = Vec::new();
+            for count in [4_u32, 16, 64] {
+                let _session = crate::kernel::VerificationSession::enter();
+                let p = Address::symbolic(Variable(8_931_000));
+                let (head, mut definitions) = super::opaque_boundary::tests::case(
+                    p.clone(),
+                    if axis == "leaves" { count } else { 1 },
+                    8_931_100,
+                );
+                if unsupported {
+                    definitions[1].matched.as_mut().unwrap().arms[1].children[0].arguments[0] =
+                        SpecExpression::ProgramExpression(variable("ptr"));
+                }
+                let mut facts = PureFactContext::new();
+                let mut owners = ResourceContext::new();
+                for i in 0..count {
+                    let q = Address::symbolic(Variable(8_932_000 + u64::from(i)));
+                    match axis {
+                        "owners" => {
+                            owners = owners.unchecked_with_fact(ResourceFact::own_memory(
+                                MemoryRange::new(
+                                    p.clone(),
+                                    (i * 2 + 1000).into(),
+                                    (i * 2 + 1001).into(),
+                                ),
+                            ))
+                        }
+                        "aliases" => {
+                            facts = facts
+                                .assume_condition(ConditionTerm::pointer_equal(p.clone(), q), true)
+                        }
+                        "definitions" => definitions.push(CompositeResourceDefinition::new(
+                            format!("unused_{i:04}"),
+                            vec![],
+                            None,
+                            false,
+                            vec![],
+                            vec![],
+                        )),
+                        _ => {}
+                    }
+                }
+                definitions.sort_by(|a, b| a.name().cmp(b.name()));
+                let state = ExecutionState::new().with_resource_context(owners);
+                let outputs = EvaluatedReturnResources::new(&facts)
+                    .admit(head, ReturnOwnershipOrigin::Description, &facts)
+                    .unwrap();
+                let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    let _fast =
+                        crate::kernel::search::FastOperationScope::enter("opaque envelope growth");
+                    let bodies =
+                        ConstructedReturnBodies::construct(&outputs, &definitions, &state, &facts);
+                    let body = bodies.get(outputs.occurrences[0].source).unwrap();
+                    assert!(body.frontier.is_empty() && body.viewed_children.is_empty());
+                    assert_eq!(
+                        body.boundary.len(),
+                        if unsupported {
+                            0
+                        } else if axis == "leaves" {
+                            count as usize
+                        } else {
+                            1
+                        }
+                    );
+                    assert_eq!(body.folded.is_empty(), !unsupported);
+                });
+                samples.push(work);
+            }
+            if axis == "leaves" {
+                assert!(
+                    samples[2] <= samples[0] * 32 + 8192,
+                    "{unsupported}, {axis}: {samples:?}"
+                );
+            } else {
+                assert!(
+                    samples.iter().all(|work| *work <= samples[0] + 256),
+                    "{unsupported}, {axis}: {samples:?}"
+                );
+            }
         }
     }
 }

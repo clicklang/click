@@ -34,7 +34,7 @@ int32 count_to(int32 n) diverges {
         initialize by { solve(); }
         preserve by {
             step();
-            obtain (previous: Nat) { previous == previous }
+            let previous = obtain(exists (previous: Nat) { previous == previous });
             apply(nat_reflexive(previous));
             have exists (fuel: Nat) { fuel == fuel } by {
                 witness(Nat::Succ(previous));

@@ -5,15 +5,16 @@ fn compound_read_query_ignores_cached_expression_size() {
     let mut samples = Vec::new();
     for size in [16, 64, 256, 1024] {
         let _session = crate::kernel::VerificationSession::enter();
-        let slot = Pointer {
-            block: "cached-expression".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let slot = Address {
+            base: "cached-expression".into(),
+            offset: AddressOffset::Constant(0),
         };
         let mut cached = MachineTerm::Variable(Variable(989201));
         for _ in 0..size {
             cached = sum(M::Int32, cached, number(M::Int32, 1));
         }
-        let memory = intern_memory(Memory::new().store(slot.clone(), ProgramValue::Int32(cached)));
+        let memory =
+            intern_memory(SymbolicMemory::new().store(slot.clone(), ProgramValue::Int32(cached)));
         crate::kernel::eval::record_load_access_width(memory.memory(), &slot, 4);
         let read =
             MachineTerm::MemoryLoad(ProgramPoint::at(&memory), Box::new(slot), LoadKind::Int32);

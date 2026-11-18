@@ -55,12 +55,12 @@ fn wide_scalar_root_validation_does_not_scan_legacy_operand_trees() {
 fn wide_cached_load_canonicalization_ignores_unrelated_cells() {
     let mut samples = Vec::new();
     for count in [16, 64, 256] {
-        let pointer = Pointer {
-            block: "wide-cached-scaling".into(),
-            offset: PointerOffsetTerm::Constant(0),
+        let pointer = Address {
+            base: "wide-cached-scaling".into(),
+            offset: AddressOffset::Constant(0),
         };
         let bits = MachineTerm::uint64_constant(0x1_0000_0001);
-        let mut memory = Memory::new().with_block("wide-cached-scaling", (count + 1) * 8);
+        let mut memory = SymbolicMemory::new().with_block("wide-cached-scaling", (count + 1) * 8);
         for index in 1..=count {
             memory = memory.store(
                 pointer.offset_by_bytes(index * 8),
@@ -97,9 +97,9 @@ fn wide_cached_load_canonicalization_ignores_unrelated_cells() {
 #[test]
 fn selected_wide_read_value_keeps_alias_authority_and_scales_with_unrelated_cells() {
     let _session = crate::kernel::VerificationSession::enter();
-    let read_pointer = Pointer::symbolic(Variable(78_100));
-    let owned_pointer = Pointer::symbolic(Variable(78_101));
-    let callee = Pointer::symbolic(Variable(78_102));
+    let read_pointer = Address::symbolic(Variable(78_100));
+    let owned_pointer = Address::symbolic(Variable(78_101));
+    let callee = Address::symbolic(Variable(78_102));
     let alias = ConditionTerm::pointer_equal(read_pointer.clone(), owned_pointer.clone());
     let selected = PureFactContext::new().assume_condition(alias, true);
     let bits = MachineTerm::uint64_add(
@@ -118,10 +118,10 @@ fn selected_wide_read_value_keeps_alias_authority_and_scales_with_unrelated_cell
     let matches = crate::kernel::memory_history::wide_read_has_recorded_value;
     let mut previous = None;
     for count in [16, 64, 256, 1024] {
-        let mut memory = Memory::new();
+        let mut memory = SymbolicMemory::new();
         for index in 0..count {
             memory = memory.store(
-                Pointer::symbolic(Variable(79_000 + index)),
+                Address::symbolic(Variable(79_000 + index)),
                 ProgramValue::UInt64(MachineTerm::uint64_constant(index)),
             );
         }
@@ -173,9 +173,9 @@ fn selected_wide_read_value_keeps_alias_authority_and_scales_with_unrelated_cell
 #[test]
 fn selected_wide_read_value_bounds_unselected_call_history() {
     let _session = crate::kernel::VerificationSession::enter();
-    let pointer = Pointer::symbolic(Variable(81_100));
-    let owner = Pointer::symbolic(Variable(81_101));
-    let callee = Pointer::symbolic(Variable(81_102));
+    let pointer = Address::symbolic(Variable(81_100));
+    let owner = Address::symbolic(Variable(81_101));
+    let callee = Address::symbolic(Variable(81_102));
     let selected = PureFactContext::new().assume_condition(
         ConditionTerm::pointer_equal(pointer.clone(), owner.clone()),
         true,
@@ -189,7 +189,8 @@ fn selected_wide_read_value_bounds_unselected_call_history() {
     let bits = MachineTerm::uint64_constant(7);
     let mut previous = None;
     for count in [128, 256, 512] {
-        let mut memory = Memory::new().store(pointer.clone(), ProgramValue::UInt64(bits.clone()));
+        let mut memory =
+            SymbolicMemory::new().store(pointer.clone(), ProgramValue::UInt64(bits.clone()));
         for index in 0..count {
             memory = memory.with_call_memory_havoc(
                 Variable(82_000 + index),
@@ -224,15 +225,15 @@ fn selected_wide_read_value_bounds_unselected_call_history() {
 #[test]
 fn selected_wide_read_congruence_preserves_history_width_and_scales() {
     let _session = crate::kernel::VerificationSession::enter();
-    let read_pointer = Pointer::symbolic(Variable(81_100));
-    let owned_pointer = Pointer::symbolic(Variable(81_103));
-    let callee = Pointer::symbolic(Variable(81_104));
+    let read_pointer = Address::symbolic(Variable(81_100));
+    let owned_pointer = Address::symbolic(Variable(81_103));
+    let callee = Address::symbolic(Variable(81_104));
     let alias = ConditionTerm::pointer_equal(read_pointer.clone(), owned_pointer.clone());
     let matches = crate::kernel::memory_history::wide_read_has_recorded_value;
     let mut previous_work = None;
     for count in [4u32, 16, 64, 256] {
         let mut selected = PureFactContext::new().assume_condition(alias.clone(), true);
-        let mut memory = Memory::new();
+        let mut memory = SymbolicMemory::new();
         for index in 0..count {
             memory = memory.store(
                 owned_pointer.offset_by_bytes((index + 1) * 8),
@@ -265,7 +266,7 @@ fn selected_wide_read_congruence_preserves_history_width_and_scales() {
             &selected,
             Some(&kept),
         );
-        let read = |retained_state: &Memory, pointer: &Pointer, kind| {
+        let read = |retained_state: &SymbolicMemory, pointer: &Address, kind| {
             MachineTerm::MemoryLoad(
                 ProgramPoint::at(&(intern_memory_ref(retained_state))),
                 Box::new(pointer.clone()),

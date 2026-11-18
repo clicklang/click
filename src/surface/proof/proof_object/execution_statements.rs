@@ -449,17 +449,17 @@ impl<'a> Proof<'a> {
             })
     }
 
-    /// The scalar local assigned by the statement at the current frontier.
-    /// Plain `step()` bindings accept assignments; call bindings retain the
-    /// explicit callee and binder-map path.
+    /// The value produced by the current frontier statement. A bare step
+    /// accepts a scalar assignment or a retained step result. A step with
+    /// a callee or contract selection accepts only a call result.
     ///
     /// A call whose result the rest of its statement reads is a call step of
     /// its own, and its result is that step's. A call in statement position
     /// discards its result; naming it is an error rather than a silent no-op.
-    fn frontier_result_local(
+    fn frontier_result(
         &self,
         name: &String,
-        assignment: bool,
+        allow_non_call: bool,
     ) -> Result<FrontierResult, ClickError> {
         let ProofContext::Execution(context) = self.context.as_ref() else {
             return Err(self.step_error("`step` requires an execution-frontier proof"));
@@ -486,13 +486,19 @@ impl<'a> Proof<'a> {
             "step",
         )?;
         match statement {
-            ProgramStatement::Assign { name, .. } if assignment => Ok(FrontierResult::Local(name)),
-            ProgramStatement::CallConstruct { target, .. } if !assignment => {
+            ProgramStatement::Assign { name, .. } if allow_non_call => Ok(FrontierResult::Local(name)),
+            ProgramStatement::CallConstruct { target, .. } => {
                 Ok(FrontierResult::Local(target))
             }
-            ProgramStatement::CallResult { call, .. } if !assignment => Ok(FrontierResult::Call(call)),
-            _ if assignment => Err(self.step_error(format!(
-                "`let {{ result: {name} }} = step()` requires a scalar assignment at the frontier"
+            ProgramStatement::CallResult { call, .. } => Ok(FrontierResult::Retained(call)),
+            ProgramStatement::StepValue { aggregate_layout: None, steps, .. }
+                if allow_non_call && !steps.is_empty() =>
+            {
+                // All of the step's destination slots hold the same evaluated value.
+                Ok(FrontierResult::Retained(steps[0]))
+            }
+            _ if allow_non_call => Err(self.step_error(format!(
+                "`let {{ result: {name} }} = step()` requires a scalar assignment, a used call result, or a retained scalar value at the frontier"
             ))),
             _ => Err(self.step_error(format!(
                 "`let {{ result: {name} }} = step(...)` names a call result, but this call's result is unused"
@@ -519,7 +525,7 @@ impl<'a> Proof<'a> {
         let array_refs = array_refs_for_parameters(
             context.parsed_function.parameters(),
             &values,
-            state.memory(),
+            &state.program_point(),
         );
         let (values, array_refs) = contract_environment_at_state(&values, &array_refs, state);
         evaluate_fixed_state_expression_through_kernel(
@@ -563,17 +569,15 @@ impl<'a> Proof<'a> {
             }
             _ => None,
         };
-        // Resolve this statement's result local before checking the step.
+        // Resolve this statement's result slot before checking the step.
         // Only its checked successor value is bound below. The assignment
         // or call is exactly the current frontier; nothing is searched.
         let result_target = match &step {
-            ProofStep::StepBind(name) => {
-                Some((name.clone(), self.frontier_result_local(name, true)?))
-            }
+            ProofStep::StepBind(name) => Some((name.clone(), self.frontier_result(name, true)?)),
             ProofStep::StepCall(transport) => match transport.result() {
                 Some(name) => {
                     let name = name.to_string();
-                    let target = self.frontier_result_local(&name, false)?;
+                    let target = self.frontier_result(&name, false)?;
                     Some((name, target))
                 }
                 None => None,
@@ -898,9 +902,8 @@ impl<'a> Proof<'a> {
                     .record_lowering(&surface, fact);
             }
         }
-        // The result is the value the checked statement left in its local:
-        // one indexed read of that name,
-        // bound as the proof-local value the surface name denotes from here on.
+        // Bind the result with one indexed read from the checked successor,
+        // using either the assigned local or the step's result slot.
         let result_binding = match &result_target {
             Some((name, target)) => {
                 let state = &checked.execution.core.state;
@@ -909,13 +912,13 @@ impl<'a> Proof<'a> {
                         .locals()
                         .get(target)
                         .map(|value| value.clone().into_native()),
-                    FrontierResult::Call(call) => state
-                        .step_result(*call)
+                    FrontierResult::Retained(step) => state
+                        .step_result(*step)
                         .map(|value| value.clone().into_native()),
                 }
                 .ok_or_else(|| {
                     self.step_error(format!(
-                        "`let {{ result: {name} }} = step(...)` found no assignment result"
+                        "`let {{ result: {name} }} = step(...)` found no retained result"
                     ))
                 })?;
                 Some((
@@ -1013,7 +1016,7 @@ impl<'a> Proof<'a> {
         let array_refs = array_refs_for_parameters(
             context.parsed_function.parameters(),
             &values,
-            before.memory(),
+            &before.program_point(),
         );
         let (values, array_refs) = contract_environment_at_state(&values, &array_refs, before);
         let mut arguments = Vec::with_capacity(parameters.len());
@@ -1026,7 +1029,7 @@ impl<'a> Proof<'a> {
                 && matches!(&argument, ContractExpression::IntegerLiteral(text) if text == "0")
             {
                 arguments.push(ProgramValue::typed_pointer(
-                    crate::kernel::Pointer::null(),
+                    crate::kernel::Address::null(),
                     parameter.program_type(),
                 ));
                 continue;
@@ -1543,17 +1546,17 @@ impl<'a> Proof<'a> {
     /// Checks the heap, resource, and counted-population components at this
     /// loop-state join using the Proof-owned state and facts.
     #[allow(clippy::too_many_arguments)]
-    pub(in crate::surface::proof) fn check_loop_state_join(
+    pub(in crate::surface::proof) fn check_loop_boundary(
         &self,
         loop_entry_state: &ExecutionState,
         loop_head_state: &ExecutionState,
         head_iterations: &crate::kernel::IntegerTerm,
-        condition: &ProgramExpression,
+        condition: Option<&ProgramExpression>,
         invariant_checks: &[LoopInvariantCheck],
         binders: &[crate::kernel::LoopBinder],
         structural_measure: Option<&str>,
         composite_resource_definitions: &[CompositeResourceDefinition],
-    ) -> Result<(), ClickError> {
+    ) -> Result<LoopBoundary, ClickError> {
         if !matches!(self.context.as_ref(), ProofContext::Execution(_)) {
             return Err(self.step_error("loop state join requires an execution proof"));
         }
@@ -1569,20 +1572,42 @@ impl<'a> Proof<'a> {
         // them: whatever the body called the instance it ends holding, the
         // binder names it, and a body that ends with no instance at those
         // arguments fails here by name.
-        let back_edge_state = crate::kernel::loop_state_with_loop_binders_rebound(
+        let boundary_state = crate::kernel::loop_state_with_loop_binders_rebound(
             loop_head_state,
             &execution.core.state,
             binders,
             &assumptions,
         )
         .map_err(|message| self.step_error(format!("loop state join: {message}")))?;
-        // D6: a structural `decreases` is decided here, against the instance
-        // the binder held at the loop head. It is not a bundle member, so a
-        // back edge that does not descend is named at the join.
-        if let Some(measure) = structural_measure
+        let invariant_obligations = crate::kernel::loop_invariant_obligations_at_back_edge(
+            &boundary_state,
+            loop_entry_state,
+            invariant_checks,
+            head_iterations,
+            &assumptions,
+        )
+        .map_err(|message| self.step_error(format!("loop invariant classification: {message}")))?;
+        let guard_assumptions = invariant_obligations
+            .into_iter()
+            .map(|obligation| obligation.proposition().clone())
+            .fold(assumptions.clone(), PureFactContext::assume_proposition);
+        let guard = match condition {
+            Some(condition) => crate::kernel::classify_loop_condition(
+                &boundary_state,
+                condition,
+                &guard_assumptions,
+            )
+            .map_err(|message| {
+                self.step_error(format!("loop condition classification: {message}"))
+            })?,
+            None => crate::kernel::LoopConditionFeasibility::TrueOnly,
+        };
+        // Structural descent is owed only if another iteration can start.
+        if guard.may_continue()
+            && let Some(measure) = structural_measure
             && let Some(failure) = crate::kernel::loop_structural_descent_failure(
                 loop_head_state,
-                &back_edge_state,
+                &boundary_state,
                 binders,
                 measure,
                 composite_resource_definitions,
@@ -1591,39 +1616,33 @@ impl<'a> Proof<'a> {
         {
             return Err(self.step_error(format!("loop state join: {failure}")));
         }
-        let invariant_obligations = crate::kernel::loop_invariant_obligations_at_back_edge(
-            &back_edge_state,
-            loop_entry_state,
-            invariant_checks,
-            head_iterations,
-            &assumptions,
-        )
-        .map_err(|message| self.step_error(format!("loop invariant classification: {message}")))?;
-        let assumptions = invariant_obligations
-            .into_iter()
-            .map(|obligation| obligation.proposition().clone())
-            .fold(assumptions, PureFactContext::assume_proposition);
-        if !crate::kernel::loop_condition_may_continue(&back_edge_state, condition, &assumptions)
-            .map_err(|message| {
-                self.step_error(format!("loop condition classification: {message}"))
-            })?
-        {
-            return Ok(());
-        }
         // Heap lifetime and resource ownership are compared against the head
         // the body actually started from. That is the loop entry context for
         // an ordinary loop, and the loop's own narrower resource context when
         // the loop declares `owns` or `views` clauses of its own. A binder's
         // model is what its invariants constrain, so the ownership comparison
         // sets it aside; the invariant obligations above checked it.
-        crate::kernel::loop_binder_state_components_match_at_back_edge(
+        let head_join = crate::kernel::loop_binder_state_components_match_at_back_edge(
             loop_head_state,
-            &back_edge_state,
+            &boundary_state,
             binders,
-            &assumptions,
+            &guard_assumptions,
             composite_resource_definitions,
-        )
-        .map_err(|message| self.step_error(format!("loop state join: {message}")))
+        );
+        let head_compatible = match head_join {
+            Ok(()) => true,
+            Err(message) if guard.may_continue() => {
+                return Err(self.step_error(format!("loop state join: {message}")));
+            }
+            // The guard already establishes an exit. This comparison only
+            // selects its representation; it does not classify control flow.
+            Err(_) => false,
+        };
+        Ok(LoopBoundary {
+            state: boundary_state,
+            guard,
+            head_compatible,
+        })
     }
 
     /// Consume the complete prepared bundle without lowering or proof search.
@@ -1999,12 +2018,14 @@ fn retained_have_body(certificate: &ProofCertificate) -> Result<ProofCertificate
         .ok_or_else(|| ClickError::new("a step obligation proof retained no `have`"))
 }
 
-/// Requirements up to alpha-equivalence, in the order first met.
+/// Requirements up to the comparison used by written obligation proofs, in
+/// the order first met. In particular, different closed true comparisons
+/// must not produce entries that replay matches to the same obligation.
 fn distinct_requirements(recorded: Vec<UnresolvedRequirement>) -> Vec<UnresolvedRequirement> {
     let mut distinct: Vec<UnresolvedRequirement> = Vec::new();
     for requirement in recorded {
         if !distinct.iter().any(|seen| {
-            crate::kernel::proof::propositions_are_alpha_equal(
+            super::super::smart_closures::propositions_match_after_canonical_loads(
                 &seen.proposition,
                 &requirement.proposition,
             )
@@ -2013,6 +2034,31 @@ fn distinct_requirements(recorded: Vec<UnresolvedRequirement>) -> Vec<Unresolved
         }
     }
     distinct
+}
+
+#[test]
+fn requirement_deduplication_uses_replay_truth_and_polarity() {
+    let requirement = |left: u32, right: u32| UnresolvedRequirement {
+        proposition: Proposition::ConditionIs(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessEqual,
+                left: Box::new(left.into()),
+                right: Box::new(right.into()),
+            },
+            true,
+        ),
+        context: None,
+        introductions: Default::default(),
+        call_site: None,
+        assertion_condition: None,
+        surface: None,
+    };
+    let first = requirement(0, 0);
+    let false_bound = requirement(2, 1);
+    let distinct =
+        distinct_requirements(vec![first.clone(), requirement(0, 1), false_bound.clone()]);
+    assert_eq!(distinct, vec![first, false_bound]);
 }
 
 thread_local! {
@@ -2107,6 +2153,6 @@ mod search;
 enum FrontierResult {
     /// The local it assigns.
     Local(crate::kernel::BindingName),
-    /// The result of this call step.
-    Call(u32),
+    /// The typed result the step retained.
+    Retained(u32),
 }

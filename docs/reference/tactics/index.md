@@ -343,7 +343,7 @@ the one execution transition that fails.
 | --- | --- | --- | --- | --- |
 | `mark name;` | simple | Specialized | Name the current execution state. | [Reference](#proof-marks) |
 | `step()` | simple | Core | Execute one checked statement transition. | [Reference](#single-statements) |
-| `let { result: name } = step()` | simple | Specialized | Bind the checked value of a scalar assignment. | [Reference](#binding-a-statement-result) |
+| `let { result: name } = step()` | simple | Specialized | Bind a checked assignment, call, or scalar step result. | [Reference](#binding-a-statement-result) |
 | `step_until(statement(i))` | smart | Specialized | Execute up to a selected source point, or to `function.exit`, without splitting. | [Reference](#execution-to-a-point) |
 | `branch [ensuring { ... } then] { ... } else { ... }` | control | Core | Prove and join the arms of source control flow. | [Reference](#source-branches) |
 | `loop [as name] { ... }` | control | Core | Prove a loop from its invariants and ranking obligations. | [Reference](#loop-transitions) |
@@ -543,28 +543,29 @@ separate smart `implicit closer` row at the step.
 
 **Form:** `let { result: name } = step()`
 
-**Specialized.** Write it when a later fact must name an assigned value after
-its local is overwritten or leaves scope. Execute the scalar assignment at the
-current frontier and bind its checked value to an immutable proof name. The name
-continues to denote that value after the source local is overwritten or leaves
-scope.
+**Specialized.** Bind the checked value from the next assignment, call, or
+scalar evaluation step to an immutable proof name. The name still refers to
+that value after the program overwrites the local, leaves its scope, or uses
+the step result.
 
-**Accepts** a frontier whose next lowered statement assigns a scalar or
-pointer C local without a call: `y = e;`, `x += e;`, `x++;`, or the second
-step of `int32 y = e;` (its initializing assignment). `name` must not be a C
-local in scope or a parameter. A proof name may be bound again, and the newest
-binding wins. The step executes exactly as `step()` does, and `name` then
-denotes the assigned value.
+**Accepts** a scalar or pointer local assignment such as `y = e;`,
+`x += e;`, or the initializing assignment of `int32 y = e;`. It also accepts
+a call whose result is used, including `y = g(x);`, `if (g(x))`, or
+`return g(x);` at the call step. Bare `step()` must be able to resolve the
+call in the current proof context. It also accepts a scalar value that the
+front end retains in a separate step, such as a Rust load followed by an
+arithmetic check. A proof name may be rebound, and the newest binding wins.
 
 **Outside it**, with what to write instead:
 
-- An assignment from a call, `y = g(x);`: use
-  `let { result: name } = step(g, { })`. The empty map is enough for a
-  callee without binders.
+- A call that needs a callee, contract, or binder selection: supply it on
+  the right, for example `let { result: name } = step(g, { input: instance })`.
+  Use the named call form to bind any resources the call produces.
+- A call whose result C discards: use `step()`.
 - A store through a pointer, field, or array element (`p[0] = 3;`,
   `p->v = 3;`): use `step()` and name the cell.
-- A `return`, a declaration's first step, or any other non-assignment: use
-  `step()`. `result` names a returned value.
+- A return step itself or a declaration's first step: use `step()`.
+  In an outcome proof, `result` names the function's return value.
 - A name that is a C variable here is refused with `names a C variable here`.
   Choose another name.
 - An output other than `result`, such as `let { value: v } = step()`, is
@@ -575,7 +576,7 @@ denotes the assigned value.
 The ordinary step checks every access and arithmetic prerequisite, and the
 binding adds no assumption. Expansion retains the binding unchanged.
 
-**Checked examples:** [`step_result_binding_names_checked_values_and_survives_overwrite`](https://github.com/clicklang/click/blob/master/src/surface/tests/project_tests.rs), [`a_step_result_name_can_be_bound_again.md`](https://github.com/clicklang/click/blob/master/mdtests/a_step_result_name_can_be_bound_again.md), [`step_result_binding_refuses_a_store_through_a_pointer.md`](https://github.com/clicklang/click/blob/master/mdtests/step_result_binding_refuses_a_store_through_a_pointer.md)
+**Checked examples:** [`c_static_function.md`](https://github.com/clicklang/click/blob/master/mdtests/c_static_function.md), [`step_binds_call_result_with_default_resource.md`](https://github.com/clicklang/click/blob/master/mdtests/step_binds_call_result_with_default_resource.md), [`step_result_binding_names_checked_values_and_survives_overwrite`](https://github.com/clicklang/click/blob/master/src/surface/tests/project_tests.rs), [`a_step_result_name_can_be_bound_again.md`](https://github.com/clicklang/click/blob/master/mdtests/a_step_result_name_can_be_bound_again.md), [`step_result_binding_refuses_a_store_through_a_pointer.md`](https://github.com/clicklang/click/blob/master/mdtests/step_result_binding_refuses_a_store_through_a_pointer.md)
 
 ### Execution to function exit
 
@@ -803,9 +804,8 @@ loop, `iterations` is that loop's own count, and the enclosing proof reads it
 as `loop(i).iterations` once the inner loop exits. `iterations` outside a loop,
 and `loop(i).iterations` on a path that has not left loop `i`, are refused. In a
 loop's clauses and phases bare `iterations` is always the pass count; a
-program variable of that name is [`c(iterations)`](../language/index.md#explicit-c-binding-references),
-or `rust(iterations)` in a Rust sidecar
-([`a_c_local_named_iterations_is_written_c_iterations.md`](https://github.com/clicklang/click/blob/master/mdtests/a_c_local_named_iterations_is_written_c_iterations.md)).
+program variable of that name is [`program::iterations`](../language/index.md#program-binding-references)
+([`a_c_local_named_iterations_is_written_program_iterations.md`](https://github.com/clicklang/click/blob/master/mdtests/a_c_local_named_iterations_is_written_program_iterations.md)).
 Like any proof `Integer`, it compares with a C value directly, `i == iterations`
 ([`a_loop_states_a_running_total_over_its_pass_count.md`](https://github.com/clicklang/click/blob/master/mdtests/a_loop_states_a_running_total_over_its_pass_count.md),
 [`a_loop_pass_count_names_the_passes_after_the_loop.md`](https://github.com/clicklang/click/blob/master/mdtests/a_loop_pass_count_names_the_passes_after_the_loop.md),
@@ -919,8 +919,8 @@ the C value.
 - The `let` pattern names every `produces` binder. A produced instance's
   resource arguments are the call's arguments
   ([`c_call_binder_transport_multiple_produces.md`](https://github.com/clicklang/click/blob/master/mdtests/c_call_binder_transport_multiple_produces.md)).
-- A callee without binders takes the empty map `{ }`. Use this to name the
-  result of `y = g(x);` or `return g(x);`
+- An explicitly named callee without binders takes the empty map `{ }`.
+  This form also names a call result when the proof names the callee
   ([`call_result_in_condition.md`](https://github.com/clicklang/click/blob/master/mdtests/call_result_in_condition.md)).
   `name` must not be a C variable. A proof name may be rebound.
 
@@ -1095,7 +1095,7 @@ step is still checked.
 
 | Form | Class | Audience | Purpose | Details |
 | --- | --- | --- | --- | --- |
-| `both { ... } and { ... }` | control | Expansion output | Prove both sides of a conjunction. | [Reference](#conjunctions) |
+| `both { left => { ... } right => { ... } }` | control | Expansion output | Prove both sides of a conjunction. | [Reference](#conjunctions) |
 | `outcomes { returned => { ... } threw => { ... } }` | control | Specialized | Prove each returned or exceptional outcome. | [Reference](#execution-outcomes) |
 | `solve()` | smart | Core | Close one goal from available facts and bounded rules. | [Reference](#simplification) |
 | `solve() using { P; ... }` | smart | Specialized | Close one goal from written premises only. | [Reference](#simplification-with-selected-premises) |
@@ -1125,9 +1125,8 @@ step is still checked.
 | `if P [ensuring { ... } then] { ... } else { ... }` | control | Core | Split a proof on a chosen proposition. | [Reference](#proposition-branches) |
 | `cases { A => { ... } B => { ... } }` | control | Specialized | Prove a written collection of cases. | [Reference](#explicit-cases) |
 | `open(resource) { ... }` | control | Specialized | Unfold a resource for a nested proof. | [Reference](#scoped-resource-opening) |
-| `open(...) { ... } by { ... }` | control | Expansion output | Supply the proof that restores an opened resource. | [Reference](#scoped-resource-opening-with-restoration) |
 | `witness(value, ...);` | simple | Specialized | Supply values for existential binders. | [Reference](#existential-witnesses) |
-| `obtain (name: Type, ...) { P }` | simple | Specialized | Name witnesses from an available existential fact. | [Reference](#obtaining-witnesses) |
+| `let name = obtain(exists (k: Type) { P });` | simple | Specialized | Name witnesses from an available existential fact. | [Reference](#obtaining-witnesses) |
 
 `sorry()` is a dev-only proof hole, not a tactic for committed proofs: it
 parses only under `click verify --allow-sorry` and closes its goal without
@@ -1141,8 +1140,8 @@ cannot reuse a live proof binding. Narrow machine binders also supply their
 intrinsic bounds at introduction; these type facts need no extra `intro()`.
 A written range quantifier still has its explicit range-membership guard.
 
-`both { ... } and { ... }` proves an `A and B` goal by opening the exact `A`
-and `B` child goals. Both arms inherit the parent assumptions; neither inherits
+`both { left => { ... } right => { ... } }` opens the exact `A` and `B` child
+goals of `A and B`. Both arms inherit the parent assumptions; neither inherits
 facts proved only in the other arm. This differs from `known()`, which
 closes a conjunction from already-established facts. Empty or unfinished arms fail.
 The `both` source location owns expansion and profiling of its nested proof;
@@ -1268,12 +1267,13 @@ complete rewritten surface proof through the ordinary entry point.
 
 ### Conjunctions
 
-**Form:** `both { ... } and { ... }`
+**Form:** `both { left => { ... } right => { ... } }`
 
 **Expansion output.** `click expand` writes it; by hand, a conjunction goal is
-normally split by `solve` or the implicit closer; write `both` only when each side needs its
-own explicit proof. Prove the exact left and right children of an `and` goal in
-separate scopes.
+normally split by `solve` or the implicit closer. Write `both` when each side
+needs its own explicit proof. Write the `left` arm first for the left child
+of the `and` goal, then the `right` arm for the right child. Each arm has
+its own proof scope.
 
 **Failure, checking, and tools:**
 
@@ -1284,12 +1284,11 @@ assumptions. The source container owns expansion of its nested proof.
 
 ### Execution outcomes
 
-**Form:** `outcomes { returned => { ... } threw => { ... } }`
+**Form:** `outcomes { returned[(value)] => { ... } threw[(error)] => { ... } }`
 
 **Specialized.** Write it at a C++ call that may throw, when the two outcomes
 need different proofs; the implicit tail splits them for you. At a maybe-throwing
-call, prove its two successors separately; each arm begins with the `step()`
-that runs the call along its edge. Inside a `try`/`catch (int name)` the `threw`
+call, `outcomes` executes the call and starts each arm at its checked successor. Inside a `try`/`catch (int name)` the `threw`
 arm follows the caught exceptional edge into the handler.
 
 Outside any `try` the `threw` arm ends at function exit with that throw, while
@@ -1298,13 +1297,21 @@ call's own nested `outcomes`. The implicit tail splits every maybe-throwing call
 way, inside a C `if` arm as well as at top level, and expansion writes the split
 it took.
 
+Write `returned(value)` to name the checked value of a call whose result the
+program uses. Write `threw(error)` to name the thrown payload. Each name is a
+proof binding scoped to its arm. At function exit, the same syntax selects
+the call edge already recorded on the path and binds the same call payload.
+For example, a call's returned value still names that value after the caller
+transforms it, and a caught exception names the original thrown value even
+if the caller returns normally. An arm without a name can ignore its payload.
+
 **Failure, checking, and tools:**
 
 The checked execution must establish exactly one edge of each kind. Each arm has
 its own outcome goal and must close it; neither arm can use the other's facts or
 state. Expansion preserves both certificates.
 
-**Checked examples:** [`cpp_import.rs`](https://github.com/clicklang/click/blob/master/tests/cpp_import.rs), [`outcomes_routes_a_throw_that_leaves_the_function.md`](https://github.com/clicklang/click/blob/master/mdtests/outcomes_routes_a_throw_that_leaves_the_function.md)
+**Checked examples:** [`cpp_import.rs`](https://github.com/clicklang/click/blob/master/tests/cpp_import.rs), [`outcomes_routes_a_throw_that_leaves_the_function.md`](https://github.com/clicklang/click/blob/master/mdtests/outcomes_routes_a_throw_that_leaves_the_function.md), [`outcomes_payload_bindings.md`](https://github.com/clicklang/click/blob/master/mdtests/outcomes_payload_bindings.md)
 
 ### Simplification
 
@@ -2171,7 +2178,7 @@ by identity; it does not unfold the resource or enumerate its other fields.
 Split expressions involving different resource fields into individual links.
 Supported field values include algebraic values, mathematical `Integer`,
 abstract C values, pointers, and the integer types listed above.
-A byte read retains its one-byte storage extent even though C promotes its
+A byte read retains its one-byte storage size even though C promotes its
 equality to `int32`; separating one byte never licenses a four-byte read. The
 result is oriented after-to-before. Logical read producers
 retain their complete typed values under the exact version point, address, and read
@@ -2184,7 +2191,7 @@ checking does not retain these observations. Missing observations fail locally;
 no alias or history fallback runs.
 Pointer preservation also accepts address equality when the pointer domains
 already agree. Equality composition uses ordinary `rewrite` and `known` steps.
-Footprints can record non-memory resources, symbolic release extents, and
+Footprints can record non-memory resources, symbolic release spans, and
 multiple mutable call resources. Wide-index memory ranges are not yet supported.
 Joined branch/loop footprints still need
 producer integration; use recorded individual transitions where available.
@@ -2269,10 +2276,10 @@ fact. Write `rewrite(x, y)`; the old `rewrite(x == y)` form is refused.
   range premise and does not turn a machine equality into an Integer one.
   The conversion is bounded to 64 nodes in the cited equality.
 - A pointer equality rewrites the base of an explicit `viewable(...)` claim
-  while preserving the point it is stated at and its byte extent. A cited shifted view
-  whose extent is `(i + 4) - i` also covers the same address with a literal
-  four-byte extent; constant endpoint differences are compared in the
-  extent's own modular arithmetic.
+  while preserving the point it is stated at and its byte span. A cited shifted view
+  whose span is `(i + 4) - i` also covers the same address with a literal
+  four-byte span; constant endpoint differences are compared in the
+  span's own modular arithmetic.
 - A pointer equality also rewrites the addresses of loads read through the
   pointer, including byte reads observed with `to_integer` and a pointer that
   is itself loaded (`o->in->cells[2]` under `o->in == a`); it keeps the read's
@@ -2846,7 +2853,7 @@ top-level `let ih = induct(n)`, when:
   measure needs no domain fact.
 
 It adds one fact, `ih`: for every `m` of the measure's type, `m >= 0` (signed
-only), `m < n`, and every theorem requirement at `m`, together with the extent
+only), `m < n`, and every theorem requirement at `m`, together with the span
 halves of each range that requirement names at `m`, imply the theorem's goal
 at `m`. Every other parameter keeps its current value. The goal is unchanged.
 Earlier helper proofs may precede `induct`; the hypothesis is unavailable
@@ -2948,12 +2955,12 @@ type (any expression, such as `n - 1` or `n - 1u64`), when:
 - Every listed `P` is an available fact, read as `using` lists read premises:
   exactly, under another form of the same order claim (`0 <= m` for
   `m >= 0`, `n > m` for `m < n`), or true without facts. Listing a range a
-  clause stated also cites its two extent halves where they are available.
+  clause stated also cites its two span halves where they are available.
   Extra or repeated premises are allowed.
 - Every guard of the hypothesis at `m`, split into its `and` conjuncts, is
   true by context-free evaluation or is one listed premise under one of those
   forms. The guards are `m >= 0` (signed only), `m < n`, each requirement
-  at `m`, and the extent halves of every range a requirement names at `m`.
+  at `m`, and the span halves of every range a requirement names at `m`.
 
 It adds the theorem's goal at `m` as a fact and closes the current goal when
 that fact is the goal. Nothing else in context is read.
@@ -2982,8 +2989,8 @@ available: n - 2 < n``). Click performs one local instantiation with no premise
 search; expansion is unchanged.
 
 **Checked examples:** [`pure_induction_countdown_explicit.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_induction_countdown_explicit.md),
-[`induction_hypothesis_cites_a_listed_range_with_its_extent.md`](https://github.com/clicklang/click/blob/master/mdtests/induction_hypothesis_cites_a_listed_range_with_its_extent.md),
-and [`induction_hypothesis_owes_the_range_extent.md`](https://github.com/clicklang/click/blob/master/mdtests/induction_hypothesis_owes_the_range_extent.md).
+[`induction_hypothesis_cites_a_listed_range_with_its_span.md`](https://github.com/clicklang/click/blob/master/mdtests/induction_hypothesis_cites_a_listed_range_with_its_span.md),
+and [`induction_hypothesis_owes_the_range_span.md`](https://github.com/clicklang/click/blob/master/mdtests/induction_hypothesis_owes_the_range_span.md).
 
 ### Intermediate facts
 
@@ -3181,35 +3188,14 @@ an `ensuring` interface can rejoin before the block closes.
 
 Missing ownership, an undecided guard, or failure to restore the body fails. A
 body fact the closing fold leaves open is proved by the implicit closer, which
-expansion prints as `open(...) { ... } by { ... }`. When it leaves several open,
-the implicit closer proves each, and expansion prints them as `have`s at the end
-of the block. Click checks the exact
-resource transition; expansion recurses, and profiling reports descendants.
+expansion writes as `have` steps at the end of the block. To supply a closing
+proof by hand, put the `have` there yourself, after any execution that
+establishes the fact. This also works when the block reaches function exit.
+A trailing `by` after the block is refused.
 
 **Checked examples:** [`resource_population_open.md`](https://github.com/clicklang/click/blob/master/mdtests/resource_population_open.md), [`open_scope_model_match_terminal.md`](https://github.com/clicklang/click/blob/master/mdtests/open_scope_model_match_terminal.md), [`open_scope_model_match_rejoins.md`](https://github.com/clicklang/click/blob/master/mdtests/open_scope_model_match_rejoins.md), [`open_scope_model_match_rejects_bad_arm.md`](https://github.com/clicklang/click/blob/master/mdtests/open_scope_model_match_rejects_bad_arm.md)
 
-### Scoped resource opening with restoration
-
-**Form:** `open(...) { ... } by { ... }`
-
-**Expansion output.** `click expand` writes it; by hand, write it only to give
-the close a different proof than the implicit closer. Closing an `open` scope
-folds its resource again; the body after `by` proves the one body fact that fold
-leaves open, as `fold(...) by { ... }` does, where the block ends, or after
-execution when the block reaches function exit.
-
-A bare `open` proves that fact by the implicit closer, which expansion prints as
-this `by`. The body is one tactic call, such as `solve();`, or a block.
-
-**Failure, checking, and tools:**
-
-Refused when the close leaves no body fact open (superfluous) or more than one;
-prove the others with `have` in the block, the form expansion writes for a bare
-`open` whose close leaves several. Expansion keeps the `by` and
-prints the body's checked steps; a smart tactic written in the `by` expands with its claim
-(`click expand --claim`), not as a site of its own.
-
-**Checked examples:** [`open_by_proves_the_closing_fold_body_fact.md`](https://github.com/clicklang/click/blob/master/mdtests/open_by_proves_the_closing_fold_body_fact.md), [`open_by_is_refused_when_the_close_leaves_nothing_open.md`](https://github.com/clicklang/click/blob/master/mdtests/open_by_is_refused_when_the_close_leaves_nothing_open.md)
+**Checked closing examples:** [`open_closing_fact_inside_block.md`](https://github.com/clicklang/click/blob/master/mdtests/open_closing_fact_inside_block.md), [`open_trailing_by_is_rejected.md`](https://github.com/clicklang/click/blob/master/mdtests/open_trailing_by_is_rejected.md)
 
 ### Existential witnesses
 
@@ -3256,46 +3242,32 @@ and profiling charges one instantiation per value.
 
 ### Obtaining witnesses
 
-**Form:** `obtain (name: Type, ...) { P }`
+**Forms:** `let name = obtain(exists (k: Type) { P });` and
+`let (a, b) = obtain(exists (x: T, y: U) { P });`.
 
-**Specialized.** Write it to use an existential fact by naming its witness. Open
-an already established `exists (name: Type, ...) { P }`, introducing the bound
-values and instantiated body into the proof context. Each name is in scope for
-every later tactic of the same proof block, whatever its type: a `have` goal, an
-`instantiate` argument or `using` premise, a `contradiction` fact, a theorem
-argument, or a `witness`.
+**Specialized.** Open an established existential and name its witnesses.
+The right side states the exact available proposition, up to its bound names.
+The left side names the outputs in quantifier order. Their types come from
+the existential. Each output and the instantiated body are available in
+subsequent tactics in the same proof block.
 
-**Accepts** an `obtain` whose written `exists (name: Type, ...) { P }` is an
-available fact up to the binders' names, held alone or as a leaf conjunct of a
-fact (`requires n > 0 and exists (k: int32) { k < n };`), when:
-
-- The fact is a requirement, a `have` conclusion, or another opened body, and
-  `P` is written as the fact states it, with each binder type the same.
-- Binder types are C integers, pointers, `Integer`, or algebraic types.
-- Fewer names than the fact's binders open the outer ones, when `P` is written
-  as the remaining existential: `obtain (a: int32) { exists (y: int32) { a < y } }`
-  opens `exists (x: int32, y: int32) { x < y }` one binder at a time.
-- A `(0..n).any(|k| { B })` fact opens with its bounds written in the body:
-  `obtain (m: int32) { 0 <= m and m < n and B' }`, `B'` being `B` at `m`.
-- No name is a parameter, `result`, a local, or an earlier `obtain` name.
-
-Each name is bound to a fresh value, and the body at those values becomes a
-fact.
-
-**Outside it**, with what to write instead:
-
-- An existential held only under a disjunction or implication: `cases` or
-  `have` it first.
-- A body spelled differently from the fact (`n > m` for `m < n`), or a
-  different binder type: write it as the fact states it.
-- More names than the fact's binders: name only those it has.
+- The existential may be a requirement, a `have` conclusion, or a leaf
+  conjunct of an available fact. It must be available before the tactic runs.
+- One output opens the outermost binder. For example,
+  `let a = obtain(exists (x: int32, y: int32) { x < y });` leaves
+  `exists (y: int32) { a < y }` available.
+- For `(0..n).any(|k| { B })`, give the explicit existential, including the
+  range bounds, as the argument.
+- To open a historical existential, write
+  `let a = obtain(at(point, exists (x: int32) { P }));`.
+- Output names must be distinct and fresh in the proof block. The quantifier
+  binds its own variables independently of the output names.
 
 **Failure, checking, and tools:**
 
-An unavailable existential, wrong binder type, or name already in scope fails;
-the first two print the written existential as an unsatisfied requirement.
-Prove the existential with `have` first if needed. Expansion retains this exact
-step.
+An unavailable existential, too many outputs, or an output name already in
+scope fails. State an existential with `have` first if it needs a proof.
+Expansion retains the `let` and its source proposition.
 
 **Checked examples:** [`integer_exists_choose.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_exists_choose.md), [`witness_and_choose.md`](https://github.com/clicklang/click/blob/master/mdtests/witness_and_choose.md), [`obtain_requires_the_written_existential_body.md`](https://github.com/clicklang/click/blob/master/mdtests/obtain_requires_the_written_existential_body.md)
 
@@ -3416,7 +3388,7 @@ pure theorem too, where the listed premises are all there is to read.
   without facts. A quantified premise may name its own binder: a call's
   postcondition held under the binder its lowering chose is cited by a written
   form with another, as in `apply using`. Listing a stated range also cites
-  its two extent halves.
+  its two span halves.
 - The source `P` is a listed premise, follows from the listed premises by the
   kernel's atomic derivation (`old(p[0]) <= 7` from `old(p[0]) == 7`), or is
   a reflexive equality, under binders and guards, which needs no entry. At a
@@ -3553,7 +3525,7 @@ Beyond it:
 
 - A `viewable` target is decided by the kernel's viewability rules, so a range
   narrows to a sub-range the listed order facts place inside it, provided the
-  source range is established to be a valid 32-bit byte extent.
+  source range is established to be a valid 32-bit byte span.
 - A fact about an application of an `Integer` range-fold function whose body
   the kernel checks, reading its one `T[]` argument (for a C integer `T` such
   as `int32` or `uint64`) only at the fold's own index, crosses each store and

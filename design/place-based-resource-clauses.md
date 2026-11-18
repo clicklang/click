@@ -18,7 +18,7 @@ struct-pointer range counts structs, rather than the historical four-byte
 cells. `&place`, `object(p)` and ranges on scalar fields were retired and
 are refused with their replacements. Use a field, `*p`, or a typed range.
 Wide symbolic struct ranges have since gained the bounded support described in
-[Heap extents](heap-extents.md); the original migration's blanket refusal is
+[Allocation sizes](heap-allocation-sizes.md); the original migration's blanket refusal is
 not a current support statement.
 
 C++ reference parameters name the referent directly; Rust references use `*r`
@@ -44,7 +44,10 @@ carry the same address and retain their nominal layout: `r.field` reads a
 field of the referent and `&r` names its address. They introduce no ownership,
 copy, or destruction of that object; reads and writes use the caller's held
 permissions. Pointer-based bindings check the entire record's live storage
-without loading fields. See [supported C++](../docs/reference/cli/import.md).
+without loading fields. Struct/class reference results retain the same nominal
+layout through calls: `result.field` reads a field and `&result` names the
+returned address. A local binding to that result keeps the existing reference
+carrier and permissions. See [supported C++](../docs/reference/cli/import.md).
 
 ## Decisions and history
 

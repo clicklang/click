@@ -40,7 +40,7 @@ pub(super) use path_facts::{
     shared_byte_offset_from_pointer_offset, shared_element_index_from_offset,
     shared_element_index_from_offset_with_facts, shared_pointer_byte_offset_from_base,
     single_scaled_index_equal_to_constant, solve_builtin_prop, uint64_element_count_from_bytes,
-    uint64_extent_in_elements, wide_index_bound_conditions, wrap_path_context,
+    uint64_size_in_elements, wide_index_bound_conditions, wrap_path_context,
     wrap_path_context_with_introductions, wrap_proof_facts,
 };
 pub(crate) use substitution::*;
@@ -49,12 +49,12 @@ pub(crate) use variable_collection::*;
 
 pub(crate) fn memory_effect_write_accesses(
     facts: &(impl ExecutionFactSource + ?Sized),
-) -> BTreeSet<(Pointer, u32)> {
+) -> BTreeSet<(Address, u32)> {
     collect_memory_effect_write_accesses(facts)
 }
 
 pub(crate) fn memory_effect_write_pointers(
     facts: &(impl ExecutionFactSource + ?Sized),
-) -> BTreeSet<Pointer> {
+) -> BTreeSet<Address> {
     collect_memory_effect_write_pointers(facts)
 }

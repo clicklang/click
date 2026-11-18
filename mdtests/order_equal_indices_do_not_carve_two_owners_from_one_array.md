@@ -1,8 +1,10 @@
 # order-equal indices do not carve two owners from one array
 
 `i <= j` and `j <= i` make `x + i` and `x + j` one cell, so the call would
-hand `wr` two owners of it. The call is refused for overlapping owners.
-Admitting it would let `wr` prove `result == 1` from their separation where
+hand `wr` two owners of it. After reserving the first cell, the caller cannot
+supply the second requirement from the remaining array partition. The refusal
+comes from one-use input reservation, without discovering pairwise conflicts
+inside the callee's declared separating precondition. Admitting it would let `wr` prove `result == 1` from their separation where
 the C returns 2.
 
 ```c filename=order_equal_indices_do_not_carve_two_owners_from_one_array.c
@@ -41,5 +43,5 @@ int32 caller(int32* x, int32 i, int32 j) {
 ```
 
 ```expect
-fail: overlapping owned memory resource facts `owns x[i]` and `owns x[j]`
+fail: missing resource fact `owns x[j]`
 ```

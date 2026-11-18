@@ -114,16 +114,16 @@ pub(super) fn set_contract_result(
                 // declaration must remain in the memory history so copying
                 // its fields does not disconnect unrelated input states.
                 // A symbolic pointer still supplies only a synthetic layout.
-                if matches!(pointer.block, PointerBlock::Symbolic(_)) {
+                if matches!(pointer.base, AddressBase::Symbolic(_)) {
                     state
                         .memory
                         .clone()
-                        .with_block_without_derivation(pointer.block.clone(), layout.size_bytes())
+                        .with_block_without_derivation(pointer.base.clone(), layout.size_bytes())
                 } else {
                     state
                         .memory
                         .clone()
-                        .with_block(pointer.block.clone(), layout.size_bytes())
+                        .with_block(pointer.base.clone(), layout.size_bytes())
                 },
             );
         }
@@ -179,12 +179,12 @@ pub(super) fn complete_aggregate_return(
         return Err(AggregateReturnRefusal::UninitializedRead);
     }
     let frame = state.next_local_frame;
-    let destination = Memory::aggregate_return_pointer(frame);
+    let destination = SymbolicMemory::aggregate_return_pointer(frame);
     state.set_memory(
         state
             .memory
             .clone()
-            .with_block(destination.block.clone(), layout.size_bytes()),
+            .with_block(destination.base.clone(), layout.size_bytes()),
     );
     state.set_memory(copy_aggregate_fields(
         state.memory.clone(),
@@ -275,7 +275,7 @@ pub(super) fn incompatible_pointer_argument(
             }
             if assumptions.decide(&ConditionTerm::pointer_equal(
                 pointer.pointer().clone(),
-                Pointer::null(),
+                Address::null(),
             )) == Some(true)
             {
                 return None;
@@ -317,7 +317,7 @@ pub(super) fn incompatible_pointer_return(
     }
     if assumptions.decide(&ConditionTerm::pointer_equal(
         pointer.pointer().clone(),
-        Pointer::null(),
+        Address::null(),
     )) == Some(true)
     {
         return None;
@@ -394,7 +394,7 @@ pub(super) fn coerce_function_return_value(
             pointer.program_type(),
             ProgramType::Int32Pointer | ProgramType::UInt8Pointer
         )
-        && !pointer.pointer().block.is_function()
+        && !pointer.pointer().base.is_function()
     {
         return Some(ProgramValue::typed_pointer(
             pointer.pointer().clone(),
@@ -447,20 +447,20 @@ pub(super) fn symbolic_contract_result(
     // it is a fresh object the C abstract machine creates for the caller to
     // copy out of, and the program has no name and no prior pointer for it.
     // Giving it a `Temporary` identity rather than a symbolic one is what lets
-    // `PointerBlock::proven_distinct` separate it from every other block, so a
+    // `AddressBase::proven_distinct` separate it from every other block, so a
     // read of one of its fields is framed across an unrelated store by
     // structure alone. A symbolic block would be separated from nothing, and a
     // load through it would then need aliasing evidence that no honest contract
     // about a returned struct can state.
     if interface.return_aggregate_layout().is_some() {
         return ProgramValue::typed_pointer(
-            Pointer::verifier_temporary(variable),
+            Address::verifier_temporary(variable),
             interface.return_type(),
         )
         .with_pointer_pointee_constant(interface.return_pointee_is_constant());
     }
     symbolic_call_result(interface.return_type(), variable)
-        .complete_word(Pointer::symbolic(variable))
+        .complete_word(Address::symbolic(variable))
         .with_pointer_pointee_constant(interface.return_pointee_is_constant())
         .with_pointer_declared_object_class(interface.return_pointee_class())
 }
@@ -478,7 +478,7 @@ pub(crate) fn symbolic_call_result(program_type: ProgramType, variable: Variable
             ProgramValue::of_bool(crate::kernel::ConditionTerm::Variable(variable))
         }
         ProgramType::VoidPointer | ProgramType::VoidPointerPointer => {
-            ProgramValue::typed_pointer(Pointer::symbolic(variable), program_type)
+            ProgramValue::typed_pointer(Address::symbolic(variable), program_type)
         }
         ProgramType::Int8 => ProgramValue::Int8(MachineTerm::Variable(variable)),
         ProgramType::Int16 => ProgramValue::Int16(MachineTerm::Variable(variable)),
@@ -493,7 +493,7 @@ pub(crate) fn symbolic_call_result(program_type: ProgramType, variable: Variable
         ProgramType::Float32 => ProgramValue::Float32(MachineTerm::Variable(variable)),
         ProgramType::Float64 => ProgramValue::Float64(MachineTerm::Variable(variable)),
         ProgramType::Int8Pointer | ProgramType::Int8PointerPointer => {
-            ProgramValue::typed_pointer(Pointer::symbolic(variable), program_type)
+            ProgramValue::typed_pointer(Address::symbolic(variable), program_type)
         }
         ProgramType::ParameterPointer(_)
         | ProgramType::Int16Pointer
@@ -518,10 +518,10 @@ pub(crate) fn symbolic_call_result(program_type: ProgramType, variable: Variable
         | ProgramType::Float64Pointer
         | ProgramType::Float32PointerPointer
         | ProgramType::Float64PointerPointer => {
-            ProgramValue::typed_pointer(Pointer::symbolic(variable), program_type)
+            ProgramValue::typed_pointer(Address::symbolic(variable), program_type)
         }
         ProgramType::FunctionPointer(_) => {
-            ProgramValue::typed_pointer(Pointer::symbolic_function(variable), program_type)
+            ProgramValue::typed_pointer(Address::symbolic_function(variable), program_type)
         }
         ProgramType::Int8Array(_) => {
             unreachable!("C functions cannot return array values")
@@ -546,8 +546,8 @@ pub(crate) fn symbolic_call_result(program_type: ProgramType, variable: Variable
 }
 
 pub(in crate::kernel) fn add_memory_store_obligation(
-    memory: &Memory,
-    pointer: &Pointer,
+    memory: &SymbolicMemory,
+    pointer: &Address,
     value: &ProgramValue,
     mut obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
@@ -700,7 +700,7 @@ pub(super) fn type_function_address_value(
     };
     match value {
         ProgramValue::Pointer(pointer)
-            if pointer.block.is_function()
+            if pointer.base.is_function()
                 && pointer.program_type()
                     == ProgramType::FunctionPointer(CallbackSignature::UNSPECIFIED) =>
         {
@@ -732,7 +732,7 @@ pub(super) fn contract_argument_binding_error(
             matches!(
                 (parameter.program_type(), value),
                 (ProgramType::FunctionPointer(expected), ProgramValue::Pointer(actual))
-                    if actual.block.is_function()
+                    if actual.base.is_function()
                         && actual.program_type() != ProgramType::FunctionPointer(expected)
             )
         })
@@ -760,7 +760,7 @@ pub(super) fn append_string_literal_loadable_facts(
         _ => return,
     };
     for literal in function.string_literals() {
-        let base = Memory::string_literal_pointer(literal.identity(), literal.bytes());
+        let base = SymbolicMemory::string_literal_pointer(literal.identity(), literal.bytes());
         let proposition = Proposition::MemoryLoadable {
             memory: state.memory.clone(),
             base,
@@ -902,8 +902,8 @@ fn bind_program_function_arguments_impl(
                 return None;
             }
             let source = pointer.pointer().clone();
-            let slot = Memory::frame_local_pointer(frame, parameter.binding_name());
-            register_block_alignment(&slot.block, layout.alignment_bytes());
+            let slot = SymbolicMemory::frame_local_pointer(frame, parameter.binding_name());
+            register_block_alignment(&slot.base, layout.alignment_bytes());
             // A proof's input object holds its own entry values: each field
             // is the read of that field before the object is declared, so
             // the value has the parameter's own spelling and no other
@@ -911,7 +911,7 @@ fn bind_program_function_arguments_impl(
             let source = if input_aggregates {
                 slot.clone()
             } else {
-                register_aggregate_argument_source(&slot.block, &source);
+                register_aggregate_argument_source(&slot.base, &source);
                 source
             };
             // Preserve the caller's memory state for symbolic source
@@ -928,7 +928,7 @@ fn bind_program_function_arguments_impl(
                 callee_state
                     .memory
                     .clone()
-                    .with_block(slot.block.clone(), layout.size_bytes()),
+                    .with_block(slot.base.clone(), layout.size_bytes()),
             );
             callee_state.locals.set_aggregate_object_at(
                 parameter.binding_name().clone(),
@@ -949,13 +949,13 @@ fn bind_program_function_arguments_impl(
             .with_pointer_pointee_constant(parameter.pointee_is_constant())
             .with_pointer_declared_object_class(parameter.pointee_class());
         if address_taken_parameters.contains(parameter.binding_name()) {
-            let slot = Memory::frame_local_pointer(frame, parameter.binding_name());
-            register_block_alignment(&slot.block, parameter.program_type().abi_alignment());
+            let slot = SymbolicMemory::frame_local_pointer(frame, parameter.binding_name());
+            register_block_alignment(&slot.base, parameter.program_type().abi_alignment());
             callee_state.set_memory(
                 callee_state
                     .memory
                     .clone()
-                    .with_block(slot.block.clone(), value.byte_width())
+                    .with_block(slot.base.clone(), value.byte_width())
                     .store(slot.clone(), value.clone()),
             );
             callee_state
@@ -983,7 +983,7 @@ fn bind_program_function_arguments_impl(
                         |source| source.retain_coerced_argument(value.clone()),
                     ),
                     parameter.program_type(),
-                    Memory::value_parameter_pointer(parameter.binding_name()),
+                    SymbolicMemory::value_parameter_pointer(parameter.binding_name()),
                     parameter.is_volatile(),
                     parameter.pointee_is_volatile(),
                     parameter.is_constant(),
@@ -1078,8 +1078,8 @@ pub(super) fn bind_contract_arguments(
                 return None;
             }
             let source = pointer.pointer().clone();
-            let slot = Memory::frame_local_pointer(frame, parameter.binding_name());
-            register_block_alignment(&slot.block, layout.alignment_bytes());
+            let slot = SymbolicMemory::frame_local_pointer(frame, parameter.binding_name());
+            register_block_alignment(&slot.base, layout.alignment_bytes());
             callee_state.set_memory(copy_aggregate_fields(
                 callee_state.memory.clone(),
                 &source,
@@ -1090,7 +1090,7 @@ pub(super) fn bind_contract_arguments(
                 callee_state
                     .memory
                     .clone()
-                    .with_block(slot.block.clone(), layout.size_bytes()),
+                    .with_block(slot.base.clone(), layout.size_bytes()),
             );
             callee_state.locals.set_aggregate_object_at(
                 parameter.binding_name().clone(),
@@ -1112,7 +1112,7 @@ pub(super) fn bind_contract_arguments(
                     |source| source.retain_coerced_argument(value.clone()),
                 ),
                 parameter.program_type(),
-                Memory::value_parameter_pointer(parameter.binding_name()),
+                SymbolicMemory::value_parameter_pointer(parameter.binding_name()),
                 parameter.is_volatile(),
                 parameter.pointee_is_volatile(),
                 parameter.is_constant(),
@@ -1405,7 +1405,7 @@ mod pointer_argument_tests {
     fn pointer_execution_arguments_keep_selected_roots_and_native_bindings() {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = PointerValue::new(
-            Pointer::symbolic(Variable(1027100)),
+            Address::symbolic(Variable(1027100)),
             ProgramType::Int32Pointer,
         );
         let root = KernelTerm::shared_pointer_call(
@@ -1477,7 +1477,7 @@ mod pointer_return_tests {
     fn pointer_returns_keep_complete_payload_and_const_drop_refusals() {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = PointerValue::new(
-            Pointer::symbolic(Variable(1027400)),
+            Address::symbolic(Variable(1027400)),
             ProgramType::Int32Pointer,
         )
         .with_pointee_volatile(true)
@@ -1531,7 +1531,7 @@ mod pointer_return_tests {
         assert!(!bound.pointer().unwrap().pointee_volatile());
         state.locals.set_typed(
             "mutable",
-            ProgramValue::typed_pointer(Pointer::null(), ProgramType::Int32Pointer),
+            ProgramValue::typed_pointer(Address::null(), ProgramType::Int32Pointer),
             ProgramType::Int32Pointer,
         );
         assert!(

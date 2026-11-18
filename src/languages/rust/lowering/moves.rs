@@ -80,7 +80,7 @@ pub(super) fn region_count(statement: &ProgramStatement) -> usize {
             body,
             ..
         } => {
-            let (_, _, test) = loop_test.execution_parts();
+            let test = loop_test.source_region();
             1 + region_count(body)
                 + test
                     .as_ref()
@@ -351,15 +351,21 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
         return Err("MIR body has no entry block".into());
     }
     let flow = flow::Flow::analyze(f, mir)?;
+    let owner = LocalFunctionId::new(Some(cx.source.to_owned()), f.name.clone());
+    let mut escape_flags = BTreeMap::new();
     for (header, loop_) in &flow.loops {
         if loop_.escapes.is_empty() {
             continue;
         }
-        let flag = escape_flag(*header);
-        if !cx.locals.insert(flag.clone()) {
-            return Err("MIR loop escape flag collides with a source name".into());
-        }
-        declarations = program_seq(declarations, program_declare(flag, ProgramType::Int32));
+        let ordinal = u32::try_from(*header).map_err(|_| "MIR loop header index exceeds u32")?;
+        let flag = LocalBindingId::temporary(owner.clone(), ordinal);
+        flag.initialize_program_type(ProgramType::Int32);
+        let flag = BindingName::from(flag);
+        declarations = program_seq(
+            declarations,
+            program_declare(flag.clone(), ProgramType::Int32),
+        );
+        escape_flags.insert(*header, flag);
     }
     let mut nodes = vec![None; mir.blocks.len()];
     let check = |local: &str, record: &str| -> Result<(), String> {
@@ -952,6 +958,7 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
         mir,
         &nodes,
         &flow,
+        &escape_flags,
         &mut emitted,
         0..mir.blocks.len(),
         None,
@@ -1053,7 +1060,7 @@ struct LoopExits<'a> {
     header: usize,
     exit: usize,
     escapes: &'a [usize],
-    flag: String,
+    flag: Option<&'a BindingName>,
 }
 
 impl LoopExits<'_> {
@@ -1063,16 +1070,10 @@ impl LoopExits<'_> {
         }
         let index = self.escapes.iter().position(|end| *end == block)?;
         Some(program_seq(
-            program_assign(&self.flag, escape_code(index)),
+            program_assign(self.flag?, escape_code(index)),
             program_break(),
         ))
     }
-}
-
-/// The local recording which labeled escape left the loop headed at
-/// `header`; zero while none has.
-fn escape_flag(header: usize) -> String {
-    format!("__rust_loop_escape_{header}")
 }
 
 /// The iterator the loop headed at `header` advances: the first `next` of a
@@ -1168,11 +1169,13 @@ fn escape_code(index: usize) -> ProgramExpression {
     crate::kernel::program_expression::int32_literal(index as u32 + 1)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn region(
     cx: &mut Context<'_>,
     mir: &MirBody,
     nodes: &[Option<Sited>],
     flow: &flow::Flow,
+    escape_flags: &BTreeMap<usize, BindingName>,
     emitted: &mut [bool],
     bounds: std::ops::Range<usize>,
     exits: Option<&LoopExits<'_>>,
@@ -1200,7 +1203,7 @@ fn region(
                 header: block,
                 exit: loop_.exit,
                 escapes: &loop_.escapes,
-                flag: escape_flag(block),
+                flag: escape_flags.get(&block),
             };
             // The loop's index is its place in preorder, the order its
             // `while` takes in the lowered body; its iterator is the one the
@@ -1213,6 +1216,7 @@ fn region(
                 mir,
                 nodes,
                 flow,
+                escape_flags,
                 emitted,
                 loop_.body..block,
                 loop_.breaks.then_some(&inner),
@@ -1260,6 +1264,7 @@ fn region(
                     mir,
                     nodes,
                     flow,
+                    escape_flags,
                     emitted,
                     loop_.after..mir.blocks.len(),
                     Some(&inner),
@@ -1294,9 +1299,9 @@ fn region(
             // A labeled `break` or `continue` leaves this loop with its flag
             // naming the escape; the enclosing body then resumes there.
             let mut lowered = lowered;
-            if !loop_.escapes.is_empty() {
+            if let Some(flag) = inner.flag {
                 lowered = Sited::unsited(program_assign(
-                    &inner.flag,
+                    flag,
                     crate::kernel::program_expression::int32_literal(0),
                 ))
                 .then(lowered);
@@ -1310,7 +1315,7 @@ fn region(
                     };
                     lowered = lowered.then(Sited::unsited(program_if(
                         crate::kernel::program_expression::equal(
-                            crate::kernel::program_expression::variable(&inner.flag),
+                            crate::kernel::program_expression::variable(flag),
                             escape_code(index),
                         ),
                         resume,
@@ -1336,8 +1341,26 @@ fn region(
                 } else {
                     flow.joins[block]
                 };
-                let yes = region(cx, mir, nodes, flow, emitted, *then_target..join, exits)?;
-                let no = region(cx, mir, nodes, flow, emitted, *else_target..join, exits)?;
+                let yes = region(
+                    cx,
+                    mir,
+                    nodes,
+                    flow,
+                    escape_flags,
+                    emitted,
+                    *then_target..join,
+                    exits,
+                )?;
+                let no = region(
+                    cx,
+                    mir,
+                    nodes,
+                    flow,
+                    escape_flags,
+                    emitted,
+                    *else_target..join,
+                    exits,
+                )?;
                 result = result.then(Sited::branch(site, cx.condition(condition)?, yes, no));
                 block = join;
             }
@@ -1352,7 +1375,18 @@ fn region(
                     flow.joins[block]
                 };
                 result = result.then(switch(
-                    cx, mir, nodes, flow, emitted, scrutinee, cases, *otherwise, join, exits, site,
+                    cx,
+                    mir,
+                    nodes,
+                    flow,
+                    escape_flags,
+                    emitted,
+                    scrutinee,
+                    cases,
+                    *otherwise,
+                    join,
+                    exits,
+                    site,
                 )?);
                 block = join;
             }
@@ -1377,6 +1411,7 @@ fn switch(
     mir: &MirBody,
     nodes: &[Option<Sited>],
     flow: &flow::Flow,
+    escape_flags: &BTreeMap<usize, BindingName>,
     emitted: &mut [bool],
     scrutinee: &E,
     cases: &[crate::languages::rust::schema::SwitchCase],
@@ -1400,7 +1435,16 @@ fn switch(
     }
     let mut bodies = Vec::with_capacity(groups.len());
     for (target, _) in &groups {
-        bodies.push(region(cx, mir, nodes, flow, emitted, *target..join, exits)?);
+        bodies.push(region(
+            cx,
+            mir,
+            nodes,
+            flow,
+            escape_flags,
+            emitted,
+            *target..join,
+            exits,
+        )?);
     }
     // Read a nested enum field once. Every arm consumes the retained
     // discriminant on entry, after the conditions that inspect it.
@@ -1690,6 +1734,7 @@ mod tests {
                     scalar_names: BTreeSet::new(),
                     metadata_names: BTreeSet::new(),
                 },
+                &BTreeMap::new(),
                 &mut emitted,
                 0..mir.blocks.len(),
                 None,

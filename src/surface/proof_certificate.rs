@@ -135,7 +135,7 @@ pub enum ProofStep {
         resource: ResourceClause,
         proof: Box<ProofCertificate>,
         /// The closing fold's proof of its one open body fact.
-        close_proof: Option<Box<ProofCertificate>>,
+        deferred_tail: bool,
     },
     If {
         condition: ClickProposition,
@@ -154,6 +154,7 @@ pub enum ProofStep {
         else_proof: Box<ProofCertificate>,
     },
     CallOutcomes {
+        payload_bindings: [Option<String>; 2],
         returned_proof: Box<ProofCertificate>,
         threw_proof: Box<ProofCertificate>,
     },
@@ -195,7 +196,6 @@ pub enum CertificatePathSegment {
     RightCase,
     LoopInitialize,
     LoopPreserve,
-    LoopItem(usize),
     StepBody,
     StepRequirement(usize),
 }
@@ -409,19 +409,7 @@ pub(crate) fn proof_step_contains_arithmetic_using(step: &ProofStep) -> bool {
                 }
                 ProofStep::CloseInvariantsBy(proof)
                 | ProofStep::Have { proof, .. }
-                | ProofStep::Open {
-                    proof,
-                    close_proof: None,
-                    ..
-                } => pending.extend(proof.steps.iter()),
-                ProofStep::Open {
-                    proof,
-                    close_proof: Some(close_proof),
-                    ..
-                } => {
-                    pending.extend(proof.steps.iter());
-                    pending.extend(close_proof.steps.iter());
-                }
+                | ProofStep::Open { proof, .. } => pending.extend(proof.steps.iter()),
                 ProofStep::StepProved { step, proof } => {
                     pending.push(step);
                     match proof {
@@ -455,6 +443,7 @@ pub(crate) fn proof_step_contains_arithmetic_using(step: &ProofStep) -> bool {
                 | ProofStep::CallOutcomes {
                     returned_proof: left_proof,
                     threw_proof: right_proof,
+                    ..
                 } => {
                     pending.extend(left_proof.steps.iter());
                     pending.extend(right_proof.steps.iter());
@@ -577,11 +566,7 @@ impl ProofStep {
                         .map(Self::from_validated_tactic)
                         .collect(),
                 )),
-                close_proof: proof_open.close_proof.as_ref().map(|body| {
-                    Box::new(ProofCertificate::from_validated_steps(
-                        body.iter().map(Self::from_validated_tactic).collect(),
-                    ))
-                }),
+                deferred_tail: proof_open.deferred_tail,
             },
             ProofTactic::If(proof_if) => Self::If {
                 condition: proof_if.condition.clone(),
@@ -631,6 +616,7 @@ impl ProofStep {
                 )),
             },
             ProofTactic::CallOutcomes(proof_outcomes) => Self::CallOutcomes {
+                payload_bindings: proof_outcomes.payload_bindings.clone(),
                 returned_proof: Box::new(ProofCertificate::from_validated_steps(
                     proof_outcomes
                         .returned_tactics
@@ -919,11 +905,11 @@ impl ProofStep {
             Self::Open {
                 resource,
                 proof,
-                close_proof,
+                deferred_tail,
             } => ProofTactic::Open(ProofOpen {
                 resource: resource.clone(),
                 tactics: proof.to_proof_tactics(),
-                close_proof: close_proof.as_ref().map(|body| body.to_proof_tactics()),
+                deferred_tail: *deferred_tail,
             }),
             Self::If {
                 condition,
@@ -955,9 +941,11 @@ impl ProofStep {
                 else_tactics: else_proof.to_proof_tactics(),
             }),
             Self::CallOutcomes {
+                payload_bindings,
                 returned_proof,
                 threw_proof,
             } => ProofTactic::CallOutcomes(ProofCallOutcomes {
+                payload_bindings: payload_bindings.clone(),
                 returned_tactics: returned_proof.to_proof_tactics(),
                 threw_tactics: threw_proof.to_proof_tactics(),
             }),
@@ -1034,7 +1022,6 @@ impl CertificateError {
                 CertificatePathSegment::RightCase => "right case".to_string(),
                 CertificatePathSegment::LoopInitialize => "loop `initialize`".to_string(),
                 CertificatePathSegment::LoopPreserve => "loop `preserve`".to_string(),
-                CertificatePathSegment::LoopItem(index) => format!("loop item {index}"),
                 CertificatePathSegment::StepBody => "step `by` body".to_string(),
                 CertificatePathSegment::StepRequirement(index) => {
                     format!("step `requires` entry {index}")
@@ -1279,17 +1266,9 @@ pub(super) fn validate_certificate_tactics(
                         unreachable!("tactic class and variant must agree")
                     };
                     path.push(CertificatePathSegment::OpenBody);
-                    validate_certificate_tactics(&proof_open.tactics, path)?;
+                    let result = validate_certificate_tactics(&proof_open.tactics, path);
                     path.pop();
-                    match &proof_open.close_proof {
-                        Some(close_proof) => {
-                            path.push(CertificatePathSegment::StepBody);
-                            let result = validate_certificate_tactics(close_proof, path);
-                            path.pop();
-                            result
-                        }
-                        None => Ok(()),
-                    }
+                    result
                 }
                 TacticClass::Control(ControlTactic::If) => {
                     let ProofTactic::If(proof_if) = tactic else {

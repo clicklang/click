@@ -133,6 +133,17 @@ fn a_consumed_input_cannot_supply_two_composite_children_or_a_flat_sibling() {
             .children
             .contains_key(&vec![0, 0])
     );
+    assert!(
+        returned(
+            &duplicate,
+            &state,
+            &transfer,
+            ReturnResourceComposition::ApplyTransfers(&transfer.consumed_cell_returns),
+            &facts,
+        )
+        .is_err(),
+        "one transferred footprint cannot supply two returned heads"
+    );
     let flat = input
         .clone()
         .with_role(ResourceTransferRole::Produce)
@@ -247,6 +258,94 @@ fn borrowed_parameter_bounded_bodies_keep_entry_footprint_origin() {
             .unwrap()
             .boundary
             .len(),
-        1
+        0
     );
+}
+
+#[test]
+fn dynamic_flat_returns_cannot_reuse_a_composite_childs_static_input_recipe() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let (state, facts, owner) = super::summary_transfer_tests::symbolic_state();
+    for flat_first in [false, true] {
+        let template = contract();
+        let flat = ResourceSpec::owned_memory(
+            MemorySegment::new(variable("q"), int32_literal(0), variable("n"))
+                .with_uninitialized(true),
+        )
+        .with_role(ResourceTransferRole::Produce)
+        .with_state_source(ResourceStateSource::Post);
+        let head = template.resource_ensures()[0].clone();
+        let outputs = if flat_first {
+            vec![flat, head]
+        } else {
+            vec![head, flat]
+        };
+        let function = template
+            .clone()
+            .with_resource_summary(template.resource_requires().to_vec(), outputs);
+        let mut transfer = super::tests::prepare_mixed_scalar(&function, &state, &facts);
+        assert_eq!(transfer.consumed_cell_returns.children.len(), 1);
+        transfer
+            .consumed_cell_returns
+            .retain_frontier([owner.memory_own_range().unwrap().clone()], &facts);
+        assert!(matches!(
+            returned(
+                &function,
+                &state,
+                &transfer,
+                ReturnResourceComposition::ApplyTransfers(&transfer.consumed_cell_returns),
+                &facts
+            ),
+            Err(RuntimeError::ProducedCompositeOverlapsHeldResource { .. })
+        ));
+    }
+}
+
+#[test]
+fn held_body_construction_uses_the_parent_partition_and_fresh_child_occurrences() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let (state, facts, child) = super::summary_transfer_tests::symbolic_state();
+    let head = ResourceFact::own_composite(
+        "packet".into(),
+        vec![
+            ProgramValue::pointer(child.memory_own_range().unwrap().base().clone()).into(),
+            ProgramValue::Int32(child.memory_own_range().unwrap().end().clone()).into(),
+        ],
+    );
+    let ambient = ResourceFact::own_memory(MemoryRange::new(
+        Address::symbolic(Variable(8_796_551)),
+        0u32.into(),
+        4u32.into(),
+    ));
+    let (frame, emitted) = ResourceContext::new_with_equalities(&facts)
+        .unchecked_with_facts_and_occurrences([head.clone(), ambient.clone()]);
+    for selected in [None, Some(emitted[0].1)] {
+        let construction = construct_composite_resource_body(
+            &frame,
+            &head,
+            &[definition()],
+            &ProgramPoint::of_memory(&state.memory),
+            &facts,
+            selected,
+            None,
+        )
+        .unwrap();
+        assert!(construction.opened);
+        assert_eq!(construction.raw_children, vec![child.clone()]);
+        assert_eq!(
+            construction
+                .expanded
+                .owned_fact_for_occurrence(emitted[1].1),
+            Some(&ambient)
+        );
+        assert_eq!(construction.occurrences.len(), 1);
+        assert_eq!(
+            construction
+                .expanded
+                .owned_fact_for_occurrence(construction.occurrences[0].1),
+            Some(&child)
+        );
+        assert!(!construction.expanded.contains_exact_representation(&head));
+    }
+    assert!(frame.contains_exact_representation(&head));
 }
