@@ -11140,6 +11140,7 @@ fn nested_call_results_scale_with_the_statements_that_read_them() {
 }
 
 #[test]
+#[ignore = "nightly: 5.6s selected-guard context scaling audit"]
 fn ordinary_fold_unfold_checks_only_selected_guards() {
     let mut samples = Vec::new();
     for size in [4, 16, 64, 256] {
