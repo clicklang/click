@@ -2280,7 +2280,7 @@ impl Printer<'_> {
             }
             ResourceFact::Own(_, quantity) => {
                 let quantity = self
-                    .bitvector(quantity, None, 0)
+                    .bitvector(quantity.native_compat(), None, 0)
                     .map_or_else(|| "…".into(), |v| v.text);
                 format!("owns {text} (quantity {quantity})")
             }

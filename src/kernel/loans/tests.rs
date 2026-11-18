@@ -1203,8 +1203,14 @@ fn mutex_contract_input_return_requires_unsplit_unit_ownership() {
     let fact = ledger.mutex_use_resource(input.usage, holder).unwrap();
     for invalid in [
         ResourceFact::View(fact.resource().clone()),
-        ResourceFact::Own(fact.resource().clone(), Box::new(MachineTerm::constant(0))),
-        ResourceFact::Own(fact.resource().clone(), Box::new(MachineTerm::constant(2))),
+        ResourceFact::Own(
+            fact.resource().clone(),
+            Box::new(MachineTerm::constant(0).into()),
+        ),
+        ResourceFact::Own(
+            fact.resource().clone(),
+            Box::new(MachineTerm::constant(2).into()),
+        ),
     ] {
         assert!(
             ledger

@@ -1540,9 +1540,14 @@ fn walk_resource_fact<S: VariableSubstitution + ?Sized>(
     s: &S,
 ) -> ResourceFact {
     match resource {
-        ResourceFact::Own(resource, quantity) => {
-            ResourceFact::Own(walk_resource(resource, s), Box::new(s.bitvector(quantity)))
-        }
+        ResourceFact::Own(resource, quantity) => ResourceFact::own_quantity_stored(
+            walk_resource(resource, s),
+            match quantity.value() {
+                ExecutionValue::Native(_) => quantity.map_native(|term| s.bitvector(term)),
+                value => crate::kernel::StoredMachineTerm::from_value(s.expression_value(value))
+                    .expect("substitution preserves quantity type"),
+            },
+        ),
         ResourceFact::View(resource) => ResourceFact::View(walk_resource(resource, s)),
     }
 }

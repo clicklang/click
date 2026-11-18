@@ -7943,6 +7943,25 @@ pub(super) fn evaluate_resource_argument_value(
     .map(|(value, _)| value))
 }
 
+pub(super) fn evaluate_resource_argument_value_retained(
+    state: &ExecutionState,
+    expression: &ProgramExpression,
+    assumptions: &PureFactContext,
+    label: &str,
+    budget: &mut ExecutionBudget,
+    diagnostic: &mut Option<RuntimeError>,
+) -> ExecutionResult<Result<ExecutionValue, ValueRefusal>> {
+    Ok(evaluate_loop_effect_segment_value_retained_capturing(
+        state,
+        expression,
+        assumptions,
+        label,
+        budget,
+        Some(diagnostic),
+    )?
+    .map(|(value, _)| value))
+}
+
 fn evaluate_loop_effect_segment_value_capturing(
     state: &ExecutionState,
     expression: &ProgramExpression,

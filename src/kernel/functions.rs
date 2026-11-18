@@ -19765,7 +19765,7 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterEqual,
-                        left: Box::new(quantity.clone()),
+                        left: Box::new(quantity.native_compat().clone()),
                         right: Box::new(MachineTerm::constant(0)),
                     },
                 ) {
@@ -19781,7 +19781,7 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
                         "declared resource quantity did not lower to owned authority".to_string(),
                     )));
                 };
-                fact = ResourceFact::own_quantity(inner, quantity);
+                fact = ResourceFact::own_quantity_stored(inner, quantity);
             }
             Ok(Ok(fact))
         }
@@ -19870,10 +19870,10 @@ fn evaluate_declared_quantity(
     quantity: &ProgramExpression,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<MachineTerm, RuntimeError>> {
+) -> ExecutionResult<Result<crate::kernel::StoredMachineTerm, RuntimeError>> {
     let mut diagnostic = None;
     Ok(
-        match super::loops::evaluate_resource_argument_value(
+        match super::loops::evaluate_resource_argument_value_retained(
             state,
             quantity,
             assumptions,
@@ -19881,7 +19881,9 @@ fn evaluate_declared_quantity(
             budget,
             &mut diagnostic,
         )? {
-            Ok(ProgramValue::Int32(quantity)) => Ok(quantity),
+            Ok(value) if value.program_type() == ProgramType::Int32 => {
+                Ok(crate::kernel::StoredMachineTerm::from_value(value).expect("int32 quantity"))
+            }
             Ok(_) => Err(RuntimeError::FunctionContract(
                 "declared resource quantity must evaluate to int32".to_string(),
             )),
@@ -19978,7 +19980,7 @@ pub(crate) fn quantified_resource_requirement_assumptions(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterEqual,
-                left: Box::new(quantity),
+                left: Box::new(quantity.native_compat().clone()),
                 right: Box::new(MachineTerm::constant(0)),
             },
             true,

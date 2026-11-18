@@ -50,3 +50,42 @@ fn iterated_descriptor_handoffs_and_holes_preserve_growing_shared_operands() {
         assert_eq!(work, *baseline.get_or_insert(work), "size={size}");
     }
 }
+
+#[test]
+fn owned_resource_quantity_handoffs_share_growing_machine_dags() {
+    let mut baseline = None;
+    for size in [4, 16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut root =
+            KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(10993652));
+        for _ in 0..size {
+            root = KernelTerm::machine_binary_shared(
+                MachineIntegerType::Int32,
+                MachineBinaryOp::Add,
+                [root.clone(), root],
+            );
+        }
+        let state = ExecutionState::new().with_retained_local("quantity", root.clone().into());
+        let exports = KernelTermExport::machine_export_count();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let quantity = evaluate_declared_quantity(
+                &state,
+                &ProgramExpression::Variable("quantity".into()),
+                &PureFactContext::new(),
+                &mut ExecutionBudget::default(),
+            )
+            .unwrap()
+            .unwrap();
+            let fact = ResourceFact::own_quantity_stored(Resource::Emp, quantity);
+            for _ in 0..32 {
+                let ResourceFact::Own(_, value) = fact.clone() else {
+                    panic!("owned");
+                };
+                assert_eq!(value.root(), Some(&root));
+            }
+        });
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        assert!(!root.has_cached_native_argument());
+        assert_eq!(work, *baseline.get_or_insert(work), "size={size}");
+    }
+}

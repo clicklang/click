@@ -1069,7 +1069,7 @@ not a change to proof rules or snapshot architecture.
 | 10p3 | `MemoryRange` bounds and `AllocationSize` byte counts. Preserve signed/wide reading, bound provenance and existing identity/hash contracts. | Implemented locally; final 525 focused checks, all 1,919 regular scaling cases, 14 wide-range/allocation proofs, fact stability and quality passed. |
 | 10p4 | `IteratedMemory` endpoints, guard comparison value and selected holes. Preserve checked ownership transitions and opaque owner/address identities. | Implemented locally; current-upstream 590 focused checks, all 1,926 regular scaling cases, indexed/resource-field proofs, fact stability and quality passed; one isolated proof has identical upstream failure. |
 | 10p5 | `PublicationRight::observed`, `ConditionalMutexGuard::held`, and the matching `MutexEntry::ConditionalLoop` condition. Preserve channel/acquisition identities and protocol rules. | Common carriers and producer handoffs implemented locally; two producer regressions confirmed red; 690 focused checks, all 1,927 regular scaling cases and publication proofs passed; mutex proofs passed 215/216 with one identical parent failure. |
-| 10p6 | `ResourceFact::Own` quantity. Preserve counting semantics and existing resource identity readers. | Inventoried; pending. |
+| 10p6 | `ResourceFact::Own` quantity. Preserve counting semantics and existing resource identity readers. | Implemented locally; focused validation pending. |
 
 `MemorySegment` source expressions and declared `ResourceQuantity` expressions
 are source input ASTs, not evaluated term storage to erase. Addresses, allocation
@@ -1246,6 +1246,33 @@ publication proof selection passed. Mutex proofs passed 215/216;
 revision, at the same `fold(control(p), ...)` quantity bound. It uses neither
 migrated protocol producer. Fact stability recorded 88 refusals and no changed
 terms or paths. No syntax or proof rule is changed.
+
+### 10p6 Owned resource quantities (in progress)
+
+`ResourceFact::Own` retains `StoredMachineTerm` quantities. Native constructors
+preserve their exact machine input; declared-quantity evaluation uses the
+existing retained expression capture with its diagnostic policy unchanged.
+Native count arithmetic and selected proof/raising consumers remain explicit
+readers. Substitution preserves exact native bitvector rewrites and transports
+shared roots through the existing expression rewrite. This changes storage,
+not quantity arithmetic, nonnegativity admission or resource identity.
+
+Producer-root and growing-DAG handoff regressions cover retained quantities.
+Validation is pending.
+
+### 10q Proposition-output inventory and sequential families
+
+| Family | Owning output schema | Required preservation |
+| --- | --- | --- |
+| 10q1 | `ProgramExpressionEvaluates` and `MemoryLoads` outcomes | Retain evaluated program roots; exact native outcome identity, errors and source/state DTOs remain unchanged. |
+| 10q2 | `VolatileAccess::value` and `MemoryLoadable::bytes` | Retain value/count roots; nominal event identity and signed/wide count policy remain unchanged. |
+| 10q3 | `ConditionIs` logical payloads | Retain produced logical roots; native input syntax and existing comparison/fact/raising readers keep their exact contracts. |
+| 10q4 | Expression-bearing `Term` payloads in equality/predicate outputs | Retain numeric/program/algebraic roots at actual producer handoffs; preserve native term ordering, hashing, capture and proof admission. |
+
+These are sequential representation slices. Source program/specification ASTs,
+opaque state/event/resource identities and existing proof rules are not payloads
+to erase. Selected native checking/rewriting/raising adapters stay explicit and
+are accounted for in 10r–10t; they are not evidence that a store is migrated.
 
 ## Chunk 3: machine-valued pure-function results
 

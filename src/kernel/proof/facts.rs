@@ -5055,7 +5055,7 @@ mod held_separation_tests {
             );
         assert!(!projected.proves_exact_partition_separation(&a_other, &b));
         let non_unit = ResourceContext::new().unchecked_with_facts([
-            ResourceFact::Own(a, Box::new(MachineTerm::constant(0))),
+            ResourceFact::Own(a, Box::new(MachineTerm::constant(0).into())),
             ResourceFact::own(b.clone()),
         ]);
         assert!(!non_unit.proves_exact_partition_separation(&a_other, &b));

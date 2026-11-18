@@ -1148,7 +1148,7 @@ pub(crate) fn render_resource_fact_labeled(
             renderer.push("owns ");
             renderer.resource(resource);
             renderer.push(" x ");
-            renderer.bitvector(quantity);
+            renderer.bitvector(quantity.native_compat());
         }
         ResourceFact::View(resource) => {
             renderer.push("views ");

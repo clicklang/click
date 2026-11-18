@@ -47,3 +47,26 @@ mod scaling_tests {
     use super::*;
     include!("../../scaling_tests/kernel/functions/iterated_operand_storage_tests.rs");
 }
+
+#[test]
+fn evaluated_resource_quantity_retains_the_existing_common_producer() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let root = KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(10993651));
+    let state = ExecutionState::new().with_retained_local("quantity", root.clone().into());
+    let exports = KernelTermExport::machine_export_count();
+    let quantity = evaluate_declared_quantity(
+        &state,
+        &ProgramExpression::Variable("quantity".into()),
+        &PureFactContext::new(),
+        &mut ExecutionBudget::default(),
+    )
+    .unwrap()
+    .unwrap();
+    let fact = ResourceFact::own_quantity_stored(Resource::Emp, quantity);
+    let ResourceFact::Own(_, quantity) = fact else {
+        panic!("owned");
+    };
+    assert_eq!(quantity.root(), Some(&root));
+    assert_eq!(KernelTermExport::machine_export_count(), exports);
+    assert!(!root.has_cached_native_argument());
+}
