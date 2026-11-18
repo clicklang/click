@@ -3455,6 +3455,7 @@ mod tests {
                 ),
             ))),
             value_type: ProgramType::Int32,
+            exact: false,
         };
         // An explicit validity claim needs evidence even though logical
         // reflexivity at this address would hold without memory permission.

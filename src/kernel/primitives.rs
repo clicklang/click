@@ -4268,6 +4268,10 @@ pub enum SpecExpression {
         point: SpecPoint,
         pointer: Box<SpecExpression>,
         value_type: ProgramType,
+        /// Surface `exact(place)`: the read named by the selected state's own
+        /// memory, with no version walk (`design/exact-reads.md`). An ordinary
+        /// read (`false`) names the cell's version point.
+        exact: bool,
     },
     /// A field of a by-value parameter, not a dereference of a C pointer.
     /// Its logical value remains available after the parameter storage ends.

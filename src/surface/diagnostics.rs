@@ -7458,6 +7458,9 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
             selector,
             expression,
         } => describe_program_point_expression(Some(selector), expression),
+        ContractExpression::Exact(place) => {
+            format!("exact({})", describe_contract_expression(place))
+        }
         ContractExpression::Negate(expression) => {
             format!("-{}", describe_contract_expression(expression))
         }

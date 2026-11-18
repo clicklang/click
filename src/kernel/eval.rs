@@ -122,7 +122,8 @@ pub(in crate::kernel) use memory_loads::{
 };
 pub(crate) use memory_loads::{canonical_cell_load, canonical_form_of_load};
 pub(super) use memory_loads::{
-    canonical_offset_term, evaluate_logical_memory_load_paths, evaluate_retained_memory_load_paths,
+    canonical_offset_term, evaluate_exact_logical_memory_load_paths,
+    evaluate_logical_memory_load_paths, evaluate_retained_memory_load_paths,
     evaluate_spec_memory_load_paths, symbolic_load_value,
 };
 pub(crate) use memory_loads::{

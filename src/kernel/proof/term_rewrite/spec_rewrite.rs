@@ -1313,10 +1313,12 @@ impl<'a> TermRewrite<'a> {
                 point: memory,
                 pointer,
                 value_type,
+                exact,
             } => SpecExpression::MemoryLoad {
                 point: memory.clone(),
                 pointer: Box::new(self.rewrite_spec_expression(pointer)?),
                 value_type: *value_type,
+                exact: *exact,
             },
         };
         self.spec_status()?;
