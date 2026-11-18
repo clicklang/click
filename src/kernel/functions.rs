@@ -21395,7 +21395,9 @@ fn function_outcome_from_body_with_resource_transfer(
     }
 
     let mut return_state = caller_state.clone();
-    return_state.set_memory(state.memory.clone());
+    // The caller resumes with the callee's memory, made by the steps the
+    // callee took: continue the callee's path, which began at the call.
+    return_state.set_memory_of(&state);
     return_state.resources = return_resources;
     return_state.loan_ledger = return_ledger;
     return_state.loan_participant = return_participant;
