@@ -56,3 +56,69 @@ fn protocol_descriptors_keep_growing_shared_values_and_condition_dags() {
         assert_eq!(work, *baseline.get_or_insert(work), "size={size}");
     }
 }
+
+#[test]
+fn proposition_outcome_handoffs_retain_growing_machine_and_float_operands() {
+    let mut baseline = None;
+    for size in [4, 16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut word =
+            KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(10993664));
+        let mut float = KernelTerm::variable(
+            KernelType::Program(ProgramType::Float32),
+            Variable(10993665),
+        );
+        for _ in 0..size {
+            word = KernelTerm::machine_binary_shared(
+                MachineIntegerType::Int32,
+                MachineBinaryOp::Add,
+                [word.clone(), word],
+            );
+            float = KernelTerm::float_negate(KernelFloatType::Float32, float).unwrap();
+        }
+        let state = ExecutionState::new().with_retained_local("result", word.clone().into());
+        let pointer = Address::symbolic(Variable(10993666));
+        let memory = SymbolicMemory::new().store_retained(pointer.clone(), float.clone().into());
+        let exports = (
+            KernelTermExport::machine_export_count(),
+            KernelTermExport::float_export_count(),
+        );
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let expression = crate::kernel::prove_program_expression_evaluation(
+                state,
+                ProgramExpression::Variable("result".into()),
+            )
+            .unwrap();
+            let load = crate::kernel::prove_memory_load(memory, pointer);
+            for _ in 0..32 {
+                let expression = expression.proposition().clone();
+                let Proposition::ProgramExpressionEvaluates {
+                    outcome: ExpressionOutcome::Value(value),
+                    ..
+                } = expression
+                else {
+                    panic!("expression value");
+                };
+                assert_eq!(value.root(), Some(&word));
+                let load = load.proposition().clone();
+                let Proposition::MemoryLoads {
+                    outcome: ExpressionOutcome::Value(value),
+                    ..
+                } = load
+                else {
+                    panic!("load value");
+                };
+                assert_eq!(value.root(), Some(&float));
+            }
+        });
+        assert_eq!(
+            (
+                KernelTermExport::machine_export_count(),
+                KernelTermExport::float_export_count()
+            ),
+            exports
+        );
+        assert!(!word.has_cached_native_argument());
+        assert_eq!(work, *baseline.get_or_insert(work), "size={size}");
+    }
+}

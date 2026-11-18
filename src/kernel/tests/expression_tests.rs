@@ -679,7 +679,7 @@ fn floating_point_arithmetic_rounds_both_widths_in_integer_space() {
         let theorem = prove_program_expression_evaluation(state.clone(), expression)
             .expect("constant floating arithmetic should evaluate");
         match theorem.proposition() {
-            Proposition::ProgramExpressionEvaluates { outcome, .. } => outcome.clone(),
+            Proposition::ProgramExpressionEvaluates { outcome, .. } => outcome.native_compat(),
             proposition => panic!("unexpected floating arithmetic theorem {proposition:?}"),
         }
     };
@@ -771,7 +771,7 @@ fn floating_point_arithmetic_preserves_ieee_exceptions_and_ties() {
         let theorem = prove_program_expression_evaluation(state.clone(), expression)
             .expect("constant floating arithmetic should evaluate");
         match theorem.proposition() {
-            Proposition::ProgramExpressionEvaluates { outcome, .. } => outcome.clone(),
+            Proposition::ProgramExpressionEvaluates { outcome, .. } => outcome.native_compat(),
             proposition => panic!("unexpected floating arithmetic theorem {proposition:?}"),
         }
     };
@@ -927,7 +927,7 @@ fn mixed_floating_arithmetic_promotes_to_the_wider_or_present_float_type() {
         let theorem = prove_program_expression_evaluation(state.clone(), expression)
             .expect("mixed floating arithmetic should evaluate");
         match theorem.proposition() {
-            Proposition::ProgramExpressionEvaluates { outcome, .. } => outcome.clone(),
+            Proposition::ProgramExpressionEvaluates { outcome, .. } => outcome.native_compat(),
             proposition => panic!("unexpected mixed floating theorem {proposition:?}"),
         }
     };
@@ -4302,6 +4302,8 @@ fn modulo_casts_are_explicit_integer_boundaries_and_preserve_operand_definedness
         let Proposition::ProgramExpressionEvaluates { outcome, .. } = theorem.proposition() else {
             panic!("expected evaluation");
         };
+        let native_outcome = outcome.native_compat();
+        let outcome = &native_outcome;
         outcome.clone()
     };
     for target in [

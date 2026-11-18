@@ -4679,8 +4679,19 @@ pub fn prove_program_expression_evaluation(
     expression: ProgramExpression,
 ) -> Option<Theorem> {
     let mut budget = ExecutionBudget::for_new_execution().with_program_expression_cost(&expression);
-    let outcome =
-        evaluate_program_expression(&state, &expression, &PureFactContext::new(), &mut budget)?;
+    let mut paths = super::eval::evaluate_expression_value_paths(
+        &state,
+        &expression,
+        &PureFactContext::new(),
+        &mut budget,
+    )
+    .ok()?
+    .into_iter();
+    let path = paths.next()?;
+    if paths.next().is_some() || !path.obligations.is_empty() {
+        return None;
+    }
+    let outcome = path.outcome;
     Some(Theorem::new(Proposition::ProgramExpressionEvaluates {
         state: Box::new(state),
         expression,
@@ -8505,7 +8516,10 @@ pub fn prove_uint32_ge_implies_reversed_le(greater: MachineTerm, lower: MachineT
 
 #[cfg(test)]
 pub fn prove_memory_load(memory: SymbolicMemory, pointer: Address) -> Theorem {
-    let outcome = memory.load(&pointer);
+    let outcome = match memory.known_retained_value(&pointer) {
+        Some(value) => ExpressionOutcome::Value(value),
+        None => ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::InvalidMemory),
+    };
     Theorem::new(Proposition::MemoryLoads {
         memory,
         pointer,

@@ -517,7 +517,7 @@ fn dynamic_body_fact_dependency(
             | Proposition::ResourceContains { .. } => Ok(()),
             Proposition::MemoryLoads { outcome, .. } => match outcome {
                 ExpressionOutcome::Value(value) => walk_term(
-                    &Term::ProgramValue(value.clone()),
+                    &Term::ProgramValue(value.native_compat().clone()),
                     state,
                     assumptions,
                     temporary_views,

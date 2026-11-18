@@ -9,6 +9,8 @@ fn evaluated(expression: ProgramExpression) -> ExpressionOutcome {
     let Proposition::ProgramExpressionEvaluates { outcome, .. } = theorem.proposition() else {
         panic!("expected expression evaluation");
     };
+    let native_outcome = outcome.native_compat();
+    let outcome = &native_outcome;
     outcome.clone().map_value(Into::into)
 }
 
@@ -123,6 +125,8 @@ fn wide_scalar_symbolic_identity_substitution_and_observation_preserve_type() {
         let Proposition::ProgramExpressionEvaluates { outcome, .. } = theorem.proposition() else {
             unreachable!()
         };
+        let native_outcome = outcome.native_compat();
+        let outcome = &native_outcome;
         assert_eq!(outcome, &ExpressionOutcome::Value(value.clone()));
         let term = MachineTerm::Variable(variable);
         let observation = IntegerTerm::from_machine(ty, term).unwrap();

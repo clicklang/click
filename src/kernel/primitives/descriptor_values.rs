@@ -342,21 +342,12 @@ mod protocol_value_tests {
     }
 }
 
-// Both outcome schemas use exact native value identity, rather than execution
-// observation equality. This comparison is the explicit native DTO boundary.
-impl PartialEq<ExpressionOutcome<ProgramValue>> for ExpressionOutcome<StoredProgramValue> {
-    fn eq(&self, other: &ExpressionOutcome<ProgramValue>) -> bool {
-        match (self, other) {
-            (Self::Value(a), ExpressionOutcome::Value(b)) => a.native_compat() == b,
-            (Self::UndefinedBehavior(a), ExpressionOutcome::UndefinedBehavior(b)) => a == b,
-            (Self::RuntimeError(a), ExpressionOutcome::RuntimeError(b)) => a == b,
-            _ => false,
-        }
-    }
-}
-impl PartialEq<ExpressionOutcome<StoredProgramValue>> for ExpressionOutcome<ProgramValue> {
-    fn eq(&self, other: &ExpressionOutcome<StoredProgramValue>) -> bool {
-        other == self
+// Selected native DTO view for existing output assertions. Production stores
+// and value visitors retain their common operands.
+#[cfg(test)]
+impl ExpressionOutcome<StoredProgramValue> {
+    pub(crate) fn native_compat(&self) -> ExpressionOutcome {
+        self.clone().map_value(Into::into)
     }
 }
 
