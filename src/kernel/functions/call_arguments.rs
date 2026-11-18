@@ -15,6 +15,25 @@ pub(super) fn with_contract_interface_argument_views(
     interface: &FunctionContractInterface,
     values: &[ProgramValue],
 ) -> ExecutionState {
+    contract_interface_argument_views(state, interface, values, false)
+}
+
+/// A verified call's states are derived from its bound entry without
+/// executing the callee body. Reuse the checked scalar argument binding.
+pub(super) fn with_bound_contract_interface_argument_views(
+    state: &ExecutionState,
+    interface: &FunctionContractInterface,
+    values: &[ProgramValue],
+) -> ExecutionState {
+    contract_interface_argument_views(state, interface, values, true)
+}
+
+fn contract_interface_argument_views(
+    state: &ExecutionState,
+    interface: &FunctionContractInterface,
+    values: &[ProgramValue],
+    arguments_already_bound: bool,
+) -> ExecutionState {
     let mut state = state.clone();
     state.resources = state.resources.unpublished_contract_view();
     for (parameter, value) in interface.parameters().iter().zip(values) {
@@ -24,6 +43,9 @@ pub(super) fn with_contract_interface_argument_views(
             // that binding lets contract field accesses inspect the copy
             // rather than accidentally replacing it with the caller's source
             // pointer.
+            continue;
+        }
+        if arguments_already_bound && parameter.program_type() == ProgramType::UInt32 {
             continue;
         }
         // Keep the contract view identical to the typed parameter binding.
@@ -1109,7 +1131,18 @@ pub(super) fn bind_contract_arguments(
                 parameter.binding_name().clone(),
                 roots.get(index).map_or_else(
                     || ExecutionValue::from(value.clone()),
-                    |source| source.retain_coerced_argument(value.clone()),
+                    |source| {
+                        // A same-type word argument has no coercion to perform.
+                        // Keep its evaluated operand for contract lowering.
+                        if parameter.program_type() == ProgramType::UInt32
+                            && source.program_type() == ProgramType::UInt32
+                            && source.shared().is_some()
+                        {
+                            source.clone()
+                        } else {
+                            source.retain_coerced_argument(value.clone())
+                        }
+                    },
                 ),
                 parameter.program_type(),
                 SymbolicMemory::value_parameter_pointer(parameter.binding_name()),
