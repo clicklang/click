@@ -1727,7 +1727,7 @@ impl<'a> Proof<'a> {
                 right: ContractExpression::IntegerLiteral("0".into()),
             };
             let Ok(lowered) =
-                self.lower_surface_proposition_direct(&probe, "signed arithmetic certificate term")
+                self.lower_surface_proposition_direct(&probe, "signed arithmetic step term")
             else {
                 continue;
             };
@@ -1785,7 +1785,7 @@ impl<'a> Proof<'a> {
             right: ContractExpression::IntegerLiteral("0".into()),
         };
         let Ok(Proposition::ConditionIs(condition, true)) =
-            self.lower_surface_proposition_direct(&probe, "signed arithmetic certificate term")
+            self.lower_surface_proposition_direct(&probe, "signed arithmetic step term")
         else {
             return false;
         };

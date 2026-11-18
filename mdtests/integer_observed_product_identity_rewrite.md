@@ -1,7 +1,7 @@
 # Observed Integer products retain source spellings after identity rewrites
 
 Checked rewriting uses the same zero and unit product identities as lowering.
-The resulting arithmetic certificates remain checkable independently of search.
+The resulting arithmetic steps remain checkable independently of search.
 Observations retain the complete unsigned range.
 
 ```click
