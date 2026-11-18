@@ -1511,7 +1511,7 @@ and zero changed terms. Coverage includes the historical algebraic pointer-field
 regression corrected in 10q3b1. The condition-storage switch and retained
 producer handoffs remain separate required slices.
 
-### 10q3c Condition output storage (in progress)
+### 10q3c Condition output storage (landed)
 
 `ConditionIs` owns the existing exact condition carrier. Native constructors
 preserve their original syntax; retained inputs forward one logical Bool root.
@@ -1522,9 +1522,56 @@ visit retained conditions directly with the existing common-term operations.
 There is no implicit dereference, cross-representation equality or additional
 native expression cache.
 
-Validation is in progress. The separate 10q3d producer handoffs and 10q4
-expression-bearing `Term` outputs remain required; storage support alone does
-not close either boundary.
+All four focused storage/identity/visitor/DAG checks, all 6,737 regular unit
+checks, all 1,940 scaling checks, all 5,623 regular proof fixtures and final
+quality passed. Fact stability recorded 121 refusals and zero changed terms or
+paths. [PR #3280](https://github.com/clicklang/click/pull/3280) merged, and both
+pushed commits were verified upstream. The separate 10q3d producer handoffs and
+10q4 expression-bearing `Term` outputs remain required; storage support alone
+does not close either boundary.
+
+### 10q3d Evaluated condition producer handoffs (in progress)
+
+Deliver the independent producer families in two sequential PRs:
+
+| Subslice | Boundary | Status |
+| --- | --- | --- |
+| 10q3d1 | Boolean, Integer and shared float comparison/classification outputs | PR #3281; clean candidate validated for these independent handoffs. |
+| 10q3d2 | Typed machine comparison outputs in `SpecValue::comparison_in` | Required next PR; preserve actual shared operands, exact canonical output, partial-borrow scaling and fold-alias refusal behavior. |
+
+10q3d1 forwards logical Boolean equality roots directly. Literal comparisons
+retain the logical operand and apply the existing truth polarity and outer
+negation rule. Integer comparisons retain their evaluated Integer operands;
+the existing native observation-spelling rule runs only on atomic observation
+and literal inputs. Same-format shared float comparisons and classifications
+retain their operands with the existing IEEE literal-folding rules. Their
+selected literal read uses a query-local DAG memo, including refused
+nonconstant results. Native float inputs keep their exact input policy.
+
+The existing compatibility slot retains already-produced native conditions.
+Cached Integer comparison variable readers reuse their existing native operand
+summaries; known nonconstant Integer outputs avoid redundant Boolean
+normalization. The clean candidate passed all 1,943 regular scaling checks,
+615 affected regular checks and quality, including growing Integer DAGs across
+five variable-reading modes. The exact previously failing CI proof shard also
+passed all 1,124 fixtures. The equivalent narrowed producer path passed all
+5,623 regular proof fixtures, with 121 fact-stability refusals and zero changed
+terms or paths. Full nightly was excluded. No search budget or proof fixture
+is changed.
+
+10q3d2 remains part of this family. Its first activation passed 1,942 of
+1,943 scaling checks after the other eight regressions were repaired, but
+failed the partial-borrow work check and the fold-alias proof fixture. Restoring
+only the machine-output handoff passed that work check and all 5,623 regular
+proof fixtures while retaining the other new producer families. The machine
+comparison constructor therefore keeps its existing native result in 10q3d1;
+that boundary is not counted as migrated. The follow-up must account for actual
+shared machine operands, including UInt64 equality whose canonical condition
+uses Integer operands, and close these regressions before activation.
+
+Existing native numeric-coercion readers remain explicit adapters for the later
+10r–10t audit; mixed-format conversion rules are unchanged. Expression-bearing
+equality and predicate `Term` payloads remain assigned to 10q4.
 
 ## Chunk 3: machine-valued pure-function results
 

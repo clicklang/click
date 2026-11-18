@@ -271,6 +271,19 @@ pub(super) fn common_variables(
         }
         let mut leaf_variables = BTreeSet::new();
         match term.node() {
+            KernelTermNode::IntegerCompare { .. } if term.cached_condition_output().is_some() => {
+                // This compatibility consumer already owns the exact native
+                // Integer operands. Reuse their existing variable reader rather
+                // than rebuilding common summaries of the same prefix.
+                collect_boolean_variables(
+                    crate::kernel::BooleanOperandView::Native(
+                        term.cached_condition_output()
+                            .expect("retained condition output"),
+                    ),
+                    mode,
+                    &mut leaf_variables,
+                );
+            }
             KernelTermNode::Legacy(value) | KernelTermNode::LegacyBool(value) => {
                 // Each opaque leaf gets its complete intrinsic answer. A seen
                 // set belonging to another leaf would discard shared payload
