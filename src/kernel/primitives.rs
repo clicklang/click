@@ -13455,6 +13455,15 @@ pub enum Proposition {
 }
 
 impl Proposition {
+    /// Selected native condition-payload inspection. This view borrows the
+    /// original payload and truth marker without rebuilding a proposition.
+    pub(crate) fn condition_native(&self) -> Option<(&ConditionTerm, &bool)> {
+        match self {
+            Self::ConditionIs(condition, truth) => Some((condition, truth)),
+            _ => None,
+        }
+    }
+
     /// The two ranges of a separation between two memory resources.
     pub(crate) fn memory_separation(&self) -> Option<(&MemoryRange, &MemoryRange)> {
         match self {

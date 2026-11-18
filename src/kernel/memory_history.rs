@@ -2183,7 +2183,7 @@ impl AtomicMemoryLoadEqualityEvidence {
         // walk's own input, taken from the load registry on both the
         // construction and the checking side, not something the goal's
         // carrier decides.
-        let Proposition::ConditionIs(
+        let Some((
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
@@ -2197,7 +2197,7 @@ impl AtomicMemoryLoadEqualityEvidence {
                 right,
             },
             true,
-        ) = proposition
+        )) = proposition.condition_native()
         else {
             return false;
         };

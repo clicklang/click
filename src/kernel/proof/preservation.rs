@@ -846,7 +846,7 @@ mod tests {
         let (mut preservation, goal) = abstract_fixture(8);
         assert_eq!(preservation.apply(|_| true).unwrap(), goal);
         let result = &mut preservation.result;
-        let Proposition::ConditionIs(ConditionTerm::AlgebraicEqual(_, old), true) = result else {
+        let Some((ConditionTerm::AlgebraicEqual(_, old), true)) = result.condition_native() else {
             unreachable!()
         };
         old.algebraic_type = TypeParameterName::intern("WrongTransportValue").algebraic_type();
@@ -872,8 +872,8 @@ mod tests {
             Some(goal)
         );
         let mut wrong_domain = preservation.clone();
-        let Proposition::ConditionIs(ConditionTerm::PointerEqual(left, _), true) =
-            &mut wrong_domain.result
+        let Some((ConditionTerm::PointerEqual(left, _), true)) =
+            (&mut wrong_domain.result).condition_native()
         else {
             panic!("distinct complete read domains");
         };

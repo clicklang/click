@@ -2813,7 +2813,7 @@ fn plan_interval_goal(
 
 /// The operands of a held `uint32` order goal, as `(lower, upper, strict)`.
 fn unsigned_order_terms(goal: &Proposition) -> Option<(&MachineTerm, &MachineTerm, bool)> {
-    let Proposition::ConditionIs(
+    let Some((
         ConditionTerm::Compare {
             format: MachineIntegerType::UInt32,
             relation:
@@ -2825,7 +2825,7 @@ fn unsigned_order_terms(goal: &Proposition) -> Option<(&MachineTerm, &MachineTer
             right,
         },
         value,
-    ) = goal
+    )) = goal.condition_native()
     else {
         return None;
     };

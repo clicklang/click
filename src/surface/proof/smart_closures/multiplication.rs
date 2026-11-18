@@ -30,7 +30,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(None);
         };
         let goal = input.lower_integer_surface_proposition(&surface, "multiplication order")?;
-        let Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(left, right), true) = goal
+        let Some((ConditionTerm::IntegerLessEqual(left, right), true)) = goal.condition_native()
         else {
             return Ok(None);
         };

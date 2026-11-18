@@ -432,7 +432,7 @@ fn overflowing_operation(condition: &ConditionTerm) -> Option<MachineTerm> {
 /// The cell read by the equation naming one memory read, when this condition
 /// is such an equation.
 fn load_definition_cell(condition: &Proposition) -> Option<&Address> {
-    let Proposition::ConditionIs(
+    let Some((
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
@@ -440,7 +440,7 @@ fn load_definition_cell(condition: &Proposition) -> Option<&Address> {
             right,
         },
         true,
-    ) = condition
+    )) = condition.condition_native()
     else {
         return None;
     };

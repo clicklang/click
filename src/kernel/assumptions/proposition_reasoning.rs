@@ -1980,15 +1980,15 @@ impl SelectedFacts<'_> {
             return evidence.checks(proposition, self);
         }
         if let AtomicPropositionDerivationEvidence::PointerOffsetMemoryDag(evidence) = evidence {
-            let Proposition::ConditionIs(ConditionTerm::AddressOffsetEqual(left, right), true) =
-                proposition
+            let Some((ConditionTerm::AddressOffsetEqual(left, right), true)) =
+                proposition.condition_native()
             else {
                 return false;
             };
             return evidence.checks(left, right, self);
         }
         if let AtomicPropositionDerivationEvidence::BitvectorEqualityPath(path) = evidence {
-            let Proposition::ConditionIs(
+            let Some((
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
@@ -1996,7 +1996,7 @@ impl SelectedFacts<'_> {
                     right,
                 },
                 true,
-            ) = proposition
+            )) = proposition.condition_native()
             else {
                 return false;
             };
@@ -2131,7 +2131,7 @@ impl SelectedFacts<'_> {
                 && (goal.relation != Relation::Less || strict);
         }
         if let AtomicPropositionDerivationEvidence::Int32IncrementUpperBound(step) = evidence {
-            let Proposition::ConditionIs(
+            let Some((
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
@@ -2139,7 +2139,7 @@ impl SelectedFacts<'_> {
                     right: upper,
                 },
                 true,
-            ) = proposition
+            )) = proposition.condition_native()
             else {
                 return false;
             };
@@ -2154,7 +2154,7 @@ impl SelectedFacts<'_> {
         if let AtomicPropositionDerivationEvidence::Int32IncrementConstantUpperBound(step) =
             evidence
         {
-            let Proposition::ConditionIs(
+            let Some((
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
@@ -2162,7 +2162,7 @@ impl SelectedFacts<'_> {
                     right: goal_upper,
                 },
                 true,
-            ) = proposition
+            )) = proposition.condition_native()
             else {
                 return false;
             };
@@ -2182,7 +2182,7 @@ impl SelectedFacts<'_> {
         }
         if let AtomicPropositionDerivationEvidence::Int32IncrementStrictlyIncreases(step) = evidence
         {
-            let Proposition::ConditionIs(
+            let Some((
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
@@ -2190,7 +2190,7 @@ impl SelectedFacts<'_> {
                     right: incremented,
                 },
                 true,
-            ) = proposition
+            )) = proposition.condition_native()
             else {
                 return false;
             };
@@ -2214,7 +2214,7 @@ impl SelectedFacts<'_> {
                 && self.checks_exact_order_step(step);
         }
         if let AtomicPropositionDerivationEvidence::Int32OnePlusStrictlyIncreases(step) = evidence {
-            let Proposition::ConditionIs(
+            let Some((
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
@@ -2222,7 +2222,7 @@ impl SelectedFacts<'_> {
                     right: sum,
                 },
                 true,
-            ) = proposition
+            )) = proposition.condition_native()
             else {
                 return false;
             };
@@ -2267,7 +2267,7 @@ impl SelectedFacts<'_> {
                 });
         }
         if let AtomicPropositionDerivationEvidence::Int32IncrementLowerBound(bounds) = evidence {
-            let Proposition::ConditionIs(
+            let Some((
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
@@ -2275,7 +2275,7 @@ impl SelectedFacts<'_> {
                     right: incremented,
                 },
                 true,
-            ) = proposition
+            )) = proposition.condition_native()
             else {
                 return false;
             };
@@ -2287,7 +2287,7 @@ impl SelectedFacts<'_> {
         if let AtomicPropositionDerivationEvidence::Int32IncrementGreaterEqualLowerBound(bounds) =
             evidence
         {
-            let Proposition::ConditionIs(
+            let Some((
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::GreaterEqual,
@@ -2295,7 +2295,7 @@ impl SelectedFacts<'_> {
                     right: lower,
                 },
                 true,
-            ) = proposition
+            )) = proposition.condition_native()
             else {
                 return false;
             };
@@ -2307,7 +2307,7 @@ impl SelectedFacts<'_> {
         if let AtomicPropositionDerivationEvidence::Int32IncrementStrictGreaterLowerBound(bounds) =
             evidence
         {
-            let Proposition::ConditionIs(
+            let Some((
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::GreaterThan,
@@ -2315,7 +2315,7 @@ impl SelectedFacts<'_> {
                     right: lower,
                 },
                 true,
-            ) = proposition
+            )) = proposition.condition_native()
             else {
                 return false;
             };
@@ -2328,7 +2328,7 @@ impl SelectedFacts<'_> {
             bounds,
         ) = evidence
         {
-            let Proposition::ConditionIs(
+            let Some((
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::GreaterThan,
@@ -2336,7 +2336,7 @@ impl SelectedFacts<'_> {
                     right: lower,
                 },
                 true,
-            ) = proposition
+            )) = proposition.condition_native()
             else {
                 return false;
             };
@@ -2347,7 +2347,7 @@ impl SelectedFacts<'_> {
         }
         if let AtomicPropositionDerivationEvidence::Int32IncrementPreservesOrder(bounds) = evidence
         {
-            let Proposition::ConditionIs(
+            let Some((
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
@@ -2355,7 +2355,7 @@ impl SelectedFacts<'_> {
                     right: incremented_value,
                 },
                 true,
-            ) = proposition
+            )) = proposition.condition_native()
             else {
                 return false;
             };
@@ -2368,7 +2368,7 @@ impl SelectedFacts<'_> {
             return self.checks_increment_bounds(bounds, &lower, &value);
         }
         if let AtomicPropositionDerivationEvidence::Int32PositiveIsNonnegative(step) = evidence {
-            let Proposition::ConditionIs(
+            let Some((
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
@@ -2382,7 +2382,7 @@ impl SelectedFacts<'_> {
                     right: lower,
                 },
                 true,
-            ) = proposition
+            )) = proposition.condition_native()
             else {
                 return false;
             };
@@ -2428,7 +2428,7 @@ impl SelectedFacts<'_> {
         if let AtomicPropositionDerivationEvidence::Int32ConstantLowerBoundWeakening(step) =
             evidence
         {
-            let Proposition::ConditionIs(
+            let Some((
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
@@ -2436,7 +2436,7 @@ impl SelectedFacts<'_> {
                     right: value,
                 },
                 true,
-            ) = proposition
+            )) = proposition.condition_native()
             else {
                 return false;
             };
@@ -2454,7 +2454,7 @@ impl SelectedFacts<'_> {
         if let AtomicPropositionDerivationEvidence::Int32NegatedStrictSuccessorBound(step) =
             evidence
         {
-            let Proposition::ConditionIs(
+            let Some((
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::GreaterEqual,
@@ -2462,7 +2462,7 @@ impl SelectedFacts<'_> {
                     right: lower,
                 },
                 true,
-            ) = proposition
+            )) = proposition.condition_native()
             else {
                 return false;
             };
@@ -2489,7 +2489,7 @@ impl SelectedFacts<'_> {
         if let AtomicPropositionDerivationEvidence::Int32PositivePredecessorIsNonnegative(step) =
             evidence
         {
-            let Proposition::ConditionIs(
+            let Some((
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
@@ -2497,7 +2497,7 @@ impl SelectedFacts<'_> {
                     right: predecessor,
                 },
                 true,
-            ) = proposition
+            )) = proposition.condition_native()
             else {
                 return false;
             };
@@ -2514,7 +2514,7 @@ impl SelectedFacts<'_> {
             step,
         ) = evidence
         {
-            let Proposition::ConditionIs(
+            let Some((
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
@@ -2522,7 +2522,7 @@ impl SelectedFacts<'_> {
                     right: value,
                 },
                 true,
-            ) = proposition
+            )) = proposition.condition_native()
             else {
                 return false;
             };
@@ -2538,7 +2538,7 @@ impl SelectedFacts<'_> {
         if let AtomicPropositionDerivationEvidence::Int32NonnegativePredecessorUpperBound(bounds) =
             evidence
         {
-            let Proposition::ConditionIs(
+            let Some((
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
@@ -2546,7 +2546,7 @@ impl SelectedFacts<'_> {
                     right: upper,
                 },
                 true,
-            ) = proposition
+            )) = proposition.condition_native()
             else {
                 return false;
             };
@@ -2565,7 +2565,7 @@ impl SelectedFacts<'_> {
         if let AtomicPropositionDerivationEvidence::Int32OneLePredecessorIsNonnegative(source) =
             evidence
         {
-            let Proposition::ConditionIs(
+            let Some((
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
@@ -2573,7 +2573,7 @@ impl SelectedFacts<'_> {
                     right: predecessor,
                 },
                 true,
-            ) = proposition
+            )) = proposition.condition_native()
             else {
                 return false;
             };
@@ -2586,7 +2586,7 @@ impl SelectedFacts<'_> {
         if let AtomicPropositionDerivationEvidence::Int32OneLePredecessorStrictlyDecreases(source) =
             evidence
         {
-            let Proposition::ConditionIs(
+            let Some((
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
@@ -2594,7 +2594,7 @@ impl SelectedFacts<'_> {
                     right: value,
                 },
                 true,
-            ) = proposition
+            )) = proposition.condition_native()
             else {
                 return false;
             };
@@ -2605,7 +2605,7 @@ impl SelectedFacts<'_> {
         }
         if let AtomicPropositionDerivationEvidence::Int32EqualOnePredecessorIsZero(path) = evidence
         {
-            let Proposition::ConditionIs(
+            let Some((
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
@@ -2613,7 +2613,7 @@ impl SelectedFacts<'_> {
                     right,
                 },
                 true,
-            ) = proposition
+            )) = proposition.condition_native()
             else {
                 return false;
             };
@@ -2628,7 +2628,7 @@ impl SelectedFacts<'_> {
         }
         if let AtomicPropositionDerivationEvidence::Int32PinnedConstantEquality(evidence) = evidence
         {
-            let Proposition::ConditionIs(
+            let Some((
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
@@ -2636,7 +2636,7 @@ impl SelectedFacts<'_> {
                     right,
                 },
                 true,
-            ) = proposition
+            )) = proposition.condition_native()
             else {
                 return false;
             };
@@ -2645,7 +2645,7 @@ impl SelectedFacts<'_> {
         if let AtomicPropositionDerivationEvidence::Int32LeAndNotLtImpliesEquality(evidence) =
             evidence
         {
-            let Proposition::ConditionIs(
+            let Some((
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
@@ -2653,7 +2653,7 @@ impl SelectedFacts<'_> {
                     right,
                 },
                 true,
-            ) = proposition
+            )) = proposition.condition_native()
             else {
                 return false;
             };
@@ -2669,7 +2669,7 @@ impl SelectedFacts<'_> {
         if let AtomicPropositionDerivationEvidence::Int32GeAndNotGtImpliesEquality(evidence) =
             evidence
         {
-            let Proposition::ConditionIs(
+            let Some((
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
@@ -2677,7 +2677,7 @@ impl SelectedFacts<'_> {
                     right,
                 },
                 true,
-            ) = proposition
+            )) = proposition.condition_native()
             else {
                 return false;
             };
@@ -2692,7 +2692,7 @@ impl SelectedFacts<'_> {
         }
         if let AtomicPropositionDerivationEvidence::Int32LeAndNeqImpliesStrict(evidence) = evidence
         {
-            let Proposition::ConditionIs(
+            let Some((
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
@@ -2700,7 +2700,7 @@ impl SelectedFacts<'_> {
                     right,
                 },
                 true,
-            ) = proposition
+            )) = proposition.condition_native()
             else {
                 return false;
             };
@@ -3405,7 +3405,7 @@ impl PureFactContext {
         let Proposition::Implies(antecedent, consequent) = body.as_ref() else {
             return;
         };
-        let Proposition::ConditionIs(
+        let Some((
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -3413,7 +3413,7 @@ impl PureFactContext {
                 right,
             },
             truth,
-        ) = consequent.as_ref()
+        )) = consequent.as_ref().condition_native()
         else {
             return;
         };
@@ -3528,8 +3528,8 @@ impl PureFactContext {
             {
                 continue;
             }
-            let Proposition::ConditionIs(ConditionTerm::Compare { left, right, .. }, truth) =
-                consequent.as_ref()
+            let Some((ConditionTerm::Compare { left, right, .. }, truth)) =
+                consequent.as_ref().condition_native()
             else {
                 unreachable!()
             };

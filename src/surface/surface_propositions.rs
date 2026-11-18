@@ -79,14 +79,14 @@ struct StoreReadKey {
 impl StoreReadKey {
     fn of(equation: &Proposition) -> Option<(Self, &Address)> {
         use crate::kernel::{AddressBase, LoadKind};
-        let Proposition::ConditionIs(
+        let Some((
             ConditionTerm::Compare {
                 relation: CompareRelation::Equal,
                 left,
                 ..
             },
             true,
-        ) = equation
+        )) = equation.condition_native()
         else {
             return None;
         };

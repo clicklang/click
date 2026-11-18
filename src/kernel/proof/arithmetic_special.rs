@@ -225,7 +225,7 @@ fn charge_map_insert(offset: &AddressOffset, map_len: usize) -> bool {
 fn charge_signed_bound(proposition: &Proposition) -> bool {
     // A native 8- or 16-bit order is the same fact as the `int32` order of
     // its widenings (rule K8), which the bound context files with it.
-    let Proposition::ConditionIs(
+    let Some((
         ConditionTerm::Compare {
             format:
                 MachineIntegerType::Int32
@@ -243,7 +243,7 @@ fn charge_signed_bound(proposition: &Proposition) -> bool {
             right,
         },
         true,
-    ) = proposition
+    )) = proposition.condition_native()
     else {
         return false;
     };

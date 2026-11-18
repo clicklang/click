@@ -7305,8 +7305,8 @@ pub fn prove_integer_range_fold_over_equal_terms(
     let Proposition::Implies(guard, conclusion) = append.proposition() else {
         return Err("the Integer fold append law is not a guarded theorem");
     };
-    let Proposition::ConditionIs(ConditionTerm::IntegerEqual(extended, _), true) =
-        conclusion.as_ref()
+    let Some((ConditionTerm::IntegerEqual(extended, _), true)) =
+        conclusion.as_ref().condition_native()
     else {
         return Err("the Integer fold append law did not conclude an equation");
     };
@@ -8072,7 +8072,7 @@ pub(crate) fn prove_universally_quantified_pure_implication_by_int32_rewrites(
     let mut goal = conclusion.clone();
     for rewrite in rewrites {
         crate::kernel::proof::fact_reasoning::exactly_available_fact(&rewrite, &requirements)?;
-        let Proposition::ConditionIs(
+        let Some((
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
@@ -8080,11 +8080,11 @@ pub(crate) fn prove_universally_quantified_pure_implication_by_int32_rewrites(
                 right: to,
             },
             true,
-        ) = rewrite
+        )) = rewrite.condition_native()
         else {
             return None;
         };
-        let Proposition::ConditionIs(
+        let Some((
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
@@ -8092,7 +8092,7 @@ pub(crate) fn prove_universally_quantified_pure_implication_by_int32_rewrites(
                 right,
             },
             true,
-        ) = goal
+        )) = goal.condition_native()
         else {
             return None;
         };

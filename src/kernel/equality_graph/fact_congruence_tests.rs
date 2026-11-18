@@ -574,7 +574,7 @@ fn selected_cursor_chain_needs_its_support_and_displacement() {
             "missing premise {missing}"
         );
     }
-    let Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) = &goal else {
+    let Some((ConditionTerm::PointerEqual(left, right), true)) = (&goal).condition_native() else {
         unreachable!()
     };
     let wrong = Proposition::ConditionIs(
@@ -596,7 +596,7 @@ fn selected_cursor_chain_needs_its_support_and_displacement() {
 fn refreshed_address_aliases_do_not_establish_pointer_identity() {
     use crate::kernel::proof::{PureFactStore, fact_reasoning::normalize_using_conditions};
     let (goal, mut premises) = selected_cursor_chain();
-    let Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) = &premises[0]
+    let Some((ConditionTerm::PointerEqual(left, right), true)) = (&premises[0]).condition_native()
     else {
         unreachable!()
     };
@@ -604,7 +604,7 @@ fn refreshed_address_aliases_do_not_establish_pointer_identity() {
         ConditionTerm::address_equal(left.address().clone(), right.address().clone()),
         true,
     );
-    let Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) = &goal else {
+    let Some((ConditionTerm::PointerEqual(left, right), true)) = (&goal).condition_native() else {
         unreachable!()
     };
     // Establish the numeric result independently of value identity.

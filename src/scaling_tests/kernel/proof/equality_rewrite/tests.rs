@@ -170,8 +170,8 @@ fn pointer_read_rewrite_preserves_value_state_and_scales() {
                 facts.check_equality_rewrite(&goal, &cited).unwrap()
             })
         });
-        let Proposition::ConditionIs(ConditionTerm::AddressEqual(actual, rhs), true) =
-            rewritten.proposition()
+        let Some((ConditionTerm::AddressEqual(actual, rhs), true)) =
+            rewritten.proposition().condition_native()
         else {
             panic!("full pointer equality retained");
         };
@@ -405,8 +405,9 @@ fn integer_equality_rewrite_scales_with_selected_dag_not_ambient_facts() {
         });
         let checked = checked.unwrap();
         assert!(work <= 20 * size + 100, "size {size}: {work}");
-        let Proposition::ConditionIs(ConditionTerm::IntegerEqual(mut root, _), true) =
-            checked.proposition().clone()
+        let condition_source = checked.proposition().clone();
+        let Some((ConditionTerm::IntegerEqual(mut root, _), true)) =
+            condition_source.condition_native()
         else {
             unreachable!()
         };

@@ -666,8 +666,8 @@ fn bitwise_guard_comparisons_ignore_ambient_truth_and_operand_aliases() {
                     &mut SpecEvaluation::logical(&mut execution),
                 )
                 .unwrap();
-                let Proposition::ConditionIs(ConditionTerm::Compare { left, .. }, true) =
-                    &original[0].proposition
+                let Some((ConditionTerm::Compare { left, .. }, true)) =
+                    (&original[0].proposition).condition_native()
                 else {
                     panic!("native comparison");
                 };

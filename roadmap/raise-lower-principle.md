@@ -1437,6 +1437,16 @@ base cancellation. The actual loadability producer is measured against growing
 shared endpoint DAGs without native export. All 45 focused checks and quality
 passed; the regular scaling and proof/fact-stability suites are running.
 
+### 10q3a Explicit native condition destructuring (in progress)
+
+Selected nested `let` readers inspect `Proposition::condition_native()` rather
+than destructuring its condition storage directly. The view borrows the exact
+native payload and truth marker; no proposition is cloned or reconstructed.
+This prepares the logical-condition carrier switch, without changing matching,
+refusal behavior, theorem rules or the output schema. Temporary owned producer
+results retain a local owner while their payload is inspected. Validation is
+pending.
+
 ## Chunk 3: machine-valued pure-function results
 
 Finish the remaining machine-valued call-result boundaries in six sequential

@@ -1016,7 +1016,7 @@ mod tests {
                     super::super::rewrite_with_admitted_equality_as_written(&goal, &equality)
                         .unwrap();
                 assert_eq!(KernelTermExport::machine_export_count(), exports);
-                let Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, _), true) = result
+                let Some((ConditionTerm::IntegerEqual(left, _), true)) = result.condition_native()
                 else {
                     panic!("integer equality")
                 };

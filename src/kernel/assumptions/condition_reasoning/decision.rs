@@ -219,7 +219,7 @@ impl PureFactContext {
             .into_iter()
             .flatten()
         {
-            let Proposition::ConditionIs(ref condition, value) = source else {
+            let Some((ref condition, value)) = source.condition_native() else {
                 continue;
             };
             let view = order_view_at_format(condition, value, MachineIntegerType::Int32)?;

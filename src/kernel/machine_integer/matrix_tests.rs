@@ -172,8 +172,9 @@ fn every_format_has_its_range_and_spells_its_constants() {
             panic!("{ty:?} observes a variable as a machine value");
         };
         for upper in [false, true] {
-            let Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(low, high), true) =
-                range::range_fact(&machine, upper)
+            let condition_source = range::range_fact(&machine, upper);
+            let Some((ConditionTerm::IntegerLessEqual(low, high), true)) =
+                condition_source.condition_native()
             else {
                 panic!("{ty:?} range fact is an order");
             };

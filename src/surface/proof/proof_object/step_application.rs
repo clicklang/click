@@ -10,7 +10,7 @@ use crate::kernel::{
 };
 
 fn is_positive_predecessor_goal(proposition: &crate::kernel::Proposition) -> bool {
-    let crate::kernel::Proposition::ConditionIs(
+    let Some((
         crate::kernel::ConditionTerm::Compare {
             format: crate::kernel::MachineIntegerType::Int32,
             relation: crate::kernel::CompareRelation::LessThan,
@@ -18,7 +18,7 @@ fn is_positive_predecessor_goal(proposition: &crate::kernel::Proposition) -> boo
             right,
         },
         true,
-    ) = proposition
+    )) = proposition.condition_native()
     else {
         return false;
     };

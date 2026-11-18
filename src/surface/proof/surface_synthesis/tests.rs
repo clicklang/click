@@ -2351,7 +2351,7 @@ fn load_equation_rejects_wrong_state_and_unresolvable_variable() {
         base: AddressBase::Concrete("owned-string:wrong-retained_state".into()),
         offset: AddressOffset::Constant(4),
     };
-    let Proposition::ConditionIs(
+    let Some((
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -2359,7 +2359,7 @@ fn load_equation_rejects_wrong_state_and_unresolvable_variable() {
             right: _,
         },
         true,
-    ) = &requirement
+    )) = (&requirement).condition_native()
     else {
         unreachable!()
     };
@@ -4133,7 +4133,7 @@ fn shared_scalar_load_raises_and_relowers_to_the_same_read_node() {
         right: ContractExpression::IntegerLiteral("20".into()),
     };
     let lowered = relower_written_proposition(&claim, &state).unwrap();
-    let Proposition::ConditionIs(ConditionTerm::Compare { left, .. }, true) = lowered else {
+    let Some((ConditionTerm::Compare { left, .. }, true)) = lowered.condition_native() else {
         panic!("read comparison")
     };
     // Both native lowering and checker observations enter the same structural
@@ -6495,8 +6495,8 @@ fn closed_machine_orders_round_trip_after_checked_rewrite() {
                 .unwrap()
                 .proposition()
                 .clone();
-            let Proposition::ConditionIs(condition @ ConditionTerm::Compare { .. }, true) =
-                &produced
+            let Some((condition @ ConditionTerm::Compare { .. }, true)) =
+                (&produced).condition_native()
             else {
                 panic!("retained native comparison: {produced:?}")
             };
@@ -6580,14 +6580,14 @@ fn closed_machine_order_lowering_preserves_relations_and_truth_checking() {
                 panic!("requirement")
             };
             let lowered = relower_written_proposition(written, &state).unwrap();
-            let Proposition::ConditionIs(
+            let Some((
                 condition @ ConditionTerm::Compare {
                     format: actual,
                     relation: actual_relation,
                     ..
                 },
                 true,
-            ) = &lowered
+            )) = (&lowered).condition_native()
             else {
                 panic!("{spelling} {operator}: {lowered:?}")
             };
@@ -7366,14 +7366,14 @@ fn closed_machine_equality_lowering_retains_its_comparison() {
                 panic!("requirement")
             };
             let lowered = relower_written_proposition(written, &state).unwrap();
-            let Proposition::ConditionIs(
+            let Some((
                 condition @ ConditionTerm::Compare {
                     format: actual,
                     relation: CompareRelation::Equal,
                     ..
                 },
                 actual_held,
-            ) = &lowered
+            )) = (&lowered).condition_native()
             else {
                 panic!("{source}: {lowered:?}")
             };
@@ -7457,8 +7457,8 @@ fn closed_bool_literal_comparison_lowering_retains_its_comparison() {
             panic!("requirement")
         };
         let lowered = relower_written_proposition(written, &state).unwrap();
-        let Proposition::ConditionIs(condition @ ConditionTerm::BoolEqual(..), actual_held) =
-            &lowered
+        let Some((condition @ ConditionTerm::BoolEqual(..), actual_held)) =
+            (&lowered).condition_native()
         else {
             panic!("{source}: {lowered:?}")
         };
@@ -7643,7 +7643,8 @@ fn mixed_format_integer_comparisons_of_bitwise_values_round_trip() {
                 panic!()
             };
             let native = relower_written_proposition(written, &state).unwrap();
-            let Proposition::ConditionIs(ConditionTerm::Compare { left, right, .. }, true) = native
+            let Some((ConditionTerm::Compare { left, right, .. }, true)) =
+                native.condition_native()
             else {
                 panic!("native bitwise comparison");
             };

@@ -65,7 +65,7 @@ fn truncating_integer_congruence_visits_shared_nodes_once() {
             crate::kernel::substitute_integer_term_in_proposition(&goal, &from, &to).unwrap()
         });
         assert!(work <= 4 * depth + 8, "depth={depth}, work={work}");
-        let Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true) = rewritten
+        let Some((ConditionTerm::IntegerEqual(left, right), true)) = rewritten.condition_native()
         else {
             unreachable!()
         };
