@@ -396,7 +396,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(Some(closed));
         }
         if retained {
-            let step = if crate::surface::planning::solve::computes_with_known(goal) {
+            let step = if kernels.contains(goal)
+                || crate::surface::planning::solve::computes_with_known(goal)
+            {
                 Some(ProofStep::Known)
             } else if crate::kernel::proof::fact_reasoning::normalize_using_conditions(
                 goal,

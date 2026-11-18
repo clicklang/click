@@ -17769,6 +17769,18 @@ fn retained_int32_addition_expands_with_ordinary_bounds() {
     for (bound, tactic) in bounds {
         assert_eq!(tactic.trim(), "known();", "{bound}\n{tactic}\n{expanded}");
     }
+    for goal in [
+        "have 0 <= to_integer((at(region(4).entry, i) as int32)) by {",
+        "have to_integer((at(region(4).entry, i) as int32)) <= 1 by {",
+    ] {
+        assert!(
+            expanded
+                .lines()
+                .zip(expanded.lines().skip(1))
+                .any(|(line, tactic)| line.trim() == goal && tactic.trim() == "known();"),
+            "the exact cited bound should close with known: {goal}\n{expanded}"
+        );
+    }
     let increment = " + to_integer((1 as int32)))";
     let mut sum_bounds = 0;
     let mut identities = 0;
