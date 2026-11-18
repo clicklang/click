@@ -31,6 +31,7 @@ mod retained_folds;
 mod retained_integer;
 #[allow(dead_code)]
 mod retained_matches;
+mod retained_scalar_boolean;
 mod shared_comparison;
 pub(in crate::kernel) use common_boolean::{
     substitute_application_address_bits, substitute_application_address_pointer,
