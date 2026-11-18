@@ -3515,7 +3515,7 @@ pub(in crate::surface) fn lower_integer_arithmetic_proposition(
             // Propositions still store native condition descriptors. This is the
             // explicit output boundary, after both operands have stayed shared.
             let condition = crate::kernel::KernelTermExport::condition(&root)?;
-            Ok(Proposition::ConditionIs(condition, true))
+            Ok(Proposition::condition_is(condition, true))
         }
         ClickProposition::Not(body) => Ok(Proposition::Not(Box::new(
             lower_integer_arithmetic_proposition(body, integer_values)?,

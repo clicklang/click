@@ -207,7 +207,7 @@ fn certified_symbolic_quantities_use_empty_frame_and_block_boundaries() {
             4u32.into(),
             1,
         )),
-        Box::new(quantity),
+        Box::new(quantity.into()),
     );
     for retained in [
         ResourceFact::own_composite("frame".into(), Vec::new()),

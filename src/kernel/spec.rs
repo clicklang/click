@@ -1086,7 +1086,7 @@ fn wrap_spec_negation_path(path: SpecPropositionPath) -> SpecPropositionPath {
     // keeps a `Not` node an introduction can reach.
     let (proposition, introductions) = match path.proposition {
         Proposition::ConditionIs(condition, value) => (
-            Proposition::ConditionIs(condition, !value),
+            Proposition::condition_is(condition, !value),
             LoweringIntroductions::new(),
         ),
         proposition => (
@@ -1513,7 +1513,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                     };
                     result.push(SpecPropositionPath {
                         introductions: Vec::new(),
-                        proposition: Proposition::ConditionIs(condition, truth),
+                        proposition: Proposition::condition_is(condition, truth),
                         facts,
                         obligations,
                     });
@@ -1565,7 +1565,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
         // A written literal is the constant condition itself; no comparison
         // is formed or folded.
         SpecProposition::Truth(value) => Ok(vec![SpecPropositionPath {
-            proposition: Proposition::ConditionIs(ConditionTerm::Constant(*value), true),
+            proposition: Proposition::condition_is(ConditionTerm::Constant(*value), true),
             facts: ExecutionFacts::new(),
             obligations: Vec::new(),
             introductions: Vec::new(),
@@ -1640,7 +1640,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                 // remaining shape keeps a `Not` node an introduction can reach.
                 let (proposition, introductions) = match path.proposition {
                     Proposition::ConditionIs(condition, value) => (
-                        Proposition::ConditionIs(condition, !value),
+                        Proposition::condition_is(condition, !value),
                         LoweringIntroductions::new(),
                     ),
                     proposition => (
@@ -2124,7 +2124,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                 )
             });
             let proposition = normal_paths.next().map_or_else(
-                || Proposition::ConditionIs(ConditionTerm::Constant(false), true),
+                || Proposition::condition_is(ConditionTerm::Constant(false), true),
                 |first| {
                     normal_paths.fold(first, |left, right| {
                         Proposition::Or(Box::new(left), Box::new(right))
@@ -2146,7 +2146,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
 /// all branches still describe the same witness.
 fn proposition_or_all(mut propositions: Vec<Proposition>) -> Proposition {
     if propositions.is_empty() {
-        return Proposition::ConditionIs(ConditionTerm::Constant(false), true);
+        return Proposition::condition_is(ConditionTerm::Constant(false), true);
     }
     while propositions.len() > 1 {
         let mut next = Vec::with_capacity(propositions.len().div_ceil(2));
@@ -2288,7 +2288,7 @@ fn evaluate_spec_integer_expression_paths_in(
                     )
                 })
                 .reduce(|left, right| Proposition::Or(Box::new(left), Box::new(right)))
-                .unwrap_or(Proposition::ConditionIs(
+                .unwrap_or(Proposition::condition_is(
                     ConditionTerm::Constant(false),
                     true,
                 ));
@@ -2556,7 +2556,7 @@ fn evaluate_spec_integer_expression_paths_in(
 /// interned states uses their O(1) identity equality; arbitrary memory
 /// contents are never traversed here.
 pub(crate) fn is_verified_load_variable_defining_fact(proposition: &Proposition) -> bool {
-    let Proposition::ConditionIs(
+    let Some((
         ConditionTerm::Compare {
             relation: CompareRelation::Equal,
             left,
@@ -2564,7 +2564,7 @@ pub(crate) fn is_verified_load_variable_defining_fact(proposition: &Proposition)
             ..
         },
         true,
-    ) = proposition
+    )) = proposition.condition_native()
     else {
         return false;
     };
@@ -2925,7 +2925,9 @@ fn proposition_mentions_integer_variable(proposition: &Proposition, variable: Va
         Proposition::Equal(left, right) => {
             term_contains(left, variable) || term_contains(right, variable)
         }
-        Proposition::ConditionIs(condition, _) => condition_contains(condition, variable),
+        Proposition::ConditionIs(condition, _) => {
+            condition_contains(condition.native_compat(), variable)
+        }
         Proposition::Predicate { arguments, .. } => {
             arguments.iter().any(|term| term_contains(term, variable))
         }
@@ -2933,7 +2935,7 @@ fn proposition_mentions_integer_variable(proposition: &Proposition, variable: Va
             pointer, outcome, ..
         } => {
             integer_carrier_in_pointer(pointer, variable)
-                || matches!(outcome, ExpressionOutcome::Value(value) if integer_carrier_in_program_value(value, variable))
+                || matches!(outcome, ExpressionOutcome::Value(value) if integer_carrier_in_program_value(value.native_compat(), variable))
         }
         Proposition::MemoryCanStore { pointer, .. } => {
             integer_carrier_in_pointer(pointer, variable)
@@ -2942,7 +2944,7 @@ fn proposition_mentions_integer_variable(proposition: &Proposition, variable: Va
             integer_carrier_in_pointer(pointer, variable)
         }
         Proposition::MemoryLoadable { base, bytes, .. } => {
-            integer_carrier_in_bitvector(bytes, variable)
+            integer_carrier_in_bitvector(bytes.native_compat(), variable)
                 || integer_carrier_in_pointer(base, variable)
         }
         Proposition::MemoryMutatesOnly { writes, .. } => writes
@@ -3471,7 +3473,7 @@ fn evaluate_integer_binary_paths_in(
                 retain_required_integer_obligation(
                     &mut obligations,
                     &path_assumptions,
-                    Proposition::ConditionIs(nonzero, true),
+                    Proposition::condition_is(nonzero, true),
                 );
             }
             let operator = match operation {
@@ -3524,7 +3526,7 @@ fn lower_spec_algebraic_comparison_at_state_in(
     {
         return Ok(vec![SpecPropositionPath {
             introductions: Vec::new(),
-            proposition: Proposition::ConditionIs(ConditionTerm::Constant(equal), true),
+            proposition: Proposition::condition_is(ConditionTerm::Constant(equal), true),
             facts: Vec::new().into(),
             obligations: Vec::new(),
         }]);
@@ -3559,7 +3561,7 @@ fn lower_spec_algebraic_comparison_at_state_in(
             let left_value = left_path.value.clone().into_native_compat();
             let right_value = right_path.value.into_native_compat();
             let equality = if left_value == right_value {
-                Proposition::ConditionIs(ConditionTerm::Constant(true), true)
+                Proposition::condition_is(ConditionTerm::Constant(true), true)
             } else {
                 Proposition::Equal(Term::Algebraic(left_value), Term::Algebraic(right_value))
             };
@@ -3748,7 +3750,7 @@ fn evaluate_spec_algebraic_call_in(
                     value.as_ref().clone(),
                     crate::kernel::IntegerTerm::Constant(0.into()),
                 );
-                let required = Proposition::ConditionIs(nonnegative, true);
+                let required = Proposition::condition_is(nonnegative, true);
                 if super::check_nat_integer_law("click::nat::to_integer_nonnegative", &required)
                     .is_none()
                 {
@@ -4556,7 +4558,7 @@ fn lower_spec_sequence_membership_at_state_in(
             let proposition = comparisons
                 .into_iter()
                 .reduce(|left, right| Proposition::Or(Box::new(left), Box::new(right)))
-                .unwrap_or(Proposition::ConditionIs(
+                .unwrap_or(Proposition::condition_is(
                     ConditionTerm::Constant(false),
                     true,
                 ));
@@ -4675,11 +4677,11 @@ fn finite_sequence_equality(left: &SequenceTerm, right: &SequenceTerm) -> Propos
                 equalities.push(equality);
             }
             (None, None) => break,
-            _ => return Proposition::ConditionIs(ConditionTerm::Constant(false), true),
+            _ => return Proposition::condition_is(ConditionTerm::Constant(false), true),
         }
     }
     if equalities.is_empty() {
-        return Proposition::ConditionIs(ConditionTerm::Constant(true), true);
+        return Proposition::condition_is(ConditionTerm::Constant(true), true);
     }
     while equalities.len() > 1 {
         let mut next = Vec::with_capacity(equalities.len().div_ceil(2));
@@ -4869,7 +4871,7 @@ fn lower_spec_float_classification_proposition_at_state_in(
         };
         Some(SpecPropositionPath {
             introductions: Vec::new(),
-            proposition: Proposition::ConditionIs(condition, true),
+            proposition: Proposition::condition_is(condition, true),
             facts: path.facts,
             obligations: path.obligations,
         })
@@ -5354,7 +5356,7 @@ fn lower_spec_memory_loadable_at_state_in(
                         } else {
                             guards
                         };
-                        let ordered = Proposition::ConditionIs(
+                        let ordered = Proposition::condition_is(
                             ConditionTerm::signed_less_equal(
                                 range_start.clone(),
                                 range_end.clone(),
@@ -5379,11 +5381,12 @@ fn lower_spec_memory_loadable_at_state_in(
                 proposition: Proposition::MemoryLoadable {
                     memory: memory.clone(),
                     base,
-                    bytes: crate::kernel::memory_range_byte_count(
+                    bytes: (crate::kernel::memory_range_byte_count(
                         range_start,
                         range_end,
                         element_width,
-                    ),
+                    ))
+                    .into(),
                     wide: false,
                 },
                 facts: path.facts,
@@ -5525,7 +5528,7 @@ fn lower_spec_disjunction_at_state_in(
         // `b == 0 or a <= MAX / b` then lowers as written whatever the facts.
         let negated_left = match &left_path.proposition {
             Proposition::ConditionIs(condition, value) => {
-                Proposition::ConditionIs(condition.clone(), !value)
+                Proposition::condition_is(condition.clone(), !value)
             }
             Proposition::Not(body) => body.as_ref().clone(),
             proposition => Proposition::Not(Box::new(proposition.clone())),
@@ -5619,7 +5622,7 @@ fn lower_spec_comparison_proposition_at_state_in(
     {
         return Ok(vec![SpecPropositionPath {
             introductions: Vec::new(),
-            proposition: Proposition::ConditionIs(
+            proposition: Proposition::condition_is(
                 ConditionTerm::Constant(operator == ComparisonOperator::Equal),
                 true,
             ),
@@ -5731,7 +5734,7 @@ fn lower_mutex_held_at_state_in(
                 {
                     return SpecPropositionPath {
                         introductions: Vec::new(),
-                        proposition: Proposition::ConditionIs(ConditionTerm::Constant(true), true),
+                        proposition: Proposition::condition_is(ConditionTerm::Constant(true), true),
                         facts: path.facts,
                         obligations: path.obligations,
                     };
@@ -5750,7 +5753,7 @@ fn lower_mutex_held_at_state_in(
                 });
             SpecPropositionPath {
                 introductions: Vec::new(),
-                proposition: Proposition::ConditionIs(held, true),
+                proposition: Proposition::condition_is(held, true),
                 facts: path.facts,
                 obligations: path.obligations,
             }
@@ -6496,7 +6499,7 @@ fn evaluate_resource_count_paths(
                         .entry_symbolic_members
                         .clone()
                         .unwrap_or(MachineTerm::constant(symbolic.entry_owned_members));
-                    let minimum = Proposition::ConditionIs(
+                    let minimum = Proposition::condition_is(
                         ConditionTerm::signed_greater_equal(entry.clone(), entry_owned),
                         true,
                     );
@@ -6557,7 +6560,7 @@ fn evaluate_resource_count_paths(
                             MachineTerm::add(entry, quantity)
                         }
                         Some((false, quantity)) => {
-                            let within = Proposition::ConditionIs(
+                            let within = Proposition::condition_is(
                                 ConditionTerm::signed_greater_equal(
                                     entry.clone(),
                                     quantity.clone(),
@@ -6700,14 +6703,14 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     return Err(ExecutionLimit::Paths);
                 }
                 let mut obligations = path.obligations;
-                let lower_bound = Proposition::ConditionIs(
+                let lower_bound = Proposition::condition_is(
                     ConditionTerm::integer_greater_equal(
                         path.value.clone().into_native_compat(),
                         lower.clone(),
                     ),
                     true,
                 );
-                let upper_bound = Proposition::ConditionIs(
+                let upper_bound = Proposition::condition_is(
                     ConditionTerm::integer_less_equal(
                         path.value.clone().into_native_compat(),
                         upper.clone(),
@@ -8481,10 +8484,10 @@ fn refuted_narrowing_error(obligations: &[ProofObligation]) -> Option<RuntimeErr
         let Proposition::ConditionIs(condition, true) = obligation.proposition() else {
             continue;
         };
-        if PureFactContext::decide_intrinsically(condition) != Some(false) {
+        if PureFactContext::decide_intrinsically(condition.native_compat()) != Some(false) {
             continue;
         }
-        let comparison = match condition {
+        let comparison = match condition.native_compat() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
@@ -8498,7 +8501,7 @@ fn refuted_narrowing_error(obligations: &[ProofObligation]) -> Option<RuntimeErr
                 right,
             } => {
                 let op = if matches!(
-                    condition,
+                    condition.native_compat(),
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessEqual,
@@ -8526,7 +8529,7 @@ fn refuted_narrowing_error(obligations: &[ProofObligation]) -> Option<RuntimeErr
                 right,
             } => {
                 let op = if matches!(
-                    condition,
+                    condition.native_compat(),
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int64,
                         relation: CompareRelation::LessEqual,
@@ -8552,7 +8555,10 @@ fn refuted_narrowing_error(obligations: &[ProofObligation]) -> Option<RuntimeErr
                 .map(|(left, right)| format!("{left} <= {right}")),
             ConditionTerm::IntegerLessEqual(left, right)
             | ConditionTerm::IntegerGreaterEqual(left, right) => {
-                let op = if matches!(condition, ConditionTerm::IntegerLessEqual(..)) {
+                let op = if matches!(
+                    condition.native_compat(),
+                    ConditionTerm::IntegerLessEqual(..)
+                ) {
                     "<="
                 } else {
                     ">="
@@ -8988,40 +8994,40 @@ fn evaluate_spec_if_paths_in(
             && match &condition_path.proposition {
                 Proposition::ConditionIs(condition, _)
                     if crate::kernel::machine_integer::comparison::is_bounded_machine_comparison(
-                        condition,
+                        condition.native_compat(),
                     ) =>
                 {
                     true
                 }
 
-                Proposition::ConditionIs(
-                    ConditionTerm::Compare {
+                condition_source_0 @ Proposition::ConditionIs(
+                    _,
+                    _,
+                ) if let Some((ConditionTerm::Compare {
                         format,
                         left,
                         right,
                         ..
-                    },
-                    _,
-                ) if matches!(
+                    }, _)) = condition_source_0.condition_native() && (matches!(
                     format,
                     MachineIntegerType::Int32
                         | MachineIntegerType::UInt32
                         | MachineIntegerType::Int64
                         | MachineIntegerType::UInt64
-                ) && matches!((left.as_ref(), right.as_ref()), (MachineTerm::Variable(left), MachineTerm::Variable(right)) if left == right) =>
+                ) && matches!((left.as_ref(), right.as_ref()), (MachineTerm::Variable(left), MachineTerm::Variable(right)) if left == right)) =>
                 {
                     true
                 }
 
-                Proposition::ConditionIs(
-                    ConditionTerm::Compare {
+                condition_source_0 @ Proposition::ConditionIs(
+                    _,
+                    _,
+                ) if let Some((ConditionTerm::Compare {
                         format,
                         relation: CompareRelation::Equal,
                         left,
                         right,
-                    },
-                    _,
-                ) => {
+                    }, _)) = condition_source_0.condition_native() => {
                     // Wide equality reads words, including unsigned literal
                     // payloads filed under the native Int64 equality format.
                     matches!(
@@ -9030,15 +9036,15 @@ fn evaluate_spec_if_paths_in(
                     ) && left.bitvector64_as_const().is_some()
                         && right.bitvector64_as_const().is_some()
                 }
-                Proposition::ConditionIs(
-                    ConditionTerm::Compare {
+                condition_source_0 @ Proposition::ConditionIs(
+                    _,
+                    _,
+                ) if let Some((ConditionTerm::Compare {
                         format,
                         left,
                         right,
                         ..
-                    },
-                    _,
-                ) => {
+                    }, _)) = condition_source_0.condition_native() => {
                     matches!(
                         format,
                         MachineIntegerType::Int32
@@ -9200,7 +9206,7 @@ fn evaluate_spec_if_paths_in(
 /// branch it did not take.
 fn negated_lowered_condition(condition: &Proposition) -> Proposition {
     match condition {
-        Proposition::ConditionIs(term, value) => Proposition::ConditionIs(term.clone(), !value),
+        Proposition::ConditionIs(term, value) => Proposition::condition_is(term.clone(), !value),
         Proposition::Not(body) => body.as_ref().clone(),
         proposition => Proposition::Not(Box::new(proposition.clone())),
     }
@@ -9852,7 +9858,9 @@ pub(super) fn proposition_as_single_condition(
     proposition: &Proposition,
 ) -> Option<(ConditionTerm, bool)> {
     match proposition {
-        Proposition::ConditionIs(condition, value) => Some((condition.clone(), *value)),
+        Proposition::ConditionIs(condition, value) => {
+            Some(((condition.clone()).native_compat().clone(), *value))
+        }
         Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) => Some((
             ConditionTerm::AlgebraicEqual(Box::new(left.clone()), Box::new(right.clone())),
             true,
@@ -9884,7 +9892,8 @@ pub(super) fn constant_spec_condition_value(proposition: &Proposition) -> Option
     }
     match proposition {
         Proposition::ConditionIs(condition, value) => {
-            PureFactContext::decide_intrinsically(condition).map(|decided| decided == *value)
+            PureFactContext::decide_intrinsically(condition.native_compat())
+                .map(|decided| decided == *value)
         }
         _ => None,
     }
@@ -9952,7 +9961,7 @@ fn bool_comparison_proposition(
         // Two literals keep their comparison; checking decides it
         // (`closed_condition_value`).
         (Some(left), Some(right)) => {
-            return Some(Ok(Proposition::ConditionIs(
+            return Some(Ok(Proposition::condition_is(
                 ConditionTerm::BoolEqual(
                     Box::new(ConditionTerm::Constant(left)),
                     Box::new(ConditionTerm::Constant(right)),
@@ -9981,7 +9990,7 @@ fn bool_comparison_proposition(
         } else {
             ConditionTerm::nonzero_bool_word
         };
-    Some(Ok(Proposition::ConditionIs(
+    Some(Ok(Proposition::condition_is(
         ConditionTerm::bool_equal(truth(left_term), truth(right_term)),
         equal,
     )))
@@ -10003,7 +10012,7 @@ pub(super) fn program_value_comparison_proposition(
                     ComparisonOperator::Equal | ComparisonOperator::NotEqual
                 ) =>
         {
-            return Some(Proposition::ConditionIs(
+            return Some(Proposition::condition_is(
                 ConditionTerm::AlgebraicEqual(a.clone(), b.clone()),
                 operator == ComparisonOperator::Equal,
             ));
@@ -10021,7 +10030,7 @@ pub(super) fn program_value_comparison_proposition(
         )
     {
         let condition = ConditionTerm::pointer_equal(a.clone(), b.clone());
-        return Some(Proposition::ConditionIs(
+        return Some(Proposition::condition_is(
             condition,
             operator == ComparisonOperator::Equal,
         ));
@@ -10060,7 +10069,7 @@ pub(super) fn program_value_comparison_proposition(
             _ => (left.clone(), right.clone()),
         };
         return crate::kernel::eval::wide_integer_comparison_condition(operator, &left, &right)
-            .map(|condition| Proposition::ConditionIs(condition, true));
+            .map(|condition| Proposition::condition_is(condition, true));
     }
     let pointer_condition = match (left, right) {
         (ProgramValue::Pointer(left), ProgramValue::Pointer(right))
@@ -10116,7 +10125,7 @@ pub(super) fn program_value_comparison_proposition(
         _ => None,
     };
     if let Some((condition, value)) = pointer_condition {
-        return Some(Proposition::ConditionIs(condition, value));
+        return Some(Proposition::condition_is(condition, value));
     }
 
     let target_type = if matches!(left, ProgramValue::Float64(_))
@@ -10157,7 +10166,7 @@ pub(super) fn program_value_comparison_proposition(
         };
         // Float conditions retain the requested operator, including NotEqual.
         // Unlike integer equality, inequality needs no additional negation.
-        return Some(Proposition::ConditionIs(condition, true));
+        return Some(Proposition::condition_is(condition, true));
     }
 
     if matches!(left, ProgramValue::UInt64(_)) || matches!(right, ProgramValue::UInt64(_)) {
@@ -10172,7 +10181,7 @@ pub(super) fn program_value_comparison_proposition(
             ComparisonOperator::GreaterThan => ConditionTerm::uint64_greater_than(left, right),
             ComparisonOperator::GreaterEqual => ConditionTerm::uint64_greater_equal(left, right),
         };
-        return Some(Proposition::ConditionIs(
+        return Some(Proposition::condition_is(
             condition,
             !matches!(operator, ComparisonOperator::NotEqual),
         ));
@@ -10193,7 +10202,7 @@ pub(super) fn program_value_comparison_proposition(
                 ConditionTerm::int64_signed_greater_equal(left, right)
             }
         };
-        return Some(Proposition::ConditionIs(
+        return Some(Proposition::condition_is(
             condition,
             !matches!(operator, ComparisonOperator::NotEqual),
         ));
@@ -10214,7 +10223,7 @@ pub(super) fn program_value_comparison_proposition(
             ComparisonOperator::GreaterThan => (CompareRelation::GreaterThan, true),
             ComparisonOperator::GreaterEqual => (CompareRelation::GreaterEqual, true),
         };
-        return Some(Proposition::ConditionIs(
+        return Some(Proposition::condition_is(
             ConditionTerm::machine_compare(format, relation, a, b),
             value,
         ));
@@ -10274,7 +10283,7 @@ pub(super) fn program_value_comparison_proposition(
             true,
         ),
     };
-    Some(Proposition::ConditionIs(condition, value))
+    Some(Proposition::condition_is(condition, value))
 }
 
 /// The format and operands of a specification comparison made natively at
@@ -10501,7 +10510,7 @@ mod assumed_arithmetic_domain_tests {
 
     #[test]
     fn held_body_arithmetic_assumes_only_its_own_domain_and_preserves_the_value() {
-        let inherited = ProofObligation::evaluation_domain(Proposition::ConditionIs(
+        let inherited = ProofObligation::evaluation_domain(Proposition::condition_is(
             ConditionTerm::Constant(false),
             true,
         ));

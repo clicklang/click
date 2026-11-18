@@ -44,10 +44,16 @@ impl EqualityGraph {
         let mut pending = match proposition {
             Proposition::Equal(a, b) => vec![Work::Term(a), Work::Term(b)],
             Proposition::Predicate { arguments, .. } => arguments.iter().map(Work::Term).collect(),
-            Proposition::ConditionIs(ConditionTerm::PointerEqual(a, b), true) => {
+            condition_source_0 @ Proposition::ConditionIs(_, true)
+                if let Some((ConditionTerm::PointerEqual(a, b), _)) =
+                    condition_source_0.condition_native() =>
+            {
                 vec![Work::Pointer(a), Work::Pointer(b)]
             }
-            Proposition::ConditionIs(ConditionTerm::AlgebraicEqual(a, b), true) => {
+            condition_source_0 @ Proposition::ConditionIs(_, true)
+                if let Some((ConditionTerm::AlgebraicEqual(a, b), _)) =
+                    condition_source_0.condition_native() =>
+            {
                 vec![Work::Model(a), Work::Model(b)]
             }
             _ => return BTreeSet::new(),

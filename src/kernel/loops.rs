@@ -1787,7 +1787,7 @@ fn condition_path_is_ruled_out(
         let Proposition::ConditionIs(condition, value) = fact.proposition() else {
             return false;
         };
-        condition_value_is_proven(assumptions, condition, !value)
+        condition_value_is_proven(assumptions, condition.native_compat(), !value)
     })
 }
 
@@ -2139,14 +2139,14 @@ pub(super) fn guard_path_disjunction(own_facts: &[Vec<Proposition>]) -> Option<P
             .iter()
             .filter(|fact| match fact {
                 Proposition::ConditionIs(condition, value) => {
-                    !earlier.contains(&(condition, !*value))
+                    !earlier.contains(&(condition.native_compat(), !*value))
                 }
                 _ => true,
             })
             .collect::<Vec<_>>();
         for fact in own.iter() {
             if let Proposition::ConditionIs(condition, value) = fact {
-                earlier.insert((condition, *value));
+                earlier.insert((condition.native_compat(), *value));
             }
         }
         let mut own = if narrowed.is_empty() {
@@ -2239,11 +2239,7 @@ fn join_loop_exit_paths(
                         // Dropping this conjunct weakens the path disjunction
                         // and keeps its pure successor facts spellable.
                         && !matches!(proposition, Proposition::ResourceComposition(_))
-                        && !matches!(
-                            proposition,
-                            Proposition::ConditionIs(ConditionTerm::Constant(actual), expected)
-                                if actual == expected
-                        )
+                        && !matches!(&proposition, condition_source_0 @ Proposition::ConditionIs(_, expected) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Constant(actual), _)) if (actual == expected)))
                 })
                 .cloned()
                 .collect::<Vec<_>>()
@@ -2830,10 +2826,10 @@ fn indexed_loop_exit_load_equality(
     else {
         return None;
     };
-    if let Some(answer) = context.exact_condition_value(&condition) {
+    if let Some(answer) = context.exact_condition_value((&condition).native_compat()) {
         return Some(answer == expected);
     }
-    match &condition {
+    match (&condition).native_compat() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
@@ -3059,7 +3055,7 @@ fn equation_states_nothing(equation: &Proposition) -> bool {
     match equation {
         Proposition::Equal(left, right) => left == right,
         Proposition::ConditionIs(condition, value) => {
-            PureFactContext::decide_intrinsically(condition) == Some(*value)
+            PureFactContext::decide_intrinsically(condition.native_compat()) == Some(*value)
         }
         _ => false,
     }
@@ -7943,6 +7939,25 @@ pub(super) fn evaluate_resource_argument_value(
     .map(|(value, _)| value))
 }
 
+pub(super) fn evaluate_resource_argument_value_retained(
+    state: &ExecutionState,
+    expression: &ProgramExpression,
+    assumptions: &PureFactContext,
+    label: &str,
+    budget: &mut ExecutionBudget,
+    diagnostic: &mut Option<RuntimeError>,
+) -> ExecutionResult<Result<ExecutionValue, ValueRefusal>> {
+    Ok(evaluate_loop_effect_segment_value_retained_capturing(
+        state,
+        expression,
+        assumptions,
+        label,
+        budget,
+        Some(diagnostic),
+    )?
+    .map(|(value, _)| value))
+}
+
 fn evaluate_loop_effect_segment_value_capturing(
     state: &ExecutionState,
     expression: &ProgramExpression,
@@ -7951,13 +7966,55 @@ fn evaluate_loop_effect_segment_value_capturing(
     budget: &mut ExecutionBudget,
     diagnostic: Option<&mut Option<RuntimeError>>,
 ) -> ExecutionResult<Result<(ProgramValue, ExecutionFacts), ValueRefusal>> {
+    Ok(evaluate_loop_effect_segment_value_retained_capturing(
+        state,
+        expression,
+        assumptions,
+        label,
+        budget,
+        diagnostic,
+    )?
+    .map(|(value, facts)| (value.into_native(), facts)))
+}
+
+pub(super) fn evaluate_loop_effect_segment_value_retained(
+    state: &ExecutionState,
+    expression: &ProgramExpression,
+    assumptions: &PureFactContext,
+    label: &str,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Result<ExecutionValue, ValueRefusal>> {
+    Ok(evaluate_loop_effect_segment_value_retained_capturing(
+        state,
+        expression,
+        assumptions,
+        label,
+        budget,
+        None,
+    )?
+    .map(|(value, _)| value))
+}
+
+fn evaluate_loop_effect_segment_value_retained_capturing(
+    state: &ExecutionState,
+    expression: &ProgramExpression,
+    assumptions: &PureFactContext,
+    label: &str,
+    budget: &mut ExecutionBudget,
+    diagnostic: Option<&mut Option<RuntimeError>>,
+) -> ExecutionResult<Result<(ExecutionValue, ExecutionFacts), ValueRefusal>> {
     // A contract's operand, such as a resource argument, is a specification:
     // its reads are not C accesses, and facts must not replace pointer metadata.
     // Use the same fact-stable evaluation as written proof propositions so a
     // resource footprint and its explicit memory(...) spelling have one identity.
     let paths = {
         let _specification = crate::kernel::eval::SpecificationReadScope::enter();
-        evaluate_program_expression_paths(state, expression, assumptions, budget)?
+        crate::kernel::eval::evaluate_expression_value_paths(
+            state,
+            expression,
+            assumptions,
+            budget,
+        )?
     };
     // An endpoint the facts do not keep defined splits into its defined value
     // and the undefined behavior beside it: name that behavior, which a
@@ -8243,7 +8300,7 @@ fn assume_invariant_checks_explained(
     // that is never negative.
     let _iterations = crate::kernel::spec::LoopIterationsScope::enter(iterations.clone());
     let mut head_facts = prefix_facts.persistent_facts();
-    head_facts.push(ExecutionPureFact::new(Proposition::ConditionIs(
+    head_facts.push(ExecutionPureFact::new(Proposition::condition_is(
         ConditionTerm::IntegerLessEqual(
             IntegerTerm::constant(0.into()).into(),
             iterations.clone().into(),

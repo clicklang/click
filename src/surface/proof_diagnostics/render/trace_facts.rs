@@ -38,7 +38,7 @@ impl Renderer<'_> {
                     self.push("owns ");
                     self.resource(resource);
                     self.push(" x ");
-                    self.bitvector(quantity);
+                    self.bitvector(quantity.native_compat());
                 }
                 ResourceFact::View(resource) => {
                     self.push("views ");
@@ -169,11 +169,11 @@ mod tests {
         };
         let context = ResourceContext::new().unchecked_with_fact(ResourceFact::Own(
             field.clone(),
-            Box::new(MachineTerm::constant(1)),
+            Box::new(MachineTerm::constant(1).into()),
         ));
         let facts = [
             (
-                Proposition::ConditionIs(
+                Proposition::condition_is(
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int64,
                         relation: CompareRelation::Equal,
@@ -190,7 +190,7 @@ mod tests {
                 "read<Bits64>",
             ),
             (
-                Proposition::ConditionIs(
+                Proposition::condition_is(
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
@@ -205,7 +205,7 @@ mod tests {
                 "rb_root_black(",
             ),
             (
-                Proposition::ConditionIs(
+                Proposition::condition_is(
                     ConditionTerm::AddressEqual(Box::new(p.clone()), Box::new(Address::null())),
                     false,
                 ),
@@ -216,7 +216,7 @@ mod tests {
                 ":Tree",
             ),
             (
-                Proposition::ConditionIs(
+                Proposition::condition_is(
                     ConditionTerm::AddressOffsetEqual(
                         Box::new(p.offset.clone()),
                         Box::new(AddressOffset::Constant(16)),
@@ -229,7 +229,7 @@ mod tests {
                 Proposition::MemoryLoadable {
                     memory,
                     base: p,
-                    bytes: MachineTerm::constant(8),
+                    bytes: (MachineTerm::constant(8)).into(),
                     wide: false,
                 },
                 "bytes:uint32=8",
@@ -248,7 +248,7 @@ mod tests {
                     kind: crate::kernel::VolatileAccessKind::Write,
                     pointer: Address::symbolic(Variable(986_703)),
                     value_type: crate::kernel::ProgramType::UInt64,
-                    value: ProgramValue::UInt64(MachineTerm::uint64_constant(1)),
+                    value: ProgramValue::UInt64(MachineTerm::uint64_constant(1)).into(),
                 })),
                 "volatile-write-event#123(",
             ),
@@ -362,7 +362,7 @@ mod extended_state_tests {
     #[test]
     fn trace_labels_retain_late_state_identities_without_more_structural_comparisons() {
         let mut labels = MemoryStateLabels::default();
-        let fact = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
+        let fact = Proposition::condition_is(ConditionTerm::Constant(true), true);
         render_trace_fact_labeled(&fact, &mut labels);
         let memories: Vec<_> = (0..64)
             .map(|i| SymbolicMemory::new().with_block(format!("late_{i}"), 8))

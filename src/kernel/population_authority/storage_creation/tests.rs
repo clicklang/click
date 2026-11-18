@@ -28,7 +28,7 @@ fn resolved_malloc(pending: &ExecutionState, success: bool) -> ExecutionState {
     let Some(ProgramValue::Pointer(pointer)) = local_native_output_27.as_deref() else {
         panic!("pending allocation has a result pointer");
     };
-    let assumptions = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+    let assumptions = PureFactContext::new().assume_proposition(Proposition::condition_is(
         ConditionTerm::address_equal(pointer.address().clone(), Address::null()),
         !success,
     ));
@@ -1569,7 +1569,7 @@ fn checked_control_import_observes_only_its_exact_entry_population() {
         .checked_member_exchange(&AddressBase::ExternalArgument, &description, false)
         .unwrap();
     let retirement_assumptions =
-        PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+        PureFactContext::new().assume_proposition(Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -2212,7 +2212,7 @@ fn opaque_retirement_requires_global_count_proof_not_local_exhaustion() {
             .unwrap_err(),
         CreationRefusal::UnknownTotal
     );
-    let wrong_total = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+    let wrong_total = PureFactContext::new().assume_proposition(Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -2226,7 +2226,7 @@ fn opaque_retirement_requires_global_count_proof_not_local_exhaustion() {
             .checked_retire_imported(&description, &wrong_total)
             .is_err()
     );
-    let right_total = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+    let right_total = PureFactContext::new().assume_proposition(Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -3749,7 +3749,7 @@ fn authority_contract_entry_retains_only_authenticated_member_bounds() {
             &[ProgramExpression::Value(pointer.clone())],
         )
         .unwrap();
-        let lower_bound = Proposition::ConditionIs(
+        let lower_bound = Proposition::condition_is(
             // `states` is an exact lookup. Match the count evaluator's
             // canonical orientation, rather than asking it to prove `1 <= n`.
             ConditionTerm::signed_greater_equal(count.clone(), MachineTerm::constant(1)),
@@ -3757,7 +3757,7 @@ fn authority_contract_entry_retains_only_authenticated_member_bounds() {
         );
         assert_eq!(entry.states(&lower_bound), tracked_quantity == 1);
         assert!(
-            !entry.states(&Proposition::ConditionIs(
+            !entry.states(&Proposition::condition_is(
                 ConditionTerm::equal(count.clone(), MachineTerm::constant(1)),
                 true
             )),

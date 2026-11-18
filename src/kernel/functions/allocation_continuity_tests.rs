@@ -124,7 +124,7 @@ fn contract_retirement_invalidates_creation_history_even_with_replacement() {
     ] {
         let VerifiedAllocationDelta {
             memory: after_memory,
-            retired_creations: retired,
+            retired_allocations: retired,
             ..
         } = apply_verified_heap_allocation_delta(
             memory.clone(),
@@ -139,10 +139,16 @@ fn contract_retirement_invalidates_creation_history_even_with_replacement() {
             &state,
         )
         .expect("checked allocation retirement");
-        assert_eq!(retired, vec![base.base.clone()]);
+        assert_eq!(retired.len(), 1);
+        assert_eq!(
+            retired[0],
+            AllocationSize::int32(bytes.clone()).byte_range(base.clone())
+        );
         let mut returned = state.clone().with_memory(after_memory);
-        for block in retired {
-            returned.retire_population_storage(&block).unwrap();
+        for range in retired {
+            returned
+                .retire_population_storage(&range.base().base)
+                .unwrap();
         }
         assert!(
             !returned

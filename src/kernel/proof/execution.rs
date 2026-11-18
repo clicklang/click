@@ -1692,7 +1692,7 @@ impl CheckedResourceRewrite {
         }
         let mut evaluation_assumptions = assumptions.clone();
         for imported in imported_counts.into_iter().flatten() {
-            let bound = Proposition::ConditionIs(
+            let bound = Proposition::condition_is(
                 crate::kernel::ConditionTerm::signed_greater_equal(
                     imported.entry_count,
                     imported
@@ -2313,7 +2313,7 @@ impl CheckedResourceRewrite {
                     crate::kernel::functions::evaluate_composite_resource_loadable_propositions(
                         selected,
                         function.composite_resource_definitions(),
-                        after_state.memory(),
+                        &after_state.program_point(),
                         assumptions,
                     )
                 {
@@ -2876,7 +2876,7 @@ impl CheckedResourceObservation {
             let quantity = observed
                 .owned_quantity_term()
                 .ok_or("count observation requires owned member quantity")?;
-            let nonnegative = Proposition::ConditionIs(
+            let nonnegative = Proposition::condition_is(
                 crate::kernel::machine_integer::comparison::logical_condition_for_operand_views(
                     MachineIntegerType::Int32,
                     CompareRelation::LessEqual,
@@ -3104,7 +3104,7 @@ impl CheckedResourceObservation {
                 crate::kernel::functions::evaluate_composite_resource_loadable_propositions(
                     observation_authority,
                     function.composite_resource_definitions(),
-                    after_state.memory(),
+                    &after_state.program_point(),
                     assumptions,
                 )
         {
@@ -3359,7 +3359,10 @@ impl OpenedContractEntry {
             // keep the entry producer's form, avoiding extra read-over-write
             // equations being admitted as independent premises.
             let selected = match fact {
-                Proposition::ConditionIs(crate::kernel::ConditionTerm::PointerEqual(..), _) => {
+                condition_source_0 @ Proposition::ConditionIs(_, _)
+                    if let Some((crate::kernel::ConditionTerm::PointerEqual(..), _)) =
+                        condition_source_0.condition_native() =>
+                {
                     contract.explicitly_states(fact)
                 }
                 _ => contract.states(fact),
@@ -3537,7 +3540,7 @@ fn matched_value_premise_instances(
         crate::instrumentation::record_deterministic_work(1);
         let premise = match fact {
             crate::kernel::AtomicConnectedFact::Condition(condition, value) => {
-                Proposition::ConditionIs(condition.clone(), value)
+                Proposition::condition_is(condition.clone(), value)
             }
             crate::kernel::AtomicConnectedFact::Proposition(proposition) => proposition.clone(),
         };
@@ -5854,7 +5857,7 @@ pub(super) struct CheckedInterfaceLoadDefinition {
 
 impl CheckedInterfaceLoadDefinition {
     fn check(proposition: &Proposition) -> Option<Self> {
-        let Proposition::ConditionIs(
+        let Some((
             crate::kernel::ConditionTerm::Compare {
                 format:
                     crate::kernel::MachineIntegerType::Int32 | crate::kernel::MachineIntegerType::UInt32,
@@ -5863,7 +5866,7 @@ impl CheckedInterfaceLoadDefinition {
                 right,
             },
             true,
-        ) = proposition
+        )) = proposition.condition_native()
         else {
             return None;
         };
@@ -6779,15 +6782,12 @@ pub(crate) fn checked_branch_fact_is_available(facts: &PureFactStore, fact: &Pro
         // shared comparison spellings use the same retained source; this
         // does not derive a weaker bound or search for a missing premise.
         || matches!(fact, Proposition::ConditionIs(condition, truth)
-            if facts.assumptions().selected_comparison_source(condition, *truth).is_some())
-        || matches!(fact, Proposition::ConditionIs(crate::kernel::ConditionTerm::Compare { .. }, _)
-            if crate::kernel::proposition_holds_without_facts(fact))
+            if facts.assumptions().selected_comparison_source(condition.native_compat(), *truth).is_some())
+        || matches!(&fact, condition_source_0 @ Proposition::ConditionIs(_, _) if matches!(condition_source_0.condition_native(), Some((crate::kernel::ConditionTerm::Compare { .. }, _)) if crate::kernel::proposition_holds_without_facts(fact)))
         || matches!(fact, Proposition::And(left, right)
             if checked_branch_fact_is_available(facts, left)
                 && checked_branch_fact_is_available(facts, right))
-        || matches!(fact,
-            Proposition::ConditionIs(crate::kernel::ConditionTerm::Compare { format: crate::kernel::MachineIntegerType::Int32 | crate::kernel::MachineIntegerType::UInt32, relation: crate::kernel::CompareRelation::Equal, left, right }, true)
-                if left == right)
+        || matches!(&fact, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((crate::kernel::ConditionTerm::Compare { format: crate::kernel::MachineIntegerType::Int32 | crate::kernel::MachineIntegerType::UInt32, relation: crate::kernel::CompareRelation::Equal, left, right }, _)) if (left == right)))
 }
 
 /// The pointer congruence fragment may give a field read another spelling
@@ -6797,15 +6797,13 @@ pub(super) fn checked_interface_pointer_equality(
     facts: &PureFactStore,
     goal: &Proposition,
 ) -> bool {
-    matches!(
-        goal,
-        Proposition::ConditionIs(
-            crate::kernel::ConditionTerm::AddressEqual(_, _)
-                | crate::kernel::ConditionTerm::PointerEqual(_, _)
-                | crate::kernel::ConditionTerm::AddressOffsetEqual(_, _),
+    matches!(&goal, condition_source_0 @ Proposition::ConditionIs(
+            _,
             true
-        )
-    ) && super::fact_reasoning::normalize_using_conditions(goal, &[], facts).is_ok()
+        ) if matches!(condition_source_0.condition_native(), Some((crate::kernel::ConditionTerm::AddressEqual(_, _)
+                | crate::kernel::ConditionTerm::PointerEqual(_, _)
+                | crate::kernel::ConditionTerm::AddressOffsetEqual(_, _), _))))
+        && super::fact_reasoning::normalize_using_conditions(goal, &[], facts).is_ok()
 }
 
 fn split_checked_evidence_statement(
@@ -7520,7 +7518,7 @@ fn retain_return_context(
                 crate::kernel::functions::evaluate_composite_resource_loadable_propositions(
                     held,
                     definition,
-                    published.memory(),
+                    &published.program_point(),
                     executed_under,
                 )
             {

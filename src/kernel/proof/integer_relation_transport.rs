@@ -4,10 +4,18 @@ use super::arithmetic_special::ArithmeticRuleError as Error;
 use crate::kernel::{ConditionTerm, Proposition, SharedIntegerTerm};
 fn relation(proposition: &Proposition) -> Option<(&SharedIntegerTerm, &SharedIntegerTerm, bool)> {
     match proposition {
-        Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(a, b), true) => {
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::IntegerLessEqual(a, b), _)) =
+                condition_source_0.condition_native() =>
+        {
             Some((a, b, false))
         }
-        Proposition::ConditionIs(ConditionTerm::IntegerEqual(a, b), true) => Some((a, b, true)),
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::IntegerEqual(a, b), _)) =
+                condition_source_0.condition_native() =>
+        {
+            Some((a, b, true))
+        }
         _ => None,
     }
 }
@@ -27,10 +35,10 @@ pub(super) fn check(
     if bounds.len() != 2 {
         return Err(invalid());
     }
-    let Proposition::ConditionIs(ConditionTerm::IntegerEqual(a, b), true) = premises
+    let Some((ConditionTerm::IntegerEqual(a, b), true)) = (premises
         .get(bounds[0])
-        .ok_or(Error::InvalidPremise(bounds[0]))?
-    else {
+        .ok_or(Error::InvalidPremise(bounds[0]))?)
+    .condition_native() else {
         return Err(invalid());
     };
     let (lo, hi, equality) = relation(

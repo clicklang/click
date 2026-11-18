@@ -904,7 +904,7 @@ fn checked_substitution_collector_reuses_registered_load_dag() {
                 base: AddressBase::Concrete("array".into()),
                 offset: AddressOffset::Variable(load),
             },
-            bytes: MachineTerm::constant(4),
+            bytes: (MachineTerm::constant(4)).into(),
             wide: false,
         };
         let mut proposition = atom.clone();
@@ -1028,18 +1028,18 @@ fn native_unsigned_offset_projection_checks_full_width_bounds_and_scopes() {
         name: Default::default(),
         var: Variable(989_100),
         sort: Sort::ProgramInteger(MachineIntegerType::UInt64),
-        body: Box::new(Proposition::ConditionIs(
+        body: Box::new(Proposition::condition_is(
             ConditionTerm::address_offset_equal(native.clone(), narrow.clone()),
             true,
         )),
     };
     assert_eq!(rewrite.proposition(&binder), binder);
     assert!(rewrite.refusal().is_none());
-    let goal = Proposition::ConditionIs(
+    let goal = Proposition::condition_is(
         ConditionTerm::address_offset_equal(native.clone(), narrow),
         true,
     );
-    let premise = Proposition::ConditionIs(bound, true);
+    let premise = Proposition::condition_is(bound, true);
     let facts = crate::kernel::proof::PureFactStore::from_ordered(std::slice::from_ref(&premise));
     assert!(
         crate::kernel::proof::fact_reasoning::normalize_using_conditions(
@@ -1347,7 +1347,7 @@ fn arithmetic_comparison_memos_are_bounded_and_session_local() {
                 MachineTerm::constant(0),
             );
         }
-        let goal = Proposition::ConditionIs(ConditionTerm::equal(expression, variable), true);
+        let goal = Proposition::condition_is(ConditionTerm::equal(expression, variable), true);
         let measure = || {
             crate::instrumentation::measure_deterministic_work(|| {
                 crate::kernel::arithmetic_comparison_form(&goal)
@@ -1397,7 +1397,7 @@ fn shared_carrier_collection_reuses_growing_prefixes_without_exporting() {
                     [root.clone(), root.clone()],
                 );
                 let machine = SharedMachineIntegerTerm::from_shared(format, root.clone()).unwrap();
-                let proposition = Proposition::ConditionIs(
+                let proposition = Proposition::condition_is(
                     ConditionTerm::IntegerEqual(
                         IntegerTerm::Machine(machine.clone()).into(),
                         IntegerTerm::constant_i64(0).into(),

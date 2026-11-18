@@ -22,7 +22,7 @@ impl Context<'_> {
         }
         Ok(program_seq(
             storage,
-            program_declare(field, ProgramType::UInt64),
+            program_declare(self.binding(&field), ProgramType::UInt64),
         ))
     }
 
@@ -48,7 +48,7 @@ impl Context<'_> {
         Ok(program_seq(
             self.shared_array_move(target, source)?,
             program_assign(
-                format!("{target}_count"),
+                self.binding(&format!("{target}_count")),
                 crate::kernel::program_expression::uint64_literal(0),
             ),
         ))
@@ -64,8 +64,10 @@ impl Context<'_> {
         Ok(program_seq(
             self.shared_array_move(target, source)?,
             program_assign(
-                format!("{target}_count"),
-                crate::kernel::program_expression::variable(format!("{source}_count")),
+                self.binding(&format!("{target}_count")),
+                crate::kernel::program_expression::variable(
+                    self.binding(&format!("{source}_count")),
+                ),
             ),
         ))
     }
@@ -94,16 +96,22 @@ impl Context<'_> {
             }
             let mut some = program_skip();
             if let Some(index) = index {
-                some = program_seq(some, self.bind_local(index, variable(&count))?);
+                some = program_seq(
+                    some,
+                    self.bind_local(index, variable(self.binding(&count)))?,
+                );
             }
             some = program_seq(
                 some,
-                program_assign(&count, add(variable(&count), uint64_literal(1))),
+                program_assign(
+                    self.binding(&count),
+                    add(variable(self.binding(&count)), uint64_literal(1)),
+                ),
             );
             if let Some(element) = element {
                 some = program_seq(
                     some,
-                    self.bind_local(element, variable(format!("{iterator}_ptr")))?,
+                    self.bind_local(element, variable(self.binding(&format!("{iterator}_ptr"))))?,
                 );
             }
             some = program_seq(some, self.shared_array_advance(iterator));
@@ -116,8 +124,14 @@ impl Context<'_> {
             return Err("unknown enumerated iterator Option".into());
         }
         let yielded = program_seq(
-            program_assign(format!("{option}_index"), variable(&count)),
-            program_assign(&count, add(variable(&count), uint64_literal(1))),
+            program_assign(
+                self.binding(&format!("{option}_index")),
+                variable(self.binding(&count)),
+            ),
+            program_assign(
+                self.binding(&count),
+                add(variable(self.binding(&count)), uint64_literal(1)),
+            ),
         );
         self.shared_array_next_with(iterator, option, yielded)
     }
@@ -132,10 +146,12 @@ impl Context<'_> {
         }
         Ok((
             program_assert(crate::kernel::program_expression::equal(
-                crate::kernel::program_expression::variable(format!("{option}_some")),
+                crate::kernel::program_expression::variable(
+                    self.binding(&format!("{option}_some")),
+                ),
                 crate::kernel::program_expression::int32_literal(1),
             )),
-            crate::kernel::program_expression::variable(format!("{option}_index")),
+            crate::kernel::program_expression::variable(self.binding(&format!("{option}_index"))),
         ))
     }
 }

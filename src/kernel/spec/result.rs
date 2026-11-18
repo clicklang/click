@@ -223,7 +223,7 @@ impl SpecValue {
             } else {
                 comparison::logical_condition_for_operand_views(format, relation, [left, right])
             };
-            return Ok(Some(Proposition::ConditionIs(
+            return Ok(Some(Proposition::condition_is(
                 condition,
                 op != ComparisonOperator::NotEqual,
             )));
@@ -246,7 +246,7 @@ impl SpecValue {
             && let (Some(left), Some(right)) = (logical(self), logical(right))
         {
             let root = KernelTerm::boolean_equal([left, right]);
-            return Ok(Some(Proposition::ConditionIs(
+            return Ok(Some(Proposition::condition_is(
                 KernelTermExport::condition(&root).expect("Boolean equality"),
                 op == ComparisonOperator::Equal,
             )));
@@ -264,7 +264,7 @@ impl SpecValue {
             }
         {
             // Lowering is structural: `p == p` keeps its comparison.
-            return Ok(Some(Proposition::ConditionIs(
+            return Ok(Some(Proposition::condition_is(
                 ConditionTerm::logical_pointer_equal(a.clone(), b.clone()),
                 held,
             )));

@@ -1334,7 +1334,7 @@ mod tests {
             ResourceFact::View(owner().resource().clone()),
             ResourceFact::Own(
                 owner().resource().clone(),
-                Box::new(MachineTerm::constant(2)),
+                Box::new(MachineTerm::constant(2).into()),
             ),
             token("unrelated"),
         ] {

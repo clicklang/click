@@ -898,7 +898,35 @@ fn lower_function(
         .map(|last| last.checked_add(1).ok_or("too many calls in one function"))
         .transpose()?
         .unwrap_or(0);
+    // A source name bound more than once is one declaration per binding,
+    // spelled as the source spells it; MIR's local order is the
+    // declaration order, so a proof's `word` is the innermost live one.
+    let owner = LocalFunctionId::new(Some(export.logical_source.clone()), f.name.clone());
+    let bindings = f
+        .mir
+        .iter()
+        .flat_map(|mir| {
+            mir.locals
+                .iter()
+                .enumerate()
+                .filter_map(|(ordinal, local)| {
+                    let spelling = mir.spellings.get(&local.name)?;
+                    let ordinal = u32::try_from(ordinal).ok()?;
+                    Some((
+                        local.name.clone(),
+                        BindingName::from(LocalBindingId::new(
+                            owner.clone(),
+                            false,
+                            ordinal,
+                            Some(spelling.clone()),
+                        )),
+                    ))
+                })
+        })
+        .collect();
     let mut cx = Context {
+        bindings,
+        declaration_sites: Vec::new(),
         shared_array_iterators: BTreeMap::new(),
         ranges: BTreeMap::new(),
         enumerated: BTreeSet::new(),
@@ -971,6 +999,7 @@ fn lower_function(
         lowered = lowered.with_source_sites(crate::languages::interface::SourceSites {
             paths: f.sites.clone(),
             regions,
+            declarations: std::mem::take(&mut cx.declaration_sites),
         });
     }
     if let Some((name, layout)) = return_layout {
@@ -979,6 +1008,12 @@ fn lower_function(
     Ok(lowered)
 }
 struct Context<'a> {
+    /// The binding of each local whose source name is bound more than
+    /// once, by its MIR key; every other local is bound by its name.
+    bindings: BTreeMap<String, BindingName>,
+    /// Where each of those is declared: its binding and source statement
+    /// (`Function::sites`), so `statement(i).local(word)` names it.
+    declaration_sites: Vec<(BindingName, u32)>,
     shared_array_iterators: BTreeMap<String, ProgramType>,
     /// The range locals, with their element type.
     ranges: BTreeMap<String, (Type, bool)>,
@@ -1017,6 +1052,14 @@ struct Context<'a> {
     functions: &'a BTreeMap<&'a str, &'a Function>,
 }
 impl Context<'_> {
+    /// The kernel binding of the local `name`.
+    fn binding(&self, name: &str) -> BindingName {
+        self.bindings
+            .get(name)
+            .cloned()
+            .unwrap_or_else(|| BindingName::from(name))
+    }
+
     fn result_step(&self) -> u32 {
         let id = self.next_result_step.get();
         self.next_result_step.set(
@@ -1042,7 +1085,10 @@ impl Context<'_> {
         arguments: Vec<ProgramExpression>,
     ) -> ProgramStatement {
         let (call, value) = self.call_value(function, arguments);
-        program_seq(call, program_assign(Into::<String>::into(target), value))
+        program_seq(
+            call,
+            program_assign(self.binding(&Into::<String>::into(target)), value),
+        )
     }
 
     fn reference_source(
@@ -1126,7 +1172,7 @@ impl Context<'_> {
                         .insert(place.name.clone(), (length.clone(), !mutable));
                     return Ok(program_seq(
                         program_declare_with_all_qualifiers(
-                            &place.name,
+                            self.binding(&place.name),
                             ProgramType::UInt8Pointer,
                             false,
                             false,
@@ -1134,10 +1180,10 @@ impl Context<'_> {
                             !mutable,
                         ),
                         program_seq(
-                            program_declare(&length, ProgramType::UInt64),
+                            program_declare(self.binding(&length), ProgramType::UInt64),
                             program_seq(
                                 program_assign(
-                                    &place.name,
+                                    self.binding(&place.name),
                                     reference_view(
                                         pointer,
                                         ProgramType::UInt8Pointer,
@@ -1145,7 +1191,7 @@ impl Context<'_> {
                                         !mutable,
                                     ),
                                 ),
-                                program_assign(length, length_value),
+                                program_assign(self.binding(&length), length_value),
                             ),
                         ),
                     ));
@@ -1165,14 +1211,17 @@ impl Context<'_> {
                         .insert(place.name.clone(), (*length, source_element, !mutable));
                     return Ok(program_seq(
                         program_declare_with_all_qualifiers(
-                            &place.name,
+                            self.binding(&place.name),
                             t,
                             false,
                             false,
                             false,
                             !mutable,
                         ),
-                        program_assign(&place.name, reference_view(pointer, t, false, !mutable)),
+                        program_assign(
+                            self.binding(&place.name),
+                            reference_view(pointer, t, false, !mutable),
+                        ),
                     ));
                 }
                 let t = scalar_type(&place.value_type)?;
@@ -1181,7 +1230,7 @@ impl Context<'_> {
                 }
                 let constant = matches!(place.value_type, Type::Reference { mutable: false, .. });
                 let declaration = program_declare_with_all_qualifiers(
-                    &place.name,
+                    self.binding(&place.name),
                     t.to_kernel_type(),
                     false,
                     false,
@@ -1331,10 +1380,7 @@ impl Context<'_> {
         if left.name == right.name {
             return Err("split_at results require distinct slice slots".into());
         }
-        let Some(name) = shared_slice_local(slice) else {
-            return Err("split_at requires a shared byte-slice local".into());
-        };
-        if !self.slices.get(name).is_some_and(|(_, constant)| *constant) {
+        if !self.shared_byte_slice(slice) {
             return Err("split_at requires a shared byte-slice local".into());
         }
         let (pointer, length) = self.slice_parts(slice)?;
@@ -1401,14 +1447,14 @@ impl Context<'_> {
                     result,
                     program_seq(
                         program_declare_with_all_qualifiers(
-                            &place.name,
+                            self.binding(&place.name),
                             ProgramType::UInt8Pointer,
                             false,
                             false,
                             false,
                             true,
                         ),
-                        program_declare(&length_name, ProgramType::UInt64),
+                        program_declare(self.binding(&length_name), ProgramType::UInt64),
                     ),
                 );
                 length_name
@@ -1423,10 +1469,10 @@ impl Context<'_> {
                 result,
                 program_seq(
                     program_assign(
-                        &place.name,
+                        self.binding(&place.name),
                         reference_view(pointer, ProgramType::UInt8Pointer, false, true),
                     ),
-                    program_assign(length_name, length),
+                    program_assign(self.binding(&length_name), length),
                 ),
             );
         }
@@ -1464,7 +1510,7 @@ impl Context<'_> {
             return Err("Rust iterator yielded binding type mismatch".into());
         }
         let declaration = program_declare_with_all_qualifiers(
-            &binding.name,
+            self.binding(&binding.name),
             scalar_type(&binding.value_type)?.to_kernel_type(),
             false,
             false,
@@ -1474,7 +1520,7 @@ impl Context<'_> {
         // Save Some's shared address before advancing. Copy patterns likewise
         // read that address before the source body; None does neither operation.
         let yielded = if by_reference {
-            crate::kernel::program_expression::variable(&item)
+            crate::kernel::program_expression::variable(self.binding(&item))
         } else {
             let occurrence = self.next_load;
             self.next_load = self
@@ -1482,7 +1528,7 @@ impl Context<'_> {
                 .checked_add(1)
                 .ok_or("Rust load identity exhausted")?;
             crate::kernel::program_expression::typed_load_with_source(
-                crate::kernel::program_expression::variable(&item),
+                crate::kernel::program_expression::variable(self.binding(&item)),
                 ProgramType::UInt8,
                 Some(LoadSourceId {
                     owner: LoadSourceOwnerId {
@@ -1497,7 +1543,7 @@ impl Context<'_> {
         // The remaining count is the slice's length, a `usize`.
         let next = program_seq(
             program_declare_with_all_qualifiers(
-                &item,
+                self.binding(&item),
                 ProgramType::UInt8Pointer,
                 false,
                 false,
@@ -1505,24 +1551,32 @@ impl Context<'_> {
                 true,
             ),
             program_seq(
-                program_assign(&item, crate::kernel::program_expression::variable(&cursor)),
+                program_assign(
+                    self.binding(&item),
+                    crate::kernel::program_expression::variable(self.binding(&cursor)),
+                ),
                 program_seq(
                     program_assign(
-                        &cursor,
+                        self.binding(&cursor),
                         crate::kernel::program_expression::add(
-                            crate::kernel::program_expression::variable(&cursor),
+                            crate::kernel::program_expression::variable(self.binding(&cursor)),
                             crate::kernel::program_expression::int32_literal(1),
                         ),
                     ),
                     program_seq(
                         program_assign(
-                            &remaining,
+                            self.binding(&remaining),
                             crate::kernel::program_expression::subtract(
-                                crate::kernel::program_expression::variable(&remaining),
+                                crate::kernel::program_expression::variable(
+                                    self.binding(&remaining),
+                                ),
                                 crate::kernel::program_expression::uint64_literal(1),
                             ),
                         ),
-                        program_seq(declaration, program_assign(&binding.name, yielded)),
+                        program_seq(
+                            declaration,
+                            program_assign(self.binding(&binding.name), yielded),
+                        ),
                     ),
                 ),
             ),
@@ -1530,7 +1584,7 @@ impl Context<'_> {
         let source_body = self.body(body)?;
         Ok(program_seq(
             program_declare_with_all_qualifiers(
-                &cursor,
+                self.binding(&cursor),
                 ProgramType::UInt8Pointer,
                 false,
                 false,
@@ -1538,15 +1592,17 @@ impl Context<'_> {
                 true,
             ),
             program_seq(
-                program_assign(&cursor, pointer),
+                program_assign(self.binding(&cursor), pointer),
                 program_seq(
-                    program_declare(&remaining, ProgramType::UInt64),
+                    program_declare(self.binding(&remaining), ProgramType::UInt64),
                     program_seq(
-                        program_assign(&remaining, length),
+                        program_assign(self.binding(&remaining), length),
                         program_while(
                             crate::kernel::program_expression::not(
                                 crate::kernel::program_expression::equal(
-                                    crate::kernel::program_expression::variable(&remaining),
+                                    crate::kernel::program_expression::variable(
+                                        self.binding(&remaining),
+                                    ),
                                     crate::kernel::program_expression::uint64_literal(0),
                                 ),
                             ),
@@ -1576,8 +1632,8 @@ impl Context<'_> {
                 return Err("shared scalar slice assignment element mismatch".into());
             }
             return Ok(program_seq(
-                program_assign(name, pointer),
-                program_assign(length, source_length),
+                program_assign(self.binding(&name), pointer),
+                program_assign(self.binding(&length), source_length),
             ));
         }
         if self.local_arrays.contains(name) {
@@ -1591,10 +1647,10 @@ impl Context<'_> {
                 checks,
                 program_seq(
                     program_assign(
-                        name,
+                        self.binding(&name),
                         reference_view(pointer, ProgramType::UInt8Pointer, false, constant),
                     ),
-                    program_assign(length, length_value),
+                    program_assign(self.binding(&length), length_value),
                 ),
             ));
         }
@@ -1612,7 +1668,7 @@ impl Context<'_> {
                 _ => return Err("unsupported fixed array element".into()),
             };
             return Ok(program_assign(
-                name,
+                self.binding(&name),
                 reference_view(pointer, pointer_type, false, constant),
             ));
         }
@@ -1629,7 +1685,7 @@ impl Context<'_> {
             }
             _ => {
                 let (checks, value) = self.prepared_expr(e)?;
-                let mut assignment = program_assign(name, value);
+                let mut assignment = program_assign(self.binding(&name), value);
                 if let (
                     Some(import_identity),
                     Some(point),
@@ -1705,7 +1761,9 @@ impl Context<'_> {
                 if !self.owned_locals.contains(name) {
                     return Err("owned call operand has no local storage".into());
                 }
-                values.push(crate::kernel::program_expression::variable(name));
+                values.push(crate::kernel::program_expression::variable(
+                    self.binding(&name),
+                ));
                 pieces.push((checks, values, None));
                 continue;
             }
@@ -1844,10 +1902,14 @@ impl Context<'_> {
                 }
                 Ok((
                     program_assert(crate::kernel::program_expression::equal(
-                        crate::kernel::program_expression::variable(format!("{option}_some")),
+                        crate::kernel::program_expression::variable(
+                            self.binding(&format!("{option}_some")),
+                        ),
                         crate::kernel::program_expression::int32_literal(1),
                     )),
-                    crate::kernel::program_expression::variable(format!("{option}_pointer")),
+                    crate::kernel::program_expression::variable(
+                        self.binding(&format!("{option}_pointer")),
+                    ),
                 ))
             }
             E::Call {
@@ -2207,14 +2269,27 @@ impl Context<'_> {
             _ => Ok((program_skip(), self.expr(e)?)),
         }
     }
+    /// Whether `slice` is a shared byte slice whose parts never change while
+    /// it is read: a shared slice local, a shared borrow of one, or a shared
+    /// slice of an array.
+    pub(super) fn shared_byte_slice(&self, slice: &E) -> bool {
+        match slice {
+            E::ArrayToSlice { mutable: false, .. } => true,
+            slice => shared_slice_local(slice)
+                .is_some_and(|name| self.slices.get(name).is_some_and(|(_, constant)| *constant)),
+        }
+    }
+
     fn slice_parts(&mut self, e: &E) -> Result<(ProgramExpression, ProgramExpression), String> {
         if let E::ChunkOptionSlice { option } = e {
             if !self.chunk_options.contains(option) {
                 return Err("unknown chunk Option".into());
             }
             return Ok((
-                crate::kernel::program_expression::variable(format!("{option}_pointer")),
-                crate::kernel::program_expression::variable(format!("{option}_len")),
+                crate::kernel::program_expression::variable(
+                    self.binding(&format!("{option}_pointer")),
+                ),
+                crate::kernel::program_expression::variable(self.binding(&format!("{option}_len"))),
             ));
         }
         if let E::Borrow {
@@ -2235,8 +2310,12 @@ impl Context<'_> {
                 return Err("unknown Rust chunk iterator".into());
             }
             return Ok((
-                crate::kernel::program_expression::variable(format!("{iterator}_rem")),
-                crate::kernel::program_expression::variable(format!("{iterator}_rem_len")),
+                crate::kernel::program_expression::variable(
+                    self.binding(&format!("{iterator}_rem")),
+                ),
+                crate::kernel::program_expression::variable(
+                    self.binding(&format!("{iterator}_rem_len")),
+                ),
             ));
         }
         if let E::ArrayToSlice { array, mutable } = e {
@@ -2258,8 +2337,8 @@ impl Context<'_> {
             .get(name)
             .ok_or("unknown Rust slice reference")?;
         Ok((
-            crate::kernel::program_expression::variable(name),
-            crate::kernel::program_expression::variable(length),
+            crate::kernel::program_expression::variable(self.binding(&name)),
+            crate::kernel::program_expression::variable(self.binding(&length)),
         ))
     }
     fn array_source_is_constant(&self, e: &E) -> Result<bool, String> {
@@ -2308,8 +2387,8 @@ impl Context<'_> {
             E::Local { name } if self.shared_scalar_slices.contains_key(name) => {
                 let (length, element) = self.shared_scalar_slices[name].clone();
                 Ok((
-                    crate::kernel::program_expression::variable(name),
-                    crate::kernel::program_expression::variable(length),
+                    crate::kernel::program_expression::variable(self.binding(&name)),
+                    crate::kernel::program_expression::variable(self.binding(&length)),
                     element,
                 ))
             }
@@ -2361,7 +2440,7 @@ impl Context<'_> {
             _ => return Err("unsupported fixed array element".into()),
         };
         Ok(reference_view(
-            crate::kernel::program_expression::variable(name),
+            crate::kernel::program_expression::variable(self.binding(&name)),
             pointer_type,
             false,
             *constant,
@@ -2424,13 +2503,13 @@ impl Context<'_> {
             }
             E::Local { name } if self.owned_locals.contains(name) => {
                 Ok(crate::kernel::program_expression::cast(
-                    crate::kernel::program_expression::variable(name),
+                    crate::kernel::program_expression::variable(self.binding(&name)),
                     ProgramType::Int32Pointer,
                 ))
             }
             E::Local { name } if self.addressable_locals.contains(name) => {
                 Ok(ProgramExpression::AddressOf(Box::new(
-                    crate::kernel::program_expression::variable(name),
+                    crate::kernel::program_expression::variable(self.binding(&name)),
                 )))
             }
             E::Local { name } if self.memory_values.contains_key(name) => {
@@ -2440,7 +2519,7 @@ impl Context<'_> {
                     );
                 };
                 Ok(crate::kernel::program_expression::cast(
-                    crate::kernel::program_expression::variable(name),
+                    crate::kernel::program_expression::variable(self.binding(&name)),
                     ProgramType::ParameterPointer(value_type),
                 ))
             }
@@ -2481,9 +2560,9 @@ impl Context<'_> {
                 if !self.shared_array_options.contains_key(option) {
                     return Err("unknown shared iterator Option".into());
                 }
-                Ok(crate::kernel::program_expression::variable(format!(
-                    "{option}_some"
-                )))
+                Ok(crate::kernel::program_expression::variable(
+                    self.binding(&format!("{option}_some")),
+                ))
             }
             E::SharedArrayOptionElement { .. } => {
                 Err("shared Option payload requires checked preparation".into())
@@ -2496,9 +2575,9 @@ impl Context<'_> {
                 if !self.chunk_options.contains(option) {
                     return Err("unknown chunk Option".into());
                 }
-                Ok(crate::kernel::program_expression::variable(format!(
-                    "{option}_some"
-                )))
+                Ok(crate::kernel::program_expression::variable(
+                    self.binding(&format!("{option}_some")),
+                ))
             }
             E::VariantIs { value, variant } => Ok(ProgramExpression::EnumIs {
                 value: Box::new(self.expr(value)?),
@@ -2629,7 +2708,9 @@ impl Context<'_> {
                 if !self.locals.contains(name) {
                     return Err(format!("unknown Rust local `{name}`"));
                 }
-                Ok(crate::kernel::program_expression::variable(name))
+                Ok(crate::kernel::program_expression::variable(
+                    self.binding(&name),
+                ))
             }
             E::Not { value } => Ok(crate::kernel::program_expression::bool_value(
                 crate::kernel::program_expression::not(self.expr(value)?),

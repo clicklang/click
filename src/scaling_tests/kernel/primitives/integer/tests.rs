@@ -60,12 +60,12 @@ fn truncating_integer_congruence_visits_shared_nodes_once() {
                 IntegerTerm::TruncatingRemainder(term.clone(), term).into()
             };
         }
-        let goal = Proposition::ConditionIs(ConditionTerm::IntegerEqual(term.clone(), term), true);
+        let goal = Proposition::condition_is(ConditionTerm::IntegerEqual(term.clone(), term), true);
         let (rewritten, work) = crate::instrumentation::measure_deterministic_work(|| {
             crate::kernel::substitute_integer_term_in_proposition(&goal, &from, &to).unwrap()
         });
         assert!(work <= 4 * depth + 8, "depth={depth}, work={work}");
-        let Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true) = rewritten
+        let Some((ConditionTerm::IntegerEqual(left, right), true)) = rewritten.condition_native()
         else {
             unreachable!()
         };
@@ -79,9 +79,9 @@ fn truncating_integer_congruence_visits_shared_nodes_once() {
                 _ => unreachable!(),
             };
             assert_eq!(left.id(), right.id());
-            node = left.clone();
+            node = left;
         }
-        assert_eq!(node, to);
+        assert_eq!(node, &to);
     }
 }
 
@@ -200,7 +200,7 @@ fn widened_observations_are_one_affine_atom_with_their_operands() {
     let mut costs = Vec::new();
     for n in [16u32, 64, 256, 1024] {
         let (widened, read) = widened_and_read_sums(n);
-        let equality = Proposition::ConditionIs(ConditionTerm::IntegerEqual(widened, read), true);
+        let equality = Proposition::condition_is(ConditionTerm::IntegerEqual(widened, read), true);
         let (claim, work) = crate::instrumentation::measure_deterministic_work(|| {
             crate::kernel::proof::integer_arithmetic::integer_affine_claim(&equality)
         });

@@ -45,7 +45,7 @@ fn boolean_local_synthesis_round_trips_and_scales_with_local_population() {
         let lowered = relower_written_proposition(&equality, &state).unwrap();
         assert_eq!(
             lowered,
-            Proposition::ConditionIs(ConditionTerm::Constant(true), true)
+            Proposition::condition_is(ConditionTerm::Constant(true), true)
         );
     }
 }
@@ -307,7 +307,7 @@ fn boolean_synthesis_tracks_expression_size_not_unrelated_names() {
         }
         names.insert(Variable(9000), "flag".into());
         let flag = ConditionTerm::Variable(Variable(9000));
-        let fact = Proposition::ConditionIs(
+        let fact = Proposition::condition_is(
             ConditionTerm::bool_application(
                 "choose",
                 vec![crate::kernel::PureFunctionArgument::Value(
@@ -340,7 +340,7 @@ fn boolean_synthesis_tracks_expression_size_not_unrelated_names() {
                 condition,
             );
         }
-        let fact = Proposition::ConditionIs(condition, true);
+        let fact = Proposition::condition_is(condition, true);
         let (surface, work) = crate::instrumentation::measure_deterministic_work(|| {
             synthesize_surface_proposition(
                 &fact,
@@ -382,14 +382,14 @@ fn leading_domain_recognition_retains_shared_arithmetic() {
             } else {
                 IntegerTerm::Add(left, right)
             };
-            let upper = Proposition::ConditionIs(
+            let upper = Proposition::condition_is(
                 ConditionTerm::IntegerLessEqual(
                     exact.clone().into(),
                     IntegerTerm::constant(i32::MAX.into()).into(),
                 ),
                 true,
             );
-            let lower = Proposition::ConditionIs(
+            let lower = Proposition::condition_is(
                 ConditionTerm::IntegerGreaterEqual(
                     exact.into(),
                     IntegerTerm::constant(i32::MIN.into()).into(),
@@ -895,7 +895,7 @@ fn narrow_literal_comparison_spelling_ignores_unrelated_locals() {
             let word = |n: i64| {
                 crate::kernel::machine_integer::range::constant_word(format, &n.into()).unwrap()
             };
-            let proposition = Proposition::ConditionIs(
+            let proposition = Proposition::condition_is(
                 ConditionTerm::Compare {
                     format,
                     relation: R::LessEqual,
@@ -927,7 +927,7 @@ fn narrow_comparison_spelling_scales_with_the_selected_proposition() {
         let word = |n: i64| {
             crate::kernel::machine_integer::range::constant_word(T::UInt8, &n.into()).unwrap()
         };
-        let atom = Proposition::ConditionIs(
+        let atom = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: T::UInt8,
                 relation: R::GreaterEqual,

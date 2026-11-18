@@ -815,7 +815,7 @@ pub(crate) fn render_read_resolution(
 ) -> String {
     let _typed = TypedNotationScope::enter();
     let query = render_proposition_labeled(
-        &Proposition::ConditionIs(
+        &Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
@@ -1148,7 +1148,7 @@ pub(crate) fn render_resource_fact_labeled(
             renderer.push("owns ");
             renderer.resource(resource);
             renderer.push(" x ");
-            renderer.bitvector(quantity);
+            renderer.bitvector(quantity.native_compat());
         }
         ResourceFact::View(resource) => {
             renderer.push("views ");
@@ -1449,12 +1449,12 @@ impl Renderer<'_> {
                 self.fmt(format_args!("volatile-{operation}-event#{}(", event.id.0));
                 self.pointer(&event.pointer);
                 self.push(", ");
-                self.cvalue(&event.value);
+                self.cvalue(event.value.native_compat());
                 self.push(")");
             }
             Proposition::Equal(left, right) => self.binary_term(left, " = ", right),
             Proposition::ConditionIs(condition, value) => {
-                self.condition(condition);
+                self.condition(condition.native_compat());
                 self.push(if *value { " is true" } else { " is false" });
             }
             Proposition::Predicate { name, arguments } => {
@@ -1538,7 +1538,7 @@ impl Renderer<'_> {
                 } else {
                     ", bytes:uint32="
                 });
-                self.bitvector(bytes);
+                self.bitvector(bytes.native_compat());
                 self.push(")");
             }
             Proposition::MemoryCanStore {
@@ -2659,7 +2659,7 @@ impl Renderer<'_> {
                     if index > 0 {
                         self.push(", ");
                     }
-                    self.bitvector(hole);
+                    self.bitvector(hole.native_compat());
                 }
                 self.push("])");
             }
@@ -2761,9 +2761,9 @@ impl Renderer<'_> {
             }
         }
     }
-    fn outcome(&mut self, outcome: &ExpressionOutcome) {
+    fn outcome(&mut self, outcome: &ExpressionOutcome<crate::kernel::StoredProgramValue>) {
         match outcome {
-            ExpressionOutcome::Value(value) => self.cvalue(value),
+            ExpressionOutcome::Value(value) => self.cvalue(value.native_compat()),
             ExpressionOutcome::UndefinedBehavior(_) => self.push("undefined-behavior"),
             ExpressionOutcome::RuntimeError(_) => self.push("runtime-error"),
         }
@@ -2904,7 +2904,7 @@ mod tests {
                 },
             );
         }
-        let fact = Proposition::ConditionIs(
+        let fact = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -2989,7 +2989,7 @@ mod tests {
     fn source_names_and_report_local_names_replace_variable_ids() {
         let mut labels = MemoryStateLabels::default();
         labels.source_name(Variable(7), "cur".into());
-        let proposition = Proposition::ConditionIs(
+        let proposition = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -3015,7 +3015,7 @@ mod tests {
             name: "path".into(),
             var: Variable(7),
             sort: Sort::Algebraic(path),
-            body: Box::new(Proposition::ConditionIs(
+            body: Box::new(Proposition::condition_is(
                 ConditionTerm::Constant(true),
                 true,
             )),
@@ -3037,7 +3037,7 @@ mod tests {
         let mut labels = MemoryStateLabels::default();
         labels.source_name(Variable(7), "r".into());
         let equality = |variable| {
-            Proposition::ConditionIs(
+            Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
@@ -3059,7 +3059,7 @@ mod tests {
 
     #[test]
     fn deep_dag_is_bounded_and_marks_truncation() {
-        let mut proposition = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
+        let mut proposition = Proposition::condition_is(ConditionTerm::Constant(true), true);
         for _ in 0..128 {
             proposition = Proposition::Not(Box::new(proposition));
         }
@@ -3073,7 +3073,7 @@ mod tests {
         let left = SharedIntegerTerm::from(IntegerTerm::from(11));
         let right = SharedIntegerTerm::from(IntegerTerm::from(19));
         let proposition =
-            Proposition::ConditionIs(ConditionTerm::IntegerLessThan(left, right), true);
+            Proposition::condition_is(ConditionTerm::IntegerLessThan(left, right), true);
         let rendered = render_proposition(&proposition);
         assert!(rendered.contains("integer-condition"));
         assert!(rendered.contains("<"));
@@ -3107,7 +3107,7 @@ mod tests {
                 base: crate::kernel::AddressBase::ExternalArgument,
                 offset: AddressOffset::Constant(0),
             },
-            bytes: MachineTerm::constant(1),
+            bytes: (MachineTerm::constant(1)).into(),
             wide: false,
         }
     }

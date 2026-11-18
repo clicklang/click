@@ -30,7 +30,7 @@ fn equal_pointer_arguments(graph: &mut EqualityGraph, p: &Address, q: &Address) 
 }
 
 fn equal(a: &Address, b: &Address) -> Proposition {
-    Proposition::ConditionIs(
+    Proposition::condition_is(
         ConditionTerm::AddressEqual(Box::new(a.clone()), Box::new(b.clone())),
         true,
     )
@@ -163,7 +163,7 @@ fn pointer_call_evidence_stays_scoped() {
         call("get", vec![argument(51)]),
     );
     let p = Address::symbolic(Variable(52));
-    let premise = Proposition::ConditionIs(ConditionTerm::equal(word(50), word(51)), true);
+    let premise = Proposition::condition_is(ConditionTerm::equal(word(50), word(51)), true);
     let held = equal(&p, &a);
     let goal = equal(&p, &b);
     let base = PureFactContext::new().assume_proposition(held.clone());

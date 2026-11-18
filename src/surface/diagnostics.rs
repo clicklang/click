@@ -1063,7 +1063,7 @@ pub(super) fn describe_missing_resource_fact(
                 .iter()
                 .map(|hole| format!(
                     "`{}`",
-                    describe_bitvector_with_context(hole, parameter_binding)
+                    describe_bitvector_with_context(hole.native_compat(), parameter_binding)
                 ))
                 .collect::<Vec<_>>()
                 .join(", ")
@@ -2181,7 +2181,10 @@ pub(in crate::surface) fn describe_iterated_memory(
             iterated
                 .holes()
                 .iter()
-                .map(|hole| describe_bitvector_with_context(hole, parameter_binding))
+                .map(|hole| describe_bitvector_with_context(
+                    hole.native_compat(),
+                    parameter_binding
+                ))
                 .collect::<Vec<_>>()
                 .join(", ")
         ));
@@ -4306,7 +4309,7 @@ fn states_terms_differ(stated: &[&Proposition], left: &MachineTerm, right: &Mach
             return false;
         };
         matches!(
-            condition.as_bitvector_comparison(),
+            condition.native_compat().as_bitvector_comparison(),
             Some((
                 crate::kernel::BitvectorComparisonOp::Compare(
                     _,
@@ -4356,9 +4359,23 @@ pub(in crate::surface) fn diagnostic_aggregate_parameter_load_cell(
         .iter()
         .zip(parameter_binding.arguments)
     {
-        if !parameter.is_struct_value() {
+        // A struct value's field is `s.f`; a field through a struct pointer
+        // is `p->f`, its first field included: `*p` would read the struct.
+        let (layout, select) = if parameter.is_struct_value() {
+            (parameter.struct_layout(), ".")
+        } else if parameter.is_reference() {
             continue;
-        }
+        } else {
+            (
+                parameter
+                    .pointee_struct_layout()
+                    .or_else(|| parameter.struct_layout()),
+                "->",
+            )
+        };
+        let Some(layout) = layout else {
+            continue;
+        };
         let ProgramExpression::Value(ProgramValue::Pointer(base)) = argument else {
             continue;
         };
@@ -4367,16 +4384,13 @@ pub(in crate::surface) fn diagnostic_aggregate_parameter_load_cell(
         else {
             continue;
         };
-        let Some(layout) = parameter.struct_layout() else {
-            continue;
-        };
         let mut fields = layout.typed_leaf_fields().filter(|(_, at, ty)| {
             *at == offset
                 && crate::kernel::LoadKind::of_type(ty.to_kernel_type())
                     .is_some_and(|read| read.reads_word_of(kind))
         });
         if let (Some((field, _, _)), None) = (fields.next(), fields.next()) {
-            return Some(format!("{}.{field}", parameter.name()));
+            return Some(format!("{}{select}{field}", parameter.name()));
         }
     }
     None
@@ -8683,7 +8697,7 @@ mod assembly_fact_tests {
                 "zero".into(),
                 vec![pointer.clone()],
             )),
-            fact: Box::new(Proposition::ConditionIs(
+            fact: Box::new(Proposition::condition_is(
                 ConditionTerm::Constant(false),
                 true,
             )),

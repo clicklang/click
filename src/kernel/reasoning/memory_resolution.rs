@@ -415,7 +415,7 @@ fn expired_nested_reasoning_does_not_poison_resolution_memo() {
             let assumptions = PureFactContext::new();
             crate::kernel::search::ProofSearch::proves(
                 &(assumptions),
-                &Proposition::ConditionIs(ConditionTerm::Constant(true), true),
+                &Proposition::condition_is(ConditionTerm::Constant(true), true),
             )
         })
     }));
@@ -630,8 +630,8 @@ fn closure_distinctness_failure_key(
 #[test]
 fn closure_failure_memo_answers_a_repeated_failure_once() {
     let assumptions = PureFactContext::new();
-    let source = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
-    let target = Proposition::ConditionIs(ConditionTerm::Constant(false), true);
+    let source = Proposition::condition_is(ConditionTerm::Constant(true), true);
+    let target = Proposition::condition_is(ConditionTerm::Constant(false), true);
     let runs = std::cell::Cell::new(0);
     let check = |answer: bool| {
         closure_memoized_fact_check(

@@ -4,10 +4,8 @@ src/kernel/api.rs	legacy-caller	::execution_state_with_borrowed_contract_inputs	
 src/kernel/api.rs	legacy-caller	::install_borrowed_contract_inputs	expand_composite_resource_fact_with_children	1
 src/kernel/api/contract_certification.rs	legacy-caller	::prepare_function_contract_entry_cases	expand_all_composite_resource_facts_at_state	1
 src/kernel/api/contract_certification.rs	legacy-caller	::program_function_contract_entry_facts	expand_all_composite_resource_facts_at_state	2
-src/kernel/api/contract_certification/contract_claims.rs	legacy-caller	::prepare_closing_path	expand_all_composite_resource_facts_at_state	1
 src/kernel/api/contract_certification/contract_claims.rs	legacy-caller	::prepare_closing_path	try_compose_with_facts	1
 src/kernel/api/contract_certification/contract_claims.rs	legacy-caller	::prepare_function_claim_path	expand_all_composite_resource_facts_at_state	1
-src/kernel/api/contract_certification/contract_claims.rs	legacy-caller	FunctionEnsureGoalContext::at_entry	expand_all_composite_resource_facts_at_state	1
 src/kernel/api/contract_certification/contract_claims.rs	legacy-caller	FunctionEnsureGoalContext::new	expand_all_composite_resource_facts_at_state	1
 src/kernel/functions.rs	legacy-caller	::add_verified_function_ensure_facts_selected_with_interface	expand_all_composite_resource_facts_at_state	1
 src/kernel/functions.rs	legacy-caller	::apply_verified_heap_allocation_delta	expand_all_composite_resource_facts_at_state	1
@@ -75,3 +73,4 @@ src/kernel/api.rs	import	::	admit_declared_entry_resources	1
 src/kernel/api/contract_certification.rs	legacy-caller	::program_function_contract_entry_facts	admit_declared_entry_resources	1
 src/surface/proof.rs	mixed	::evaluate_entry_resource_context	admit_declared_entry_resources	1
 src/kernel/functions.rs	legacy-caller	::consume_returned_resource_unit	expand_composite_resource_fact_with_children	1
+src/kernel/api/contract_certification/contract_claims/retained_context.rs	legacy-caller	::expand_certification_exit	expand_all_composite_resource_facts_at_state	1

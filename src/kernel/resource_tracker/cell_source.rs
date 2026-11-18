@@ -1174,8 +1174,11 @@ impl RangeBoundEvidence {
                 let Proposition::ConditionIs(condition, truth) = &to_successor.premise else {
                     return false;
                 };
-                let Some(edge) = order_view_at_format(condition, *truth, MachineIntegerType::Int32)
-                else {
+                let Some(edge) = order_view_at_format(
+                    condition.native_compat(),
+                    *truth,
+                    MachineIntegerType::Int32,
+                ) else {
                     return false;
                 };
                 let [lower, upper] = edge
@@ -1185,7 +1188,7 @@ impl RangeBoundEvidence {
                 if !strict
                     || edge.relation != Relation::Less
                     || Key::new(lower) != Key::new(left)
-                    || assumptions.exact_condition_value(condition) != Some(*truth)
+                    || assumptions.exact_condition_value(condition.native_compat()) != Some(*truth)
                 {
                     return false;
                 }
@@ -1220,7 +1223,7 @@ impl PointerInRangeEvidence {
                             ConditionTerm::address_equal(pointer.clone(), alias.clone());
                         crate::kernel::record_implicit_consulted_premises(
                             assumptions,
-                            &Proposition::ConditionIs(condition.clone(), true),
+                            &Proposition::condition_is(condition.clone(), true),
                         );
                         Some(Self::ExactAlias {
                             alias: alias.clone(),
@@ -1244,7 +1247,7 @@ impl PointerInRangeEvidence {
                         let membership = Self::for_pointer_direct(&shifted, range, assumptions)?;
                         crate::kernel::record_implicit_consulted_premises(
                             assumptions,
-                            &Proposition::ConditionIs(
+                            &Proposition::condition_is(
                                 ConditionTerm::address_equal(base.clone(), range.base().clone()),
                                 true,
                             ),
@@ -1426,8 +1429,8 @@ impl PointerInRangeEvidence {
                             return true;
                         }
                         crate::kernel::proof::propositions_are_alpha_equal(
-                            &Proposition::ConditionIs(guard.clone(), true),
-                            &Proposition::ConditionIs(upper.clone(), true),
+                            &Proposition::condition_is(guard.clone(), true),
+                            &Proposition::condition_is(upper.clone(), true),
                         )
                     })
             }) && assumptions.exact_condition_value(upper) == Some(true);
@@ -2019,17 +2022,17 @@ mod separated_range_frame_tests {
                 left: Box::new(Resource::Memory(backing)),
                 right: Box::new(Resource::Memory(descriptor)),
             },
-            Proposition::ConditionIs(ConditionTerm::equal(loaded_start, start.clone()), true),
-            Proposition::ConditionIs(
+            Proposition::condition_is(ConditionTerm::equal(loaded_start, start.clone()), true),
+            Proposition::condition_is(
                 ConditionTerm::signed_less_equal(start.clone(), model_index.clone()),
                 true,
             ),
-            Proposition::ConditionIs(
+            Proposition::condition_is(
                 ConditionTerm::signed_less_than(model_index, end.clone()),
                 true,
             ),
-            Proposition::ConditionIs(ConditionTerm::signed_less_equal(0u32.into(), start), true),
-            Proposition::ConditionIs(ConditionTerm::signed_less_equal(end, 1024u32.into()), true),
+            Proposition::condition_is(ConditionTerm::signed_less_equal(0u32.into(), start), true),
+            Proposition::condition_is(ConditionTerm::signed_less_equal(end, 1024u32.into()), true),
         ];
         let context = facts
             .iter()
@@ -2376,7 +2379,7 @@ mod shared_range_bound_evidence_tests {
         };
         let goal = compare(variable(994103), variable(994104));
         for successor in [false, true] {
-            let first = Proposition::ConditionIs(
+            let first = Proposition::condition_is(
                 compare(
                     variable(994103),
                     if successor {
@@ -2387,7 +2390,8 @@ mod shared_range_bound_evidence_tests {
                 ),
                 true,
             );
-            let second = Proposition::ConditionIs(compare(product.clone(), variable(994104)), true);
+            let second =
+                Proposition::condition_is(compare(product.clone(), variable(994104)), true);
             let exports = KernelTermExport::machine_export_count();
             let facts = PureFactContext::new()
                 .assume_proposition(first.clone())

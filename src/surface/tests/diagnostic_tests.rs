@@ -35,7 +35,7 @@ fn full_and_concise_reports_keep_named_pointer_prerequisites() {
         identity: Address::symbolic(Variable(990_102)),
     };
     let pointer = |p: &Address| Pointer::new(p.clone(), ProgramType::Int32Pointer);
-    let requirement = Proposition::ConditionIs(
+    let requirement = Proposition::condition_is(
         ConditionTerm::PointerEqual(
             Box::new(pointer(&names.node)),
             Box::new(pointer(&names.identity)),
@@ -923,7 +923,7 @@ fn a_condition_search_miss_spells_its_goal_and_premises() {
     let x = MachineTerm::Variable(Variable(1));
     let y = MachineTerm::Variable(Variable(2));
     let at_most = |term: &MachineTerm, bound: u32| {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
@@ -933,7 +933,7 @@ fn a_condition_search_miss_spells_its_goal_and_premises() {
             true,
         )
     };
-    let goal = Proposition::ConditionIs(
+    let goal = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessEqual,
@@ -975,7 +975,7 @@ fn a_condition_search_miss_spells_its_goal_and_premises() {
 fn verifier_diagnostics_bound_fact_items() {
     let facts = (0..20)
         .map(|index| {
-            Proposition::ConditionIs(
+            Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
@@ -1516,7 +1516,7 @@ fn a_store_wider_than_an_element_is_refused_by_bytes_not_by_index() {
     use crate::kernel::{ConditionTerm, MachineTerm, Proposition, Variable};
     let i = MachineTerm::Variable(Variable(1));
     let j = MachineTerm::Variable(Variable(2));
-    let differ = Proposition::ConditionIs(
+    let differ = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -1538,7 +1538,7 @@ fn a_store_wider_than_an_element_is_refused_by_bytes_not_by_index() {
         "the store to `a[j]` may have written it. `i != j` is already available, so stating \
          it again will not help."
     );
-    let unrelated = Proposition::ConditionIs(
+    let unrelated = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -1576,7 +1576,7 @@ fn empty_footprint_rejects_a_fact_aliased_write_and_effect_range() {
     let after = before.clone().store(alias.clone(), int32(1));
     let pre_state = ExecutionState::new().with_memory(before.clone());
     let aliases_global =
-        Proposition::ConditionIs(ConditionTerm::address_equal(alias.clone(), global), true);
+        Proposition::condition_is(ConditionTerm::address_equal(alias.clone(), global), true);
     let facts = [
         ExecutionPureFact::new(Proposition::MemoryMutatesOnly {
             before: before.clone(),
@@ -2855,7 +2855,7 @@ fn memory_history_diagnostic_names_the_store_and_limits_its_claim() {
             LoadKind::Bits64,
         )
     };
-    let goal = Proposition::ConditionIs(
+    let goal = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
@@ -3427,7 +3427,7 @@ fn pending_call_obligations_use_shared_goal_printer_and_state_legend() {
         base: "pending_read_cell".into(),
         offset: AddressOffset::Constant(0),
     };
-    let goal = Proposition::ConditionIs(
+    let goal = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,

@@ -214,11 +214,11 @@ fn indexed_store_bounds(
         return None;
     }
     Some([
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::signed_less_equal(range.start().clone(), index.clone()),
             true,
         ),
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::signed_less_than(index.clone(), range.end().clone()),
             true,
         ),
@@ -794,7 +794,7 @@ fn write_program_lvalue_paths_for_initialization(
                     VolatileAccessKind::Write,
                     pointer,
                     value_type,
-                    value.clone().into_native(),
+                    value.clone(),
                 )?);
             }
             state.locals.set_retained_typed_with_all_qualifiers(
@@ -825,6 +825,14 @@ fn write_program_lvalue_paths_for_initialization(
                 .shared()
                 .filter(|root| root.pointer_payload().is_some())
                 .cloned();
+            // The bit-field producer computes a different, combined byte below.
+            // Ordinary writes keep their already-coerced execution operand.
+            let retained_volatile_value = (is_volatile
+                && !matches!(
+                    &lvalue_classes.0,
+                    Some(crate::kernel::effective_type::CAccessClass::BitFieldByte(_))
+                ))
+            .then(|| value.clone());
             let value = value.into_native();
             // The loan obligation names the evaluated source lvalue. Keep its
             // address before storage chooses an equivalent owner's coordinates.
@@ -1223,7 +1231,7 @@ fn write_program_lvalue_paths_for_initialization(
             if let ProgramValue::Pointer(stored) = &written_value {
                 facts.push(ExecutionPureFact::logical_read_equation(
                     stored.clone(),
-                    Address::loaded_value(
+                    Address::canonical_read(
                         &crate::kernel::intern_memory_ref(state.memory()),
                         &written_pointer,
                     ),
@@ -1241,7 +1249,7 @@ fn write_program_lvalue_paths_for_initialization(
                     VolatileAccessKind::Write,
                     pointer,
                     value_type,
-                    value,
+                    retained_volatile_value.unwrap_or_else(|| value.into()),
                 )?);
             }
             Ok(vec![StatementExecutionPath::new(
@@ -3268,7 +3276,7 @@ fn execute_program_heap_free_paths(
                 unreachable!("a pointer version read has pointer type");
             };
             if before != after {
-                facts.push(ExecutionPureFact::certified(Proposition::ConditionIs(
+                facts.push(ExecutionPureFact::certified(Proposition::condition_is(
                     ConditionTerm::pointer_equal(before, after),
                     true,
                 )));

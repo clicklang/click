@@ -56,7 +56,7 @@ pub(super) fn native_domain(value: &Proposition) -> Proposition {
             Proposition::Or(Box::new(native_domain(a)), Box::new(native_domain(b)))
         }
         Proposition::ConditionIs(condition, truth) => {
-            let condition = match condition {
+            let condition = match condition.native_compat() {
                 ConditionTerm::IntegerLessEqual(a, b) => {
                     ConditionTerm::integer_less_equal(native_integer(a), native_integer(b))
                 }
@@ -65,7 +65,7 @@ pub(super) fn native_domain(value: &Proposition) -> Proposition {
                 }
                 _ => return boxed_domain(value),
             };
-            Proposition::ConditionIs(condition, *truth)
+            Proposition::condition_is(condition, *truth)
         }
         _ => value.clone(),
     }
@@ -194,9 +194,13 @@ fn mixed_arithmetic_evaluator_preserves_nested_results_and_refusals() {
     let mut execution = ExecutionBudget::new();
     let budget = SpecEvaluation::logical(&mut execution);
     let left = SpecValue::Native(ProgramValue::Int32(MachineTerm::Variable(Variable(995455))));
-    let right = SpecValue::Native(ProgramValue::UInt64(MachineTerm::Variable(Variable(995456))));
+    let right = SpecValue::Native(ProgramValue::UInt64(MachineTerm::Variable(Variable(
+        995456,
+    ))));
     assert!(apply_values(Some(MachineBinaryOp::ShiftLeft), &left, &right, &budget).is_some());
-    let wide = SpecValue::Native(ProgramValue::Int128(MachineTerm::Variable(Variable(995457))));
+    let wide = SpecValue::Native(ProgramValue::Int128(MachineTerm::Variable(Variable(
+        995457,
+    ))));
     assert!(apply_values(Some(MachineBinaryOp::Add), &wide, &right, &budget).is_none());
 }
 

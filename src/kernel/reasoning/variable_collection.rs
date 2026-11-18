@@ -585,14 +585,18 @@ fn collect_proposition_bitvector_variables_one(
     match proposition {
         Proposition::VolatileAccess(event) => {
             collect_pointer_bitvector_variables(&event.pointer, variables);
-            collect_program_value_bitvector_variables(&event.value, variables);
+            collect_expression_value_bitvector_variables(event.value.value(), variables);
         }
         Proposition::Equal(left, right) => {
             collect_term_bitvector_variables(left, variables);
             collect_term_bitvector_variables(right, variables);
         }
         Proposition::ConditionIs(condition, _) => {
-            collect_condition_bitvector_variables(condition, variables);
+            retained_folds::collect_boolean_variables(
+                condition.operand_view(),
+                retained_folds::FoldVariableRead::ExpressionFree,
+                variables,
+            );
         }
         Proposition::Predicate { arguments, .. } => {
             for argument in arguments {
@@ -669,7 +673,7 @@ fn collect_proposition_bitvector_variables_one(
         } => {
             collect_memory_bitvector_variables(memory, variables);
             collect_pointer_bitvector_variables(base, variables);
-            collect_bitvector_variables(bytes, variables);
+            collect_expression_value_bitvector_variables(bytes.value(), variables);
         }
         Proposition::ResourceSeparate { left, right } => {
             collect_resource_bitvector_variables(left, variables);
@@ -1551,11 +1555,11 @@ pub(in crate::kernel) fn collect_loop_effect_bitvector_variables(
 }
 
 pub(in crate::kernel) fn collect_program_expression_outcome_bitvector_variables(
-    outcome: &ExpressionOutcome,
+    outcome: &ExpressionOutcome<crate::kernel::StoredProgramValue>,
     variables: &mut BTreeSet<Variable>,
 ) {
     if let ExpressionOutcome::Value(value) = outcome {
-        collect_program_value_bitvector_variables(value, variables);
+        collect_expression_value_bitvector_variables(value.value(), variables);
     }
 }
 
@@ -1670,7 +1674,7 @@ pub(in crate::kernel) fn collect_resource_bitvector_variables(
             }
         }
         Resource::ConditionalMutexGuard(carrier) => {
-            collect_condition_bitvector_variables(&carrier.held, variables)
+            collect_condition_bitvector_variables(carrier.condition(), variables)
         }
         Resource::MutexGuard(identity) | Resource::MutexLive(identity) => {
             if identity.epoch.is_none() {
@@ -1684,7 +1688,7 @@ pub(in crate::kernel) fn collect_resource_bitvector_variables(
                 .visit_values(|v| collect_algebraic_value_bitvector_variables(v, variables));
             collect_pointer_bitvector_variables(&right.flag, variables);
             if let Some(value) = &right.observed {
-                collect_program_value_bitvector_variables(value, variables);
+                collect_expression_value_bitvector_variables(value.value(), variables);
             }
         }
         Resource::Instance(instance) => {
@@ -3514,11 +3518,28 @@ pub(in crate::kernel) fn collect_proposition_capture_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     let mut integer_seen = SeenTerms::default();
+    let mut condition_summaries = Default::default();
     let mut pending = vec![proposition];
     while let Some(proposition) = pending.pop() {
         match proposition {
             Proposition::ConditionIs(condition, _) => {
-                collect_condition_capture_variables(condition, variables, &mut integer_seen);
+                if let Some(root) = condition.root() {
+                    variables.extend(
+                        retained_folds::common_variables(
+                            root,
+                            retained_folds::FoldVariableRead::MachineCapture,
+                            &mut condition_summaries,
+                        )
+                        .iter()
+                        .copied(),
+                    );
+                } else {
+                    collect_condition_capture_variables(
+                        condition.native_compat(),
+                        variables,
+                        &mut integer_seen,
+                    );
+                }
             }
             Proposition::And(left, right)
             | Proposition::Or(left, right)

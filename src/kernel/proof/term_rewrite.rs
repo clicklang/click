@@ -1389,7 +1389,7 @@ fn collect_integer_substitution_variables_with_carriers(
         match proposition {
             Proposition::VolatileAccess(event) => {
                 collect_pointer_carriers(&event.pointer, carriers);
-                collect_program_value_carriers(&event.value, carriers);
+                collect_program_value_carriers(event.value.native_compat(), carriers);
             }
             Proposition::Predicate { arguments, .. } => {
                 for argument in arguments {
@@ -1407,7 +1407,7 @@ fn collect_integer_substitution_variables_with_carriers(
                 collect_integer_substitution_term_variables(right, carriers);
             }
             Proposition::ConditionIs(condition, _) => {
-                collect_condition_carriers(condition, carriers);
+                collect_condition_carriers(condition.native_compat(), carriers);
             }
             // Loadability obligations produced while lowering a symbolic array
             // read carry the selected pointer and byte-count terms directly.  The
@@ -1421,7 +1421,7 @@ fn collect_integer_substitution_variables_with_carriers(
                 if carriers.exhausted() {
                     return;
                 }
-                collect_bitvector_carriers(bytes, carriers);
+                collect_bitvector_carriers(bytes.native_compat(), carriers);
             }
             Proposition::ResourceViewable { resource, .. } => {
                 collect_resource_carriers(resource, carriers)
@@ -1642,7 +1642,7 @@ fn exhausted_term(term: &Term) -> Term {
 }
 
 fn exhausted_proposition() -> Proposition {
-    Proposition::ConditionIs(ConditionTerm::Constant(false), true)
+    Proposition::condition_is(ConditionTerm::Constant(false), true)
 }
 
 struct IntegerVariableRewrite<'a> {
@@ -3466,12 +3466,12 @@ impl<'a> TermRewrite<'a> {
                 if !self.source_variables_reserved {
                     let mut variables = self.new_carrier_variables();
                     collect_pointer_carriers(&event.pointer, &mut variables);
-                    collect_program_value_carriers(&event.value, &mut variables);
+                    collect_program_value_carriers(event.value.native_compat(), &mut variables);
                     self.reserve_source_variables(variables);
                 }
                 Proposition::VolatileAccess(std::sync::Arc::new(VolatileAccess {
                     pointer: self.pointer(&event.pointer),
-                    value: self.value(&event.value),
+                    value: self.value(event.value.native_compat()).into(),
                     id: event.id,
                     kind: event.kind,
                     value_type: event.value_type,
@@ -3493,11 +3493,11 @@ impl<'a> TermRewrite<'a> {
                 Proposition::Equal(left, right)
             }
             Proposition::ConditionIs(condition, value) => {
-                self.reserve_condition_variables_once(condition);
+                self.reserve_condition_variables_once(condition.native_compat());
                 if self.checked_work_exhausted() {
                     return exhausted_proposition();
                 }
-                let condition = self.condition(condition);
+                let condition = self.condition(condition.native_compat());
                 if self.checked_work_exhausted() {
                     return exhausted_proposition();
                 }
@@ -3514,18 +3514,25 @@ impl<'a> TermRewrite<'a> {
                 if !self.source_variables_reserved {
                     let mut variables = self.new_carrier_variables();
                     collect_pointer_carriers(base, &mut variables);
-                    collect_bitvector_carriers(bytes, &mut variables);
+                    collect_bitvector_carriers(bytes.native_compat(), &mut variables);
                     self.reserve_source_variables(variables);
                 }
                 let base = self.pointer(base);
-                let bytes = self.bits(bytes);
+                let bytes = self.bits(bytes.native_compat());
                 if self.checked_work_exhausted() {
                     return exhausted_proposition();
                 }
                 Proposition::MemoryLoadable {
                     memory: memory.clone(),
                     base,
-                    bytes,
+                    bytes: crate::kernel::StoredMachineTerm::new(
+                        if *wide {
+                            crate::kernel::MachineIntegerType::UInt64
+                        } else {
+                            crate::kernel::MachineIntegerType::Int32
+                        },
+                        bytes,
+                    ),
                     wide: *wide,
                 }
             }
@@ -8782,7 +8789,7 @@ mod tests {
                 base: AddressBase::ExternalArgument,
                 offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(source), 4),
             },
-            bytes: MachineTerm::constant(4),
+            bytes: (MachineTerm::constant(4)).into(),
             wide: false,
         };
         let mut proposition = atom.clone();
@@ -9004,7 +9011,7 @@ mod comparison_read_batch_tests {
                 (CompareRelation::LessThan, 4, true),
                 (CompareRelation::LessThan, 3, false),
             ] {
-                let input = Proposition::ConditionIs(
+                let input = Proposition::condition_is(
                     ConditionTerm::Compare {
                         format,
                         relation,
@@ -9015,7 +9022,7 @@ mod comparison_read_batch_tests {
                 );
                 assert_eq!(
                     TermRewrite::comparison_read_batch(&input, [(read.clone(), three.clone())]),
-                    Some(Proposition::ConditionIs(
+                    Some(Proposition::condition_is(
                         ConditionTerm::Constant(expected),
                         true
                     )),
@@ -9024,10 +9031,9 @@ mod comparison_read_batch_tests {
                 let mut structural = TermRewrite::for_bits(&read, &three);
                 let result = structural.proposition(&input);
                 assert!(structural.refusal().is_none());
-                assert!(matches!(
-                    result,
-                    Proposition::ConditionIs(ConditionTerm::Compare { .. }, true)
-                ));
+                assert!(
+                    matches!(&result, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare { .. }, _))))
+                );
             }
         }
     }

@@ -1187,7 +1187,7 @@ impl ProofExecutionView<'_> {
                 };
                 Some((|| {
                     let condition = synthesize_surface_proposition(
-                        &Proposition::ConditionIs(condition.clone(), true),
+                        &Proposition::condition_is(condition.clone(), true),
                         self.context.parameter_binding(),
                         &case.state,
                     )
@@ -1977,11 +1977,7 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
             return None;
         };
         if goal.generated_surface
-            || !matches!(
-                goal.proposition(),
-                Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), _)
-                    if left != right && left.address() == right.address()
-            )
+            || !matches!(&goal.proposition(), condition_source_0 @ Proposition::ConditionIs(_, _) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::PointerEqual(left, right), _)) if left != right && left.address() == right.address()))
         {
             return None;
         }

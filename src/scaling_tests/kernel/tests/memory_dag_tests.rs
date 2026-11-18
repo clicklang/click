@@ -37,7 +37,7 @@ fn rewritten_integer_observations_preserve_binders_and_selected_goal_work() {
     let variable = Variable(989_002);
     let word = MachineTerm::Variable(variable);
     let one = MachineTerm::constant(1);
-    let facts = PureFactStore::from_ordered(&[Proposition::ConditionIs(
+    let facts = PureFactStore::from_ordered(&[Proposition::condition_is(
         ConditionTerm::equal(word.clone(), one.clone()),
         true,
     )]);
@@ -46,7 +46,7 @@ fn rewritten_integer_observations_preserve_binders_and_selected_goal_work() {
         name: Default::default(),
         var: variable,
         sort: Sort::ProgramInt32,
-        body: Box::new(Proposition::ConditionIs(
+        body: Box::new(Proposition::condition_is(
             ConditionTerm::integer_equal(observed(bits), IntegerTerm::constant_i64(1)),
             true,
         )),
@@ -56,7 +56,7 @@ fn rewritten_integer_observations_preserve_binders_and_selected_goal_work() {
             .with_checked_rewritten_loads(&goal(word.clone()), &goal(one))
             .is_none()
     );
-    let leaf = Proposition::ConditionIs(
+    let leaf = Proposition::condition_is(
         ConditionTerm::integer_equal(observed(word.clone()), observed(word)),
         true,
     );
@@ -79,7 +79,7 @@ fn rewritten_integer_observations_preserve_binders_and_selected_goal_work() {
 fn rewritten_goal_comparison_visits_only_the_selected_proposition() {
     let facts = crate::kernel::proof::PureFactStore::default();
     for size in [4, 8, 16, 32] {
-        let leaf = Proposition::ConditionIs(
+        let leaf = Proposition::condition_is(
             ConditionTerm::equal(MachineTerm::constant(0), MachineTerm::constant(0)),
             true,
         );
@@ -1182,11 +1182,11 @@ fn preliminary_byte_gap_uses_only_stated_endpoint_order() {
         }
         let ordered = context.clone().assume_condition(order.clone(), true);
         let reversed = context.clone().assume_condition(order.clone(), false);
-        let first_edge = Proposition::ConditionIs(
+        let first_edge = Proposition::condition_is(
             ConditionTerm::signed_less_than(left_index.clone(), middle.clone()),
             true,
         );
-        let second_edge = Proposition::ConditionIs(
+        let second_edge = Proposition::condition_is(
             ConditionTerm::signed_less_equal(middle.clone(), right_index.clone()),
             true,
         );
@@ -1277,7 +1277,7 @@ fn numeric_byte_geometry_ignores_unrelated_address_classes() {
         offset: AddressOffset::Variable(Variable(id)),
     };
     let numeric_alias = |p: Address, q: Address| {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::uint64_equal(
                 MachineTerm::integer_address(p),
                 MachineTerm::integer_address(q),

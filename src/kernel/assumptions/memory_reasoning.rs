@@ -475,7 +475,10 @@ impl PureFactContext {
         if self.contains_assumed_exact(&Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: base.clone(),
-            bytes: bytes.clone(),
+            bytes: crate::kernel::StoredMachineTerm::new(
+                crate::kernel::MachineIntegerType::UInt64,
+                bytes.clone(),
+            ),
             wide: true,
         }) {
             return true;
@@ -501,10 +504,11 @@ impl PureFactContext {
             .memory_loadable_exact_candidates_for_base(base)
             .filter_map(|fact| match fact {
                 Proposition::MemoryLoadable {
-                    bytes: int32_constant!(held),
-                    wide: false,
-                    ..
-                } => Some(constant_u32(*held)),
+                    bytes, wide: false, ..
+                } => match bytes.native_compat() {
+                    int32_constant!(held) => Some(constant_u32(*held)),
+                    _ => None,
+                },
                 _ => None,
             })
             .max();
@@ -534,10 +538,10 @@ impl PureFactContext {
                 };
                 crate::instrumentation::record_deterministic_work(1);
                 source_base == base
-                    && (source_bytes == bytes
+                    && (source_bytes.native_compat() == bytes
                         || self.decide(&ConditionTerm::uint64_less_equal(
                             bytes.clone(),
-                            source_bytes.clone(),
+                            source_bytes.native_compat().clone(),
                         )) == Some(true))
                     && before.read_region_identity(source_base) == memory.read_region_identity(base)
                     && memory_range_still_available(before, memory, source_base, self)
@@ -616,9 +620,9 @@ impl PureFactContext {
             && self.decide(&wide_index_comparison(
                 CompareRelation::LessEqual,
                 delta.operand_view(),
-                MachineOperandView::Legacy(held),
+                held.operand_view(),
             )) == Some(true)
-            && self.window_fits_after(delta.operand_view(), bytes, held)
+            && self.window_fits_after(delta.operand_view(), bytes, held.native_compat())
             && before.read_region_identity(source) == memory.read_region_identity(source)
             && memory_range_still_available(before, memory, source, self)
     }
@@ -687,7 +691,7 @@ impl PureFactContext {
                 &Proposition::MemoryLoadable {
                     memory: memory.clone(),
                     base: base.clone(),
-                    bytes: bytes.clone(),
+                    bytes: (bytes.clone()).into(),
                     wide: false,
                 },
             );
@@ -707,7 +711,7 @@ impl PureFactContext {
         if self.contains_assumed_exact(&Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: base.clone(),
-            bytes: bytes.clone(),
+            bytes: (bytes.clone()).into(),
             wide: false,
         }) {
             return true;
@@ -750,7 +754,7 @@ impl PureFactContext {
                 memory_range_still_available(range_memory, memory, range_base, self)
                     && self.proves_loadable_region_from_structural_range(
                         range_base,
-                        range_bytes,
+                        range_bytes.native_compat(),
                         base,
                         bytes,
                     )
@@ -783,7 +787,8 @@ impl PureFactContext {
                 else {
                     return false;
                 };
-                let Some(elements) = crate::kernel::wide_loadable_element_count(range_bytes, width)
+                let Some(elements) =
+                    crate::kernel::wide_loadable_element_count(range_bytes.native_compat(), width)
                 else {
                     return false;
                 };
@@ -836,7 +841,7 @@ impl PureFactContext {
             .collect::<Vec<_>>();
         ranges.sort_by_key(|(preferred, _, _)| !preferred);
         ranges.into_iter().any(|(_, range_base, range_bytes)| {
-            self.proves_loadable_region_from_range(range_base, range_bytes, base, bytes)
+            self.proves_loadable_region_from_range(range_base, range_bytes.native_compat(), base, bytes)
         }) || bytes.as_const() == Some(4)
             && crate::kernel::api::contract_certification::quantified_int32_fact_certifies_loadable_cell(
                 self, memory, base,
@@ -910,7 +915,14 @@ impl PureFactContext {
                 .cells
                 .contiguous_bytes_at(pointer)
                 .filter(|width| *width > 0)
-                .map(|width| (None, pointer.clone(), MachineTerm::constant(width), true))
+                .map(|width| {
+                    (
+                        None,
+                        pointer.clone(),
+                        crate::kernel::StoredMachineTerm::from(width),
+                        true,
+                    )
+                })
         };
         regions.extend(cell_region(base));
         let base = crate::kernel::api::canonicalize_pointer_loads(base);
@@ -936,7 +948,7 @@ impl PureFactContext {
                 .as_const()
                 .map(|width| base.offset_by_bytes(width))
                 .or_else(|| {
-                    int32_element_count_from_bytes(prefix_bytes)
+                    int32_element_count_from_bytes(prefix_bytes.native_compat())
                         .map(|count| base.offset_by_int32_elements(count))
                 });
             let Some(endpoint) = endpoint else {
@@ -996,7 +1008,7 @@ impl PureFactContext {
                         |suffix_start| {
                             self.byte_operands_equal(
                                 suffix_start.operand_view(),
-                                MachineOperandView::Legacy(prefix_bytes),
+                                prefix_bytes.operand_view(),
                             )
                         },
                     )
@@ -1004,29 +1016,31 @@ impl PureFactContext {
                 let byte_concatenation = byte_adjacent
                     && equal(
                         bytes,
-                        &MachineTerm::add((*prefix_bytes).clone(), (*suffix_bytes).clone()),
+                        &MachineTerm::add(
+                            prefix_bytes.native_compat().clone(),
+                            suffix_bytes.native_compat().clone(),
+                        ),
                     );
-                let element_concatenation = int32_element_count_from_bytes(prefix_bytes)
-                    .zip(int32_element_count_from_bytes(suffix_bytes))
-                    .zip(int32_element_count_from_bytes(bytes))
-                    .is_some_and(|((prefix_count, suffix_count), goal_count)| {
-                        if !self.assumed_span_covers_its_element_count(&prefix_count, 4)
-                            || !self.assumed_span_covers_its_element_count(&suffix_count, 4)
-                        {
-                            return false;
-                        }
-                        let expected_suffix = base.offset_by_int32_elements(prefix_count.clone());
-                        (suffix_base == &expected_suffix
-                            || crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
-                                suffix_base,
-                                &expected_suffix,
-                                self,
-                            ))
-                            && equal(
-                                &goal_count,
-                                &MachineTerm::add(prefix_count, suffix_count),
-                            )
-                    });
+                let element_concatenation =
+                    int32_element_count_from_bytes(prefix_bytes.native_compat())
+                        .zip(int32_element_count_from_bytes(suffix_bytes.native_compat()))
+                        .zip(int32_element_count_from_bytes(bytes))
+                        .is_some_and(|((prefix_count, suffix_count), goal_count)| {
+                            if !self.assumed_span_covers_its_element_count(&prefix_count, 4)
+                                || !self.assumed_span_covers_its_element_count(&suffix_count, 4)
+                            {
+                                return false;
+                            }
+                            let expected_suffix =
+                                base.offset_by_int32_elements(prefix_count.clone());
+                            (suffix_base == &expected_suffix
+                        || crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
+                            suffix_base,
+                            &expected_suffix,
+                            self,
+                        ))
+                        && equal(&goal_count, &MachineTerm::add(prefix_count, suffix_count))
+                        });
                 if byte_concatenation || element_concatenation {
                     return Some(
                         [*prefix_fact, *suffix_fact]
@@ -1053,7 +1067,7 @@ impl PureFactContext {
         if self.contains_assumed_exact(&Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: base.clone(),
-            bytes: bytes.clone(),
+            bytes: (bytes.clone()).into(),
             wide: false,
         }) {
             return true;
@@ -1086,13 +1100,20 @@ impl PureFactContext {
                 if !memory_range_still_available(range_memory, memory, range_base, self) {
                     return false;
                 }
-                if self.same_base_and_loadable_span_match(range_base, range_bytes, base, bytes) {
+                if self.same_base_and_loadable_span_match(
+                    range_base,
+                    range_bytes.native_compat(),
+                    base,
+                    bytes,
+                ) {
                     return true;
                 }
                 let Some(byte_width) = bytes.as_const() else {
                     return false;
                 };
-                let Some(element_count) = element_count_from_bytes(range_bytes, byte_width) else {
+                let Some(element_count) =
+                    element_count_from_bytes(range_bytes.native_compat(), byte_width)
+                else {
                     return false;
                 };
                 if !self.assumed_span_covers_its_element_count(&element_count, byte_width) {
@@ -1465,15 +1486,19 @@ impl PureFactContext {
                 crate::kernel::memory_range_element_count_guards(element_count, element_width)
                     .iter()
                     .all(|guard| match guard {
-                        Proposition::ConditionIs(
-                            ConditionTerm::Compare {
-                                format: MachineIntegerType::Int32,
-                                relation: CompareRelation::LessEqual,
-                                left: lower,
-                                right: upper,
-                            },
-                            true,
-                        ) => self.proves_element_endpoint_order(lower, upper),
+                        condition_source_0 @ Proposition::ConditionIs(_, true)
+                            if let Some((
+                                ConditionTerm::Compare {
+                                    format: MachineIntegerType::Int32,
+                                    relation: CompareRelation::LessEqual,
+                                    left: lower,
+                                    right: upper,
+                                },
+                                _,
+                            )) = condition_source_0.condition_native() =>
+                        {
+                            self.proves_element_endpoint_order(lower, upper)
+                        }
                         guard => self.proves_exact(guard),
                     })
             }
@@ -1540,15 +1565,19 @@ impl PureFactContext {
         guards
             .iter()
             .all(|guard| match guard {
-                Proposition::ConditionIs(
-                    ConditionTerm::Compare {
-                        format: MachineIntegerType::Int32,
-                        relation: CompareRelation::LessEqual,
-                        left: lower,
-                        right: upper,
-                    },
-                    true,
-                ) => self.proves_element_endpoint_order(lower, upper),
+                condition_source_0 @ Proposition::ConditionIs(_, true)
+                    if let Some((
+                        ConditionTerm::Compare {
+                            format: MachineIntegerType::Int32,
+                            relation: CompareRelation::LessEqual,
+                            left: lower,
+                            right: upper,
+                        },
+                        _,
+                    )) = condition_source_0.condition_native() =>
+                {
+                    self.proves_element_endpoint_order(lower, upper)
+                }
                 guard => self.proves_exact(guard),
             })
             .then(|| {

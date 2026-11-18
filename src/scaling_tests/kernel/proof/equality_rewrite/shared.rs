@@ -40,7 +40,7 @@ fn exact_rewrite_keeps_cold_and_growing_shared_goals() {
                                 SharedMachineIntegerTerm::from_shared(ty, root).unwrap(),
                             )
                         };
-                        Proposition::ConditionIs(
+                        Proposition::condition_is(
                             ConditionTerm::IntegerEqual(
                                 value.into(),
                                 IntegerTerm::Variable(Variable(1006302)).into(),
@@ -48,7 +48,7 @@ fn exact_rewrite_keeps_cold_and_growing_shared_goals() {
                             true,
                         )
                     };
-                    let equality = Proposition::ConditionIs(
+                    let equality = Proposition::condition_is(
                         ConditionTerm::Compare {
                             format: if ty == T::Int32 { T::Int32 } else { T::Int64 },
                             relation: CompareRelation::Equal,

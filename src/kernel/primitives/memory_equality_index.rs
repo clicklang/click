@@ -3075,7 +3075,7 @@ mod tests {
                 AddressOffset::scale_int32(MachineTerm::Variable(Variable(989_812)), 4),
             ),
         };
-        let equality = Proposition::ConditionIs(
+        let equality = Proposition::condition_is(
             ConditionTerm::address_equal(query.clone(), owner.offset_by_bytes(24)),
             true,
         );
@@ -3228,7 +3228,10 @@ mod tests {
         let only_viewable = facts.assume_proposition(Proposition::MemoryLoadable {
             memory: SymbolicMemory::new(),
             base,
-            bytes: whole,
+            bytes: crate::kernel::StoredMachineTerm::new(
+                crate::kernel::MachineIntegerType::UInt64,
+                whole,
+            ),
             wide: true,
         });
         assert!(

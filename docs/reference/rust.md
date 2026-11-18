@@ -1259,9 +1259,19 @@ call, `call(result_values::ok_if, 0).result`
 (`charon_a_nested_call_result_is_named_by_its_call`). A proof names a
 point by the statements as written, `statement(i)`, `S.statement(j)`,
 `S.call(f, j)` and the rest, as a C proof does; Click reads them from the
-source with `syn` (`src/languages/rust/source_statements.rs`). Other unnamed and
-ambiguous locals use collision-checked `__rust_mir_ID` identities from the
-locked artifact. These compiler identities can change when the artifact is refreshed.
+source with `syn` (`src/languages/rust/source_statements.rs`). A source name
+bound more than once, as `word` in two `Some(word)` arms, `x` in two `match`
+arms, or a shadowing `let`, is one declaration per binding, as in C: each
+starts where rustc starts its storage and ends where rustc ends it, so a
+proof's `word` names the live one. Inside `let x = x + 1;` the new `x` has the
+name from its storage start, before its value is written, as a C declarator's
+scope starts before its initializer. `f.statement(3).local(word)` names the
+`word` that statement declares, and `f.local(i)` names a declaration by its
+position among the function's locals; diagnostics write a repeated name in
+that canonical form, `"lib.rs"::f.local(5)`
+(`charon_repeated_source_names_are_distinct_declarations`). Other unnamed
+locals use collision-checked `__rust_mir_ID` identities from the locked
+artifact. These compiler identities can change when the artifact is refreshed.
 
 Conditions currently support scalar comparisons, boolean combinations,
 negation, casts, and builtin `.len()`. Calls, indexing, and arithmetic in a

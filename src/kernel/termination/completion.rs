@@ -489,7 +489,7 @@ mod tests {
                     "spin",
                     crate::kernel::program_while(
                         crate::kernel::program_expression::int32_literal(1),
-                        vec![Proposition::ConditionIs(
+                        vec![Proposition::condition_is(
                             ConditionTerm::Constant(true),
                             true,
                         )],
@@ -545,7 +545,7 @@ mod tests {
                 "spin",
                 crate::kernel::program_while(
                     crate::kernel::program_expression::int32_literal(1),
-                    vec![Proposition::ConditionIs(
+                    vec![Proposition::condition_is(
                         ConditionTerm::Constant(true),
                         true,
                     )],

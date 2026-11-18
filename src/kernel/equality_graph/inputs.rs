@@ -313,7 +313,7 @@ impl EqualityGraph {
                 _ => None,
             };
             if let Some((left, right)) = pair {
-                equalities.push(crate::kernel::Proposition::ConditionIs(
+                equalities.push(crate::kernel::Proposition::condition_is(
                     crate::kernel::ConditionTerm::address_equal(left.clone(), right.clone()),
                     true,
                 ));
@@ -360,7 +360,7 @@ impl EqualityGraph {
                 _ => None,
             };
             if let Some(condition) = scalar_condition {
-                equalities.push(crate::kernel::Proposition::ConditionIs(condition, true));
+                equalities.push(crate::kernel::Proposition::condition_is(condition, true));
             }
             current = node.parent.clone();
         }
@@ -381,7 +381,7 @@ mod read_trace_tests {
         Address::symbolic(Variable(id))
     }
     fn equality(left: Address, right: Address) -> Proposition {
-        Proposition::ConditionIs(ConditionTerm::address_equal(left, right), true)
+        Proposition::condition_is(ConditionTerm::address_equal(left, right), true)
     }
 
     #[test]
@@ -495,7 +495,7 @@ mod read_trace_tests {
         graph.add_offset_equality(&read, &target);
         assert_eq!(
             graph.read_equalities_since(&checkpoint).equalities,
-            vec![Proposition::ConditionIs(
+            vec![Proposition::condition_is(
                 ConditionTerm::AddressOffsetEqual(Box::new(read), Box::new(target)),
                 true
             )]

@@ -741,7 +741,7 @@ pub(super) fn transfer_population_call_facts<'a>(
                         to_events,
                         &description,
                         false,
-                        quantity,
+                        quantity.native_compat(),
                         assumptions,
                     )
                     .map_err(|refusal| {
@@ -783,7 +783,7 @@ pub(super) fn transfer_population_call_facts<'a>(
                 to_events,
                 &description,
                 authority_fact,
-                quantity,
+                quantity.native_compat(),
                 assumptions,
             )
             .map_err(|refusal| {
@@ -3360,6 +3360,15 @@ fn execute_verified_function_applications_with_suspension(
         // lends; the caller's other active loans (its own contract inputs,
         // an enclosing call's loans) are checked here, so a summary can
         // never havoc memory that is lent elsewhere.
+        let call_site = || {
+            CallRequirementSite::for_requirement(
+                name,
+                interface_name,
+                candidate_ordinal,
+                arguments,
+                caller_state.memory(),
+            )
+        };
         let write_requirements = if suspended.is_some()
             || application.representation_copy.is_some()
             || !has_exact_write_ranges
@@ -3385,19 +3394,12 @@ fn execute_verified_function_applications_with_suspension(
             }
             Vec::new()
         } else {
-            verified_call_write_requirements(
+            verified_call_loan_requirements(
                 caller_state.loan_ledger(),
                 &transfer.memory_effects,
-                || {
-                    CallRequirementSite::for_requirement(
-                        name,
-                        interface_name,
-                        candidate_ordinal,
-                        arguments,
-                        caller_state.memory(),
-                    )
-                },
+                call_site,
                 interface.contract_requires().len(),
+                "verified call write separation",
             )
         };
         // A checked mutex-use call may execute runtime lock/unlock operations.
@@ -4193,13 +4195,13 @@ fn execute_verified_function_applications_with_suspension(
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
-                        left: quantity.clone(),
+                        left: Box::new(quantity.native_compat().clone()),
                         right: Box::new(MachineTerm::constant(0)),
                     },
                 ) {
                 MachineTerm::constant(0)
             } else {
-                *quantity
+                quantity.native_compat().clone()
             };
             let (spent, _) = match events.checked_member_exchange_quantity(
                 &pointer.address().base,
@@ -4471,7 +4473,7 @@ fn execute_verified_function_applications_with_suspension(
                         block: anchor.base.clone(),
                         description,
                         produce,
-                        quantity: (**quantity).clone(),
+                        quantity: quantity.as_ref().clone(),
                         exclusive,
                     });
                     continue;
@@ -4481,7 +4483,7 @@ fn execute_verified_function_applications_with_suspension(
                         &anchor.base,
                         &description,
                         produce,
-                        quantity,
+                        quantity.native_compat(),
                         &effective_assumptions,
                     )
                 } else {
@@ -4489,7 +4491,7 @@ fn execute_verified_function_applications_with_suspension(
                         &anchor.base,
                         &description,
                         produce,
-                        quantity,
+                        quantity.native_compat(),
                         &effective_assumptions,
                     )
                 };
@@ -4516,7 +4518,7 @@ fn execute_verified_function_applications_with_suspension(
                 Ok(VerifiedAllocationDelta {
                     memory: post_state.memory.clone(),
                     effects: ExecutionFacts::new(),
-                    retired_creations: Vec::new(),
+                    retired_allocations: Vec::new(),
                     continued_tokens: Vec::new(),
                 })
             } else {
@@ -4581,7 +4583,11 @@ fn execute_verified_function_applications_with_suspension(
                     &output_resources,
                     interface,
                     &allocation_assumptions,
-                    post_state.loan_ledger(),
+                    if suspended.is_some() {
+                        post_state.loan_ledger()
+                    } else {
+                        None
+                    },
                     caller_state,
                     &post_state,
                 )
@@ -4589,7 +4595,7 @@ fn execute_verified_function_applications_with_suspension(
         let VerifiedAllocationDelta {
             memory,
             effects: allocation_effects,
-            retired_creations,
+            retired_allocations,
             continued_tokens,
         } = match allocation_delta {
             Ok(result) => result,
@@ -4618,10 +4624,11 @@ fn execute_verified_function_applications_with_suspension(
         };
         facts.extend(allocation_effects);
         post_state.set_memory(memory);
-        if let Some(error) = retired_creations
-            .into_iter()
-            .find_map(|block| post_state.retire_population_storage(&block).err())
-        {
+        if let Some(error) = retired_allocations.iter().find_map(|range| {
+            post_state
+                .retire_population_storage(&range.base().base)
+                .err()
+        }) {
             paths.push(FunctionPath::new(
                 FunctionOutcome::RuntimeError(error),
                 facts,
@@ -4704,15 +4711,12 @@ fn execute_verified_function_applications_with_suspension(
                 .map(ExecutionPureFact::certified),
             );
         }
-        // The applicable interfaces share the result and post-call memory,
+        // The applicable interfaces share the result and post-call point,
         // but bind their own argument names against the original entry state.
         for additional in additional_calls {
             let mut additional_facts = additional.facts;
             let entry_fact_count = additional_facts.len();
-            let mut additional_post = additional
-                .entry_state
-                .clone()
-                .with_memory(post_state.memory.clone());
+            let mut additional_post = additional.entry_state.clone().with_memory_of(&post_state);
             if additional.interface.return_type() != ProgramType::Void {
                 set_contract_result(&mut additional_post, additional.interface, result.clone());
             }
@@ -5117,6 +5121,18 @@ fn execute_verified_function_applications_with_suspension(
             path.obligations.extend(write_requirements.iter().cloned());
         }
         obligations.extend(write_requirements);
+        // The retirement ranges are the consumed allocation tokens at
+        // entry. Return facts may decide continuity, but they cannot prove
+        // that retiring one of those allocations was permitted.
+        if suspended.is_none() {
+            obligations.extend(verified_call_loan_requirements(
+                entry_state.loan_ledger(),
+                &retired_allocations,
+                call_site,
+                interface.contract_requires().len() + transfer.memory_effects.len(),
+                "verified call allocation retirement separation",
+            ));
+        }
         paths.push(FunctionPath {
             outcome,
             facts,
@@ -5143,11 +5159,12 @@ fn execute_verified_function_applications_with_suspension(
     Ok(paths)
 }
 
-fn verified_call_write_requirements(
+fn verified_call_loan_requirements(
     ledger: Option<&LoanLedger>,
     effects: &[MemoryRange],
     call_site: impl FnOnce() -> CallRequirementSite,
     first_ordinal: usize,
+    context: &str,
 ) -> Vec<ProofObligation> {
     let Some(ledger) = ledger else {
         return Vec::new();
@@ -5175,7 +5192,7 @@ fn verified_call_write_requirements(
                     false,
                     None,
                 )))
-                .with_context("verified call write separation")
+                .with_context(context)
         })
         .collect()
 }
@@ -5415,7 +5432,7 @@ fn source_load_state_for_proposition(
         }
         match item {
             Work::Proposition(Proposition::ConditionIs(condition, _)) => {
-                work.push(Work::Condition(condition));
+                work.push(Work::Condition(condition.native_compat()));
             }
             Work::Proposition(Proposition::And(left, right))
             | Work::Proposition(Proposition::Or(left, right))
@@ -6379,7 +6396,8 @@ fn prepare_verified_function_call<'a>(
                                 path_assumptions.proves_exact(&requirement_path.proposition)
                                     || path_assumptions
                                         .has_matching_condition_fact_for_memory_resolution(
-                                            condition, *value,
+                                            condition.native_compat(),
+                                            *value,
                                         )
                             }
                             Proposition::ResourceSeparate { .. }
@@ -6504,7 +6522,7 @@ fn prepare_verified_function_call<'a>(
                 )));
             }
             None => {
-                let guard = Proposition::ConditionIs(order, true);
+                let guard = Proposition::condition_is(order, true);
                 if required_obligation_is_exactly_discharged(&guard_context, &guard) {
                     super::assumptions::record_consulted_premises(&guard_context, &guard);
                 } else {
@@ -7458,7 +7476,10 @@ fn separation_requirement_parts_are_established(
         }
         Proposition::ConditionIs(condition, value) => {
             required_obligation_is_exactly_discharged(assumptions, proposition)
-                || assumptions.has_matching_condition_fact_for_memory_resolution(condition, *value)
+                || assumptions.has_matching_condition_fact_for_memory_resolution(
+                    condition.native_compat(),
+                    *value,
+                )
         }
         Proposition::ResourceSeparate { .. } if proposition.memory_separation().is_some() => {
             let (left, right) = proposition
@@ -8207,10 +8228,7 @@ fn matched_instance_body_ownership(
         assumptions,
     );
     if clauses.iter().any(|clause| {
-        matches!(
-            clause.proposition,
-            Proposition::ConditionIs(ConditionTerm::Constant(false), true)
-        )
+        matches!(&clause.proposition, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Constant(false), _))))
     }) {
         return None;
     }
@@ -8227,7 +8245,9 @@ fn matched_instance_body_ownership(
     let premises = clauses
         .into_iter()
         .filter_map(|clause| match clause.proposition {
-            Proposition::ConditionIs(condition, value) => Some((condition, value)),
+            Proposition::ConditionIs(condition, value) => {
+                Some((condition.native_compat().clone(), value))
+            }
             _ => None,
         })
         .collect();
@@ -9520,74 +9540,90 @@ fn add_verified_function_ensure_facts_selected_with_interface<'a>(
             let mut discharged_premises: Vec<Proposition> = Vec::new();
             while let Proposition::Implies(premise, body) = specialized {
                 let reversed_order = match premise.as_ref() {
-                    Proposition::ConditionIs(
-                        ConditionTerm::Compare {
-                            format: MachineIntegerType::Int32,
-                            relation: CompareRelation::GreaterThan,
-                            left,
-                            right,
-                        },
-                        value,
-                    ) => Some(Proposition::ConditionIs(
-                        ConditionTerm::Compare {
-                            format: MachineIntegerType::Int32,
-                            relation: CompareRelation::LessThan,
-                            left: right.clone(),
-                            right: left.clone(),
-                        },
-                        *value,
-                    )),
-                    Proposition::ConditionIs(
-                        ConditionTerm::Compare {
-                            format: MachineIntegerType::Int32,
-                            relation: CompareRelation::GreaterEqual,
-                            left,
-                            right,
-                        },
-                        value,
-                    ) => Some(Proposition::ConditionIs(
-                        ConditionTerm::Compare {
-                            format: MachineIntegerType::Int32,
-                            relation: CompareRelation::LessEqual,
-                            left: right.clone(),
-                            right: left.clone(),
-                        },
-                        *value,
-                    )),
-                    Proposition::ConditionIs(
-                        ConditionTerm::Compare {
-                            format: MachineIntegerType::Int32,
-                            relation: CompareRelation::LessThan,
-                            left,
-                            right,
-                        },
-                        value,
-                    ) => Some(Proposition::ConditionIs(
-                        ConditionTerm::Compare {
-                            format: MachineIntegerType::Int32,
-                            relation: CompareRelation::GreaterThan,
-                            left: right.clone(),
-                            right: left.clone(),
-                        },
-                        *value,
-                    )),
-                    Proposition::ConditionIs(
-                        ConditionTerm::Compare {
-                            format: MachineIntegerType::Int32,
-                            relation: CompareRelation::LessEqual,
-                            left,
-                            right,
-                        },
-                        value,
-                    ) => Some(Proposition::ConditionIs(
-                        ConditionTerm::Compare {
-                            format: MachineIntegerType::Int32,
-                            relation: CompareRelation::GreaterEqual,
-                            left: right.clone(),
-                            right: left.clone(),
-                        },
-                        *value,
-                    )),
+                    condition_source_0 @ Proposition::ConditionIs(_, value)
+                        if let Some((
+                            ConditionTerm::Compare {
+                                format: MachineIntegerType::Int32,
+                                relation: CompareRelation::GreaterThan,
+                                left,
+                                right,
+                            },
+                            _,
+                        )) = condition_source_0.condition_native() =>
+                    {
+                        Some(Proposition::condition_is(
+                            ConditionTerm::Compare {
+                                format: MachineIntegerType::Int32,
+                                relation: CompareRelation::LessThan,
+                                left: right.clone(),
+                                right: left.clone(),
+                            },
+                            *value,
+                        ))
+                    }
+                    condition_source_0 @ Proposition::ConditionIs(_, value)
+                        if let Some((
+                            ConditionTerm::Compare {
+                                format: MachineIntegerType::Int32,
+                                relation: CompareRelation::GreaterEqual,
+                                left,
+                                right,
+                            },
+                            _,
+                        )) = condition_source_0.condition_native() =>
+                    {
+                        Some(Proposition::condition_is(
+                            ConditionTerm::Compare {
+                                format: MachineIntegerType::Int32,
+                                relation: CompareRelation::LessEqual,
+                                left: right.clone(),
+                                right: left.clone(),
+                            },
+                            *value,
+                        ))
+                    }
+                    condition_source_0 @ Proposition::ConditionIs(_, value)
+                        if let Some((
+                            ConditionTerm::Compare {
+                                format: MachineIntegerType::Int32,
+                                relation: CompareRelation::LessThan,
+                                left,
+                                right,
+                            },
+                            _,
+                        )) = condition_source_0.condition_native() =>
+                    {
+                        Some(Proposition::condition_is(
+                            ConditionTerm::Compare {
+                                format: MachineIntegerType::Int32,
+                                relation: CompareRelation::GreaterThan,
+                                left: right.clone(),
+                                right: left.clone(),
+                            },
+                            *value,
+                        ))
+                    }
+                    condition_source_0 @ Proposition::ConditionIs(_, value)
+                        if let Some((
+                            ConditionTerm::Compare {
+                                format: MachineIntegerType::Int32,
+                                relation: CompareRelation::LessEqual,
+                                left,
+                                right,
+                            },
+                            _,
+                        )) = condition_source_0.condition_native() =>
+                    {
+                        Some(Proposition::condition_is(
+                            ConditionTerm::Compare {
+                                format: MachineIntegerType::Int32,
+                                relation: CompareRelation::GreaterEqual,
+                                left: right.clone(),
+                                right: left.clone(),
+                            },
+                            *value,
+                        ))
+                    }
                     _ => None,
                 };
                 // A closed premise, such as the constant condition left by
@@ -9703,7 +9739,7 @@ fn allocation_continuity(
         // consumer must settle.
         if required_obligation_is_exactly_discharged(
             assumptions,
-            &Proposition::ConditionIs(condition.clone(), false),
+            &Proposition::condition_is(condition.clone(), false),
         ) {
             AllocationContinuity::Inconsistent
         } else {
@@ -9721,34 +9757,6 @@ fn allocation_continuity(
 
 #[cfg(test)]
 mod allocation_continuity_tests;
-
-/// A callee that retires an allocation identity, by a definite free or by a
-/// contract that leaves continuity undecided, gives up every byte of it; a
-/// live loan over any of those bytes forbids that exactly as a direct `free`
-/// would (D6, D10). Every retire path consults the ledger that carries this
-/// call's own loans, because lending has already removed the owner from the
-/// preserved caller residual.
-fn refuse_retiring_a_lent_allocation(
-    ledger: Option<&LoanLedger>,
-    base: &Address,
-    bytes: &AllocationSize,
-    assumptions: &PureFactContext,
-) -> Result<(), VerifiedAllocationDeltaError> {
-    let Some(ledger) = ledger else {
-        return Ok(());
-    };
-    let whole_allocation = bytes.byte_range(base.clone());
-    match ledger.memory_access_refusal(
-        &whole_allocation,
-        assumptions,
-        LoanRefusalOperation::MemoryAccess,
-    ) {
-        Some(diagnostic) => Err(VerifiedAllocationDeltaError::Runtime(
-            RuntimeError::LoanRefusal(Box::new(diagnostic)),
-        )),
-        None => Ok(()),
-    }
-}
 
 /// The resource the caller keeps across a call that could still refer to an
 /// allocation the call retires, or `None` when every kept resource is known
@@ -9837,12 +9845,12 @@ fn apply_verified_heap_allocation_delta(
     output_resources: &ResourceContext,
     interface: &FunctionContractInterface,
     assumptions: &PureFactContext,
-    ledger: Option<&LoanLedger>,
+    worker_ledger: Option<&LoanLedger>,
     mutex_state: &ExecutionState,
     output_state: &ExecutionState,
 ) -> Result<VerifiedAllocationDelta, VerifiedAllocationDeltaError> {
     let mut effects = Vec::new();
-    let mut retired_creations = Vec::new();
+    let mut retired_allocations = Vec::new();
     let mut continued_tokens = Vec::new();
     // What the callee consumed is read where it was consumed: at the call's
     // entry. The post-call memory may have rewritten a pointer field the lent
@@ -9883,7 +9891,7 @@ fn apply_verified_heap_allocation_delta(
         .iter()
         .filter_map(|fact| {
             fact.allocation_size()
-                .map(|(base, bytes)| (fact, base.address().clone(), bytes))
+                .map(|(pointer, bytes)| (fact, pointer, bytes))
         })
         .collect::<Vec<_>>();
     // The caller's untouched resources are expanded only when the callee
@@ -9932,7 +9940,8 @@ fn apply_verified_heap_allocation_delta(
         })
         .collect::<Vec<_>>();
 
-    for (fact, base, bytes) in input_allocations {
+    for (fact, pointer, bytes) in input_allocations {
+        let base = pointer.address().clone();
         if output
             .cached_support_exposing_fact(fact, &allocation_assumptions)
             .is_some()
@@ -9979,9 +9988,9 @@ fn apply_verified_heap_allocation_delta(
             .iter()
             .filter(|(output_base, _, _)| !base.blocks_proven_distinct(output_base))
             .collect::<Vec<_>>();
+        let mut continuity_is_undecided = false;
         if !candidates.is_empty() {
             let mut retained = false;
-            let mut continuity_is_undecided = false;
             for (output_base, output_bytes, returned) in candidates {
                 match allocation_continuity(
                     &base,
@@ -10020,51 +10029,9 @@ fn apply_verified_heap_allocation_delta(
             if retained {
                 continue;
             }
-            // A contract that does not decide allocation continuity admits a
-            // deallocating implementation. Therefore no independent caller
-            // resource may still refer to the input allocation. Retire the
-            // consumed allocation occurrence without asserting a C `free`;
-            // the output occurrence is installed below even when it later
-            // proves to have the same pointer value.
-            if continuity_is_undecided {
-                if let Some(resource) = caller_resource_left_stale_by_retirement(
-                    &input,
-                    &preserved,
-                    &base,
-                    &bytes,
-                    &allocation_assumptions,
-                ) {
-                    return Err(VerifiedAllocationDeltaError::Runtime(
-                        RuntimeError::StaleResourceAfterFree {
-                            resource: Box::new(resource.clone()),
-                        },
-                    ));
-                }
-                // Lending removed the owner from the preserved residual, so
-                // the scan above cannot see a view the caller still holds
-                // over these bytes; the ledger can (docs/internals/stable-views.md).
-                refuse_retiring_a_lent_allocation(ledger, &base, &bytes, &allocation_assumptions)?;
-                let allocation_range = bytes.byte_range(base.clone());
-                if let Some(error) = super::mutexes::storage_retirement_refusal(
-                    mutex_state,
-                    &allocation_range,
-                    &allocation_assumptions,
-                ) {
-                    return Err(VerifiedAllocationDeltaError::Runtime(error));
-                }
-
-                memory = memory.retire_contract_heap_allocation_claim(
-                    &base,
-                    bytes.bytes(),
-                    &allocation_assumptions,
-                );
-                retired_creations.push(base.base.clone());
-                continue;
-            }
         }
-        // Only the untransferred caller frame survives independently across
-        // the call. Any such resource that can still refer to an allocation
-        // the contract definitely retires makes this transition unsafe.
+        // Both retirement outcomes give up the input allocation's identity.
+        // A retained caller resource must be separate from its entire extent.
         if let Some(resource) = caller_resource_left_stale_by_retirement(
             &input,
             &preserved,
@@ -10078,8 +10045,20 @@ fn apply_verified_heap_allocation_delta(
                 },
             ));
         }
-        refuse_retiring_a_lent_allocation(ledger, &base, &bytes, &allocation_assumptions)?;
         let allocation_range = bytes.byte_range(base.clone());
+        // Suspended worker admission still checks before publishing its
+        // separately recoverable state. Ordinary calls carry an obligation.
+        if let Some(diagnostic) = worker_ledger.and_then(|ledger| {
+            ledger.memory_access_refusal(
+                &allocation_range,
+                &allocation_assumptions,
+                LoanRefusalOperation::MemoryAccess,
+            )
+        }) {
+            return Err(VerifiedAllocationDeltaError::Runtime(
+                RuntimeError::LoanRefusal(Box::new(diagnostic)),
+            ));
+        }
         if let Some(error) = super::mutexes::storage_retirement_refusal(
             mutex_state,
             &allocation_range,
@@ -10088,7 +10067,20 @@ fn apply_verified_heap_allocation_delta(
             return Err(VerifiedAllocationDeltaError::Runtime(error));
         }
 
-        retired_creations.push(base.base.clone());
+        // The allocation token names the whole object. Spell its extent
+        // through a byte pointer at the root, retaining the original address
+        // and provenance but dropping any narrower pointer bounds.
+        retired_allocations
+            .push(allocation_range.with_pointer_carrier(&pointer.clone().with_root_bounds()));
+        if continuity_is_undecided {
+            // An undecided return admits a free, but does not assert one.
+            memory = memory.retire_contract_heap_allocation_claim(
+                &base,
+                bytes.bytes(),
+                &allocation_assumptions,
+            );
+            continue;
+        }
         let before_free = memory.clone();
         if memory.live_heap_block_size(&base).is_none() {
             memory = memory
@@ -10142,7 +10134,7 @@ fn apply_verified_heap_allocation_delta(
     Ok(VerifiedAllocationDelta {
         memory,
         effects: effects.into(),
-        retired_creations,
+        retired_allocations,
         continued_tokens,
     })
 }
@@ -10166,14 +10158,14 @@ fn with_continued_allocation_tokens(
 }
 
 /// The memory and facts after a verified call's allocation effects, with
-/// the consumed blocks the call retires and, for each returned allocation
+/// the complete ranges of consumed allocations the call retires and, for each returned allocation
 /// token proven to continue a consumed one under another block spelling
 /// (`result` proven equal to `p`), that returned token and the consumed
 /// token it continues.
 struct VerifiedAllocationDelta {
     memory: SymbolicMemory,
     effects: ExecutionFacts,
-    retired_creations: Vec<AddressBase>,
+    retired_allocations: Vec<MemoryRange>,
     continued_tokens: Vec<(ResourceFact, ResourceFact)>,
 }
 
@@ -11314,7 +11306,7 @@ fn string_literal_fact_value(
                 Some(true)
             } else if let Proposition::ConditionIs(condition, value) = &leaf
                 && crate::kernel::proof::fact_reasoning::normalizes_context_free(
-                    &Proposition::ConditionIs(condition.clone(), !value),
+                    &Proposition::condition_is(condition.clone(), !value),
                 )
             {
                 Some(false)
@@ -13134,7 +13126,7 @@ fn evaluate_contract_return_resource_context(
         let mut views = opened_composite_read_views(
             entry_state.resources(),
             interface.composite_resource_definitions(),
-            entry_state.memory(),
+            &entry_state.program_point(),
             assumptions,
         );
         // A folded field-bearing instance the contract's own clauses checked
@@ -13547,14 +13539,14 @@ fn evaluate_contract_return_resource_context(
 }
 
 /// The memory a context's owned composites hold, opened through their
-/// definitions over `memory`, as read views: the authority a clause set
+/// definitions at `at`, as read views: the authority a clause set
 /// gives to the addresses its own dependent clauses load, offered to an
 /// evaluation that reads the entry the way the entry itself did. Nothing is
 /// owned twice; a view grants a read and no more.
 fn opened_composite_read_views(
     resources: &ResourceContext,
     definitions: &[CompositeResourceDefinition],
-    memory: &SymbolicMemory,
+    at: &ProgramPoint,
     assumptions: &PureFactContext,
 ) -> Vec<ResourceFact> {
     if !resources
@@ -13564,12 +13556,8 @@ fn opened_composite_read_views(
     {
         return Vec::new();
     }
-    let Some(opened) = expand_all_composite_resource_facts(
-        resources,
-        definitions,
-        &crate::kernel::ProgramPoint::of_memory(memory),
-        assumptions,
-    ) else {
+    let Some(opened) = expand_all_composite_resource_facts(resources, definitions, at, assumptions)
+    else {
         return Vec::new();
     };
     opened
@@ -14451,7 +14439,7 @@ fn is_pure_undefined_behavior_condition(proposition: &Proposition) -> bool {
         return false;
     };
     matches!(
-        condition,
+        condition.native_compat(),
         ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Add,
@@ -14575,10 +14563,10 @@ fn lower_selected_resource_body_clauses(
         if let Proposition::ConditionIs(condition, truth) = &path.proposition
             && let Some(condition) =
                 crate::kernel::machine_integer::comparison::retained_arithmetic_comparison(
-                    condition,
+                    condition.native_compat(),
                 )
         {
-            path.proposition = Proposition::ConditionIs(condition, *truth);
+            path.proposition = Proposition::condition_is(condition, *truth);
         }
         // An undischarged pure undefined-behavior condition (unchecked
         // arithmetic) is exposed alongside the body fact instead of
@@ -14676,7 +14664,7 @@ fn resource_body_fact_is_established(
     // packed-word equation. Query only exact 64-bit neighbors of the stated
     // endpoints and captured variables, using checked equality substitution. A
     // candidate must still be established by the original context.
-    if let Proposition::ConditionIs(
+    if let Some((
         ConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
@@ -14684,7 +14672,7 @@ fn resource_body_fact_is_established(
             right,
         },
         true,
-    ) = proposition
+    )) = (proposition).condition_native()
     {
         let mut variables = std::collections::BTreeSet::new();
         crate::kernel::reasoning::variable_collection::collect_proposition_capture_variables(
@@ -14697,7 +14685,7 @@ fn resource_body_fact_is_established(
         for endpoint in endpoints {
             for (alias, evidence) in established.exact_uint64_equalities(&endpoint) {
                 crate::instrumentation::record_deterministic_work(1);
-                let equality = Proposition::ConditionIs(
+                let equality = Proposition::condition_is(
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int64,
                         relation: CompareRelation::Equal,
@@ -14706,7 +14694,7 @@ fn resource_body_fact_is_established(
                     },
                     true,
                 );
-                let evidence = Proposition::ConditionIs(evidence.clone(), true);
+                let evidence = Proposition::condition_is(evidence.clone(), true);
                 if let Ok(candidate) =
                     crate::kernel::proof::equality_rewrite::rewrite_proposition_by_exact_equality(
                         proposition,
@@ -14725,22 +14713,19 @@ fn resource_body_fact_is_established(
     // logical read retains its own producer identity. Reuse only the exact
     // typed read relation already checked for contract facts: it requires
     // the same recorded state and address, or a checked stored value.
-    if let Proposition::ConditionIs(ConditionTerm::AddressEqual(left, right), true) = proposition
+    if let Some((ConditionTerm::AddressEqual(left, right), true)) = (proposition).condition_native()
         && crate::kernel::memory_history::pointer_read_has_recorded_value(left, right, established)
     {
         return true;
     }
-    if matches!(
-        proposition,
-        Proposition::ConditionIs(
-            ConditionTerm::AddressOffsetEqual(left, right),
-            true,
-        ) if crate::kernel::memory_history::pointer_load_offset_proven_equal(
-            left,
-            right,
-            established,
-        )
-    ) {
+    if matches!(&proposition, condition_source_0 @ Proposition::ConditionIs(
+        _,
+        true,
+    ) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::AddressOffsetEqual(left, right), _)) if (crate::kernel::memory_history::pointer_load_offset_proven_equal(
+        left,
+        right,
+        established,
+    )))) {
         return true;
     }
     // A field of an abstract type is read at the fold's state, while the
@@ -14748,7 +14733,7 @@ fn resource_body_fact_is_established(
     // two loads denote one value when the states are proven to agree at
     // its address.
     if let Proposition::ConditionIs(condition, value) = proposition
-        && established.proves_algebraic_condition_modulo_states(condition, *value)
+        && established.proves_algebraic_condition_modulo_states(condition.native_compat(), *value)
     {
         return true;
     }
@@ -15312,7 +15297,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
             let ProgramValue::Int32(quantity) = value else {
                 return Err("instance body quantity must have type int32".into());
             };
-            let fact = Proposition::ConditionIs(
+            let fact = Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::GreaterEqual,
@@ -16007,7 +15992,10 @@ pub(super) fn loop_instance_guard(
         Ok(_) => return Err("loop guard requires a mutex pointer".into()),
         Err(message) => return Err(message.into()),
     };
-    Ok(Some((pointer.address().clone(), held.clone())))
+    Ok(Some((
+        pointer.address().clone(),
+        (held.clone()).native_compat().clone(),
+    )))
 }
 
 pub(in crate::kernel) fn instance_body_guard_case(
@@ -16338,7 +16326,7 @@ fn construct_composite_resource_body_with_source(
 fn negated_contract_proposition(proposition: &Proposition) -> Proposition {
     match proposition {
         Proposition::ConditionIs(condition, value) => {
-            Proposition::ConditionIs(condition.clone(), !value)
+            Proposition::condition_is(condition.clone(), !value)
         }
         Proposition::Not(body) => body.as_ref().clone(),
         proposition => Proposition::Not(Box::new(proposition.clone())),
@@ -16416,15 +16404,15 @@ pub(crate) fn evaluate_guarded_contract_condition_with_loop_entry(
     let assumptions = &guard_assumptions;
     let proves_body_condition = |proposition: &Proposition| match proposition {
         Proposition::ConditionIs(condition, value) => {
-            assumptions.proves_condition_exact(condition, *value)
-                || assumptions.decide(condition) == Some(*value)
+            assumptions.proves_condition_exact(condition.native_compat(), *value)
+                || assumptions.decide(condition.native_compat()) == Some(*value)
                 || assumptions.proves_atomic_without_search(proposition)
         }
         Proposition::Not(body) => match body.as_ref() {
             Proposition::ConditionIs(condition, value) => {
-                assumptions.proves_condition_exact(condition, !*value)
-                    || assumptions.decide(condition) == Some(!*value)
-                    || assumptions.proves_atomic_without_search(&Proposition::ConditionIs(
+                assumptions.proves_condition_exact(condition.native_compat(), !*value)
+                    || assumptions.decide(condition.native_compat()) == Some(!*value)
+                    || assumptions.proves_atomic_without_search(&Proposition::condition_is(
                         condition.clone(),
                         !*value,
                     ))
@@ -16890,7 +16878,7 @@ fn consume_returned_resource_unit(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: quantity.clone(),
+            left: Box::new(quantity.native_compat().clone()),
             right: Box::new(MachineTerm::constant(1)),
         },
     );
@@ -17184,12 +17172,11 @@ fn consume_resource_fact_definitionally(
     at: &ProgramPoint,
     assumptions: &PureFactContext,
 ) -> Option<ResourceContext> {
-    let memory = at.memory();
     fn consume(
         available: &ResourceContext,
         required: &ResourceFact,
         definitions: &[CompositeResourceDefinition],
-        memory: &SymbolicMemory,
+        at: &ProgramPoint,
         assumptions: &PureFactContext,
         seen: &mut BTreeSet<(ResourceContext, ResourceFact)>,
     ) -> Option<ResourceContext> {
@@ -17200,7 +17187,7 @@ fn consume_resource_fact_definitionally(
         // satisfiable: read access is represented by the materialized cells,
         // mirroring the local-block view rule at call transfer.
         if let ResourceFact::View(Resource::Memory(range)) = required
-            && view_range_concretely_loadable(memory, range)
+            && view_range_concretely_loadable(at.memory(), range)
         {
             return Some(available.clone());
         }
@@ -17241,7 +17228,7 @@ fn consume_resource_fact_definitionally(
                     &required_context,
                     required,
                     definitions,
-                    &crate::kernel::ProgramPoint::of_memory(memory),
+                    at,
                     assumptions,
                 )
             },
@@ -17252,7 +17239,7 @@ fn consume_resource_fact_definitionally(
             if !assembled_composite_body_facts_hold(
                 required,
                 definitions,
-                &crate::kernel::ProgramPoint::of_memory(memory),
+                at,
                 available,
                 assumptions,
             ) {
@@ -17260,7 +17247,7 @@ fn consume_resource_fact_definitionally(
             }
             let mut remaining = available.clone();
             for child in expanded_required.facts() {
-                remaining = consume(&remaining, child, definitions, memory, assumptions, seen)?;
+                remaining = consume(&remaining, child, definitions, at, assumptions, seen)?;
             }
             return Some(remaining);
         }
@@ -17279,7 +17266,7 @@ fn consume_resource_fact_definitionally(
                         available,
                         composite,
                         definitions,
-                        &crate::kernel::ProgramPoint::of_memory(memory),
+                        at,
                         assumptions,
                     )
                 },
@@ -17290,7 +17277,7 @@ fn consume_resource_fact_definitionally(
                 &expanded_available,
                 required,
                 definitions,
-                memory,
+                at,
                 assumptions,
                 seen,
             ) {
@@ -17304,7 +17291,7 @@ fn consume_resource_fact_definitionally(
         available,
         required,
         definitions,
-        memory,
+        at,
         assumptions,
         &mut BTreeSet::new(),
     )
@@ -18387,7 +18374,7 @@ fn resource_clause_memory_views(
 fn refutation_of_body_fact(proposition: &Proposition) -> Option<Proposition> {
     match proposition {
         Proposition::ConditionIs(condition, value) => {
-            Some(Proposition::ConditionIs(condition.clone(), !value))
+            Some(Proposition::condition_is(condition.clone(), !value))
         }
         _ => None,
     }
@@ -19862,7 +19849,7 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterEqual,
-                        left: Box::new(quantity.clone()),
+                        left: Box::new(quantity.native_compat().clone()),
                         right: Box::new(MachineTerm::constant(0)),
                     },
                 ) {
@@ -19878,7 +19865,7 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
                         "declared resource quantity did not lower to owned authority".to_string(),
                     )));
                 };
-                fact = ResourceFact::own_quantity(inner, quantity);
+                fact = ResourceFact::own_quantity_stored(inner, quantity);
             }
             Ok(Ok(fact))
         }
@@ -19915,14 +19902,19 @@ pub(super) fn evaluate_iterated_resource_spec(
         Ok(ProgramValue::Pointer(pointer)) => pointer.into_pointer(),
         _ => return failure("guard base"),
     };
-    let guard_value = match evaluate_loop_effect_segment_value(
+    let guard_value = match evaluate_loop_effect_segment_value_retained(
         state,
         &spec.guard_value,
         assumptions,
         "iterated guard value",
         budget,
     )? {
-        Ok(ProgramValue::Int32(value)) => value,
+        Ok(value) if value.program_type() == ProgramType::Int32 => {
+            let Some(value) = StoredMachineTerm::from_value(value) else {
+                return failure("guard value");
+            };
+            value
+        }
         _ => return failure("guard value"),
     };
     let Some(iterated) = crate::kernel::IteratedMemory::new(
@@ -19934,7 +19926,7 @@ pub(super) fn evaluate_iterated_resource_spec(
         spec.end_offset,
         element.start,
         element.end,
-        crate::kernel::IteratedGuard::new(
+        crate::kernel::IteratedGuard::new_stored(
             guard_base,
             spec.guard_cell_type,
             spec.guard_cell_width,
@@ -19962,10 +19954,10 @@ fn evaluate_declared_quantity(
     quantity: &ProgramExpression,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<MachineTerm, RuntimeError>> {
+) -> ExecutionResult<Result<crate::kernel::StoredMachineTerm, RuntimeError>> {
     let mut diagnostic = None;
     Ok(
-        match super::loops::evaluate_resource_argument_value(
+        match super::loops::evaluate_resource_argument_value_retained(
             state,
             quantity,
             assumptions,
@@ -19973,10 +19965,13 @@ fn evaluate_declared_quantity(
             budget,
             &mut diagnostic,
         )? {
-            Ok(ProgramValue::Int32(quantity)) => Ok(quantity),
-            Ok(_) => Err(RuntimeError::FunctionContract(
-                "declared resource quantity must evaluate to int32".to_string(),
-            )),
+            Ok(value) => crate::kernel::StoredMachineTerm::from_value(value)
+                .filter(|quantity| quantity.value().program_type() == ProgramType::Int32)
+                .ok_or_else(|| {
+                    RuntimeError::FunctionContract(
+                        "declared resource quantity must evaluate to int32".to_string(),
+                    )
+                }),
             Err(message) => Err(match diagnostic {
                 Some(RuntimeError::ContractResourceDiagnostic {
                     reason,
@@ -20066,11 +20061,11 @@ pub(crate) fn quantified_resource_requirement_assumptions(
             Ok(quantity) => quantity,
             Err(error) => return Ok(Err(error)),
         };
-        propositions.push(Proposition::ConditionIs(
+        propositions.push(Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterEqual,
-                left: Box::new(quantity),
+                left: Box::new(quantity.native_compat().clone()),
                 right: Box::new(MachineTerm::constant(0)),
             },
             true,
@@ -22508,5 +22503,8 @@ mod wide_matched_range_reader_tests;
 
 #[cfg(test)]
 mod storage_summary_footprint_tests;
+
+#[cfg(test)]
+mod iterated_operand_storage_tests;
 
 mod legacy_search;

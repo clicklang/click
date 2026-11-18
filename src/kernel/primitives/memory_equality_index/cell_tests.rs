@@ -436,7 +436,7 @@ fn cell_footprints_follow_merges_removals_and_normalization() {
             12u32.into(),
             1,
         )),
-        Box::new(MachineTerm::constant(0)),
+        Box::new(MachineTerm::constant(0).into()),
     );
     let resources = ResourceContext::new()
         .unchecked_with_fact(short.clone())

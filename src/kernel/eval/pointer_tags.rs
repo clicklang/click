@@ -197,7 +197,7 @@ impl PureFactContext {
         }
         for stored in [condition.clone(), condition.flipped()] {
             if let Some(value) = self.condition_facts.get(&stored).copied() {
-                used.cite(Proposition::ConditionIs(stored, value));
+                used.cite(Proposition::condition_is(stored, value));
                 return Some(value);
             }
         }
@@ -350,7 +350,7 @@ fn require(
                     if add_proof_obligation_with_context(
                         obligations,
                         assumptions,
-                        Proposition::ConditionIs(condition, true),
+                        Proposition::condition_is(condition, true),
                         Some(&context),
                     )
                     .is_none()
@@ -458,7 +458,7 @@ fn form_of_uncached(
                 used,
                 false,
             )? {
-                used.cite(Proposition::ConditionIs(fact, true));
+                used.cite(Proposition::condition_is(fact, true));
                 return Ok(Some(form));
             }
         }
@@ -497,7 +497,7 @@ fn form_of_uncached(
                 used,
                 false,
             )? {
-                used.cite(Proposition::ConditionIs(fact, true));
+                used.cite(Proposition::condition_is(fact, true));
                 used.complete = false;
                 return Ok(Some(form));
             }
@@ -845,7 +845,7 @@ pub(in crate::kernel) fn cast_tagged_address_to_pointer(
             if add_proof_obligation_with_context(
                 obligations,
                 assumptions,
-                Proposition::ConditionIs(tag_is_zero, true),
+                Proposition::condition_is(tag_is_zero, true),
                 Some(context),
             )
             .is_none()
@@ -897,7 +897,7 @@ mod exact_word_address_tests {
             assert_eq!(tag_bound_citing(value, &context, &mut used), Some(3));
             assert!(
                 used.premises
-                    .contains(&Proposition::ConditionIs(bound.clone(), true))
+                    .contains(&Proposition::condition_is(bound.clone(), true))
             );
             assert_eq!(
                 tag_bound_citing(value, &PureFactContext::new(), &mut UsedFacts::new()),
@@ -1084,7 +1084,7 @@ mod exact_word_address_tests {
         assert!(
             crate::kernel::reasoning::path_facts::required_obligation_is_exactly_discharged(
                 &assumptions,
-                &Proposition::ConditionIs(asked, false),
+                &Proposition::condition_is(asked, false),
             )
         );
         // The class is evidence for decoding, and identity never erases it.
@@ -1112,7 +1112,7 @@ mod exact_word_address_tests {
             .pointer_alignment_certificate_decision(&pointer, 8)
             .unwrap();
         assert!(aligned);
-        assert_eq!(cited, Some(Proposition::ConditionIs(premise, true)));
+        assert_eq!(cited, Some(Proposition::condition_is(premise, true)));
         for address in [
             MachineTerm::integer_address(pointer.clone()),
             MachineTerm::object_pointer_address(pointer.clone(), Some(class.clone())),
@@ -1209,7 +1209,7 @@ mod exact_word_address_tests {
         let pointer = Address::symbolic(Variable(980020));
         let class = CAccessClass::Scalar(CScalarClass::Int);
         let word = MachineTerm::Variable(Variable(980021));
-        let premise = Proposition::ConditionIs(
+        let premise = Proposition::condition_is(
             ConditionTerm::uint64_equal(
                 word.clone(),
                 MachineTerm::object_pointer_address(pointer.clone(), Some(class.clone())),
@@ -1360,11 +1360,11 @@ mod exact_word_address_tests {
                             if expected.is_some() {
                                 assert!(
                                     used.premises
-                                        .contains(&Proposition::ConditionIs(upper.clone(), true))
+                                        .contains(&Proposition::condition_is(upper.clone(), true))
                                 );
                                 if signed {
                                     assert!(
-                                        used.premises.contains(&Proposition::ConditionIs(
+                                        used.premises.contains(&Proposition::condition_is(
                                             lower.clone(),
                                             true
                                         ))
@@ -1430,7 +1430,7 @@ mod exact_word_address_tests {
         for condition in [lower, upper] {
             assert!(
                 used.premises
-                    .contains(&Proposition::ConditionIs(condition, true))
+                    .contains(&Proposition::condition_is(condition, true))
             );
         }
     }
@@ -1455,7 +1455,7 @@ mod retained_tag_tests {
         let x = MachineTerm::Variable(Variable(986003));
         let y = MachineTerm::Variable(Variable(986004));
         let opaque = MachineTerm::integer_address(q);
-        let source = Proposition::ConditionIs(
+        let source = Proposition::condition_is(
             ConditionTerm::uint64_equal(
                 x.clone(),
                 MachineTerm::uint64_add(MachineTerm::integer_address(p.clone()), opaque.clone()),
@@ -1553,7 +1553,7 @@ mod retained_tag_tests {
             assert!(used.complete);
             assert!(
                 used.premises
-                    .contains(&Proposition::ConditionIs(equality.clone(), true))
+                    .contains(&Proposition::condition_is(equality.clone(), true))
             );
             assert_eq!(KernelTermExport::machine_export_count(), exports);
         }
@@ -1572,7 +1572,7 @@ mod retained_tag_tests {
         let roots = [&word, &tagged].map(|value| {
             KernelTerm::retained_machine_operand(ty, MachineOperandView::Legacy(value))
         });
-        let source = Proposition::ConditionIs(
+        let source = Proposition::condition_is(
             crate::kernel::machine_integer::comparison::condition_for_operand_views(
                 ty,
                 CompareRelation::Equal,
@@ -1617,7 +1617,7 @@ mod retained_tag_tests {
         };
         let raw = read(memory.clone());
         let other = read(memory.with_block("other-tag-cell", 8));
-        let source = Proposition::ConditionIs(
+        let source = Proposition::condition_is(
             ConditionTerm::uint64_equal(
                 raw,
                 MachineTerm::uint64_add(

@@ -155,7 +155,7 @@ mod tests {
         Pointer::new(Address::symbolic(Variable(id)), ProgramType::Int32Pointer)
     }
     fn equality(a: &Pointer, b: &Pointer) -> Proposition {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::PointerEqual(Box::new(a.clone()), Box::new(b.clone())),
             true,
         )
@@ -376,7 +376,7 @@ mod tests {
         let offset = MachineTerm::Variable(Variable(830_003));
         let facts = [
             equality(&a, &b),
-            Proposition::ConditionIs(ConditionTerm::equal(offset.clone(), 0u32.into()), true),
+            Proposition::condition_is(ConditionTerm::equal(offset.clone(), 0u32.into()), true),
         ];
         let context = facts.iter().fold(PureFactContext::new(), |c, f| {
             c.assume_proposition(f.clone())

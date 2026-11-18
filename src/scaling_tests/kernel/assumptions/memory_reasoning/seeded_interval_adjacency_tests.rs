@@ -43,7 +43,7 @@ fn materialized_run_adjacency_preserves_holes_and_scales() {
                 let goal = Proposition::MemoryLoadable {
                     memory,
                     base: base.clone(),
-                    bytes: MachineTerm::constant(size + 1),
+                    bytes: (MachineTerm::constant(size + 1)).into(),
                     wide: false,
                 };
                 let derivation = crate::kernel::search::ProofSearch::derive_atomic_proposition(

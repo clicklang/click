@@ -79,14 +79,14 @@ struct StoreReadKey {
 impl StoreReadKey {
     fn of(equation: &Proposition) -> Option<(Self, &Address)> {
         use crate::kernel::{AddressBase, LoadKind};
-        let Proposition::ConditionIs(
+        let Some((
             ConditionTerm::Compare {
                 relation: CompareRelation::Equal,
                 left,
                 ..
             },
             true,
-        ) = equation
+        )) = equation.condition_native()
         else {
             return None;
         };
@@ -958,7 +958,7 @@ impl SurfacePropositionMap {
                 let qualified = [left, right].map(|side| qualified_object_access(side));
                 if qualified.iter().any(Option::is_some) {
                     let resolved = crate::kernel::resolve_load_variables_from_registry(kernel);
-                    if let Proposition::ConditionIs(
+                    if let Some((
                         ConditionTerm::Compare {
                             format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                             relation: CompareRelation::Equal,
@@ -972,7 +972,7 @@ impl SurfacePropositionMap {
                             right: b,
                         },
                         _,
-                    ) = &resolved
+                    )) = (&resolved).condition_native()
                     {
                         for (expression, term) in qualified.into_iter().zip([a, b]) {
                             if let Some(expression) = expression
@@ -1390,7 +1390,7 @@ mod store_source_tests {
             LoadKind::UInt32,
         );
         let equation = |word| {
-            Arc::new(Proposition::ConditionIs(
+            Arc::new(Proposition::condition_is(
                 ConditionTerm::uint32_equal(read.clone(), MachineTerm::constant(word)),
                 true,
             ))

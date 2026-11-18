@@ -28,7 +28,7 @@ pub struct IteratedGuard {
     pub(in crate::kernel) cell_width: u32,
     /// `true` for `g[k] == value`, `false` for `g[k] != value`.
     pub(in crate::kernel) holds_when_equal: bool,
-    pub(in crate::kernel) value: MachineTerm,
+    pub(in crate::kernel) value: StoredMachineTerm,
 }
 
 /// The name of the resource definition whose clause formed a fact. It is
@@ -78,13 +78,13 @@ pub struct IteratedMemory {
     pub(in crate::kernel) stride: u32,
     pub(in crate::kernel) start_offset: i32,
     pub(in crate::kernel) end_offset: i32,
-    pub(in crate::kernel) lower: MachineTerm,
-    pub(in crate::kernel) upper: MachineTerm,
+    pub(in crate::kernel) lower: StoredMachineTerm,
+    pub(in crate::kernel) upper: StoredMachineTerm,
     pub(in crate::kernel) guard: IteratedGuard,
     /// Indices about which the fact currently makes no claim, in the order
     /// they were opened. Only explicit proof steps and checked C stores add
     /// one, so the list is bounded by the proof's own operations.
-    pub(in crate::kernel) holes: Arc<[MachineTerm]>,
+    pub(in crate::kernel) holes: Arc<[StoredMachineTerm]>,
 }
 
 impl IteratedMemory {
@@ -98,6 +98,31 @@ impl IteratedMemory {
         end_offset: i32,
         lower: MachineTerm,
         upper: MachineTerm,
+        guard: IteratedGuard,
+    ) -> Option<Self> {
+        Self::new_stored(
+            owner,
+            element_base,
+            element_width,
+            stride,
+            start_offset,
+            end_offset,
+            lower.into(),
+            upper.into(),
+            guard,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn new_stored(
+        owner: &str,
+        element_base: Address,
+        element_width: u32,
+        stride: u32,
+        start_offset: i32,
+        end_offset: i32,
+        lower: StoredMachineTerm,
+        upper: StoredMachineTerm,
         guard: IteratedGuard,
     ) -> Option<Self> {
         if stride == 0
@@ -115,8 +140,8 @@ impl IteratedMemory {
             stride,
             start_offset,
             end_offset,
-            lower,
-            upper,
+            lower: lower.into(),
+            upper: upper.into(),
             guard,
             holes: Arc::from(Vec::new()),
         })
@@ -135,18 +160,18 @@ impl IteratedMemory {
     }
 
     pub fn lower(&self) -> &MachineTerm {
-        &self.lower
+        self.lower.native_compat()
     }
 
     pub fn upper(&self) -> &MachineTerm {
-        &self.upper
+        self.upper.native_compat()
     }
 
     pub fn guard(&self) -> &IteratedGuard {
         &self.guard
     }
 
-    pub fn holes(&self) -> &[MachineTerm] {
+    pub fn holes(&self) -> &[StoredMachineTerm] {
         &self.holes
     }
 
@@ -176,8 +201,8 @@ impl IteratedMemory {
             || {
                 MemoryRange::new_with_element_width(
                     self.element_base.clone(),
-                    self.scaled(&self.lower, self.start_offset),
-                    self.scaled(&self.upper, self.start_offset),
+                    self.scaled(self.lower.native_compat(), self.start_offset),
+                    self.scaled(self.upper.native_compat(), self.start_offset),
                     self.element_width,
                 )
             },
@@ -190,10 +215,11 @@ impl IteratedMemory {
     /// memory the fact can ever hold, whatever its guards and holes say.
     pub(crate) fn spanning_range(&self) -> MemoryRange {
         self.covering_range().unwrap_or_else(|| {
-            let last = MachineTerm::subtract(self.upper.clone(), MachineTerm::constant(1));
+            let last =
+                MachineTerm::subtract(self.upper.native_compat().clone(), MachineTerm::constant(1));
             MemoryRange::new_with_element_width(
                 self.element_base.clone(),
-                self.scaled(&self.lower, self.start_offset),
+                self.scaled(self.lower.native_compat(), self.start_offset),
                 self.scaled(&last, self.end_offset),
                 self.element_width,
             )
@@ -211,8 +237,8 @@ impl IteratedMemory {
     pub(crate) fn guard_range(&self) -> MemoryRange {
         MemoryRange::new_with_element_width(
             self.guard.base.clone(),
-            self.lower.clone(),
-            self.upper.clone(),
+            self.lower.native_compat().clone(),
+            self.upper.native_compat().clone(),
             self.guard.cell_width,
         )
     }
@@ -226,8 +252,12 @@ impl IteratedMemory {
     }
 
     pub(crate) fn with_hole(&self, index: MachineTerm) -> Self {
+        self.with_stored_hole(index.into())
+    }
+
+    pub(crate) fn with_stored_hole(&self, index: StoredMachineTerm) -> Self {
         let mut holes = self.holes.to_vec();
-        holes.push(index);
+        holes.push(index.into());
         Self {
             holes: Arc::from(holes),
             ..self.clone()
@@ -258,24 +288,33 @@ impl IteratedMemory {
             stride: self.stride,
             start_offset: self.start_offset,
             end_offset: self.end_offset,
-            lower: term(&self.lower),
-            upper: term(&self.upper),
+            lower: self.lower.map_native(&mut term),
+            upper: self.upper.map_native(&mut term),
             guard: IteratedGuard {
                 base: pointer(&self.guard.base),
                 cell_type: self.guard.cell_type,
                 cell_width: self.guard.cell_width,
                 holds_when_equal: self.guard.holds_when_equal,
-                value: term(&self.guard.value),
+                value: self.guard.value.map_native(&mut term),
             },
-            holes: self.holes.iter().map(&mut term).collect::<Vec<_>>().into(),
+            holes: self
+                .holes
+                .iter()
+                .map(|value| value.map_native(&mut term))
+                .collect::<Vec<_>>()
+                .into(),
         }
     }
 
     /// Every bitvector term the fact carries, pointers' offsets excluded.
     pub(crate) fn terms(&self) -> impl Iterator<Item = &MachineTerm> {
-        [&self.lower, &self.upper, &self.guard.value]
-            .into_iter()
-            .chain(self.holes.iter())
+        [
+            self.lower.native_compat(),
+            self.upper.native_compat(),
+            self.guard.value.native_compat(),
+        ]
+        .into_iter()
+        .chain(self.holes.iter().map(StoredMachineTerm::native_compat))
     }
 
     /// Both pointers the fact carries.
@@ -297,12 +336,21 @@ impl IteratedGuard {
         holds_when_equal: bool,
         value: MachineTerm,
     ) -> Self {
+        Self::new_stored(base, cell_type, cell_width, holds_when_equal, value.into())
+    }
+    pub(crate) fn new_stored(
+        base: Address,
+        cell_type: ProgramType,
+        cell_width: u32,
+        holds_when_equal: bool,
+        value: StoredMachineTerm,
+    ) -> Self {
         Self {
             base,
             cell_type,
             cell_width,
             holds_when_equal,
-            value,
+            value: value.into(),
         }
     }
 
@@ -315,7 +363,7 @@ impl IteratedGuard {
     }
 
     pub fn value(&self) -> &MachineTerm {
-        &self.value
+        self.value.native_compat()
     }
 }
 

@@ -856,11 +856,11 @@ fn selected_pointer_alias_path(
 ) -> Option<Vec<(Address, Address)>> {
     let equal = |first: &Address, second: &Address| {
         first == second
-            || assumptions.proves_exact(&Proposition::ConditionIs(
+            || assumptions.proves_exact(&Proposition::condition_is(
                 ConditionTerm::address_equal(first.clone(), second.clone()),
                 true,
             ))
-            || assumptions.proves_exact(&Proposition::ConditionIs(
+            || assumptions.proves_exact(&Proposition::condition_is(
                 ConditionTerm::address_equal(second.clone(), first.clone()),
                 true,
             ))
@@ -1418,7 +1418,7 @@ impl CheckedLoadEquality {
                     == crate::kernel::eval::canonical_term(&self.right)
             }
             CheckedLoadEqualityEvidence::MemoryDag(evidence) => evidence.checks(
-                &Proposition::ConditionIs(
+                &Proposition::condition_is(
                     ConditionTerm::equal(self.left.clone(), self.right.clone()),
                     true,
                 ),
@@ -1444,7 +1444,7 @@ impl CheckedLoadEquality {
                 left.matches_observed_term(&self.left)
                     && right.matches_observed_term(&self.right)
                     && equality.checks(
-                        &Proposition::ConditionIs(
+                        &Proposition::condition_is(
                             ConditionTerm::equal(left.as_term(), right.as_term()),
                             true,
                         ),
@@ -1492,7 +1492,7 @@ impl CheckedLoadEquality {
                     && origin_load_width(&self.left) == Some(4)
                     && origin_load_width(&self.right) == Some(4)
                     && (alias.as_ref()
-                        == &Proposition::ConditionIs(
+                        == &Proposition::condition_is(
                             ConditionTerm::address_equal(
                                 left.pointer.clone(),
                                 right.pointer.clone(),
@@ -1500,7 +1500,7 @@ impl CheckedLoadEquality {
                             true,
                         )
                         || alias.as_ref()
-                            == &Proposition::ConditionIs(
+                            == &Proposition::condition_is(
                                 ConditionTerm::address_equal(
                                     right.pointer.clone(),
                                     left.pointer.clone(),
@@ -1514,13 +1514,13 @@ impl CheckedLoadEquality {
                                 && path.last().is_some_and(|step| step.1 == right.pointer)
                                 && path.windows(2).all(|steps| steps[0].1 == steps[1].0)
                                 && path.iter().all(|step| {
-                                    assumptions.proves_exact(&Proposition::ConditionIs(
+                                    assumptions.proves_exact(&Proposition::condition_is(
                                         ConditionTerm::address_equal(
                                             step.0.clone(),
                                             step.1.clone(),
                                         ),
                                         true,
-                                    )) || assumptions.proves_exact(&Proposition::ConditionIs(
+                                    )) || assumptions.proves_exact(&Proposition::condition_is(
                                         ConditionTerm::address_equal(
                                             step.1.clone(),
                                             step.0.clone(),
@@ -1835,7 +1835,7 @@ pub(crate) fn checked_origin_load_equality(
                 (&left_endpoint.pointer, &right_endpoint.pointer),
                 (&right_endpoint.pointer, &left_endpoint.pointer),
             ] {
-                let alias = Proposition::ConditionIs(
+                let alias = Proposition::condition_is(
                     ConditionTerm::address_equal(first.clone(), second.clone()),
                     true,
                 );
@@ -2139,7 +2139,7 @@ impl AddressOffsetEqualityEvidence {
                     return false;
                 };
                 values.checks(
-                    &Proposition::ConditionIs(
+                    &Proposition::condition_is(
                         ConditionTerm::equal(left.into_owned(), right.into_owned()),
                         true,
                     ),
@@ -2183,7 +2183,7 @@ impl AtomicMemoryLoadEqualityEvidence {
         // walk's own input, taken from the load registry on both the
         // construction and the checking side, not something the goal's
         // carrier decides.
-        let Proposition::ConditionIs(
+        let Some((
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
@@ -2197,7 +2197,7 @@ impl AtomicMemoryLoadEqualityEvidence {
                 right,
             },
             true,
-        ) = proposition
+        )) = proposition.condition_native()
         else {
             return false;
         };
@@ -4767,11 +4767,11 @@ fn prove_program_condition_fact_transport_with_assumptions(
         Proposition::ConditionIs(condition, value) => {
             let (transported, premises) = crate::kernel::collect_consulted_premises(|| {
                 crate::kernel::capture_implicit_consulted_premises(|| {
-                    transport_framed_atomic_condition(condition, after, assumptions)
+                    transport_framed_atomic_condition(condition.native_compat(), after, assumptions)
                 })
             });
             let transported = transported?;
-            if &transported == condition {
+            if &transported == condition.native_compat() {
                 return None;
             }
             // As with target-directed transport, the recorded derivation is a candidate
@@ -4786,15 +4786,18 @@ fn prove_program_condition_fact_transport_with_assumptions(
                         context.assume_proposition(premise)
                     })
                     .assume_proposition(fact.clone());
-                if transport_framed_atomic_condition(condition, after, Some((&restricted, direct)))
-                    != Some(transported.clone())
+                if transport_framed_atomic_condition(
+                    condition.native_compat(),
+                    after,
+                    Some((&restricted, direct)),
+                ) != Some(transported.clone())
                 {
                     return None;
                 }
             }
             Some(program_condition_fact_transport_theorem(
                 fact,
-                Proposition::ConditionIs(transported, *value),
+                Proposition::condition_is(transported, *value),
                 premises,
             ))
         }
@@ -4879,7 +4882,7 @@ pub(crate) fn rewrite_condition_through_certified_stores(
             Box::new(rewrite_term(right, &equations)),
         )
     };
-    let rewritten = match condition {
+    let rewritten = match condition.native_compat() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
@@ -4952,7 +4955,7 @@ pub(crate) fn rewrite_condition_through_certified_stores(
         }
         _ => return fact.clone(),
     };
-    Proposition::ConditionIs(rewritten, *value)
+    Proposition::condition_is(rewritten, *value)
 }
 
 /// Canonicalizes every load in a term for structural comparison: cached
@@ -6066,7 +6069,7 @@ pub(crate) fn program_condition_facts_equivalent_for_memory_resolution(
     if left_value != right_value {
         return false;
     }
-    let operands = match (left, right) {
+    let operands = match (left.native_compat(), right.native_compat()) {
         (
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
@@ -6155,7 +6158,7 @@ mod condition_fact_graph_equivalence_tests {
     }
 
     fn less_than(left: MachineTerm, right: MachineTerm) -> Proposition {
-        Proposition::ConditionIs(ConditionTerm::signed_less_than(left, right), true)
+        Proposition::condition_is(ConditionTerm::signed_less_than(left, right), true)
     }
 
     #[test]
@@ -6201,7 +6204,7 @@ mod condition_fact_graph_equivalence_tests {
         assert!(!program_condition_facts_equivalent_for_memory_resolution(
             &source, &target, &parent,
         ));
-        let false_target = Proposition::ConditionIs(
+        let false_target = Proposition::condition_is(
             ConditionTerm::signed_less_than(sum(load(&before, b.clone())), var(93)),
             false,
         );
@@ -6210,7 +6213,7 @@ mod condition_fact_graph_equivalence_tests {
             &false_target,
             &branch,
         ));
-        let equal_target = Proposition::ConditionIs(
+        let equal_target = Proposition::condition_is(
             ConditionTerm::equal(sum(load(&before, b.clone())), var(93)),
             true,
         );
@@ -6227,12 +6230,12 @@ mod condition_fact_graph_equivalence_tests {
             &target_right,
             &both,
         ));
-        let equal_source = Proposition::ConditionIs(
+        let equal_source = Proposition::condition_is(
             ConditionTerm::equal(sum(load(&before, var(91))), var(93)),
             true,
         );
         let equal_target =
-            Proposition::ConditionIs(ConditionTerm::equal(sum(load(&before, b)), var(94)), true);
+            Proposition::condition_is(ConditionTerm::equal(sum(load(&before, b)), var(94)), true);
         assert!(program_condition_facts_equivalent_for_memory_resolution(
             &equal_source,
             &equal_target,
@@ -6285,7 +6288,7 @@ pub(super) fn store_value_equation(
             Address::loaded_value(&memory, pointer),
             value.program_type(),
         );
-        return Some(Proposition::ConditionIs(
+        return Some(Proposition::condition_is(
             ConditionTerm::pointer_equal(read, value.clone()),
             true,
         ));
@@ -6342,7 +6345,7 @@ pub(super) fn store_value_equation(
     // 64/128-bit equality has one sign-free, signed-format spelling.
     let condition =
         ConditionTerm::machine_compare(format, CompareRelation::Equal, read, stored_bits);
-    Some(Proposition::ConditionIs(condition, true))
+    Some(Proposition::condition_is(condition, true))
 }
 
 pub(crate) fn certified_store_loadability_facts(
@@ -6361,7 +6364,7 @@ pub(crate) fn certified_store_loadability_facts(
             Some(Proposition::MemoryLoadable {
                 memory: store.after.clone(),
                 base: store.pointer.clone(),
-                bytes: MachineTerm::constant(byte_width),
+                bytes: (MachineTerm::constant(byte_width)).into(),
                 wide: false,
             })
         })
@@ -6373,7 +6376,7 @@ pub(crate) fn program_condition_fact_memories(fact: &Proposition) -> Vec<Symboli
         return Vec::new();
     };
     let mut memories = Vec::new();
-    collect_condition_memories(condition, &mut memories);
+    collect_condition_memories(condition.native_compat(), &mut memories);
     memories
         .into_iter()
         .map(|memory| memory.as_ref().clone())
@@ -7645,7 +7648,7 @@ fn effect_pointer_equality_does_not_use_general_context_inconsistency() {
     let left = AddressOffset::Variable(Variable(911));
     let right = AddressOffset::Variable(Variable(912));
     let facts = PureFactContext::new().assume_condition(ConditionTerm::Constant(false), true);
-    let goal = Proposition::ConditionIs(
+    let goal = Proposition::condition_is(
         ConditionTerm::address_offset_equal(left.clone(), right.clone()),
         true,
     );
@@ -7843,7 +7846,7 @@ mod opaque_pointer_frame_tests {
         };
         let before_value = observe(before);
         let after_value = observe(after);
-        let result = Proposition::ConditionIs(
+        let result = Proposition::condition_is(
             ConditionTerm::pointer_equal(after_value.clone(), before_value),
             true,
         );
@@ -8125,7 +8128,7 @@ mod opaque_pointer_frame_tests {
             base: AddressBase::ExternalArgument,
             offset: AddressOffset::Constant(128),
         };
-        let alias = Proposition::ConditionIs(
+        let alias = Proposition::condition_is(
             ConditionTerm::address_equal(write.clone(), argument.clone()),
             true,
         );
@@ -8248,7 +8251,7 @@ mod opaque_pointer_frame_tests {
             .unwrap()
             .0;
         let pointer = Address::symbolic(variable);
-        let source = Proposition::ConditionIs(
+        let source = Proposition::condition_is(
             ConditionTerm::address_equal(pointer.clone(), argument.clone()),
             true,
         );
@@ -8285,7 +8288,7 @@ mod opaque_pointer_frame_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let left_pointer = Address::symbolic(Variable(9_880_610));
         let right_pointer = Address::symbolic(Variable(9_880_611));
-        let alias = Proposition::ConditionIs(
+        let alias = Proposition::condition_is(
             ConditionTerm::address_equal(left_pointer.clone(), right_pointer.clone()),
             true,
         );
@@ -8353,7 +8356,7 @@ mod opaque_pointer_frame_tests {
             base: AddressBase::ExternalArgument,
             offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(9_880_402)), 4),
         };
-        let alias = Proposition::ConditionIs(
+        let alias = Proposition::condition_is(
             ConditionTerm::address_equal(write.clone(), address.clone()),
             true,
         );
@@ -8489,7 +8492,7 @@ mod opaque_pointer_frame_tests {
         };
         let parent = Address::symbolic(Variable(9_880_501));
         let alias = Address::symbolic(Variable(9_880_502));
-        let equality = Proposition::ConditionIs(
+        let equality = Proposition::condition_is(
             ConditionTerm::address_equal(parent.clone(), alias.clone()),
             true,
         );
@@ -8947,7 +8950,7 @@ mod direct_unchanged_scaling_tests {
             let loadable = |memory: &SymbolicMemory, base: Address| Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base,
-                bytes: MachineTerm::constant(4),
+                bytes: (MachineTerm::constant(4)).into(),
                 wide: false,
             };
             // The queried state holds no target object, so no other
@@ -9079,7 +9082,7 @@ fn certified_scalar_store_equations_name_the_read_at_its_actual_width() {
         let equations = certified_store_equations(&facts);
         assert_eq!(
             equations,
-            vec![Proposition::ConditionIs(
+            vec![Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: if format == MachineIntegerType::UInt64 {
                         MachineIntegerType::Int64
@@ -9096,7 +9099,7 @@ fn certified_scalar_store_equations_name_the_read_at_its_actual_width() {
         let Proposition::ConditionIs(condition, _) = &equations[0] else {
             unreachable!()
         };
-        assert!(crate::kernel::condition_variable_widths(condition).is_ok());
+        assert!(crate::kernel::condition_variable_widths(condition.native_compat()).is_ok());
     }
 }
 
@@ -9140,7 +9143,7 @@ fn a_store_equation_admitted_before_a_typed_read_joins_reads_at_equal_indexes() 
     let after = crate::kernel::intern_memory(after);
     crate::kernel::eval::record_load_access_width(after.memory(), &cell(stored), 4);
     crate::kernel::eval::record_load_access_width(after.memory(), &cell(read), 4);
-    let goal = Proposition::ConditionIs(
+    let goal = Proposition::condition_is(
         ConditionTerm::equal(
             crate::kernel::canonical_form_of_load(after, cell(read), LoadKind::Int32),
             variable(value),

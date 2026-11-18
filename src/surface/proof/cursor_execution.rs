@@ -4049,7 +4049,7 @@ fn path_case_split_condition(
     let facts = cases.iter().map(|case| case.path_facts).collect::<Vec<_>>();
     let decides = |case: &PathCase<'_>, condition: &ConditionTerm, value: bool| {
         case.path_facts
-            .contains(&Proposition::ConditionIs(condition.clone(), value))
+            .contains(&Proposition::condition_is(condition.clone(), value))
     };
     let candidates = cases
         .iter()
@@ -4058,12 +4058,14 @@ fn path_case_split_condition(
             let Proposition::ConditionIs(condition, _) = fact else {
                 return None;
             };
-            let splits = [true, false]
-                .into_iter()
-                .all(|value| cases.iter().any(|case| decides(case, condition, value)));
+            let splits = [true, false].into_iter().all(|value| {
+                cases
+                    .iter()
+                    .any(|case| decides(case, condition.native_compat(), value))
+            });
             let undecided = [true, false]
                 .into_iter()
-                .all(|value| !available(&Proposition::ConditionIs(condition.clone(), value)));
+                .all(|value| !available(&Proposition::condition_is(condition.clone(), value)));
             (splits && undecided).then_some(condition)
         })
         .collect::<Vec<_>>();
@@ -4074,22 +4076,22 @@ fn path_case_split_condition(
     };
     candidates
         .iter()
-        .filter(|condition| decided_by_every_case(condition))
+        .filter(|condition| decided_by_every_case(condition.native_compat()))
         .chain(
             candidates
                 .iter()
-                .filter(|condition| !decided_by_every_case(condition)),
+                .filter(|condition| !decided_by_every_case(condition.native_compat())),
         )
         .find_map(|condition| {
             let surface = synthesize_surface_proposition(
-                &Proposition::ConditionIs((*condition).clone(), true),
+                &Proposition::condition_is((*condition).clone(), true),
                 ParameterBinding::new(
                     proof_context.parsed_function.parameters(),
                     proof_context.arguments,
                 ),
                 state,
             )?;
-            Some(((*condition).clone(), surface))
+            Some((condition.native_compat().clone(), surface))
         })
 }
 
