@@ -4306,7 +4306,13 @@ impl CppInitializer {
                 CppType::Integer { .. } | CppType::Enumeration { .. } | CppType::Pointer { .. },
             ) => {
                 validate_call_in_context(
-                    callee, arguments, span, places, records, logical_source, false,
+                    callee,
+                    arguments,
+                    span,
+                    places,
+                    records,
+                    logical_source,
+                    false,
                     arguments.iter().any(CppCallArgument::is_opaque_copy),
                 )?;
                 validate_scalar_conversions(conversions, local_type, logical_source)
@@ -4565,7 +4571,13 @@ fn checked_boolean_condition(
 
 impl CppCallArgument {
     pub(super) fn is_opaque_copy(&self) -> bool {
-        matches!(self, Self::Construct { opaque_copy: true, .. })
+        matches!(
+            self,
+            Self::Construct {
+                opaque_copy: true,
+                ..
+            }
+        )
     }
 
     pub(super) fn is_record_temporary(&self) -> bool {
@@ -5873,7 +5885,11 @@ fn validate_reachable_calls(
                     records,
                 )?;
             }
-            CollectedCall::ReturnedConstructor { value_type, opaque_copy, .. } => {
+            CollectedCall::ReturnedConstructor {
+                value_type,
+                opaque_copy,
+                ..
+            } => {
                 if opaque_copy && (target.axiom.is_none() || !target.has_nonthrowing_interface()) {
                     return Err("C++ opaque copy construction requires a nonthrowing opaque constructor interface".into());
                 }
@@ -5900,7 +5916,10 @@ fn validate_reachable_calls(
                     }] if matches!(pointee.as_ref(), CppType::Record { declaration_id, name, .. }
                         if declaration_id == record_declaration_id && name == record_name))
                 {
-                    return Err("C++ opaque copy constructor must take a reference to its own record type".into());
+                    return Err(
+                        "C++ opaque copy constructor must take a reference to its own record type"
+                            .into(),
+                    );
                 }
                 validate_call_arguments(
                     &places,

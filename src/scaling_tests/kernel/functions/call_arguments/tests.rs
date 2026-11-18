@@ -197,11 +197,16 @@ fn prepared_argument_checks_lookup_only_the_live_destination_and_its_resources()
         let memory = SymbolicMemory::new().with_block(address.base.clone(), 4);
         let mut state = ExecutionState::new();
         state.set_memory(memory);
-        state.locals.set_aggregate_object_at(name.clone(), layout.clone(), address.clone());
+        state
+            .locals
+            .set_aggregate_object_at(name.clone(), layout.clone(), address.clone());
         let token = |key: Address, index: u32| {
             ResourceFact::own_token(
                 "logical_state".into(),
-                vec![ProgramValue::typed_pointer(key, ProgramType::UInt8Pointer), int32(index)],
+                vec![
+                    ProgramValue::typed_pointer(key, ProgramType::UInt8Pointer),
+                    int32(index),
+                ],
             )
         };
         let mut resources = ResourceContext::new();
@@ -211,11 +216,9 @@ fn prepared_argument_checks_lookup_only_the_live_destination_and_its_resources()
                 index + 1,
             ));
             let other_address = SymbolicMemory::local_lifetime_pointer(1, &other);
-            state.locals.set_aggregate_object_at(
-                other,
-                layout.clone(),
-                other_address.clone(),
-            );
+            state
+                .locals
+                .set_aggregate_object_at(other, layout.clone(), other_address.clone());
             resources = resources.unchecked_with_fact(token(other_address, 0));
         }
         let hit = (0..count).fold(resources.clone(), |resources, index| {
@@ -228,7 +231,11 @@ fn prepared_argument_checks_lookup_only_the_live_destination_and_its_resources()
                 &address.offset_by_bytes(1),
                 &layout,
             ));
-            assert!(resources.prepared_argument_resource_name(&address.base).is_none());
+            assert!(
+                resources
+                    .prepared_argument_resource_name(&address.base)
+                    .is_none()
+            );
             assert!(hit.prepared_argument_resource_name(&address.base).is_some());
         });
         samples.push(work);

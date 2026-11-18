@@ -675,8 +675,11 @@ impl ResourceContextIndex {
             }
         }
         for block in prepared_argument_resource_blocks(fact) {
-            result.prepared_argument_resources =
-                insert_resource_index_entry(&result.prepared_argument_resources, block.clone(), entry);
+            result.prepared_argument_resources = insert_resource_index_entry(
+                &result.prepared_argument_resources,
+                block.clone(),
+                entry,
+            );
         }
         let hash = resource_fact_content_hash(fact);
         result.fact_hash = result.fact_hash.wrapping_add(hash);
@@ -9694,7 +9697,9 @@ impl ResourceNormalizationIndex {
 fn prepared_argument_resource_blocks(fact: &ResourceFact) -> impl Iterator<Item = &AddressBase> {
     let arguments = match fact.resource() {
         Resource::Instance(instance) => Some(&instance.arguments),
-        Resource::Composite { arguments, .. } | Resource::Token { arguments, .. } => Some(arguments),
+        Resource::Composite { arguments, .. } | Resource::Token { arguments, .. } => {
+            Some(arguments)
+        }
         _ => None,
     };
     arguments

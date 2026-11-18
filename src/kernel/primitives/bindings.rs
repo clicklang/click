@@ -172,7 +172,10 @@ impl LocalBindingId {
     }
 
     pub fn is_temporary(&self) -> bool {
-        matches!(self.0.kind, LocalBindingKind::Temporary | LocalBindingKind::PreparedArgument)
+        matches!(
+            self.0.kind,
+            LocalBindingKind::Temporary | LocalBindingKind::PreparedArgument
+        )
     }
 
     pub(crate) fn is_prepared_argument(&self) -> bool {

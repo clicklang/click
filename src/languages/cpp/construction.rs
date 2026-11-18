@@ -86,7 +86,10 @@ pub(super) fn validate_returns<'a>(
                         crate::instrumentation::record_deterministic_work(1);
                         match argument {
                             CppCallArgument::Construct {
-                                callee, arguments, opaque_copy, ..
+                                callee,
+                                arguments,
+                                opaque_copy,
+                                ..
                             } => {
                                 let target = functions
                                     .get(&callee.declaration_id)
