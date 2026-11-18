@@ -1477,6 +1477,15 @@ condition/proposition/substitution/arithmetic checks passed, followed by all
 All 5,623 regular proof fixtures passed. Fact stability recorded 121 refusals
 and zero changed terms/paths; quality passed. Full nightly was not run.
 
+Additional execution checks exposed a predicate-grouping regression: a negated
+mixed predicate had been split into two `matches!` expressions without keeping
+the surrounding parentheses, so pointer-equality type evidence was discarded.
+The existing historical struct-pointer constructor test was red on this slice.
+Restoring the original Boolean grouping made it and all 62 selected pointer/field
+checks pass. The other split predicates were audited for the same issue.
+Broader regular unit, scaling, proof/fact-stability and quality validation is
+running again before publication. No proof rules or source proofs changed.
+
 The initial inventory considered named syntax children and missed anonymous
 wildcard truth markers. The corrected inventory records 47 further patterns
 (45 ignoring truth and two additional macro cases). They are assigned to
