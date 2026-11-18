@@ -11833,7 +11833,6 @@ impl ExecutionProofCore {
             deferred_contract_exit_errors,
             // Empty conclusion placeholders; checked resource clauses replace
             // them before any live resource query.
-            checked_returned_resources: vec![crate::kernel::ResourceContext::new(); path_count],
             entry_representation_origin: has_checked_entry
                 .then_some(self.function_entry.as_ref())
                 .flatten()

@@ -385,7 +385,6 @@ mod tests {
                     false,
                     false,
                     None,
-                    ResourceContext::new(),
                     false,
                     None,
                 )
@@ -415,7 +414,6 @@ mod tests {
                     false,
                     false,
                     None,
-                    ResourceContext::new(),
                     false,
                     None,
                     Some(&outcome),
@@ -470,7 +468,6 @@ mod tests {
             false,
             false,
             None,
-            ResourceContext::new(),
             false,
             None,
         )
