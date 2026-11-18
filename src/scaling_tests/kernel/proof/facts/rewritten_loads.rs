@@ -14,7 +14,7 @@ fn retained_rewritten_loads_share_syntax_but_recheck_authority() {
                 let variable =
                     crate::kernel::eval::load_variable_for_cell(&memory, &pointer, LoadKind::Int32);
                 let one = MachineTerm::constant(1);
-                let facts = PureFactStore::from_ordered(&[Proposition::ConditionIs(
+                let facts = PureFactStore::from_ordered(&[Proposition::condition_is(
                     ConditionTerm::equal(MachineTerm::Variable(variable), one.clone()),
                     true,
                 )]);
@@ -31,7 +31,7 @@ fn retained_rewritten_loads_share_syntax_but_recheck_authority() {
                 };
                 let guards = [guard(MachineTerm::Variable(variable)), guard(one.clone())];
                 let goal = |root| {
-                    Proposition::ConditionIs(
+                    Proposition::condition_is(
                         ConditionTerm::IntegerEqual(
                             IntegerTerm::Machine(
                                 SharedMachineIntegerTerm::from_shared(format, root).unwrap(),

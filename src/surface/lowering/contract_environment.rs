@@ -28,17 +28,16 @@ pub(in crate::surface) fn array_refs_at_point(
 }
 
 pub(in crate::surface) fn contract_environment_at_state(
-    parameter_values: &BTreeMap<String, ProgramValue>,
+    parameter_values: &ProgramValueBindings,
     array_refs: &ClickArrayRefs,
     state: &ExecutionState,
-) -> (BTreeMap<String, ProgramValue>, ClickArrayRefs) {
+) -> (ProgramValueBindings, ClickArrayRefs) {
     let mut values = parameter_values.clone();
-    values.extend(state.locals().object_values().filter_map(|(name, value)| {
-        Some((
-            state.locals().active_source_name(name)?.to_owned(),
-            value.clone().into_native(),
-        ))
-    }));
+    for (name, value) in state.locals().object_values() {
+        if let Some(name) = state.locals().active_source_name(name) {
+            values.insert_retained(name.to_owned(), value.clone().into_value());
+        }
+    }
 
     let point = state.program_point();
     let mut state_array_refs = array_refs_at_point(array_refs, &point);
@@ -55,7 +54,7 @@ pub(in crate::surface) fn contract_environment_at_state(
         if let Some(pointer) = value.pointer()
             && let Some(array_ref) = state_array_refs.get_mut(source_name)
         {
-            array_ref.pointer = pointer.pointer().clone();
+            array_ref.pointer = pointer.address().clone();
         }
     }
     for (name, value, element_type) in state.locals().array_object_values() {
@@ -75,7 +74,7 @@ pub(in crate::surface) fn contract_environment_at_state(
             source_name.to_owned(),
             ClickArrayRef {
                 point: point.clone(),
-                pointer: pointer.pointer().clone(),
+                pointer: pointer.address().clone(),
                 element_type,
             },
         );
@@ -91,7 +90,7 @@ pub(in crate::surface) fn contract_environment_for_names(
     parameter_binding: ParameterBinding<'_>,
     names: &BTreeSet<String>,
     state: &ExecutionState,
-) -> Result<(BTreeMap<String, ProgramValue>, ClickArrayRefs), ClickError> {
+) -> Result<(ProgramValueBindings, ClickArrayRefs), ClickError> {
     let mut values = parameter_values_named(parameter_binding, names)?;
     let point = state.program_point();
     let mut array_refs = array_refs_for_values(parameter_binding, &values, &point);
@@ -103,9 +102,9 @@ pub(in crate::surface) fn contract_environment_for_names(
             if let Some(pointer) = value.pointer()
                 && let Some(array_ref) = array_refs.get_mut(name)
             {
-                array_ref.pointer = pointer.pointer().clone();
+                array_ref.pointer = pointer.address().clone();
             }
-            values.insert(name.clone(), value.clone().into_native());
+            values.insert_retained(name.clone(), value.clone().into_value());
         } else if let Some((value, element_type)) = state.locals().array_object_value(name) {
             let ProgramValue::Pointer(pointer) = &value else {
                 unreachable!("local array values are pointers")
@@ -117,7 +116,7 @@ pub(in crate::surface) fn contract_environment_for_names(
                 name.clone(),
                 ClickArrayRef {
                     point: point.clone(),
-                    pointer: pointer.pointer().clone(),
+                    pointer: pointer.address().clone(),
                     element_type,
                 },
             );
@@ -339,7 +338,7 @@ mod tests {
     }
 
     fn assert_bytes(
-        values: &BTreeMap<String, ProgramValue>,
+        values: &ProgramValueBindings,
         arrays: &ClickArrayRefs,
         value: &ProgramValue,
         element_type: ProgramType,
@@ -348,7 +347,7 @@ mod tests {
         let ProgramValue::Pointer(pointer) = value else {
             unreachable!()
         };
-        assert_eq!(arrays["bytes"].pointer, *pointer.pointer());
+        assert_eq!(arrays["bytes"].pointer, *pointer.address());
         assert_eq!(arrays["bytes"].element_type, element_type);
     }
 
@@ -369,7 +368,7 @@ mod tests {
         )];
         let arguments = [ProgramExpression::Value(value.clone())];
         let binding = ParameterBinding::new(&parameters, &arguments);
-        let values = BTreeMap::from([("bytes".to_string(), value.clone())]);
+        let values = ProgramValueBindings::from([("bytes".to_string(), value.clone())]);
         let arrays = array_refs_for_parameters(&parameters, &values, &state.program_point());
         let names = BTreeSet::from(["bytes".to_string()]);
         let reassigned = ProgramValue::typed_pointer(
@@ -398,7 +397,7 @@ mod tests {
             ProgramType::UInt8Pointer,
         );
         let (values, arrays) =
-            contract_environment_at_state(&BTreeMap::new(), &BTreeMap::new(), &state);
+            contract_environment_at_state(&ProgramValueBindings::new(), &BTreeMap::new(), &state);
         assert_bytes(&values, &arrays, &expected, ProgramType::UInt8);
         let (values, arrays) =
             contract_environment_for_names(ParameterBinding::default(), &names, &state).unwrap();

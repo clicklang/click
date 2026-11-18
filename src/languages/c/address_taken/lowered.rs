@@ -147,7 +147,7 @@ pub(super) fn summarize(function: &ProgramFunction, summary: &mut AddressTakenSu
         crate::instrumentation::record_deterministic_work(1);
         match expression {
             ProgramExpression::Value(value) => {
-                if matches!(value, ProgramValue::Pointer(pointer) if pointer.pointer() != &crate::kernel::Address::null())
+                if matches!(value, ProgramValue::Pointer(pointer) if pointer.address() != &crate::kernel::Address::null())
                 {
                     return false;
                 }

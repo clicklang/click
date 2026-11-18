@@ -41,13 +41,13 @@ impl StatementAssignSource {
         else {
             return None;
         };
-        if parent.pointer() != child.pointer() || parent.program_type() != child.program_type() {
+        if parent.address() != child.address() || parent.program_type() != child.program_type() {
             return None;
         }
-        let mut fact = ExecutionPureFact::certified(Proposition::ConditionIs(
-            ConditionTerm::PointerEqual(
-                Box::new(parent.pointer().clone()),
-                Box::new(child.pointer().clone()),
+        let mut fact = ExecutionPureFact::certified(Proposition::condition_is(
+            ConditionTerm::AddressEqual(
+                Box::new(parent.address().clone()),
+                Box::new(child.address().clone()),
             ),
             true,
         ));
@@ -56,7 +56,7 @@ impl StatementAssignSource {
         fact.reference_observation = ReferenceObservationSource(Some(Arc::new(
             ReferenceObservation::Borrow(ReferenceBorrowObservation {
                 source: source.clone(),
-                pointer: child.pointer().clone(),
+                pointer: child.address().clone(),
             }),
         )));
         Some(fact)
@@ -197,9 +197,7 @@ impl ReferenceObservationSource {
             ReferenceObservation::Read { source: _, pointer: expected, retained_state, at: expected_point, value_type: expected_type } => matches!(proposition,
                 Proposition::MemoryReadDefined { memory, pointer, value_type, at }
                 if expected_point == at && *retained_state == MemoryStateIdentity::of(memory) && expected == pointer && expected_type == value_type),
-            ReferenceObservation::Borrow(birth) => matches!(proposition,
-                Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true)
-                if left.as_ref() == &birth.pointer && right.as_ref() == &birth.pointer),
+            ReferenceObservation::Borrow(birth) => matches!(&proposition, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::AddressEqual(left, right), _)) if (left.as_ref() == &birth.pointer && right.as_ref() == &birth.pointer))),
         })
     }
 }
@@ -226,7 +224,7 @@ impl ExecutedReferenceAccess<'_> {
     pub(crate) fn source(&self) -> &ReferenceAccessSourceId {
         self.source
     }
-    pub(crate) fn pointer(&self) -> &Address {
+    pub(crate) fn address(&self) -> &Address {
         self.pointer
     }
 }
@@ -346,7 +344,7 @@ mod tests {
         );
         assert!(
             !fact
-                .with_proposition(Proposition::ConditionIs(
+                .with_proposition(Proposition::condition_is(
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,

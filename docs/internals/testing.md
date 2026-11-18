@@ -729,7 +729,10 @@ once. The batched files are `diagnostic_tests.rs`, `expansion_tests.rs`,
 `loop_tests.rs`, `project_tests.rs`, `preservation.rs` and the
 files under `tactic_tests/`. The initial rollout covered 1,000 cases in
 253 batches. The expansion API tests in `src/surface/expansion/tests.rs`
-reuse the same runner and inventory macro: 69 short cases in 17 batches.
+reuse the same runner and inventory macro for 69 short cases in 17 batches.
+The authority private-body and transfer-wrapper tests, contract-closing
+tests, and resource-parameter tests share library setup across another
+54 cases in 14 batches.
 
 Each case starts on a fresh 8 MiB-stack thread, retaining thread-local
 isolation while sharing the immutable library-syntax cache across cases.
@@ -977,10 +980,10 @@ extraction uses the compiler/runtime identity in
 its runtime paths from that profile. Preparation bundles `rustc` and its runtime
 libraries in `rust-runtime.tar.zst` using `scripts/charon-runtime.sh` and both
 Charon executables in `charon.tar.gz`. They form the separate `rust-toolchain`
-artifact. The `rust` shards download that artifact,
-validate the compiler, target, and toolchain identity, and restore those
-libraries before setup, so missing caches do not prevent test execution; every
-other shard downloads the test binaries alone. Unit shards use
+artifact. The single `rust` shard downloads that artifact, validates the
+compiler, target, and toolchain identity, and restores those libraries before
+setup, so missing caches do not prevent test execution. Every other shard
+downloads the test binaries alone. Unit shards use
 `scripts/setup-environment.sh --unit-test-runner` to install Click's pinned
 Rust toolchain before the search-boundary tests compile visibility probes.
 This keeps rustup's first-use download outside each test's 30-second timeout;

@@ -415,7 +415,7 @@ fn closed_order_lowering_ignores_unrelated_state_and_facts() {
             let mut facts = PureFactContext::new();
             for index in 0..unrelated {
                 state = state.with_local(format!("unused{index}"), int32(index));
-                facts = facts.assume_proposition(Proposition::ConditionIs(
+                facts = facts.assume_proposition(Proposition::condition_is(
                     ConditionTerm::signed_less_equal(
                         MachineTerm::Variable(Variable(999800 + index as u64)),
                         MachineTerm::constant(100),
@@ -448,10 +448,9 @@ fn closed_order_lowering_ignores_unrelated_state_and_facts() {
                 )
                 .unwrap()
             });
-            assert!(matches!(
-                lowered.0,
-                Proposition::ConditionIs(ConditionTerm::Compare { .. }, true)
-            ));
+            assert!(
+                matches!(&lowered.0, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare { .. }, _))))
+            );
             assert!(work > 0);
             let expected = *baseline.get_or_insert(work);
             assert_eq!(work, expected, "{format:?}, unrelated={unrelated}");

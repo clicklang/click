@@ -9,9 +9,9 @@ use std::sync::Arc;
 
 #[derive(Clone)]
 pub(super) enum Input {
-    PointerValue(PointerValue, PointerValue),
+    Pointer(Pointer, Pointer),
     PointerReadValue(Address, Address),
-    Pointer(Address, Address),
+    Address(Address, Address),
     Offset(AddressOffset, AddressOffset),
     Int32(MachineTerm, MachineTerm),
     Int32Operands(
@@ -177,10 +177,10 @@ impl EqualityGraph {
                 Input::PointerReadValue(left, right) => {
                     self.add_checked_pointer_read_equality(left, right);
                 }
-                Input::PointerValue(left, right) => {
-                    self.add_pointer_value_equality(left, right);
-                }
                 Input::Pointer(left, right) => {
+                    self.add_pointer_equality(left, right);
+                }
+                Input::Address(left, right) => {
                     self.add_equality(left, right);
                 }
                 Input::Offset(left, right) => {
@@ -307,14 +307,14 @@ impl EqualityGraph {
             let Some(node) = current else { break };
             let pair = match &node.input {
                 Input::CheckedRead(left, right) => Some((left, right)),
-                Input::Pointer(left, right) if is_read(left) || is_read(right) => {
+                Input::Address(left, right) if is_read(left) || is_read(right) => {
                     Some((left, right))
                 }
                 _ => None,
             };
             if let Some((left, right)) = pair {
-                equalities.push(crate::kernel::Proposition::ConditionIs(
-                    crate::kernel::ConditionTerm::pointer_equal(left.clone(), right.clone()),
+                equalities.push(crate::kernel::Proposition::condition_is(
+                    crate::kernel::ConditionTerm::address_equal(left.clone(), right.clone()),
                     true,
                 ));
             }
@@ -352,7 +352,7 @@ impl EqualityGraph {
                     })
                 }
                 Input::Offset(left, right) if is_read_offset(left) || is_read_offset(right) => {
-                    Some(ConditionTerm::PointerOffsetEqual(
+                    Some(ConditionTerm::AddressOffsetEqual(
                         Box::new(left.clone()),
                         Box::new(right.clone()),
                     ))
@@ -360,7 +360,7 @@ impl EqualityGraph {
                 _ => None,
             };
             if let Some(condition) = scalar_condition {
-                equalities.push(crate::kernel::Proposition::ConditionIs(condition, true));
+                equalities.push(crate::kernel::Proposition::condition_is(condition, true));
             }
             current = node.parent.clone();
         }
@@ -381,7 +381,7 @@ mod read_trace_tests {
         Address::symbolic(Variable(id))
     }
     fn equality(left: Address, right: Address) -> Proposition {
-        Proposition::ConditionIs(ConditionTerm::pointer_equal(left, right), true)
+        Proposition::condition_is(ConditionTerm::address_equal(left, right), true)
     }
 
     #[test]
@@ -495,8 +495,8 @@ mod read_trace_tests {
         graph.add_offset_equality(&read, &target);
         assert_eq!(
             graph.read_equalities_since(&checkpoint).equalities,
-            vec![Proposition::ConditionIs(
-                ConditionTerm::PointerOffsetEqual(Box::new(read), Box::new(target)),
+            vec![Proposition::condition_is(
+                ConditionTerm::AddressOffsetEqual(Box::new(read), Box::new(target)),
                 true
             )]
         );

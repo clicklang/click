@@ -345,7 +345,7 @@ the one execution transition that fails.
 | --- | --- | --- | --- | --- |
 | `mark name;` | simple | Specialized | Name the current execution state. | [Reference](#proof-marks) |
 | `step()` | simple | Core | Execute one checked statement transition. | [Reference](#single-statements) |
-| `let { result: name } = step()` | simple | Specialized | Bind the checked value of an assignment or a call. | [Reference](#binding-a-statement-result) |
+| `let { result: name } = step()` | simple | Specialized | Bind a checked assignment, call, or scalar step result. | [Reference](#binding-a-statement-result) |
 | `step_until(statement(i))` | smart | Specialized | Execute up to a selected source point, or to `function.exit`, without splitting. | [Reference](#execution-to-a-point) |
 | `branch [ensuring { ... } then] { ... } else { ... }` | control | Core | Prove and join the arms of source control flow. | [Reference](#source-branches) |
 | `loop [as name] { ... }` | control | Core | Prove a loop from its invariants and ranking obligations. | [Reference](#loop-transitions) |
@@ -545,16 +545,18 @@ separate smart `implicit closer` row at the step.
 
 **Form:** `let { result: name } = step()`
 
-**Specialized.** Bind the checked value from the next assignment or call to
-an immutable proof name. The name can refer to the value after C overwrites
-the local, leaves its scope, or uses the result of the call.
+**Specialized.** Bind the checked value from the next assignment, call, or
+scalar evaluation step to an immutable proof name. The name still refers to
+that value after the program overwrites the local, leaves its scope, or uses
+the step result.
 
 **Accepts** a scalar or pointer local assignment such as `y = e;`,
 `x += e;`, or the initializing assignment of `int32 y = e;`. It also accepts
 a call whose result is used, including `y = g(x);`, `if (g(x))`, or
 `return g(x);` at the call step. Bare `step()` must be able to resolve the
-call in the current proof context. A proof name may be rebound, and the
-newest binding wins.
+call in the current proof context. It also accepts a scalar value that the
+front end retains in a separate step, such as a Rust load followed by an
+arithmetic check. A proof name may be rebound, and the newest binding wins.
 
 **Outside it**, with what to write instead:
 
@@ -1239,7 +1241,7 @@ For a native uint64 `index <= 2147483647u64`, `pointer + index` and
 `pointer + index as int32` denote the same address. `solve() using { ... }` checks
 that the cited native bound is available and preserves the pointer stride.
 A bound on the low word or a signed comparison cannot establish this unsigned
-projection, and address equality grants no permission to access the backing
+projection, and integer address equality grants no permission to access the backing
 storage. Conditional normalization does not enter binder bodies.
 
 Two displacements of one pointer by full-width unsigned indices regroup:
@@ -1271,9 +1273,9 @@ complete rewritten surface proof through the ordinary entry point.
 
 **Expansion output.** `click expand` writes it; by hand, a conjunction goal is
 normally split by `solve` or the implicit closer. Write `both` when each side
-needs its own explicit proof. Write the `left` arm first for the left child
-of the `and` goal, then the `right` arm for the right child. Each arm has
-its own proof scope.
+needs its own explicit proof. The `left` and `right` labels select the
+respective children of the `and` goal. The arms can appear in either order,
+and each has its own proof scope. Expansion prints `left` before `right`.
 
 **Failure, checking, and tools:**
 
@@ -1780,6 +1782,10 @@ It decides conditions in the goal from the cited premises and the equality
 graph, then applies `normalize()`'s check (see
 [Context-free normalization](#context-free-normalization)) to the result.
 
+For a signed `int32` order goal, the cited comparisons can form a chain in
+list order from the goal's lower endpoint to its upper endpoint. A strict
+goal needs at least one strict link. Replay checks the listed links directly.
+
 An in-range operation or cast identity also accepts exactly two ordered
 Integer bounds on its exact result: the lower bound, then the upper bound.
 Both must lie within the operation or destination format. A bound on one
@@ -2114,18 +2120,17 @@ planning again.
 
 **Form:** `preserve(resource, region);`
 
-A simple tactic for a read-equality or read-definedness goal. Select the resource
-being read and the recorded region across which to preserve it. The exact fact
-`separate(region.footprint, resource)` (in either order) must already be
-available; establish it with `have` first. For evidence at a saved snapshot, write
+A simple tactic for read equality, read definedness, or range viewability.
+Select the resource and the recorded region across which to preserve it. Use
+`have` to establish the exact fact `separate(region.footprint, resource)` in
+either order. For evidence at a saved snapshot, write
 `preserve(at(mark, resource), region)`. Here `at(mark, resource)` is an ordinary
 resource descriptor evaluated at the saved snapshot, just as in `separate` or
 `contains`. Parentheses only group: `(at(mark, resource))` has the same meaning.
-The recorded region endpoints remain fixed. The tactic
-constructs equality of the selected read at the region's exit and entry, in
-that order. It applies one primitive directly, with no premise discovery or
-history search. The current goal selects the read type or named-resource
-field; it must match the constructed equality.
+The tactic applies one primitive using the recorded region endpoints and exact
+facts. For equality goals, it constructs equality of the selected read at the
+exit and entry, in that order. The goal selects the read type or named-resource
+field and must match the constructed equality.
 
 For `defined(read)`, the separated resource must be the complete typed cell.
 The tactic looks up the exact `defined(read)` fact at the footprint's entry
@@ -2134,13 +2139,20 @@ separated cell supplies the address. Missing old definedness is a local refusal,
 not a request to search memory history. This rule preserves definedness; it
 does not establish initialization from ownership or value equality alone.
 
-Use an ordinary `have` to establish this equality, then `rewrite` and
-`known` to carry a proposition across the change. The tactic remains
+For a `viewable(range)` goal, `preserve` accepts a complete footprint from a
+single declaration of fresh local storage without an initializer. Prove
+separation from that footprint and supply the exact entry viewability fact
+for the selected range. The conclusion is a pure live-storage fact for the
+same range at the exit, including for symbolic `uint64` byte ranges.
+
+For equality goals, use an ordinary `have` to establish the equality, then
+`rewrite` and `known` to carry a proposition across the change. The tactic remains
 `preserve(...)` in expansion. Unavailable separation, an unsupported observation,
 or mismatched endpoints is a local refusal. This tactic is distinct from a
 loop's `preserve by { ... }` proof block.
 
-**Checked example:** [`preserve_step_carries_a_fact.md`](https://github.com/clicklang/click/blob/master/mdtests/preserve_step_carries_a_fact.md).
+- Read equality. [`preserve_step_carries_a_fact.md`](https://github.com/clicklang/click/blob/master/mdtests/preserve_step_carries_a_fact.md)
+- Range viewability. [`cstr_plain_char_kernel_requirement_reaches_callee.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_plain_char_kernel_requirement_reaches_callee.md)
 
 `region.footprint` is a resource descriptor, not ownership. Execution records
 writes, call effects, resource changes, and allocation lifetime changes while
@@ -2207,7 +2219,8 @@ no alias or history fallback runs.
 Pointer preservation also accepts address equality when the pointer domains
 already agree. Equality composition uses ordinary `rewrite` and `known` steps.
 Footprints can record non-memory resources, symbolic release spans, and
-multiple mutable call resources. Wide-index memory ranges are not yet supported.
+multiple mutable call resources. Wide-index memory ranges are supported for
+viewability preservation.
 Joined branch/loop footprints still need
 producer integration; use recorded individual transitions where available.
 An unavailable premise, unsupported rule, or mismatched endpoint fails locally.
@@ -2272,10 +2285,10 @@ before addition. The route supports uint8/uint16 source ranges, uint32 values
 above `INT32_MAX`, and nonnegative int64 constants through `UINT32_MAX`.
 Missing selected bounds and bounds one below the attainable sum are refused.
 See [`widened_unsigned_sum_bounds.md`](https://github.com/clicklang/click/blob/master/mdtests/widened_unsigned_sum_bounds.md)
-and its adjacent refusal fixture. Retained-read
-and history adapters keep their compatibility normalizer while read/state
-transport is migrated separately; they do not select a different memory state
-or version point. Other specialized selected rules
+and its adjacent refusal fixture. Exact type bounds on observations at
+program points expand to `known()` when the bound follows from the type.
+Other retained-read and history obligations keep the compatibility normalizer
+with their selected facts and version points. Other specialized selected rules
 normalize from explicit inputs, while polynomial
 search emits separate distribution and rewrite steps. All library proofs use
 ordinary tactics. The [library reference](../library/index.md#foundational-integer-order-axioms)
@@ -3409,8 +3422,8 @@ mathematical product.
 | `fold(...) by { ... }` | control | Expansion output | Supply a proof for one fold obligation. | [Reference](#folding-with-one-obligation) |
 | `fold(...) { requires P by ...; }` | control | Expansion output | Supply proofs for selected fold obligations. | [Reference](#folding-with-several-obligations) |
 | `construct(resource)` | simple | Specialized | Create an abstract token authorized by a `constructs` clause. | [Reference](#constructing-resources) |
-| `take(base[a..b])` | simple | Specialized | Take one element out of iterated ownership. | [Reference](#taking-a-range) |
-| `give(base[a..b])` | simple | Specialized | Return a taken element to iterated ownership. | [Reference](#giving-a-range) |
+| `unfold(resource(args)[i])` | simple | Specialized | Expose one guarded ownership slot. | [Reference](#indexed-resource-unfolding-and-folding) |
+| `fold(resource(args)[i])` | simple | Specialized | Restore one guarded ownership slot. | [Reference](#indexed-resource-unfolding-and-folding) |
 | `gather(resource(args))` | simple | Specialized | Form iterated ownership from its covering range. | [Reference](#gathering-resources) |
 | `scatter(resource(args))` | simple | Specialized | Dissolve iterated ownership into its covering range. | [Reference](#scattering-resources) |
 | `name(args, { binder: instance })` | simple | Specialized | Apply a verified tactic with resource bindings. | [Reference](#user-defined-tactic-calls) |
@@ -3873,98 +3886,30 @@ expansion preserves the checked step, and profiling charges one simple leaf.
 
 **Checked examples:** [`contract_tests.rs`](https://github.com/clicklang/click/blob/master/src/surface/tests/contract_tests.rs), [`authority_ordinary_token_construction.md`](https://github.com/clicklang/click/blob/master/mdtests/authority_ordinary_token_construction.md), [`authority_authorized_token_construction_rejected.md`](https://github.com/clicklang/click/blob/master/mdtests/authority_authorized_token_construction_rejected.md)
 
-### Taking a range
+### Indexed resource unfolding and folding
 
-**Form:** `take(base[a..b])`
+**Forms:** `unfold(resource(args)[i]);` and `fold(resource(args)[i]);`
 
-**Specialized.** Write it to use one element of an iterated ownership fact as
-ordinary owned memory. Move one element out of the unfolded iterated ownership
-fact whose elements live at `base`, as ordinary owned memory. The element's
-index must be known in range, its guard known true, and the index not already
-out; the fact then claims nothing at that index.
+Open the declaring resource first. Its arguments must determine the guarded
+iterated clause's bounds, layout, and guard. Those coordinates select one held
+clause, which supplies the memory range at the current `int32` index `i`.
 
-**Accepts**, at a C function's execution frontier before exit, a range that is
-one element of the one held iterated ownership fact whose elements live at
-`base` (the declaring resource already unfolded), when:
+- Indexed `unfold` requires `i` to be in range, its guard known true, and
+  `i` known distinct from every open slot. It exposes the element as owned
+  memory and records an open slot.
+- Indexed `fold` requires an open slot at `i`, its guard known true, and
+  direct ownership of the element's memory. A slot may have been opened by
+  indexed `unfold` or by a C store that made its guard true. Folding consumes
+  the direct ownership and restores the slot to the clause.
 
-- The range is the clause's element at some index `i`: for
-  `owns data[k..k + 1]` write `data[i..i + 1]`; for an offset clause
-  `data[k + 1..k + 2]` write `data[i + 1..i + 2]`; for a stride `s > 1`
-  write `data[s * i + a..s * i + b]`, with the offset in any arrangement of
-  the same affine form (`i * s`, `s * i`, or `i + i` for `s = 2`). `i` may be any
-  `int32` term, constants included.
-- `lo <= i` and `i < hi` are settled by the kernel's condition decision from
-  current facts: stated bounds, equalities (`j == index`), and chains of
-  bounds (`0 <= j`, `j <= index`).
-- The guard at `i` is settled true the same way, from a fact about the guard
-  cell (`occupied[i] == 0`, or `occupied[i] <= 0` with `occupied[i] >= 0`)
-  or from a C branch on it. Both `g[k] == v` and `g[k] != v` guards work.
-- `i` is settled different from every index already taken out.
+Write `at(point, resource(args))[i]` to select the clause using arguments
+at a recorded program point. The index, guard, and ownership transfer use
+the current state. The operation runs at an execution frontier before
+function exit. Expansion retains the indexed form.
 
-It adds the element as owned memory and records `i` as taken out. Several
-elements may be out at once.
-
-**Outside it**, with what to write instead:
-
-- A range wider or narrower than one element, such as `data[i..i + 2]` for
-  a one-cell clause: one `take` per element.
-- An iterated fact still folded inside its resource: `unfold` the resource
-  first.
-- An index whose range, guard, or distinctness is not settled: state it with
-  `have` or a `requires` first; a guard known false holds no element.
-- After the function exit: take before execution reaches the exit.
-
-**Failure, checking, and tools:**
-
-An unknown or false guard, an index that may already be out, an index not
-known in range, a range that is not one element, or two held iterated facts at
-the same base fails, each with its own message. The kernel re-derives the step
-from its input state when the trace is checked; expansion prints it unchanged,
-and profiling charges one guard cell and the fact's taken-out indices.
-
-**Checked examples:** [`iterated_ownership_allocate_one.md`](https://github.com/clicklang/click/blob/master/mdtests/iterated_ownership_allocate_one.md), [`iterated_ownership_rejects_take_false_guard.md`](https://github.com/clicklang/click/blob/master/mdtests/iterated_ownership_rejects_take_false_guard.md), [`iterated_ownership_rejects_take_unknown_guard.md`](https://github.com/clicklang/click/blob/master/mdtests/iterated_ownership_rejects_take_unknown_guard.md), [`take_refuses_an_element_already_taken_out.md`](https://github.com/clicklang/click/blob/master/mdtests/take_refuses_an_element_already_taken_out.md), [`take_refuses_a_range_that_is_not_one_element.md`](https://github.com/clicklang/click/blob/master/mdtests/take_refuses_a_range_that_is_not_one_element.md)
-
-### Giving a range
-
-**Form:** `give(base[a..b])`
-
-**Specialized.** Write it to return an element taken with `take`. Move a
-taken-out element back into its iterated ownership fact. Its guard must be known
-true.
-
-**Accepts**, at a C function's execution frontier before exit, a range that is
-one element of the one held iterated ownership fact at `base`, written as for
-`take`, when:
-
-- Its index is settled equal to an index taken out of the fact, by `take` or
-  by a C store that made the guard true.
-- The guard at that index is settled true by the kernel's condition decision.
-- The element's cells are owned.
-
-It consumes the element and clears the index from the taken-out set.
-
-Both `give` and `take` accept an explicitly saved pointer base:
-`give(at(opened, arena->data)[i..i + 1])` or `take(old(data)[i..i + 1])`.
-Only the base expression selects an earlier state. Bounds outside that selector
-refer to the current state, and guard checking and ownership transfer occur in
-the current state. This selects the recorded base directly when a fresh read
-of a descriptor field does not find its iterated ownership fact; it does not
-search for equivalent pointer forms.
-
-**Outside it**, with what to write instead:
-
-- An element never taken out: there is nothing to return; the fact already
-  holds it.
-- A guard known false or not settled: store the guard value in C, or state
-  the guard cell's value as a fact first.
-- After the function exit: give before execution reaches the exit.
-
-**Failure, checking, and tools:**
-
-A guard that is false or unknown, or an element that is not out, fails. Checked
-and expanded like `take`.
-
-**Checked examples:** [`iterated_saved_base_release.md`](https://github.com/clicklang/click/blob/master/mdtests/iterated_saved_base_release.md), [`iterated_saved_base_current_bounds.md`](https://github.com/clicklang/click/blob/master/mdtests/iterated_saved_base_current_bounds.md), [`iterated_ownership_release_one.md`](https://github.com/clicklang/click/blob/master/mdtests/iterated_ownership_release_one.md), [`iterated_ownership_rejects_give_false_guard.md`](https://github.com/clicklang/click/blob/master/mdtests/iterated_ownership_rejects_give_false_guard.md)
+**Checked examples:** [Strided slot and saved arguments](https://github.com/clicklang/click/blob/master/mdtests/indexed_iterated_ownership.md),
+[Allocation](https://github.com/clicklang/click/blob/master/mdtests/iterated_ownership_allocate_one.md),
+[Release](https://github.com/clicklang/click/blob/master/mdtests/iterated_ownership_release_one.md).
 
 ### Gathering resources
 
@@ -4036,7 +3981,7 @@ elements must tile one range, which it adds as owned memory.
 
 **Outside it**, with what to write instead:
 
-- A fact with an element taken out: `give` it back first.
+- A fact with an open slot: restore it with indexed `fold` first.
 - A fact still folded inside its resource: `unfold` the resource first.
 - Guards not settled one way: as for `gather`.
 

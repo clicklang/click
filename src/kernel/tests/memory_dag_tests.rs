@@ -84,7 +84,7 @@ fn rewritten_integer_word_observations_retain_checked_store_evidence() {
             )
         };
         let goal = |ty, bits| {
-            Proposition::ConditionIs(
+            Proposition::condition_is(
                 ConditionTerm::integer_equal(
                     IntegerTerm::from_machine(ty, bits).unwrap(),
                     IntegerTerm::constant_i64(17),
@@ -104,7 +104,7 @@ fn rewritten_integer_word_observations_retain_checked_store_evidence() {
             );
             let source = MachineTerm::Variable(Variable(989_003));
             let cited =
-                Proposition::ConditionIs(ConditionTerm::equal(source.clone(), read.clone()), true);
+                Proposition::condition_is(ConditionTerm::equal(source.clone(), read.clone()), true);
             let mut rewrite = facts
                 .clone()
                 .with_fact(cited.clone())
@@ -153,13 +153,13 @@ fn rewritten_goal_does_not_reuse_an_ambient_equality_for_a_bound_variable() {
     let variable = Variable(981);
     let term = MachineTerm::Variable(variable);
     let one = MachineTerm::constant(1);
-    let premise = Proposition::ConditionIs(ConditionTerm::equal(term.clone(), one.clone()), true);
+    let premise = Proposition::condition_is(ConditionTerm::equal(term.clone(), one.clone()), true);
     let facts = crate::kernel::proof::PureFactStore::from_ordered(&[premise]);
     let goal = |value| Proposition::ForAll {
         name: Default::default(),
         var: variable,
         sort: Sort::ProgramInt32,
-        body: Box::new(Proposition::ConditionIs(
+        body: Box::new(Proposition::condition_is(
             ConditionTerm::signed_less_equal(value, MachineTerm::constant(2)),
             true,
         )),
@@ -548,7 +548,7 @@ fn retained_store_hops_carry_locally_checkable_distinctness_proofs() {
     )
     .expect("the atomic query retains the same typed walk");
     assert!(constant_atomic.checks(
-        &Proposition::ConditionIs(ConditionTerm::equal(constant_left, constant_right), true,),
+        &Proposition::condition_is(ConditionTerm::equal(constant_left, constant_right), true,),
         &PureFactContext::new(),
     ));
 
@@ -613,7 +613,7 @@ fn retained_store_hops_carry_locally_checkable_distinctness_proofs() {
         atomic_memory_load_equality_evidence(&symbolic_left, &symbolic_right, &assumptions)
             .expect("the atomic query retains the exact inequality proof");
     let symbolic_goal =
-        Proposition::ConditionIs(ConditionTerm::equal(symbolic_left, symbolic_right), true);
+        Proposition::condition_is(ConditionTerm::equal(symbolic_left, symbolic_right), true);
     assert!(symbolic_atomic.checks(&symbolic_goal, &assumptions));
     assert!(
         !symbolic_atomic.checks(&symbolic_goal, &PureFactContext::new()),
@@ -698,8 +698,8 @@ fn retained_common_base_store_hop_uses_a_stated_endpoint_order() {
             .cloned()
             .collect::<Vec<_>>(),
         vec![
-            Proposition::ConditionIs(first, true),
-            Proposition::ConditionIs(second.clone(), true)
+            Proposition::condition_is(first, true),
+            Proposition::condition_is(second.clone(), true)
         ]
     );
     assert!(
@@ -854,13 +854,13 @@ fn entry_separation_does_not_frame_a_store_after_its_bases_become_equal() {
     .expect("the entry-time partition initially supplies the hop");
     let assumptions = entry_assumptions
         .assume_condition(
-            ConditionTerm::pointer_equal(left.clone(), bridge.clone()),
+            ConditionTerm::address_equal(left.clone(), bridge.clone()),
             true,
         )
-        .assume_condition(ConditionTerm::pointer_equal(bridge, right.clone()), true);
+        .assume_condition(ConditionTerm::address_equal(bridge, right.clone()), true);
     assert_eq!(
         assumptions
-            .exact_condition_value(&ConditionTerm::pointer_equal(left.clone(), right.clone())),
+            .exact_condition_value(&ConditionTerm::address_equal(left.clone(), right.clone())),
         None,
         "the alias is established through the intermediate pointer, not a direct fact"
     );
@@ -920,7 +920,7 @@ fn equal_range_bases_keep_a_separation_for_disjoint_byte_intervals() {
     };
     let assumptions = PureFactContext::new()
         .assume_proposition(separation)
-        .assume_condition(ConditionTerm::pointer_equal(left, right), true);
+        .assume_condition(ConditionTerm::address_equal(left, right), true);
 
     assert!(
         !assumptions.memory_ranges_overlap_after_base_equality(&left_range, &right_range),
@@ -1567,7 +1567,7 @@ fn sibling_states_resolve_one_cell_to_a_common_ancestor() {
     assert_eq!(cached, first);
     assert!(first.is_fully_typed());
     let goal =
-        Proposition::ConditionIs(ConditionTerm::equal(load_in(&left), load_in(&right)), true);
+        Proposition::condition_is(ConditionTerm::equal(load_in(&left), load_in(&right)), true);
     assert!(first.checks(&goal, &PureFactContext::new()));
     let derivation = with_extended_dag_bridging(|| {
         crate::kernel::search::ProofSearch::derive_atomic_proposition(
@@ -1664,7 +1664,7 @@ fn call_havoc_retains_exact_separation_and_positive_offset_steps() {
         }
     );
     assert!(evidence.is_fully_typed());
-    let goal = Proposition::ConditionIs(ConditionTerm::equal(load(&called), load(&base)), true);
+    let goal = Proposition::condition_is(ConditionTerm::equal(load(&called), load(&base)), true);
     assert!(evidence.checks(&goal, &assumptions));
     assert!(
         !evidence.checks(&goal, &PureFactContext::new()),
@@ -1672,8 +1672,8 @@ fn call_havoc_retains_exact_separation_and_positive_offset_steps() {
     );
     let left_offset = AddressOffset::scale_int32(load(&called), 4);
     let right_offset = AddressOffset::scale_int32(load(&base), 4);
-    let offset_goal = Proposition::ConditionIs(
-        ConditionTerm::pointer_offset_equal(left_offset.clone(), right_offset.clone()),
+    let offset_goal = Proposition::condition_is(
+        ConditionTerm::address_offset_equal(left_offset.clone(), right_offset.clone()),
         true,
     );
     let offset_derivation = with_extended_dag_bridging(|| {
@@ -1726,25 +1726,25 @@ fn loadable_bound_check_bridges_len_forms_across_block_and_prune_edges() {
         .assume_proposition(Proposition::MemoryLoadable {
             memory: entry.clone(),
             base: arc_pointer(0),
-            bytes: MachineTerm::constant(4),
+            bytes: (MachineTerm::constant(4)).into(),
             wide: false,
         })
         .assume_proposition(Proposition::MemoryLoadable {
             memory: entry.clone(),
             base: arc_pointer(8),
-            bytes: MachineTerm::constant(4),
+            bytes: (MachineTerm::constant(4)).into(),
             wide: false,
         })
         .assume_proposition(Proposition::MemoryLoadable {
             memory: entry.clone(),
             base: arc_pointer(12),
-            bytes: MachineTerm::constant(4),
+            bytes: (MachineTerm::constant(4)).into(),
             wide: false,
         })
         .assume_proposition(Proposition::MemoryLoadable {
             memory: entry.clone(),
             base: arc_pointer(16),
-            bytes: MachineTerm::constant(32),
+            bytes: (MachineTerm::constant(32)).into(),
             wide: false,
         })
         .assume_condition(
@@ -1873,12 +1873,12 @@ fn conditions_equal_modulo_proven_states_needs_frame_evidence() {
         &PureFactContext::new(),
     )
     .expect("the selected call footprint is separate");
-    let source = Proposition::ConditionIs(condition(&before), true);
+    let source = Proposition::condition_is(condition(&before), true);
     let premises = vec![source, equality];
     let facts = crate::kernel::proof::PureFactStore::from_ordered(&premises);
     assert!(
         crate::kernel::proof::fact_reasoning::normalize_using_conditions(
-            &Proposition::ConditionIs(condition(&after), true),
+            &Proposition::condition_is(condition(&after), true),
             &premises,
             &facts,
         )
@@ -1901,7 +1901,7 @@ fn conditions_equal_modulo_proven_states_needs_frame_evidence() {
     );
     assert!(
         crate::kernel::proof::fact_reasoning::normalize_using_conditions(
-            &Proposition::ConditionIs(other, true),
+            &Proposition::condition_is(other, true),
             &premises,
             &facts,
         )
@@ -2139,7 +2139,7 @@ fn a_symbolic_store_requires_the_current_paths_separation_order() {
         atomic_memory_load_equality_evidence(&load(&separated), &load(&base), &ordered)
     })
     .expect("the current path's strict order proves preservation");
-    let goal = Proposition::ConditionIs(ConditionTerm::equal(load(&separated), load(&base)), true);
+    let goal = Proposition::condition_is(ConditionTerm::equal(load(&separated), load(&base)), true);
     assert!(evidence.checks(&goal, &ordered));
     assert!(!evidence.checks(&goal, &PureFactContext::new()));
 
@@ -2583,7 +2583,7 @@ fn canonical_load_form_keeps_a_cell_a_wide_read_covers() {
     assert!(
         !canonical_equal_across_store_at(
             -4,
-            ProgramValue::Pointer(PointerValue::new(arc_pointer(0), ProgramType::Int32Pointer))
+            ProgramValue::Pointer(Pointer::new(arc_pointer(0), ProgramType::Int32Pointer))
         ),
         "a stored pointer is eight bytes, so one four bytes below the load \
          covers the load's first four bytes"
@@ -2719,7 +2719,7 @@ fn a_store_inside_a_read_refutes_the_load_equality_at_every_offset() {
                 "the state comparison answers to that history"
             );
             assert!(
-                !bare.proves_atomic_without_search(&Proposition::ConditionIs(
+                !bare.proves_atomic_without_search(&Proposition::condition_is(
                     ConditionTerm::equal(load_in(&base), load_in(&after)),
                     true
                 )),
@@ -3114,7 +3114,7 @@ fn seeded_pointer_read_context(
     alias: &Address,
 ) -> (PureFactContext, Address, Address) {
     let context = PureFactContext::new().assume_condition(
-        ConditionTerm::pointer_equal(address.clone(), alias.clone()),
+        ConditionTerm::address_equal(address.clone(), alias.clone()),
         true,
     );
     let left = Address::loaded_value(old, alias);
@@ -3225,15 +3225,15 @@ fn direct_pointer_reads_retain_their_projection_definitions() {
     let context = PureFactContext::new();
     assert!(!context.pointers_known_equal(&named, &observed));
     let context =
-        context.assume_condition(ConditionTerm::pointer_equal(address.clone(), alias), true);
+        context.assume_condition(ConditionTerm::address_equal(address.clone(), alias), true);
     assert!(
         context.pointers_known_equal(&named, &observed),
         "direct read names must use their producer-recorded projection edge"
     );
     assert!(context.equality_graph.knows_condition(
-        &ConditionTerm::pointer_value_equal(
-            PointerValue::new(named.clone(), ProgramType::Int32Pointer),
-            PointerValue::new(observed.clone(), ProgramType::Int32Pointer),
+        &ConditionTerm::pointer_equal(
+            Pointer::new(named.clone(), ProgramType::Int32Pointer),
+            Pointer::new(observed.clone(), ProgramType::Int32Pointer),
         ),
         true
     ));
@@ -3271,7 +3271,7 @@ fn pointer_read_producer_closes_seeded_state_equality_in_the_shared_graph() {
     // Source normalization precedes the address alias. Ordinary congruence
     // must propagate this later fact, with no producer retry or fold hook.
     let context =
-        context.assume_condition(ConditionTerm::pointer_equal(a.clone(), b.clone()), true);
+        context.assume_condition(ConditionTerm::address_equal(a.clone(), b.clone()), true);
     assert!(
         context.pointers_known_equal(&left, &right),
         "producer evidence should power the ordinary graph query without a fold-specific rule"
@@ -3372,7 +3372,7 @@ fn pointer_read_single_store_uses_only_its_branch_address_equality() {
     context.register_pointer_read(&right, &current, &read);
     let sibling = context.clone();
     let branch = context.clone().assume_condition(
-        ConditionTerm::pointer_equal(write, read.offset_by_bytes(16)),
+        ConditionTerm::address_equal(write, read.offset_by_bytes(16)),
         true,
     );
     assert!(!pointers_proven_equal_for_memory_resolution(
@@ -3410,7 +3410,7 @@ fn pointer_read_single_store_preservation_propagates_late_read_aliases() {
     context.register_pointer_read(&left, &old, &alias);
     context.register_pointer_read(&right, &current, &address);
     assert!(!context.pointers_known_equal(&left, &right));
-    let context = context.assume_condition(ConditionTerm::pointer_equal(address, alias), true);
+    let context = context.assume_condition(ConditionTerm::address_equal(address, alias), true);
     assert!(context.pointers_known_equal(&left, &right));
 }
 
@@ -3452,7 +3452,7 @@ fn pointer_read_producer_admits_recorded_cache_forgetting() {
     let alias = Address::symbolic(Variable(98_400));
     let alias_read = Address::loaded_value(&forgotten, &alias);
     branch.register_pointer_read(&alias_read, &forgotten, &alias);
-    let branch = branch.assume_condition(ConditionTerm::pointer_equal(address, alias), true);
+    let branch = branch.assume_condition(ConditionTerm::address_equal(address, alias), true);
     assert!(branch.pointers_known_equal(&left, &alias_read));
 }
 
@@ -3568,7 +3568,7 @@ fn initialization_metadata_keeps_complete_pointer_identity_without_access_author
     assert!(after.memory().has_initialized_bytes_at(&address, 8));
 
     let read = |memory: &SharedMemory| {
-        PointerValue::from_read(
+        Pointer::from_read(
             Address::loaded_value(memory, &address),
             ProgramType::Int32Pointer,
             memory,
@@ -3579,7 +3579,7 @@ fn initialization_metadata_keeps_complete_pointer_identity_without_access_author
     let original = read(&before);
     assert_eq!(original.provenance(), read(&after).provenance());
     assert!(facts.pointer_provenance_match(&original, &read(&after)));
-    assert!(facts.pointers_known_equal(original.pointer(), read(&after).pointer()));
+    assert!(facts.pointers_known_equal(original.address(), read(&after).address()));
     assert!(!ResourceContext::new().permits_memory_read(&address, 8, &facts));
 
     let overwritten = intern_memory(
@@ -3589,7 +3589,7 @@ fn initialization_metadata_keeps_complete_pointer_identity_without_access_author
             .store(address.offset_by_bytes(4), crate::kernel::uint8(1u32)),
     );
     assert!(!facts.pointer_provenance_match(&original, &read(&overwritten)));
-    assert!(!facts.pointers_known_equal(original.pointer(), read(&overwritten).pointer()));
+    assert!(!facts.pointers_known_equal(original.address(), read(&overwritten).address()));
 }
 
 #[test]
@@ -3809,7 +3809,7 @@ fn kept_constant_offset_fields_have_checkable_call_havoc_evidence() {
             crate::kernel::LoadKind::Int32,
         )
     };
-    let equality = Proposition::ConditionIs(ConditionTerm::equal(load(&after), load(&base)), true);
+    let equality = Proposition::condition_is(ConditionTerm::equal(load(&after), load(&base)), true);
     let evidence = with_extended_dag_bridging(|| {
         atomic_memory_load_equality_evidence(&load(&after), &load(&base), &assumptions)
     })
@@ -3829,7 +3829,7 @@ fn kept_constant_offset_fields_have_checkable_call_havoc_evidence() {
     );
     let overwritten = after.store(cell.clone(), ProgramValue::Int32(MachineTerm::constant(43)));
     assert!(!evidence.checks(
-        &Proposition::ConditionIs(ConditionTerm::equal(load(&overwritten), load(&base)), true),
+        &Proposition::condition_is(ConditionTerm::equal(load(&overwritten), load(&base)), true),
         &assumptions
     ));
 }
@@ -3847,8 +3847,8 @@ fn two_edge_pointer_alias_witness_rechecks_each_named_premise() {
         crate::kernel::eval::declare_load_access_width(pointer, 4);
     }
     let memory = crate::kernel::intern_memory(SymbolicMemory::new());
-    let first = ConditionTerm::pointer_equal(left.clone(), middle.clone());
-    let second = ConditionTerm::pointer_equal(middle, right.clone());
+    let first = ConditionTerm::address_equal(left.clone(), middle.clone());
+    let second = ConditionTerm::address_equal(middle, right.clone());
     let assumptions = PureFactContext::new()
         .assume_condition(first.clone(), true)
         .assume_condition(second.clone(), true);
@@ -4136,7 +4136,7 @@ fn full_pointer_read_survives_a_join_of_stores_to_its_sibling() {
     let _session = crate::kernel::VerificationSession::enter();
     let before = intern_memory(SymbolicMemory::new());
     let p = Address::symbolic(Variable(998_710));
-    let q = PointerValue::new(
+    let q = Pointer::new(
         Address::symbolic(Variable(998_711)),
         ProgramType::Int32Pointer,
     );
@@ -4145,13 +4145,11 @@ fn full_pointer_read_survives_a_join_of_stores_to_its_sibling() {
     else {
         panic!("pointer load")
     };
-    let facts = PureFactContext::new().assume_condition(
-        ConditionTerm::pointer_value_equal(child.clone(), q.clone()),
-        true,
-    );
+    let facts = PureFactContext::new()
+        .assume_condition(ConditionTerm::pointer_equal(child.clone(), q.clone()), true);
     let beside = Address {
-        base: child.pointer().base.clone(),
-        offset: AddressOffset::add(child.pointer().offset.clone(), AddressOffset::Constant(8)),
+        base: child.address().base.clone(),
+        offset: AddressOffset::add(child.address().offset.clone(), AddressOffset::Constant(8)),
     };
     let left = before.memory().clone().store(beside.clone(), int32(0));
     let right = before.memory().clone().store(beside.clone(), int32(1));
@@ -4170,7 +4168,7 @@ fn full_pointer_read_survives_a_join_of_stores_to_its_sibling() {
             1,
         ))),
         right: Box::new(Resource::Memory(MemoryRange::new_with_element_width(
-            q.pointer().clone(),
+            q.address().clone(),
             0u32.into(),
             8u32.into(),
             1,
@@ -4186,7 +4184,7 @@ fn full_pointer_read_survives_a_join_of_stores_to_its_sibling() {
     let (old, new, equality) = super::explicit_frame(
         before.memory(),
         joined.memory(),
-        q.pointer(),
+        q.address(),
         ProgramType::Int32Pointer,
         &[effect],
         &facts,
@@ -4197,20 +4195,20 @@ fn full_pointer_read_survives_a_join_of_stores_to_its_sibling() {
     };
     let preserved = facts.clone().assume_proposition(equality);
     assert!(preserved.pointer_provenance_match(&old, &new));
-    let earlier = Address::loaded_value(&before, q.pointer());
+    let earlier = Address::loaded_value(&before, q.address());
     let upper_half = Address {
-        base: q.pointer().base.clone(),
-        offset: AddressOffset::add(q.pointer().offset.clone(), AddressOffset::Constant(4)),
+        base: q.address().base.clone(),
+        offset: AddressOffset::add(q.address().offset.clone(), AddressOffset::Constant(4)),
     };
     let changed = intern_memory(joined.memory().clone().store(upper_half, int32(5)));
     let projection = intern_memory(
         crate::kernel::memory_history::canonical_program_memory_for_pointer_load(
             &changed,
-            q.pointer(),
+            q.address(),
         ),
     );
-    crate::kernel::reasoning::record_canonical_load_projection(&changed, &projection, q.pointer());
-    let overwritten = Address::loaded_value(&projection, q.pointer());
+    crate::kernel::reasoning::record_canonical_load_projection(&changed, &projection, q.address());
+    let overwritten = Address::loaded_value(&projection, q.address());
     assert!(
         !crate::kernel::memory_history::pointer_read_provenance_equal(
             &earlier,
@@ -4275,10 +4273,10 @@ fn numeric_address_byte_gaps_preserve_cache_and_read_history() {
     let p = Address::symbolic(Variable(970_101));
     let q = Address::symbolic(Variable(970_102));
     for shift in [0, 4, 8, 16] {
-        let premise = Proposition::ConditionIs(
+        let premise = Proposition::condition_is(
             ConditionTerm::uint64_equal(
-                MachineTerm::pointer_address(q.clone()),
-                MachineTerm::pointer_address(p.offset_by_bytes(shift)),
+                MachineTerm::integer_address(q.clone()),
+                MachineTerm::integer_address(p.offset_by_bytes(shift)),
             ),
             true,
         );
@@ -4343,8 +4341,8 @@ fn anchored_byte_separation_checks_full_width_and_scope() {
     assert!(!check(&PureFactContext::new(), 8));
     let overlapping = context.assume_condition(
         ConditionTerm::uint64_equal(
-            MachineTerm::pointer_address(q.clone()),
-            MachineTerm::pointer_address(p.offset_by_bytes(4)),
+            MachineTerm::integer_address(q.clone()),
+            MachineTerm::integer_address(p.offset_by_bytes(4)),
         ),
         true,
     );
@@ -4363,11 +4361,11 @@ fn owned_byte_separation_survives_an_unknown_numeric_displacement() {
     );
     let address = PureFactContext::new().assume_condition(
         ConditionTerm::uint64_equal(
-            MachineTerm::pointer_address(q.clone()),
+            MachineTerm::integer_address(q.clone()),
             MachineTerm::Binary {
                 format: MachineIntegerType::UInt64,
                 op: MachineBinaryOp::Add,
-                left: Box::new(MachineTerm::pointer_address(p.clone())),
+                left: Box::new(MachineTerm::integer_address(p.clone())),
                 right: Box::new(MachineTerm::Variable(Variable(970_143))),
             },
         ),
@@ -4482,7 +4480,7 @@ fn seeded_mixed_width_aliases_still_invalidate_overlapping_reads() {
         .with_seeded_cells(word.clone(), 8, ProgramType::UInt64, 0, 1, source);
     assert!(memory.cells.contains_key(&word));
     let assumptions = PureFactContext::new().assume_condition(
-        ConditionTerm::pointer_equal(word.clone(), bytes.clone()),
+        ConditionTerm::address_equal(word.clone(), bytes.clone()),
         true,
     );
     let written = bytes.offset_by_bytes(4);
@@ -4506,12 +4504,12 @@ fn equal_object_origins_frame_neighbor_fields_without_equating_index_atoms() {
     let left = origin(9_882_101);
     let right = origin(9_882_102);
     let parent = Address::symbolic(Variable(9_882_103));
-    let first = Proposition::ConditionIs(
-        ConditionTerm::pointer_equal(left.clone(), parent.clone()),
+    let first = Proposition::condition_is(
+        ConditionTerm::address_equal(left.clone(), parent.clone()),
         true,
     );
     let second =
-        Proposition::ConditionIs(ConditionTerm::pointer_equal(parent, right.clone()), true);
+        Proposition::condition_is(ConditionTerm::address_equal(parent, right.clone()), true);
     let context = PureFactContext::new()
         .assume_proposition(first.clone())
         .assume_proposition(second.clone());
@@ -4536,7 +4534,7 @@ fn equal_object_origins_frame_neighbor_fields_without_equating_index_atoms() {
     let proof =
         with_extended_dag_bridging(|| atomic_memory_load_equality_evidence(&new, &old, &context))
             .expect("equal object origins preserve the neighboring eight-byte field");
-    let goal = Proposition::ConditionIs(ConditionTerm::equal(new, old), true);
+    let goal = Proposition::condition_is(ConditionTerm::equal(new, old), true);
     assert!(proof.checks(&goal, &context));
     for remaining in [first, second] {
         let partial = PureFactContext::new().assume_proposition(remaining);
@@ -4567,12 +4565,12 @@ fn stated_separation_frames_equal_model_and_program_origins() {
     let parent = Address::symbolic(Variable(9_883_102));
     let bridge = Address::symbolic(Variable(9_883_103));
     let node = origin(9_883_104);
-    let first = Proposition::ConditionIs(
-        ConditionTerm::pointer_equal(parent.clone(), bridge.clone()),
+    let first = Proposition::condition_is(
+        ConditionTerm::address_equal(parent.clone(), bridge.clone()),
         true,
     );
     let second =
-        Proposition::ConditionIs(ConditionTerm::pointer_equal(bridge, entry.clone()), true);
+        Proposition::condition_is(ConditionTerm::address_equal(bridge, entry.clone()), true);
     let separation = Proposition::ResourceSeparate {
         left: Box::new(Resource::Memory(memory_range(
             parent.offset_by_bytes(8),
@@ -4617,7 +4615,7 @@ fn stated_separation_frames_equal_model_and_program_origins() {
         })
         .expect("stated separation follows checked origin equality");
         let goal =
-            Proposition::ConditionIs(ConditionTerm::equal(load(&after), load(&before)), true);
+            Proposition::condition_is(ConditionTerm::equal(load(&after), load(&before)), true);
         assert!(proof.checks(&goal, &context));
         assert!(typed_read_has_same_memory_source(
             before.memory(),
@@ -4766,11 +4764,11 @@ fn an_abstract_value_fact_carries_across_states_only_with_frame_evidence() {
         &PureFactContext::new(),
     )
     .expect("the explicit footprint preserves the abstract typed read");
-    let premises = vec![Proposition::ConditionIs(read(&before), true), equality];
+    let premises = vec![Proposition::condition_is(read(&before), true), equality];
     let facts = crate::kernel::proof::PureFactStore::from_ordered(&premises);
     for expected in [true, false] {
         let result = crate::kernel::proof::fact_reasoning::normalize_using_conditions(
-            &Proposition::ConditionIs(read(&after), expected),
+            &Proposition::condition_is(read(&after), expected),
             &premises,
             &facts,
         );
@@ -4791,7 +4789,7 @@ fn abstract_reads_follow_address_equalities_in_the_shared_graph() {
     let read = |pointer: &Address, memory: &SharedMemory| AlgebraicTerm {
         algebraic_type: parameter.algebraic_type(),
         node: AlgebraicTermNode::MemoryLoad {
-            memory: memory.clone(),
+            point: crate::kernel::ProgramPoint::at(&memory.clone()),
             pointer: Box::new(pointer.clone()),
         },
     };
@@ -4800,7 +4798,7 @@ fn abstract_reads_follow_address_equalities_in_the_shared_graph() {
     let context = PureFactContext::new();
     assert!(!context.equality_graph.are_algebraic_equal(&a, &b));
     let context = context.assume_condition(
-        ConditionTerm::pointer_equal(left.clone(), right.clone()),
+        ConditionTerm::address_equal(left.clone(), right.clone()),
         true,
     );
     assert!(
@@ -4873,7 +4871,7 @@ fn abstract_read_naming_retains_its_selected_width_origin() {
     let observed = AlgebraicTerm {
         algebraic_type: parameter.algebraic_type(),
         node: AlgebraicTermNode::MemoryLoad {
-            memory: source.clone(),
+            point: crate::kernel::ProgramPoint::at(&source.clone()),
             pointer: Box::new(address.clone()),
         },
     };
@@ -4884,10 +4882,12 @@ fn abstract_read_naming_retains_its_selected_width_origin() {
             .equality_graph
             .are_algebraic_equal(&named, &observed)
     );
-    let AlgebraicTermNode::MemoryLoad { memory, .. } = &named.node else {
+    let AlgebraicTermNode::MemoryLoad { point: memory, .. } = &named.node else {
         unreachable!()
     };
-    assert!(crate::kernel::prelude::value_load_origin(memory, &address, 16).is_none());
+    assert!(
+        crate::kernel::prelude::value_load_origin(memory.shared_memory(), &address, 16).is_none()
+    );
     let changed = intern_memory(
         source
             .memory()
@@ -4897,7 +4897,7 @@ fn abstract_read_naming_retains_its_selected_width_origin() {
     let changed_read = AlgebraicTerm {
         algebraic_type: parameter.algebraic_type(),
         node: AlgebraicTermNode::MemoryLoad {
-            memory: changed,
+            point: crate::kernel::ProgramPoint::at(&changed),
             pointer: Box::new(address),
         },
     };

@@ -133,12 +133,12 @@ impl SpecValue {
                 let numeric = *record.numeric;
                 if matches!(
                     &numeric,
-                    ProgramValue::Int64(MachineTerm::PointerAddress(..))
-                        | ProgramValue::UInt64(MachineTerm::PointerAddress(..))
+                    ProgramValue::Int64(MachineTerm::IntegerAddress(..))
+                        | ProgramValue::UInt64(MachineTerm::IntegerAddress(..))
                 ) {
                     let root = KernelTermImport::default()
                         .argument(&PureFunctionArgument::Value(numeric.clone()));
-                    if matches!(root.node(), KernelTermNode::PointerAddress { .. }) {
+                    if matches!(root.node(), KernelTermNode::IntegerAddress { .. }) {
                         return root.into();
                     }
                 }
@@ -223,7 +223,7 @@ impl SpecValue {
             } else {
                 comparison::logical_condition_for_operand_views(format, relation, [left, right])
             };
-            return Ok(Some(Proposition::ConditionIs(
+            return Ok(Some(Proposition::condition_is(
                 condition,
                 op != ComparisonOperator::NotEqual,
             )));
@@ -246,13 +246,29 @@ impl SpecValue {
             && let (Some(left), Some(right)) = (logical(self), logical(right))
         {
             let root = KernelTerm::boolean_equal([left, right]);
-            return Ok(Some(Proposition::ConditionIs(
+            return Ok(Some(Proposition::condition_is(
                 KernelTermExport::condition(&root).expect("Boolean equality"),
                 op == ComparisonOperator::Equal,
             )));
         }
         let left = self.native();
         let right = right.native();
+        if let (ProgramValue::Pointer(a), ProgramValue::Pointer(b)) =
+            (left.numeric_value(), right.numeric_value())
+            && a == b
+            && !a.is_null()
+            && let Some(held) = match op {
+                ComparisonOperator::Equal => Some(true),
+                ComparisonOperator::NotEqual => Some(false),
+                _ => None,
+            }
+        {
+            // Lowering is structural: `p == p` keeps its comparison.
+            return Ok(Some(Proposition::condition_is(
+                ConditionTerm::logical_pointer_equal(a.clone(), b.clone()),
+                held,
+            )));
+        }
         Ok(bool_comparison_proposition(&left, op, &right)
             .transpose()?
             .or_else(|| program_value_comparison_proposition(&left, op, &right)))
@@ -275,7 +291,7 @@ impl SpecCallArgument {
                 Self::Shared(KernelTerm::program_parameter(root))
             }
             SpecValue::Shared(value)
-                if matches!(value.node(), KernelTermNode::PointerAddress { .. }) =>
+                if matches!(value.node(), KernelTermNode::IntegerAddress { .. }) =>
             {
                 let KernelType::Program(ty) = value.ty() else {
                     unreachable!()
@@ -383,7 +399,7 @@ pub(super) fn common_call_arguments(arguments: &[SpecCallArgument]) -> Option<Ve
             | SpecCallArgument::Native(PureFunctionArgument::ArrayRef { .. }) => None,
             SpecCallArgument::Native(PureFunctionArgument::Value(
                 crate::kernel::integer_c_value!(term),
-            )) if matches!(term, MachineTerm::PointerAddress(..)) => None,
+            )) if matches!(term, MachineTerm::IntegerAddress(..)) => None,
             SpecCallArgument::Native(value) => {
                 let root = importer.argument(value);
                 (!matches!(root.node(), KernelTermNode::Legacy(_))).then_some(root)
@@ -426,14 +442,14 @@ mod pointer_observation_tests {
     #[test]
     fn numeric_pointer_projection_retains_the_address_without_changing_complete_values() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = PointerValue::new(
+        let pointer = Pointer::new(
             Address::symbolic(Variable(1024900)),
             ProgramType::Int32Pointer,
         )
         .with_pointee_constant(true)
         .with_pointee_volatile(true);
         let numeric = ProgramValue::UInt64(MachineTerm::object_pointer_address(
-            pointer.pointer().clone(),
+            pointer.address().clone(),
             pointer.object_class(),
         ));
         let value = ProgramValue::PointerInteger(PointerIntegerValue {
@@ -445,7 +461,7 @@ mod pointer_observation_tests {
         let projected = complete.clone().numeric();
         assert!(matches!(
             projected.shared().unwrap().node(),
-            KernelTermNode::PointerAddress { .. }
+            KernelTermNode::IntegerAddress { .. }
         ));
         assert_eq!(projected.clone().into_native(), numeric);
         assert_eq!(

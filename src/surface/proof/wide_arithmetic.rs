@@ -29,72 +29,77 @@ impl Carrier {
     /// `arithmetic() using` order bridge reads.
     fn of_order_goal(proposition: &Proposition) -> Option<Self> {
         Self::of(proposition).or_else(|| {
-            matches!(
-                proposition,
-                Proposition::ConditionIs(
-                    ConditionTerm::Compare {
+            matches!(&proposition, condition_source_0 @ Proposition::ConditionIs(
+                    _,
+                    _,
+                ) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare {
                         format: MachineIntegerType::UInt32,
                         relation: CompareRelation::LessThan
                             | CompareRelation::LessEqual
                             | CompareRelation::GreaterThan
                             | CompareRelation::GreaterEqual,
                         ..
-                    },
-                    _,
-                )
-            )
+                    }, _))))
             .then_some(Self::UInt32)
         })
     }
 
     pub(super) fn of(proposition: &Proposition) -> Option<Self> {
         match proposition {
-            Proposition::ConditionIs(
-                ConditionTerm::Compare {
-                    format: MachineIntegerType::UInt64,
-                    relation: CompareRelation::LessThan,
-                    ..
-                }
-                | ConditionTerm::Compare {
-                    format: MachineIntegerType::UInt64,
-                    relation: CompareRelation::LessEqual,
-                    ..
-                }
-                | ConditionTerm::Compare {
-                    format: MachineIntegerType::UInt64,
-                    relation: CompareRelation::GreaterThan,
-                    ..
-                }
-                | ConditionTerm::Compare {
-                    format: MachineIntegerType::UInt64,
-                    relation: CompareRelation::GreaterEqual,
-                    ..
-                },
-                _,
-            ) => Some(Self::UInt64),
-            Proposition::ConditionIs(
-                ConditionTerm::Compare {
-                    format: MachineIntegerType::Int64,
-                    relation: CompareRelation::LessThan,
-                    ..
-                }
-                | ConditionTerm::Compare {
-                    format: MachineIntegerType::Int64,
-                    relation: CompareRelation::LessEqual,
-                    ..
-                }
-                | ConditionTerm::Compare {
-                    format: MachineIntegerType::Int64,
-                    relation: CompareRelation::GreaterThan,
-                    ..
-                }
-                | ConditionTerm::Compare {
-                    format: MachineIntegerType::Int64,
-                    relation: CompareRelation::GreaterEqual,
-                    ..
-                },
-                _,
-            ) => Some(Self::Int64),
+            condition_source_0 @ Proposition::ConditionIs(_, _)
+                if let Some((
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::UInt64,
+                        relation: CompareRelation::LessThan,
+                        ..
+                    }
+                    | ConditionTerm::Compare {
+                        format: MachineIntegerType::UInt64,
+                        relation: CompareRelation::LessEqual,
+                        ..
+                    }
+                    | ConditionTerm::Compare {
+                        format: MachineIntegerType::UInt64,
+                        relation: CompareRelation::GreaterThan,
+                        ..
+                    }
+                    | ConditionTerm::Compare {
+                        format: MachineIntegerType::UInt64,
+                        relation: CompareRelation::GreaterEqual,
+                        ..
+                    },
+                    _,
+                )) = condition_source_0.condition_native() =>
+            {
+                Some(Self::UInt64)
+            }
+            condition_source_0 @ Proposition::ConditionIs(_, _)
+                if let Some((
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int64,
+                        relation: CompareRelation::LessThan,
+                        ..
+                    }
+                    | ConditionTerm::Compare {
+                        format: MachineIntegerType::Int64,
+                        relation: CompareRelation::LessEqual,
+                        ..
+                    }
+                    | ConditionTerm::Compare {
+                        format: MachineIntegerType::Int64,
+                        relation: CompareRelation::GreaterThan,
+                        ..
+                    }
+                    | ConditionTerm::Compare {
+                        format: MachineIntegerType::Int64,
+                        relation: CompareRelation::GreaterEqual,
+                        ..
+                    },
+                    _,
+                )) = condition_source_0.condition_native() =>
+            {
+                Some(Self::Int64)
+            }
             _ => None,
         }
     }

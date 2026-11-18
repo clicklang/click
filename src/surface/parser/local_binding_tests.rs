@@ -86,7 +86,7 @@ fn exact_automatic_storage_instances_have_a_surface_spelling() {
             panic!("storage pointer")
         };
         assert!(
-            matches!(&pointer.pointer().base, crate::kernel::AddressBase::AutomaticLocal { instance: actual, .. } if actual == &instance)
+            matches!(&pointer.address().base, crate::kernel::AddressBase::AutomaticLocal { instance: actual, .. } if actual == &instance)
         );
         let rendered = crate::surface::diagnostics::describe_contract_expression(&expression);
         let reparsed = parse_binding_expression(&rendered, source).unwrap();
@@ -153,12 +153,12 @@ fn function_statics_keep_types_and_exact_storage_spelling() {
         panic!("static address");
     };
     assert!(matches!(
-        pointer.pointer().base,
+        pointer.address().base,
         crate::kernel::AddressBase::StaticObject { .. }
     ));
     assert_eq!(
         crate::surface::diagnostics::describe_pointer(
-            pointer.pointer(),
+            pointer.address(),
             crate::surface::ParameterBinding::default()
         ),
         "\"bindings.c\"::f.static(0).storage()"
@@ -167,100 +167,30 @@ fn function_statics_keep_types_and_exact_storage_spelling() {
     assert!(parse_binding_expression("f.static(0).storage(frame, 1)", source).is_err());
 }
 
-fn parse_temporary_expression(text: &str) -> Result<ContractExpression, ClickError> {
-    let mut function = syntax::parse_functions_for_source(
-        "struct pair { int value; }; int f(void) { int x = 0; return x; }",
-        "bindings.c",
-    )
-    .unwrap()
-    .remove(0);
+#[test]
+fn frontend_temporaries_have_no_declaration_selector() {
     let owner = crate::kernel::LocalFunctionId::new(Some("bindings.c".into()), "f".into());
-    let scalar = crate::kernel::LocalBindingId::temporary(owner.clone(), 0);
-    scalar.initialize_program_type(ProgramType::Int64);
-    let object = crate::kernel::LocalBindingId::temporary(owner.clone(), 1);
-    object.initialize_program_type(ProgramType::Int32Pointer);
-    object.initialize_struct_name("pair");
-    let payload = crate::kernel::LocalBindingId::temporary(owner, 2);
-    payload.initialize_program_type(ProgramType::Int32);
-    function = function.with_prelowered_kernel_function(crate::kernel::program_function(
-        ProgramType::Int32,
-        "f",
-        Vec::new(),
-        crate::kernel::program_seq(
-            crate::kernel::program_declare(scalar, ProgramType::Int64),
-            crate::kernel::program_seq(
-                crate::kernel::program_declare_aggregate(
-                    object,
-                    crate::kernel::AggregateLayout::new(4, 4, Vec::new()),
-                ),
-                crate::kernel::program_try_catch_int32(
-                    crate::kernel::program_skip(),
-                    payload,
-                    crate::kernel::program_skip(),
-                ),
-            ),
-        ),
-    ));
-    let mut layouts = ProgramLayouts::default();
-    layouts.register_local_bindings(&function);
-    let mut parser = Parser::new(text)?;
-    parser.local_bindings = layouts.local_bindings;
-    parser.struct_layouts = function
-        .structs()
-        .iter()
-        .map(|(name, layout)| (name.clone(), layout.clone()))
-        .collect();
-    parser.parse_contract_expression()
-}
-
-#[test]
-fn temporary_selectors_preserve_types_owners_and_aggregate_fields() {
-    let expression = parse_temporary_expression("f.temporary(0)").unwrap();
-    assert_eq!(
-        expression,
-        parse_temporary_expression("\"bindings.c\"::f.temporary(0)").unwrap()
-    );
-    let ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) = expression
-    else {
-        panic!("typed temporary");
-    };
-    assert_eq!(name.program_type(), Some(ProgramType::Int64));
-    assert_eq!(name.source_spelling(), None);
-    assert_ne!(
-        parse_temporary_expression("f.local(0)").unwrap(),
-        parse_temporary_expression("f.temporary(0)").unwrap()
-    );
-    assert!(matches!(
-        parse_temporary_expression("f.temporary(1).value").unwrap(),
-        ContractExpression::Field {
-            offset_bytes: 0,
-            ..
-        }
-    ));
-    assert!(parse_temporary_expression("f.temporary(2)").is_ok());
-    assert!(parse_temporary_expression("f.temporary(3)").is_err());
-}
-
-#[test]
-fn temporary_storage_instances_round_trip_without_string_decoding() {
-    for instance in ["implicit", "lifetime, 7", "frame, 11"] {
-        let text = format!("f.temporary(1).storage({instance})");
-        let expression = parse_temporary_expression(&text).unwrap();
-        let raised = crate::surface::diagnostics::describe_contract_expression(&expression);
-        let reparsed = parse_temporary_expression(&raised).unwrap();
-        let lowered = contract_expression_as_program_expression(&reparsed).unwrap();
-        let (restored, _) = crate::kernel::program_evaluate_speprogram_expression_at_state(
-            &ExecutionState::new(),
-            &SpecExpression::ProgramExpression(lowered),
-            None,
-            &PureFactContext::new(),
-        )
-        .unwrap();
-        let ContractExpression::ProgramExpression(ProgramExpression::Value(expected)) = expression
-        else {
-            panic!("storage pointer");
-        };
-        assert_eq!(restored, expected, "{raised}");
+    let temporary = crate::kernel::LocalBindingId::temporary(owner, 0);
+    temporary.initialize_program_type(ProgramType::Int64);
+    let mut bindings = SourceBindingIndex::default();
+    bindings
+        .owners
+        .insert("f".into(), [Some("bindings.c".into())].into());
+    bindings
+        .declarations
+        .insert(temporary, SourceBindingInfo::default());
+    let bindings = std::sync::Arc::new(bindings);
+    for selector in [
+        "f.temporary(0)",
+        "\"bindings.c\"::f.temporary(0)",
+        "f.temporary(0).storage(lifetime, 7)",
+    ] {
+        let mut parser = Parser::new(selector).unwrap();
+        parser.local_bindings = bindings.clone();
+        assert!(
+            parser.take_local_binding_reference().unwrap().is_none(),
+            "{selector}"
+        );
     }
 }
 
@@ -275,12 +205,12 @@ fn contract_result_slot_has_an_exact_surface_spelling() {
         panic!("a typed result slot pointer")
     };
     assert_eq!(
-        pointer.pointer().base,
+        pointer.address().base,
         crate::kernel::AddressBase::ContractResult
     );
-    assert_eq!(pointer.pointer().base.to_string(), "result.storage()");
+    assert_eq!(pointer.address().base.to_string(), "result.storage()");
     let text = crate::surface::diagnostics::describe_pointer(
-        pointer.pointer(),
+        pointer.address(),
         crate::surface::ParameterBinding::default(),
     );
     assert_eq!(text, "result.storage()");
@@ -303,12 +233,12 @@ fn contract_exception_slot_has_an_exact_surface_spelling() {
         panic!("a typed exception slot pointer")
     };
     assert_eq!(
-        pointer.pointer().base,
+        pointer.address().base,
         crate::kernel::AddressBase::ContractException
     );
-    assert_eq!(pointer.pointer().base.to_string(), "exception.storage()");
+    assert_eq!(pointer.address().base.to_string(), "exception.storage()");
     let text = crate::surface::diagnostics::describe_pointer(
-        pointer.pointer(),
+        pointer.address(),
         crate::surface::ParameterBinding::default(),
     );
     assert_eq!(text, "exception.storage()");
@@ -344,16 +274,16 @@ fn aggregate_return_storage_round_trips_the_full_frame_identity() {
             panic!("typed return storage")
         };
         assert_eq!(
-            pointer.pointer().base,
+            pointer.address().base,
             crate::kernel::AddressBase::AggregateReturn { frame }
         );
         assert_ne!(
-            pointer.pointer().base,
+            pointer.address().base,
             crate::kernel::AddressBase::ContractResult
         );
-        assert_eq!(pointer.pointer().base.to_string(), text);
+        assert_eq!(pointer.address().base.to_string(), text);
         let raised = crate::surface::diagnostics::describe_pointer(
-            pointer.pointer(),
+            pointer.address(),
             crate::surface::ParameterBinding::default(),
         );
         assert_eq!(raised, text);

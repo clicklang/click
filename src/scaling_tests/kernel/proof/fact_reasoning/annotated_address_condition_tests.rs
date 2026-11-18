@@ -4,14 +4,14 @@ use super::*;
 #[test]
 fn annotated_condition_lookup_and_selected_normalization_skip_unrelated_facts() {
     let _session = VerificationSession::enter();
-    let source = Proposition::ConditionIs(comparison(false), false);
-    let cited = Proposition::ConditionIs(comparison(true), false);
+    let source = Proposition::condition_is(comparison(false), false);
+    let cited = Proposition::condition_is(comparison(true), false);
     let goal = choice(comparison(false), false);
     let mut costs = Vec::new();
     for size in [4, 16, 64, 256] {
         let mut premises = vec![source.clone()];
         premises.extend((0..size).map(|index| {
-            Proposition::ConditionIs(
+            Proposition::condition_is(
                 ConditionTerm::uint64_equal(
                     MachineTerm::Variable(Variable(982_000 + index)),
                     MachineTerm::uint64_constant(index),
@@ -21,7 +21,7 @@ fn annotated_condition_lookup_and_selected_normalization_skip_unrelated_facts() 
         }));
         let wrapped = |body| {
             Proposition::Implies(
-                Box::new(Proposition::ConditionIs(
+                Box::new(Proposition::condition_is(
                     ConditionTerm::Constant(true),
                     true,
                 )),
@@ -29,8 +29,8 @@ fn annotated_condition_lookup_and_selected_normalization_skip_unrelated_facts() 
             )
         };
         for index in 0..size {
-            let address = |id| MachineTerm::pointer_address(Address::symbolic(Variable(id)));
-            premises.push(wrapped(Proposition::ConditionIs(
+            let address = |id| MachineTerm::integer_address(Address::symbolic(Variable(id)));
+            premises.push(wrapped(Proposition::condition_is(
                 ConditionTerm::uint64_equal(address(984_000 + index), address(985_000 + index)),
                 true,
             )));

@@ -227,13 +227,13 @@ fn gcd(mut a: u64, mut b: u64) -> u64 {
     a
 }
 impl KernelTerm {
-    pub(crate) fn pointer_offset_equal_raw(arguments: [SharedAddressOffset; 2]) -> Self {
+    pub(crate) fn address_offset_equal_raw(arguments: [SharedAddressOffset; 2]) -> Self {
         Self::intern(
             KernelType::Bool,
-            KernelTermNode::PointerOffsetEqual { arguments },
+            KernelTermNode::AddressOffsetEqual { arguments },
         )
     }
-    pub(crate) fn pointer_offset_equal(arguments: [SharedAddressOffset; 2]) -> Self {
+    pub(crate) fn address_offset_equal(arguments: [SharedAddressOffset; 2]) -> Self {
         let [a, b] = &arguments;
         let constant = match (a.as_const(), b.as_const()) {
             (Some(a), Some(b)) => Some(a == b),
@@ -248,7 +248,7 @@ impl KernelTerm {
         };
         match constant {
             Some(value) => Self::intern(KernelType::Bool, KernelTermNode::BoolLiteral(value)),
-            None => Self::pointer_offset_equal_raw(arguments),
+            None => Self::address_offset_equal_raw(arguments),
         }
     }
 }
@@ -299,11 +299,11 @@ mod tests {
             let shared = KernelAddressOffset::import(a);
             assert_eq!(shared.as_const(), a.as_const());
             for b in &values {
-                let root = KernelTerm::pointer_offset_equal([
+                let root = KernelTerm::address_offset_equal([
                     shared.clone(),
                     KernelAddressOffset::import(b),
                 ]);
-                let expected = ConditionTerm::pointer_offset_equal(a.clone(), b.clone());
+                let expected = ConditionTerm::address_offset_equal(a.clone(), b.clone());
                 assert_eq!(
                     KernelTermExport::condition(&root).unwrap(),
                     expected,
@@ -317,7 +317,7 @@ mod tests {
     fn offset_conditions_keep_raw_shape_and_substitution_policy() {
         let _session = crate::kernel::VerificationSession::enter();
         for offset in sources() {
-            let source = ConditionTerm::PointerOffsetEqual(
+            let source = ConditionTerm::AddressOffsetEqual(
                 Box::new(AddressOffset::Add(
                     Box::new(AddressOffset::Constant(0)),
                     Box::new(offset),
@@ -327,7 +327,7 @@ mod tests {
             let root = KernelTermImport::default().condition(&source);
             assert!(matches!(
                 root.node(),
-                KernelTermNode::PointerOffsetEqual { .. }
+                KernelTermNode::AddressOffsetEqual { .. }
             ));
             assert_eq!(
                 format!("{:?}", KernelTermExport::condition(&root).unwrap()),
@@ -391,7 +391,7 @@ mod tests {
                 } else {
                     AddressOffset::scaled_int32_node(value, 4)
                 };
-                ConditionTerm::PointerOffsetEqual(
+                ConditionTerm::AddressOffsetEqual(
                     Box::new(offset),
                     Box::new(AddressOffset::Constant(0)),
                 )
@@ -440,9 +440,9 @@ mod identity_tests {
         use crate::kernel::effective_type::{CAccessClass, CScalarClass};
         let _session = crate::kernel::VerificationSession::enter();
         let sources = [CScalarClass::Int, CScalarClass::Char].map(|class| {
-            ConditionTerm::PointerOffsetEqual(
+            ConditionTerm::AddressOffsetEqual(
                 Box::new(AddressOffset::scaled_int64_node(
-                    MachineTerm::PointerAddress(
+                    MachineTerm::IntegerAddress(
                         Box::new(Address::symbolic(Variable(998400))),
                         crate::kernel::AddressObjectClass::new(Some(CAccessClass::Scalar(class))),
                     ),

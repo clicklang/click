@@ -53,13 +53,13 @@ impl KernelTerm {
                     .get_or_init(|| MachineTerm::ThreadHandle(*id)),
             );
         }
-        if let KernelTermNode::PointerAddress {
+        if let KernelTermNode::IntegerAddress {
             address,
             object_class,
         } = self.node()
         {
             return Some(self.0.machine_leaf.get_or_init(|| {
-                MachineTerm::PointerAddress(
+                MachineTerm::IntegerAddress(
                     Box::new(address.export().expect("address observation")),
                     AddressObjectClass::new(object_class.clone()),
                 )
@@ -616,7 +616,23 @@ impl KernelTermImport {
             .iter()
             .enumerate()
             .map(|(index, argument)| {
-                if let Some(root) = application.common_argument(index) {
+                if self.exact_field_inputs {
+                    if matches!(argument, PureFunctionArgument::SharedMachine(_)) {
+                        // This is a typed input descriptor, not a boxed value
+                        // argument. Keep its existing shared operand and exact
+                        // envelope through native field storage/output.
+                        KernelTerm::legacy_at(
+                            argument.clone(),
+                            LegacyIdentity::ExactApplicationArgument {
+                                application: application.clone(),
+                                payload: application.payload_id(),
+                                index,
+                            },
+                        )
+                    } else {
+                        self.argument(argument)
+                    }
+                } else if let Some(root) = application.common_argument(index) {
                     root
                 } else {
                     KernelTerm::legacy_at(
@@ -658,7 +674,7 @@ impl KernelTermImport {
         if matches!(
             result,
             MachineIntegerType::Int64 | MachineIntegerType::UInt64
-        ) && let Old::PointerAddress(address, object_class) = term
+        ) && let Old::IntegerAddress(address, object_class) = term
             && let Some(address) = KernelTerm::scalar_read_address(address)
         {
             return KernelTerm::shared_pointer_address_observation(
@@ -759,7 +775,7 @@ impl KernelTermImport {
             // read/address descriptors not admitted above keep exact payloads.
             Old::PureFunctionApplication { .. }
             | Old::MemoryLoad(..)
-            | Old::PointerAddress(..)
+            | Old::IntegerAddress(..)
             | Old::Float32Negate(_)
             | Old::Float32Binary { .. }
             | Old::Float64Negate(_)
@@ -811,10 +827,10 @@ impl KernelTermExport {
                 then_term: Box::new(Self::machine(&arguments[1])?),
                 else_term: Box::new(Self::machine(&arguments[2])?),
             },
-            Node::PointerAddress {
+            Node::IntegerAddress {
                 address,
                 object_class,
-            } => Old::PointerAddress(
+            } => Old::IntegerAddress(
                 Box::new(address.export()?),
                 AddressObjectClass::new(object_class.clone()),
             ),

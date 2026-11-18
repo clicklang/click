@@ -26,13 +26,13 @@ fn provenance_queries_ignore_unrelated_origins() {
 
 #[test]
 fn typed_access_does_not_search_unrelated_address_equalities_or_ranges() {
-    let value = |id| PointerValue::new(Address::symbolic(Variable(id)), ProgramType::Int32Pointer);
+    let value = |id| Pointer::new(Address::symbolic(Variable(id)), ProgramType::Int32Pointer);
     let a = value(870_001);
     let b = value(870_002);
     let mut samples = Vec::new();
     for size in [4u64, 16, 64, 256] {
         let mut context = PureFactContext::new().assume_condition(
-            ConditionTerm::pointer_equal(a.pointer().clone(), b.pointer().clone()),
+            ConditionTerm::address_equal(a.address().clone(), b.address().clone()),
             true,
         );
         let mut resources = ResourceContext::new().unchecked_with_fact(ResourceFact::view_memory(
@@ -41,9 +41,9 @@ fn typed_access_does_not_search_unrelated_address_equalities_or_ranges() {
         for index in 0..size {
             let unrelated = value(880_000 + index * 2);
             context = context.assume_condition(
-                ConditionTerm::pointer_equal(
-                    unrelated.pointer().clone(),
-                    value(880_001 + index * 2).pointer().clone(),
+                ConditionTerm::address_equal(
+                    unrelated.address().clone(),
+                    value(880_001 + index * 2).address().clone(),
                 ),
                 true,
             );
@@ -53,13 +53,13 @@ fn typed_access_does_not_search_unrelated_address_equalities_or_ranges() {
         }
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             assert!(resources.permits_designated_memory_read(
-                b.pointer(),
+                b.address(),
                 Some(b.access_provenance()),
                 4,
                 &context
             ));
             assert!(!resources.permits_designated_memory_read(
-                a.pointer(),
+                a.address(),
                 Some(a.access_provenance()),
                 4,
                 &context
@@ -86,7 +86,7 @@ fn typed_access_does_not_search_unrelated_address_equalities_or_ranges() {
 
 #[test]
 fn pointer_integer_round_trips_ignore_unrelated_facts() {
-    let pointer = PointerValue::new(
+    let pointer = Pointer::new(
         Address::symbolic(Variable(992_001)),
         ProgramType::Int32Pointer,
     );
@@ -134,10 +134,10 @@ fn pointer_integer_round_trips_ignore_unrelated_facts() {
 #[test]
 fn packed_word_contract_lookup_and_scope_ignore_unrelated_words() {
     let _session = VerificationSession::enter();
-    let value = |id| PointerValue::new(Address::symbolic(Variable(id)), ProgramType::Int32Pointer);
-    let equality = |a: &PointerValue, b: &PointerValue| {
-        Proposition::ConditionIs(
-            ConditionTerm::PointerValueEqual(Box::new(a.clone()), Box::new(b.clone())),
+    let value = |id| Pointer::new(Address::symbolic(Variable(id)), ProgramType::Int32Pointer);
+    let equality = |a: &Pointer, b: &Pointer| {
+        Proposition::condition_is(
+            ConditionTerm::PointerEqual(Box::new(a.clone()), Box::new(b.clone())),
             true,
         )
     };
@@ -206,20 +206,20 @@ fn recent_pointer_read_origin_avoids_older_alias_histories() {
         }
         let before = intern_memory_ref(&memory);
         let read = |retained_state: &SharedMemory, pointer: &Address| {
-            PointerValue::from_read(
+            Pointer::from_read(
                 Address::loaded_value(retained_state, pointer),
                 ProgramType::Int32Pointer,
                 retained_state,
                 pointer,
             )
         };
-        let value = PointerValue::new(
+        let value = Pointer::new(
             Address::symbolic(Variable(994_001)),
             ProgramType::Int32Pointer,
         );
         let fact = |pointer: &Address| {
-            Proposition::ConditionIs(
-                ConditionTerm::PointerValueEqual(
+            Proposition::condition_is(
+                ConditionTerm::PointerEqual(
                     Box::new(read(&before, pointer)),
                     Box::new(value.clone()),
                 ),

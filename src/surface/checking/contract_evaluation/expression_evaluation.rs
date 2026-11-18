@@ -1,7 +1,7 @@
 use super::*;
 
 pub(in crate::surface) fn evaluate_contract_expression_with_environment(
-    parameter_values: &BTreeMap<String, ProgramValue>,
+    parameter_values: &ProgramValueBindings,
     array_refs: &ClickArrayRefs,
     pre_state: &ExecutionState,
     post_state: &ExecutionState,

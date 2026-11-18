@@ -26,8 +26,7 @@ const RUN_QUARANTINED: &str = "CLICK_RUN_QUARANTINED";
 /// Rewrites the checked-in C++ imports instead of comparing them.
 const REFRESH_CPP_IMPORTS: &str = "CLICK_REFRESH_CPP_IMPORTS";
 const BUBBLE_SORT3_WORK_LIMIT: usize = 100_000;
-/// The explicit frame refusal takes about 175,000 units with scoped failure
-/// reuse, versus 513,000 when its proof routes repeat the same questions.
+/// Pin the explicit frame refusal under a fixed work limit.
 const PROMPT_EXPLICIT_FRAME_FAILURE_WORK_LIMIT: usize = 250_000;
 
 /// Known-broken mdtests, skipped by default so the suite is a meaningful
@@ -199,7 +198,7 @@ const NIGHTLY: &[&str] = &[
     "entry_alignment_premise_expands.md",                                      // 1.4s
     "execute_order_reasoning_terminates.md",                                   // 0.7s
     "expand_sequential_null_checks.md",                                        // 1.4s
-    "explicit_transport_failure_is_prompt.md",                                 // 1.5s
+    "explicit_preserve_failure_is_prompt.md",                                  // 1.5s
     "field_borrow_parent_drop.md",                                             // 0.7s
     "field_borrow_parent_drop_rejects_stale_value.md",                         // 0.7s
     "field_derived_precise_effect_after_metadata_write.md",                    // 4.4s
@@ -649,7 +648,7 @@ fn run_mdtest_attempt(path: &Path) -> Result<(), String> {
     if !budgets_disabled
         && path
             .file_name()
-            .is_some_and(|name| name == "explicit_transport_failure_is_prompt.md")
+            .is_some_and(|name| name == "explicit_preserve_failure_is_prompt.md")
     {
         return instrumentation::with_tactic_work_limits(
             instrumentation::TacticWorkLimits {

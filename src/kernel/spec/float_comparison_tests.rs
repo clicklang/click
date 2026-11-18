@@ -30,7 +30,7 @@ fn float_comparison_lowering_preserves_symbolic_operator_polarity() {
                     operator,
                     &format.value(right.clone())
                 ),
-                Some(Proposition::ConditionIs(condition, true))
+                Some(Proposition::condition_is(condition, true))
             );
         }
     }
@@ -75,7 +75,7 @@ fn float_inequality_lowering_preserves_ieee_constant_results() {
             ] {
                 assert_eq!(
                     program_value_comparison_proposition(&value(left), operator, &value(right)),
-                    Some(Proposition::ConditionIs(
+                    Some(Proposition::condition_is(
                         ConditionTerm::Constant(expected),
                         true
                     )),
@@ -146,7 +146,7 @@ fn float_conditional_handoffs_preserve_exact_equality_and_existing_refusals() {
             "other_branch".into(),
             vec![],
         ));
-        let condition = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
+        let condition = Proposition::condition_is(ConditionTerm::Constant(true), true);
         let exports = KernelTermExport::float_export_count();
         assert_eq!(
             SpecValue::conditional(&condition, &left, &native, true)

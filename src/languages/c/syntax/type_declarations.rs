@@ -364,7 +364,10 @@ impl Parser {
         }
 
         let mut fields = BTreeMap::new();
-        let mut offset_bytes = 0u32;
+        let mut bit_cursor = 0u64;
+        let mut bit_fields = Vec::new();
+        let mut saw_bit_field = false;
+        let mut qualified_scalar = false;
         let mut struct_alignment = 1u32;
         while self.peek() != Some(&Token::RBrace) {
             if self.peek().is_none() {
@@ -375,16 +378,6 @@ impl Parser {
                 continue;
             }
             let field_type = self.parse_type_with_anonymous_struct(false, true, false)?;
-            if fields.is_empty()
-                && matches!(self.peek(), Some(Token::Ident(_)))
-                && self.peek_next() == Some(&Token::Colon)
-            {
-                if !allow_bit_fields {
-                    return Err(self.error_here("bit-field record definitions currently require a standalone file-scope struct"));
-                }
-                return self.parse_bit_field_record(name, field_type);
-            }
-
             if let Some((field_name, interface_type, function_pointer_signature)) =
                 self.parse_function_pointer_declarator(field_type.clone())?
             {
@@ -392,9 +385,8 @@ impl Parser {
                 if let Some(attribute_alignment) = self.consume_field_alignment_attribute()? {
                     field_alignment = field_alignment.max(attribute_alignment);
                 }
-                offset_bytes = align_up(offset_bytes, field_alignment).ok_or_else(|| {
-                    self.error_here(format!("struct `{name}` layout is too large"))
-                })?;
+                let offset_bytes =
+                    self.aligned_struct_offset(bit_cursor, field_alignment, &name)?;
                 if fields
                     .insert(
                         field_name.clone(),
@@ -417,14 +409,33 @@ impl Parser {
                     return Err(self
                         .error_here(format!("duplicate field `{field_name}` in struct `{name}`")));
                 }
-                offset_bytes = offset_bytes.checked_add(field_size).ok_or_else(|| {
-                    self.error_here(format!("struct `{name}` layout is too large"))
-                })?;
+                bit_cursor = 8 * (u64::from(offset_bytes) + u64::from(field_size));
                 struct_alignment = struct_alignment.max(field_alignment);
                 self.expect(Token::Semicolon)?;
                 continue;
             }
             loop {
+                if self.peek() == Some(&Token::Colon)
+                    || (matches!(self.peek(), Some(Token::Ident(_)))
+                        && self.peek_next() == Some(&Token::Colon))
+                {
+                    if !allow_bit_fields || self.current_function_source_name.is_some() {
+                        return Err(self.error_here(
+                            "bit-field record definitions currently require a standalone file-scope struct",
+                        ));
+                    }
+                    saw_bit_field = true;
+                    if let Some(field) = self.parse_int_bit_field(&field_type, &mut bit_cursor)? {
+                        struct_alignment = struct_alignment.max(4);
+                        bit_fields.push(field);
+                    }
+                    if self.peek() != Some(&Token::Comma) {
+                        break;
+                    }
+                    self.position += 1;
+                    continue;
+                }
+                qualified_scalar |= field_type.is_constant || field_type.is_volatile;
                 let field_name = self.expect_ident("struct field name")?;
                 let (
                     interface_type,
@@ -437,9 +448,8 @@ impl Parser {
                 if let Some(attribute_alignment) = self.consume_field_alignment_attribute()? {
                     field_alignment = field_alignment.max(attribute_alignment);
                 }
-                offset_bytes = align_up(offset_bytes, field_alignment).ok_or_else(|| {
-                    self.error_here(format!("struct `{name}` layout is too large"))
-                })?;
+                let offset_bytes =
+                    self.aligned_struct_offset(bit_cursor, field_alignment, &name)?;
                 if fields
                     .insert(
                         field_name.clone(),
@@ -468,9 +478,7 @@ impl Parser {
                     return Err(self
                         .error_here(format!("duplicate field `{field_name}` in struct `{name}`")));
                 }
-                offset_bytes = offset_bytes.checked_add(field_size).ok_or_else(|| {
-                    self.error_here(format!("struct `{name}` layout is too large"))
-                })?;
+                bit_cursor = 8 * (u64::from(offset_bytes) + u64::from(field_size));
                 struct_alignment = struct_alignment.max(field_alignment);
                 if self.peek() != Some(&Token::Comma) {
                     break;
@@ -482,38 +490,49 @@ impl Parser {
 
         self.expect(Token::RBrace)?;
         if let Some(attribute_alignment) = self.consume_struct_alignment_attribute()? {
+            if saw_bit_field {
+                return Err(self.error_at_previous("aligned bit-field records are not supported"));
+            }
             struct_alignment = struct_alignment.max(attribute_alignment);
         }
 
-        if fields.is_empty() {
+        if fields.is_empty() && bit_fields.is_empty() {
             return Err(self.error_here("struct declarations must contain at least one field"));
         }
-        let size_bytes = align_up(offset_bytes, struct_alignment)
-            .ok_or_else(|| self.error_here(format!("struct `{name}` layout is too large")))?;
+        let size_bytes = self.aligned_struct_offset(bit_cursor, struct_alignment, &name)?;
         let (aggregate_fields, aggregate_unions) =
             flatten_aggregate_layout(&fields, &self.structs, &self.unions);
         let class = struct_class_of_fields(&name, &fields, &self.structs, &self.unions);
-        if self
-            .structs
-            .insert(
-                name.clone(),
-                RecordLayout {
-                    bit_field_bytes: None,
-                    embedded_structs: RecordLayout::index_embedded_structs(&fields),
-                    fields,
-                    aggregate_fields,
-                    aggregate_unions,
-                    size_bytes,
-                    alignment_bytes: struct_alignment,
-                    class: Some(class),
-                },
-            )
-            .is_some()
-        {
+        let layout = RecordLayout {
+            bit_field_bytes: None,
+            embedded_structs: RecordLayout::index_embedded_structs(&fields),
+            fields,
+            aggregate_fields,
+            aggregate_unions,
+            size_bytes,
+            alignment_bytes: struct_alignment,
+            class: Some(class),
+        };
+        if self.structs.contains_key(&name) {
             return Err(self.error_here(format!("duplicate struct declaration `{name}`")));
         }
-
+        if saw_bit_field {
+            return self.register_bit_field_record(name, layout, bit_fields, qualified_scalar);
+        }
+        self.structs.insert(name, layout);
         Ok(())
+    }
+
+    fn aligned_struct_offset(
+        &self,
+        bit_cursor: u64,
+        alignment: u32,
+        name: &str,
+    ) -> Result<u32, CSyntaxError> {
+        u32::try_from(bit_cursor.div_ceil(8))
+            .ok()
+            .and_then(|bytes| align_up(bytes, alignment))
+            .ok_or_else(|| self.error_here(format!("struct `{name}` layout is too large")))
     }
 
     pub(super) fn parse_struct_field_declarator(

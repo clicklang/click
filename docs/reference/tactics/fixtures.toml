@@ -238,14 +238,14 @@ path = "mdtests/solve_closes_one_goal.md"
 needle = "solve() using {"
 
 [[form]]
-id = "take-element"
+id = "unfold-slot"
 path = "mdtests/iterated_ownership_allocate_one.md"
-needle = "take(data[index..index + 1]);"
+needle = "unfold(arena_cells(data, occupied, capacity)[index]);"
 
 [[form]]
-id = "give-element"
+id = "fold-slot"
 path = "mdtests/iterated_ownership_release_one.md"
-needle = "give(data[index..index + 1]);"
+needle = "fold(arena_cells(data, occupied, capacity)[index]);"
 
 [[form]]
 id = "gather-resource"

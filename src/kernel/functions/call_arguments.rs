@@ -61,7 +61,7 @@ pub(super) fn with_contract_interface_argument_views(
                 .resources
                 .unchecked_with_fact(ResourceFact::view_memory(
                     MemoryRange::new_with_element_width(
-                        pointer.pointer().clone(),
+                        pointer.address().clone(),
                         MachineTerm::constant(0),
                         MachineTerm::constant(i32::MAX as u32),
                         element_width,
@@ -130,7 +130,7 @@ pub(super) fn set_contract_result(
         state.locals.set_aggregate_object_at(
             CONTRACT_RESULT,
             layout.clone(),
-            pointer.pointer().clone(),
+            pointer.address().clone(),
         );
         return;
     }
@@ -174,7 +174,7 @@ pub(super) fn complete_aggregate_return(
     if pointer.is_null() {
         return Err(AggregateReturnRefusal::InvalidValue);
     }
-    let source = pointer.pointer().clone();
+    let source = pointer.address().clone();
     if aggregate_copy_reads_uninitialized(&state.memory, &source, layout) {
         return Err(AggregateReturnRefusal::UninitializedRead);
     }
@@ -268,13 +268,13 @@ pub(super) fn incompatible_pointer_argument(
             };
             let object = state
                 .memory()
-                .declared_class(pointer.pointer())
+                .declared_class(pointer.address())
                 .or_else(|| pointer.object_class())?;
             if pointee.may_designate(&object) || pointer.is_null() {
                 return None;
             }
-            if assumptions.decide(&ConditionTerm::pointer_equal(
-                pointer.pointer().clone(),
+            if assumptions.decide(&ConditionTerm::address_equal(
+                pointer.address().clone(),
                 Address::null(),
             )) == Some(true)
             {
@@ -310,13 +310,13 @@ pub(super) fn incompatible_pointer_return(
     };
     let object = state
         .memory()
-        .declared_class(pointer.pointer())
+        .declared_class(pointer.address())
         .or_else(|| pointer.object_class())?;
     if pointee.may_designate(&object) || pointer.is_null() {
         return None;
     }
-    if assumptions.decide(&ConditionTerm::pointer_equal(
-        pointer.pointer().clone(),
+    if assumptions.decide(&ConditionTerm::address_equal(
+        pointer.address().clone(),
         Address::null(),
     )) == Some(true)
     {
@@ -394,10 +394,10 @@ pub(super) fn coerce_function_return_value(
             pointer.program_type(),
             ProgramType::Int32Pointer | ProgramType::UInt8Pointer
         )
-        && !pointer.pointer().base.is_function()
+        && !pointer.address().base.is_function()
     {
         return Some(ProgramValue::typed_pointer(
-            pointer.pointer().clone(),
+            pointer.address().clone(),
             function.return_type(),
         ));
     }
@@ -764,7 +764,7 @@ pub(super) fn append_string_literal_loadable_facts(
         let proposition = Proposition::MemoryLoadable {
             memory: state.memory.clone(),
             base,
-            bytes: MachineTerm::constant(literal.bytes().len() as u32),
+            bytes: (MachineTerm::constant(literal.bytes().len() as u32)).into(),
             wide: false,
         };
         if !facts.iter().any(|fact| fact.proposition() == &proposition) {
@@ -901,7 +901,7 @@ fn bind_program_function_arguments_impl(
             if pointer.is_null() {
                 return None;
             }
-            let source = pointer.pointer().clone();
+            let source = pointer.address().clone();
             let slot = SymbolicMemory::frame_local_pointer(frame, parameter.binding_name());
             register_block_alignment(&slot.base, layout.alignment_bytes());
             // A proof's input object holds its own entry values: each field
@@ -1077,7 +1077,7 @@ pub(super) fn bind_contract_arguments(
             if pointer.is_null() {
                 return None;
             }
-            let source = pointer.pointer().clone();
+            let source = pointer.address().clone();
             let slot = SymbolicMemory::frame_local_pointer(frame, parameter.binding_name());
             register_block_alignment(&slot.base, layout.alignment_bytes());
             callee_state.set_memory(copy_aggregate_fields(
@@ -1404,7 +1404,7 @@ mod pointer_argument_tests {
     #[test]
     fn pointer_execution_arguments_keep_selected_roots_and_native_bindings() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = PointerValue::new(
+        let pointer = Pointer::new(
             Address::symbolic(Variable(1027100)),
             ProgramType::Int32Pointer,
         );
@@ -1414,7 +1414,7 @@ mod pointer_argument_tests {
                 "argument_source".into(),
                 vec![],
             ),
-            SharedPointerValue::import(&pointer),
+            SharedPointer::import(&pointer),
         );
         let mut state = ExecutionState::new();
         state.locals.set_retained_typed_with_all_qualifiers(
@@ -1465,7 +1465,7 @@ mod pointer_argument_tests {
                 .unwrap()
                 .pointer_payload()
                 .unwrap()
-                .same_source_payload(&SharedPointerValue::import(legacy.pointer().unwrap()))
+                .same_source_payload(&SharedPointer::import(legacy.pointer().unwrap()))
         );
     }
 }
@@ -1476,7 +1476,7 @@ mod pointer_return_tests {
     #[test]
     fn pointer_returns_keep_complete_payload_and_const_drop_refusals() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = PointerValue::new(
+        let pointer = Pointer::new(
             Address::symbolic(Variable(1027400)),
             ProgramType::Int32Pointer,
         )
@@ -1488,7 +1488,7 @@ mod pointer_return_tests {
                 "source".into(),
                 vec![],
             ),
-            SharedPointerValue::import(&pointer),
+            SharedPointer::import(&pointer),
         );
         let plain = program_function(
             ProgramType::Int32Pointer,

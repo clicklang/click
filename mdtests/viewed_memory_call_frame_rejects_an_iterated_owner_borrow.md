@@ -38,7 +38,7 @@ void touch(int32* flags, int32* data, int32 n) {
     ensures flags[0] == 0;
 } by {
     unfold(cells(flags, data, n));
-    take(data[0..1]);
+    unfold(cells(flags, data, n)[0]);
     step();
     have separate(memory(data[0]), memory(flags[0])) by { known(); }
     have separate(statement(0).footprint, memory(flags[0])) by {
@@ -48,7 +48,7 @@ void touch(int32* flags, int32* data, int32 n) {
         preserve(memory(flags[0]), statement(0));
     }
     have flags[0] == 0 by { known(); }
-    give(data[0..1]);
+    fold(cells(flags, data, n)[0]);
     fold(cells(flags, data, n));
 }
 

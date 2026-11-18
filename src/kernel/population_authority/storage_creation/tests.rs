@@ -28,8 +28,8 @@ fn resolved_malloc(pending: &ExecutionState, success: bool) -> ExecutionState {
     let Some(ProgramValue::Pointer(pointer)) = local_native_output_27.as_deref() else {
         panic!("pending allocation has a result pointer");
     };
-    let assumptions = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
-        ConditionTerm::pointer_equal(pointer.pointer().clone(), Address::null()),
+    let assumptions = PureFactContext::new().assume_proposition(Proposition::condition_is(
+        ConditionTerm::address_equal(pointer.address().clone(), Address::null()),
         !success,
     ));
     crate::kernel::resolve_pending_heap_allocations(pending, &assumptions)
@@ -61,7 +61,7 @@ fn only_successful_real_malloc_records_creation() {
     };
     assert!(succeeded.population_storage_created_here(created));
     assert!(!entry.population_storage_created_here(created));
-    assert!(!succeeded.population_storage_created_here(&created.pointer().offset_by_bytes(4)));
+    assert!(!succeeded.population_storage_created_here(&created.address().offset_by_bytes(4)));
     assert_eq!(
         succeeded
             .clone()
@@ -76,7 +76,7 @@ fn only_successful_real_malloc_records_creation() {
         .with_population_creation_tracking()
         .with_memory(
             SymbolicMemory::new()
-                .with_heap_allocation_claim(created.pointer().clone(), AllocationSize::int32(16))
+                .with_heap_allocation_claim(created.address().clone(), AllocationSize::int32(16))
                 .expect("assumed allocation claim"),
         );
     assert!(!imported.population_storage_created_here(created));
@@ -90,7 +90,7 @@ fn only_successful_real_malloc_records_creation() {
     let callee = bind_program_function_arguments(
         &succeeded,
         &helper,
-        &[ProgramValue::pointer(created.pointer().clone())],
+        &[ProgramValue::pointer(created.address().clone())],
     )
     .expect("bind actual helper environment");
     let local_native_output_92 = callee.locals().get_native("q");
@@ -184,7 +184,7 @@ fn caller_pending_malloc_resolved_in_helper_keeps_caller_origin() {
     let callee = bind_program_function_arguments(
         &pending,
         &helper,
-        &[ProgramValue::pointer(pending_pointer.pointer().clone())],
+        &[ProgramValue::pointer(pending_pointer.address().clone())],
     )
     .expect("bind actual helper environment");
     let paths = execute_execution_statement_paths(
@@ -214,7 +214,7 @@ fn caller_pending_malloc_resolved_in_helper_keeps_caller_origin() {
             pending.population_effects.creation.as_ref(),
             state.population_effects.creation.as_ref(),
         );
-        if pointer.pointer() == &Address::null() {
+        if pointer.address() == &Address::null() {
             saw_failure = true;
             assert_eq!(*value.native(), ProgramValue::Int32(0.into()));
             assert!(!resumed.population_storage_created_here(pointer));
@@ -1369,7 +1369,15 @@ fn two_authority_control_import_checks_each_custody_and_scope() {
         .clone();
     let member = ResourceDescription::new(
         scope.family().into(),
-        vec![scope.arguments()[0].clone(), int32(7).into()].into(),
+        vec![
+            scope
+                .arguments()
+                .get(0)
+                .expect("argument index")
+                .into_native(),
+            int32(7).into(),
+        ]
+        .into(),
         scope.schema().clone(),
     );
     let fact = ResourceFact::own(Resource::Composite {
@@ -1561,7 +1569,7 @@ fn checked_control_import_observes_only_its_exact_entry_population() {
         .checked_member_exchange(&AddressBase::ExternalArgument, &description, false)
         .unwrap();
     let retirement_assumptions =
-        PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+        PureFactContext::new().assume_proposition(Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -2204,7 +2212,7 @@ fn opaque_retirement_requires_global_count_proof_not_local_exhaustion() {
             .unwrap_err(),
         CreationRefusal::UnknownTotal
     );
-    let wrong_total = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+    let wrong_total = PureFactContext::new().assume_proposition(Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -2218,7 +2226,7 @@ fn opaque_retirement_requires_global_count_proof_not_local_exhaustion() {
             .checked_retire_imported(&description, &wrong_total)
             .is_err()
     );
-    let right_total = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+    let right_total = PureFactContext::new().assume_proposition(Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -2442,7 +2450,9 @@ fn opaque_numeric_count_delta_survives_exact_call_custody() {
 fn opaque_numeric_count_observation_uses_exact_magnitude_and_overflow_guard() {
     let block = AddressBase::ExternalArgument;
     let description = member_description(block.clone());
-    let [AlgebraicValue::Program(pointer)] = description.arguments() else {
+    let Some([crate::kernel::ResourceFieldValue::Program(pointer)]) =
+        (description.arguments()).fixed_values::<1>()
+    else {
         panic!("pointer anchor")
     };
     let count = SpecExpression::CountedResourceCount {
@@ -2515,19 +2525,21 @@ fn opaque_numeric_count_observation_uses_exact_magnitude_and_overflow_guard() {
 #[test]
 fn count_uses_its_written_anchor_not_a_proven_alias() {
     let description = member_description(AddressBase::ExternalArgument);
-    let [AlgebraicValue::Program(ProgramValue::Pointer(anchor))] = description.arguments() else {
+    let Some([crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(anchor))]) =
+        (description.arguments()).fixed_values::<1>()
+    else {
         panic!("pointer anchor")
     };
     let alias = Address {
         base: AddressBase::ExternalArgument,
         offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(9_850_100)), 4),
     };
-    let count_of = |pointer: PointerValue| SpecExpression::CountedResourceCount {
+    let count_of = |pointer: Pointer| SpecExpression::CountedResourceCount {
         name: "reference".into(),
         arguments: vec![Some(SpecExpression::Value(ProgramValue::Pointer(pointer)))],
     };
     let anchor_count = count_of(anchor.clone());
-    let alias_count = count_of(PointerValue::new(alias.clone(), anchor.program_type()));
+    let alias_count = count_of(Pointer::new(alias.clone(), anchor.program_type()));
     let events = CreationEvents::new()
         .import_opaque_contract_population_inner(
             &description,
@@ -2546,8 +2558,8 @@ fn count_uses_its_written_anchor_not_a_proven_alias() {
         );
     Arc::make_mut(&mut state.population_effects).creation = Some(events);
     let equal = PureFactContext::new().assume_condition(
-        ConditionTerm::PointerValueEqual(
-            Box::new(PointerValue::new(alias, ProgramType::Int32Pointer)),
+        ConditionTerm::PointerEqual(
+            Box::new(Pointer::new(alias, ProgramType::Int32Pointer)),
             Box::new(anchor.clone()),
         ),
         true,
@@ -3704,7 +3716,12 @@ fn authority_contract_entry_retains_only_authenticated_member_bounds() {
         vec![],
         vec![],
     )]);
-    let AlgebraicValue::Program(pointer) = &description.arguments()[0] else {
+    let AlgebraicValue::Program(pointer) = &description
+        .arguments()
+        .get(0)
+        .expect("argument index")
+        .into_native()
+    else {
         unreachable!();
     };
     let member_only_function = function
@@ -3732,7 +3749,7 @@ fn authority_contract_entry_retains_only_authenticated_member_bounds() {
             &[ProgramExpression::Value(pointer.clone())],
         )
         .unwrap();
-        let lower_bound = Proposition::ConditionIs(
+        let lower_bound = Proposition::condition_is(
             // `states` is an exact lookup. Match the count evaluator's
             // canonical orientation, rather than asking it to prove `1 <= n`.
             ConditionTerm::signed_greater_equal(count.clone(), MachineTerm::constant(1)),
@@ -3740,7 +3757,7 @@ fn authority_contract_entry_retains_only_authenticated_member_bounds() {
         );
         assert_eq!(entry.states(&lower_bound), tracked_quantity == 1);
         assert!(
-            !entry.states(&Proposition::ConditionIs(
+            !entry.states(&Proposition::condition_is(
                 ConditionTerm::equal(count.clone(), MachineTerm::constant(1)),
                 true
             )),

@@ -19,14 +19,14 @@ fn rewrite_observation(
     } else {
         SharedMachineIntegerTerm::intern(format, expression)
     };
-    let goal = Proposition::ConditionIs(
+    let goal = Proposition::condition_is(
         ConditionTerm::IntegerLessEqual(
             IntegerTerm::Machine(machine).into(),
             IntegerTerm::constant_i64(5).into(),
         ),
         true,
     );
-    let equality = Proposition::ConditionIs(
+    let equality = Proposition::condition_is(
         ConditionTerm::machine_compare(
             format,
             CompareRelation::Equal,
@@ -84,7 +84,7 @@ fn newly_closed_word32_arithmetic_has_the_same_value_for_native_and_shared_sourc
                 let exports = KernelTermExport::machine_export_count();
                 assert_eq!(
                     rewrite_observation(format, expression, &variable, word(value), shared),
-                    Proposition::ConditionIs(
+                    Proposition::condition_is(
                         ConditionTerm::IntegerLessEqual(
                             IntegerTerm::constant_i64(expected).into(),
                             IntegerTerm::constant_i64(5).into()
@@ -125,7 +125,8 @@ fn newly_closed_word32_arithmetic_keeps_undefined_values_opaque() {
                 right: Box::new(word(operand)),
             };
             let result = rewrite_observation(format, expression, &variable, word(value), shared);
-            let Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(left, _), true) = &result
+            let Some((ConditionTerm::IntegerLessEqual(left, _), true)) =
+                (&result).condition_native()
             else {
                 panic!("{result:?}");
             };
@@ -206,7 +207,7 @@ fn selected_word32_literal_goal(format: MachineIntegerType, literal: u32) -> Pro
     let word = |n: u32| {
         crate::kernel::machine_integer::range::constant_word(format, &i64::from(n).into()).unwrap()
     };
-    Proposition::ConditionIs(
+    Proposition::condition_is(
         ConditionTerm::Compare {
             format,
             relation: CompareRelation::LessEqual,
@@ -227,7 +228,7 @@ fn selected_word32_literal_goal(format: MachineIntegerType, literal: u32) -> Pro
 }
 
 fn selected_word32_literal_equality(format: MachineIntegerType) -> Proposition {
-    Proposition::ConditionIs(
+    Proposition::condition_is(
         ConditionTerm::machine_compare(
             format,
             CompareRelation::Equal,

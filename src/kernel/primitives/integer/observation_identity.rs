@@ -146,7 +146,7 @@ pub(in crate::kernel::primitives) fn normalize(root: &KernelTerm) -> KernelTerm 
                 .with_machine_observation_type(format),
                 KernelTermNode::Legacy(_)
                 | KernelTermNode::Call { .. }
-                | KernelTermNode::PointerAddress { .. }
+                | KernelTermNode::IntegerAddress { .. }
                     if machine_payload(&term).is_some() =>
                 {
                     let value = machine_payload(&term).expect("retained machine leaf");
@@ -159,7 +159,7 @@ pub(in crate::kernel::primitives) fn normalize(root: &KernelTerm) -> KernelTerm 
                 KernelTermNode::Legacy(value) => {
                     KernelTerm::native_observation_leaf(value.value().clone())
                 }
-                KernelTermNode::PointerValue(_)
+                KernelTermNode::Pointer(_)
                 | KernelTermNode::PointerRead { .. }
                 | KernelTermNode::PointerArithmetic { .. }
                 | KernelTermNode::PointerCall { .. }
@@ -230,9 +230,9 @@ pub(in crate::kernel::primitives) fn normalize(root: &KernelTerm) -> KernelTerm 
                         )),
                     )
                 }
-                KernelTermNode::PointerValueEqual(pair) => KernelTerm::intern(
+                KernelTermNode::PointerEqual(pair) => KernelTerm::intern(
                     KernelType::Bool,
-                    KernelTermNode::PointerValueEqual(pair.observe(
+                    KernelTermNode::PointerEqual(pair.observe(
                         |address| {
                             crate::kernel::SharedAddress::new(
                                 address.node().base.observation(),
@@ -242,16 +242,16 @@ pub(in crate::kernel::primitives) fn normalize(root: &KernelTerm) -> KernelTerm 
                         normalize,
                     )),
                 ),
-                KernelTermNode::PointerEqual { arguments } => {
-                    KernelTerm::pointer_equal_raw(arguments.each_ref().map(|address| {
+                KernelTermNode::AddressEqual { arguments } => {
+                    KernelTerm::address_equal_raw(arguments.each_ref().map(|address| {
                         crate::kernel::SharedAddress::new(
                             address.node().base.observation(),
                             normalize_offset(&address.node().offset),
                         )
                     }))
                 }
-                KernelTermNode::PointerOffsetEqual { arguments } => {
-                    KernelTerm::pointer_offset_equal_raw(arguments.each_ref().map(normalize_offset))
+                KernelTermNode::AddressOffsetEqual { arguments } => {
+                    KernelTerm::address_offset_equal_raw(arguments.each_ref().map(normalize_offset))
                 }
                 KernelTermNode::LegacyBool(_) => {
                     let condition = KernelTermExport::condition(&term).expect("retained guard");

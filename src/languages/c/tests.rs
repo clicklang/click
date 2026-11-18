@@ -1411,7 +1411,7 @@ fn c_pointer_object_volatile_accesses_preserve_pointer_provenance() {
     else {
         panic!("expected Pointer result");
     };
-    assert_eq!(pointer.pointer(), &node_pointer);
+    assert_eq!(pointer.address(), &node_pointer);
     assert_eq!(
         pointer.program_type(),
         crate::kernel::ProgramType::Int32Pointer
@@ -1543,7 +1543,7 @@ fn c_lowers_static_address_initializers_with_pointer_provenance() {
     let crate::kernel::ProgramValue::Pointer(global_pointer) = global_value else {
         panic!("global address initializer should lower to a pointer value");
     };
-    assert_eq!(global_pointer.pointer(), &expected_pointer);
+    assert_eq!(global_pointer.address(), &expected_pointer);
     assert_eq!(
         global_pointer.program_type(),
         crate::kernel::ProgramType::Int32Pointer
@@ -1561,7 +1561,7 @@ fn c_lowers_static_address_initializers_with_pointer_provenance() {
         panic!("file-static address initializer should lower to a pointer value");
     };
     assert_eq!(
-        private_pointer.pointer(),
+        private_pointer.address(),
         &crate::kernel::SymbolicMemory::global_pointer(private_target.kernel_name())
     );
     assert_eq!(
@@ -1579,7 +1579,7 @@ fn c_lowers_static_address_initializers_with_pointer_provenance() {
     let crate::kernel::ProgramValue::Pointer(static_pointer) = static_value else {
         panic!("static address initializer should lower to a pointer value");
     };
-    assert_eq!(static_pointer.pointer(), &expected_pointer);
+    assert_eq!(static_pointer.address(), &expected_pointer);
     assert_eq!(
         static_pointer.program_type(),
         crate::kernel::ProgramType::Int32Pointer
@@ -1622,7 +1622,7 @@ fn c_links_static_address_dependencies_after_later_definitions() {
         panic!("alias should have an address initializer");
     };
     assert_eq!(
-        alias_pointer.pointer(),
+        alias_pointer.address(),
         &crate::kernel::SymbolicMemory::global_pointer("target")
     );
 
@@ -1635,7 +1635,7 @@ fn c_links_static_address_dependencies_after_later_definitions() {
         panic!("alias_ref should have an address initializer");
     };
     assert_eq!(
-        alias_ref_pointer.pointer(),
+        alias_ref_pointer.address(),
         &crate::kernel::SymbolicMemory::global_pointer("alias")
     );
     assert_eq!(
@@ -1701,7 +1701,7 @@ fn c_lowers_static_subobject_address_initializers_with_byte_offsets() {
         panic!("array-element address initializer should lower to a pointer value");
     };
     assert_eq!(
-        table_middle_pointer.pointer(),
+        table_middle_pointer.address(),
         &crate::kernel::SymbolicMemory::global_pointer("table").offset_by_bytes(4)
     );
 
@@ -1727,7 +1727,7 @@ fn c_lowers_static_subobject_address_initializers_with_byte_offsets() {
             panic!("struct-field address initializer should lower to a pointer value");
         };
         assert_eq!(
-            pointer.pointer(),
+            pointer.address(),
             &crate::kernel::SymbolicMemory::global_pointer("shared").offset_by_bytes(offset)
         );
     }
@@ -1741,7 +1741,7 @@ fn c_lowers_static_subobject_address_initializers_with_byte_offsets() {
         panic!("static struct-field address initializer should lower to a pointer value");
     };
     assert_eq!(
-        pointer.pointer(),
+        pointer.address(),
         &crate::kernel::SymbolicMemory::global_pointer("shared").offset_by_bytes(value_offset)
     );
 }
@@ -6921,7 +6921,7 @@ fn c_syntax_targets_kernel_max_body() {
     assert_eq!(
         theorem.proposition(),
         &crate::kernel::Proposition::Implies(
-            Box::new(crate::kernel::Proposition::ConditionIs(condition, true)),
+            Box::new(crate::kernel::Proposition::condition_is(condition, true)),
             Box::new(crate::kernel::Proposition::ProgramStatementVerifies {
                 state: Box::new(state.clone()),
                 statement: Box::new(statement),
@@ -9377,7 +9377,7 @@ fn c_struct_value_pointer_parameter_and_return_copy_pointee_identity() {
     else {
         panic!("expected Pointer result");
     };
-    let return_data = return_pointer.pointer().offset_by_bytes(0);
+    let return_data = return_pointer.address().offset_by_bytes(0);
     assert_eq!(
         final_state.memory().load(&return_data),
         crate::kernel::ExpressionOutcome::Value(crate::kernel::ProgramValue::typed_pointer(
@@ -9388,7 +9388,7 @@ fn c_struct_value_pointer_parameter_and_return_copy_pointee_identity() {
     assert_eq!(
         final_state
             .memory()
-            .load(&return_pointer.pointer().offset_by_bytes(8)),
+            .load(&return_pointer.address().offset_by_bytes(8)),
         crate::kernel::ExpressionOutcome::Value(crate::kernel::int32(7))
     );
     assert_eq!(

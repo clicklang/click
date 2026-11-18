@@ -118,6 +118,9 @@ pub(crate) struct SourceSites {
     /// The statement each region comes from, by region in the order the
     /// source layout numbers them; `None` for a region the lowering added.
     pub(crate) regions: Vec<Option<u32>>,
+    /// The statement each declaration the lowering places at a source
+    /// statement comes from, by the declaration's binding.
+    pub(crate) declarations: Vec<(crate::kernel::BindingName, u32)>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1178,13 +1181,6 @@ impl RecordLayout {
     }
 
     pub(crate) fn to_kernel_aggregate_layout(&self) -> crate::kernel::AggregateLayout {
-        if let Some(bytes) = &self.bit_field_bytes {
-            return crate::kernel::AggregateLayout::bit_field_record(
-                self.size_bytes,
-                self.alignment_bytes,
-                bytes.clone(),
-            );
-        }
         crate::kernel::AggregateLayout::with_unions(
             self.size_bytes,
             self.alignment_bytes,
@@ -1225,6 +1221,7 @@ impl RecordLayout {
                 })
                 .collect(),
         )
+        .with_bit_field_bytes(self.bit_field_bytes.clone())
     }
 
     pub(super) fn aggregate_fields(&self) -> &[RecordScalarField] {

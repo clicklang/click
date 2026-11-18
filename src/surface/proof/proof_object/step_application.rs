@@ -10,7 +10,7 @@ use crate::kernel::{
 };
 
 fn is_positive_predecessor_goal(proposition: &crate::kernel::Proposition) -> bool {
-    let crate::kernel::Proposition::ConditionIs(
+    let Some((
         crate::kernel::ConditionTerm::Compare {
             format: crate::kernel::MachineIntegerType::Int32,
             relation: crate::kernel::CompareRelation::LessThan,
@@ -18,7 +18,7 @@ fn is_positive_predecessor_goal(proposition: &crate::kernel::Proposition) -> boo
             right,
         },
         true,
-    ) = proposition
+    )) = proposition.condition_native()
     else {
         return false;
     };
@@ -197,7 +197,7 @@ fn signed_goal_shape_flags(goal: &crate::kernel::Proposition) -> Option<(bool, b
         },
         _ => return None,
     };
-    let (left, right) = match condition {
+    let (left, right) = match condition.native_compat() {
         crate::kernel::ConditionTerm::Compare {
             format: crate::kernel::MachineIntegerType::Int32,
             relation: crate::kernel::CompareRelation::LessThan,
@@ -318,10 +318,10 @@ fn signed_goal_shape_flags(goal: &crate::kernel::Proposition) -> Option<(bool, b
 
 /// Whether a held `uint32` order goal has a plain variable as an operand.
 fn unsigned_order_names_a_variable(goal: &crate::kernel::Proposition) -> bool {
-    matches!(
-        goal,
-        crate::kernel::Proposition::ConditionIs(
-            crate::kernel::ConditionTerm::Compare {
+    matches!(&goal, condition_source_0 @ crate::kernel::Proposition::ConditionIs(
+            _,
+            true,
+        ) if matches!(condition_source_0.condition_native(), Some((crate::kernel::ConditionTerm::Compare {
                 format: crate::kernel::MachineIntegerType::UInt32,
                 relation: crate::kernel::CompareRelation::LessThan
                     | crate::kernel::CompareRelation::LessEqual
@@ -329,11 +329,8 @@ fn unsigned_order_names_a_variable(goal: &crate::kernel::Proposition) -> bool {
                     | crate::kernel::CompareRelation::GreaterEqual,
                 left,
                 right,
-            },
-            true,
-        ) if matches!(left.as_ref(), crate::kernel::MachineTerm::Variable(_))
-            || matches!(right.as_ref(), crate::kernel::MachineTerm::Variable(_))
-    )
+            }, _)) if (matches!(left.as_ref(), crate::kernel::MachineTerm::Variable(_))
+            || matches!(right.as_ref(), crate::kernel::MachineTerm::Variable(_)))))
 }
 
 /// The step as `click expand` writes it, for a step with a `using` list,
@@ -1506,7 +1503,7 @@ impl<'a> Proof<'a> {
         }
         match context.theorem_context.values.get(parameter) {
             Some(ProgramValue::Int32(current)) => {
-                let nonnegative = Proposition::ConditionIs(
+                let nonnegative = Proposition::condition_is(
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterEqual,
@@ -1820,7 +1817,7 @@ fn trace_resource_fact(
             .zip(context.arguments)
         {
             if let ProgramExpression::Value(ProgramValue::Pointer(base)) = argument
-                && base.pointer() == range.base()
+                && base.address() == range.base()
             {
                 return crate::surface::proof_diagnostics::render::render_resource_fact_diagnostic(
                     fact,
@@ -1853,7 +1850,7 @@ fn describe_known_goal(goal: &Proposition) -> &'static str {
         Proposition::ForAll { .. } => "a universal proposition",
         Proposition::Exists { .. } => "an existential proposition",
         Proposition::MemoryLoadable { .. } => "a memory-viewability fact",
-        Proposition::ConditionIs(condition, _) => match condition {
+        Proposition::ConditionIs(condition, _) => match condition.native_compat() {
             ConditionTerm::IntegerLessThan(..) => "an Integer less-than fact",
             ConditionTerm::IntegerLessEqual(..) => "an Integer less-or-equal fact",
             ConditionTerm::IntegerGreaterThan(..) => "an Integer greater-than fact",

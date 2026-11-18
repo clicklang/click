@@ -43,7 +43,7 @@ fn resource_relation_comparison_lookup_ignores_unrelated_facts() {
             LoadKind::Int32,
             4,
         );
-        let pointer = PointerValue::new(address.clone(), ProgramType::Int32Pointer);
+        let pointer = Pointer::new(address.clone(), ProgramType::Int32Pointer);
         let source = relation(MachineTerm::Variable(name), pointer.clone(), false);
         let goal = relation(
             MachineTerm::MemoryLoad(
@@ -83,7 +83,7 @@ fn deep_logical_comparison_keys_visit_each_selected_node_once() {
         };
         for _ in 0..depth {
             proposition = Proposition::Implies(
-                Box::new(Proposition::ConditionIs(
+                Box::new(Proposition::condition_is(
                     ConditionTerm::Constant(true),
                     true,
                 )),

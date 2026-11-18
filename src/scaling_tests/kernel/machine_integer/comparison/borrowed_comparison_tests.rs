@@ -299,7 +299,7 @@ fn machine_comparison_and_guard_reads_are_bounded_on_hits_and_misses() {
                         .is_none()
                 );
             }
-            let wrapping_cases = [O::Add, O::Subtract].map(|op| {
+            let wrapping_cases = [O::Add, O::Subtract, O::Multiply].map(|op| {
                 let encoding = if format == MachineIntegerType::UInt32 {
                     MachineIntegerType::Int32
                 } else {
@@ -321,6 +321,53 @@ fn machine_comparison_and_guard_reads_are_bounded_on_hits_and_misses() {
             for (signed, ..) in wrapping_misses {
                 assert!(bounded_comparison_operand(format, V::Shared(signed), true).is_none());
             }
+            let division_cases = [O::Divide, O::Remainder].map(|op| {
+                let operation =
+                    |left, right| KernelTerm::machine_binary_shared(format, op, [left, right]);
+                let zero = operation(variable.clone(), literal(0));
+                assert!(bounded_comparison_operand(format, V::Shared(&zero), true).is_none());
+                let hit = operation(variable.clone(), literal(3));
+                assert!(bounded_comparison_operand(format, V::Shared(&hit), false).is_none());
+                (
+                    hit,
+                    operation(arithmetic.clone(), literal(3)),
+                    operation(variable.clone(), other.clone()),
+                )
+            });
+            let division_hits = if format.format().is_signed() {
+                for (signed, ..) in &division_cases {
+                    assert!(bounded_comparison_operand(format, V::Shared(signed), true).is_none());
+                }
+                &division_cases[..0]
+            } else {
+                &division_cases[..]
+            };
+            let mut cast_cases = Vec::new();
+            for spelling in [
+                crate::kernel::MachineCastSpelling::Int64From32,
+                crate::kernel::MachineCastSpelling::Int64FromUInt32,
+                crate::kernel::MachineCastSpelling::UInt64FromInt32,
+                crate::kernel::MachineCastSpelling::UInt64From32,
+                crate::kernel::MachineCastSpelling::UInt32From64,
+            ] {
+                let (source, destination) = spelling.legacy_formats().unwrap();
+                if destination != format {
+                    continue;
+                }
+                let child = variable.with_machine_observation_type(source);
+                let cast = |operand| {
+                    KernelTerm::machine_cast_shared(spelling, source, destination, operand)
+                };
+                cast_cases.push((
+                    cast(child.clone()),
+                    cast(arithmetic.with_machine_observation_type(source)),
+                    cast(KernelTerm::machine_unary_shared(
+                        source,
+                        crate::kernel::MachineUnaryOp::BitwiseNot,
+                        child,
+                    )),
+                ));
+            }
             let exports = KernelTermExport::machine_export_count();
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 for (hit, left_miss, right_miss) in binary_cases
@@ -328,6 +375,8 @@ fn machine_comparison_and_guard_reads_are_bounded_on_hits_and_misses() {
                     .chain(std::iter::once(&unary_case))
                     .chain(&shift_cases)
                     .chain(wrapping_hits)
+                    .chain(division_hits)
+                    .chain(&cast_cases)
                 {
                     for operands in [
                         [V::Shared(hit), V::Shared(&other)],

@@ -77,11 +77,18 @@ impl Hash for LocalFunctionId {
 /// is metadata, never part of the identity used for storage or execution.
 #[derive(Clone, Debug)]
 pub struct LocalBindingId(Arc<LocalDeclaration>);
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+enum LocalBindingKind {
+    Source,
+    Temporary,
+    LoopEscape,
+}
+
 #[derive(Debug)]
 struct LocalDeclaration {
     owner: LocalFunctionId,
     parameter: bool,
-    temporary: bool,
+    kind: LocalBindingKind,
     ordinal: u32,
     scope_depth: u32,
     spelling: Option<String>,
@@ -99,7 +106,7 @@ impl LocalBindingId {
         Self(Arc::new(LocalDeclaration {
             owner,
             parameter,
-            temporary: false,
+            kind: LocalBindingKind::Source,
             ordinal,
             scope_depth: 0,
             spelling,
@@ -113,7 +120,7 @@ impl LocalBindingId {
         Self(Arc::new(LocalDeclaration {
             owner,
             parameter: false,
-            temporary: true,
+            kind: LocalBindingKind::Temporary,
             ordinal,
             scope_depth: 0,
             spelling: None,
@@ -122,14 +129,28 @@ impl LocalBindingId {
             struct_name: OnceLock::new(),
         }))
     }
+    pub(crate) fn loop_escape(owner: LocalFunctionId, ordinal: u32) -> Self {
+        Self(Arc::new(LocalDeclaration {
+            owner,
+            parameter: false,
+            kind: LocalBindingKind::LoopEscape,
+            ordinal,
+            scope_depth: 0,
+            spelling: None,
+            program_type: OnceLock::from(ProgramType::Int32),
+            array_shape: OnceLock::new(),
+            struct_name: OnceLock::new(),
+        }))
+    }
+
     pub fn is_temporary(&self) -> bool {
-        self.0.temporary
+        self.0.kind == LocalBindingKind::Temporary
     }
     pub(crate) fn with_scope_depth(self, scope_depth: u32) -> Self {
         Self(Arc::new(LocalDeclaration {
             owner: self.0.owner.clone(),
             parameter: self.0.parameter,
-            temporary: self.0.temporary,
+            kind: self.0.kind,
             ordinal: self.0.ordinal,
             scope_depth,
             spelling: self.0.spelling.clone(),
@@ -187,13 +208,8 @@ impl LocalBindingId {
     pub fn program_type(&self) -> Option<ProgramType> {
         self.0.program_type.get().copied()
     }
-    fn identity(&self) -> (&LocalFunctionId, bool, bool, u32) {
-        (
-            &self.0.owner,
-            self.0.temporary,
-            self.0.parameter,
-            self.0.ordinal,
-        )
+    fn identity(&self) -> (&LocalFunctionId, LocalBindingKind, bool, u32) {
+        (&self.0.owner, self.0.kind, self.0.parameter, self.0.ordinal)
     }
 }
 
@@ -215,11 +231,13 @@ impl Ord for LocalBindingId {
 }
 impl Hash for LocalBindingId {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        if self.is_temporary() {
-            (&self.0.owner, 2u8, self.0.ordinal).hash(state);
-        } else {
-            // Preserve the hash domain of existing C declaration identities.
-            (&self.0.owner, self.0.parameter, self.0.ordinal).hash(state);
+        match self.0.kind {
+            // Preserve the hash domain of existing declaration identities.
+            LocalBindingKind::Source => {
+                (&self.0.owner, self.0.parameter, self.0.ordinal).hash(state)
+            }
+            LocalBindingKind::Temporary => (&self.0.owner, 2u8, self.0.ordinal).hash(state),
+            LocalBindingKind::LoopEscape => (&self.0.owner, 3u8, self.0.ordinal).hash(state),
         }
     }
 }
@@ -248,6 +266,12 @@ impl LocalBindingId {
 impl std::fmt::Display for CanonicalLocalBinding<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let id = self.0;
+        if id.is_temporary() {
+            return f.write_str("<temporary storage>");
+        }
+        if id.0.kind == LocalBindingKind::LoopEscape {
+            return f.write_str("<loop escape>");
+        }
         if let Some(source) = id.source() {
             write!(f, "{source:?}::")?;
         }
@@ -255,9 +279,7 @@ impl std::fmt::Display for CanonicalLocalBinding<'_> {
             f,
             "{}.{}({})",
             id.function(),
-            if id.is_temporary() {
-                "temporary"
-            } else if id.is_parameter() {
+            if id.is_parameter() {
                 "parameter"
             } else {
                 "local"
@@ -915,7 +937,6 @@ mod tests {
         assert_eq!(temporary.source_spelling(), None);
         assert_eq!(locals.active_source_name(&temporary), None);
         assert_eq!(locals.resolve_binding(&temporary), temporary);
-        assert_eq!(temporary.to_string(), "\"unit.cpp\"::f.temporary(0)");
         assert_ne!(temporary, BindingName::from(temporary.to_string()));
         assert_ne!(temporary, LocalBindingId::temporary(owner, 1).into());
         assert_ne!(

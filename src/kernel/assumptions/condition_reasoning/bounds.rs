@@ -119,7 +119,7 @@ impl PureFactContext {
     ) {
         match proposition {
             Proposition::ConditionIs(condition, value) => {
-                if let Some(order_fact) = retained_order_fact(condition, *value) {
+                if let Some(order_fact) = retained_order_fact(condition.native_compat(), *value) {
                     order_facts.push(order_fact);
                 }
             }
@@ -148,10 +148,10 @@ impl PureFactContext {
                 self.guard_is_decided(left) && self.guard_is_decided(right)
             }
             Proposition::ConditionIs(condition, value) => {
-                PureFactContext::decide_intrinsically(condition) == Some(*value)
-                    || self.exact_condition_value(condition) == Some(*value)
+                PureFactContext::decide_intrinsically(condition.native_compat()) == Some(*value)
+                    || self.exact_condition_value(condition.native_compat()) == Some(*value)
                     || !self.should_defer_non_exact_condition_reasoning()
-                        && self.decide(condition) == Some(*value)
+                        && self.decide(condition.native_compat()) == Some(*value)
             }
             _ => self.proves_exact(guard),
         }
@@ -850,7 +850,7 @@ impl PureFactContext {
                 let Proposition::ConditionIs(condition, true) = bound else {
                     unreachable!()
                 };
-                self.known_condition_value(condition) == Some(true)
+                self.known_condition_value(condition.native_compat()) == Some(true)
             })
         };
         // Preserve the native add-domain rule's two written operand orders.

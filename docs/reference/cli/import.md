@@ -568,8 +568,19 @@ results as well as existing object lvalues. These calls preserve record
 identity, const qualification, subobject bounds and backing authority; the
 returned address grants no ownership or initialization. A dangling address
 under an alias-only claim does not promise live backing; later accesses still
-check storage lifetime and permissions. Direct member access on a call result,
-rvalue references and temporary lifetime extension remain outside this slice.
+check storage lifetime and permissions.
+
+A direct integer field read such as `return outer.get().value;` uses the
+expression observer rules, including a nonthrowing getter with a read-only
+contract. A simple assignment such as `outer.get().value = outer.first;`
+evaluates the right operand before calling the getter. The store requires
+writable authority for the selected field and a mutable record reference.
+Both forms evaluate the getter once. Compound assignments with `+=` and
+`-=` also support direct same-width signed integer fields on a returned
+record reference. Click reads the selected field after the call, checks
+signed overflow, and stores through the same returned reference. Rvalue
+references and temporary lifetime extension remain outside this slice.
+
 A record-reference name shared with a
 different record layout or a non-reference object in another scope is refused,
 rather than assigning its proof fields an ambiguous layout.
@@ -801,6 +812,14 @@ arithmetic, additional calls, and side effects in sibling arguments fail import.
 No unsafe sibling operation can be hidden by selecting an argument order that
 skips it. Resource-bearing exceptional contracts remain outside the proof
 surface slice.
+
+An omitted argument of a supported integer type can come from a direct,
+non-`constexpr`, `noexcept` helper with no arguments, such as `limit()` for
+`int limit(int n = default_limit())`. The helper follows the ordinary
+nested-call sequencing checks and runs once before `limit` is entered.
+The import tracks the source supplying the default and records the nested
+call at the omission site. An explicit argument uses the ordinary call path.
+Integral constant defaults continue to use Clang's evaluated value.
 
 Each nested result has a checked typed capture; an inner exception skips the
 outer call and uses the return's cleanup edge. Verification, selected-caller
@@ -1660,6 +1679,10 @@ read-only contracts; lowering captures the call result before storing the
 field. Exception-enabled normal-only imports permit these local objects when
 destruction is trivial. Throwing construction, header destructor bodies, and
 nested calls in constructor arguments remain outside this slice.
+
+An ordinary `void` function may use a bare `return;` to leave an
+execution path early. The importer records it as a return edge and runs
+the live locals' supported destructors before exiting.
 
 The `terminal-destructor` fixture adds one public, non-virtual, non-deleted,
 explicitly `noexcept` destructor with a nonempty supported body. The artifact

@@ -180,7 +180,7 @@ fn flat_haves_before_a_case_use_linear_work_and_constant_traversal_stack() {
                     assert!(written.is_some());
                     calls.set(calls.get() + 1);
                     Ok((
-                        Proposition::ConditionIs(ConditionTerm::Constant(true), true),
+                        Proposition::condition_is(ConditionTerm::Constant(true), true),
                         ProofCertificate::from_steps(vec![]).unwrap(),
                     ))
                 },

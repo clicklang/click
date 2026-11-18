@@ -54,8 +54,20 @@ fn execute_program_lvalue_assignment_paths_with_source(
     budget: &mut ExecutionBudget,
     store_source: StatementStoreSource,
 ) -> ExecutionResult<Vec<StatementExecutionPath>> {
+    let bounds = indexed_store_bounds(state, target, assumptions);
+    // Use the bounds only while preparing this statement. The driver gets the
+    // original input context and must prove the condition before publishing
+    // the prepared successor.
+    let conditional_context = bounds.as_ref().map(|[lower, upper]| {
+        assumptions
+            .clone()
+            .assume_proposition(lower.clone())
+            .assume_proposition(upper.clone())
+    });
+    let execution_assumptions = conditional_context.as_ref().unwrap_or(assumptions);
     let mut paths = Vec::new();
-    for target_path in evaluate_program_lvalue_paths(state, target, assumptions, budget)? {
+    for target_path in evaluate_program_lvalue_paths(state, target, execution_assumptions, budget)?
+    {
         let LValuePath {
             outcome: target_outcome,
             facts: target_facts,
@@ -104,7 +116,7 @@ fn execute_program_lvalue_assignment_paths_with_source(
                         value,
                         facts,
                         obligations,
-                        assumptions,
+                        execution_assumptions,
                         budget,
                         false,
                         store_source.clone(),
@@ -125,8 +137,92 @@ fn execute_program_lvalue_assignment_paths_with_source(
             }
         }
     }
+    if let Some([lower, upper]) = bounds {
+        let requirement = ProofObligation::verification_condition(Proposition::And(
+            Box::new(lower),
+            Box::new(upper),
+        ))
+        .with_context("indexed store requires an in-bounds index");
+        for path in &mut paths {
+            path.obligations.push(requirement.clone());
+        }
+    }
     budget.check_path_width(paths.len())?;
     Ok(paths)
+}
+
+/// Bounds for a plain signed index into one directly held external array.
+/// The block bucket supplies at most one owner. The original access check
+/// still validates the chosen storage, provenance, and write permission.
+fn indexed_store_bounds(
+    state: &ExecutionState,
+    target: &ProgramExpression,
+    assumptions: &PureFactContext,
+) -> Option<[Proposition; 2]> {
+    if !assumptions.retains_required_obligations() {
+        return None;
+    }
+    let (base, index) = match target {
+        ProgramExpression::Load(pointer)
+        | ProgramExpression::TypedLoad {
+            pointer,
+            value_type: ProgramType::Int32,
+            ..
+        } => match pointer.as_ref() {
+            ProgramExpression::Add(base, index) => (base, index),
+            _ => return None,
+        },
+        _ => return None,
+    };
+    let (ProgramExpression::Variable(base), ProgramExpression::Variable(index)) =
+        (base.as_ref(), index.as_ref())
+    else {
+        return None;
+    };
+    let binding = |name, expected| match state.locals.binding(name) {
+        Some(LocalBinding::Object {
+            value,
+            program_type,
+            volatile: false,
+            ..
+        }) if *program_type == expected => Some(value.native()),
+        _ => None,
+    };
+    let base = binding(base, ProgramType::Int32Pointer)?;
+    let index = binding(index, ProgramType::Int32)?;
+    let (ProgramValue::Pointer(base), ProgramValue::Int32(index)) = (base.as_ref(), index.as_ref())
+    else {
+        return None;
+    };
+    let address = base.address();
+    if address.base != AddressBase::ExternalArgument
+        || address != &address.object_base()
+        || base.provenance() != &address.object_identity()
+        || base.bounds().is_some()
+        || index.as_const().is_some()
+    {
+        return None;
+    }
+    let mut owners = state.resources().owned_memory_facts_in_block(&address.base);
+    let range = owners.next()?.memory_own_range()?;
+    if owners.next().is_some()
+        || range.base() != address
+        || range.wide_bounds().is_some()
+        || range.element_width() != ProgramType::Int32.byte_width()
+        || range.start().as_const() != Some(0)
+    {
+        return None;
+    }
+    Some([
+        Proposition::condition_is(
+            ConditionTerm::signed_less_equal(range.start().clone(), index.clone()),
+            true,
+        ),
+        Proposition::condition_is(
+            ConditionTerm::signed_less_than(index.clone(), range.end().clone()),
+            true,
+        ),
+    ])
 }
 
 fn execute_program_lvalue_update_paths(
@@ -363,11 +459,11 @@ pub(in crate::kernel) fn memory_write_permission_outcome(
     memory_write_ownership_outcome(state, range, assumptions)
 }
 
-/// Pointee stores report loan separation as an obligation. The driver chooses
+/// Scalar writes report loan separation as an obligation. The driver chooses
 /// its explicit proof or ordinary solve; this operation never searches loans.
 fn memory_write_obligation_outcome(
     state: &ExecutionState,
-    range: MemoryRange,
+    range: &MemoryRange,
     storage_pointer: &Address,
     assumptions: &PureFactContext,
     obligations: &mut Vec<ProofObligation>,
@@ -378,7 +474,7 @@ fn memory_write_obligation_outcome(
     {
         return Some(StatementOutcome::RuntimeError(error));
     }
-    require_write_loan_separation(state, &range, obligations);
+    require_write_loan_separation(state, range, obligations);
     memory_write_ownership_outcome(state, storage_range, assumptions)
 }
 
@@ -659,19 +755,36 @@ fn write_program_lvalue_paths_for_initialization(
                     obligations,
                 )]);
             }
-            if let Some(pointer) = state.locals.slot(&name).cloned()
-                && let Some(outcome) = memory_write_permission_outcome(
-                    state,
-                    &pointer,
-                    value.program_type().byte_width(),
-                    &effective_assumptions,
-                )
-            {
-                return Ok(vec![StatementExecutionPath::new(
-                    outcome,
-                    facts,
-                    obligations,
-                )]);
+            if let Some(pointer) = state.locals.slot(&name) {
+                let bytes = value.program_type().byte_width();
+                let outcome = if initialization
+                    || crate::kernel::block_is_never_address_taken_local(&pointer.base)
+                    || !state.memory.has_block(&pointer.base)
+                {
+                    memory_write_permission_outcome(state, pointer, bytes, &effective_assumptions)
+                } else {
+                    // Name the declared slot with the same carrier as `&name`.
+                    let range = MemoryRange::from_pointer_value(
+                        &Pointer::new(pointer.clone(), ProgramType::VoidPointer),
+                        0u32.into(),
+                        1u32.into(),
+                        bytes,
+                    );
+                    memory_write_obligation_outcome(
+                        state,
+                        &range,
+                        pointer,
+                        &effective_assumptions,
+                        &mut obligations,
+                    )
+                };
+                if let Some(outcome) = outcome {
+                    return Ok(vec![StatementExecutionPath::new(
+                        outcome,
+                        facts,
+                        obligations,
+                    )]);
+                }
             }
             let mut state = state.clone();
             sync_retained_stack_local(&mut state, &name, &value);
@@ -681,7 +794,7 @@ fn write_program_lvalue_paths_for_initialization(
                     VolatileAccessKind::Write,
                     pointer,
                     value_type,
-                    value.clone().into_native(),
+                    value.clone(),
                 )?);
             }
             state.locals.set_retained_typed_with_all_qualifiers(
@@ -712,6 +825,14 @@ fn write_program_lvalue_paths_for_initialization(
                 .shared()
                 .filter(|root| root.pointer_payload().is_some())
                 .cloned();
+            // The bit-field producer computes a different, combined byte below.
+            // Ordinary writes keep their already-coerced execution operand.
+            let retained_volatile_value = (is_volatile
+                && !matches!(
+                    &lvalue_classes.0,
+                    Some(crate::kernel::effective_type::CAccessClass::BitFieldByte(_))
+                ))
+            .then(|| value.clone());
             let value = value.into_native();
             // The loan obligation names the evaluated source lvalue. Keep its
             // address before storage chooses an equivalent owner's coordinates.
@@ -863,7 +984,7 @@ fn write_program_lvalue_paths_for_initialization(
             }
             if let Some(outcome) = memory_write_obligation_outcome(
                 state,
-                write_range,
+                &write_range,
                 &pointer,
                 &effective_assumptions,
                 &mut obligations,
@@ -1089,11 +1210,19 @@ fn write_program_lvalue_paths_for_initialization(
                 written_value.clone(),
                 authorized_range,
             );
-            store_fact
+            let certificate = store_fact
                 .certified_store
                 .as_mut()
-                .expect("fresh store certificate")
-                .source = store_source.clone();
+                .expect("fresh store certificate");
+            certificate.source = store_source.clone();
+            let source_address = write_range.base();
+            if !is_volatile
+                && written_value.program_type() == ProgramType::UInt32
+                && source_address.base == AddressBase::ExternalArgument
+                && source_address.offset.is_shallow()
+            {
+                certificate.source_address = Some(source_address.clone());
+            }
             facts.push(store_fact);
             // The checked store establishes the complete pointer value at
             // this exact state. Retain its read equation so congruence
@@ -1102,7 +1231,7 @@ fn write_program_lvalue_paths_for_initialization(
             if let ProgramValue::Pointer(stored) = &written_value {
                 facts.push(ExecutionPureFact::logical_read_equation(
                     stored.clone(),
-                    Address::loaded_value(
+                    Address::canonical_read(
                         &crate::kernel::intern_memory_ref(state.memory()),
                         &written_pointer,
                     ),
@@ -1120,7 +1249,7 @@ fn write_program_lvalue_paths_for_initialization(
                     VolatileAccessKind::Write,
                     pointer,
                     value_type,
-                    value,
+                    retained_volatile_value.unwrap_or_else(|| value.into()),
                 )?);
             }
             Ok(vec![StatementExecutionPath::new(
@@ -1158,12 +1287,8 @@ fn end_aggregate_step_lifetimes(
             continue;
         };
         let range = MemoryRange::new_with_element_width(pointer.clone(), 0.into(), bytes, 1);
-        if let Some(refusal) = next.stable_loan_memory_access_refusal(
-            &range,
-            &PureFactContext::default(),
-            crate::kernel::LoanRefusalOperation::MemoryAccess,
-        ) {
-            return Err(RuntimeError::LoanRefusal(Box::new(refusal)));
+        if let Some(error) = next.automatic_storage_loan_refusal(&pointer.base) {
+            return Err(error);
         }
         retire_automatic_storage_owner(&mut next, &range);
         next.set_memory(next.memory.without_local_block(&pointer.base));
@@ -1314,7 +1439,7 @@ fn execute_program_aggregate_copy_paths(
             }
             let copy_assumptions = assumptions_with_path_context(assumptions, &facts, &obligations);
             if let Some(refusal) = subobject_access_refusal(
-                source_pointer.pointer(),
+                source_pointer.address(),
                 &source_pointer,
                 layout.size_bytes(),
                 &facts,
@@ -1323,7 +1448,7 @@ fn execute_program_aggregate_copy_paths(
             )
             .or_else(|| {
                 subobject_access_refusal(
-                    target_pointer.pointer(),
+                    target_pointer.address(),
                     &target_pointer,
                     layout.size_bytes(),
                     &facts,
@@ -1369,7 +1494,7 @@ fn execute_program_aggregate_copy_paths(
                     );
                     memory_region_write_obligation_outcome(
                         state,
-                        target_pointer.pointer(),
+                        target_pointer.address(),
                         bytes,
                         &range,
                         &copy_assumptions,
@@ -1378,7 +1503,7 @@ fn execute_program_aggregate_copy_paths(
                 }
                 AggregateCopyDestination::ResultTemporary => memory_write_permission_outcome(
                     state,
-                    target_pointer.pointer(),
+                    target_pointer.address(),
                     layout.size_bytes(),
                     &copy_assumptions,
                 ),
@@ -1405,8 +1530,8 @@ fn execute_program_aggregate_copy_paths(
             let mut state = state.clone();
             let next_memory = match crate::kernel::functions::copy_aggregate_fields_checked(
                 state.memory.clone(),
-                source_pointer.pointer(),
-                target_pointer.pointer(),
+                source_pointer.address(),
+                target_pointer.address(),
                 layout,
             ) {
                 Ok(memory) => memory,
@@ -1433,13 +1558,13 @@ fn execute_program_aggregate_copy_paths(
 
 fn missing_aggregate_copy_write_resource(
     state: &ExecutionState,
-    target: &PointerValue,
+    target: &Pointer,
     layout: &AggregateLayout,
     assumptions: &PureFactContext,
 ) -> Option<ResourceFact> {
     if !is_external_memory_pointer(target)
         && target.bounds_are_known()
-        && assumptions.provenance_equal(target.provenance(), &target.pointer().object_identity())
+        && assumptions.provenance_equal(target.provenance(), &target.address().object_identity())
     {
         return None;
     }
@@ -1480,7 +1605,7 @@ fn missing_aggregate_copy_write_resource(
 
 pub(in crate::kernel) fn missing_aggregate_copy_read_resource(
     state: &ExecutionState,
-    source: &PointerValue,
+    source: &Pointer,
     layout: &AggregateLayout,
     assumptions: &PureFactContext,
 ) -> Option<ResourceFact> {
@@ -1490,14 +1615,14 @@ pub(in crate::kernel) fn missing_aggregate_copy_read_resource(
     // bounds, not merely its identity, to authorize this selected copy.
     if matches!(source.base, AddressBase::Temporary(_))
         && source.bounds_are_known()
-        && assumptions.provenance_equal(source.provenance(), &source.pointer().object_identity())
+        && assumptions.provenance_equal(source.provenance(), &source.address().object_identity())
         && state.memory.access_in_bounds(source, layout.size_bytes())
     {
         return None;
     }
     if (!crate::kernel::eval::is_external_memory_pointer(source)
         && source.bounds_are_known()
-        && assumptions.provenance_equal(source.provenance(), &source.pointer().object_identity())
+        && assumptions.provenance_equal(source.provenance(), &source.address().object_identity())
         && !state.memory.requires_explicit_scalar_ownership(source)
         && !assumptions.should_require_owned_expression_loads())
         || (assumptions.should_allow_symbolic_contract_loads()
@@ -1844,7 +1969,7 @@ fn heap_allocation_element_width(state: &ExecutionState, base: &Address) -> u32 
                 return None;
             };
             let pointer = value.pointer()?;
-            (pointer.pointer() == base)
+            (pointer.address() == base)
                 .then(|| program_type.pointee_type().map(ProgramType::byte_width))
                 .flatten()
         })
@@ -2442,7 +2567,7 @@ fn execute_program_realloc_result_paths(
         let old_argument = match old_value {
             ProgramValue::Pointer(pointer) => pointer,
             ProgramValue::Int32(bits) if bits.as_const() == Some(0) => {
-                PointerValue::new(Address::null(), target_type)
+                Pointer::new(Address::null(), target_type)
             }
             _ => {
                 paths.push(StatementExecutionPath::new(
@@ -2454,7 +2579,7 @@ fn execute_program_realloc_result_paths(
             }
         };
 
-        let old_pointer = old_argument.pointer().clone();
+        let old_pointer = old_argument.address().clone();
         // C specifies realloc(NULL, size) as an allocation. Reuse the
         // existing pending-allocation machinery so a later null check can
         // resolve this branch just like malloc/calloc.
@@ -2899,7 +3024,7 @@ fn execute_program_heap_free_paths(
         let effective_assumptions =
             assumptions_with_path_context(assumptions, &facts, &obligations);
         if pointer.is_null()
-            || effective_assumptions.decide(&pointer_is_null_condition(pointer.pointer().clone()))
+            || effective_assumptions.decide(&pointer_is_null_condition(pointer.address().clone()))
                 == Some(true)
         {
             paths.push(StatementExecutionPath::new(
@@ -2944,7 +3069,7 @@ fn execute_program_heap_free_paths(
         pointer.replace_pointer(
             effective_assumptions
                 .equality_graph
-                .storage_address(pointer.pointer()),
+                .storage_address(pointer.address()),
         );
         if state
             .memory
@@ -2968,10 +3093,10 @@ fn execute_program_heap_free_paths(
             .unwrap_or(ProgramType::Int32.byte_width());
         let before_free = state.memory.clone();
         let mut working_memory = state.memory.clone();
-        let bytes = if let Some(bytes) = working_memory.live_heap_block_size(pointer.pointer()) {
+        let bytes = if let Some(bytes) = working_memory.live_heap_block_size(pointer.address()) {
             bytes.clone()
         } else if working_memory
-            .is_deallocated_heap_address(pointer.pointer(), &effective_assumptions)
+            .is_deallocated_heap_address(pointer.address(), &effective_assumptions)
         {
             let error = InvalidFree::DoubleFree;
             paths.push(StatementExecutionPath::new(
@@ -2980,7 +3105,7 @@ fn execute_program_heap_free_paths(
                 obligations,
             ));
             continue;
-        } else if working_memory.is_live_heap_address(pointer.pointer(), &effective_assumptions) {
+        } else if working_memory.is_live_heap_address(pointer.address(), &effective_assumptions) {
             let error = InvalidFree::InteriorPointer;
             paths.push(StatementExecutionPath::new(
                 StatementOutcome::RuntimeError(RuntimeError::InvalidFree(error)),
@@ -2990,7 +3115,7 @@ fn execute_program_heap_free_paths(
             continue;
         } else if let Some(bytes) = declared_allocation {
             let Some(memory) =
-                working_memory.with_heap_allocation_claim(pointer.pointer().clone(), bytes.clone())
+                working_memory.with_heap_allocation_claim(pointer.address().clone(), bytes.clone())
             else {
                 paths.push(StatementExecutionPath::new(
                     StatementOutcome::RuntimeError(RuntimeError::InvalidFree(
@@ -3021,7 +3146,7 @@ fn execute_program_heap_free_paths(
             ));
             continue;
         }
-        let full_allocation_range = bytes.byte_range(pointer.pointer().clone());
+        let full_allocation_range = bytes.byte_range(pointer.address().clone());
         let allocation = ResourceFact::own_designated_allocation(pointer.clone(), &bytes);
         let Some(resources) = state
             .resources
@@ -3038,7 +3163,7 @@ fn execute_program_heap_free_paths(
             continue;
         };
         let (complete_range, range_width) =
-            heap_block_range(pointer.pointer().clone(), &bytes, element_width);
+            heap_block_range(pointer.address().clone(), &bytes, element_width);
         let complete_access = ResourceFact::own_memory(complete_range);
         // Single-supplier consumption keeps unrelated holdings untouched.
         // Split and supported owners still need their composition checked.
@@ -3092,7 +3217,7 @@ fn execute_program_heap_free_paths(
             let byte_pointer =
                 super::expression::cast_pointer_value(argument, ProgramType::UInt8Pointer);
             let range = bytes
-                .byte_range(byte_pointer.pointer().clone())
+                .byte_range(byte_pointer.address().clone())
                 .with_pointer_carrier(&byte_pointer);
             if let Some(requirement) = ledger.memory_access_requirement(&range) {
                 obligations.push(ProofObligation::verification_condition(requirement));
@@ -3134,7 +3259,7 @@ fn execute_program_heap_free_paths(
         }
         let (memory, pointer_frames) = working_memory
             .free_heap_block_and_owned_pointer_frames(
-                pointer.pointer(),
+                pointer.address(),
                 &effective_assumptions,
                 &resources,
             )
@@ -3151,8 +3276,8 @@ fn execute_program_heap_free_paths(
                 unreachable!("a pointer version read has pointer type");
             };
             if before != after {
-                facts.push(ExecutionPureFact::certified(Proposition::ConditionIs(
-                    ConditionTerm::pointer_value_equal(before, after),
+                facts.push(ExecutionPureFact::certified(Proposition::condition_is(
+                    ConditionTerm::pointer_equal(before, after),
                     true,
                 )));
             }
@@ -3161,7 +3286,7 @@ fn execute_program_heap_free_paths(
             Proposition::HeapAllocationFreed {
                 before: before_free,
                 after: memory.clone(),
-                allocation_base: pointer.pointer().clone(),
+                allocation_base: pointer.address().clone(),
                 bytes: bytes.clone(),
             },
         ));
@@ -3234,7 +3359,7 @@ pub(crate) fn resolve_pending_heap_allocations_with<E>(
                     let LocalBinding::Object { value, .. } = &mut binding else {
                         return None;
                     };
-                    if value.pointer()?.pointer() != &base {
+                    if value.pointer()?.address() != &base {
                         return None;
                     }
                     let native = value.native();
@@ -3302,7 +3427,7 @@ pub(crate) fn resolve_pending_heap_allocations_with<E>(
                 let LocalBinding::Object { value, .. } = &mut binding else {
                     return None;
                 };
-                if value.pointer()?.pointer() != &base {
+                if value.pointer()?.address() != &base {
                     return None;
                 }
                 let native = value.native();
@@ -3432,7 +3557,7 @@ fn execute_program_return_expression_paths(
             {
                 let pointer = value.pointer().expect("pending pointer result").clone();
                 for mut truthiness_path in pending_allocation_outcome_paths(
-                    pointer.pointer().clone(),
+                    pointer.address().clone(),
                     facts,
                     obligations,
                     assumptions,
@@ -3669,12 +3794,8 @@ pub(in crate::kernel) fn end_scope_automatic_lifetimes(
                     .clone(),
                 1,
             );
-            if let Some(refusal) = state.stable_loan_memory_access_refusal(
-                &range,
-                &PureFactContext::default(),
-                crate::kernel::LoanRefusalOperation::MemoryAccess,
-            ) {
-                return Err(RuntimeError::LoanRefusal(Box::new(refusal)));
+            if let Some(error) = state.automatic_storage_loan_refusal(&slot.base) {
+                return Err(error);
             }
             retire_automatic_storage_owner(&mut state, &range);
             memory = memory.without_local_block(&slot.base);
@@ -4604,7 +4725,7 @@ fn execute_execution_statement_leaf_paths(
                                 StatementOutcome::RuntimeError(RuntimeError::TypeMismatch);
                             continue;
                         };
-                        let pointer = pointer.pointer().clone();
+                        let pointer = pointer.address().clone();
                         let size = result_layout.layout.size_bytes();
                         // The call already materialized its by-value result in caller storage.
                         // Keep that object as the step's result, with its C lifetime and type.
@@ -5761,12 +5882,8 @@ fn local_declaration_pointer(
             .unwrap_or(MachineTerm::Variable(Variable(u64::MAX)));
         let old_range =
             MemoryRange::new_with_element_width(previous.clone(), MachineTerm::constant(0), end, 1);
-        if let Some(refusal) = state.stable_loan_memory_access_refusal(
-            &old_range,
-            &PureFactContext::default(),
-            crate::kernel::LoanRefusalOperation::MemoryAccess,
-        ) {
-            return Err(RuntimeError::LoanRefusal(Box::new(refusal)));
+        if let Some(error) = state.automatic_storage_loan_refusal(&previous.base) {
+            return Err(error);
         }
         retire_automatic_storage_owner(state, &old_range);
         state.set_memory(state.memory.without_local_block(&previous.base));
@@ -6505,10 +6622,10 @@ pub(in crate::kernel) fn sync_retained_stack_local(
 /// A pointer value moved from a pending allocation's base to its resolved
 /// block. Its subobject bounds, which names the same block, moves with it.
 pub(in crate::kernel) fn rebase_resolved_allocation(
-    value: &PointerValue,
+    value: &Pointer,
     base: &Address,
     resolved: &Address,
-) -> PointerValue {
+) -> Pointer {
     let resolved_value = value
         .map_pointers(|address| {
             if address == base {

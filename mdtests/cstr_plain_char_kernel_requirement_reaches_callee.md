@@ -37,11 +37,12 @@ int32 outer(const char* src) {
     step();
     let n = obtain(entry_string);
     have at(function.entry, viewable((src as (uint8 *))[0..n + 1u64])) by { known(); }
-    have separate(memory(result), memory((src as (uint8 *))[0..n + 1u64])) by { normalize(); }
-    transport(at(function.entry, viewable((src as (uint8 *))[0..n + 1u64])), viewable((src as (uint8 *))[0..n + 1u64])) using {
-        at(function.entry, viewable((src as (uint8 *))[0..n + 1u64]));
-        separate(memory(result), memory((src as (uint8 *))[0..n + 1u64]));
-    };
+    have separate(region(0).footprint, memory((src as (uint8 *))[0..n + 1u64])) by {
+        normalize() using {};
+    }
+    have viewable((src as (uint8 *))[0..n + 1u64]) by {
+        preserve(memory((src as (uint8 *))[0..n + 1u64]), region(0));
+    }
     have entry_defined: at(region(0).entry, forall (j: uint64) { to_integer(j) < to_integer(n + 1u64) implies defined((src as (uint8 *))[j]) }) by { known(); }
     have forall (j: uint64) { to_integer(j) < to_integer(n + 1u64) implies defined((src as (uint8 *))[j]) } by {
         intro(); intro();

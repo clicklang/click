@@ -71,7 +71,7 @@ pub(super) fn describe_derivation_failure(
         // search's miss is then not the news, and neither smaller steps nor
         // listed premises would supply the condition.
         let consulted = available.pure_context();
-        if consulted.decide(condition) == Some(!*value) {
+        if consulted.decide(condition.native_compat()) == Some(!*value) {
             return crate::surface::diagnostics::describe_refuted_condition(
                 proposition,
                 available,

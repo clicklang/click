@@ -333,8 +333,11 @@ mod tests {
                 };
                 for (nonnegative, positive) in [(true, true), (false, true), (true, false)] {
                     let sources = [
-                        Proposition::ConditionIs(signed_nonnegative(signed_n.clone()), nonnegative),
-                        Proposition::ConditionIs(signed_positive(signed_d.clone()), positive),
+                        Proposition::condition_is(
+                            signed_nonnegative(signed_n.clone()),
+                            nonnegative,
+                        ),
+                        Proposition::condition_is(signed_positive(signed_d.clone()), positive),
                     ];
                     let context = PureFactContext::new()
                         .assume_proposition(sources[0].clone())

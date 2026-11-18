@@ -28,7 +28,7 @@ fn pointer(value: &ProgramValue) -> Address {
     let ProgramValue::Pointer(value) = value else {
         panic!("expected an aggregate storage pointer");
     };
-    value.pointer().clone()
+    value.address().clone()
 }
 
 fn allocate_destination(state: &ExecutionState, name: &str) -> ExecutionState {
@@ -632,7 +632,7 @@ fn aggregate_copy_result_preserves_unrelated_entry_byte_history() {
         )
     };
     let equality = |memory: &SymbolicMemory| {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -803,7 +803,7 @@ fn symbolic_construction_storage_respects_known_aliases() {
     let source = Address::symbolic(Variable(870_005));
     let alias = Address::symbolic(Variable(870_006));
     let assumptions = PureFactContext::new().assume_condition(
-        ConditionTerm::pointer_equal(source.clone(), alias.clone()),
+        ConditionTerm::address_equal(source.clone(), alias.clone()),
         true,
     );
     for forgotten in [false, true] {
@@ -836,7 +836,7 @@ fn symbolic_construction_storage_respects_known_aliases() {
                     &state,
                     &program_return(crate::kernel::program_expression::typed_load(
                         ProgramExpression::Value(ProgramValue::Pointer(
-                            PointerValue::new(source.clone(), ProgramType::Int32Pointer)
+                            Pointer::new(source.clone(), ProgramType::Int32Pointer)
                                 .with_address(read.clone()),
                         )),
                         ProgramType::Int32,
@@ -1377,7 +1377,7 @@ mod scaling_tests {
 fn aggregate_return_temporary_copy_requires_its_recorded_size() {
     let layout = node_layout();
     let temporary = Address::verifier_temporary(Variable(870_101));
-    let source = PointerValue::new(temporary.clone(), ProgramType::UInt8Pointer);
+    let source = Pointer::new(temporary.clone(), ProgramType::UInt8Pointer);
     let assumptions = PureFactContext::new();
     for bytes in [0, 8, 16] {
         let state = ExecutionState::new()
@@ -1401,7 +1401,7 @@ fn aggregate_return_temporary_copy_requires_its_recorded_size() {
             base: block.clone(),
             offset: AddressOffset::Constant(0),
         };
-        let source = PointerValue::new(pointer, ProgramType::UInt8Pointer);
+        let source = Pointer::new(pointer, ProgramType::UInt8Pointer);
         let state = ExecutionState::new().with_memory(SymbolicMemory::new().with_block(block, 16));
         assert!(
             crate::kernel::eval::missing_aggregate_copy_read_resource(

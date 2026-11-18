@@ -1008,7 +1008,7 @@ fn offset_alias_overlap_uses_exact_bytes_and_ignores_unrelated_facts() {
             (-1, 2, true),
             (4_294_967_297, 8, false),
         ] {
-            let equality = ConditionTerm::pointer_offset_equal(
+            let equality = ConditionTerm::address_offset_equal(
                 q.offset.clone(),
                 AddressOffset::Constant(offset),
             );
@@ -1431,7 +1431,7 @@ fn writes_without_active_memory_loans_do_not_walk_pointer_aliases() {
                 let mut facts = PureFactContext::new();
                 for index in 0..count {
                     facts = facts.assume_condition(
-                        ConditionTerm::pointer_equal(
+                        ConditionTerm::address_equal(
                             base.clone(),
                             Address::symbolic(Variable(980_001 + index as u64)),
                         ),
@@ -1524,7 +1524,7 @@ fn returned_view_recovery_retains_the_constructed_frame_as_aliases_and_owners_gr
             for index in 0..count {
                 if aliases {
                     assumptions = assumptions.assume_condition(
-                        ConditionTerm::pointer_equal(
+                        ConditionTerm::address_equal(
                             base.clone(),
                             Address::symbolic(Variable(8_799_000 + u64::from(index))),
                         ),
@@ -1630,4 +1630,68 @@ fn escrow_restoration_ignores_unrelated_frame_owners() {
             .all(|(work, maps)| *work <= samples[0].0 + 64 && *maps <= samples[0].1 * 3 + 256),
         "escrow restoration scanned unrelated state: {samples:?}"
     );
+}
+
+#[test]
+fn composite_lending_checks_only_the_selected_frontier() {
+    for conflicting in [false, true] {
+        let mut samples = Vec::new();
+        for count in [4_u32, 16, 64] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let assumptions = PureFactContext::new();
+            let (ledger, caller, callee) = participants();
+            let head = composite("cell", true);
+            let owned = if conflicting {
+                memory(0, 1, true)
+            } else {
+                memory(4, 8, true)
+            };
+            let mut resources =
+                ResourceContext::new().unchecked_with_facts([head.clone(), owned.clone()]);
+            for index in 0..count {
+                resources =
+                    resources.unchecked_with_fact(memory(16 + index * 8, 20 + index * 8, true));
+            }
+            let (support, _) = resources.unique_owned_occurrence_for_fact(&head).unwrap();
+            let backing = CompositeLoanBacking::from_checked_expansion(
+                support,
+                head,
+                vec![memory(0, 4, true)],
+            )
+            .unwrap();
+            let backings = BTreeMap::from([(support, backing)]);
+            let requirements = [
+                CheckedResourceFact {
+                    role: ResourceTransferRole::Consume,
+                    ..checked(owned.clone())
+                },
+                checked(composite("cell", false)),
+            ];
+            let (plan, work) = crate::instrumentation::measure_deterministic_work(|| {
+                plan_stable_view_transfer_with_bindings_and_composites(
+                    &resources,
+                    &requirements,
+                    &assumptions,
+                    &ledger,
+                    caller,
+                    callee,
+                    &LoanViewBindings::default(),
+                    &backings,
+                )
+            });
+            if conflicting {
+                assert!(matches!(
+                    plan,
+                    Err(StableViewPlanError::ConflictingRequirement(_))
+                ));
+            } else {
+                assert_eq!(plan.unwrap().stable_views().len(), 1);
+            }
+            samples.push(work);
+        }
+        assert!(
+            samples.iter().all(|work| *work <= samples[0] + 32),
+            "conflicting={conflicting}: {samples:?}"
+        );
+    }
 }

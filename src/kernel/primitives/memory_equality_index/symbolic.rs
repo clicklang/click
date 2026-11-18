@@ -501,7 +501,7 @@ mod tests {
         let facts = empty
             .clone()
             .assume_condition(
-                ConditionTerm::pointer_equal(base.clone(), alias.clone()),
+                ConditionTerm::address_equal(base.clone(), alias.clone()),
                 true,
             )
             .assume_condition(
@@ -569,7 +569,7 @@ mod tests {
         let k = MachineTerm::Variable(Variable(962_003));
         let empty = PureFactContext::new();
         let equal = empty.clone().assume_condition(
-            ConditionTerm::pointer_equal(base.clone(), alias.clone()),
+            ConditionTerm::address_equal(base.clone(), alias.clone()),
             true,
         );
         let bounded = equal
@@ -683,7 +683,7 @@ mod tests {
         let loaded_alias = Address::loaded_value(&retained_state, &alias);
         let empty = PureFactContext::new();
         let equal_base = empty.clone().assume_condition(
-            ConditionTerm::pointer_equal(slot.clone(), alias.clone()),
+            ConditionTerm::address_equal(slot.clone(), alias.clone()),
             true,
         );
         let facts = equal_base
@@ -758,7 +758,7 @@ mod wide_range_reader_tests {
             1,
         );
         let facts = PureFactContext::new()
-            .assume_condition(ConditionTerm::pointer_equal(base, alias.clone()), true);
+            .assume_condition(ConditionTerm::address_equal(base, alias.clone()), true);
         let held = ResourceFact::view_memory(wide.clone());
         let resources = ResourceContext::new().unchecked_with_fact(held.clone());
         // Register the resource input at publication, before bounded queries.

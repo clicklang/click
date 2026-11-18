@@ -14,7 +14,11 @@ pub(super) fn construct(
         return None;
     }
     let mut evaluation = ExecutionState::at_point(&state.program_point());
-    bind(definition, instance.arguments(), &mut evaluation)?;
+    bind(
+        definition,
+        &(instance.arguments()).native_values(),
+        &mut evaluation,
+    )?;
     let parameters = definition
         .parameters()
         .iter()

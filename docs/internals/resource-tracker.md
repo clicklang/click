@@ -738,7 +738,7 @@ load. Two things were `Symbolic` before, and only one of them still is:
 
 Framing a load of the second kind therefore needs evidence, and one route
 spends it: `pointers_proven_distinct_for_memory_resolution` takes **one hop**
-through the index of assumed `PointerEqual` facts to a non-symbolic form and
+through the index of assumed `AddressEqual` facts to a non-symbolic form and
 asks the same question there
 (`pointers_distinct_through_one_exact_alias`). `ensures result == &g[0]` and
 `ensures result == p` are what that reads, and
@@ -1410,11 +1410,11 @@ meant when it was folded.
 
 While the fact is unfolded, every operation preserves its denotation:
 
-- `take` requires the index in range, its guard known true, and the index
+- Indexed `unfold` requires the index in range, its guard known true, and the index
   provably different from every hole; it adds the index as a hole and
   composes the element as owned memory. Before, the fact held the element;
   after, the element is held outright and the fact claims nothing there.
-- `give` requires a hole at the index and its guard known true, consumes the
+- Indexed `fold` requires a hole at the index and its guard known true, consumes the
   element, and removes the hole.
 - `gather` and `scatter` require every guard decided one way by a quantified
   fact, which the kernel instantiates once at a reserved arbitrary index under
@@ -1444,7 +1444,7 @@ write provably changes nothing the fact claims — and afterwards removes the
 hole when `j` is out of range or the stored value makes the guard known false,
 since excluding an index and including it with a false guard denote the same
 thing. A store that makes the guard true leaves the hole open; the element
-must come back through `give` before the next fold. Any other store is
+must be restored with indexed `fold` before folding the whole resource. Any other store is
 refused: at an index whose guard is true and whose element was not taken out,
 the fact would silently gain or lose a cell.
 
@@ -1745,28 +1745,17 @@ Neither query reads more than one guard cell or the fact's own terms.
 
 ### Certificates, expansion, and cost
 
-Each step is recorded as `CheckedExecutionEvent::IteratedStep`, which retains
-its input state and fact context; trace checking applies the kernel step again
-and compares the result, as it does for a lifetime end. The store rule lives
-in the statement evaluator, so re-executing a statement re-applies it.
-Expansion prints the steps as written.
+Each step records a `CheckedExecutionEvent::IteratedStep` from the checked
+transition. Expansion prints it as written.
 
-`take` and `give` read one fact, one guard cell, and the fact's holes; a
-store reads the facts filed under its block; unfolding and folding the
-declaring resource move one fact. The deterministic regressions in
-`src/kernel/tests/iterated_ownership_tests.rs` hold the index range at 64,
-256, 1024, and 4096 cells: taking one element costs 14 units at every size,
-unfolding the declaring resource 39, a separation query nothing measurable,
-and a loop claiming `M` elements costs 40 units per element (1275, 2555, 5115,
-and 10235 for 32 to 256). The one linear scan is `gather`'s and `scatter`'s
-instantiation of the quantified guard fact, which reads the context's
-quantified facts once per step, as other quantified matching does.
+Indexed `unfold` and `fold` select one held clause by its exact instantiated
+coordinates, then read one guard cell and the selected clause's holes. A store
+reads the facts filed under its block. Folding or unfolding the declaring
+resource moves one fact. Deterministic regressions measure work across range
+sizes and with unrelated holdings.
 
-### Decisions this slice made
+### Declaration boundaries
 
-- The steps are named `take`, `give`, `gather`, and `scatter`. `take` and
-  `give` name the element range itself rather than an index, and find their
-  fact by the element base.
 - An unguarded clause must own the one-cell element `base[k..k + 1]` and
   lowers to `owns base[lo..hi]`; any other unguarded element is refused with
   that form.
@@ -1981,6 +1970,15 @@ occurrences. Selected return construction preserves raw clause order and
 multiplicity. Optional normalization visits only the explicit body. Arbitrary
 return descriptions still establish their cross-head and caller boundaries;
 they do not acquire the held parent's frame rule merely from a role marker.
+Cached expansion and live authority control expansion check reuse against the
+retained ownership partition. Exact representations use the exact fact index.
+For a split memory child, the indexed write supplier at each successive
+address must start there, have positive quantity and compatible provenance,
+and end at or before the child's end. Symbolic bounds follow the same
+indexed endpoint chain used in owned-resource consumption. The walk stops
+at an exact cover and
+retains the existing occurrences and their lineage. No scratch context or
+ownership validation is needed to establish coverage.
 Generic expansion also serves contract entry/certification, folding and
 observations, whose remaining caller-specific work stays source pinned. Footprint projection
 coalesces the explicit ranges derived from its selected head without admitting
@@ -2017,7 +2015,7 @@ Ordinary returns, exceptional returns and void fallthrough do not call
 shared-root consistency check is constant work; selected output consumption,
 loan recovery and declared resource effects keep their own construction rules.
 
-Entry/exit certification and definition-fact checking use
+Entry/exit certification, definition-fact checking and Surface observation use
 `observable_facts_assuming_valid` on their producer-established partitions.
 They expose the compact observable composition without repeating ownership
 admission. The raw `observable_facts` API still validates an assembled description
@@ -2028,6 +2026,28 @@ exceptional and fallthrough completion, reject overlapping raw observations,
 and grow owners, related ranges, tokens, aliases and private slots at 4/16/64.
 Existing observable-projection tests cover private filtering and invalidation.
 
+For an explicit folded composite observation on a state with no loan bindings,
+the kernel takes the selected resource and the memory naming input. It
+constructs the successor from the reached state, inserts the checked body's
+views with the selected occurrence as support, and publishes the structural
+witnesses of that body. There is no proposed resource context to compare
+against the whole retained partition. Loan-bound observations still use the
+ledger projection route. The introduced pure facts still need their ordinary
+checked definition and derivation evidence.
+
+Exact contract certification shares its original closing entry with the
+single unconditional finite entry case. Guarded and recursive cases retain
+their case-specific entry construction. Closing still needs the definition
+and footprint evidence for each requested claim.
+
+Normal `ensures` goal preparation and closing share one successful exit
+resource projection per retained entry case. Reuse requires the same exit
+checkpoint, adjusted memory and resource custody, composite definitions, and
+proof facts including logical read definitions. A changed checkpoint prepares
+a fresh projection. Each consumer builds its own claim state from the
+projection, and closing still checks allocation escape and computes the
+observation facts for its claims.
+
 The source tests in `tests/search_boundary.rs` pin the perimeter, including
 new/hidden references and duplicate caller edges. Runtime probes exercise
 raw-output admission and pending-return admission; the broader legacy routes
@@ -2035,4 +2055,25 @@ remain source pinned. Existing migrated fragment tests provide their own no-disc
 observes registered discovery calls, not arbitrary loops: each future migration
 still needs an operation audit and deterministic scaling checks.
 
-Surface observation retains raw-context validation: entry declarations can still expose contradictory instance bodies. That remaining raw boundary is source-inventoried; only producer-established observations may bypass it. Returned composite requirements consume every written body occurrence, before normalization can collapse duplicate memory clauses.
+Raw entry descriptions enter through `admit_declared_entry_resources`, before
+the entry is published. It elaborates the declared section's known owned memory
+frontier, including folded instance bodies and nested fieldless composites.
+Admission reads the retained written-clause metadata, so normalization cannot
+merge away repeated entry heads. It reuses the section producer's admitted flat
+partition and admits only the newly elaborated body footprint beside it.
+Nonunit ownership propagates through nested bodies and refuses a proven
+nonempty exclusive footprint; empty ranges and readonly bodies remain allowed.
+The returned context retains the original folded storage and occurrence IDs.
+Undecided guards, unselected constructors, existential bodies and recursive
+tails retain their conditional or opaque entry assertions; admission does not
+guess a model or union mutually exclusive arms. It never inspects an unrelated
+caller frame. Plain flat sections retain their existing section admission.
+
+The raw constructor is source-pinned to the two entry producers. Initial,
+outcome and unfold observations consume the resulting persistent composition
+without whole-context validation. The actual Surface-helper regression grows
+related owners, independent owners and aliases at 4/16/64. Legacy raw validation
+visits are metered so an accidental return to that walk fails the growth test.
+The folded-entry source regressions refuse duplicate ownership without an
+explicit unfold and keep an adjacent owner accepted. Returned composite
+requirements likewise consume every written body occurrence before normalization.

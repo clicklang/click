@@ -59,3 +59,41 @@ fn charon_enumeration_rejects_understated_element_bound() {
         "last_pair",
     );
 }
+
+/// An enumerated loop's `next` binds the index and the element itself: the
+/// `Option` MIR returns, its tag test and its temporary are gone.
+#[test]
+fn charon_enumerated_loops_bind_their_index_and_element_without_an_option() {
+    use click::languages::rust::schema::{MirStatement, Type};
+    let prepared = prepared_enumeration();
+    let mut bound = 0;
+    for function in &prepared.export().functions {
+        let Some(mir) = &function.mir else { continue };
+        assert!(
+            !mir.locals
+                .iter()
+                .any(|local| matches!(local.value_type, Type::EnumerateOption { .. })),
+            "{}",
+            function.name
+        );
+        for statement in mir.blocks.iter().flat_map(|block| &block.statements) {
+            if let MirStatement::EnumerateNext {
+                option,
+                index,
+                element,
+                taken,
+                ..
+            } = statement
+            {
+                assert_eq!(option, &None, "{}: {statement:?}", function.name);
+                assert!(
+                    (index.is_none() && element.is_none()) || *taken == Some(true),
+                    "{}: {statement:?}",
+                    function.name
+                );
+                bound += usize::from(index.is_some() || element.is_some());
+            }
+        }
+    }
+    assert!(bound > 0);
+}

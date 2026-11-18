@@ -732,8 +732,9 @@ fn advance_execution_proof_statement(
                 state: exit_state, ..
             } = &transition.outcome
             {
-                let footprint = crate::kernel::RegionFootprint::transition(
+                let footprint = crate::kernel::RegionFootprint::statement_transition(
                     format!("region({statement_index}).footprint"),
+                    statement,
                     &context.state,
                     exit_state,
                     &transition.execution_facts,
@@ -796,7 +797,7 @@ fn advance_execution_proof_statement(
                         recorded_states.record_region_points(points);
                     }
                     if let Some(iterations) = &transition.loop_iterations {
-                        recorded_states.record_loop_iterations(loop_index, iterations);
+                        recorded_states.record_loop_iterations_root(loop_index, iterations.clone());
                     }
                     if let Some(loop_clause) = environment
                         .function_block
@@ -950,11 +951,11 @@ fn loop_entry_branches(
             let Proposition::ConditionIs(condition, _) = fact else {
                 continue;
             };
-            if decided.contains(condition) {
+            if decided.contains(condition.native_compat()) {
                 continue;
             }
-            let positive = Proposition::ConditionIs(condition.clone(), true);
-            let negative = Proposition::ConditionIs(condition.clone(), false);
+            let positive = Proposition::condition_is(condition.clone(), true);
+            let negative = Proposition::condition_is(condition.clone(), false);
             let (mut yes, mut no) = (Vec::new(), Vec::new());
             for index in &indices {
                 crate::instrumentation::record_deterministic_work(1);
@@ -967,7 +968,7 @@ fn loop_entry_branches(
             if yes.len() + no.len() != indices.len() {
                 continue;
             }
-            decided.insert(condition.clone());
+            decided.insert((condition.clone()).native_compat().clone());
             if yes.is_empty() || no.is_empty() {
                 continue;
             }

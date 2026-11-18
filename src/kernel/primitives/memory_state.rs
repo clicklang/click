@@ -568,7 +568,7 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                         tasks.push(HavocIdentityTask::Text(")"));
                         tasks.push(HavocIdentityTask::Pointer(*pointer));
                     }
-                    MachineTerm::PointerAddress(pointer, _) => {
+                    MachineTerm::IntegerAddress(pointer, _) => {
                         identity.push_str("address(");
                         tasks.push(HavocIdentityTask::Text(")"));
                         tasks.push(HavocIdentityTask::Pointer(*pointer));
@@ -606,7 +606,7 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
             HavocIdentityTask::Condition(condition) => {
                 crate::instrumentation::record_deterministic_work(1);
                 match condition {
-                    ConditionTerm::PointerValueEqual(left, right) => {
+                    ConditionTerm::PointerEqual(left, right) => {
                         let _ = write!(identity, "pveq({left:?},{right:?});");
                     }
 
@@ -658,14 +658,14 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                             is_float64: true,
                         });
                     }
-                    ConditionTerm::PointerOffsetEqual(left, right) => {
+                    ConditionTerm::AddressOffsetEqual(left, right) => {
                         identity.push_str("coe(");
                         tasks.push(HavocIdentityTask::Text(")"));
                         tasks.push(HavocIdentityTask::PointerOffset(*right));
                         tasks.push(HavocIdentityTask::Text(","));
                         tasks.push(HavocIdentityTask::PointerOffset(*left));
                     }
-                    ConditionTerm::PointerEqual(left, right) => {
+                    ConditionTerm::AddressEqual(left, right) => {
                         identity.push_str("cpe(");
                         tasks.push(HavocIdentityTask::Text(")"));
                         tasks.push(HavocIdentityTask::Pointer(*right));
@@ -866,7 +866,7 @@ mod call_havoc_local_retention_tests {
                 ProgramValue::Int32(MachineTerm::constant(7)),
             );
         let facts = PureFactContext::new().assume_condition(
-            ConditionTerm::pointer_equal(alias.clone(), pointer.offset_by_bytes(1)),
+            ConditionTerm::address_equal(alias.clone(), pointer.offset_by_bytes(1)),
             true,
         );
         let range = MemoryRange::new_with_element_width(alias, 0u32.into(), 1u32.into(), 1);
@@ -911,8 +911,8 @@ mod call_havoc_local_retention_tests {
             MachineTerm::constant(0),
             MachineTerm::constant(1),
         );
-        let assumptions = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
-            ConditionTerm::pointer_equal(symbolic, local.clone()),
+        let assumptions = PureFactContext::new().assume_proposition(Proposition::condition_is(
+            ConditionTerm::address_equal(symbolic, local.clone()),
             true,
         ));
         let unrelated_range = MemoryRange::new(
@@ -1774,6 +1774,22 @@ impl LocalEnvironment {
         }
     }
 
+    pub(crate) fn nonvolatile_scalar(
+        &self,
+        name: &BindingName,
+        expected_type: ProgramType,
+    ) -> Option<&StoredExecutionValue> {
+        match self.binding(name)? {
+            LocalBinding::Object {
+                value,
+                program_type,
+                volatile: false,
+                ..
+            } if *program_type == expected_type => Some(value),
+            _ => None,
+        }
+    }
+
     /// Explicit legacy output: reconstruct one selected native value, without caching it.
     pub fn get_native(
         &self,
@@ -2087,7 +2103,7 @@ fn held_address_base(binding: &LocalBinding) -> Option<&AddressBase> {
     let LocalBinding::Object { value, .. } = binding else {
         return None;
     };
-    Some(&value.pointer()?.pointer().base)
+    Some(&value.pointer()?.address().base)
 }
 
 /// The numeric value of a scalar of integer or truth type.
@@ -2373,7 +2389,7 @@ impl LocalEnvironment {
     pub(crate) fn pointer_objects_in_block<'a>(
         &'a self,
         block: &AddressBase,
-    ) -> impl Iterator<Item = (&'a BindingName, &'a PointerValue)> {
+    ) -> impl Iterator<Item = (&'a BindingName, &'a Pointer)> {
         self.pointer_objects_by_block
             .get(block)
             .into_iter()
@@ -3017,7 +3033,7 @@ impl CallKeptRanges {
             self.premises
                 .iter()
                 .fold(assumptions.clone(), |facts, (condition, value)| {
-                    facts.assume_proposition(Proposition::ConditionIs(condition.clone(), *value))
+                    facts.assume_proposition(Proposition::condition_is(condition.clone(), *value))
                 }),
         )
     }
@@ -4577,8 +4593,8 @@ impl SymbolicMemory {
     /// Name the success identity already reserved by this allocation producer.
     /// This is a value observation, not evidence that allocation succeeded or
     /// that the object is still live. No facts or memory history are consulted.
-    pub(crate) fn fresh_allocation_identity(&self, result: &PointerValue) -> Option<PointerValue> {
-        let base = result.pointer();
+    pub(crate) fn fresh_allocation_identity(&self, result: &Pointer) -> Option<Pointer> {
+        let base = result.address();
         match base.base {
             AddressBase::Heap(_) => Some(result.clone()),
             AddressBase::Symbolic(variable) if self.heap.pending_allocations.contains_key(base) => {
@@ -5536,6 +5552,7 @@ impl SymbolicMemory {
         destination: &Address,
         bytes: u32,
         field_bytes: &[(u32, std::num::NonZeroU8)],
+        fields: &[AggregateField],
     ) -> Result<Self, UndefinedBehavior> {
         if !source.base.is_local_block()
             || !destination.base.is_local_block()
@@ -5593,6 +5610,29 @@ impl SymbolicMemory {
                         ProgramValue::UInt8(crate::kernel::eval::mask_byte(value, mask))
                     });
                     initialized.set_partial(to, mask, value);
+                }
+            }
+        }
+        for field in fields {
+            let width = field.program_type().byte_width();
+            let from = source.offset_by_bytes(field.offset_bytes());
+            let to = destination.offset_by_bytes(field.offset_bytes());
+            initialized
+                .copy_exact_range_from(&snapshot.heap.initialized, &from, &to, width)
+                .expect("checked local member range");
+            let start = from.offset.as_const().expect("exact local member");
+            for (address, value) in snapshot
+                .cells
+                .concrete()
+                .range(from.clone()..from.offset_by_bytes(width))
+            {
+                crate::instrumentation::record_deterministic_work(1);
+                let offset = address.offset.as_const().expect("exact cell offset") - start;
+                let relative = u32::try_from(offset).expect("cell starts within the member");
+                if value.byte_width() <= width - relative {
+                    let target = to.offset_by_bytes(relative);
+                    initialized.record(&target, value.byte_width());
+                    Arc::make_mut(&mut self.cells).insert_retained(target, value.clone());
                 }
             }
         }
@@ -5989,8 +6029,8 @@ impl SymbolicMemory {
             .ok_or(RuntimeError::TypeMismatch)?;
         let state_copy = copy
             && matches!(&value, ProgramValue::Pointer(source) if
-            !source.pointer().base.is_local_block()
-            || self.cells.runs_in_block(&source.pointer().base)
+            !source.address().base.is_local_block()
+            || self.cells.runs_in_block(&source.address().base)
                 .any(|run| !matches!(run.value_mode(), RunValueMode::Constant(_))));
         if !base.base.is_local_block() || state_copy {
             return self.write_scalar_array_state(
@@ -6043,7 +6083,7 @@ impl SymbolicMemory {
             let ProgramValue::Pointer(pointer) = &value else {
                 return Err(RuntimeError::TypeMismatch);
             };
-            let pointer = pointer.pointer();
+            let pointer = pointer.address();
             if !valid_region(pointer)
                 || !self.run_can_stand_for_cells_at(pointer)
                 || (bytes != 0 && !self.has_initialized_bytes_under(pointer, bytes, assumptions))
@@ -6282,7 +6322,7 @@ impl SymbolicMemory {
             let ProgramValue::Pointer(pointer) = value else {
                 return Err(RuntimeError::TypeMismatch);
             };
-            let pointer = pointer.pointer();
+            let pointer = pointer.address();
             if !valid(pointer)
                 || (pointer.base.is_local_block()
                     && !self.has_initialized_bytes_under(pointer, bytes, assumptions))
@@ -8122,7 +8162,7 @@ impl SymbolicMemory {
                     base: block.clone(),
                     offset: AddressOffset::Constant(0),
                 },
-                bytes: contents.size().clone(),
+                bytes: (contents.size().clone()).into(),
                 wide: false,
             })
             .collect()
@@ -8270,7 +8310,7 @@ impl SymbolicMemory {
         // cell, either of which already carries its definition.
         match Address::version_read_value(&retained_state, pointer) {
             Ok(held) => ProgramValue::Pointer(held.with_type(value_type)),
-            Err(value) => ProgramValue::Pointer(PointerValue::from_read(
+            Err(value) => ProgramValue::Pointer(Pointer::from_read(
                 value,
                 value_type,
                 &retained_state,
@@ -8299,7 +8339,7 @@ impl SymbolicMemory {
             &retained_state,
             pointer,
         );
-        ProgramValue::Pointer(PointerValue::from_read(
+        ProgramValue::Pointer(Pointer::from_read(
             value,
             value_type,
             &retained_state,
@@ -8796,7 +8836,7 @@ impl ExecutionState {
             .creation
             .as_ref()
             .ok_or("batch import requires the creation ledger")?
-            .import_observable_contract_population_quantity(description, quantity)
+            .import_observable_contract_population_quantity(description, quantity.native_compat())
             .map_err(|refusal| format!("batch population import refused: {refusal}"))?;
         let mut next = self.clone();
         Arc::make_mut(&mut next.population_effects).creation = Some(events);
@@ -9039,11 +9079,12 @@ impl ExecutionState {
     ) -> Result<Vec<MachineTerm>, String> {
         let mut counts = Vec::with_capacity(descriptions.len());
         for description in descriptions {
-            let [AlgebraicValue::Program(ProgramValue::Pointer(pointer))] = description.arguments()
+            let Some([crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(pointer))]) =
+                (description.arguments()).fixed_values::<1>()
             else {
                 return Err("control authority needs one pointer anchor".into());
             };
-            let anchor = pointer.pointer();
+            let anchor = pointer.address();
             let events = self
                 .population_effects
                 .creation
@@ -9208,12 +9249,13 @@ impl ExecutionState {
             self.authority_wrapper_candidates(selected, definition, assumptions, true)?;
         let mut components = Vec::with_capacity(descriptions.len());
         for description in &descriptions {
-            let [AlgebraicValue::Program(ProgramValue::Pointer(anchor_value))] =
-                description.arguments()
+            let Some(
+                [crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(anchor_value))],
+            ) = (description.arguments()).fixed_values::<1>()
             else {
                 return Err("control authority needs one pointer anchor".into());
             };
-            let anchor = anchor_value.pointer().clone();
+            let anchor = anchor_value.address().clone();
             let ResourceFact::Own(Resource::Composite { arguments, .. }, _) = selected else {
                 return Err("Requires owns control resource".into());
             };
@@ -9488,11 +9530,12 @@ impl ExecutionState {
         if quantity.as_const() != Some(1) {
             return Err("Requires one authority(R(p))".into());
         }
-        let [AlgebraicValue::Program(ProgramValue::Pointer(pointer))] = description.arguments()
+        let Some([crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(pointer))]) =
+            (description.arguments()).fixed_values::<1>()
         else {
             return Err("authority requires one pointer anchor".into());
         };
-        let anchor = pointer.pointer();
+        let anchor = pointer.address();
         let events = self
             .population_effects
             .creation
@@ -9609,12 +9652,12 @@ impl ExecutionState {
             arguments.clone(),
             super::super::ResourceFieldSchema::new(vec![]).expect("empty resource schema is valid"),
         );
-        let Some(AlgebraicValue::Program(ProgramValue::Pointer(pointer))) =
+        let Some(crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(pointer))) =
             description.arguments().first()
         else {
             return Err("Requires an exact pointer-anchored authorized resource R(p)".into());
         };
-        let anchor = pointer.pointer();
+        let anchor = pointer.address();
         let imported_member_exchange =
             self.population_effects
                 .creation
@@ -9781,7 +9824,7 @@ impl ExecutionState {
                 &anchor.base,
                 &description,
                 produce,
-                quantity,
+                quantity.native_compat(),
                 assumptions,
             )
         } else {
@@ -9789,7 +9832,7 @@ impl ExecutionState {
                 &anchor.base,
                 &description,
                 produce,
-                quantity,
+                quantity.native_compat(),
                 assumptions,
             )
         };
@@ -9853,12 +9896,12 @@ impl ExecutionState {
                     .map_err(|refusal| format!("named member change refused: {refusal}"))?
             }
         } else if produce {
-            let Some(AlgebraicValue::Program(ProgramValue::Pointer(pointer))) =
+            let Some(crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(pointer))) =
                 description.arguments().first()
             else {
                 return Ok(());
             };
-            events.member_created(&pointer.pointer().base, description.family())
+            events.member_created(&pointer.address().base, description.family())
         } else {
             return Ok(());
         };
@@ -10009,6 +10052,29 @@ impl ExecutionState {
 
     pub fn with_local(mut self, name: impl Into<BindingName>, value: ProgramValue) -> Self {
         self.locals.set(name, value);
+        self
+    }
+
+    /// Bind an existing producer for proof-side expression lowering through
+    /// the same local type/qualifier policy as `with_local`.
+    pub(crate) fn with_retained_local(
+        mut self,
+        name: impl Into<BindingName>,
+        value: ExecutionValue,
+    ) -> Self {
+        if let ExecutionValue::Native(value) = value {
+            return self.with_local(name, value);
+        }
+        let program_type = value.program_type();
+        self.locals.set_retained_typed_with_all_qualifiers(
+            name,
+            value,
+            program_type,
+            false,
+            false,
+            false,
+            false,
+        );
         self
     }
 
@@ -10296,6 +10362,16 @@ impl ExecutionState {
         self.loan_ledger
             .as_ref()
             .and_then(|ledger| ledger.memory_access_refusal(range, assumptions, operation))
+    }
+
+    pub(in crate::kernel) fn automatic_storage_loan_refusal(
+        &self,
+        block: &AddressBase,
+    ) -> Option<RuntimeError> {
+        self.loan_ledger
+            .as_ref()?
+            .automatic_storage_retirement_refusal(block, self.memory.block_size(block)?)
+            .map(|refusal| RuntimeError::LoanRefusal(Box::new(refusal)))
     }
 
     pub fn locals(&self) -> &LocalEnvironment {
@@ -10821,8 +10897,8 @@ mod contract_retirement_tests {
             offset: AddressOffset::Constant(0),
         };
         let assumptions = aliases.iter().fold(PureFactContext::new(), |facts, alias| {
-            facts.assume_proposition(Proposition::ConditionIs(
-                ConditionTerm::pointer_equal(alias.clone(), base.clone()),
+            facts.assume_proposition(Proposition::condition_is(
+                ConditionTerm::address_equal(alias.clone(), base.clone()),
                 true,
             ))
         });
@@ -10981,8 +11057,8 @@ mod join_allocation_spelling_tests {
             base: AddressBase::Symbolic(Variable(924_005)),
             offset: AddressOffset::Constant(0),
         };
-        let assumptions = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
-            ConditionTerm::pointer_equal(p.clone(), q.clone()),
+        let assumptions = PureFactContext::new().assume_proposition(Proposition::condition_is(
+            ConditionTerm::address_equal(p.clone(), q.clone()),
             true,
         ));
         assert!(!assumptions.is_inconsistent());
@@ -11005,11 +11081,11 @@ mod join_allocation_spelling_tests {
         let p = heap_base(924_021);
         let q = heap_base(924_025);
         assert_eq!(
-            ConditionTerm::pointer_equal(p.clone(), q.clone()),
+            ConditionTerm::address_equal(p.clone(), q.clone()),
             ConditionTerm::Constant(false)
         );
-        let assumptions = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
-            ConditionTerm::pointer_equal(p, q),
+        let assumptions = PureFactContext::new().assume_proposition(Proposition::condition_is(
+            ConditionTerm::address_equal(p, q),
             true,
         ));
         assert!(assumptions.is_inconsistent());
@@ -11459,7 +11535,7 @@ mod local_variable_spelling_tests {
                 let scanned = locals
                     .object_values()
                     .filter_map(|(name, value)| {
-                        let pointer = value.pointer()?.pointer();
+                        let pointer = value.pointer()?.address();
                         (&pointer.base == block).then(|| (name, pointer.clone()))
                     })
                     .collect::<Vec<_>>();
@@ -11467,7 +11543,7 @@ mod local_variable_spelling_tests {
                     assert_eq!(
                         indexed
                             .pointer_objects_in_block(block)
-                            .map(|(name, pointer)| (name, pointer.pointer().clone()))
+                            .map(|(name, pointer)| (name, pointer.address().clone()))
                             .collect::<Vec<_>>(),
                         scanned
                     );

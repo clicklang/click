@@ -1,5 +1,6 @@
 //! Compiler-owned typed Rust source vocabulary. No printed compiler dumps.
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 pub const SCHEMA: u32 = 8;
 pub const TARGET: &str = "x86_64-unknown-linux-gnu";
@@ -496,6 +497,12 @@ pub struct MirBody {
     /// whose return the importer reads directly (`ReturnValue`) has none.
     #[serde(default = "return_place_name")]
     pub return_place: String,
+    /// The locals whose source name is bound more than once in the
+    /// function, by their key in `locals`, with that source name. Each is
+    /// its own declaration spelled as the source spells it; a proof's
+    /// `word` names the innermost live one, as in C.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub spellings: BTreeMap<String, String>,
 }
 
 /// The name of a function's return place.
@@ -543,7 +550,18 @@ pub enum MirStatement {
     },
     SharedArrayNext {
         iterator: String,
-        option: String,
+        /// The local the `Option` `next` returns is built in; `None` once
+        /// the `for` loop reads only its element, which `payload` binds.
+        option: Option<String>,
+        /// The local the yielded element's reference is bound to, the `for`
+        /// loop's own variable: the yielding arm assigns it directly and
+        /// builds no `Option`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        payload: Option<String>,
+        /// Whether the iterator yields, when its `for` header's test already
+        /// decided it: the statement is then that arm alone.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        taken: Option<bool>,
     },
     /// `target = source.enumerate()` of a slice iterator.
     EnumerateInitialize {
@@ -556,7 +574,19 @@ pub enum MirStatement {
     },
     EnumerateNext {
         iterator: String,
-        option: String,
+        /// The local the `Option` is built in; `None` once the loop reads only
+        /// its index and element, which `index` and `element` bind.
+        option: Option<String>,
+        /// The local the yielded index is bound to.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        index: Option<String>,
+        /// The local the yielded element's reference is bound to.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        element: Option<String>,
+        /// Whether the iterator yields, when its `for` header's test already
+        /// decided it: the statement is then that arm alone.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        taken: Option<bool>,
     },
     /// `target = start..end`.
     RangeInitialize {
@@ -600,7 +630,16 @@ pub enum MirStatement {
     },
     ChunkNext {
         iterator: String,
-        option: String,
+        /// The local the `Option` is built in; `None` once the loop reads only
+        /// its chunk, which `payload` binds.
+        option: Option<String>,
+        /// The slice local the yielded chunk is bound to.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        payload: Option<String>,
+        /// Whether the iterator yields, when its `for` header's test already
+        /// decided it: the statement is then that arm alone.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        taken: Option<bool>,
     },
     Assign {
         target: Expression,

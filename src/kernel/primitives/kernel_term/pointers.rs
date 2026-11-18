@@ -20,7 +20,7 @@ pub(crate) struct KernelPointerQualifiers {
     pub(crate) object_type_evidence: Option<ObjectTypeEvidence>,
 }
 #[derive(Clone, Debug)]
-pub(crate) struct KernelPointerValue {
+pub(crate) struct KernelPointer {
     pub(crate) address: SharedAddress,
     pub(crate) provenance: SharedAddress,
     pub(crate) bounds_owner: Option<SharedAddress>,
@@ -31,31 +31,31 @@ pub(crate) struct KernelPointerValue {
 /// Exact producer handle. Logical equality is a separate checker operation;
 /// it must not discard qualifiers or proof evidence from this payload.
 #[derive(Clone)]
-pub struct SharedPointerValue(Arc<KernelPointerValue>);
-impl std::fmt::Debug for SharedPointerValue {
+pub struct SharedPointer(Arc<KernelPointer>);
+impl std::fmt::Debug for SharedPointer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple("SharedPointerValue")
+        f.debug_tuple("SharedPointer")
             .field(&Arc::as_ptr(&self.0))
             .finish()
     }
 }
-impl PartialEq for SharedPointerValue {
+impl PartialEq for SharedPointer {
     fn eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.0, &other.0)
     }
 }
-impl Eq for SharedPointerValue {}
-impl Hash for SharedPointerValue {
+impl Eq for SharedPointer {}
+impl Hash for SharedPointer {
     fn hash<H: Hasher>(&self, state: &mut H) {
         Arc::as_ptr(&self.0).hash(state);
     }
 }
-impl SharedPointerValue {
-    pub(crate) fn new(value: KernelPointerValue) -> Self {
+impl SharedPointer {
+    pub(crate) fn new(value: KernelPointer) -> Self {
         crate::instrumentation::record_deterministic_work(1);
         Self(Arc::new(value))
     }
-    pub(crate) fn node(&self) -> &KernelPointerValue {
+    pub(crate) fn node(&self) -> &KernelPointer {
         &self.0
     }
     pub(in crate::kernel) fn retained_nonaddress_metadata(&self) -> RetainedPointerMetadata<'_> {
@@ -138,7 +138,7 @@ impl SharedPointerValue {
             && bounds_match
             && evidence_matches
     }
-    /// Same address roles as PointerValue::pointers. Widths remain separate
+    /// Same address roles as Pointer::pointers. Widths remain separate
     /// numeric payloads; each reader retains its existing metadata policy.
     pub(crate) fn addresses(&self) -> impl Iterator<Item = &SharedAddress> {
         let value = self.node();
@@ -153,15 +153,15 @@ impl SharedPointerValue {
                     .map(|bounds| &bounds.start),
             )
     }
-    pub(crate) fn import(value: &PointerValue) -> Self {
+    pub(crate) fn import(value: &Pointer) -> Self {
         Self::import_addresses(value, SharedAddress::import)
     }
-    pub(crate) fn import_produced(value: &PointerValue) -> Self {
+    pub(crate) fn import_produced(value: &Pointer) -> Self {
         Self::import_addresses(value, SharedAddress::import_produced)
     }
-    fn import_addresses(value: &PointerValue, address: fn(&Address) -> SharedAddress) -> Self {
-        Self::new(KernelPointerValue {
-            address: address(&value.pointer),
+    fn import_addresses(value: &Pointer, address: fn(&Address) -> SharedAddress) -> Self {
+        Self::new(KernelPointer {
+            address: address(&value.address),
             provenance: address(&value.provenance),
             bounds_owner: value.bounds_owner.as_ref().map(|pointer| address(pointer)),
             program_type: value.program_type,
@@ -183,10 +183,10 @@ impl SharedPointerValue {
             }),
         })
     }
-    pub(crate) fn export(&self) -> Result<PointerValue, &'static str> {
+    pub(crate) fn export(&self) -> Result<Pointer, &'static str> {
         let value = self.node();
-        Ok(PointerValue {
-            pointer: value.address.export()?,
+        Ok(Pointer {
+            address: value.address.export()?,
             provenance: Arc::new(value.provenance.export()?),
             bounds_owner: value
                 .bounds_owner
@@ -222,14 +222,14 @@ impl SharedPointerValue {
 }
 
 impl KernelTerm {
-    pub(crate) fn shared_pointer_value(value: SharedPointerValue) -> Self {
+    pub(crate) fn shared_pointer_value(value: SharedPointer) -> Self {
         Self::intern(
             KernelType::Program(value.node().program_type),
-            KernelTermNode::PointerValue(value),
+            KernelTermNode::Pointer(value),
         )
     }
 
-    pub(crate) fn shared_pointer_call(call: KernelTerm, value: SharedPointerValue) -> Self {
+    pub(crate) fn shared_pointer_call(call: KernelTerm, value: SharedPointer) -> Self {
         Self::intern(
             KernelType::Program(value.node().program_type),
             KernelTermNode::PointerCall { call, value },
@@ -240,7 +240,7 @@ impl KernelTerm {
         operation: MachineBinaryOp,
         byte_width: u32,
         operands: [KernelTerm; 2],
-        value: SharedPointerValue,
+        value: SharedPointer,
     ) -> Self {
         Self::intern(
             KernelType::Program(value.node().program_type),
@@ -253,9 +253,9 @@ impl KernelTerm {
         )
     }
 
-    pub(crate) fn pointer_payload(&self) -> Option<&SharedPointerValue> {
+    pub(crate) fn pointer_payload(&self) -> Option<&SharedPointer> {
         match self.node() {
-            KernelTermNode::PointerValue(value)
+            KernelTermNode::Pointer(value)
             | KernelTermNode::PointerRead { value, .. }
             | KernelTermNode::PointerArithmetic { value, .. }
             | KernelTermNode::PointerCall { value, .. } => Some(value),
@@ -311,7 +311,7 @@ impl KernelTerm {
 
     /// Keep the producer structure when existing object-argument checking
     /// refines only its complete pointer payload.
-    pub(crate) fn refined_pointer_argument(&self, pointer: &PointerValue) -> Self {
+    pub(crate) fn refined_pointer_argument(&self, pointer: &Pointer) -> Self {
         if let KernelTermNode::ArrayReference {
             point,
             pointer: source,
@@ -324,10 +324,10 @@ impl KernelTerm {
                 *element_type,
             );
         }
-        self.with_pointer_payload(SharedPointerValue::import_produced(pointer))
+        self.with_pointer_payload(SharedPointer::import_produced(pointer))
     }
 
-    pub(crate) fn with_pointer_payload(&self, value: SharedPointerValue) -> Self {
+    pub(crate) fn with_pointer_payload(&self, value: SharedPointer) -> Self {
         if let Some(old) = self.pointer_payload() {
             if old.same_source_payload(&value) {
                 return self.clone();
@@ -362,10 +362,10 @@ impl KernelTerm {
 mod tests {
     use super::*;
     use crate::kernel::effective_type::{CAccessClass, CScalarClass};
-    pub(super) fn complete_source() -> PointerValue {
+    pub(super) fn complete_source() -> Pointer {
         let class = CAccessClass::Scalar(CScalarClass::Int);
-        PointerValue {
-            pointer: Address::symbolic(Variable(1000001)),
+        Pointer {
+            address: Address::symbolic(Variable(1000001)),
             provenance: Arc::new(Address::symbolic(Variable(1000002))),
             bounds_owner: Some(Arc::new(Address::symbolic(Variable(1000003)))),
             program_type: ProgramType::VoidPointer,
@@ -385,7 +385,7 @@ mod tests {
     #[test]
     fn complete_payload_preserves_addresses_qualifiers_and_unchecked_evidence() {
         let source = complete_source();
-        let shared = SharedPointerValue::import(&source);
+        let shared = SharedPointer::import(&source);
         let output = shared.export().unwrap();
         assert_eq!(source, output);
         // Logical equality omits these; compare the exact payload separately.
@@ -416,8 +416,8 @@ mod tests {
         q.object_type_evidence = None;
         b.bounds_owner = None; // Ignored by logical equality when bounds_known.
         assert_eq!(a, b);
-        let left = SharedPointerValue::import(&a);
-        let right = SharedPointerValue::import(&b);
+        let left = SharedPointer::import(&a);
+        let right = SharedPointer::import(&b);
         assert_ne!(left, right);
         assert!(left.export().unwrap().qualifiers.unwrap().constant);
         assert!(!right.export().unwrap().qualifiers.unwrap().constant);
@@ -427,8 +427,8 @@ mod tests {
     #[test]
     fn source_payload_names_do_not_inherit_logical_equality_omissions() {
         let source = complete_source();
-        let retained = SharedPointerValue::import(&source);
-        assert!(retained.same_source_payload(&SharedPointerValue::import(&source)));
+        let retained = SharedPointer::import(&source);
+        assert!(retained.same_source_payload(&SharedPointer::import(&source)));
         let mut variants = vec![source.clone().with_pointee_constant(false)];
         let mut changed = source.clone();
         changed.bounds_owner = None;
@@ -448,7 +448,7 @@ mod tests {
                 source, different,
                 "these distinctions are not logical pointer identity"
             );
-            assert!(!retained.same_source_payload(&SharedPointerValue::import(&different)));
+            assert!(!retained.same_source_payload(&SharedPointer::import(&different)));
         }
     }
 
@@ -457,7 +457,7 @@ mod tests {
         let mut source = complete_source();
         for qualifiers in [None, Some(Arc::new(PointerQualifiers::default()))] {
             source.qualifiers = qualifiers;
-            let output = SharedPointerValue::import(&source).export().unwrap();
+            let output = SharedPointer::import(&source).export().unwrap();
             assert_eq!(output.qualifiers.is_some(), source.qualifiers.is_some());
         }
     }
@@ -472,7 +472,7 @@ impl KernelTermImport {
         &mut self,
         application: &SharedPureApplication,
         retained: Vec<Option<KernelTerm>>,
-        value: SharedPointerValue,
+        value: SharedPointer,
     ) -> KernelTerm {
         let arguments = application
             .arguments()

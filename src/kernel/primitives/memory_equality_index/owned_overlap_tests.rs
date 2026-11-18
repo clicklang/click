@@ -24,7 +24,7 @@ fn indexed_ownership_overlap_keeps_geometry_and_persistent_branches() {
     let q = at(0);
     let p = at(1);
     let facts = empty.clone().assume_condition(
-        ConditionTerm::pointer_equal(p.clone(), q.offset_by_bytes(2)),
+        ConditionTerm::address_equal(p.clone(), q.offset_by_bytes(2)),
         true,
     );
     let held = owner(q.clone(), 4, 8);
@@ -163,7 +163,7 @@ fn pooled_literal_ownership_keeps_the_existing_memory_algebra_policy() {
     let left = literal("overlap:left");
     let right = literal("overlap:right");
     let facts = PureFactContext::new().assume_condition(
-        ConditionTerm::pointer_equal(left.clone(), right.clone()),
+        ConditionTerm::address_equal(left.clone(), right.clone()),
         true,
     );
     let resources =
@@ -281,7 +281,7 @@ fn a_complete_empty_class_is_clear_even_at_a_symbolic_coordinate() {
     // A whole-pointer alias can make affine coordinates incomplete. It must
     // never be mistaken for an empty owner class after extending the facts.
     let alias = facts.clone().assume_condition(
-        ConditionTerm::pointer_equal(pointer, held.memory_own_range().unwrap().base().clone()),
+        ConditionTerm::address_equal(pointer, held.memory_own_range().unwrap().base().clone()),
         true,
     );
     context.synchronize_memory_equalities(&alias);
@@ -320,7 +320,7 @@ fn cold_automatic_partitions_use_the_storage_index_and_exclude_opaque_owners() {
     ));
     let named_pointer = facts
         .clone()
-        .assume_condition(ConditionTerm::pointer_equal(local("first"), at(92)), true);
+        .assume_condition(ConditionTerm::address_equal(local("first"), at(92)), true);
     assert!(matches!(
         context.constant_owned_overlap(&owner(local("third"), 0, 4), &named_pointer),
         ConstantOwnedOverlap::Clear
@@ -339,7 +339,7 @@ fn cold_automatic_partitions_use_the_storage_index_and_exclude_opaque_owners() {
     ));
     let alias = facts
         .clone()
-        .assume_condition(ConditionTerm::pointer_equal(opaque, local("third")), true);
+        .assume_condition(ConditionTerm::address_equal(opaque, local("third")), true);
     assert!(!matches!(
         mixed.constant_owned_overlap(&owner(local("third"), 0, 4), &alias),
         ConstantOwnedOverlap::Clear
@@ -383,7 +383,7 @@ fn hidden_local_coverage_is_invalidated_when_addressability_changes() {
     ));
     crate::kernel::clear_never_address_taken_locals();
     let aliased = facts.assume_condition(
-        ConditionTerm::pointer_equal(
+        ConditionTerm::address_equal(
             at(100),
             Address {
                 base: "local:hidden_a".into(),

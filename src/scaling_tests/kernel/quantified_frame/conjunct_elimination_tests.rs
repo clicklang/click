@@ -37,7 +37,7 @@ fn conjunct_elimination_is_flat_against_unrelated_history_and_facts() {
             .clone()
             .store(base.offset_by_bytes(8), crate::kernel::uint8(0));
         let assumptions = (0..size).fold(PureFactContext::new(), |context, index| {
-            context.assume_proposition(Proposition::ConditionIs(
+            context.assume_proposition(Proposition::condition_is(
                 ConditionTerm::Variable(Variable(50_000 + u64::from(index))),
                 true,
             ))
@@ -50,7 +50,7 @@ fn conjunct_elimination_is_flat_against_unrelated_history_and_facts() {
         };
         // Built outside the measurement: interning a state is paid by
         // whoever builds it, not by the frame.
-        let other = Proposition::ConditionIs(ConditionTerm::Variable(Variable(49_999)), true);
+        let other = Proposition::condition_is(ConditionTerm::Variable(Variable(49_999)), true);
         let source = Proposition::And(Box::new(other), Box::new(defined(&before)));
         let target = defined(&after);
         let leaf =

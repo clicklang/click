@@ -94,7 +94,9 @@ fn fold_item_domains_retain_growing_endpoints_at_each_width() {
                         let Proposition::ConditionIs(condition, true) = *part else {
                             panic!("positive guard")
                         };
-                        let view = structural_native_comparison_view(&condition, true).unwrap();
+                        let view =
+                            structural_native_comparison_view((&condition).native_compat(), true)
+                                .unwrap();
                         assert_eq!(view.format, format);
                         assert_eq!(view.relation, relation);
                         assert_eq!(

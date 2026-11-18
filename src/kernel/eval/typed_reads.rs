@@ -6,7 +6,7 @@ use super::*;
 pub(in crate::kernel) enum ReadType {
     Pointer(ProgramType),
     Abstract,
-    PointerAddress,
+    IntegerAddress,
     Integer(MachineIntegerType),
 }
 
@@ -22,7 +22,7 @@ impl ReadType {
 
     pub(in crate::kernel) fn bytes(self) -> u32 {
         match self {
-            Self::Pointer(_) | Self::PointerAddress => C_POINTER_BYTE_WIDTH,
+            Self::Pointer(_) | Self::IntegerAddress => C_POINTER_BYTE_WIDTH,
             Self::Abstract => ABSTRACT_VALUE_WIDTH,
             Self::Integer(format) => format.program_type().byte_width(),
         }
@@ -72,7 +72,7 @@ pub(super) fn record(memory: &SymbolicMemory, address: &Address, value: &Program
         reads.insert((memory.clone(), address.clone(), kind), value.clone());
         if matches!(kind, ReadType::Pointer(_)) {
             reads.insert(
-                (memory, address.clone(), ReadType::PointerAddress),
+                (memory, address.clone(), ReadType::IntegerAddress),
                 value.clone(),
             );
         }
