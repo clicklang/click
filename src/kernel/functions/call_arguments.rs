@@ -18,14 +18,39 @@ pub(super) fn with_contract_interface_argument_views(
     contract_interface_argument_views(state, interface, values, false)
 }
 
+/// After same-type word arguments are bound, the entry locals hold their
+/// checked values. Other calls carry native arguments for their native readers.
+pub(super) enum VerifiedCallArguments {
+    BoundWords,
+    Native(Vec<ProgramValue>),
+}
+
+impl VerifiedCallArguments {
+    pub(super) fn native_values(&self) -> Option<&[ProgramValue]> {
+        match self {
+            Self::BoundWords => None,
+            Self::Native(values) => Some(values),
+        }
+    }
+}
+
 /// A verified call's states are derived from its bound entry without
 /// executing the callee body. Reuse the checked scalar argument binding.
 pub(super) fn with_bound_contract_interface_argument_views(
     state: &ExecutionState,
     interface: &FunctionContractInterface,
-    values: &[ProgramValue],
+    values: &VerifiedCallArguments,
 ) -> ExecutionState {
-    contract_interface_argument_views(state, interface, values, true)
+    match values {
+        VerifiedCallArguments::BoundWords => {
+            let mut state = state.clone();
+            state.resources = state.resources.unpublished_contract_view();
+            state
+        }
+        VerifiedCallArguments::Native(values) => {
+            contract_interface_argument_views(state, interface, values, true)
+        }
+    }
 }
 
 fn contract_interface_argument_views(
@@ -1051,11 +1076,12 @@ fn bind_program_function_arguments_impl(
 pub(super) fn bind_contract_arguments(
     caller_state: &ExecutionState,
     interface: &FunctionContractInterface,
-    values: &[ProgramValue],
+    values: &VerifiedCallArguments,
     storage: Option<&ProgramFunction>,
     roots: &[ExecutionValue],
 ) -> Option<ExecutionState> {
-    if values.len() != interface.parameters().len() {
+    let native = values.native_values();
+    if native.map_or(roots.len(), <[_]>::len) != interface.parameters().len() {
         return None;
     }
     let frame = caller_state.next_local_frame();
@@ -1100,9 +1126,10 @@ pub(super) fn bind_contract_arguments(
     if let Some(function) = storage {
         callee_state = initialize_program_function_globals(&callee_state, function);
     }
-    for (index, (parameter, value)) in interface.parameters().iter().zip(values).enumerate() {
+    for (index, parameter) in interface.parameters().iter().enumerate() {
+        let value = native.map(|values| &values[index]);
         if let Some(layout) = parameter.aggregate_layout() {
-            let ProgramValue::Pointer(pointer) = value else {
+            let Some(ProgramValue::Pointer(pointer)) = value else {
                 return None;
             };
             if pointer.is_null() {
@@ -1130,29 +1157,31 @@ pub(super) fn bind_contract_arguments(
             );
             continue;
         }
-        let value = coerce_program_function_argument_without_obligations(value, parameter)?
-            .with_pointer_pointee_volatile(parameter.pointee_is_volatile())
-            .with_pointer_pointee_constant(parameter.pointee_is_constant())
-            .with_pointer_declared_object_class(parameter.pointee_class());
+        let root = roots.get(index);
+        let value = if let Some(value) = value {
+            let value = coerce_program_function_argument_without_obligations(value, parameter)?
+                .with_pointer_pointee_volatile(parameter.pointee_is_volatile())
+                .with_pointer_pointee_constant(parameter.pointee_is_constant())
+                .with_pointer_declared_object_class(parameter.pointee_class());
+            match root {
+                Some(source)
+                    if parameter.program_type() == ProgramType::UInt32
+                        && source.program_type() == ProgramType::UInt32
+                        && source.shared().is_some() =>
+                {
+                    source.clone()
+                }
+                Some(source) => source.retain_coerced_argument(value),
+                None => ExecutionValue::from(value),
+            }
+        } else {
+            root?.clone()
+        };
         callee_state
             .locals
             .set_retained_typed_qualified_with_all_qualifiers(
                 parameter.binding_name().clone(),
-                roots.get(index).map_or_else(
-                    || ExecutionValue::from(value.clone()),
-                    |source| {
-                        // A same-type word argument has no coercion to perform.
-                        // Keep its evaluated operand for contract lowering.
-                        if parameter.program_type() == ProgramType::UInt32
-                            && source.program_type() == ProgramType::UInt32
-                            && source.shared().is_some()
-                        {
-                            source.clone()
-                        } else {
-                            source.retain_coerced_argument(value.clone())
-                        }
-                    },
-                ),
+                value,
                 parameter.program_type(),
                 SymbolicMemory::value_parameter_pointer(parameter.binding_name()),
                 parameter.is_volatile(),

@@ -1310,7 +1310,7 @@ fn project_selected_instance_arm_cells(
     ) else {
         return state;
     };
-    let state = state.with_materialized_memory(memory);
+    let state = state.with_materialized_memory_at_current_point(memory);
     if !include_owned {
         return state;
     }
@@ -3577,9 +3577,9 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
                 &lowered,
                 parameter_binding.parameters,
             );
-            // Naming cells during a proof rewrite is not a C write. Keep
-            // unrelated memory-backed views and their support identities.
-            state = state.with_materialized_memory(memory);
+            // Keep the program point and unrelated memory-backed views when
+            // the proof rewrite gives cells names.
+            state = state.with_materialized_memory_at_current_point(memory);
         }
         // The selected child was already lowered in the current state.
         // Re-lowering from memory alone loses locals such as a callback's
@@ -6171,6 +6171,93 @@ mod guarded_unmatched_materialization_tests {
     use super::*;
 
     #[test]
+    fn composite_unfold_keeps_the_point_while_naming_a_cell() {
+        check_composite_body_point(ResourceBodyAccess::Finalize);
+    }
+
+    #[test]
+    fn composite_open_keeps_the_point_while_naming_a_cell() {
+        check_composite_body_point(ResourceBodyAccess::Open);
+    }
+
+    fn check_composite_body_point(access: ResourceBodyAccess) {
+        let _session = crate::kernel::VerificationSession::enter();
+        let file = crate::surface::parse(
+            r#"
+            resource initialized_cell(p: int32*) { owns *p; fact defined(*p); }
+            verifying "read.c";
+            int32 read(int32* p) { owns initialized_cell(p); ensures true; }
+            "#,
+        )
+        .unwrap();
+        let [Requirement::Resource(resource)] = file.function_blocks()[0].requires() else {
+            panic!("expected the cell resource as the only requirement");
+        };
+        let parsed = syntax::parse_function("int32 read(int32* p) { return *p; }").unwrap();
+        let resources = ResourceEnvironment::new(file.resource_definitions());
+        let functions = ClickFunctionEnvironment::new(&[]);
+        let predicates = PredicateEnvironment::new(&[]);
+        let specs = SpecDefinitions::new(&predicates, &functions);
+        let pointer = Address::symbolic(crate::kernel::Variable(88_023));
+        let arguments = [ProgramExpression::Value(ProgramValue::typed_pointer(
+            pointer.clone(),
+            ProgramType::Int32Pointer,
+        ))];
+        let state = ExecutionState::new()
+            .with_memory(SymbolicMemory::new().with_block(pointer.base.clone(), 4))
+            .with_resource_context(ResourceContext::new().unchecked_with_fact(
+                ResourceFact::own_composite(
+                    "initialized_cell".into(),
+                    vec![ProgramValue::typed_pointer(
+                        pointer.clone(),
+                        ProgramType::Int32Pointer,
+                    )],
+                ),
+            ));
+        let point = state.observation_point_id().unwrap();
+        assert!(!matches!(
+            state.memory().load(&pointer),
+            ExpressionOutcome::Value(_)
+        ));
+
+        let checked = unfold_composite_resource_for_proof_with_access(
+            &resources,
+            resource,
+            resource,
+            ParameterBinding::new(parsed.parameters(), &arguments),
+            state,
+            PureFactStore::default(),
+            &mut SurfacePropositionMap::default(),
+            specs,
+            "expose a defined cell",
+            0,
+            access,
+            true,
+        )
+        .unwrap();
+        let after = &checked.state;
+        assert!(matches!(
+            after.memory().load(&pointer),
+            ExpressionOutcome::Value(_)
+        ));
+        assert!(after.resources().facts().iter().any(|fact| {
+            fact.memory_own_range()
+                .is_some_and(|range| range.base() == &pointer)
+        }));
+        assert_eq!(after.observation_point_id(), Some(point));
+        assert!(
+            checked
+                .added_facts
+                .contains(&Proposition::MemoryReadDefined {
+                    at: Some(point),
+                    memory: after.memory().clone(),
+                    pointer,
+                    value_type: ProgramType::Int32,
+                })
+        );
+    }
+
+    #[test]
     fn implicit_projection_keeps_the_point_of_an_already_named_cell() {
         check_implicit_projection_point(true);
     }
@@ -6241,6 +6328,109 @@ mod guarded_unmatched_materialization_tests {
             ExpressionOutcome::Value(_)
         ));
         assert_eq!(*at, state.observation_point_id());
+    }
+
+    #[test]
+    fn instance_cell_naming_keeps_the_unfold_and_entry_points() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut file = crate::surface::parser::parse_file_items(
+            r#"
+            resource cell(p: int32*) {
+                field number: int32;
+                owns *p;
+                fact defined(*p);
+            }
+            "#,
+        )
+        .unwrap();
+        crate::surface::lowering::check_resource_field_schemas(&mut file).unwrap();
+        let resources = ResourceEnvironment::new(&file.resource_definitions);
+        let functions = ClickFunctionEnvironment::new(&[]);
+        let predicates = PredicateEnvironment::new(&[]);
+        let specs = SpecDefinitions::new(&predicates, &functions);
+        let definitions =
+            crate::surface::verification::composite_resource_definitions(&resources, specs)
+                .unwrap();
+        let [definition] = definitions.as_slice() else {
+            panic!("expected the cell resource definition");
+        };
+        let pointer = Address::symbolic(crate::kernel::Variable(88_024));
+        let instance = ResourceInstance::new(
+            crate::kernel::Variable(88_025),
+            "cell".into(),
+            vec![AlgebraicValue::Program(ProgramValue::typed_pointer(
+                pointer.clone(),
+                ProgramType::Int32Pointer,
+            ))]
+            .into(),
+            definition.instance_field_schema().unwrap().clone(),
+            vec![AlgebraicValue::Program(int32(3))].into(),
+        )
+        .unwrap();
+        let before = ExecutionState::new()
+            .with_memory(SymbolicMemory::new().with_block(pointer.base.clone(), 4))
+            .with_resource_context(
+                ResourceContext::new()
+                    .unchecked_with_fact(ResourceFact::own(Resource::Instance(instance.clone()))),
+            );
+        assert!(!matches!(
+            before.memory().load(&pointer),
+            ExpressionOutcome::Value(_)
+        ));
+        let point = before.observation_point_id().unwrap();
+        let assumptions = PureFactContext::new();
+        let rewrite = crate::kernel::rewrite_resource_instance_selecting_children(
+            &before,
+            &instance,
+            definition,
+            &definitions,
+            &assumptions,
+            true,
+            None,
+        )
+        .unwrap();
+        let naming_assumptions = rewrite
+            .naming_facts
+            .into_iter()
+            .fold(assumptions.clone(), PureFactContext::assume_proposition);
+        let published = Proposition::MemoryReadDefined {
+            at: Some(point),
+            memory: before.memory().clone(),
+            pointer: pointer.clone(),
+            value_type: ProgramType::Int32,
+        };
+        assert!(rewrite.semantic_facts.contains(&published));
+        let after = materialize_unfolded_instance_arm_cells(
+            &resources,
+            specs,
+            ParameterBinding::new(&[], &[]),
+            rewrite.state,
+            &instance,
+            &assumptions,
+            &naming_assumptions,
+            rewrite.body_active,
+        );
+        assert!(matches!(
+            after.memory().load(&pointer),
+            ExpressionOutcome::Value(_)
+        ));
+        assert_eq!(after.observation_point_id(), Some(point));
+
+        let entry = project_initial_composite_resource_cores(
+            &resources,
+            ParameterBinding::new(&[], &[]),
+            before,
+            &PureFactList::from(vec![]),
+            "named cell at entry",
+            Some(OwnedCores::AttachedToOwner),
+            specs,
+        )
+        .unwrap();
+        assert!(matches!(
+            entry.memory().load(&pointer),
+            ExpressionOutcome::Value(_)
+        ));
+        assert_eq!(entry.observation_point_id(), Some(point));
     }
 
     #[test]

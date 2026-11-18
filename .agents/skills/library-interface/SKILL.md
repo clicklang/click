@@ -1,6 +1,6 @@
 ---
 name: library-interface
-description: Add or change Click's support for a library function or type the verified code calls, in C, C++ or Rust — a standard-library or core function, method or type, such as "add support for `Vec::pop`", "support `std::string`", "handle `memmove`", "make `Option::take` work". Use before writing any code for it, and whenever a library call is refused or special-cased.
+description: Add or change Click's support for a library function or type the verified code calls, in C, C++ or Rust — a standard-library or core function, method or type, such as "add support for `Vec::pop`", "support `std::string`", "handle `memmove`", "make `Option::take` work". Use before writing any code for it, when naming proof helpers for a library, and whenever a library call is refused or special-cased.
 ---
 
 # Library interface
@@ -25,6 +25,11 @@ skill is the procedure for applying them.
    memory, in `library/c/`, `library/cpp/` or `library/rust/`. Describe
    observable state and effects: logical values, what is owned, preconditions,
    effects and invalidation. Never the representation or the implementation.
+   Preserve source-library names and signatures. Put library-specific
+   resources and proof helpers in `click::<language>::<library>`. Write ghost
+   queries as module-level specification functions and prefer selective
+   imports in examples. Use shared specification modules for helpers whose
+   meaning is language-independent (principle 7).
 2. Map the call to the contract in the front end's name table, and nothing
    else. No front-end rewrite of what the library does.
 3. Add the inventory item, the library reference entry and the trust row.

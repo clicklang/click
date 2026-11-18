@@ -18514,6 +18514,19 @@ fn axiomatic_system_header_calls_export_interfaces_only() {
     };
     assert!(verified.axiom.is_none());
     assert!(!verified.body.is_empty());
+
+    let project = axiomatic_project("#pragma clang system_header\n");
+    let header = project.directory.join("mini_std.h");
+    let potentially_throwing = fs::read_to_string(&header)
+        .unwrap()
+        .replace(" noexcept", "");
+    fs::write(header, potentially_throwing).unwrap();
+    let error = refresh_import(&project.config()).unwrap_err();
+    assert!(
+        error.contains("ministd::identity")
+            && error.contains("must be noexcept or have a nonthrowing catalog contract"),
+        "{error}"
+    );
 }
 
 // The `extern` head of a system-header member function is its C++

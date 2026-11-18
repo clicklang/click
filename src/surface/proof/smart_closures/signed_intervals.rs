@@ -571,19 +571,20 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         }
         if retained
             && let Some(closed) = {
-                // An exact type range can be computed even when its operand
-                // is written at a program point. Use the goal-local check
-                // before the history and retained-read compatibility rule.
+                // A cited copy of the goal, or a goal-local computation,
+                // needs no retained-read compatibility rule.
                 let body = scope.body();
-                let step = if body
-                    .goal()
-                    .is_some_and(crate::surface::planning::solve::computes_with_known)
-                    && premises.iter().all(|source| {
-                        body.lower_cited_surface_proposition(source, "interval source")
-                            .is_ok_and(|premise| {
-                                body.facts().listed_premise_available(&premise, &[], false)
-                            })
-                    }) {
+                let goal = body.goal();
+                let mut known =
+                    goal.is_some_and(crate::surface::planning::solve::computes_with_known);
+                let all_available = premises.iter().all(|source| {
+                    body.lower_cited_surface_proposition(source, "interval source")
+                        .is_ok_and(|premise| {
+                            known |= goal == Some(&premise);
+                            body.facts().listed_premise_available(&premise, &[], false)
+                        })
+                });
+                let step = if all_available && known {
                     ProofStep::Known
                 } else {
                     ProofStep::NormalizeUsing(premises.to_vec())

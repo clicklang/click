@@ -1211,7 +1211,7 @@ and formation checks; record this live input boundary rather than claiming it
 was erased. Native checked element-index APIs also remain explicit inputs.
 These are selected compatibility boundaries, not extra parallel payloads in
 `IteratedMemory`. Nominal owner/address identities, hole order and checked
-indexed fold/unfold and scatter/gather rules remain unchanged.
+indexed and whole-clause fold/unfold rules remain unchanged.
 
 The actual guard evaluator regression was red with three machine exports and
 now passes without exporting or replacing its root. After integrating upstream
