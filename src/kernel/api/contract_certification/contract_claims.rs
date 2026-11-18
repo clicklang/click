@@ -2798,12 +2798,7 @@ fn exceptional_goals_at_entry(
 /// Whether a lowered ensure folded to a constant truth: the kernel's own
 /// evaluation at the outcome decided it, so it needs no completion.
 fn lowered_goal_is_constant_true(proposition: &Proposition) -> bool {
-    let constant_true = |proposition: &Proposition| {
-        matches!(
-            completion_key(proposition),
-            Proposition::ConditionIs(ConditionTerm::Constant(true), true)
-        )
-    };
+    let constant_true = |proposition: &Proposition| matches!(&completion_key(proposition), condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Constant(true), _))));
     // Evaluation includes the read-over-write authority: a read of a
     // stored cell is the value stored there.
     constant_true(proposition)
@@ -2822,7 +2817,10 @@ pub(crate) fn completion_key(proposition: &Proposition) -> Proposition {
     }
     fn as_truth(proposition: &Proposition) -> Option<bool> {
         match proposition {
-            Proposition::ConditionIs(ConditionTerm::Constant(constant), value) => {
+            condition_source_0 @ Proposition::ConditionIs(_, value)
+                if let Some((ConditionTerm::Constant(constant), _)) =
+                    condition_source_0.condition_native() =>
+            {
                 Some(constant == value)
             }
             _ => None,

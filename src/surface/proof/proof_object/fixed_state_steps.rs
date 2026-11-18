@@ -2706,11 +2706,11 @@ impl<'a> Proof<'a> {
                         .unwrap_or(lowered)
                     })
                     .and_then(|reading| match reading {
-                        Proposition::ConditionIs(
-                            ConditionTerm::IntegerLessEqual(left, right),
+                        ref condition_source_0 @ Proposition::ConditionIs(
+                            _,
                             true,
-                        ) => Some(Proposition::ConditionIs(
-                            ConditionTerm::integer_equal((*left).clone(), (*right).clone()),
+                        ) if let Some((ConditionTerm::IntegerLessEqual(left, right), _)) = condition_source_0.condition_native() => Some(Proposition::ConditionIs(
+                            ConditionTerm::integer_equal(left.as_ref().clone(), right.as_ref().clone()),
                             true,
                         )),
                         _ => None,

@@ -146,24 +146,32 @@ impl PureFactStore {
                 // this atomic goal. Corresponding operators stay exact; the
                 // shared transport checker validates any changed read leaves.
                 let (from, to, wide) = match equality {
-                    Proposition::ConditionIs(
-                        ConditionTerm::Compare {
-                            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                            relation: CompareRelation::Equal,
-                            left: a,
-                            right: b,
-                        },
-                        true,
-                    ) => (a, b, false),
-                    Proposition::ConditionIs(
-                        ConditionTerm::Compare {
-                            format: MachineIntegerType::Int64,
-                            relation: CompareRelation::Equal,
-                            left: a,
-                            right: b,
-                        },
-                        true,
-                    ) => (a, b, true),
+                    condition_source_0 @ Proposition::ConditionIs(_, true)
+                        if let Some((
+                            ConditionTerm::Compare {
+                                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+                                relation: CompareRelation::Equal,
+                                left: a,
+                                right: b,
+                            },
+                            _,
+                        )) = condition_source_0.condition_native() =>
+                    {
+                        (a, b, false)
+                    }
+                    condition_source_0 @ Proposition::ConditionIs(_, true)
+                        if let Some((
+                            ConditionTerm::Compare {
+                                format: MachineIntegerType::Int64,
+                                relation: CompareRelation::Equal,
+                                left: a,
+                                right: b,
+                            },
+                            _,
+                        )) = condition_source_0.condition_native() =>
+                    {
+                        (a, b, true)
+                    }
                     _ => return Err(original_error),
                 };
                 let (left, right) = match goal {
@@ -216,7 +224,7 @@ impl PureFactStore {
 }
 
 pub(crate) fn reverse_equality(equality: &Proposition) -> Option<Proposition> {
-    if let Proposition::ConditionIs(ConditionTerm::BoolEqual(a, b), true) = equality {
+    if let Some((ConditionTerm::BoolEqual(a, b), true)) = (equality).condition_native() {
         return Some(Proposition::ConditionIs(
             ConditionTerm::BoolEqual(b.clone(), a.clone()),
             true,
@@ -229,63 +237,87 @@ pub(crate) fn reverse_equality(equality: &Proposition) -> Option<Proposition> {
                 Term::Algebraic(a.clone()),
             ));
         }
-        Proposition::ConditionIs(
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((
+                ConditionTerm::Compare {
+                    format: format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
+                    relation: CompareRelation::Equal,
+                    left: a,
+                    right: b,
+                },
+                _,
+            )) = condition_source_0.condition_native() =>
+        {
             ConditionTerm::Compare {
-                format: format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
+                format: *format,
                 relation: CompareRelation::Equal,
-                left: a,
-                right: b,
-            },
-            true,
-        ) => ConditionTerm::Compare {
-            format: *format,
-            relation: CompareRelation::Equal,
-            left: b.clone(),
-            right: a.clone(),
-        },
+                left: b.clone(),
+                right: a.clone(),
+            }
+        }
         // A native 8- or 16-bit equality reverses at its own format.
-        Proposition::ConditionIs(
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((
+                ConditionTerm::Compare {
+                    format:
+                        format @ (MachineIntegerType::Int8
+                        | MachineIntegerType::UInt8
+                        | MachineIntegerType::Int16
+                        | MachineIntegerType::UInt16),
+                    relation: CompareRelation::Equal,
+                    left: a,
+                    right: b,
+                },
+                _,
+            )) = condition_source_0.condition_native() =>
+        {
             ConditionTerm::Compare {
-                format:
-                    format @ (MachineIntegerType::Int8
-                    | MachineIntegerType::UInt8
-                    | MachineIntegerType::Int16
-                    | MachineIntegerType::UInt16),
+                format: *format,
                 relation: CompareRelation::Equal,
-                left: a,
-                right: b,
-            },
-            true,
-        ) => ConditionTerm::Compare {
-            format: *format,
-            relation: CompareRelation::Equal,
-            left: b.clone(),
-            right: a.clone(),
-        },
-        Proposition::ConditionIs(
+                left: b.clone(),
+                right: a.clone(),
+            }
+        }
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int64,
+                    relation: CompareRelation::Equal,
+                    left: a,
+                    right: b,
+                },
+                _,
+            )) = condition_source_0.condition_native() =>
+        {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
-                left: a,
-                right: b,
-            },
-            true,
-        ) => ConditionTerm::Compare {
-            format: MachineIntegerType::Int64,
-            relation: CompareRelation::Equal,
-            left: b.clone(),
-            right: a.clone(),
-        },
-        Proposition::ConditionIs(ConditionTerm::IntegerEqual(a, b), true) => {
+                left: b.clone(),
+                right: a.clone(),
+            }
+        }
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::IntegerEqual(a, b), _)) =
+                condition_source_0.condition_native() =>
+        {
             ConditionTerm::IntegerEqual(b.clone(), a.clone())
         }
-        Proposition::ConditionIs(ConditionTerm::AddressOffsetEqual(a, b), true) => {
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::AddressOffsetEqual(a, b), _)) =
+                condition_source_0.condition_native() =>
+        {
             ConditionTerm::AddressOffsetEqual(b.clone(), a.clone())
         }
-        Proposition::ConditionIs(ConditionTerm::PointerEqual(a, b), true) => {
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::PointerEqual(a, b), _)) =
+                condition_source_0.condition_native() =>
+        {
             ConditionTerm::PointerEqual(b.clone(), a.clone())
         }
-        Proposition::ConditionIs(ConditionTerm::AddressEqual(a, b), true) => {
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::AddressEqual(a, b), _)) =
+                condition_source_0.condition_native() =>
+        {
             ConditionTerm::AddressEqual(b.clone(), a.clone())
         }
         _ => return None,
@@ -420,11 +452,13 @@ fn rewrite_with_admitted_equality_reading(
     }
 
     let integer_source = match equality {
-        Proposition::ConditionIs(ConditionTerm::IntegerEqual(from, _), true)
-            if matches!(
-                from.as_ref(),
-                IntegerTerm::Machine(_) | IntegerTerm::Constant(_)
-            ) =>
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::IntegerEqual(from, _), _)) =
+                condition_source_0.condition_native()
+                && (matches!(
+                    from.as_ref(),
+                    IntegerTerm::Machine(_) | IntegerTerm::Constant(_)
+                )) =>
         {
             Some(from)
         }
@@ -661,34 +695,43 @@ fn signed_byte_equality_as_byte_equality(equality: &Proposition) -> Option<Propo
 /// distinguishes. The step is then vacuous rather than wrong, so it must not
 /// be reported as a missing occurrence or an unsupported equality shape.
 fn equality_is_vacuous(equality: &Proposition) -> bool {
-    if matches!(
-        equality,
-        Proposition::ConditionIs(ConditionTerm::Constant(true), true)
-    ) {
+    if matches!(&equality, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Constant(true), _))))
+    {
         return true;
     }
     match equality {
         Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) => left == right,
         // σ(x) == x is x == x under rule K6: the same bits.
-        Proposition::ConditionIs(
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                relation: CompareRelation::Equal,
-                left,
-                right,
-            },
-            true,
-        ) => left == right || left.is_sign_cast32_of(right),
-        Proposition::ConditionIs(
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int64,
-                relation: CompareRelation::Equal,
-                left,
-                right,
-            },
-            true,
-        ) => left == right,
-        Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true) => {
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+                    relation: CompareRelation::Equal,
+                    left,
+                    right,
+                },
+                _,
+            )) = condition_source_0.condition_native() =>
+        {
+            left == right || left.is_sign_cast32_of(right)
+        }
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int64,
+                    relation: CompareRelation::Equal,
+                    left,
+                    right,
+                },
+                _,
+            )) = condition_source_0.condition_native() =>
+        {
+            left == right
+        }
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::IntegerEqual(left, right), _)) =
+                condition_source_0.condition_native() =>
+        {
             if left == right {
                 return true;
             }
@@ -714,10 +757,18 @@ fn equality_is_vacuous(equality: &Proposition) -> bool {
             };
             sign_cast_of(left, right) || sign_cast_of(right, left)
         }
-        Proposition::ConditionIs(ConditionTerm::AddressOffsetEqual(left, right), true) => {
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::AddressOffsetEqual(left, right), _)) =
+                condition_source_0.condition_native() =>
+        {
             left == right
         }
-        Proposition::ConditionIs(ConditionTerm::AddressEqual(left, right), true) => left == right,
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::AddressEqual(left, right), _)) =
+                condition_source_0.condition_native() =>
+        {
+            left == right
+        }
         _ => false,
     }
 }
@@ -1227,7 +1278,10 @@ fn rewrite_atomic_proposition_by_exact_equality(
     // replaces `b` by that literal.
     let literal = |value: bool| ConditionTerm::Constant(value);
     let bool_equation = match equality {
-        Proposition::ConditionIs(ConditionTerm::BoolEqual(left, right), true) => {
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::BoolEqual(left, right), _)) =
+                condition_source_0.condition_native() =>
+        {
             Some((left.as_ref().clone(), right.as_ref().clone()))
         }
         Proposition::ConditionIs(value, truth) if value.is_bool_value_form() => {
@@ -1251,7 +1305,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
             ))
         };
     }
-    if let Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) = equality {
+    if let Some((ConditionTerm::PointerEqual(left, right), true)) = (equality).condition_native() {
         let mut rewrite = super::term_rewrite::TermRewrite::for_pointer_value_exact(left, right);
         let rewritten = rewrite.proposition(goal);
         if rewrite.refusal().is_some() {
@@ -1276,7 +1330,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
             ConditionTerm::PointerEqual(..) | ConditionTerm::AddressEqual(..),
             _
         )
-    ) && let Proposition::ConditionIs(
+    ) && let Some((
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
@@ -1290,7 +1344,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
             right,
         },
         true,
-    ) = equality
+    )) = (equality).condition_native()
     {
         let mut rewrite = super::term_rewrite::TermRewrite::for_bits(left, right);
         let rewritten = rewrite.proposition(goal);
@@ -1492,7 +1546,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
         }
     }
 
-    if let Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true) = equality {
+    if let Some((ConditionTerm::IntegerEqual(left, right), true)) = (equality).condition_native() {
         let mut rewrite = super::term_rewrite::TermRewrite::for_integer_exact(left, right);
         let rewritten = rewrite.proposition(goal);
         match rewrite.refusal() {
@@ -1713,20 +1767,22 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 bytes: bytes.clone(),
                 wide: *wide,
             },
-            Proposition::ConditionIs(
-                ConditionTerm::AddressOffsetEqual(goal_left, goal_right),
-                expected,
-            ) => Proposition::ConditionIs(
-                ConditionTerm::AddressOffsetEqual(
-                    Box::new(rewrite_offset(goal_left, left, right)),
-                    Box::new(rewrite_offset(goal_right, left, right)),
-                ),
-                *expected,
-            ),
-            Proposition::ConditionIs(
-                ConditionTerm::AddressEqual(goal_left, goal_right),
-                expected,
-            ) => {
+            condition_source_0 @ Proposition::ConditionIs(_, expected)
+                if let Some((ConditionTerm::AddressOffsetEqual(goal_left, goal_right), _)) =
+                    condition_source_0.condition_native() =>
+            {
+                Proposition::ConditionIs(
+                    ConditionTerm::AddressOffsetEqual(
+                        Box::new(rewrite_offset(goal_left, left, right)),
+                        Box::new(rewrite_offset(goal_right, left, right)),
+                    ),
+                    *expected,
+                )
+            }
+            condition_source_0 @ Proposition::ConditionIs(_, expected)
+                if let Some((ConditionTerm::AddressEqual(goal_left, goal_right), _)) =
+                    condition_source_0.condition_native() =>
+            {
                 let rewrite_pointer = |pointer: &Address| Address {
                     base: pointer.base.clone(),
                     offset: rewrite_offset(&pointer.offset, left, right),
@@ -1882,7 +1938,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
         }
         return Ok(rewritten);
     }
-    if let Proposition::ConditionIs(ConditionTerm::AddressEqual(left, right), true) = equality {
+    if let Some((ConditionTerm::AddressEqual(left, right), true)) = (equality).condition_native() {
         // A field or array access keeps its base pointer's block and adds a
         // displacement. An equality of the bases therefore also rewrites the
         // address of that access, with the same displacement on the right.
@@ -2057,32 +2113,36 @@ fn rewrite_atomic_proposition_by_exact_equality(
                     wide: *wide,
                 }
             }
-            Proposition::ConditionIs(
-                ConditionTerm::AddressEqual(goal_left, goal_right),
-                expected,
-            ) => Proposition::ConditionIs(
-                // Replacing one side can land both pointers in the same
-                // block, and a same-block pointer equality is carried
-                // everywhere else as the equality of its offsets. Rebuild
-                // through the canonicalizing constructor so the rewritten
-                // goal is the term an ordinary lowering would produce and a
-                // later `known` or `normalize() using` can see it.
-                ConditionTerm::address_equal(
-                    rewrite_pointer(goal_left),
-                    rewrite_pointer(goal_right),
-                ),
-                *expected,
-            ),
-            Proposition::ConditionIs(
-                ConditionTerm::PointerEqual(goal_left, goal_right),
-                expected,
-            ) => Proposition::ConditionIs(
-                ConditionTerm::PointerEqual(
-                    Box::new(goal_left.map_addresses(&rewrite_pointer)),
-                    Box::new(goal_right.map_addresses(&rewrite_pointer)),
-                ),
-                *expected,
-            ),
+            condition_source_0 @ Proposition::ConditionIs(_, expected)
+                if let Some((ConditionTerm::AddressEqual(goal_left, goal_right), _)) =
+                    condition_source_0.condition_native() =>
+            {
+                Proposition::ConditionIs(
+                    // Replacing one side can land both pointers in the same
+                    // block, and a same-block pointer equality is carried
+                    // everywhere else as the equality of its offsets. Rebuild
+                    // through the canonicalizing constructor so the rewritten
+                    // goal is the term an ordinary lowering would produce and a
+                    // later `known` or `normalize() using` can see it.
+                    ConditionTerm::address_equal(
+                        rewrite_pointer(goal_left),
+                        rewrite_pointer(goal_right),
+                    ),
+                    *expected,
+                )
+            }
+            condition_source_0 @ Proposition::ConditionIs(_, expected)
+                if let Some((ConditionTerm::PointerEqual(goal_left, goal_right), _)) =
+                    condition_source_0.condition_native() =>
+            {
+                Proposition::ConditionIs(
+                    ConditionTerm::PointerEqual(
+                        Box::new(goal_left.map_addresses(&rewrite_pointer)),
+                        Box::new(goal_right.map_addresses(&rewrite_pointer)),
+                    ),
+                    *expected,
+                )
+            }
             Proposition::ConditionIs(condition, expected) => {
                 let rewrite_term =
                     |term: &MachineTerm| rewrite_load_pointers(term, &rewrite_pointer);
@@ -2206,15 +2266,14 @@ fn rewrite_atomic_proposition_by_exact_equality(
         return Ok(rewritten);
     }
     let (left, right) = match equality {
-        Proposition::ConditionIs(ConditionTerm::Compare { format: MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, left, right }, true) => {
+        condition_source_0 @ Proposition::ConditionIs(_, true) if let Some((ConditionTerm::Compare { format: MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, left, right }, _)) = condition_source_0.condition_native() => {
             (left, right)
         }
-        Proposition::ConditionIs(ConditionTerm::Compare { format: MachineIntegerType::Int64, relation: CompareRelation::Equal, left, right }, true) => {
+        condition_source_0 @ Proposition::ConditionIs(_, true) if let Some((ConditionTerm::Compare { format: MachineIntegerType::Int64, relation: CompareRelation::Equal, left, right }, _)) = condition_source_0.condition_native() => {
             (left, right)
         }
         // A native 8- or 16-bit equality equates two values of its width.
-        Proposition::ConditionIs(ConditionTerm::Compare { format, relation: CompareRelation::Equal, left, right }, true)
-            if format.format().bits() < 32 =>
+        condition_source_0 @ Proposition::ConditionIs(_, true) if let Some((ConditionTerm::Compare { format, relation: CompareRelation::Equal, left, right }, _)) = condition_source_0.condition_native() && (format.format().bits() < 32) =>
         {
             (left, right)
         }
@@ -2391,18 +2450,15 @@ fn rewrite_atomic_proposition_by_exact_equality(
         }
     }
 
-    let full_width_equality = matches!(
-        equality,
-        Proposition::ConditionIs(
-            ConditionTerm::Compare {
+    let full_width_equality = matches!(&equality, condition_source_0 @ Proposition::ConditionIs(
+            _,
+            true
+        ) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
                 left: _,
                 right: _
-            },
-            true
-        )
-    );
+            }, _))));
     let rewrite_range_bound = |range: &MemoryRange, bound: &MachineTerm| {
         // A narrow equality cannot replace the complete value of a native
         // bound, even when both are represented by the same term variant.

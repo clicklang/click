@@ -1353,13 +1353,11 @@ pub(in crate::surface::proof) fn certified_fact_transport_reaches(
     // A reflexive source adds no information. Match the target directly in
     // this context rather than comparing both copies of the source's load
     // with both target operands, then transporting the same tautology.
-    if matches!(
-        (source, target),
-        (
-            Proposition::ConditionIs(ConditionTerm::Compare { format: MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, left, right }, true),
-            Proposition::ConditionIs(ConditionTerm::Compare { format: MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, .. }, true)
-        ) if left == right
-    ) {
+    if matches!(&(source, target), (
+            condition_source_0 @ Proposition::ConditionIs(_, true),
+            condition_source_1 @ Proposition::ConditionIs(_, true)
+        ) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare { format: MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, left, right }, _)) if matches!(condition_source_1.condition_native(), Some((ConditionTerm::Compare { format: MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, .. }, _)) if (left == right))))
+    {
         return crate::kernel::api::program_condition_fact_target_reaches_in_context(
             source,
             target,

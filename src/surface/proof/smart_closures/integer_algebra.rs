@@ -158,9 +158,10 @@ impl<'p, 'a> Algebra<'p, 'a> {
         let mut retained = Vec::new();
         for step in body {
             if let ProofStep::Rewrite(identity) = &step
-                && let Proposition::ConditionIs(ConditionTerm::IntegerEqual(x, y), true) = self
+                && let Some((ConditionTerm::IntegerEqual(x, y), true)) = (self
                     .proof
-                    .lower_cited_surface_proposition(identity, "algebra rewrite")?
+                    .lower_cited_surface_proposition(identity, "algebra rewrite")?)
+                .condition_native()
                 && x == y
             {
                 continue;
@@ -913,8 +914,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         }
         for (source, target) in [(left, &a.expression), (right, &b.expression)] {
             let p = eq(source.clone(), target.clone());
-            if let Proposition::ConditionIs(ConditionTerm::IntegerEqual(x, y), true) =
-                input.lower_cited_surface_proposition(&p, "algebra result")?
+            if let Some((ConditionTerm::IntegerEqual(x, y), true)) =
+                (input.lower_cited_surface_proposition(&p, "algebra result")?).condition_native()
                 && x != y
             {
                 algebra.steps.push(ProofStep::Rewrite(p));

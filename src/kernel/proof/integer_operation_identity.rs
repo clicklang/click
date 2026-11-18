@@ -11,7 +11,12 @@ use crate::kernel::{ConditionTerm, Proposition, SharedIntegerTerm};
 
 fn order(proposition: &Proposition) -> Option<(&SharedIntegerTerm, &SharedIntegerTerm)> {
     match proposition {
-        Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(a, b), true) => Some((a, b)),
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::IntegerLessEqual(a, b), _)) =
+                condition_source_0.condition_native() =>
+        {
+            Some((a, b))
+        }
         _ => None,
     }
 }

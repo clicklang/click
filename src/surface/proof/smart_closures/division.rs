@@ -397,8 +397,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 vec![p]
             };
             for p in readings {
-                if let Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(a, b), true) = p {
-                    sources.push((source.clone(), wa.clone(), wb.clone(), a, b));
+                if let Some((ConditionTerm::IntegerLessEqual(a, b), true)) = (p).condition_native()
+                {
+                    sources.push((source.clone(), wa.clone(), wb.clone(), a.clone(), b.clone()));
                 }
             }
         }

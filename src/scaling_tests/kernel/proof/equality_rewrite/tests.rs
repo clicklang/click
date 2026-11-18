@@ -917,7 +917,10 @@ fn integer_observation_rewrite_work_tracks_selected_comparison_leaves() {
                     pending.push(left);
                     pending.push(right);
                 }
-                Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(left, right), true) => {
+                condition_source_0 @ Proposition::ConditionIs(_, true)
+                    if let Some((ConditionTerm::IntegerLessEqual(left, right), _)) =
+                        condition_source_0.condition_native() =>
+                {
                     assert_eq!(left, &target);
                     assert_eq!(right.as_ref(), &IntegerTerm::constant_i64(10));
                     leaves += 1;

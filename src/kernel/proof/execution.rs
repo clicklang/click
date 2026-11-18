@@ -6785,9 +6785,7 @@ pub(crate) fn checked_branch_fact_is_available(facts: &PureFactStore, fact: &Pro
         || matches!(fact, Proposition::And(left, right)
             if checked_branch_fact_is_available(facts, left)
                 && checked_branch_fact_is_available(facts, right))
-        || matches!(fact,
-            Proposition::ConditionIs(crate::kernel::ConditionTerm::Compare { format: crate::kernel::MachineIntegerType::Int32 | crate::kernel::MachineIntegerType::UInt32, relation: crate::kernel::CompareRelation::Equal, left, right }, true)
-                if left == right)
+        || matches!(&fact, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((crate::kernel::ConditionTerm::Compare { format: crate::kernel::MachineIntegerType::Int32 | crate::kernel::MachineIntegerType::UInt32, relation: crate::kernel::CompareRelation::Equal, left, right }, _)) if (left == right)))
 }
 
 /// The pointer congruence fragment may give a field read another spelling
@@ -6797,15 +6795,13 @@ pub(super) fn checked_interface_pointer_equality(
     facts: &PureFactStore,
     goal: &Proposition,
 ) -> bool {
-    matches!(
-        goal,
-        Proposition::ConditionIs(
-            crate::kernel::ConditionTerm::AddressEqual(_, _)
-                | crate::kernel::ConditionTerm::PointerEqual(_, _)
-                | crate::kernel::ConditionTerm::AddressOffsetEqual(_, _),
+    matches!(&goal, condition_source_0 @ Proposition::ConditionIs(
+            _,
             true
-        )
-    ) && super::fact_reasoning::normalize_using_conditions(goal, &[], facts).is_ok()
+        ) if matches!(condition_source_0.condition_native(), Some((crate::kernel::ConditionTerm::AddressEqual(_, _)
+                | crate::kernel::ConditionTerm::PointerEqual(_, _)
+                | crate::kernel::ConditionTerm::AddressOffsetEqual(_, _), _))))
+        && super::fact_reasoning::normalize_using_conditions(goal, &[], facts).is_ok()
 }
 
 fn split_checked_evidence_statement(

@@ -742,10 +742,8 @@ fn source_range_capability_is_supported(proposition: &Proposition) -> Option<boo
             return None;
         };
         let guard = |p: &Proposition| {
-            matches!(p,
-            Proposition::ConditionIs(ConditionTerm::Overflows { format: MachineIntegerType::Int32, op: OverflowOperation::Add, left, right }, false)
-                if left.as_ref() == &MachineTerm::Variable(*var)
-                    && right.as_ref() == &MachineTerm::constant(1))
+            matches!(&p, condition_source_0 @ Proposition::ConditionIs(_, false) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Overflows { format: MachineIntegerType::Int32, op: OverflowOperation::Add, left, right }, _)) if (left.as_ref() == &MachineTerm::Variable(*var)
+                    && right.as_ref() == &MachineTerm::constant(1))))
         };
         let range = if guard(left) {
             right
@@ -889,18 +887,18 @@ pub(in crate::surface) fn source_backed_requirement_is_supported(
         }
         super::super::check_verification_deadline()?;
         match item {
-            Work::Proposition(
-                Proposition::ConditionIs(
+            Work::Proposition(condition_source_0 @ Proposition::ConditionIs(_, true), _)
+                if let Some((
                     ConditionTerm::Overflows {
                         format: MachineIntegerType::Int32,
                         op: OverflowOperation::Add,
                         left: _,
                         right: _,
                     },
-                    true,
-                ),
-                _,
-            ) if quantified_external_range => {
+                    _,
+                )) = condition_source_0.condition_native()
+                    && (quantified_external_range) =>
+            {
                 return Ok(false);
             }
             Work::Proposition(Proposition::ConditionIs(condition, _), _) => {

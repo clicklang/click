@@ -4,10 +4,18 @@ use super::arithmetic_special::ArithmeticRuleError as Error;
 use crate::kernel::{ConditionTerm, Proposition, SharedIntegerTerm};
 fn relation(proposition: &Proposition) -> Option<(&SharedIntegerTerm, &SharedIntegerTerm, bool)> {
     match proposition {
-        Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(a, b), true) => {
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::IntegerLessEqual(a, b), _)) =
+                condition_source_0.condition_native() =>
+        {
             Some((a, b, false))
         }
-        Proposition::ConditionIs(ConditionTerm::IntegerEqual(a, b), true) => Some((a, b, true)),
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::IntegerEqual(a, b), _)) =
+                condition_source_0.condition_native() =>
+        {
+            Some((a, b, true))
+        }
         _ => None,
     }
 }

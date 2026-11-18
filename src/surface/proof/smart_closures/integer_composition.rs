@@ -192,13 +192,24 @@ pub(super) fn parts(
     proposition: &Proposition,
 ) -> Option<(&SharedIntegerTerm, bool, &SharedIntegerTerm)> {
     match proposition {
-        Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(a, b), true) => {
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::IntegerLessEqual(a, b), _)) =
+                condition_source_0.condition_native() =>
+        {
             Some((a, false, b))
         }
-        Proposition::ConditionIs(ConditionTerm::IntegerGreaterEqual(a, b), true) => {
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::IntegerGreaterEqual(a, b), _)) =
+                condition_source_0.condition_native() =>
+        {
             Some((b, false, a))
         }
-        Proposition::ConditionIs(ConditionTerm::IntegerEqual(a, b), true) => Some((a, true, b)),
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::IntegerEqual(a, b), _)) =
+                condition_source_0.condition_native() =>
+        {
+            Some((a, true, b))
+        }
         _ => None,
     }
 }

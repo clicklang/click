@@ -2324,13 +2324,10 @@ pub(in crate::surface::proof) fn source_have_error(
             crate::surface::diagnostics::describe_click_proposition(&have.proposition)
         ));
     }
-    let pointer_equality = matches!(
-        goal,
-        Some(Proposition::ConditionIs(
-            ConditionTerm::AddressEqual(_, _),
+    let pointer_equality = matches!(&goal, Some(condition_source_0 @ Proposition::ConditionIs(
+            _,
             true
-        ))
-    );
+        )) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::AddressEqual(_, _), _))));
     let detail = if pointer_equality {
         "missing pure fact: pointer equality is true".to_string()
     } else {

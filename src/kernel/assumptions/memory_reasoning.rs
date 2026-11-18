@@ -1486,15 +1486,19 @@ impl PureFactContext {
                 crate::kernel::memory_range_element_count_guards(element_count, element_width)
                     .iter()
                     .all(|guard| match guard {
-                        Proposition::ConditionIs(
-                            ConditionTerm::Compare {
-                                format: MachineIntegerType::Int32,
-                                relation: CompareRelation::LessEqual,
-                                left: lower,
-                                right: upper,
-                            },
-                            true,
-                        ) => self.proves_element_endpoint_order(lower, upper),
+                        condition_source_0 @ Proposition::ConditionIs(_, true)
+                            if let Some((
+                                ConditionTerm::Compare {
+                                    format: MachineIntegerType::Int32,
+                                    relation: CompareRelation::LessEqual,
+                                    left: lower,
+                                    right: upper,
+                                },
+                                _,
+                            )) = condition_source_0.condition_native() =>
+                        {
+                            self.proves_element_endpoint_order(lower, upper)
+                        }
                         guard => self.proves_exact(guard),
                     })
             }
@@ -1561,15 +1565,19 @@ impl PureFactContext {
         guards
             .iter()
             .all(|guard| match guard {
-                Proposition::ConditionIs(
-                    ConditionTerm::Compare {
-                        format: MachineIntegerType::Int32,
-                        relation: CompareRelation::LessEqual,
-                        left: lower,
-                        right: upper,
-                    },
-                    true,
-                ) => self.proves_element_endpoint_order(lower, upper),
+                condition_source_0 @ Proposition::ConditionIs(_, true)
+                    if let Some((
+                        ConditionTerm::Compare {
+                            format: MachineIntegerType::Int32,
+                            relation: CompareRelation::LessEqual,
+                            left: lower,
+                            right: upper,
+                        },
+                        _,
+                    )) = condition_source_0.condition_native() =>
+                {
+                    self.proves_element_endpoint_order(lower, upper)
+                }
                 guard => self.proves_exact(guard),
             })
             .then(|| {

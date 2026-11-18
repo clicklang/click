@@ -350,12 +350,14 @@ pub(crate) fn memory_erased_proposition_key(
 
 fn memory_erased_proposition_key_one(proposition: &Proposition) -> MemoryErasedPropositionKey {
     match proposition {
-        Proposition::ConditionIs(
-            condition @ crate::kernel::integer_comparison_condition!(_, _),
-            value,
-        ) => state_observation_key(condition, *value)
-            .map(|(key, value)| MemoryErasedPropositionKey::Condition(key, value))
-            .unwrap_or_else(|| MemoryErasedPropositionKey::Exact(proposition.clone())),
+        condition_source_0 @ Proposition::ConditionIs(_, value)
+            if let Some((condition @ crate::kernel::integer_comparison_condition!(_, _), _)) =
+                condition_source_0.condition_native() =>
+        {
+            state_observation_key(condition, *value)
+                .map(|(key, value)| MemoryErasedPropositionKey::Condition(key, value))
+                .unwrap_or_else(|| MemoryErasedPropositionKey::Exact(proposition.clone()))
+        }
         // `Bool` values have no state-blind key yet: they are filed
         // exactly until their checked memory bridge has a structural view.
         Proposition::ConditionIs(condition, _) if condition.is_bool_value_form() => {
@@ -836,10 +838,7 @@ pub(crate) fn integer_condition_alpha_key(
 pub(crate) fn integer_equality_alpha_key(
     proposition: &Proposition,
 ) -> Option<IntegerEqualityAlphaKey> {
-    matches!(
-        proposition,
-        Proposition::ConditionIs(ConditionTerm::IntegerEqual(_, _), true)
-    )
+    matches!(&proposition, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::IntegerEqual(_, _), _))))
     .then(|| integer_condition_alpha_key(proposition))
     .flatten()
 }

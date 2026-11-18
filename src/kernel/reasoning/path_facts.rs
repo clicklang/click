@@ -214,7 +214,12 @@ pub(crate) fn solve_builtin_prop(proposition: &Proposition) -> bool {
             sequence_terms_equal_by_elements(left, right)
         }
         Proposition::Equal(left, right) => left == right,
-        Proposition::ConditionIs(ConditionTerm::Constant(actual), expected) => actual == expected,
+        condition_source_0 @ Proposition::ConditionIs(_, expected)
+            if let Some((ConditionTerm::Constant(actual), _)) =
+                condition_source_0.condition_native() =>
+        {
+            actual == expected
+        }
         Proposition::ConditionIs(condition, expected) => {
             crate::kernel::machine_integer::comparison::closed_condition_value(condition)
                 .or_else(|| {
@@ -273,7 +278,12 @@ pub(in crate::kernel) fn conjunction_order_facts_are_inconsistent(
 
 pub(in crate::kernel) fn disprove_builtin_prop(proposition: &Proposition) -> bool {
     match proposition {
-        Proposition::ConditionIs(ConditionTerm::Constant(actual), expected) => actual != expected,
+        condition_source_0 @ Proposition::ConditionIs(_, expected)
+            if let Some((ConditionTerm::Constant(actual), _)) =
+                condition_source_0.condition_native() =>
+        {
+            actual != expected
+        }
         Proposition::ConditionIs(condition, expected) => {
             crate::kernel::machine_integer::comparison::closed_condition_value(condition)
                 .or_else(|| {

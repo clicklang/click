@@ -1669,13 +1669,10 @@ fn verified_function_rule_coerces_null_constants_in_contract_views() {
         path.obligations()
     );
     assert!(path.facts().iter().any(|fact| {
-        matches!(
-            fact.proposition(),
-            Proposition::ConditionIs(
-                ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::Equal, left: _, right },
+        matches!(&fact.proposition(), condition_source_0 @ Proposition::ConditionIs(
+                _,
                 true
-            ) if right.as_const() == Some(1)
-        )
+            ) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::Equal, left: _, right }, _)) if (right.as_const() == Some(1))))
     }));
 }
 

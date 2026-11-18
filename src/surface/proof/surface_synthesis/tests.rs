@@ -6545,17 +6545,16 @@ fn closed_machine_order_short_circuits_undefined_right_operand() {
         panic!("requirement")
     };
     let lowered = relower_written_proposition(written, &ExecutionState::new()).unwrap();
-    assert!(matches!(
-        lowered,
-        Proposition::ConditionIs(
-            ConditionTerm::Compare {
+    assert!(
+        matches!(&lowered, condition_source_0 @ Proposition::ConditionIs(
+            _,
+            true
+        ) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare {
                 format: crate::kernel::MachineIntegerType::UInt64,
                 relation: CompareRelation::GreaterEqual,
                 ..
-            },
-            true
-        )
-    ));
+            }, _))))
+    );
 }
 
 #[test]
@@ -7583,8 +7582,7 @@ fn intrinsically_decided_bitwise_guards_retain_their_conditionals() {
             };
             let original = relower_written_proposition(written, &state).unwrap();
             assert!(
-                matches!(&original, Proposition::ConditionIs(ConditionTerm::Compare { left, .. }, true)
-                if matches!(left.as_ref(), MachineTerm::If { .. })),
+                matches!(&original, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare { left, .. }, _)) if (matches!(left.as_ref(), MachineTerm::If { .. })))),
                 "{text}: {original:?}"
             );
             let raised =

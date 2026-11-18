@@ -801,31 +801,38 @@ fn call_payload_identity_key(fact: &Proposition) -> Option<CallPayloadKey> {
         matches!(term.node, AlgebraicTermNode::PureFunctionApplication { .. })
     };
     Some(match fact {
-        Proposition::ConditionIs(
-            ConditionTerm::Compare {
-                format,
-                relation,
-                left,
-                right,
-            },
-            truth,
-        ) if machine_call(left) || machine_call(right) => CallPayloadKey::Machine(
-            *format,
-            *relation as u8,
-            *truth,
-            [
-                crate::kernel::equality_graph::MachineAtom::from_operand(
-                    *format,
-                    MachineOperandView::Legacy(left),
-                ),
-                crate::kernel::equality_graph::MachineAtom::from_operand(
-                    *format,
-                    MachineOperandView::Legacy(right),
-                ),
-            ],
-        ),
-        Proposition::ConditionIs(ConditionTerm::AlgebraicEqual(left, right), truth)
-            if algebraic_call(left) || algebraic_call(right) =>
+        condition_source_0 @ Proposition::ConditionIs(_, truth)
+            if let Some((
+                ConditionTerm::Compare {
+                    format,
+                    relation,
+                    left,
+                    right,
+                },
+                _,
+            )) = condition_source_0.condition_native()
+                && (machine_call(left) || machine_call(right)) =>
+        {
+            CallPayloadKey::Machine(
+                *format,
+                *relation as u8,
+                *truth,
+                [
+                    crate::kernel::equality_graph::MachineAtom::from_operand(
+                        *format,
+                        MachineOperandView::Legacy(left),
+                    ),
+                    crate::kernel::equality_graph::MachineAtom::from_operand(
+                        *format,
+                        MachineOperandView::Legacy(right),
+                    ),
+                ],
+            )
+        }
+        condition_source_0 @ Proposition::ConditionIs(_, truth)
+            if let Some((ConditionTerm::AlgebraicEqual(left, right), _)) =
+                condition_source_0.condition_native()
+                && (algebraic_call(left) || algebraic_call(right)) =>
         {
             CallPayloadKey::AlgebraicCondition(*truth, [algebraic(left)?, algebraic(right)?])
         }
@@ -1335,8 +1342,7 @@ impl PureFactStore {
     /// states it. This is one equivalent fact, one exact lookup, not a search
     /// for an arbitrary contradiction.
     fn contains_opposite_constant_polarity(&self, fact: &Proposition) -> bool {
-        matches!(fact, Proposition::ConditionIs(ConditionTerm::Constant(value), truth)
-            if self.contains(&Proposition::ConditionIs(ConditionTerm::Constant(!value), !truth)))
+        matches!(&fact, condition_source_0 @ Proposition::ConditionIs(_, truth) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Constant(value), _)) if (self.contains(&Proposition::ConditionIs(ConditionTerm::Constant(!value), !truth)))))
     }
 
     pub(crate) fn contains_top_level(&self, fact: &Proposition) -> bool {
@@ -2518,10 +2524,10 @@ impl PureFactStore {
         self.load_equalities_mentioning(proposition)
             .into_iter()
             .filter(|equality| {
-                matches!(
-                    equality,
-                    Proposition::ConditionIs(
-                        ConditionTerm::Compare {
+                matches!(&equality, condition_source_0 @ Proposition::ConditionIs(
+                        _,
+                        true
+                    ) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare {
                             format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                             relation: CompareRelation::Equal,
                             left: _,
@@ -2531,10 +2537,7 @@ impl PureFactStore {
                             relation: CompareRelation::Equal,
                             left: _,
                             right: _
-                        },
-                        true
-                    )
-                )
+                        }, _))))
             })
             .collect()
     }
@@ -3031,37 +3034,49 @@ fn index_bitvector_equality_fact(
     fact: &Arc<Proposition>,
 ) -> PersistentMap<BitvectorEqualityAtomKey, PersistentSequence<Arc<Proposition>>> {
     let (left, right) = match fact.as_ref() {
-        Proposition::ConditionIs(
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                relation: CompareRelation::Equal,
-                left,
-                right,
-            }
-            | ConditionTerm::Compare {
-                format: MachineIntegerType::Int64,
-                relation: CompareRelation::Equal,
-                left,
-                right,
-            },
-            true,
-        ) => (left.as_ref(), right.as_ref()),
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+                    relation: CompareRelation::Equal,
+                    left,
+                    right,
+                }
+                | ConditionTerm::Compare {
+                    format: MachineIntegerType::Int64,
+                    relation: CompareRelation::Equal,
+                    left,
+                    right,
+                },
+                _,
+            )) = condition_source_0.condition_native() =>
+        {
+            (left.as_ref(), right.as_ref())
+        }
         // A native 8- or 16-bit equality is the same fact as the `int32`
         // equality of its operands' widenings (rule K8), whose atoms are its
         // operands' atoms; it is filed under them as that equality is.
-        Proposition::ConditionIs(
-            ConditionTerm::Compare {
-                format,
-                relation: CompareRelation::Equal,
-                left,
-                right,
-            },
-            true,
-        ) if format.format().bits() < 32 => (left.as_ref(), right.as_ref()),
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((
+                ConditionTerm::Compare {
+                    format,
+                    relation: CompareRelation::Equal,
+                    left,
+                    right,
+                },
+                _,
+            )) = condition_source_0.condition_native()
+                && (format.format().bits() < 32) =>
+        {
+            (left.as_ref(), right.as_ref())
+        }
         // A pointer-offset equality between two scaled offsets (how a
         // pointer-valued field's preservation is recorded) is indexed by the
         // same atoms so the load-variable chain bridge can select it.
-        Proposition::ConditionIs(ConditionTerm::AddressOffsetEqual(left, right), true) => {
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::AddressOffsetEqual(left, right), _)) =
+                condition_source_0.condition_native() =>
+        {
             match (left.as_ref(), right.as_ref()) {
                 (
                     AddressOffset::Int32Scaled { value: left, .. },
@@ -3084,12 +3099,14 @@ fn index_bitvector_equality_fact(
         // `to_integer(count(r)) == 0`, is filed under the machine operands
         // it observes, so a goal over those operands selects it as `solve`
         // selects their native equalities.
-        Proposition::ConditionIs(
-            condition @ (ConditionTerm::AddressEqual(_, _)
-            | ConditionTerm::PointerEqual(_, _)
-            | ConditionTerm::IntegerEqual(_, _)),
-            true,
-        ) => {
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((
+                condition @ (ConditionTerm::AddressEqual(_, _)
+                | ConditionTerm::PointerEqual(_, _)
+                | ConditionTerm::IntegerEqual(_, _)),
+                _,
+            )) = condition_source_0.condition_native() =>
+        {
             let mut atoms = BTreeSet::new();
             collect_condition_bitvector_atoms(condition, &mut atoms);
             for atom in atoms {
@@ -3250,14 +3267,12 @@ fn index_finite_classification_fact(
     mut index: PersistentMap<MemoryErasedPropositionKey, PersistentSequence<Arc<Proposition>>>,
     fact: &Arc<Proposition>,
 ) -> PersistentMap<MemoryErasedPropositionKey, PersistentSequence<Arc<Proposition>>> {
-    if !matches!(
-        fact.as_ref(),
-        Proposition::ConditionIs(
-            ConditionTerm::Float32(FloatCondition::Classification { .. })
-                | ConditionTerm::Float64(FloatCondition::Classification { .. }),
+    if !matches!(&fact.as_ref(), condition_source_0 @ Proposition::ConditionIs(
+            _,
             true,
-        )
-    ) {
+        ) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Float32(FloatCondition::Classification { .. })
+                | ConditionTerm::Float64(FloatCondition::Classification { .. }), _))))
+    {
         return index;
     }
     let key = memory_erased_proposition_key(fact.as_ref());

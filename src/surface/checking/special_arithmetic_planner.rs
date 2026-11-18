@@ -527,15 +527,12 @@ fn is_alignment_goal(p: &Proposition) -> bool {
     matches!(p, Proposition::ConditionIs(condition, _) if alignment_shape(condition).is_some())
 }
 fn is_pointer_relation(p: &Proposition) -> bool {
-    matches!(
-        p,
-        Proposition::ConditionIs(
-            ConditionTerm::PointerEqual(..)
-                | ConditionTerm::AddressEqual(_, _)
-                | ConditionTerm::AddressOffsetEqual(_, _),
+    matches!(&p, condition_source_0 @ Proposition::ConditionIs(
+            _,
             true
-        )
-    )
+        ) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::PointerEqual(..)
+                | ConditionTerm::AddressEqual(_, _)
+                | ConditionTerm::AddressOffsetEqual(_, _), _))))
 }
 fn is_signed_scalar_bound(p: &Proposition) -> bool {
     let Some((
@@ -576,10 +573,10 @@ fn is_pointer_translation_bound(p: &Proposition) -> bool {
 }
 /// An unsigned 64-bit order, which bounds a `uint64` index.
 fn is_unsigned64_bound(p: &Proposition) -> bool {
-    matches!(
-        p,
-        Proposition::ConditionIs(
-            ConditionTerm::Compare {
+    matches!(&p, condition_source_0 @ Proposition::ConditionIs(
+            _,
+            true,
+        ) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare {
                 format: MachineIntegerType::UInt64,
                 relation: CompareRelation::LessThan,
                 left: _,
@@ -599,10 +596,7 @@ fn is_unsigned64_bound(p: &Proposition) -> bool {
                 relation: CompareRelation::GreaterEqual,
                 left: _,
                 right: _
-            },
-            true,
-        )
-    )
+            }, _))))
 }
 fn is_bitvector64_equality(p: &Proposition) -> bool {
     word_comparison_truth(p) == Some(true)
@@ -650,26 +644,28 @@ fn float_finite_premise(goal: &Proposition, premises: &[Proposition]) -> Option<
             return false;
         }
         match (width, p) {
-            (
-                32,
-                Proposition::ConditionIs(
+            (32, condition_source @ Proposition::ConditionIs(_, true))
+                if let Some((
                     ConditionTerm::Float32(FloatCondition::Classification {
                         classification: FloatClassification::Finite,
                         value,
                     }),
-                    true,
-                ),
-            )
-            | (
-                64,
-                Proposition::ConditionIs(
+                    _,
+                )) = condition_source.condition_native() =>
+            {
+                bounded_term_equal(value, expression)
+            }
+            (64, condition_source @ Proposition::ConditionIs(_, true))
+                if let Some((
                     ConditionTerm::Float64(FloatCondition::Classification {
                         classification: FloatClassification::Finite,
                         value,
                     }),
-                    true,
-                ),
-            ) => bounded_term_equal(value, expression),
+                    _,
+                )) = condition_source.condition_native() =>
+            {
+                bounded_term_equal(value, expression)
+            }
             _ => false,
         }
     })

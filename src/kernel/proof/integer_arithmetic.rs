@@ -186,12 +186,19 @@ fn integer_disequality(
         );
     let reading = readings.first().unwrap_or(proposition);
     let (left, right) = match reading {
-        Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), false)
-        | Proposition::ConditionIs(ConditionTerm::IntegerNotEqual(left, right), true) => {
+        condition_source @ Proposition::ConditionIs(_, _)
+            if let Some(
+                (ConditionTerm::IntegerEqual(left, right), false)
+                | (ConditionTerm::IntegerNotEqual(left, right), true),
+            ) = condition_source.condition_native() =>
+        {
             (left, right)
         }
         Proposition::Not(body) => match body.as_ref() {
-            Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true) => {
+            condition_source_0 @ Proposition::ConditionIs(_, true)
+                if let Some((ConditionTerm::IntegerEqual(left, right), _)) =
+                    condition_source_0.condition_native() =>
+            {
                 (left, right)
             }
             _ => return None,
@@ -237,8 +244,12 @@ pub(crate) fn integer_disequality_claims(proposition: &Proposition) -> Vec<Integ
     let mut differences = Vec::with_capacity(readings.len());
     for reading in &readings {
         let (left, right) = match reading {
-            Proposition::ConditionIs(ConditionTerm::IntegerNotEqual(left, right), true)
-            | Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), false) => {
+            condition_source @ Proposition::ConditionIs(_, _)
+                if let Some(
+                    (ConditionTerm::IntegerNotEqual(left, right), true)
+                    | (ConditionTerm::IntegerEqual(left, right), false),
+                ) = condition_source.condition_native() =>
+            {
                 (left, right)
             }
             _ => continue,

@@ -42,53 +42,70 @@ pub(in crate::surface) fn plan_explicit_equality_rewrites_from(
         surface: &ClickProposition,
     ) -> Option<(Proposition, ClickProposition)> {
         let kernel = match kernel {
-            Proposition::ConditionIs(
-                ConditionTerm::Compare {
-                    format: format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
-                    relation: CompareRelation::Equal,
-                    left,
-                    right,
-                },
-                true,
-            ) => Proposition::ConditionIs(
-                ConditionTerm::Compare {
-                    format: *format,
-                    relation: CompareRelation::Equal,
-                    left: right.clone(),
-                    right: left.clone(),
-                },
-                true,
-            ),
-            Proposition::ConditionIs(
-                ConditionTerm::Compare {
-                    format: MachineIntegerType::Int64,
-                    relation: CompareRelation::Equal,
-                    left,
-                    right,
-                },
-                true,
-            ) => Proposition::ConditionIs(
-                ConditionTerm::Compare {
-                    format: MachineIntegerType::Int64,
-                    relation: CompareRelation::Equal,
-                    left: right.clone(),
-                    right: left.clone(),
-                },
-                true,
-            ),
-            Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) => {
+            condition_source_0 @ Proposition::ConditionIs(_, true)
+                if let Some((
+                    ConditionTerm::Compare {
+                        format: format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
+                        relation: CompareRelation::Equal,
+                        left,
+                        right,
+                    },
+                    _,
+                )) = condition_source_0.condition_native() =>
+            {
+                Proposition::ConditionIs(
+                    ConditionTerm::Compare {
+                        format: *format,
+                        relation: CompareRelation::Equal,
+                        left: right.clone(),
+                        right: left.clone(),
+                    },
+                    true,
+                )
+            }
+            condition_source_0 @ Proposition::ConditionIs(_, true)
+                if let Some((
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int64,
+                        relation: CompareRelation::Equal,
+                        left,
+                        right,
+                    },
+                    _,
+                )) = condition_source_0.condition_native() =>
+            {
+                Proposition::ConditionIs(
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int64,
+                        relation: CompareRelation::Equal,
+                        left: right.clone(),
+                        right: left.clone(),
+                    },
+                    true,
+                )
+            }
+            condition_source_0 @ Proposition::ConditionIs(_, true)
+                if let Some((ConditionTerm::PointerEqual(left, right), _)) =
+                    condition_source_0.condition_native() =>
+            {
                 Proposition::ConditionIs(
                     ConditionTerm::PointerEqual(right.clone(), left.clone()),
                     true,
                 )
             }
-            Proposition::ConditionIs(ConditionTerm::AddressEqual(left, right), true) => {
+            condition_source_0 @ Proposition::ConditionIs(_, true)
+                if let Some((ConditionTerm::AddressEqual(left, right), _)) =
+                    condition_source_0.condition_native() =>
+            {
                 Proposition::ConditionIs(
                     ConditionTerm::AddressEqual(right.clone(), left.clone()),
                     true,
                 )
             }
-            Proposition::ConditionIs(ConditionTerm::AddressOffsetEqual(left, right), true) => {
+            condition_source_0 @ Proposition::ConditionIs(_, true)
+                if let Some((ConditionTerm::AddressOffsetEqual(left, right), _)) =
+                    condition_source_0.condition_native() =>
+            {
                 Proposition::ConditionIs(
                     ConditionTerm::AddressOffsetEqual(right.clone(), left.clone()),
                     true,

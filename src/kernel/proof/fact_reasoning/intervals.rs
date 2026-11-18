@@ -8,14 +8,28 @@ type Bounds = (i128, i128);
 
 fn parts(p: &Proposition) -> Option<(&SharedIntegerTerm, &SharedIntegerTerm, bool)> {
     match p {
-        Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(a, b), true) => {
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::IntegerLessEqual(a, b), _)) =
+                condition_source_0.condition_native() =>
+        {
             Some((a, b, false))
         }
-        Proposition::ConditionIs(ConditionTerm::IntegerLessThan(a, b), true) => Some((a, b, true)),
-        Proposition::ConditionIs(ConditionTerm::IntegerGreaterEqual(a, b), true) => {
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::IntegerLessThan(a, b), _)) =
+                condition_source_0.condition_native() =>
+        {
+            Some((a, b, true))
+        }
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::IntegerGreaterEqual(a, b), _)) =
+                condition_source_0.condition_native() =>
+        {
             Some((b, a, false))
         }
-        Proposition::ConditionIs(ConditionTerm::IntegerGreaterThan(a, b), true) => {
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::IntegerGreaterThan(a, b), _)) =
+                condition_source_0.condition_native() =>
+        {
             Some((b, a, true))
         }
         _ => None,

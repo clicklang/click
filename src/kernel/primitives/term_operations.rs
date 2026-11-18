@@ -5913,17 +5913,24 @@ mod shift_overflow_refusal_tests {
 /// condition decision answers the same comparisons the same way.
 pub(crate) fn proposition_holds_without_facts(proposition: &Proposition) -> bool {
     match proposition {
-        Proposition::ConditionIs(ConditionTerm::Constant(constant), value) => constant == value,
-        Proposition::ConditionIs(
-            condition @ ConditionTerm::Compare {
-                format,
-                left,
-                right,
-                ..
-            },
-            value,
-        ) if format.constant_from_term(left).is_some()
-            && format.constant_from_term(right).is_some() =>
+        condition_source_0 @ Proposition::ConditionIs(_, value)
+            if let Some((ConditionTerm::Constant(constant), _)) =
+                condition_source_0.condition_native() =>
+        {
+            constant == value
+        }
+        condition_source_0 @ Proposition::ConditionIs(_, value)
+            if let Some((
+                condition @ ConditionTerm::Compare {
+                    format,
+                    left,
+                    right,
+                    ..
+                },
+                _,
+            )) = condition_source_0.condition_native()
+                && (format.constant_from_term(left).is_some()
+                    && format.constant_from_term(right).is_some()) =>
         {
             PureFactContext::decide_intrinsically(condition) == Some(*value)
         }

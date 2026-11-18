@@ -16,8 +16,14 @@ pub(super) fn check(
         return Err(invalid());
     }
     let (a, b) = match result {
-        Proposition::ConditionIs(ConditionTerm::IntegerNotEqual(a, b), true)
-        | Proposition::ConditionIs(ConditionTerm::IntegerEqual(a, b), false) => (a, b),
+        condition_source @ Proposition::ConditionIs(_, _)
+            if let Some(
+                (ConditionTerm::IntegerNotEqual(a, b), true)
+                | (ConditionTerm::IntegerEqual(a, b), false),
+            ) = condition_source.condition_native() =>
+        {
+            (a, b)
+        }
         _ => return Err(invalid()),
     };
     let (term, excluded) = if let Some(c) = a.as_const() {

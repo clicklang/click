@@ -1462,9 +1462,7 @@ impl<'a> Proof<'a> {
 
         // A decided range exposes its empty or append equation over the
         // named function, with ordinary obligations for its guards.
-        let fold_equation = if matches!(&equality,
-            Proposition::ConditionIs(ConditionTerm::IntegerEqual(_, folded), true)
-                if matches!(folded.as_ref(), IntegerTerm::RangeFold { .. }))
+        let fold_equation = if matches!(&equality, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::IntegerEqual(_, folded), _)) if (matches!(folded.as_ref(), IntegerTerm::RangeFold { .. }))))
             && !self.goal().is_some_and(|goal| {
                 crate::kernel::proof::propositions_are_alpha_equal(goal, &equality)
             }) {
@@ -1901,8 +1899,8 @@ impl<'a> Proof<'a> {
             if premise == equality {
                 continue;
             }
-            if let Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true) =
-                premise
+            if let Some((ConditionTerm::IntegerEqual(left, right), true)) =
+                (premise).condition_native()
                 && left.as_ref() == &prior
                 && matches!(right.as_ref(), IntegerTerm::RangeFold { .. })
             {

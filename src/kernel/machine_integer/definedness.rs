@@ -195,12 +195,12 @@ pub(crate) fn overflow_query_of_integer_bound(
 /// This is comparison matching, never a change to either stored term.
 fn same_integer_bound(left: &Proposition, right: &Proposition) -> bool {
     left == right
-        || matches!((left, right),
-        (Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(a, b), true),
-         Proposition::ConditionIs(ConditionTerm::IntegerGreaterEqual(c, d), true)) |
-        (Proposition::ConditionIs(ConditionTerm::IntegerGreaterEqual(a, b), true),
-         Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(c, d), true))
-        if a == d && b == c)
+        || matches!(&(left, right),
+        (left_source @ Proposition::ConditionIs(_, true), right_source @ Proposition::ConditionIs(_, true))
+        if matches!(left_source.condition_native(), Some((ConditionTerm::IntegerLessEqual(a, b), _)) if matches!(right_source.condition_native(), Some((ConditionTerm::IntegerGreaterEqual(c, d), _)) if (a == d) && (b == c))))
+        || matches!(&(left, right),
+            (left_source @ Proposition::ConditionIs(_, true), right_source @ Proposition::ConditionIs(_, true))
+            if matches!(left_source.condition_native(), Some((ConditionTerm::IntegerGreaterEqual(a, b), _)) if matches!(right_source.condition_native(), Some((ConditionTerm::IntegerLessEqual(c, d), _)) if (a == d) && (b == c))))
 }
 
 /// Read one explicitly supplied ordinary range conjunction as an arithmetic

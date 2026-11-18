@@ -2421,10 +2421,9 @@ fn loop_entry_goals_retain_satisfied_duplicate_declarations() {
         goals.declarations()[0][0].proposition(),
         goals.declarations()[1][0].proposition()
     );
-    assert!(matches!(
-        goals.declarations()[0][0].proposition(),
-        Proposition::ConditionIs(ConditionTerm::Compare { .. }, true)
-    ));
+    assert!(
+        matches!(&goals.declarations()[0][0].proposition(), condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare { .. }, _))))
+    );
     assert!(
         loop_invariant_obligations_at_entry(&state, &checks, &assumptions)
             .unwrap()

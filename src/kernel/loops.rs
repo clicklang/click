@@ -2239,11 +2239,7 @@ fn join_loop_exit_paths(
                         // Dropping this conjunct weakens the path disjunction
                         // and keeps its pure successor facts spellable.
                         && !matches!(proposition, Proposition::ResourceComposition(_))
-                        && !matches!(
-                            proposition,
-                            Proposition::ConditionIs(ConditionTerm::Constant(actual), expected)
-                                if actual == expected
-                        )
+                        && !matches!(&proposition, condition_source_0 @ Proposition::ConditionIs(_, expected) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Constant(actual), _)) if (actual == expected)))
                 })
                 .cloned()
                 .collect::<Vec<_>>()

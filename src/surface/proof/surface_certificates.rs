@@ -796,22 +796,25 @@ pub(super) fn plan_explicit_le_and_neq_implies_lt(
         }
         for (neq_kernel, neq_surface) in premise_pairs {
             let matches_neq = match neq_kernel {
-                Proposition::ConditionIs(
-                    ConditionTerm::Compare {
-                        format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                        relation: CompareRelation::Equal,
-                        left: neq_left,
-                        right: neq_right,
-                    },
-                    false,
-                ) => neq_left.as_ref() == left && neq_right.as_ref() == right,
-                Proposition::Not(body) => matches!(
-                    body.as_ref(),
-                    Proposition::ConditionIs(
-                        ConditionTerm::Compare { format: MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, left: neq_left, right: neq_right },
+                condition_source_0 @ Proposition::ConditionIs(_, false)
+                    if let Some((
+                        ConditionTerm::Compare {
+                            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+                            relation: CompareRelation::Equal,
+                            left: neq_left,
+                            right: neq_right,
+                        },
+                        _,
+                    )) = condition_source_0.condition_native() =>
+                {
+                    neq_left.as_ref() == left && neq_right.as_ref() == right
+                }
+                Proposition::Not(body) => {
+                    matches!(&body.as_ref(), condition_source_0 @ Proposition::ConditionIs(
+                        _,
                         true,
-                    ) if neq_left.as_ref() == left && neq_right.as_ref() == right
-                ),
+                    ) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare { format: MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, left: neq_left, right: neq_right }, _)) if (neq_left.as_ref() == left && neq_right.as_ref() == right)))
+                }
                 _ => false,
             };
             if !matches_neq {
@@ -2351,24 +2354,32 @@ pub(super) fn signed_strict_parts(
     proposition: &Proposition,
 ) -> Option<(&MachineTerm, &MachineTerm)> {
     match proposition {
-        Proposition::ConditionIs(
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::LessThan,
-                left,
-                right,
-            },
-            true,
-        ) => Some((left, right)),
-        Proposition::ConditionIs(
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::GreaterThan,
-                left,
-                right,
-            },
-            true,
-        ) => Some((right, left)),
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessThan,
+                    left,
+                    right,
+                },
+                _,
+            )) = condition_source_0.condition_native() =>
+        {
+            Some((left, right))
+        }
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::GreaterThan,
+                    left,
+                    right,
+                },
+                _,
+            )) = condition_source_0.condition_native() =>
+        {
+            Some((right, left))
+        }
         _ => None,
     }
 }
@@ -2377,24 +2388,32 @@ pub(super) fn signed_nonstrict_parts(
     proposition: &Proposition,
 ) -> Option<(&MachineTerm, &MachineTerm)> {
     match proposition {
-        Proposition::ConditionIs(
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::LessEqual,
-                left,
-                right,
-            },
-            true,
-        ) => Some((left, right)),
-        Proposition::ConditionIs(
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::GreaterEqual,
-                left,
-                right,
-            },
-            true,
-        ) => Some((right, left)),
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessEqual,
+                    left,
+                    right,
+                },
+                _,
+            )) = condition_source_0.condition_native() =>
+        {
+            Some((left, right))
+        }
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::GreaterEqual,
+                    left,
+                    right,
+                },
+                _,
+            )) = condition_source_0.condition_native() =>
+        {
+            Some((right, left))
+        }
         _ => None,
     }
 }
@@ -3093,15 +3112,19 @@ pub(super) fn plan_recorded_load_address_congruence(
 /// `<`, not its reversed (`>`) spelling, which other rules recognize.
 fn goal_exact_less_than_parts(goal: &Proposition) -> Option<(&MachineTerm, &MachineTerm)> {
     match goal {
-        Proposition::ConditionIs(
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::LessThan,
-                left,
-                right,
-            },
-            true,
-        ) => Some((left, right)),
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessThan,
+                    left,
+                    right,
+                },
+                _,
+            )) = condition_source_0.condition_native() =>
+        {
+            Some((left, right))
+        }
         _ => None,
     }
 }
@@ -3110,15 +3133,19 @@ fn goal_exact_less_than_parts(goal: &Proposition) -> Option<(&MachineTerm, &Mach
 /// [`goal_exact_less_than_parts`].
 fn goal_exact_less_equal_parts(goal: &Proposition) -> Option<(&MachineTerm, &MachineTerm)> {
     match goal {
-        Proposition::ConditionIs(
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::LessEqual,
-                left,
-                right,
-            },
-            true,
-        ) => Some((left, right)),
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessEqual,
+                    left,
+                    right,
+                },
+                _,
+            )) = condition_source_0.condition_native() =>
+        {
+            Some((left, right))
+        }
         _ => None,
     }
 }
@@ -3462,44 +3489,55 @@ fn plan_explicit_not_strict_implies_greater_equal(
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
     let (goal_left, goal_right) = match goal {
-        Proposition::ConditionIs(
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::GreaterEqual,
-                left,
-                right,
-            },
-            true,
-        ) => (left, right),
-        Proposition::ConditionIs(
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::LessEqual,
-                left: lower,
-                right: greater,
-            },
-            true,
-        ) => (greater, lower),
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::GreaterEqual,
+                    left,
+                    right,
+                },
+                _,
+            )) = condition_source_0.condition_native() =>
+        {
+            (left, right)
+        }
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessEqual,
+                    left: lower,
+                    right: greater,
+                },
+                _,
+            )) = condition_source_0.condition_native() =>
+        {
+            (greater, lower)
+        }
         _ => return None,
     };
     for (kernel, surface) in premise_pairs {
         let matches = match kernel {
-            Proposition::Not(body) => matches!(
-                body.as_ref(),
-                Proposition::ConditionIs(
-                    ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::LessThan, left, right },
+            Proposition::Not(body) => {
+                matches!(&body.as_ref(), condition_source_0 @ Proposition::ConditionIs(
+                    _,
                     true,
-                ) if left == goal_left && right == goal_right
-            ),
-            Proposition::ConditionIs(
-                ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
-                    relation: CompareRelation::LessThan,
-                    left,
-                    right,
-                },
-                false,
-            ) => left == goal_left && right == goal_right,
+                ) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::LessThan, left, right }, _)) if (left == goal_left && right == goal_right)))
+            }
+            condition_source_0 @ Proposition::ConditionIs(_, false)
+                if let Some((
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::LessThan,
+                        left,
+                        right,
+                    },
+                    _,
+                )) = condition_source_0.condition_native() =>
+            {
+                left == goal_left && right == goal_right
+            }
             _ => false,
         };
         if !matches {
@@ -3578,26 +3616,34 @@ pub(super) fn plan_explicit_negated_strict_successor_bound(
     for (kernel, surface) in premise_pairs {
         let (premise_value, premise_upper) = match kernel {
             Proposition::Not(body) => match body.as_ref() {
-                Proposition::ConditionIs(
+                condition_source_0 @ Proposition::ConditionIs(_, true)
+                    if let Some((
+                        ConditionTerm::Compare {
+                            format: MachineIntegerType::Int32,
+                            relation: CompareRelation::LessThan,
+                            left: value,
+                            right: upper,
+                        },
+                        _,
+                    )) = condition_source_0.condition_native() =>
+                {
+                    (value.as_ref(), upper.as_ref())
+                }
+                _ => continue,
+            },
+            condition_source_0 @ Proposition::ConditionIs(_, false)
+                if let Some((
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessThan,
                         left: value,
                         right: upper,
                     },
-                    true,
-                ) => (value.as_ref(), upper.as_ref()),
-                _ => continue,
-            },
-            Proposition::ConditionIs(
-                ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
-                    relation: CompareRelation::LessThan,
-                    left: value,
-                    right: upper,
-                },
-                false,
-            ) => (value.as_ref(), upper.as_ref()),
+                    _,
+                )) = condition_source_0.condition_native() =>
+            {
+                (value.as_ref(), upper.as_ref())
+            }
             _ => continue,
         };
         if premise_value != goal_value.as_ref() || premise_upper != &MachineTerm::constant(upper) {
@@ -3777,24 +3823,34 @@ fn plan_explicit_transitive(
     let strict =
         matches!(first_order, SignedOrder::Strict) || matches!(second_order, SignedOrder::Strict);
     let (goal_first, goal_last) = match goal {
-        Proposition::ConditionIs(
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::LessThan,
-                left: goal_first,
-                right: goal_last,
-            },
-            true,
-        ) if strict => (goal_first, goal_last),
-        Proposition::ConditionIs(
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::LessEqual,
-                left: goal_first,
-                right: goal_last,
-            },
-            true,
-        ) if !strict => (goal_first, goal_last),
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessThan,
+                    left: goal_first,
+                    right: goal_last,
+                },
+                _,
+            )) = condition_source_0.condition_native()
+                && (strict) =>
+        {
+            (goal_first, goal_last)
+        }
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessEqual,
+                    left: goal_first,
+                    right: goal_last,
+                },
+                _,
+            )) = condition_source_0.condition_native()
+                && (!strict) =>
+        {
+            (goal_first, goal_last)
+        }
         _ => return None,
     };
     for (first_kernel, first_surface) in premise_pairs {
@@ -4499,23 +4555,26 @@ pub(super) fn plan_explicit_le_and_not_lt_implies_eq(
         }
         for (not_lt_kernel, not_lt_surface) in premise_pairs {
             let matches_not_lt = match not_lt_kernel {
-                Proposition::ConditionIs(
-                    ConditionTerm::Compare {
-                        format: MachineIntegerType::Int32,
-                        relation: CompareRelation::LessThan,
-                        left: not_left,
-                        right: not_right,
-                    },
-                    false,
-                ) => not_left.as_ref() == left.as_ref() && not_right.as_ref() == right.as_ref(),
-                Proposition::Not(body) => matches!(
-                    body.as_ref(),
-                    Proposition::ConditionIs(
-                        ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::LessThan, left: not_left, right: not_right },
+                condition_source_0 @ Proposition::ConditionIs(_, false)
+                    if let Some((
+                        ConditionTerm::Compare {
+                            format: MachineIntegerType::Int32,
+                            relation: CompareRelation::LessThan,
+                            left: not_left,
+                            right: not_right,
+                        },
+                        _,
+                    )) = condition_source_0.condition_native() =>
+                {
+                    not_left.as_ref() == left.as_ref() && not_right.as_ref() == right.as_ref()
+                }
+                Proposition::Not(body) => {
+                    matches!(&body.as_ref(), condition_source_0 @ Proposition::ConditionIs(
+                        _,
                         true,
-                    ) if not_left.as_ref() == left.as_ref()
-                        && not_right.as_ref() == right.as_ref()
-                ),
+                    ) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::LessThan, left: not_left, right: not_right }, _)) if (not_left.as_ref() == left.as_ref()
+                        && not_right.as_ref() == right.as_ref())))
+                }
                 _ => false,
             };
             if !matches_not_lt {
@@ -4692,22 +4751,25 @@ pub(super) fn plan_explicit_ge_and_not_gt_implies_eq(
         }
         for (not_gt_kernel, not_gt_surface) in premise_pairs {
             let matches_not_gt = match not_gt_kernel {
-                Proposition::ConditionIs(
-                    ConditionTerm::Compare {
-                        format: MachineIntegerType::Int32,
-                        relation: CompareRelation::GreaterThan,
-                        left: not_left,
-                        right: not_right,
-                    },
-                    false,
-                ) => not_left == left && not_right == right,
-                Proposition::Not(body) => matches!(
-                    body.as_ref(),
-                    Proposition::ConditionIs(
-                        ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::GreaterThan, left: not_left, right: not_right },
+                condition_source_0 @ Proposition::ConditionIs(_, false)
+                    if let Some((
+                        ConditionTerm::Compare {
+                            format: MachineIntegerType::Int32,
+                            relation: CompareRelation::GreaterThan,
+                            left: not_left,
+                            right: not_right,
+                        },
+                        _,
+                    )) = condition_source_0.condition_native() =>
+                {
+                    not_left == left && not_right == right
+                }
+                Proposition::Not(body) => {
+                    matches!(&body.as_ref(), condition_source_0 @ Proposition::ConditionIs(
+                        _,
                         true,
-                    ) if not_left == left && not_right == right
-                ),
+                    ) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::GreaterThan, left: not_left, right: not_right }, _)) if (not_left == left && not_right == right)))
+                }
                 _ => false,
             };
             if !matches_not_gt {
@@ -4750,24 +4812,30 @@ pub(super) fn plan_explicit_successor_le_implies_lt(
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
     let (lower, value) = match goal {
-        Proposition::ConditionIs(
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::LessThan,
-                left: lower,
-                right: value,
-            },
-            true,
-        )
-        | Proposition::ConditionIs(
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::GreaterThan,
-                left: value,
-                right: lower,
-            },
-            true,
-        ) => (lower.as_ref(), value.as_ref()),
+        condition_source @ Proposition::ConditionIs(_, true)
+            if let Some(
+                (
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::LessThan,
+                        left: lower,
+                        right: value,
+                    },
+                    true,
+                )
+                | (
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::GreaterThan,
+                        left: value,
+                        right: lower,
+                    },
+                    true,
+                ),
+            ) = condition_source.condition_native() =>
+        {
+            (lower.as_ref(), value.as_ref())
+        }
         _ => return None,
     };
     for (bound_kernel, bound_surface) in premise_pairs {

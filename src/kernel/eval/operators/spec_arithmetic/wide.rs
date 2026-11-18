@@ -42,7 +42,7 @@ pub(super) fn apply(
     let mut obligations = inherited.to_vec();
     let mut domain = Vec::new();
     let mut require = |proposition: Proposition| {
-        if !matches!(&proposition, Proposition::ConditionIs(ConditionTerm::Constant(actual), expected) if actual == expected)
+        if !matches!(&proposition, condition_source_0 @ Proposition::ConditionIs(_, expected) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Constant(actual), _)) if (actual == expected)))
         {
             domain.push(proposition);
         }

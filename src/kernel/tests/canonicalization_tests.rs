@@ -229,11 +229,7 @@ fn assert_load_variables_have_defining_facts(
     for load_variable in load_variables {
         let defined = facts.fact_iter().any(|fact| {
             crate::kernel::is_load_variable_defining_fact(&fact.proposition)
-                && matches!(
-                    fact.proposition(),
-                    Proposition::ConditionIs(ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::Equal, left, right: _ }, true)
-                        if matches!(left.as_ref(), MachineTerm::Variable(variable) if variable == load_variable)
-                )
+                && matches!(&fact.proposition(), condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::Equal, left, right: _ }, _)) if (matches!(left.as_ref(), MachineTerm::Variable(variable) if variable == load_variable))))
         });
         assert!(
             defined,
