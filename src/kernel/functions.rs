@@ -3445,6 +3445,9 @@ fn execute_verified_function_applications_with_suspension(
                 mutex_storage_effects.push(range);
             }
         }
+        // A protocol summary retains the storage coordinates from the
+        // selected authority. Until those coordinates have a checked
+        // caller-side spelling, keep the conservative guard for this effect.
         if let Some(diagnostic) = mutex_storage_effects.iter().find_map(|range| {
             transfer
                 .stable_view_plan
@@ -3457,11 +3460,13 @@ fn execute_verified_function_applications_with_suspension(
                     )
                 })
                 .or_else(|| {
-                    entry_state.stable_loan_memory_access_refusal(
-                        range,
-                        &effective_assumptions,
-                        LoanRefusalOperation::MemoryAccess,
-                    )
+                    entry_state.loan_ledger().and_then(|ledger| {
+                        ledger.memory_access_refusal(
+                            range,
+                            &effective_assumptions,
+                            LoanRefusalOperation::MemoryAccess,
+                        )
+                    })
                 })
         }) {
             paths.push(FunctionPath::new(
@@ -5752,7 +5757,7 @@ fn prepare_verified_function_call<'a>(
                         .is_some_and(KernelTerm::is_shared_machine_operand)
             });
     crate::instrumentation::record_deterministic_work(parameters.len());
-    let (argument_values, argument_obligations) = if retains_words {
+    let (argument_values, mut argument_obligations) = if retains_words {
         (
             VerifiedCallArguments::BoundWords,
             arguments_path.obligations.clone(),
@@ -5775,6 +5780,7 @@ fn prepare_verified_function_call<'a>(
         &argument_values,
         application.storage,
         &arguments_path.values,
+        &mut argument_obligations,
     ) else {
         return Ok(Err(FunctionPath::new(
             FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(

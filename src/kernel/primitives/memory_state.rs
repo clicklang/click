@@ -10392,19 +10392,6 @@ impl ExecutionState {
         self
     }
 
-    /// The bounded explanation of a refused access, or `None` when the
-    /// access is permitted or no ledger is active.
-    pub(crate) fn stable_loan_memory_access_refusal(
-        &self,
-        range: &MemoryRange,
-        assumptions: &PureFactContext,
-        operation: crate::kernel::LoanRefusalOperation,
-    ) -> Option<crate::kernel::LoanRefusalDiagnostic> {
-        self.loan_ledger
-            .as_ref()
-            .and_then(|ledger| ledger.memory_access_refusal(range, assumptions, operation))
-    }
-
     pub(in crate::kernel) fn automatic_storage_loan_refusal(
         &self,
         block: &AddressBase,

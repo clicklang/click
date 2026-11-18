@@ -11,6 +11,7 @@ src/kernel/loans.rs	legacy-caller	StableViewTransferPlan::lend_local_views_with_
 src/kernel/loans/legacy_search.rs	search	ProofSearch::loan_access	memory_range_aliases	1
 src/kernel/mutexes.rs	legacy-caller	MutexLedger::havoc_protected_for_call	call_kept_ownership	1
 src/kernel/mutexes/assumed_protocol.rs	legacy-caller	::forget_released_protected_memory	call_kept_ownership	1
+src/kernel/functions/construction_return.rs	legacy-caller	::bind	permits_memory_access_with_assumptions	1
 src/kernel/primitives/memory_state.rs	legacy-caller	ExecutionState::checked_population_member_exchange	permits_memory_access_with_assumptions	1
 src/kernel/primitives/resource_algebra.rs	legacy-bridge	ResourceContext::owned_validity_candidates	ownership_validity_candidates	1
 src/kernel/primitives/resource_algebra.rs	legacy-caller	ResourceContext::validity_error_with_separation	owned_validity_candidates	1

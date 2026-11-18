@@ -455,6 +455,8 @@ fn child_reborrow_of_a_symbolic_root_keeps_the_root_protected() {
         .borrowed_contract_input(holder, support, viewed.clone(), None)
         .unwrap();
     let ledger = ledger.apply(&opening.transition).unwrap();
+    let write = parameter_range(10, 0, 1, 4);
+    let requirement = ledger.memory_access_requirement(&write).unwrap();
     let parent = LoanViewBinding {
         loan: opening.loan,
         scope: opening.scope,
@@ -467,6 +469,10 @@ fn child_reborrow_of_a_symbolic_root_keeps_the_root_protected() {
     let ledger = ledger.apply(&child.transition).unwrap();
     assert!(ledger.invariant_holds());
     assert_eq!(
+        ledger.memory_access_requirement(&write),
+        Some(requirement.clone())
+    );
+    assert_eq!(
         ledger.permits_memory_access_with_assumptions(&parameter_range(9, 0, 1, 4), &assumptions),
         Err(LoanRefusal::ActiveDependency)
     );
@@ -475,6 +481,10 @@ fn child_reborrow_of_a_symbolic_root_keeps_the_root_protected() {
     let end = ledger.end(child.scope, holder).unwrap();
     let ledger = ledger.apply(&end).unwrap();
     assert!(ledger.invariant_holds());
+    assert_eq!(
+        ledger.memory_access_requirement(&write),
+        Some(requirement.clone())
+    );
     assert!(ledger.has_active_memory_loans());
     assert_eq!(
         ledger.permits_memory_access_with_assumptions(&parameter_range(9, 0, 1, 4), &assumptions),

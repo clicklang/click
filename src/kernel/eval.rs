@@ -149,7 +149,7 @@ pub(super) use operators::pointer_offset_by_bytes_paths;
 pub(super) use operators::*;
 #[cfg(test)]
 pub(super) use statements::execute_execution_statement;
-pub(super) use statements::memory_write_permission_outcome;
+pub(super) use statements::memory_write_storage_outcome;
 #[cfg(test)]
 pub(super) use statements::paths_after_scope_exit;
 #[cfg(test)]
