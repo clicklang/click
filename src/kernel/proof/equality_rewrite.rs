@@ -68,6 +68,18 @@ pub(crate) struct CheckedEqualityRewrite {
 }
 
 impl CheckedEqualityRewrite {
+    /// The rewritten goal, stated in the one form the kernel gives a
+    /// comparison of exact observations
+    /// (`docs/internals/mathematical-integers.md#one-form-for-comparisons-of-observations`):
+    /// substituting into `to_integer(x) == to_integer(y)` can leave
+    /// `to_integer(old(n[0])) == 0`, which is the native `old(n[0]) == 0`.
+    fn constructed(proposition: Proposition, facts: PureFactStore) -> Self {
+        Self {
+            proposition: crate::kernel::assumptions::canonical_observation_form(&proposition),
+            facts,
+        }
+    }
+
     pub(crate) fn proposition(&self) -> &Proposition {
         &self.proposition
     }
@@ -137,10 +149,10 @@ impl PureFactStore {
             );
         }
         match rewrite_with_admitted_equality(goal, equality) {
-            Ok(proposition) => Ok(CheckedEqualityRewrite {
+            Ok(proposition) => Ok(CheckedEqualityRewrite::constructed(
                 proposition,
-                facts: self.clone(),
-            }),
+                self.clone(),
+            )),
             Err(original_error) => {
                 // Compare only the cited expression with the two operands of
                 // this atomic goal. Corresponding operators stay exact; the
@@ -224,7 +236,7 @@ impl PureFactStore {
                         continue;
                     };
                     if let Ok(proposition) = rewrite_with_admitted_equality(goal, &adapted) {
-                        return Ok(CheckedEqualityRewrite { proposition, facts });
+                        return Ok(CheckedEqualityRewrite::constructed(proposition, facts));
                     }
                 }
                 Err(original_error)
