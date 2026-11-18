@@ -247,7 +247,7 @@ theorem zlib_reduce_once_above(value: uint64) {
   have to_integer(value) == 1 * 65521 + to_integer(value - 65521u64) by solve() using { to_integer(value - 65521u64) == to_integer(value) - 65521; };
   apply(adler_residue_unique(to_integer(value), 1, to_integer(value - 65521u64)));
   apply(integer::uint64_remainder_to_integer(value, 65521u64));
-  both {
+  all positional {
    left => { known(); }
    right => {
     solve() using {

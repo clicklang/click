@@ -4861,15 +4861,25 @@ fn proof_tactic_entries(
                 // A structural `both` numbers as one claim-level tactic; the
                 // tactics in its arms are addressed by arm and written
                 // position below it, as the script runner reports them.
-                if let FlatTactic::Written(ProofTactic::Both(both)) = item.tactic
-                    && !smart
-                {
-                    let arms = tokens.labeled_arms(&item.tokens, ["left", "right"])?;
-                    for (arm, ((open, close), tactics)) in arms
-                        .into_iter()
-                        .zip([&both.left_tactics, &both.right_tactics])
-                        .enumerate()
-                    {
+                let arms = match item.tactic {
+                    FlatTactic::Written(ProofTactic::Both(both)) if !smart => Some(
+                        tokens
+                            .labeled_arms(&item.tokens, ["left", "right"])?
+                            .into_iter()
+                            .zip([both.left_tactics.as_slice(), both.right_tactics.as_slice()])
+                            .collect::<Vec<_>>(),
+                    ),
+                    FlatTactic::Written(ProofTactic::All(all)) if !smart => Some(
+                        tokens
+                            .cases_arms(&item.tokens)?
+                            .into_iter()
+                            .zip(all.arms.iter().map(|arm| arm.tactics.as_slice()))
+                            .collect(),
+                    ),
+                    _ => None,
+                };
+                if let Some(arms) = arms {
+                    for (arm, ((open, close), tactics)) in arms.into_iter().enumerate() {
                         block_tactic_entries(
                             tokens,
                             &WrittenBlock {
@@ -5033,6 +5043,9 @@ fn block_tactic_entries(
             ProofTactic::Cases(cases) => {
                 Some(cases.arms().iter().map(|arm| arm.tactics()).collect())
             }
+            ProofTactic::All(all) => {
+                Some(all.arms.iter().map(|arm| arm.tactics.as_slice()).collect())
+            }
             ProofTactic::Both(both) => Some(vec![&both.left_tactics, &both.right_tactics]),
             _ => None,
         };
@@ -5135,6 +5148,14 @@ fn smart_container_alias_entries(
         } => {
             if let Some(block) = body(tactic_tokens) {
                 blocks.push((block, script));
+            }
+        }
+        ProofTactic::All(all) => {
+            if let Ok(arms) = tokens.cases_arms(&tactic_tokens) {
+                blocks.extend(
+                    arms.into_iter()
+                        .zip(all.arms.iter().map(|arm| arm.tactics.as_slice())),
+                );
             }
         }
         ProofTactic::Both(both) => {
@@ -5627,8 +5648,10 @@ fn structured_tactic_arm_blocks(
 ) -> Result<Option<Vec<(usize, usize)>>, ClickError> {
     Ok(match tokens[range.start].text.as_str() {
         "if" => Some(tokens.two_arms(&range, "if")?.to_vec()),
-        "both" => Some(tokens.labeled_arms(&range, ["left", "right"])?.to_vec()),
-        "cases" => Some(tokens.cases_arms(&range)?),
+        "all" if tokens[range.start + 1].text == "positional" => {
+            Some(tokens.labeled_arms(&range, ["left", "right"])?.to_vec())
+        }
+        "cases" | "all" => Some(tokens.cases_arms(&range)?),
         _ => None,
     })
 }
@@ -5757,6 +5780,22 @@ fn collect_tactic_block_spans<'t>(
                     &proof_branch.else_tactics,
                     spans,
                 )?;
+            }
+            ProofTactic::All(all) => {
+                let blocks = tokens.cases_arms(&token_range)?;
+                if blocks.len() != all.arms.len() {
+                    return Err(ClickError::new(
+                        "source `all` arms do not match the parsed proof",
+                    ));
+                }
+                for ((open, close), arm) in blocks.into_iter().zip(&all.arms) {
+                    collect_tactic_block_spans(tokens, open, close, &arm.tactics, spans)?;
+                }
+            }
+            ProofTactic::Both(both) => {
+                let [left, right] = tokens.labeled_arms(&token_range, ["left", "right"])?;
+                collect_tactic_block_spans(tokens, left.0, left.1, &both.left_tactics, spans)?;
+                collect_tactic_block_spans(tokens, right.0, right.1, &both.right_tactics, spans)?;
             }
             ProofTactic::Cases(proof_cases) => {
                 let blocks = tokens.cases_arms(&token_range)?;

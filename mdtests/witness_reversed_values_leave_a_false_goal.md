@@ -8,7 +8,7 @@ first one that is not outermost.
 theorem witness_reversed_values() {
     ensures exists (x: int32, y: int32) { x == 3 and y == 4 } by {
         witness(4, 3);
-        both { left => { normalize(); } right => { normalize(); } }
+        all positional { left => { normalize(); } right => { normalize(); } }
     }
 }
 ```

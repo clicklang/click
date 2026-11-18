@@ -21,7 +21,7 @@ theorem nested_universal_body(n: int32) {
         intro();
         have 0 <= k;
         have k < n;
-        both {
+        all positional {
             left => {
                 known();
             }

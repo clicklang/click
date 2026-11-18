@@ -1650,6 +1650,30 @@ fn expand_declared_resource_tactic(
         | ProofTactic::Loop(_)) => {
             expand_declared_resource_tactic_with_nested_proofs(tactic, resource_definitions)
         }
+        ProofTactic::All(all) => Ok(ProofTactic::All(ProofAll {
+            arms: all
+                .arms
+                .into_iter()
+                .map(|arm| {
+                    let proposition = expand_declared_resource_proposition(
+                        arm.proposition,
+                        resource_definitions,
+                    )?;
+                    let SourceProof::Script(tactics) = expand_declared_resource_proof_of(
+                        SourceProof::Script(arm.tactics),
+                        Some(&proposition),
+                        resource_definitions,
+                    )?
+                    else {
+                        unreachable!("expansion retains proof scripts");
+                    };
+                    Ok(ProofAllArm {
+                        proposition,
+                        tactics,
+                    })
+                })
+                .collect::<Result<_, ClickError>>()?,
+        })),
         tactic @ (ProofTactic::Both(_) | ProofTactic::CloseInvariantsBy(_)) => {
             expand_declared_resource_tactic_with_plain_scripts(tactic, resource_definitions)
         }

@@ -62,7 +62,7 @@ theorem increment_is_positive_step() {
         have input <= 1000 by {
             solve() using { input <= 100; };
         }
-        both {
+        all positional {
             left => {
                 known();
             }

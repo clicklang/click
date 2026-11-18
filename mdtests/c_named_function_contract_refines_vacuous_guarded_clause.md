@@ -42,7 +42,7 @@ theorem increment_is_guarded_progress() {
     ensures GuardedProgress(&increment) by {
         unfold(GuardedProgress(&increment));
         intro();
-        both {
+        all positional {
             left => {
                 solve() using {
                     old(cell[0]) < 100;
@@ -50,7 +50,7 @@ theorem increment_is_guarded_progress() {
             }
             right => {
                 intro();
-                both {
+                all positional {
                     left => {
                         have not (old(cell[0]) < 0) by {
                             solve() using { 0 <= old(cell[0]); };

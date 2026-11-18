@@ -65,7 +65,7 @@ src/kernel/search/proposition_search.rs	search	ProofSearch::proves_not	proves	1
 src/surface/checking/segments.rs	mixed	::segment_contains_pointer	proves	2
 src/surface/planning/solve.rs	search	::plan_solve_certificate	derive_solve_proposition	1
 src/surface/proof/attempt.rs	mixed	::try_steps	driver	1
-src/surface/proof/driver/branches.rs	driver	ProofDriver::apply_both_source	driver	1
+src/surface/proof/driver/branches.rs	driver	ProofDriver::apply_all_source	driver	1
 src/surface/proof/driver/branches.rs	driver	ProofDriver::try_split_source_successor_if	driver	1
 src/surface/proof/driver/claims.rs	driver	::begin_outcome_claim_proof	driver	1
 src/surface/proof/driver/claims.rs	driver	::close_claim_directly_from_outcome	driver	1
@@ -160,10 +160,11 @@ src/surface/proof/driver/scripts.rs	driver	ProofDriver::close_with_unsigned_lemm
 src/surface/proof/driver/scripts.rs	driver	ProofDriver::have_by_integer_arithmetic	driver	1
 src/surface/proof/driver/scripts.rs	driver	ProofDriver::run_addressed_linear_script	apply_planned_fact_transport	1
 src/surface/proof/driver/scripts.rs	driver	ProofDriver::run_addressed_linear_script	apply_smart_induction	1
-src/surface/proof/driver/scripts.rs	driver	ProofDriver::run_addressed_linear_script	driver	16
+src/surface/proof/driver/scripts.rs	driver	ProofDriver::run_addressed_linear_script	driver	17
 src/surface/proof/driver/scripts.rs	driver	ProofDriver::run_addressed_linear_script	try_execution_fact_transport_or_refusal	1
 src/surface/proof/driver/scripts.rs	driver	ProofDriver::run_addressed_linear_script	try_restricted_solve_closure	1
 src/surface/proof/driver/scripts.rs	driver	ProofDriver::run_addressed_linear_script	try_solve_closure	3
+src/surface/proof/driver/scripts.rs	driver	ProofDriver::run_conjunct_proofs	driver	3
 src/surface/proof/driver/scripts.rs	driver	ProofDriver::run_case_arms	driver	4
 src/surface/proof/driver/scripts.rs	driver	ProofDriver::run_pure_match_group	driver	4
 src/surface/proof/driver/scripts.rs	driver	ProofDriver::try_addressed_linear_script	driver	1

@@ -1214,6 +1214,22 @@ fn instantiate_proof_tactic(
                 ),
             },
         },
+        ProofTactic::All(all) => ProofTactic::All(ProofAll {
+            arms: all
+                .arms
+                .iter()
+                .map(|arm| {
+                    Ok(ProofAllArm {
+                        proposition: proposition(&arm.proposition)?,
+                        tactics: instantiate_proof_tactics(
+                            &arm.tactics,
+                            substitution,
+                            algebraic_parameters,
+                        )?,
+                    })
+                })
+                .collect::<Result<_, String>>()?,
+        }),
         ProofTactic::Both(both) => ProofTactic::Both(ProofBoth {
             left_tactics: instantiate_proof_tactics(
                 &both.left_tactics,

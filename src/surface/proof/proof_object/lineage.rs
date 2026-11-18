@@ -10,6 +10,7 @@ use super::*;
 pub(in crate::surface::proof) struct ProofCheckpoint<'a> {
     pub(super) context: Arc<ProofContext<'a>>,
     pub(super) node: Arc<ProofNode>,
+    pub(super) conjuncts: [Option<Arc<ClickProposition>>; 2],
 }
 
 #[derive(Clone, Copy)]
@@ -39,6 +40,10 @@ impl ProofStepBlock {
             Self::Claim => "proof".to_string(),
             Self::Have => "have body".to_string(),
             Self::Open => "open body".to_string(),
+            Self::Arm {
+                index,
+                name: "conjunct",
+            } => format!("conjunct {} arm", index + 1),
             Self::Arm { name, .. } => format!("{name} arm"),
         }
     }

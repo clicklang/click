@@ -40,14 +40,14 @@ theorem decrement_is_decrease() {
     ensures Decrease(&decrement) by {
         unfold(Decrease(&decrement));
         intro();
-        both {
+        all positional {
             left => {
                 known();
             }
             right => {
                 intro();
                 have *cell == (old(*cell) - 1);
-                both {
+                all positional {
                     left => {
                         known();
                     }
