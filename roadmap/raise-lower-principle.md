@@ -994,6 +994,11 @@ changed terms or paths. Quality passed after formatting the new scaling include;
 the final aggregate validation exit is zero. The incremental compiler cache
 fingerprint error was resolved with a fresh crate cache and unchanged settings.
 [PR #3181](https://github.com/clicklang/click/pull/3181) has auto-merge requested.
+After integrating upstream `66ff4dedd`, call-result snapshots also retain their
+carriers while preserving program-point selection. All 47 affected checks,
+including C++ captures and snapshot scaling, passed with the current exporter;
+quality passed. The first focused command omitted the exporter environment
+variable; its fixture setup failure was corrected in the passing rerun.
 Full nightly was not run.
 
 ## Chunk 3: machine-valued pure-function results
