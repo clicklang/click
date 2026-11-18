@@ -960,7 +960,9 @@ CI uses these internal modes for code-affecting changes:
 A push to `master` runs the build job alone, to save the build state that
 pull requests and the merge queue restore. The merge queue already ran the
 whole gate on that exact tree, and repeating it after every merge took a dozen
-runners that gating runs then waited for.
+runners that gating runs then waited for. The post-merge job compiles the same
+targets with `scripts/check.sh --ci-warm-cache` and skips packaging and
+uploading test artifacts.
 
 The final required `test` check requires quality, preparation, and every
 partition to pass. A failed or cancelled quality job fails this gate even
@@ -973,9 +975,9 @@ runners restore those files instead of reinstalling Clang. Native Rust
 extraction uses the compiler/runtime identity in
 `src/languages/rust/charon-profile.json`; `scripts/charon-toolchain.sh` derives
 its runtime paths from that profile. Preparation bundles `rustc` and its runtime
-libraries using `scripts/charon-runtime.sh` and both Charon executables in
-`charon.tar.gz`, as a second artifact, `rust-toolchain`, apart from the test
-binaries: together they are nearly half of the build output. The `rust` shards download that artifact,
+libraries in `rust-runtime.tar.zst` using `scripts/charon-runtime.sh` and both
+Charon executables in `charon.tar.gz`. They form the separate `rust-toolchain`
+artifact. The `rust` shards download that artifact,
 validate the compiler, target, and toolchain identity, and restore those
 libraries before setup, so missing caches do not prevent test execution; every
 other shard downloads the test binaries alone. Unit shards use
