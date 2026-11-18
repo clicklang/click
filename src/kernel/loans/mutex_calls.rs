@@ -418,9 +418,9 @@ impl MutexUseCallTransfer {
                     .zip(required.arguments())
                     .all(|(left, right)| {
                         left == right
-                            || crate::kernel::resource_arguments_proven_equal(
-                                left,
-                                right,
+                            || crate::kernel::resource_field_values_proven_equal(
+                                (left).into(),
+                                (right).into(),
                                 assumptions,
                             )
                     })

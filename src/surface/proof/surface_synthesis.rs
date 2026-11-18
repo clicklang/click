@@ -4785,7 +4785,9 @@ fn synthesize_population_entry_count(
         return None;
     };
     let population = state.population_with_entry_count(*variable)?;
-    let [AlgebraicValue::Program(ProgramValue::Pointer(anchor))] = population.arguments() else {
+    let Some([crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(anchor))]) =
+        (population.arguments()).fixed_values::<1>()
+    else {
         return None;
     };
     let anchor = synthesize_surface_pointer_expression(

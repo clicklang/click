@@ -4834,6 +4834,8 @@ fn concatenate_sequence_terms(left: SequenceTerm, right: SequenceTerm) -> Sequen
 #[cfg(test)]
 mod logical_field_storage_tests;
 #[cfg(test)]
+mod resource_argument_storage_tests;
+#[cfg(test)]
 mod sequence_term_tests;
 
 #[cfg(test)]
@@ -4874,8 +4876,8 @@ fn lower_spec_float_classification_proposition_at_state_in(
 }
 
 #[derive(Clone)]
-struct SpecValuesPath {
-    values: Vec<ProgramValue>,
+struct SpecValuesPath<V = ProgramValue> {
+    values: Vec<V>,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
 }
@@ -4886,6 +4888,28 @@ fn evaluate_spec_values_at_state_in(
     assumptions: &PureFactContext,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecValuesPath>> {
+    Ok(
+        evaluate_spec_retained_values_at_state_in(scope, expressions, assumptions, budget)?
+            .into_iter()
+            .map(|path| SpecValuesPath {
+                values: path
+                    .values
+                    .into_iter()
+                    .map(ExecutionValue::into_native)
+                    .collect(),
+                facts: path.facts,
+                obligations: path.obligations,
+            })
+            .collect(),
+    )
+}
+
+fn evaluate_spec_retained_values_at_state_in(
+    scope: SpecScope<'_>,
+    expressions: &[SpecExpression],
+    assumptions: &PureFactContext,
+    budget: &mut SpecEvaluation<'_>,
+) -> ExecutionResult<Vec<SpecValuesPath<ExecutionValue>>> {
     let mut paths = vec![SpecValuesPath {
         values: Vec::new(),
         facts: Vec::new().into(),
@@ -4913,7 +4937,7 @@ fn evaluate_spec_values_at_state_in(
                     continue;
                 };
                 let mut values = prefix.values.clone();
-                values.push(value_path.value.into_native());
+                values.push(value_path.value);
                 next_paths.push(SpecValuesPath {
                     values,
                     facts,
@@ -4932,6 +4956,38 @@ fn evaluate_spec_resource_at_state_in(
     assumptions: &PureFactContext,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<EvaluatedSpecResource>> {
+    if let SpecResource::Composite { name, arguments } | SpecResource::Token { name, arguments } =
+        resource
+    {
+        let token = matches!(resource, SpecResource::Token { .. });
+        return Ok(evaluate_spec_retained_values_at_state_in(
+            scope,
+            arguments,
+            assumptions,
+            budget,
+        )?
+        .into_iter()
+        .map(|path| {
+            let arguments = ResourceArguments::from_stored(
+                path.values
+                    .into_iter()
+                    .map(StoredResourceField::from_program),
+            );
+            let resource = if token {
+                Resource::Token {
+                    name: name.clone(),
+                    arguments,
+                }
+            } else {
+                Resource::Composite {
+                    name: name.clone(),
+                    arguments,
+                }
+            };
+            (resource, path.facts, path.obligations)
+        })
+        .collect());
+    }
     if matches!(resource, SpecResource::Star(..)) {
         // Traverse the written descriptor once. Keep each path's fact and
         // obligation accumulators outside the tree: recursive concatenation
@@ -5073,29 +5129,8 @@ fn evaluate_spec_resource_at_state_in(
                 }),
             )
         }
-        SpecResource::Composite { name, arguments } => {
-            let name = name.clone();
-            (
-                arguments.clone(),
-                Box::new(move |arguments| {
-                    Some(Resource::Composite {
-                        name: name.clone(),
-                        arguments: arguments.into_iter().map(AlgebraicValue::Program).collect(),
-                    })
-                }),
-            )
-        }
-        SpecResource::Token { name, arguments } => {
-            let name = name.clone();
-            (
-                arguments.clone(),
-                Box::new(move |arguments| {
-                    Some(Resource::Token {
-                        name: name.clone(),
-                        arguments: arguments.into_iter().map(AlgebraicValue::Program).collect(),
-                    })
-                }),
-            )
+        SpecResource::Composite { .. } | SpecResource::Token { .. } => {
+            unreachable!("retained resource arguments are evaluated above")
         }
     };
     Ok(
@@ -6360,8 +6395,9 @@ fn evaluate_resource_count_paths(
                 let canonical = owned_description(&description);
                 let description =
                     canonical.unwrap_or_else(|| creation.population_type_description(&description));
-                let [AlgebraicValue::Program(ProgramValue::Pointer(pointer))] =
-                    description.arguments()
+                let Some(
+                    [crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(pointer))],
+                ) = (description.arguments()).fixed_values::<1>()
                 else {
                     return Err(ExecutionLimit::AuthorityCountNeedsExactPointer);
                 };
@@ -6410,7 +6446,11 @@ fn evaluate_resource_count_paths(
                 }
                 let symbolic = if let Some(member) = member {
                     let mut arguments = member.arguments().to_vec();
-                    arguments[0] = description.arguments()[0].clone();
+                    arguments[0] = description
+                        .arguments()
+                        .get(0)
+                        .expect("argument index")
+                        .into_native();
                     let member = ResourceDescription::new(
                         name.to_owned(),
                         arguments.into(),

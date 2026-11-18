@@ -78,7 +78,12 @@ impl ResourceReference {
                 );
                 continue;
             }
-            let arguments = description.arguments().iter().map(&mut map).collect();
+            let arguments = description
+                .arguments()
+                .native_values()
+                .iter()
+                .map(&mut map)
+                .collect();
             let resource_arguments = description
                 .resource_arguments()
                 .iter()
@@ -122,7 +127,7 @@ impl ResourceReference {
             if !seen.insert(Arc::as_ptr(&description.0) as usize) {
                 continue;
             }
-            for argument in description.arguments() {
+            for argument in description.arguments().native_values().iter() {
                 visit(argument);
             }
             pending.extend(description.resource_arguments());
@@ -190,7 +195,10 @@ impl ResourceDescription {
         if arity < 2
             || self.arguments().len() != 1
             || !matches!(
-                self.arguments()[0],
+                self.arguments()
+                    .get(0)
+                    .expect("argument index")
+                    .into_native(),
                 AlgebraicValue::Program(super::ProgramValue::Pointer(_))
             )
             || !self.resource_arguments().is_empty()
@@ -210,7 +218,7 @@ impl ResourceDescription {
         self.0.population_arity
     }
 
-    pub fn arguments(&self) -> &[AlgebraicValue] {
+    pub fn arguments(&self) -> &ResourceArguments {
         &self.0.arguments
     }
 
@@ -241,7 +249,11 @@ impl ResourceDescription {
                 .zip(instance.arguments())
                 .all(|(left, right)| {
                     left == right
-                        || super::resource_arguments_proven_equal(left, right, assumptions)
+                        || super::resource_field_values_proven_equal(
+                            (left).into(),
+                            (right).into(),
+                            assumptions,
+                        )
                 })
     }
 }

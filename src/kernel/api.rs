@@ -2244,7 +2244,7 @@ pub fn composite_resource_witness_values(
         .prefer_symbolic_external_loads();
     super::functions::bind_composite_witnesses_with_held(
         definition,
-        arguments,
+        &(arguments).native_values(),
         &mut state,
         resources,
         &assumptions,
@@ -6444,7 +6444,9 @@ pub fn checked_owned_resource_count_lower_bound(
         let arguments = arguments
             .iter()
             .map(|argument| match argument {
-                AlgebraicValue::Program(value) => Some(Some(SpecExpression::Value(value.clone()))),
+                crate::kernel::ResourceFieldValue::Program(value) => {
+                    Some(Some(SpecExpression::Value(value.clone())))
+                }
                 _ => None,
             })
             .collect::<Option<Vec<_>>>()?;

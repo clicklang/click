@@ -1369,7 +1369,15 @@ fn two_authority_control_import_checks_each_custody_and_scope() {
         .clone();
     let member = ResourceDescription::new(
         scope.family().into(),
-        vec![scope.arguments()[0].clone(), int32(7).into()].into(),
+        vec![
+            scope
+                .arguments()
+                .get(0)
+                .expect("argument index")
+                .into_native(),
+            int32(7).into(),
+        ]
+        .into(),
         scope.schema().clone(),
     );
     let fact = ResourceFact::own(Resource::Composite {
@@ -2442,7 +2450,9 @@ fn opaque_numeric_count_delta_survives_exact_call_custody() {
 fn opaque_numeric_count_observation_uses_exact_magnitude_and_overflow_guard() {
     let block = AddressBase::ExternalArgument;
     let description = member_description(block.clone());
-    let [AlgebraicValue::Program(pointer)] = description.arguments() else {
+    let Some([crate::kernel::ResourceFieldValue::Program(pointer)]) =
+        (description.arguments()).fixed_values::<1>()
+    else {
         panic!("pointer anchor")
     };
     let count = SpecExpression::CountedResourceCount {
@@ -2515,7 +2525,9 @@ fn opaque_numeric_count_observation_uses_exact_magnitude_and_overflow_guard() {
 #[test]
 fn count_uses_its_written_anchor_not_a_proven_alias() {
     let description = member_description(AddressBase::ExternalArgument);
-    let [AlgebraicValue::Program(ProgramValue::Pointer(anchor))] = description.arguments() else {
+    let Some([crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(anchor))]) =
+        (description.arguments()).fixed_values::<1>()
+    else {
         panic!("pointer anchor")
     };
     let alias = Address {
@@ -3704,7 +3716,12 @@ fn authority_contract_entry_retains_only_authenticated_member_bounds() {
         vec![],
         vec![],
     )]);
-    let AlgebraicValue::Program(pointer) = &description.arguments()[0] else {
+    let AlgebraicValue::Program(pointer) = &description
+        .arguments()
+        .get(0)
+        .expect("argument index")
+        .into_native()
+    else {
         unreachable!();
     };
     let member_only_function = function

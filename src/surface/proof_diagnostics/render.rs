@@ -2552,7 +2552,7 @@ impl Renderer<'_> {
                 if let Some(ty) = identity.protected_type() {
                     self.push(", ");
                     self.push(ty.family());
-                    self.resource_arguments(ty.arguments());
+                    self.resource_arguments(&(ty.arguments()).native_values());
                 }
                 self.push(")");
             }
@@ -2562,7 +2562,7 @@ impl Renderer<'_> {
                 self.pointer(right.flag());
                 self.push(", ");
                 self.push(right.payload().family());
-                self.resource_arguments(right.payload().arguments());
+                self.resource_arguments(&(right.payload().arguments()).native_values());
                 if let Some(observed) = right.observed() {
                     self.push(", observed=");
                     self.cvalue(observed);
@@ -2577,7 +2577,7 @@ impl Renderer<'_> {
                     if index > 0 {
                         self.push(", ");
                     }
-                    self.algebraic_value(argument);
+                    self.algebraic_value(&argument.into_native());
                 }
                 if let Some(arity) = description.population_arity() {
                     for _ in 1..arity {
@@ -2608,7 +2608,7 @@ impl Renderer<'_> {
             }
             Resource::Composite { name, arguments } | Resource::Token { name, arguments } => {
                 self.push(name);
-                self.resource_arguments(arguments);
+                self.resource_arguments(&(arguments).native_values());
             }
             Resource::Instance(instance) => {
                 self.push("{");
@@ -2616,7 +2616,7 @@ impl Renderer<'_> {
                 self.push(&identity);
                 self.push(": ");
                 self.push(instance.name());
-                self.resource_arguments(instance.arguments());
+                self.resource_arguments(&(instance.arguments()).native_values());
                 self.push(", fields=");
                 self.resource_arguments(&instance.fields().native_values());
                 if !instance.resource_arguments().is_empty() {
@@ -3248,9 +3248,10 @@ mod tests {
     fn trace_resource_names_its_arguments_without_debug_state() {
         let resource = ResourceFact::View(Resource::Token {
             name: "child_ref".into(),
-            arguments: std::sync::Arc::from([AlgebraicValue::Program(
-                crate::kernel::ProgramValue::Int32(MachineTerm::constant(7)),
-            )]),
+            arguments: Vec::from([AlgebraicValue::Program(crate::kernel::ProgramValue::Int32(
+                MachineTerm::constant(7),
+            ))])
+            .into(),
         });
         assert_eq!(render_resource_fact(&resource), "views child_ref(int32(7))");
     }

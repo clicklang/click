@@ -10,7 +10,8 @@ pub(super) fn composite_names_pointer_base(composite: &ResourceFact, pointer: &A
         return false;
     };
     arguments.iter().any(|argument| {
-        let AlgebraicValue::Program(ProgramValue::Pointer(argument)) = argument else {
+        let crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(argument)) = argument
+        else {
             return false;
         };
         argument.address() == pointer
@@ -239,7 +240,12 @@ pub(in crate::kernel) fn evaluate_resource_population_fact_propositions(
                     parameter.program_type(),
                 );
             }
-            bind_composite_witnesses(definition, &arguments, &mut population_state, assumptions)?;
+            bind_composite_witnesses(
+                definition,
+                &(&arguments).native_values(),
+                &mut population_state,
+                assumptions,
+            )?;
             let mut budget = ExecutionBudget::beside_live_state();
             let evaluation_assumptions = assumptions
                 .clone()
@@ -270,7 +276,12 @@ pub(in crate::kernel) fn evaluate_resource_population_fact_propositions(
                 parameter.program_type(),
             );
         }
-        bind_composite_witnesses(definition, &arguments, &mut population_state, assumptions)?;
+        bind_composite_witnesses(
+            definition,
+            &(&arguments).native_values(),
+            &mut population_state,
+            assumptions,
+        )?;
         let mut budget = ExecutionBudget::beside_live_state();
         let evaluation_assumptions = assumptions
             .clone()
@@ -442,7 +453,12 @@ pub(in crate::kernel) fn evaluate_composite_resource_relation_propositions(
             parameter.program_type(),
         );
     }
-    bind_composite_witnesses(definition, arguments, &mut state, assumptions)?;
+    bind_composite_witnesses(
+        definition,
+        &(arguments).native_values(),
+        &mut state,
+        assumptions,
+    )?;
     let mut budget = ExecutionBudget::beside_live_state();
     let evaluation_assumptions = assumptions
         .clone()
@@ -535,7 +551,12 @@ pub(in crate::kernel) fn evaluate_composite_resource_memory_ranges(
             parameter.program_type(),
         );
     }
-    bind_composite_witnesses(definition, arguments, &mut state, assumptions)?;
+    bind_composite_witnesses(
+        definition,
+        &(arguments).native_values(),
+        &mut state,
+        assumptions,
+    )?;
     let mut budget = ExecutionBudget::beside_live_state();
     let evaluation_assumptions = assumptions
         .clone()
@@ -712,7 +733,12 @@ fn instantiate_composite_resource_facts_in_state(
             parameter.program_type(),
         );
     }
-    bind_composite_witnesses(definition, arguments, &mut state, assumptions)?;
+    bind_composite_witnesses(
+        definition,
+        &(arguments).native_values(),
+        &mut state,
+        assumptions,
+    )?;
     let mut result = Vec::new();
     let mut declared = Vec::new();
     let mut budget = ExecutionBudget::beside_live_state();

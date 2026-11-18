@@ -383,14 +383,14 @@ fn substitute_pointer_variable_in_program_function(
     walk_program_function(function, &PointerSubstitution { from, to })
 }
 
-fn walk_algebraic_value<S: VariableSubstitution + ?Sized>(
-    value: &AlgebraicValue,
+fn walk_algebraic_value<'a, S: VariableSubstitution + ?Sized>(
+    value: impl Into<ResourceFieldValue<'a>>,
     s: &S,
 ) -> AlgebraicValue {
-    match value {
-        AlgebraicValue::Program(value) => AlgebraicValue::Program(s.program_value(value)),
-        AlgebraicValue::Integer(value) => AlgebraicValue::Integer(s.integer(value)),
-        AlgebraicValue::Algebraic(value) => AlgebraicValue::Algebraic(s.algebraic_term(value)),
+    match value.into() {
+        ResourceFieldValue::Program(value) => AlgebraicValue::Program(s.program_value(value)),
+        ResourceFieldValue::Integer(value) => AlgebraicValue::Integer(s.integer(value)),
+        ResourceFieldValue::Algebraic(value) => AlgebraicValue::Algebraic(s.algebraic_term(value)),
     }
 }
 

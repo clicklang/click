@@ -909,7 +909,8 @@ impl CreationEvents {
             OpaqueMemberInputs::Quantity(member) => member,
             OpaqueMemberInputs::NamedAuthority | OpaqueMemberInputs::Acquired => None,
         };
-        let [AlgebraicValue::Program(ProgramValue::Pointer(pointer))] = description.arguments()
+        let Some([crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(pointer))]) =
+            (description.arguments()).fixed_values::<1>()
         else {
             return Err(CreationRefusal::InvalidMember);
         };
@@ -1029,7 +1030,8 @@ impl CreationEvents {
         {
             return true;
         }
-        let [AlgebraicValue::Program(ProgramValue::Pointer(pointer))] = description.arguments()
+        let Some([crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(pointer))]) =
+            (description.arguments()).fixed_values::<1>()
         else {
             return false;
         };
@@ -1150,7 +1152,8 @@ impl CreationEvents {
         if self.owns_imported_population_member(description) {
             return true;
         }
-        let [AlgebraicValue::Program(ProgramValue::Pointer(pointer))] = description.arguments()
+        let Some([crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(pointer))]) =
+            (description.arguments()).fixed_values::<1>()
         else {
             return false;
         };
@@ -1653,7 +1656,8 @@ impl CreationEvents {
         if let Some(import) = self.0.opaque_imports.get(description) {
             return import.description == *description && import.retired_authority;
         }
-        let [AlgebraicValue::Program(ProgramValue::Pointer(pointer))] = description.arguments()
+        let Some([crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(pointer))]) =
+            (description.arguments()).fixed_values::<1>()
         else {
             return false;
         };
@@ -1676,7 +1680,7 @@ impl CreationEvents {
         if let Some(description) = self.0.opaque_types.get(pattern) {
             return description.clone();
         }
-        let Some(AlgebraicValue::Program(ProgramValue::Pointer(pointer))) =
+        let Some(crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(pointer))) =
             pattern.arguments().first()
         else {
             return pattern.clone();
@@ -1698,7 +1702,7 @@ impl CreationEvents {
         &self,
         description: &ResourceDescription,
     ) -> Option<ResourceDescription> {
-        let Some(AlgebraicValue::Program(ProgramValue::Pointer(pointer))) =
+        let Some(crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(pointer))) =
             description.arguments().first()
         else {
             return None;
@@ -1712,7 +1716,14 @@ impl CreationEvents {
         } else if description.arguments().len() > 1 {
             ResourceDescription::new(
                 description.family().into(),
-                vec![description.arguments()[0].clone()].into(),
+                vec![
+                    description
+                        .arguments()
+                        .get(0)
+                        .expect("argument index")
+                        .into_native(),
+                ]
+                .into(),
                 description.schema().clone(),
             )
             .with_population_arity(description.arguments().len())
@@ -1754,7 +1765,7 @@ impl CreationEvents {
         block: &'a AddressBase,
         description: &ResourceDescription,
     ) -> Result<&'a AddressBase, CreationRefusal> {
-        let Some(AlgebraicValue::Program(ProgramValue::Pointer(pointer))) =
+        let Some(crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(pointer))) =
             description.arguments().first()
         else {
             return Err(CreationRefusal::InvalidMember);
@@ -1799,7 +1810,7 @@ impl CreationEvents {
     fn fresh_member_entry_count(member: &ResourceDescription) -> MachineTerm {
         let variable =
             crate::kernel::Variable::allocate_fresh().expect("exact count identity exhausted");
-        if let Some(AlgebraicValue::Program(ProgramValue::Pointer(anchor))) =
+        if let Some(crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(anchor))) =
             member.arguments().first()
         {
             crate::kernel::model_fields::register_population_entry_count(
@@ -1888,9 +1899,10 @@ impl CreationEvents {
                     .iter()
                     .zip(description.arguments())
                     .all(|(a, b)| match (a, b) {
-                        (AlgebraicValue::Program(a), AlgebraicValue::Program(b)) => {
-                            a.numeric_value() == b.numeric_value()
-                        }
+                        (
+                            crate::kernel::ResourceFieldValue::Program(a),
+                            crate::kernel::ResourceFieldValue::Program(b),
+                        ) => a.numeric_value() == b.numeric_value(),
                         _ => a == b,
                     })
             });
@@ -1928,7 +1940,9 @@ impl CreationEvents {
                 symbolic_delta: None,
             });
         }
-        let [AlgebraicValue::Program(ProgramValue::Pointer(anchor))] = scope.arguments() else {
+        let Some([crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(anchor))]) =
+            (scope.arguments()).fixed_values::<1>()
+        else {
             return Err(CreationRefusal::InvalidMember);
         };
         if self
@@ -1994,14 +2008,16 @@ impl CreationEvents {
 
     fn has_concrete_indices(description: &ResourceDescription) -> bool {
         description.arguments().iter().all(|value| match value {
-            AlgebraicValue::Program(ProgramValue::Pointer(pointer)) => {
+            crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(pointer)) => {
                 matches!(pointer.address().base, AddressBase::Heap(_))
                     || pointer.address().base.is_local_block()
             }
-            AlgebraicValue::Program(ProgramValue::Int32(value)) => value.as_const().is_some(),
+            crate::kernel::ResourceFieldValue::Program(ProgramValue::Int32(value)) => {
+                value.as_const().is_some()
+            }
             _ => false,
         }) && description.arguments().iter().all(|value| match value {
-            AlgebraicValue::Program(ProgramValue::Pointer(pointer)) => {
+            crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(pointer)) => {
                 pointer.address().offset.as_const().is_some()
             }
             _ => true,
@@ -2362,7 +2378,8 @@ impl CreationEvents {
         } else {
             Some((produce, quantity.clone()))
         };
-        let [AlgebraicValue::Program(ProgramValue::Pointer(pointer))] = description.arguments()
+        let Some([crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(pointer))]) =
+            (description.arguments()).fixed_values::<1>()
         else {
             return Err(CreationRefusal::InvalidMember);
         };
@@ -2528,7 +2545,7 @@ impl CreationEvents {
             named_counts.insert(exact.clone(), change);
         }
         let unresolved = description.arguments().iter().skip(1).any(|value| {
-            !matches!(value, AlgebraicValue::Program(ProgramValue::Int32(value)) if value.as_const().is_some())
+            !matches!(value, crate::kernel::ResourceFieldValue::Program(ProgramValue::Int32(value)) if value.as_const().is_some())
         });
         let named_ambiguous = import.named_ambiguous
             || import
@@ -2607,7 +2624,7 @@ impl CreationEvents {
         produce: bool,
     ) -> Result<Self, CreationRefusal> {
         let description = reference.description();
-        let Some(AlgebraicValue::Program(ProgramValue::Pointer(pointer))) =
+        let Some(crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(pointer))) =
             description.arguments().first()
         else {
             return Err(CreationRefusal::InvalidMember);
@@ -2765,7 +2782,7 @@ impl CreationEvents {
             }
             // Opaque custody follows only checked exact contract transfers;
             // numeric exchanges change the global fragment total separately.
-            let Some(AlgebraicValue::Program(ProgramValue::Pointer(pointer))) =
+            let Some(crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(pointer))) =
                 description.arguments().first()
             else {
                 return Err(CreationRefusal::InvalidMember);
@@ -3079,7 +3096,7 @@ impl CreationEvents {
                 assumptions,
             );
         }
-        let Some(AlgebraicValue::Program(ProgramValue::Pointer(pointer))) =
+        let Some(crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(pointer))) =
             description.arguments().first()
         else {
             return Err(CreationRefusal::InvalidMember);
@@ -3209,7 +3226,7 @@ impl CreationEvents {
         if self.recognizes_imported_population(description) {
             return true;
         }
-        let Some(AlgebraicValue::Program(ProgramValue::Pointer(pointer))) =
+        let Some(crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(pointer))) =
             description.arguments().first()
         else {
             return false;
@@ -3490,7 +3507,8 @@ impl CreationEvents {
         block: &AddressBase,
         description: &ResourceDescription,
     ) -> Result<(Self, CheckedPopulationAuthorityExchange), CreationRefusal> {
-        let [AlgebraicValue::Program(ProgramValue::Pointer(pointer))] = description.arguments()
+        let Some([crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(pointer))]) =
+            (description.arguments()).fixed_values::<1>()
         else {
             return Err(CreationRefusal::InvalidMember);
         };

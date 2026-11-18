@@ -2375,7 +2375,8 @@ impl Printer<'_> {
                 )
             }
             Resource::Instance(instance) => {
-                let application = self.resource_arguments(instance.name(), instance.arguments());
+                let application = self
+                    .resource_arguments(instance.name(), &(instance.arguments()).native_values());
                 match self.hidden_record(
                     instance.schema().fields(),
                     &instance.fields().native_values(),
@@ -2385,7 +2386,7 @@ impl Printer<'_> {
                 }
             }
             Resource::Composite { name, arguments } | Resource::Token { name, arguments } => {
-                self.resource_arguments(name, arguments)
+                self.resource_arguments(name, &(arguments).native_values())
             }
             Resource::ConditionalMutexGuard(carrier) => {
                 let condition = self
@@ -2409,7 +2410,8 @@ impl Printer<'_> {
                     crate::surface::diagnostics::describe_mutex_pointer(identity.mutex(), binding);
                 match identity.protected_type() {
                     Some(ty) => {
-                        let protected = self.resource_arguments(ty.family(), ty.arguments());
+                        let protected =
+                            self.resource_arguments(ty.family(), &(ty.arguments()).native_values());
                         format!("mutex_use({mutex}, {protected})")
                     }
                     None => format!("mutex_use({mutex})"),
@@ -2418,8 +2420,10 @@ impl Printer<'_> {
             Resource::Publication(right) => {
                 let flag =
                     crate::surface::diagnostics::describe_mutex_pointer(right.flag(), binding);
-                let payload =
-                    self.resource_arguments(right.payload().family(), right.payload().arguments());
+                let payload = self.resource_arguments(
+                    right.payload().family(),
+                    &(right.payload().arguments()).native_values(),
+                );
                 let mut text = format!("{}({flag}, {payload})", right.side().keyword());
                 if right.observed().is_some() {
                     text.push_str(
@@ -2429,8 +2433,10 @@ impl Printer<'_> {
                 text
             }
             Resource::PopulationAuthority(description) => {
-                let mut text =
-                    self.resource_arguments(description.family(), description.arguments());
+                let mut text = self.resource_arguments(
+                    description.family(),
+                    &(description.arguments()).native_values(),
+                );
                 if let Some(arity) = description.population_arity() {
                     text.pop();
                     for _ in 1..arity {

@@ -1140,7 +1140,12 @@ fn unfolding_a_child_retains_its_checked_pointer_read_in_the_callers_graph() {
             source: Default::default(),
         },
     )];
-    let AlgebraicValue::Program(ProgramValue::Pointer(parent)) = &instance.arguments()[0] else {
+    let AlgebraicValue::Program(ProgramValue::Pointer(parent)) = &instance
+        .arguments()
+        .get(0)
+        .expect("argument index")
+        .into_native()
+    else {
         unreachable!()
     };
     let stored = Pointer::new(Address::symbolic(Variable(559)), ProgramType::Int32Pointer);
@@ -1331,7 +1336,13 @@ fn instance_memory_guard_requires_a_proved_case_and_exposes_only_that_case() {
             0,
         )),
     });
-    let ProgramValue::Pointer(pointer) = instance.arguments()[0].as_program_value().unwrap() else {
+    let ProgramValue::Pointer(pointer) = instance
+        .arguments()
+        .get(0)
+        .expect("argument index")
+        .as_program_value()
+        .unwrap()
+    else {
         panic!("fixture pointer");
     };
     let guard = ConditionTerm::pointer_equal(pointer.address().clone(), Address::null());
@@ -1618,7 +1629,7 @@ fn resource_instances_validate_fields_without_expanding_symbolic_values() {
     );
     let copy = instance.clone();
     assert!(instance.fields.shares_storage_with(&copy.fields));
-    assert!(std::sync::Arc::ptr_eq(&instance.arguments, &copy.arguments));
+    assert!(instance.arguments.shares_storage_with(&copy.arguments));
 }
 
 #[test]
@@ -2268,7 +2279,7 @@ fn symbolic_resource_indices_clone_recursive_models_by_sharing() {
         else {
             unreachable!()
         };
-        assert!(std::sync::Arc::ptr_eq(left, right));
+        assert!(left.shares_storage_with(right));
     }
 }
 
