@@ -109,6 +109,8 @@ fn automatic_lifetime_end_records_the_retired_storage_footprint() {
         .expect("scope cleanup has a footprint");
     assert_eq!(footprint.before, *state.memory());
     assert_eq!(footprint.after, *after.memory());
+    assert_eq!(footprint.before_point.id(), state.program_point().id());
+    assert_eq!(footprint.after_point.id(), after.program_point().id());
     let retired = Resource::Memory(MemoryRange::new_with_element_width(
         slot,
         0u32.into(),

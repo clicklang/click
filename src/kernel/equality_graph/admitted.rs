@@ -56,6 +56,7 @@ pub(in crate::kernel) struct InputData {
     /// `condition_facts`, like every other index above, so asking what one
     /// pointer is proved equal to is a keyed lookup rather than a scan of
     /// every pointer comparison the path happens to hold.
+    pub(in crate::kernel) local_pointer_aliases: crate::persistent::PersistentSet<ConditionTerm>,
     pub(in crate::kernel) address_base_aliases: crate::persistent::PersistentMap<
         Address,
         crate::persistent::PersistentMap<Address, ConditionTerm>,

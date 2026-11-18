@@ -6579,15 +6579,15 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             // the contract retains the value from entry, never its permission.
             // Contract validation separately refuses current reads of fields
             // modified by the body, as for ordinary by-value parameter claims.
-            let memory = if state.memory.has_block(&slot.base) {
-                state.memory()
+            let selected = if state.memory.has_block(&slot.base) {
+                state
             } else {
-                entry.memory()
+                entry
             };
             evaluate_spec_expression_paths_with_algebraic_bindings_in(
                 SpecScope { state, ..scope },
                 &SpecExpression::MemoryLoad {
-                    point: SpecPoint::At(ProgramPoint::of_memory(memory)),
+                    point: SpecPoint::At(selected.program_point()),
                     pointer: Box::new(pointer),
                     value_type: *value_type,
                 },
@@ -7640,17 +7640,15 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     continue;
                 };
                 let pointer = pointer.into_pointer();
-                let memory = match memory {
-                    SpecPoint::Current => state.memory(),
-                    SpecPoint::FunctionEntry => match loop_entry_state {
-                        Some(entry_state) => entry_state.memory(),
-                        None => continue,
-                    },
-                    SpecPoint::LoopEntry => match loop_entry_state {
-                        Some(loop_entry_state) => loop_entry_state.memory(),
-                        None => continue,
-                    },
-                    SpecPoint::At(point) => point.memory(),
+                let (memory_view, selected_state) = match memory {
+                    SpecPoint::Current => (state.memory(), Some(state)),
+                    SpecPoint::FunctionEntry | SpecPoint::LoopEntry => {
+                        let Some(entry) = loop_entry_state else {
+                            continue;
+                        };
+                        (entry.memory(), Some(entry))
+                    }
+                    SpecPoint::At(point) => (point.memory(), None),
                 };
                 let mut obligations = pointer_path.obligations;
                 // A written definedness claim must retain the typed premise,
@@ -7660,20 +7658,24 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 if budget.checked_reads
                     && (budget.program_definedness
                         || !PureFactContext::new().proves_memory_read_defined(
-                            memory,
+                            memory_view,
                             &pointer,
                             *value_type,
                         ))
                 {
                     obligations.push(ProofObligation::new(Proposition::MemoryReadDefined {
-                        memory: memory.clone(),
+                        at: match memory {
+                            SpecPoint::At(point) => point.id(),
+                            _ => selected_state.and_then(ExecutionState::observation_point_id),
+                        },
+                        memory: memory_view.clone(),
                         pointer: pointer.clone(),
                         value_type: *value_type,
                     }));
                 }
                 paths.extend(spec_value_paths_in(
                     crate::kernel::eval::evaluate_logical_memory_load_paths(
-                        memory,
+                        memory_view,
                         pointer,
                         *value_type,
                         pointer_path.facts,
@@ -8235,7 +8237,7 @@ fn evaluate_spec_pure_function_argument_paths_in(
                     })
                 } else {
                     SpecCallArgument::Shared(KernelTerm::shared_array_reference(
-                        crate::kernel::intern_memory_ref(&memory),
+                        ProgramPoint::at(&crate::kernel::intern_memory_ref(&memory)),
                         path.value.common_operand(),
                         *element_type,
                     ))

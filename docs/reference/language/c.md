@@ -1372,8 +1372,9 @@ compilers Click is targeting.
 ### Local integer bit-fields
 
 On x86-64, a standalone file-scope struct definition can contain named,
-unqualified `int`, `signed int`, and `unsigned int` bit-fields that fit in one
-32-bit allocation word. Widths are decimal literals between 1 and 32. Local
+unqualified `int`, `signed int`, and `unsigned int` bit-fields. A field
+that does not fit in the current 32-bit allocation word starts at the next
+word. Widths are decimal literals between 1 and 32. Local
 records support positional and designated integer-literal initialization,
 including zero initialization of omitted fields, or can start unwritten.
 Reads promote narrow signed and unsigned fields to `int`. A 32-bit unsigned
@@ -1389,20 +1390,38 @@ arithmetic after promotion, and store the result. Increment and decrement
 expressions used for their values are outside this subset.
 
 Copies between same-type local records, including `struct tag copy = object`
-and `*destination = *source`, transfer the source word and its initialization
+and `*destination = *source`, transfer the named fields and their initialization
 state. Assigning a record with an unwritten field leaves that field unwritten
-in the destination. Reads of such a field are refused.
+in the destination. Typed assignment supplies no padding bits.
 
-Pointers are limited to these local aliases. Reassignment, pointer arithmetic,
-calling functions with a record or its pointer, byte access, `memcpy`, bit-field
-addresses, unevaluated field operands, and combinations with `goto` are outside
-the subset. Packed or aligned definitions, ordinary fields mixed with
-bit-fields, unnamed or zero-width fields, and multiword records are unsupported.
+A character pointer cast from the address of a local record observes that
+record's representation. A byte write initializes all eight bits of its
+destination and subsequent field reads see the new bits. A field write
+initializes only its own bits. Reading a whole byte requires all eight bits
+to have been written, including any padding bits it contains.
+
+The modeled `memcpy` transports values and initialization together. Copying
+a partially written record to a local record or character array retains the
+written fields and replaces initialization in the copied span, even when the
+destination was previously initialized. A copy with unwritten source bits
+requires exact source and destination offsets and an exact byte count. Use
+`sizeof(record)` or `sizeof(struct tag)` for the full representation.
+
+Typed field access through pointers still requires a fixed local alias.
+Pointer reassignment for such aliases, bit-field addresses, unevaluated field
+operands, and combinations with `goto` are outside the subset. Packed or
+aligned definitions, ordinary fields mixed with bit-fields, unnamed or
+zero-width fields, and multiword records are unsupported.
 
 <!-- verified-example: mdtests/c_bit_field_neighbor.md -->
 <!-- verified-example: mdtests/c_bit_field_partial_initialization.md -->
 <!-- verified-example: mdtests/c_bit_field_pointer_and_promotion.md -->
 <!-- verified-example: mdtests/c_bit_field_assignment_through_pointers.md -->
+<!-- verified-example: mdtests/c_bit_field_byte_interop.md -->
+<!-- verified-example: mdtests/c_bit_field_memcpy_partial.md -->
+<!-- verified-example: mdtests/c_bit_field_memcpy_roundtrip.md -->
+<!-- verified-example: mdtests/c_bit_field_multiword_update_and_copy.md -->
+<!-- verified-example: mdtests/c_bit_field_multiword_memcpy.md -->
 
 ### Block-scope struct compound literals
 
@@ -2565,7 +2584,9 @@ the array before its type is complete are rejected. Inferred automatic struct
 arrays, string initializers, and designated initializers are not supported.
 
 Scalar local arrays may have multiple fixed dimensions, such as
-`int32 matrix[3][4]`. Click lowers their storage in row-major order while
+`int32 matrix[3][4]`. A fixed dimension may also use `sizeof` of a supported
+type or object, as in the bit-field representation-copy example. Click
+lowers their storage in row-major order while
 retaining the declared element width and each declared dimension. An access
 such as `matrix[i][j]` therefore carries separate obligations for
 `0 <= i < 3` and `0 <= j < 4` before its flattened offset is formed; the

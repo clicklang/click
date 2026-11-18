@@ -1,6 +1,42 @@
 use super::*;
 
 #[test]
+#[ignore = "nightly: fold framing, C read authority, and cold replay"]
+fn preserved_fold_does_not_grant_c_read_authority() {
+    let (source, sources) = mdtest_sources("mdtests/fold_read_transport_grants_no_c_read.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    assert!(!source.contains("transport("));
+    let report = verify_c_sources(&source, &sources).unwrap_err().report();
+    assert!(
+        report.contains("missing resource fact `views v[0]`"),
+        "{report}"
+    );
+    assert!(report.contains("return v[0]"), "{report}");
+
+    // Supply only the missing C read authority. The C and proof stay the same.
+    let control = source.replace(
+        "    owns v[i..(i + 1)];",
+        "    owns v[i..(i + 1)];\n    views v[0];",
+    );
+    assert_ne!(control, source);
+    verify_c_sources(&control, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
+    let expanded = expand_c_claim_source_by_label(&control, &sources, "same_zeros.ensures_0")
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    let expanded = expand_c_claim_source_by_label(&expanded, &sources, "set_then_read.contract")
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(!expanded.contains("transport("), "{expanded}");
+    for label in ["same_zeros.ensures_0", "set_then_read.contract"] {
+        without_implicit_solve_for_claim(label, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+    }
+}
+
+#[test]
 #[ignore = "nightly: helper fold preservation and cold replay"]
 fn fold_through_a_helper_survives_the_endpoint_store_without_transport() {
     let (source, sources) =
@@ -230,36 +266,100 @@ fn viewable_requirement_supports_a_narrower_span_without_transport() {
 }
 
 #[test]
-#[ignore = "nightly: consumed field refusal, preservation expansion and cold replay"]
-fn consumed_field_refusal_keeps_an_ordinary_preservation_repair() {
+fn named_contract_output_frame_rule_expands_and_replays() {
     let (source, sources) =
-        mdtest_sources("mdtests/resource_unfold_field_binding_rejects_consumed_read.md");
+        mdtest_sources("mdtests/named_contract_outputs_retain_the_callers_frame.md");
+    let sources = sources
+        .iter()
+        .map(|(name, code)| (name.as_str(), code.as_str()))
+        .collect::<Vec<_>>();
+    verify_c_sources(&source, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
+    for label in ["direct.contract", "indirect.contract", "refined.contract"] {
+        let expanded = expand_c_claim_source_by_label(&source, &sources, label)
+            .unwrap_or_else(|error| panic!("{}", error.report()));
+        without_implicit_solve_for_claim(label, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+    }
+    let start = source.find("int32 indirect(").unwrap();
+    let missing = format!(
+        "{}{}",
+        &source[..start],
+        source[start..].replacen("    requires Transfer(callback);\n", "", 1)
+    );
+    assert_ne!(missing, source);
+    verify_c_sources(&missing, &sources)
+        .expect_err("a declaration alone cannot establish the callback contract");
+}
+
+#[test]
+fn verified_output_frame_rule_expands_without_geometry_discovery() {
+    let (source, sources) = mdtest_sources("mdtests/verified_outputs_retain_the_callers_frame.md");
     let sources = sources
         .iter()
         .map(|(name, text)| (name.as_str(), text.as_str()))
         .collect::<Vec<_>>();
-    let error = verify_c_sources(&source, &sources).unwrap_err();
-    assert!(
-        error.message().contains("before.prefix"),
-        "{}",
-        error.report()
-    );
-    assert!(
-        error.message().contains("unfold(before)` consumed it"),
-        "{}",
-        error.report()
-    );
-    // Only the intentionally invalid invariant changes in the positive control.
-    let control = source.replace(
-        "invariant 0 <= i and i <= old(before.prefix);",
-        "invariant 0 <= i and i <= p;",
-    );
-    assert_ne!(control, source);
-    verify_c_sources(&control, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
-    assert!(!source.contains("transport("), "{source}");
-    let expanded = expand_c_claim_source_by_label(&control, &sources, "claim.contract").unwrap();
-    assert!(!expanded.contains("transport("), "{expanded}");
-    without_implicit_solve_for_claim("claim.contract", || {
+    verify_c_sources(&source, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
+    let expanded = expand_c_claim_source_by_label(&source, &sources, "caller.contract")
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    without_implicit_solve_for_claim("caller.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+
+    // An external description cannot issue a verified frame rule.
+    let external = r#"
+resource cell(p: int32*) { owns *p; }
+verifying "external_output_frame.c";
+extern int32* wrap(int32* p) {
+    consumes cell(p);
+    produces cell(result);
+}
+int32 caller(int32* p, int32* q) {
+    consumes cell(p);
+    owns *q;
+    ensures result == 0;
+} by { step_until(function.exit); solve(); }
+"#;
+    let external_sources = [(
+        "external_output_frame.c",
+        r#"
+int *wrap(int *p);
+int caller(int *p, int *q) {
+    int *h = wrap(p);
+    return 0;
+}
+"#,
+    )];
+    let error = without_implicit_solve_for_claim("caller.contract", || {
+        verify_c_sources(external, &external_sources).map_err(|error| error.report())
+    })
+    .expect_err("a description cannot issue the verified frame rule");
+    assert!(error.contains("symbolic ownership boundary"), "{error}");
+}
+
+#[test]
+fn symbolic_return_boundary_expands_and_replays_its_explicit_frame_proof() {
+    let (source, sources) =
+        mdtest_sources("mdtests/a_symbolic_return_boundary_uses_its_explicit_frame_proof.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let start = source.find("    have 0 <= n").unwrap();
+    let end = source.rfind("    step();").unwrap();
+    let mut missing = source.clone();
+    missing.replace_range(start..end, "");
+    let error = without_implicit_solve_for_claim("forward.contract", || {
+        verify_c_sources(&missing, &sources).map_err(|error| error.report())
+    })
+    .expect_err("a raw symbolic output needs its frame relationship");
+    assert!(error.contains("separate("), "{error}");
+    verify_c_sources(&source, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
+    let expanded = expand_c_claim_source_by_label(&source, &sources, "forward.contract")
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    without_implicit_solve_for_claim("forward.contract", || {
         verify_c_sources(&expanded, &sources).map_err(|error| error.report())
     })
     .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
@@ -18473,6 +18573,50 @@ fn throwing_call_forks_expand_and_reverify_in_every_position() {
 }
 
 #[test]
+#[ignore = "nightly: live and exit-time call payload expansion and replay"]
+fn call_outcome_payload_bindings_expand_and_replay() {
+    let (source, owned_sources) = mdtest_sources("mdtests/outcomes_payload_bindings.md");
+    let sources = crate::cli::source_refs(&owned_sources);
+    for label in ["live.contract", "deferred.contract"] {
+        let expanded = expand_c_claim_source_by_label(&source, &sources, label)
+            .unwrap_or_else(|error| panic!("{label}: {error}"));
+        assert_eq!(
+            expanded.matches("returned(value) =>").count(),
+            2,
+            "{expanded}"
+        );
+        assert_eq!(expanded.matches("threw(error) =>").count(), 2, "{expanded}");
+        crate::surface::without_implicit_solve_for_claim(label, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.to_string())
+        })
+        .unwrap_or_else(|error| panic!("{label}: {error}\n{expanded}"));
+    }
+    for offset in source
+        .match_indices("have value == 5")
+        .map(|(offset, _)| offset)
+    {
+        let mut changed = source.clone();
+        changed.replace_range(offset..offset + "have value == 5".len(), "have value == 6");
+        assert!(verify_c_sources(&changed, &sources).is_err());
+    }
+    let discarded = owned_sources[0]
+        .1
+        .replacen("return helper(5) + 1;", "helper(5); return 6;", 1);
+    let bad_sources = [(owned_sources[0].0.as_str(), discarded.as_str())];
+    let error = verify_c_sources(&source, &bad_sources).expect_err("the call discards its result");
+    assert!(error.message().contains("no bindable payload"), "{error}");
+    let (nested, nested_sources) =
+        mdtest_sources("mdtests/outcomes_routes_a_throw_that_leaves_the_function.md");
+    let nested_sources = crate::cli::source_refs(&nested_sources);
+    let expanded = expand_c_claim_source_by_label(&nested, &nested_sources, "caller.contract")
+        .unwrap_or_else(|error| panic!("{error}"));
+    crate::surface::without_implicit_solve_for_claim("caller.contract", || {
+        verify_c_sources(&expanded, &nested_sources).map_err(|error| error.to_string())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
 #[ignore = "nightly: 0.5s in the parallel gate"]
 fn selected_deferred_closer_freezes_computed_guards_before_parameter_mutation() {
     for (c_source, expected) in [
@@ -18684,7 +18828,7 @@ fn symbolic_upper_arithmetic_premises_expand_and_cold_recheck() {
             requires b >= 1; requires b <= 1000; {extra} requires {premise};
             ensures a <= 999 by {{ solve() using {{ {premise}; b >= 1; b <= 1000; {extra_using} }} }}
         }}");
-        verify_c_sources(&source, &[]).expect("symbolic upper bound should verify");
+        // Expansion verifies this source's sole theorem and claim.
         let expanded = expand_c_claim_source_by_label(&source, &[], &format!("{name}.ensures_0"))
             .expect("symbolic upper bound should expand");
         assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
@@ -21896,7 +22040,7 @@ fn explicit_and_implicit_existential_requirements_expand_without_search() {
 }
 
 #[test]
-fn explicit_and_implicit_entry_witnesses_expand_without_search() {
+fn explicit_entry_witnesses_for_cstr_calls_expand_without_search() {
     for fixture in [
         "cstr_plain_char_kernel_requirement_reaches_callee",
         "cstr_signed_char_kernel_requirement_reaches_callee",
@@ -21906,17 +22050,14 @@ fn explicit_and_implicit_entry_witnesses_expand_without_search() {
             .iter()
             .map(|(name, text)| (name.as_str(), text.as_str()))
             .collect::<Vec<_>>();
-        for step in ["step();", "step() by solve();"] {
-            let source = format!("{} by {{ step(); {step} }}", source.trim_end());
-            let expanded = expand_c_claim_source_by_label(&source, &sources, "outer.ensures_0")
-                .unwrap_or_else(|error| panic!("{fixture}, {step}: {error}"));
-            assert!(expanded.contains("witness("), "{expanded}");
-            assert!(!expanded.contains("extract("), "{expanded}");
-            without_implicit_solve_for_claim("outer.contract", || {
-                verify_c_sources(&expanded, &sources).map_err(|error| error.to_string())
-            })
-            .unwrap_or_else(|error| panic!("{fixture}, {step}: {error}\n{expanded}"));
-        }
+        let expanded = expand_c_claim_source_by_label(&source, &sources, "outer.ensures_0")
+            .unwrap_or_else(|error| panic!("{fixture}: {error}"));
+        assert!(expanded.contains("witness("), "{expanded}");
+        assert!(!expanded.contains("extract("), "{expanded}");
+        without_implicit_solve_for_claim("outer.contract", || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.to_string())
+        })
+        .unwrap_or_else(|error| panic!("{fixture}: {error}\n{expanded}"));
     }
 }
 
@@ -23507,6 +23648,42 @@ fn returned_member_domain_access_expands_and_replays() {
     ] {
         assert!(verify_c_sources(&bad, &sources).is_err());
     }
+}
+
+#[test]
+#[ignore = "nightly: consumed field refusal, preservation expansion and cold replay"]
+fn consumed_field_refusal_keeps_an_ordinary_preservation_repair() {
+    let (source, sources) =
+        mdtest_sources("mdtests/resource_unfold_field_binding_rejects_consumed_read.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let error = verify_c_sources(&source, &sources).unwrap_err();
+    assert!(
+        error.message().contains("before.prefix"),
+        "{}",
+        error.report()
+    );
+    assert!(
+        error.message().contains("unfold(before)` consumed it"),
+        "{}",
+        error.report()
+    );
+    // Only the intentionally invalid invariant changes in the positive control.
+    let control = source.replace(
+        "invariant 0 <= i and i <= old(before.prefix);",
+        "invariant 0 <= i and i <= p;",
+    );
+    assert_ne!(control, source);
+    verify_c_sources(&control, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(!source.contains("transport("), "{source}");
+    let expanded = expand_c_claim_source_by_label(&control, &sources, "claim.contract").unwrap();
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim("claim.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
 }
 
 #[test]

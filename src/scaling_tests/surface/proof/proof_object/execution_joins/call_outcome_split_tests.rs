@@ -136,10 +136,15 @@ fn call_outcome_split_does_not_copy_the_proofs_facts() {
         let at_call = branch.focus_split_arm(&branch_record, true).unwrap();
         let [copied_before, _] = crate::surface::pure_fact_list::fact_list_entry_counts();
         let (split, work) = crate::instrumentation::measure_deterministic_work(|| {
-            at_call
-                .split_focused_call_outcomes()
+            let (split, record) = at_call
+                .split_focused_call_outcomes([None, Some("error".to_owned())])
                 .expect("the call split should be checked")
-                .expect("the helper both returns and throws")
+                .expect("the helper both returns and throws");
+            let threw = split
+                .focus_call_outcome_arm(&record, false, &at_call)
+                .unwrap();
+            assert!(threw.state().locals().values.contains_key("error"));
+            (split, record)
         });
         let [copied_after, _] = crate::surface::pure_fact_list::fact_list_entry_counts();
         let (outcomes, record) = split;

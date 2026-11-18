@@ -1329,10 +1329,12 @@ fn walk_proposition<S: VariableSubstitution + ?Sized>(
             outcome: walk_program_expression_outcome(outcome, s),
         },
         Proposition::MemoryReadDefined {
+            at,
             memory,
             pointer,
             value_type,
         } => Proposition::MemoryReadDefined {
+            at: *at,
             memory: s.memory(memory),
             pointer: s.pointer(pointer),
             value_type: *value_type,
@@ -3109,6 +3111,12 @@ fn collect_memory_bound_variables(memory: &SymbolicMemory, variables: &mut BTree
     {
         collect_pointer_bound_variables(pointer, variables);
     }
+    for (pointer, byte) in memory.heap.initialized.partial_map().iter() {
+        collect_pointer_bound_variables(pointer, variables);
+        if let Some(value) = &byte.value {
+            collect_program_value_bound_variables(value, variables);
+        }
+    }
     for contents in memory.blocks.values() {
         collect_bitvector_bound_variables(contents.size(), variables);
     }
@@ -3154,6 +3162,17 @@ fn collect_memory_bound_variables_entering(
             let pointer = change.key();
             if after.contains_key(pointer) {
                 collect_pointer_bound_variables(pointer, variables);
+            }
+        }
+    }
+    let before = base.heap.initialized.partial_map();
+    let after = memory.heap.initialized.partial_map();
+    for change in before.diff(after) {
+        let pointer = change.key();
+        if let Some(byte) = after.get(pointer) {
+            collect_pointer_bound_variables(pointer, variables);
+            if let Some(value) = &byte.value {
+                collect_program_value_bound_variables(value, variables);
             }
         }
     }
@@ -4463,6 +4482,7 @@ fn rewrite_integer_memory_loadable_with_walker(
     walker: &mut crate::kernel::proof::term_rewrite::TermRewrite<'_>,
 ) -> Result<Proposition, IntegerPureSubstitutionError> {
     if let Proposition::MemoryReadDefined {
+        at,
         memory,
         pointer,
         value_type,
@@ -4476,6 +4496,7 @@ fn rewrite_integer_memory_loadable_with_walker(
         };
         integer_substitution_refusal(walker.refusal())?;
         return Ok(Proposition::MemoryReadDefined {
+            at: *at,
             memory: memory.clone(),
             pointer: pointer.pointer().clone(),
             value_type: *value_type,
@@ -5491,9 +5512,13 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_common_condition(
                 }
             };
             if let crate::kernel::KernelTermNode::BoolRead(read) = leaf.node() {
-                let (memory, address) = read.parts();
+                let (point, address) = read.parts();
                 return Ok(KernelTerm::boolean_read(
-                    substitute_bitvector_variable_in_shared_memory(memory, from, to),
+                    point.with_renamed_memory(substitute_bitvector_variable_in_shared_memory(
+                        point.shared_memory(),
+                        from,
+                        to,
+                    )),
                     map_address(address)?,
                 ));
             }
@@ -6492,9 +6517,10 @@ fn substitute_bitvector_variable_in_memory_contents(
                 .iter()
                 .map(|base| substitute_bitvector_variable_in_pointer(base, from, to))
                 .collect(),
-            initialized: memory.heap.initialized.map_pointers(|pointer| {
-                substitute_bitvector_variable_in_pointer(pointer, from, to)
-            }),
+            initialized: memory.heap.initialized.map_pointers(
+                |pointer| substitute_bitvector_variable_in_pointer(pointer, from, to),
+                |value| substitute_bitvector_variable_in_program_value(value, from, to),
+            ),
             zeroed_allocations: memory
                 .heap
                 .zeroed_allocations
@@ -7192,10 +7218,10 @@ pub(crate) fn substitute_pointer_variable_in_memory(
                 .iter()
                 .map(|base| substitute_pointer_variable_in_pointer(base, from, to))
                 .collect(),
-            initialized: memory
-                .heap
-                .initialized
-                .map_pointers(|pointer| substitute_pointer_variable_in_pointer(pointer, from, to)),
+            initialized: memory.heap.initialized.map_pointers(
+                |pointer| substitute_pointer_variable_in_pointer(pointer, from, to),
+                |value| substitute_pointer_variable_in_program_value(value, from, to),
+            ),
             zeroed_allocations: memory
                 .heap
                 .zeroed_allocations
@@ -7311,9 +7337,11 @@ fn substitute_pointer_variable_in_spec_point(
         SpecPoint::Current => SpecPoint::Current,
         SpecPoint::FunctionEntry => SpecPoint::FunctionEntry,
         SpecPoint::LoopEntry => SpecPoint::LoopEntry,
-        SpecPoint::At(point) => SpecPoint::At(point.with_renamed_memory(
-            substitute_pointer_variable_in_memory(point.memory(), from, to),
-        )),
+        SpecPoint::At(point) => {
+            SpecPoint::At(point.with_renamed_memory(crate::kernel::intern_memory(
+                substitute_pointer_variable_in_memory(point.memory(), from, to),
+            )))
+        }
     }
 }
 

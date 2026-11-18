@@ -3043,7 +3043,7 @@ pub(crate) fn registered_scalar_read_term(
                 read.address.as_ref().map(|address| {
                     crate::kernel::KernelTerm::shared_scalar_read_descriptor(
                         format,
-                        &read.memory,
+                        &ProgramPoint::at(&read.memory),
                         address,
                         read.kind,
                     )
@@ -6017,6 +6017,7 @@ mod tests {
         let value_type = ProgramType::Int32Pointer;
         let assumptions = PureFactContext::new()
             .assume_proposition(Proposition::MemoryReadDefined {
+                at: None,
                 memory: memory.clone(),
                 pointer: cell.clone(),
                 value_type,
@@ -6068,6 +6069,7 @@ mod tests {
                 let value_type = ProgramType::Int32Pointer;
                 let assumptions = PureFactContext::new()
                     .assume_proposition(Proposition::MemoryReadDefined {
+                        at: None,
                         memory: memory.clone(),
                         pointer: cell.clone(),
                         value_type,
@@ -6925,6 +6927,7 @@ mod tests {
         let without_alias = empty
             .assume_proposition(Proposition::ResourceComposition(resources))
             .assume_proposition(Proposition::MemoryReadDefined {
+                at: None,
                 memory: memory.clone(),
                 pointer: alias.clone(),
                 value_type: ProgramType::UInt64,

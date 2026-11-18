@@ -528,28 +528,21 @@ impl MemoryDagHopJustification {
         assumptions: &PureFactContext,
     ) -> bool {
         match self {
-            Self::StoreDistinctBlocks => matches!(
-                derivation,
-                MemoryDerivation::Store { pointer: write, .. }
-                    if write.blocks_proven_distinct(pointer)
-            ),
+            Self::StoreDistinctBlocks => derivation
+                .single_write()
+                .is_some_and(|(write, _)| write.blocks_proven_distinct(pointer)),
             Self::StoreAddressByteSeparation => {
-                let MemoryDerivation::Store {
-                    pointer: write,
-                    value,
-                    ..
-                } = derivation
-                else {
+                let Some((write, write_bytes)) = derivation.single_write() else {
                     return false;
                 };
                 assumptions
-                    .numeric_access_byte_overlap(write, value.byte_width(), pointer, bytes)
+                    .numeric_access_byte_overlap(write, write_bytes, pointer, bytes)
                     .or_else(|| {
                         (write.base == pointer.base)
                             .then(|| {
                                 crate::kernel::reasoning::exact_access_byte_overlap(
                                     write,
-                                    value.byte_width(),
+                                    write_bytes,
                                     pointer,
                                     bytes,
                                 )
@@ -559,25 +552,20 @@ impl MemoryDagHopJustification {
                     == Some(crate::kernel::reasoning::AccessByteOverlap::Separate)
             }
             Self::StoreAliasedByteSeparation { write: aligned } => {
-                let MemoryDerivation::Store {
-                    pointer: write,
-                    value,
-                    ..
-                } = derivation
-                else {
+                let Some((write, write_bytes)) = derivation.single_write() else {
                     return false;
                 };
                 !write.blocks_proven_distinct(aligned)
                     && assumptions.pointers_known_equal(write, aligned)
                     && crate::kernel::reasoning::exact_access_byte_overlap(
                         aligned,
-                        value.byte_width(),
+                        write_bytes,
                         pointer,
                         bytes,
                     ) == Some(crate::kernel::reasoning::AccessByteOverlap::Separate)
             }
             Self::StoreCommonBaseUnequalConstants { condition } => {
-                let MemoryDerivation::Store { pointer: write, .. } = derivation else {
+                let Some((write, _)) = derivation.single_write() else {
                     return false;
                 };
                 pointer_offsets_with_common_base_distinctness_condition(write, pointer)
@@ -585,7 +573,7 @@ impl MemoryDagHopJustification {
                     && condition == &ConditionTerm::Constant(false)
             }
             Self::StoreCommonBaseExactInequality { condition } => {
-                let MemoryDerivation::Store { pointer: write, .. } = derivation else {
+                let Some((write, _)) = derivation.single_write() else {
                     return false;
                 };
                 pointer_offsets_with_common_base_distinctness_condition(write, pointer)
@@ -597,7 +585,7 @@ impl MemoryDagHopJustification {
                 path,
                 reversed,
             } => {
-                let MemoryDerivation::Store { pointer: write, .. } = derivation else {
+                let Some((write, _)) = derivation.single_write() else {
                     return false;
                 };
                 let Some(ConditionTerm::Compare {
@@ -649,10 +637,12 @@ impl MemoryDagHopJustification {
             } => {
                 let retired;
                 let (write, write_bytes) = match (self, derivation) {
-                    (
-                        Self::StoreSeparatedRanges { .. },
-                        MemoryDerivation::Store { pointer, value, .. },
-                    ) => (pointer, value.byte_width()),
+                    (Self::StoreSeparatedRanges { .. }, _) => {
+                        let Some(write) = derivation.single_write() else {
+                            return false;
+                        };
+                        write
+                    }
                     (
                         Self::LocalLifetimeEndedSeparatedRanges { .. },
                         MemoryDerivation::LocalLifetimeEnded { base, block },

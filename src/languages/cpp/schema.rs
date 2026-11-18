@@ -7441,7 +7441,10 @@ fn require_function_return_type(
     } = value
     {
         validate_trivial_record_value(records, declaration_id, name)
-    } else if let Some((declaration_id, name)) = super::scalar::record_pointee(value) {
+    } else if let Some((declaration_id, name, _)) = super::scalar::record_referent(value)
+        && (matches!(value, CppType::LvalueReference { .. })
+            || super::scalar::record_pointee(value).is_some())
+    {
         validate_record_reference(records, declaration_id, name).map(|_| ())
     } else {
         require_return_value_type(value, label)
@@ -7453,6 +7456,8 @@ fn require_return_value_type(value: &CppType, label: &str) -> Result<(), String>
         || require_native_object_pointer(value, label).is_ok()
         || super::scalar::record_pointee(value).is_some()
         || super::scalar::reference_element(value).is_some()
+        || (matches!(value, CppType::LvalueReference { .. })
+            && super::scalar::record_referent(value).is_some())
         || matches!(value, CppType::Pointer { pointee } if Scalar::pointer_element(pointee, true).is_some())
         || matches!(
             value,
