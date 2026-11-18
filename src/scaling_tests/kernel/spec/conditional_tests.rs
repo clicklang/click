@@ -407,7 +407,9 @@ fn nested_reflexive_conditionals_lower_with_linear_work() {
             // Grow the explicit source, keeping nesting logarithmic.
             while layer.len() > 1 {
                 layer = layer
-                    .as_chunks::<2>().0.iter()
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
                     .map(|pair| SpecExpression::If {
                         condition: Box::new(SpecProposition::Comparison {
                             left: guard_value.clone(),
