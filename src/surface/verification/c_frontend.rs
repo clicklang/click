@@ -675,11 +675,12 @@ pub(super) fn link_c_units(
             }
         }
         if build_storage {
-            parsed
-                .get_mut("main")
-                .expect("main was found")
-                .1
-                .program_entry_state = Some(std::sync::Arc::new({
+            let main = &mut parsed.get_mut("main").expect("main was found").1;
+            main.program_entry_stdout = target == CTarget::X86_64LinuxUserspace
+                && function_declarations
+                    .values()
+                    .any(|(_, declaration)| syntax::printf_prototype(declaration));
+            main.program_entry_state = Some(std::sync::Arc::new({
                 let _timing = VerificationTimingPhase::new("program-entry storage");
                 crate::kernel::initialize_program_program_storage(storage_functions).ok_or_else(
                     || {
@@ -835,6 +836,14 @@ pub(super) fn c_layouts(
                 .values()
                 .filter_map(syntax::library_contract_module),
         );
+        if target == CTarget::X86_64LinuxUserspace
+            && unit
+                .function_declarations
+                .values()
+                .any(syntax::printf_prototype)
+        {
+            tables.library_modules.insert("library/c/stdio.click");
+        }
         for name in unit.function_declarations.keys() {
             if let Some(contract) =
                 crate::languages::c::formatted_output::contract_for_function(name)

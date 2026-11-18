@@ -5351,3 +5351,11 @@ path = "reference/library/index.md#integerfloat64_pointer_translate_uint64"
 [[item]]
 id = "library.theorem.integer::float64_pointer_add_associate_uint64"
 path = "reference/library/index.md#integerfloat64_pointer_add_associate_uint64"
+
+[[item]]
+id = "library.type.StdoutWrite"
+path = "reference/library/index.md#stdoutwrite-and-stdout"
+
+[[item]]
+id = "library.resource.stdout"
+path = "reference/library/index.md#stdoutwrite-and-stdout"

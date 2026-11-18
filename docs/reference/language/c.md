@@ -186,6 +186,7 @@ does. Verifying plain C needs no compiler or system headers; see the
 | `<stdint.h>`, `<inttypes.h>`, `<stdbool.h>` | all | the standard type names mapped to Click's C types |
 | `<limits.h>` | all | `CHAR_BIT` and the integer limit macros for LP64; `CHAR_MIN`/`CHAR_MAX` follow the target's plain `char` |
 | `<stddef.h>` | user space | `NULL` |
+| `<stdio.h>` | user space | `printf` and `snprintf` ([modeled formats](#formatted-output)) |
 | `<string.h>` | user space | `memcpy`, `memcmp`, `memset`, `strlen`, and `NULL` |
 | `<stdlib.h>` | user space | `malloc`, `calloc`, `realloc`, `free`, and `NULL` |
 | `<stdarg.h>` | user space | the `va_list` type only, so prototypes that take one parse; `va_start`, `va_arg`, `va_copy` and `va_end` are not provided, since variadic bodies are not modeled |
@@ -1928,6 +1929,31 @@ are supported.
 <!-- verified-example: mdtests/concatenated_string_literals.md -->
 
 ## Formatted output
+
+### Writing to standard output
+
+The hosted target models `printf("literal")` with ordinary bytes and `%%`.
+The literal may concatenate several C string tokens. The format ends at
+the first NUL. The model accepts up to 64 output bytes per call.
+
+A contract can use `owns out: click::c::stdio::stdout();` to carry the state
+of an open, byte-compatible standard output stream. Hosted `main` can
+bind this resource from startup with an empty write history. Each `printf` call
+prepends a `StdoutWrite::Attempt(bytes, result)` to `out.writes` and sets
+`out.last_result` to the call's return value. The bytes are the exact
+message requested. A nonnegative return value is the byte count and means
+the stream accepted the entire message. On a negative return value the
+model leaves partial output unspecified. The stream can buffer its data,
+so acceptance does not establish delivery to its destination. The model
+covers sequential use of stdout through the contracts that own it.
+
+`click verify` reports the generated library assumption as
+`printf: "<format>"`. The [hello-world example](https://github.com/clicklang/click/tree/master/examples/hello-world)
+uses this resource with the original `main()` spelling, which Click
+accepts as an implicit `int` definition of hosted `main`. Falling off the
+end of the supported hosted `int main` returns zero.
+
+### Formatting into a buffer
 
 A call to `snprintf`, declared as `int snprintf(char *s, size_t n, const char
 *format, ...)`, is modeled when its format is a string literal. The format

@@ -1933,6 +1933,85 @@ fn bool_range_surface(name: &str) -> ClickProposition {
     ClickProposition::Or(Box::new(equals("0")), Box::new(equals("1")))
 }
 
+/// Bind the hosted stream already provided at startup. No other resource
+/// or pure input can be assumed at the program entry point.
+fn bind_program_entry_stdout(
+    state: ExecutionState,
+    function_block: &FunctionBlock,
+    parsed_function: &crate::languages::interface::ImportedFunction,
+) -> Result<ExecutionState, ClickError> {
+    use crate::kernel::{AlgebraicTerm, AlgebraicTermNode, ResourceFieldType, ResourceInstance};
+    let requirement_error = || {
+        ClickError::new(
+            "program-entry main currently requires no parameters or preconditions; static ownership comes from startup",
+        )
+    };
+    if !parsed_function.parameters().is_empty() {
+        return Err(requirement_error());
+    }
+    let [Requirement::Resource(ResourceClause::Named { binding, resource })] =
+        function_block.requires()
+    else {
+        return if function_block.requires().is_empty() {
+            Ok(state)
+        } else {
+            Err(requirement_error())
+        };
+    };
+    let ResourceClause::Declared {
+        name,
+        arguments,
+        resource_arguments,
+        ..
+    } = resource.as_ref()
+    else {
+        return Err(requirement_error());
+    };
+    if !parsed_function.program_entry_stdout
+        || name != "stdout"
+        || !arguments.is_empty()
+        || !resource_arguments.is_empty()
+    {
+        return Err(requirement_error());
+    }
+    let schema = binding.schema.clone().ok_or_else(requirement_error)?;
+    let [
+        (writes, ResourceFieldType::Algebraic(history)),
+        (last_result, ResourceFieldType::Program(crate::kernel::ProgramType::Int32)),
+    ] = schema.fields()
+    else {
+        return Err(requirement_error());
+    };
+    if writes != "writes" || last_result != "last_result" {
+        return Err(requirement_error());
+    }
+    let fields = vec![
+        AlgebraicValue::Algebraic(AlgebraicTerm {
+            algebraic_type: history.clone(),
+            node: AlgebraicTermNode::Constructor {
+                variant: "Nil".to_string(),
+                fields: Vec::new(),
+            },
+        }),
+        AlgebraicValue::Program(crate::kernel::int32(0)),
+    ];
+    let stream = ResourceInstance::new(
+        binding.identity,
+        name.clone(),
+        Default::default(),
+        schema,
+        fields.into(),
+    )
+    .ok_or_else(requirement_error)?;
+    // This is the only stream instance installed at startup. The entry
+    // state before this operation contains the startup storage only.
+    let resources = state
+        .resources()
+        .clone()
+        .unchecked_with_fact(ResourceFact::own(Resource::Instance(stream)));
+    Ok(state.with_resource_context(resources))
+}
+
 pub(super) fn initial_claim_context_with_caller_owner(
     function_block: &FunctionBlock,
     parsed_function: &crate::languages::interface::ImportedFunction,
@@ -1944,16 +2023,12 @@ pub(super) fn initial_claim_context_with_caller_owner(
     let (mut state, arguments, entry_assumptions) = if let Some(startup) =
         &parsed_function.program_entry_state
     {
-        if !function_block.requires().is_empty() || !parsed_function.parameters().is_empty() {
-            return Err(ClickError::new(
-                "program-entry main currently requires no parameters or preconditions; static ownership comes from startup",
-            ));
-        }
+        let state = crate::kernel::initialize_program_function_globals(
+            &startup.as_ref().clone().with_population_creation_tracking(),
+            &parsed_function.to_kernel_function(),
+        );
         (
-            crate::kernel::initialize_program_function_globals(
-                &startup.as_ref().clone().with_population_creation_tracking(),
-                &parsed_function.to_kernel_function(),
-            ),
+            bind_program_entry_stdout(state, function_block, parsed_function)?,
             vec![],
             PureFactContext::new(),
         )

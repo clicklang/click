@@ -15,6 +15,9 @@ use std::collections::{BTreeMap, BTreeSet};
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ImportedFunction {
     pub(crate) program_entry_state: Option<std::sync::Arc<crate::kernel::ExecutionState>>,
+    /// Hosted C startup supplies a standard output stream when the unit
+    /// selects the stdio model.
+    pub(crate) program_entry_stdout: bool,
     /// A typed language frontend may provide executable kernel semantics
     /// directly while reusing this declaration interface for Surface Click
     /// contract checking. C parsing always leaves this absent.
@@ -619,6 +622,7 @@ impl ImportedFunction {
             dispatched_method: None,
             receiver_calls: Vec::new(),
             program_entry_state: None,
+            program_entry_stdout: false,
             prelowered_kernel_function: None,
             parameters,
             body: CStatement::Skip,

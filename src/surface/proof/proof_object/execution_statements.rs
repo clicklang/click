@@ -1190,8 +1190,8 @@ impl<'a> Proof<'a> {
                     .predicates
                     .function_execution_name(written)
                     == callee
-                || (written == "snprintf"
-                    && crate::languages::c::formatted_output::describe_function(callee).is_some())
+                || crate::languages::c::formatted_output::function_format(callee)
+                    .is_some_and(|(function, _)| function == written)
         };
         let Some(call) = call.filter(|call| names_written(&call.callee)) else {
             return Err(self.step_error(format!(

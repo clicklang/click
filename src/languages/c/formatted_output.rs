@@ -9,7 +9,28 @@
 use std::fmt::Write as _;
 
 /// The prefix of a formatted-output function's name.
-pub(crate) const FORMATTED_OUTPUT_PREFIX: &str = "__click_snprintf_";
+const SNPRINTF_PREFIX: &str = "__click_snprintf_";
+const PRINTF_PREFIX: &str = "__click_printf_";
+
+/// A printf message is a concrete list in its contract. Keep generated
+/// terms within the surface language's nesting budget.
+const MAX_PRINTF_BYTES: usize = 64;
+
+pub(crate) fn printf_bytes(format: &[u8]) -> Result<Vec<u8>, String> {
+    let mut bytes = Vec::new();
+    for piece in parse_format(format)? {
+        let FormatPiece::Literal(literal) = piece else {
+            return Err("Click models only literal text and `%%` in `printf`".to_string());
+        };
+        bytes.extend(literal);
+    }
+    if bytes.len() > MAX_PRINTF_BYTES {
+        return Err(format!(
+            "Click models at most {MAX_PRINTF_BYTES} output bytes in one `printf`"
+        ));
+    }
+    Ok(bytes)
+}
 
 /// The widest field a conversion may request. It only keeps a field's
 /// arithmetic small; the contract still bounds the whole output by `INT_MAX`.
@@ -117,37 +138,74 @@ pub(crate) fn parse_format(format: &[u8]) -> Result<Vec<FormatPiece>, String> {
 }
 
 /// The format of the formatted-output function `name`, when it is one.
-pub(crate) fn function_format(name: &str) -> Option<Vec<u8>> {
-    let hex = name.strip_prefix(FORMATTED_OUTPUT_PREFIX)?;
-    (0..hex.len())
+pub(crate) fn function_format(name: &str) -> Option<(&'static str, Vec<u8>)> {
+    let (function, hex) = if let Some(hex) = name.strip_prefix(PRINTF_PREFIX) {
+        ("printf", hex)
+    } else {
+        ("snprintf", name.strip_prefix(SNPRINTF_PREFIX)?)
+    };
+    let format = (0..hex.len())
         .step_by(2)
         .map(|index| u8::from_str_radix(hex.get(index..index + 2)?, 16).ok())
-        .collect()
+        .collect::<Option<Vec<_>>>()?;
+    Some((function, format))
 }
 
 /// The `extern` contract of `name` when it is a formatted-output function.
 pub(crate) fn contract_for_function(name: &str) -> Option<String> {
-    let pieces = parse_format(&function_format(name)?).ok()?;
-    Some(contract_source(name, &pieces))
+    let (function, format) = function_format(name)?;
+    if function == "printf" {
+        return Some(printf_contract(name, &printf_bytes(&format).ok()?));
+    }
+    Some(contract_source(name, &parse_format(&format).ok()?))
 }
 
 /// The C call a formatted-output function stands for, as a diagnostic
-/// names it: `snprintf` with its format.
+/// names it, including its literal format.
 pub(crate) fn describe_function(name: &str) -> Option<String> {
-    let format = function_format(name)?;
+    let (function, format) = function_format(name)?;
     Some(format!(
-        "`snprintf` with format \"{}\"",
+        "`{function}` with format \"{}\"",
         String::from_utf8_lossy(&format).escape_default()
     ))
 }
 
 /// The formatted-output function for `format`.
 pub(crate) fn function_name(format: &[u8]) -> String {
-    let mut name = FORMATTED_OUTPUT_PREFIX.to_string();
+    encode_function_name(SNPRINTF_PREFIX, format)
+}
+
+pub(crate) fn printf_name(format: &[u8]) -> String {
+    encode_function_name(PRINTF_PREFIX, format)
+}
+
+fn encode_function_name(prefix: &str, format: &[u8]) -> String {
+    let mut name = prefix.to_string();
     for byte in format {
         let _ = write!(name, "{byte:02x}");
     }
     name
+}
+
+/// `printf` records exactly one attempted write. Its return value says
+/// whether the entire message was accepted by the standard stream.
+fn printf_contract(name: &str, bytes: &[u8]) -> String {
+    let mut message = String::new();
+    for byte in bytes {
+        let _ = write!(message, "List::Cons({byte}u8, ");
+    }
+    message.push_str("List<uint8>::Nil");
+    message.extend(std::iter::repeat_n(')', bytes.len()));
+    let length = bytes.len();
+    format!(
+        "extern int32 {name}() {{
+    owns out: click::c::stdio::stdout();
+    ensures out.last_result == result;
+    ensures result == {length} or result < 0;
+    ensures out.writes == List::Cons(
+        StdoutWrite::Attempt({message}, result), old(out.writes));
+}}"
+    )
 }
 
 /// The `extern` contract of the formatted-output function `name` for a

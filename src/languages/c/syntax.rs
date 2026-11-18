@@ -7380,6 +7380,7 @@ struct Parser {
     current_function_source_name: Option<String>,
     import_mode: bool,
     abi: CAbi,
+    target: super::target::CTarget,
     /// The signedness the selected C target gives plain `char`.
     plain_char: PlainChar,
     /// The rank the selected C target gives `int64_t` and `uint64_t`.
@@ -7591,6 +7592,20 @@ pub(crate) fn library_contract_module(header: &CFunctionHeader) -> Option<&'stat
 /// `name` uses; see [`library_contract_module`].
 pub(crate) fn library_contract_module_named(name: &str) -> Option<&'static str> {
     matches!(name, "memcpy" | "memcmp" | "memset" | "strlen").then_some("library/c/string.click")
+}
+
+/// Whether `header` declares the C library's `printf`.
+pub(crate) fn printf_prototype(header: &CFunctionHeader) -> bool {
+    header.source_name == "printf"
+        && header.name == "printf"
+        && !header.internal_linkage
+        && header.variadic
+        && header.return_type == InterfaceType::Int32
+        && matches!(
+            header.parameters.as_slice(),
+            [format] if matches!(format.interface_type, InterfaceType::CharPointer(_))
+                && format.pointee_constant
+        )
 }
 
 /// Whether `header` declares the C library's `snprintf`,
@@ -7810,6 +7825,7 @@ impl Parser {
     /// Selects the target's plain `char` signedness. Every parser starts
     /// with the default target's, which the test-only entry points keep.
     fn with_target(mut self, target: super::target::CTarget) -> Self {
+        self.target = target;
         self.plain_char = target.plain_char();
         self.int64_t_rank = target.int64_t_rank();
         self
@@ -7956,6 +7972,7 @@ impl Parser {
             current_function_source_name: None,
             import_mode,
             abi,
+            target: super::target::CTarget::SUPPORTED,
             plain_char: super::target::CTarget::SUPPORTED.plain_char(),
             int64_t_rank: super::target::CTarget::SUPPORTED.int64_t_rank(),
             current_return_struct_name: None,
@@ -9127,7 +9144,7 @@ impl Parser {
                     self.static_inline_attribute
                 )));
             }
-            if !self.is_type_start() {
+            if !self.is_type_start() && !self.legacy_main_ahead(is_static) {
                 return Err(self.error_here(format!(
                     "expected function declaration, got {}",
                     self.peek()
@@ -9392,10 +9409,25 @@ impl Parser {
         self.pop_scope();
         self.out_of_scope_names.clear();
         validate_function_returns(&body, header.return_type)?;
-        if header.return_type == InterfaceType::Void {
+        let implicit_return = match header.return_type {
+            InterfaceType::Void => Some(CExpression::Void),
+            // C11 5.1.2.2.3p1. This also applies to the supported legacy
+            // spelling of the hosted entry point.
+            InterfaceType::Int32
+                if self.target == super::target::CTarget::X86_64LinuxUserspace
+                    && !header.internal_linkage
+                    && header.name == "main"
+                    && header.source_name == "main"
+                    && header.parameters.is_empty() =>
+            {
+                Some(CExpression::Int32Literal(0))
+            }
+            _ => None,
+        };
+        if let Some(value) = implicit_return {
             body = CStatement::Seq(
                 Box::new(body),
-                Box::new(CStatement::Return(CExpression::Void, CSite::NONE)),
+                Box::new(CStatement::Return(value, CSite::NONE)),
             );
         }
         let control_targets = validate_direct_forward_gotos(&body)?;
@@ -9447,6 +9479,7 @@ impl Parser {
             dispatched_method: None,
             receiver_calls: Vec::new(),
             program_entry_state: None,
+            program_entry_stdout: false,
             prelowered_kernel_function: None,
             parameters: header.parameters,
             body,
@@ -9505,6 +9538,16 @@ impl Parser {
         Ok(())
     }
 
+    /// The spelling used by the original K&R hello-world program.
+    fn legacy_main_ahead(&self, internal_linkage: bool) -> bool {
+        !internal_linkage
+            && self.target == super::target::CTarget::X86_64LinuxUserspace
+            && self.peek_ident() == Some("main")
+            && self.peek_n(1) == Some(&Token::LParen)
+            && self.peek_n(2) == Some(&Token::RParen)
+            && self.peek_n(3) == Some(&Token::LBrace)
+    }
+
     fn parse_function_header(
         &mut self,
         internal_linkage: bool,
@@ -9513,7 +9556,11 @@ impl Parser {
         self.parsing_function_header = true;
         self.opaque_function_signature = false;
         self.opaque_signature_types.clear();
-        let parsed_return_type = self.parse_signature_type()?;
+        let parsed_return_type = if self.legacy_main_ahead(internal_linkage) {
+            self.parse_named_type("int".to_string())?
+        } else {
+            self.parse_signature_type()?
+        };
         if parsed_return_type.function_pointer_signature.is_some() {
             return Err(
                 self.error_here("function-pointer return values need nested callback ABI metadata")
@@ -16699,6 +16746,11 @@ impl Parser {
                 )));
             }
             if header.variadic {
+                if self.target == super::target::CTarget::X86_64LinuxUserspace
+                    && printf_prototype(header)
+                {
+                    return self.parse_printf_arguments();
+                }
                 if formatted_output_prototype(header) {
                     return self.parse_formatted_output_arguments(source_name);
                 }
@@ -16801,6 +16853,40 @@ impl Parser {
         }
     }
 
+    /// Read a (possibly concatenated) format literal up to its first NUL.
+    fn parse_output_format(&mut self, source_name: &str) -> Result<Vec<u8>, CSyntaxError> {
+        if !matches!(self.peek(), Some(Token::StringLiteral(_))) {
+            return Err(self.error_here(format!(
+                "Click models a call to `{source_name}` only with a string-literal format"
+            )));
+        }
+        let mut format = Vec::new();
+        while let Some(Token::StringLiteral(piece)) = self.peek().cloned() {
+            self.position += 1;
+            format.extend(piece);
+        }
+        // Retain the whole literal's source occurrence and static storage.
+        let _ = self.string_literal_expression(format.clone());
+        if let Some(end) = format.iter().position(|byte| *byte == 0) {
+            format.truncate(end);
+        }
+        Ok(format)
+    }
+
+    fn parse_printf_arguments(&mut self) -> Result<Vec<CExpression>, CSyntaxError> {
+        use crate::languages::c::formatted_output;
+        self.expect(Token::LParen)?;
+        let format = self.parse_output_format("printf")?;
+        formatted_output::printf_bytes(&format)
+            .map_err(|reason| self.error_at_previous(format!("`printf` format: {reason}")))?;
+        if self.peek() == Some(&Token::Comma) {
+            return Err(self.error_here("Click models `printf` with no variadic arguments"));
+        }
+        self.expect(Token::RParen)?;
+        self.register_formatted_output_call(formatted_output::printf_name(&format), Vec::new());
+        Ok(Vec::new())
+    }
+
     /// The arguments of a call to `snprintf` whose format is a string
     /// literal: the buffer, its size, and one argument for each conversion,
     /// each checked against the type its conversion reads (C11 7.21.6.1p9).
@@ -16837,21 +16923,7 @@ impl Parser {
             )));
         }
         self.expect(Token::Comma)?;
-        let mut format = Vec::new();
-        while let Some(Token::StringLiteral(piece)) = self.peek().cloned() {
-            self.position += 1;
-            format.extend(piece);
-        }
-        if format.is_empty()
-            && self.tokens.get(self.position.wrapping_sub(1)) == Some(&Token::Comma)
-        {
-            return Err(self.error_here(format!(
-                "Click models a call to `{source_name}` only with a string-literal format"
-            )));
-        }
-        // The format is lowered into the callee's specification, but its C
-        // literal object still has a source occurrence and static storage.
-        let _ = self.string_literal_expression(format.clone());
+        let format = self.parse_output_format(source_name)?;
         let pieces = formatted_output::parse_format(&format).map_err(|reason| {
             self.error_at_previous(format!("`{source_name}` format: {reason}"))
         })?;
@@ -16963,7 +17035,11 @@ impl Parser {
             )));
         }
         self.expect(Token::RParen)?;
-        let name = formatted_output::function_name(&format);
+        self.register_formatted_output_call(formatted_output::function_name(&format), parameters);
+        Ok(arguments)
+    }
+
+    fn register_formatted_output_call(&mut self, name: String, parameters: Vec<ImportedParameter>) {
         self.function_declarations
             .entry(name.clone())
             .or_insert_with(|| CFunctionHeader {
@@ -16988,7 +17064,6 @@ impl Parser {
                 parameters,
             });
         self.formatted_output_call.replace(Some(name));
-        Ok(arguments)
     }
 
     /// The function a direct call to `source_name` whose arguments were just

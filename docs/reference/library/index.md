@@ -24,7 +24,7 @@ how far it is trusted:
   code that uses it, not with a sidecar import. `click::c::string` is written
   in Click below. The C front end builds in the allocator family
   ([heap allocation](../language/c.md#heap-allocation)) and writes the
-  `snprintf` contracts ([formatted output](../language/c.md#formatted-output)),
+  `printf` and `snprintf` contracts ([formatted output](../language/c.md#formatted-output)),
   and the C++ and Rust importers append the generic contracts of
   `library/cpp/` and `library/rust/core.click`, written out at each called
   instance, and the Rust integer-method contracts of
@@ -48,6 +48,7 @@ how far it is trusted:
 | [`click::bytes`](#clickbytes) | `import click::bytes;`, or with `click::c::string` | specification |
 | [`click::cstr`](#clickcstr) | `import click::cstr;`, or with `click::c::string` | specification |
 | [`click::format`](#clickformat) | `import click::format;`; named by path in `snprintf` contracts | specification |
+| [`click::c::stdio`](#clickcstdio) | `import click::c::stdio;`, or with a modeled `printf` call | C library model |
 | [`click::c::string`](#clickcstring) | when the C declares or calls one of its functions | C library model |
 | [C++ standard library models](#c-standard-library-models), `library/cpp/` (not a module) | when a C++ import calls one of its functions | C++ library model |
 | [`click::rust::i8` ... `click::rust::usize`](#clickrusti8-through-clickrustusize) | `import click::rust::u32;`; named by path in Rust core-method contracts | specification |
@@ -9466,6 +9467,32 @@ theorem padded_digit_lower_bound(v: uint64, width: uint64, k: uint64) {
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
+## `click::c::stdio`
+
+Source: `library/c/stdio.click`. The C front end generates the contract for
+each modeled literal `printf` call.
+
+### `StdoutWrite` and `stdout`
+
+```click
+spec enum StdoutWrite {
+    Attempt(List<uint8>, int32),
+}
+
+abstract resource stdout() {
+    // Newest attempted write first.
+    field writes: List<StdoutWrite>;
+    field last_result: int32;
+}
+```
+
+A `StdoutWrite::Attempt` carries the requested bytes and the C result. The
+resource represents an open standard output stream that accepts byte
+operations. See [writing to standard output](../language/c.md#writing-to-standard-output)
+for error and buffering semantics.
+
+<!-- verified-example: mdtests/printf_formats_literal_stdout_bytes.md -->
 
 ## `click::c::string`
 
