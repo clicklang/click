@@ -4821,15 +4821,14 @@ fn terminal_return_captures_value_before_checked_destructor_cleanup() {
     assert!(matches!(
         lowered.kernel_function().body(),
         ProgramStatement::Seq(sequence)
-            if { let (_, returned) = (sequence.first(), &sequence.rest()); matches!(
-                returned.as_ref(),
-                ProgramStatement::Seq(sequence)
-                    if { let (_, returned) = (sequence.first(), &sequence.rest()); matches!(
-                        returned.as_ref(),
-                        ProgramStatement::Return(ProgramExpression::Variable(name))
-                            if name.local_id().is_some_and(|id| id.is_temporary())
-                    ) }
-            ) }
+            if matches!(
+                sequence.iter().last().map(|stmt| stmt.as_ref()),
+                Some(ProgramStatement::Return(ProgramExpression::StepResult {
+                    origin: click::kernel::StepOrigin::Value(_),
+                    ends: true,
+                    ..
+                }))
+            )
     ));
 
     let click_source = fs::read_to_string(&sidecar).unwrap();
@@ -4857,6 +4856,7 @@ fn terminal_return_captures_value_before_checked_destructor_cleanup() {
         !expanded.contains("__click_cpp_unwind_exception"),
         "{expanded}"
     );
+    assert!(!expanded.contains(".temporary("), "{expanded}");
     click::surface::without_implicit_solve_for_claim("capture.contract", || {
         verify_program_prepared_project(&click_project.with_entry_source(expanded), &import)
             .map_err(|error| error.report())
@@ -19974,6 +19974,7 @@ int32 probe(struct Sink& sink, int32 input) {
     }
     click::surface::without_implicit_solve(|| verify_program_prepared_project(&rewritten, &import))
         .unwrap_or_else(|error| panic!("{}\n{expanded}", error.report()));
+    assert!(!expanded.contains(".temporary("), "{expanded}");
     let false_value = source.replace("ensures result == input;", "ensures result == 7;");
     let sidecar = project.directory.join("false.click");
     fs::write(&sidecar, &false_value).unwrap();

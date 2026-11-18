@@ -4285,9 +4285,9 @@ fn bare_step_call_result_bindings_expand_and_replay() {
     let error = verify_c_sources(&source, &sources)
         .expect_err("discarding a C call result leaves no value to bind");
     assert!(
-        error
-            .message()
-            .contains("requires a scalar assignment or a used call result"),
+        error.message().contains(
+            "requires a scalar assignment, a used call result, or a retained scalar value"
+        ),
         "{error}"
     );
 }

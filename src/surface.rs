@@ -3642,7 +3642,7 @@ struct RecordedStates {
     allocation_results: crate::persistent::PersistentMap<crate::kernel::Address, CodeRegionRef>,
     /// Values produced at call exits, independent of destination locals.
     call_results: RecordedCallResults,
-    /// Capture-producing functions retain the call table at each citable
+    /// Prelowered result steps retain their result table at each citable
     /// state. An `at` expression selects a table by its program point.
     call_result_snapshots: imbl::OrdMap<ProgramPointSelector, RecordedCallResults>,
     /// The points inside a loop that left at several places, by the loop
@@ -4161,7 +4161,7 @@ impl RecordedStates {
     fn records_call_snapshots(&self) -> bool {
         self.source_layout
             .as_ref()
-            .is_some_and(lowering::SourceExecutionLayout::has_call_captures)
+            .is_some_and(lowering::SourceExecutionLayout::snapshots_step_results)
     }
 
     fn region_result_value_at(
