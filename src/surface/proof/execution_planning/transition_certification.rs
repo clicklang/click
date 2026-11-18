@@ -738,10 +738,9 @@ fn certified_transitions_from_execution(
                 }
             );
             for obligation in path.obligations() {
-                // Entry requirements cannot cite facts produced by this call.
-                // In particular an identical `ensures` is conditional on the
-                // very requirement being checked, not evidence for it.
-                let prerequisite_assumptions = if obligation.call_requirement_site().is_some() {
+                // A precondition cannot cite a fact produced by the
+                // transition whose validity depends on that precondition.
+                let prerequisite_assumptions = if obligation.requires_statement_entry() {
                     executed_under
                 } else {
                     &prerequisite_assumptions

@@ -713,12 +713,15 @@ fn advance_execution_proof_statement(
                 unresolved.sort();
                 unresolved.dedup();
                 ClickError::new(format!(
-                    "`{}` loop({loop_index}) did not produce an obligation-free verified loop rule{}",
+                    "`{}` loop({loop_index}) did not produce a verified loop rule{}",
                     environment.function_block.signature().name(),
                     if unresolved.is_empty() {
                         String::new()
                     } else {
-                        format!("; unresolved verification conditions: {}", unresolved.join(", "))
+                        format!(
+                            "; unresolved verification conditions: {}",
+                            unresolved.join(", ")
+                        )
                     }
                 ))
             })?;

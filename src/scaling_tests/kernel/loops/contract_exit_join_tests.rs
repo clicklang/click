@@ -5,6 +5,83 @@
 use super::*;
 
 #[test]
+fn exit_cell_separation_shares_the_active_loan_footprint() {
+    use crate::kernel::loans::LoanLedger;
+
+    let _session = crate::kernel::VerificationSession::enter();
+    let pointer = Address::symbolic(Variable(927_000));
+    let range = |base| MemoryRange::new_with_element_width(base, 0u32.into(), 4u32.into(), 1);
+    let expected_left = Box::new(Resource::Memory(range(pointer.clone())));
+    let memory = SymbolicMemory::new().with_block(pointer.base.clone(), 4);
+    let mut samples = Vec::new();
+    for count in [4u64, 16, 64, 256] {
+        let mut ledger = LoanLedger::new();
+        let holder = ledger.fresh_participant().unwrap();
+        for index in 0..count {
+            // Include overlap with the changed cell. Construction must retain
+            // the prerequisite even here, without trying to prove it.
+            let view =
+                ResourceFact::view_memory(range(Address::symbolic(Variable(927_000 + index))));
+            let (_, occurrences) =
+                ResourceContext::new().unchecked_with_facts_and_occurrences([view.clone()]);
+            let opening = ledger
+                .borrowed_contract_input(holder, occurrences[0].1, view, None)
+                .unwrap();
+            ledger = ledger.apply(&opening.transition).unwrap();
+        }
+        let base = ExecutionState::new()
+            .with_memory(memory.clone())
+            .with_loan_ledger(Some(ledger.clone()));
+        let exits = [
+            base.clone()
+                .with_memory(memory.clone().store(pointer.clone(), int32(0))),
+            base,
+        ];
+        let mut successor = exits[0].clone();
+        let mut requirements = Vec::new();
+        let (cells, work) = crate::instrumentation::measure_deterministic_work(|| {
+            abstract_loop_exit_memory(
+                &mut successor,
+                &exits,
+                &BTreeSet::new(),
+                true,
+                &[],
+                &PureFactContext::new(),
+                &[],
+                &mut [
+                    LoopExitRestatement::default(),
+                    LoopExitRestatement::default(),
+                ],
+                &mut requirements,
+                &mut KernelVariableGenerator::fresh_for_execution(BTreeSet::new()),
+                &mut ExecutionBudget::default(),
+            )
+            .unwrap()
+        });
+        assert_eq!(cells, BTreeSet::from([pointer.clone()]));
+        assert!(successor.memory().known_value(&pointer).is_none());
+        let [requirement] = requirements.as_slice() else {
+            panic!("expected one separation condition for the dropped cell");
+        };
+        assert!(!requirement.is_assumable());
+        assert!(requirement.requires_statement_entry());
+        let expected = ledger
+            .memory_access_requirement(&range(pointer.clone()))
+            .unwrap();
+        assert_eq!(requirement.proposition(), &expected);
+        assert!(matches!(
+            requirement.proposition(),
+            Proposition::ResourceSeparate { left, .. } if left == &expected_left
+        ));
+        samples.push(work);
+    }
+    assert!(
+        samples[0] > 0 && samples.iter().all(|work| *work <= samples[0] + 16),
+        "{samples:?}"
+    );
+}
+
+#[test]
 fn contract_exit_marker_join_work_is_linear_in_exits_and_skips_ambient_cells() {
     let _session = crate::kernel::VerificationSession::enter();
     let mut samples = Vec::new();

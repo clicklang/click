@@ -7974,10 +7974,11 @@ fn project_explicit_memory_segments(
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
     require_decided_guards: bool,
-) -> ExecutionResult<Result<(Vec<MemoryRange>, ExecutionFacts), String>> {
+) -> ExecutionResult<Result<FunctionMemoryEffectProjection, String>> {
     let mut projection_assumptions = assumptions.clone();
     let mut ranges = BTreeSet::new();
     let mut evidence_facts = Vec::new();
+    let mut has_exact_write_ranges = true;
     for segment in segments {
         if let Some(guard) = segment.guard() {
             match evaluate_guarded_contract_condition(guard, entry, &projection_assumptions, budget)
@@ -7987,7 +7988,7 @@ fn project_explicit_memory_segments(
                 None if require_decided_guards => {
                     return Ok(Err("mutable footprint guard is undecided".to_string()));
                 }
-                None => {}
+                None => has_exact_write_ranges = false,
             }
         }
         match evaluate_loop_effect_segment_with_facts(
@@ -8006,7 +8007,12 @@ fn project_explicit_memory_segments(
             Err(message) => return Ok(Err(message.into())),
         }
     }
-    Ok(Ok((ranges.into_iter().collect(), evidence_facts.into())))
+    Ok(Ok(FunctionMemoryEffectProjection {
+        ranges: ranges.into_iter().collect(),
+        evidence_facts: evidence_facts.into(),
+        has_exact_write_ranges,
+        range_sources: Vec::new(),
+    }))
 }
 
 /// The canonical owned memory ranges one checked owned fact denotes, derived
@@ -8569,7 +8575,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
                 .allow_symbolic_contract_loads()
                 .prefer_symbolic_external_loads(),
             ranges: Vec::new(),
-            exact: false,
+            exact: true,
             reaches_unnamed: false,
             undefined_family: false,
             work: 0,
@@ -8581,13 +8587,6 @@ impl<'a> OwnedFootprintDerivation<'a> {
     /// it reaches has no definition in the set: the interface is malformed
     /// and the transition that needs the footprint is refused.
     fn derive(mut self, fact: &ResourceFact) -> Option<OwnedMemoryFootprint> {
-        self.exact = match fact {
-            ResourceFact::Own(Resource::Memory(_), _) => true,
-            ResourceFact::Own(Resource::Composite { .. }, quantity) => {
-                quantity.as_const() == Some(1)
-            }
-            _ => false,
-        };
         self.pending.push(OwnedFootprintTask::Fact(fact.clone()));
         while let Some(task) = self.pending.pop() {
             // Past the bound the footprint is unnamed memory, which covers
@@ -8683,14 +8682,23 @@ impl<'a> OwnedFootprintDerivation<'a> {
             self.reaches_unnamed = true;
             return false;
         }
+        self.exact &= definition.witnesses.is_empty()
+            && definition.resource_parameters.is_empty()
+            && !definition.authorized
+            && !definition.is_sealed();
         true
     }
 
     fn owned_fact(&mut self, fact: &ResourceFact) {
-        if !fact.is_own() {
+        let ResourceFact::Own(resource, quantity) = fact else {
             return;
-        }
-        match fact.resource() {
+        };
+        self.exact &= match resource {
+            Resource::Memory(_) => true,
+            Resource::Composite { .. } | Resource::Instance(_) => quantity.as_const() == Some(1),
+            _ => false,
+        };
+        match resource {
             Resource::Footprint(_) | Resource::Parameter(_) | Resource::Emp | Resource::Star(_) => {
                 self.reaches_unnamed = true;
             }
@@ -8797,11 +8805,6 @@ impl<'a> OwnedFootprintDerivation<'a> {
         if !self.enters(definition) {
             return;
         }
-        self.exact &= definition.condition.is_none()
-            && definition.witnesses.is_empty()
-            && definition.resource_parameters.is_empty()
-            && !definition.authorized
-            && !definition.is_sealed();
         if definition.instance_schema.is_some() || definition.matched.is_some() {
             self.reaches_unnamed = true;
             return;
@@ -8866,6 +8869,8 @@ impl<'a> OwnedFootprintDerivation<'a> {
             evaluation.instance_field_scope = ResourceContext::new()
                 .unchecked_with_fact(ResourceFact::own(Resource::Instance(instance)));
             evaluation.resource_bindings = None;
+        } else {
+            self.exact = false;
         }
         for ((name, _), value) in schema.fields().iter().zip(fields) {
             if let Some(AlgebraicValue::Program(value)) = value {
@@ -8891,6 +8896,9 @@ impl<'a> OwnedFootprintDerivation<'a> {
             return;
         };
         for (arm, constructor) in self.footprint_arms(definition, matched, arguments, fields) {
+            // A union of possible arms is a conservative footprint, even
+            // when each individual arm names all of its memory.
+            self.exact &= constructor.is_some();
             let mut arm_evaluation = evaluation.clone();
             if let Some(constructor) = &constructor {
                 for ((name, binding_type), value) in
@@ -8984,21 +8992,28 @@ impl<'a> OwnedFootprintDerivation<'a> {
         let mut budget = ExecutionBudget::beside_live_state();
         // An undecided guard counts the body as active: the footprint is an
         // upper bound, and a body that is not active owns nothing extra.
-        if evaluate_composite_resource_body_condition(
+        match evaluate_composite_resource_body_condition(
             definition,
             &evaluation,
             &self.evaluation_assumptions,
             &mut budget,
-        ) == Some(false)
-        {
-            return;
+        ) {
+            Some(false) => return,
+            Some(true) => {}
+            None => self.exact = false,
         }
         for spec in contains {
-            // A flat body contributes exactly its unconditional memory
-            // clauses. Other terms may project a conservative span or child.
-            self.exact &= matches!(spec.term(), ResourceTerm::Memory(segment) if segment.guard().is_none())
-                && spec.guard().is_none()
-                && spec.resource_arguments().is_empty();
+            // Direct memory and ordinary nested bodies may be exact. Each
+            // owned child records its own certainty when the worklist visits it.
+            self.exact &= spec.guard().is_none()
+                && spec.resource_arguments().is_empty()
+                && match spec.term() {
+                    ResourceTerm::Memory(segment) => segment.guard().is_none(),
+                    ResourceTerm::Composite { .. } | ResourceTerm::Instance { .. } => {
+                        spec.access() == ResourceAccessMode::Own
+                    }
+                    _ => false,
+                };
             // Abstract tokens own no memory, regardless of their quantity.
             // Footprint discovery need not prove that quantity nonnegative;
             // the actual resource exchange still checks it. A population
@@ -9071,6 +9086,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
                     let [path] = paths.as_slice() else {
                         return None;
                     };
+                    self.exact &= path.obligations.is_empty();
                     let ExpressionOutcome::Value(value) = &path.outcome else {
                         return None;
                     };
@@ -9199,13 +9215,11 @@ pub(crate) fn project_contract_memory_effects_with_guard_policy(
     // modular-call source.  Functions without resource clauses retain their
     // explicit effect segments here.
     let explicit_segments = if !interface.resource_derived_mutable_frame() {
-        let segments = interface.contract_mutable();
-        has_exact_write_ranges = segments.iter().all(|segment| segment.guard().is_none());
-        segments
+        interface.contract_mutable()
     } else {
         &[]
     };
-    let (explicit_ranges, explicit_evidence) = match project_explicit_memory_segments(
+    let explicit = match project_explicit_memory_segments(
         entry,
         explicit_segments,
         assumptions,
@@ -9215,8 +9229,9 @@ pub(crate) fn project_contract_memory_effects_with_guard_policy(
         Ok(result) => result,
         Err(message) => return Ok(Err(message)),
     };
-    ranges.extend(explicit_ranges);
-    evidence_facts.extend(explicit_evidence);
+    ranges.extend(explicit.ranges);
+    evidence_facts.extend(explicit.evidence_facts);
+    has_exact_write_ranges &= explicit.has_exact_write_ranges;
     Ok(Ok(FunctionMemoryEffectProjection {
         ranges: ranges.into_iter().collect(),
         evidence_facts: evidence_facts.into(),
@@ -9436,7 +9451,7 @@ fn evaluate_decided_contract_mutable_ranges_for_interface(
                 None => return Ok(None),
             }
         }
-        let Ok((mut projected, _)) = project_explicit_memory_segments(
+        let Ok(mut projected) = project_explicit_memory_segments(
             entry,
             std::slice::from_ref(segment),
             &guard_assumptions,
@@ -9446,7 +9461,7 @@ fn evaluate_decided_contract_mutable_ranges_for_interface(
         else {
             return Ok(None);
         };
-        let Some(range) = projected.pop() else {
+        let Some(range) = projected.ranges.pop() else {
             return Ok(None);
         };
         ranges.push(range);
