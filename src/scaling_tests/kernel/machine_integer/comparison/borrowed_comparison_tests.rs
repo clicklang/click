@@ -357,15 +357,33 @@ fn machine_comparison_and_guard_reads_are_bounded_on_hits_and_misses() {
                     operation(variable.clone(), other.clone()),
                 )
             });
+            use crate::kernel::MachineCastSpelling as C;
             let mut cast_cases = Vec::new();
-            for spelling in [
-                crate::kernel::MachineCastSpelling::Int64From32,
-                crate::kernel::MachineCastSpelling::Int64FromUInt32,
-                crate::kernel::MachineCastSpelling::UInt64FromInt32,
-                crate::kernel::MachineCastSpelling::UInt64From32,
-                crate::kernel::MachineCastSpelling::UInt32From64,
-            ] {
+            for (spelling, source, destination) in [
+                C::Int64From32,
+                C::Int64FromUInt32,
+                C::UInt64FromInt32,
+                C::UInt64From32,
+                C::UInt32From64,
+                C::UInt64FromInt64,
+            ]
+            .map(|spelling| {
                 let (source, destination) = spelling.legacy_formats().unwrap();
+                (spelling, source, destination)
+            })
+            .into_iter()
+            .chain([
+                (
+                    C::Generic,
+                    MachineIntegerType::Int32,
+                    MachineIntegerType::UInt32,
+                ),
+                (
+                    C::Generic,
+                    MachineIntegerType::UInt32,
+                    MachineIntegerType::Int32,
+                ),
+            ]) {
                 if destination != format {
                     continue;
                 }
