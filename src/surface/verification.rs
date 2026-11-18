@@ -3238,7 +3238,7 @@ struct AssumptionWalk<'a> {
 /// The closure [`verification_required_functions_with_blocks`] computes.
 /// With `report`, the walk also records the allocator functions the closure
 /// calls and follows the calls of a body a typed frontend lowered itself, so
-/// that a C++ or Rust function's library models are reported.
+/// that a C++ or Rust function's library interfaces are reported.
 fn required_functions(
     parsed_sources: &BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>,
     function_name: &str,
@@ -3338,7 +3338,7 @@ pub fn c_external_dependencies(
 /// relies on, and how many proof units are selected.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ProjectVerificationSummary {
-    /// Each function's assumed library models and `extern` contracts.
+    /// Each function's assumed library interfaces and `extern` contracts.
     pub assumptions: BTreeMap<String, Vec<ModelAssumption>>,
     /// Selected function proofs plus selected theorems.
     pub selected_proof_count: usize,

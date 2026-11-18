@@ -6,6 +6,7 @@
 - [Frequently asked questions](faq.md)
 - [What Click proves](concepts/what-click-proves.md)
 - [What Click trusts](concepts/trust.md)
+- [Library interfaces](concepts/library-interfaces.md)
 - [Language coverage](reference/coverage.md)
 - [Your first proof](concepts/first-proof.md)
 - [Verify a function in your own project](concepts/own-project.md)

@@ -95,6 +95,10 @@ evidence when possible.
 
 ## Adding standard library definitions
 
+This checklist is for a pure specification module, such as `click::list`. To
+support a function or type of a library the verified code calls, follow
+[library interfaces](../concepts/library-interfaces.md) instead.
+
 Checklist:
 
 - Add source to the `library/` module for its topic.

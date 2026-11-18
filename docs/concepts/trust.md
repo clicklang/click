@@ -28,7 +28,7 @@ are longer-term work, after those priorities (maintainer, 2026-10-14 and
 | C front end and target model | Yes | 29,000 lines of Rust | `src/languages/c` |
 | C++ and Rust import, with their pinned external front ends | Yes, for those languages | 11,000 and 8,000 lines of Rust, plus a 4,500-line C++ exporter | `src/languages/cpp`, `src/languages/rust`, `tools/cpp-exporter` |
 | Click library theorems | Proved ones are checked by `verify_standard_library`; kernel standard theorems are trusted kernel builders whose declarations it shape-checks. All are then applied without re-checking | 220 theorems, 41 of them kernel standard, in 9,658 lines | `library/` |
-| Library models: contracts for code Click does not verify | Yes: assumptions | Eight families, each reported by `click verify` ([Library models](#library-models)) | `library/c/`, `src/languages/c/`, `src/languages/cpp/standard_library.rs`, `src/languages/rust/standard_library.rs`, your sidecars |
+| Library interfaces: contracts for code Click does not verify | Yes: assumptions | Eight families, each reported by `click verify` ([Library interfaces](#library-interfaces)) | `library/c/`, `src/languages/c/`, `src/languages/cpp/standard_library.rs`, `src/languages/rust/standard_library.rs`, your sidecars |
 | CLI rendering and profiling | No: they do not decide validity | 9,500 lines of Rust | `src/bin` |
 
 Line counts exclude test files and inline `#[cfg(test)]` modules, and are
@@ -97,7 +97,7 @@ Click verifies C as it models it. The following are trusted:
 - Modeled system headers: `src/languages/c/modeled_*.h` declare `memcpy`,
   `memcmp`, `memset`, `strlen`, the allocation functions, and the selected
   pthread and atomic interfaces. They carry no executable semantics; their
-  behavior comes from the [library models](#library-models).
+  behavior comes from the [library interfaces](#library-interfaces).
 
 A verified claim says nothing about a different target, compiler flag set, or
 data layout. Click does not discover your compiler flags.
@@ -114,7 +114,7 @@ C++ and Rust code reaches Click through pinned external front ends: a Clang
 `src/languages/rust/charon-profile.json`. Clang's typed source semantics,
 Charon's translation, and Click's translators from their output are trusted.
 A C++ system-header function or a Rust core method is not translated: a
-call to one is checked against its [library model](#library-models). See
+call to one is checked against its [library interface](#library-interfaces). See
 [Experimental Rust imports](../reference/rust.md).
 
 ## The Click library
@@ -211,9 +211,13 @@ kernel reads each instance of a primitive type as a rigid type, so no
 constructor case, `match` or induction follows from its having no written
 constructors.
 
-## Library models
+## Library interfaces
 
-A library model is the contract Click assumes for code it does not verify:
+How a library interface is designed and added, and where Click still departs
+from that design, is in [library interfaces](library-interfaces.md). This
+section lists what each one assumes.
+
+A library interface is the contract Click assumes for code it does not verify:
 a C library function, the allocator, a C++ standard function, a Rust core
 method, the thread runtime, or a function you declare `extern`. Every call
 is checked against the model; that the real code meets it is assumed, not
@@ -258,7 +262,7 @@ The gate checks that this table names every family the report can print,
 every `extern` the C library declares, and each `library/cpp/` and
 `library/rust/core.click` file in its family's row; the contracts of those
 files are listed one by one in the
-[library reference](../reference/library/index.md#c-standard-library-models).
+[library reference](../reference/library/index.md#c-standard-library-interfaces).
 
 ## Your assumptions
 
@@ -266,7 +270,7 @@ Some trust comes from the sidecar itself:
 
 - An `extern` contract describes a function Click does not verify. Its
   requirements and guarantees are trusted, as every
-  [library model](#library-models) is, and `click verify` reports it with
+  [library interface](#library-interfaces) is, and `click verify` reports it with
   them.
 - A `diverges` contract drops the claim that the function returns, so the
   result is partial correctness.
@@ -283,7 +287,7 @@ Some trust comes from the sidecar itself:
 and verify the result through the ordinary entry point. This catches bugs in
 smart search, extraction, and rendering. It does not catch bugs in the kernel,
 obligation construction, the C front end, the target model, importers, or
-library models, because the same code checks the expanded proof.
+library interfaces, because the same code checks the expanded proof.
 
 Click does not serialize proof objects, and there is no independent checker
 that re-checks a proof outside Click.

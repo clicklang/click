@@ -4871,11 +4871,11 @@ impl Parser {
             && !written_instance
             && let Some(generic) = self.cpp_generic_instances.get(signature.name())
         {
-            // A sidecar states neither a library model nor an instance of it.
+            // A sidecar states neither a library interface nor an instance of it.
             if crate::languages::cpp::standard_library::is_library_generic(generic) {
                 return Err(self.error(format!(
                     "`{}` has the Click library's contract (`library/cpp/`); a sidecar does \
-                     not restate a library model",
+                     not restate a library interface",
                     crate::languages::display_source_names(signature.name())
                 )));
             }

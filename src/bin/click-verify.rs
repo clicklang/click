@@ -1723,7 +1723,7 @@ fn verify_location_within_limits(
     Ok(())
 }
 
-/// The one assumption report: each verified function's library models and
+/// The one assumption report: each verified function's library interfaces and
 /// `extern` contracts, by family, after the thread runtime the whole
 /// verification assumes.
 fn print_assumptions(
@@ -2741,7 +2741,7 @@ int32 read_first(int32 m) {
         (root, click_path)
     }
 
-    /// One report line names every library model family a C function
+    /// One report line names every library interface family a C function
     /// relies on, each tagged, from the summary's one closure walk.
     #[test]
     fn the_assumption_report_tags_each_c_library_model_family() {
