@@ -13077,7 +13077,7 @@ fn evaluate_contract_return_resource_context(
         let mut views = opened_composite_read_views(
             entry_state.resources(),
             interface.composite_resource_definitions(),
-            entry_state.memory(),
+            &entry_state.program_point(),
             assumptions,
         );
         // A folded field-bearing instance the contract's own clauses checked
@@ -13490,14 +13490,14 @@ fn evaluate_contract_return_resource_context(
 }
 
 /// The memory a context's owned composites hold, opened through their
-/// definitions over `memory`, as read views: the authority a clause set
+/// definitions at `at`, as read views: the authority a clause set
 /// gives to the addresses its own dependent clauses load, offered to an
 /// evaluation that reads the entry the way the entry itself did. Nothing is
 /// owned twice; a view grants a read and no more.
 fn opened_composite_read_views(
     resources: &ResourceContext,
     definitions: &[CompositeResourceDefinition],
-    memory: &SymbolicMemory,
+    at: &ProgramPoint,
     assumptions: &PureFactContext,
 ) -> Vec<ResourceFact> {
     if !resources
@@ -13507,12 +13507,8 @@ fn opened_composite_read_views(
     {
         return Vec::new();
     }
-    let Some(opened) = expand_all_composite_resource_facts(
-        resources,
-        definitions,
-        &crate::kernel::ProgramPoint::of_memory(memory),
-        assumptions,
-    ) else {
+    let Some(opened) = expand_all_composite_resource_facts(resources, definitions, at, assumptions)
+    else {
         return Vec::new();
     };
     opened
