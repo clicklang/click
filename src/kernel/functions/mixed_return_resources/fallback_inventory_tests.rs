@@ -168,7 +168,7 @@ fn selected_frontier_returns_keep_output_carriers_and_refuse_reuse() {
     let q = Address::symbolic(Variable(8_915_101));
     let alias = Address::symbolic(Variable(8_915_102));
     let facts = PureFactContext::new()
-        .assume_condition(ConditionTerm::pointer_equal(p.clone(), alias.clone()), true);
+        .assume_condition(ConditionTerm::address_equal(p.clone(), alias.clone()), true);
     let range = |base| MemoryRange::new(base, 0u32.into(), 2u32.into());
     let mut plan = ConsumedCellReturns::default();
     plan.retain_frontier([range(p.clone()), range(q.clone())], &facts);

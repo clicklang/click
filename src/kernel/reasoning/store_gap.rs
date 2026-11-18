@@ -290,8 +290,8 @@ mod tests {
             let field = store.offset_by_bytes(8);
             let connected = PureFactContext::new().assume_condition(
                 ConditionTerm::uint64_equal(
-                    MachineTerm::pointer_address(store.clone()),
-                    MachineTerm::pointer_address(other.clone()),
+                    MachineTerm::integer_address(store.clone()),
+                    MachineTerm::integer_address(other.clone()),
                 ),
                 true,
             );
@@ -317,8 +317,8 @@ mod tests {
             let aliased_field = other.offset_by_bytes(8);
             let overlaps = PureFactContext::new().assume_condition(
                 ConditionTerm::uint64_equal(
-                    MachineTerm::pointer_address(store.clone()),
-                    MachineTerm::pointer_address(aliased_field.clone()),
+                    MachineTerm::integer_address(store.clone()),
+                    MachineTerm::integer_address(aliased_field.clone()),
                 ),
                 true,
             );

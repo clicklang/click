@@ -393,7 +393,7 @@ impl PureFactContext {
         // comparison. Keep this projection indexed and positive only.
         if matches!(
             condition,
-            ConditionTerm::PointerEqual(..) | ConditionTerm::PointerOffsetEqual(..)
+            ConditionTerm::AddressEqual(..) | ConditionTerm::AddressOffsetEqual(..)
         ) && (self
             .equality_graph
             .admitted
@@ -407,7 +407,7 @@ impl PureFactContext {
         {
             return Some(true);
         }
-        if let ConditionTerm::PointerValueEqual(left, right) = condition {
+        if let ConditionTerm::PointerEqual(left, right) = condition {
             if let Some(value) = self.exact_condition_value(condition) {
                 return Some(value);
             }
@@ -430,7 +430,7 @@ impl PureFactContext {
             {
                 return Some(true);
             }
-            let address = self.decide(&ConditionTerm::pointer_equal(
+            let address = self.decide(&ConditionTerm::address_equal(
                 left.address().clone(),
                 right.address().clone(),
             ));
@@ -688,7 +688,7 @@ impl PureFactContext {
                 {
                     return Some(true);
                 }
-                if let ConditionTerm::PointerEqual(left, right) = condition
+                if let ConditionTerm::AddressEqual(left, right) = condition
                     && (crate::kernel::memory_history::pointer_read_has_stored_value(
                         left, right, self,
                     ) || crate::kernel::memory_history::pointer_read_has_stored_value(
@@ -718,7 +718,7 @@ impl PureFactContext {
                 // before routing to the dedicated pointer decision rules.
                 if matches!(
                     condition,
-                    ConditionTerm::PointerOffsetEqual(_, _) | ConditionTerm::PointerEqual(_, _)
+                    ConditionTerm::AddressOffsetEqual(_, _) | ConditionTerm::AddressEqual(_, _)
                 ) {
                     return self
                         .condition_facts
@@ -779,10 +779,10 @@ impl PureFactContext {
             return Some(false);
         }
         match condition {
-            ConditionTerm::PointerEqual(left, right) => self
+            ConditionTerm::AddressEqual(left, right) => self
                 .pointers_distinct_by_nullness(left, right)
                 .or_else(|| self.pointers_distinct_by_stated_separation(left, right)),
-            ConditionTerm::PointerOffsetEqual(left, right) => self
+            ConditionTerm::AddressOffsetEqual(left, right) => self
                 .offsets_distinct_by_nullness(left, right)
                 .or_else(|| self.offsets_distinct_by_stated_separation(left, right)),
             _ => None,
@@ -798,10 +798,10 @@ impl PureFactContext {
         condition: &ConditionTerm,
     ) -> Option<bool> {
         match condition {
-            ConditionTerm::PointerEqual(left, right) => {
+            ConditionTerm::AddressEqual(left, right) => {
                 self.pointers_distinct_by_stated_separation(left, right)
             }
-            ConditionTerm::PointerOffsetEqual(left, right) => {
+            ConditionTerm::AddressOffsetEqual(left, right) => {
                 self.offsets_distinct_by_stated_separation(left, right)
             }
             _ => None,
@@ -890,7 +890,7 @@ impl PureFactContext {
         if *pointer == null {
             return Some(true);
         }
-        if let Some(value) = self.exact_condition_value(&ConditionTerm::PointerEqual(
+        if let Some(value) = self.exact_condition_value(&ConditionTerm::AddressEqual(
             Box::new(pointer.clone()),
             Box::new(null.clone()),
         )) {
@@ -1342,23 +1342,20 @@ impl PureFactContext {
                         left.as_ref().clone(),
                     ))
                     .copied(),
-                ConditionTerm::PointerOffsetEqual(left, right) => self
+                ConditionTerm::AddressOffsetEqual(left, right) => self
                     .condition_facts
-                    .get(&ConditionTerm::pointer_offset_equal(
+                    .get(&ConditionTerm::address_offset_equal(
                         right.as_ref().clone(),
                         left.as_ref().clone(),
                     ))
                     .copied(),
-                ConditionTerm::PointerValueEqual(left, right) => self
-                    .condition_facts
-                    .get(&ConditionTerm::PointerValueEqual(
-                        right.clone(),
-                        left.clone(),
-                    ))
-                    .copied(),
                 ConditionTerm::PointerEqual(left, right) => self
                     .condition_facts
-                    .get(&ConditionTerm::pointer_equal(
+                    .get(&ConditionTerm::PointerEqual(right.clone(), left.clone()))
+                    .copied(),
+                ConditionTerm::AddressEqual(left, right) => self
+                    .condition_facts
+                    .get(&ConditionTerm::address_equal(
                         right.as_ref().clone(),
                         left.as_ref().clone(),
                     ))
@@ -1836,7 +1833,7 @@ impl PureFactContext {
             return Some(PointerOffsetCongruenceEvidence::Exact);
         }
         let exact_premise = Proposition::ConditionIs(
-            ConditionTerm::pointer_offset_equal(left.clone(), right.clone()),
+            ConditionTerm::address_offset_equal(left.clone(), right.clone()),
             true,
         );
         if self.contains_assumed_exact(&exact_premise) {
@@ -1845,7 +1842,7 @@ impl PureFactContext {
             )));
         }
         let mirrored_premise = Proposition::ConditionIs(
-            ConditionTerm::pointer_offset_equal(right.clone(), left.clone()),
+            ConditionTerm::address_offset_equal(right.clone(), left.clone()),
             true,
         );
         if self.contains_assumed_exact(&mirrored_premise) {
@@ -1855,7 +1852,7 @@ impl PureFactContext {
         }
         if let Some(premise) = self
             .equality_graph
-            .exact_pointer_offset_equality_source(left, right)
+            .exact_address_offset_equality_source(left, right)
         {
             return Some(PointerOffsetCongruenceEvidence::ExactPremise(Box::new(
                 premise.clone(),
@@ -2132,12 +2129,12 @@ impl PureFactContext {
                 self.simplify_bitvector_under_assumptions(value),
                 *classification,
             ),
-            ConditionTerm::PointerOffsetEqual(left, right) => {
-                ConditionTerm::pointer_offset_equal(left.as_ref().clone(), right.as_ref().clone())
+            ConditionTerm::AddressOffsetEqual(left, right) => {
+                ConditionTerm::address_offset_equal(left.as_ref().clone(), right.as_ref().clone())
             }
-            ConditionTerm::PointerValueEqual(..) => condition.clone(),
-            ConditionTerm::PointerEqual(left, right) => {
-                ConditionTerm::pointer_equal(left.as_ref().clone(), right.as_ref().clone())
+            ConditionTerm::PointerEqual(..) => condition.clone(),
+            ConditionTerm::AddressEqual(left, right) => {
+                ConditionTerm::address_equal(left.as_ref().clone(), right.as_ref().clone())
             }
             // Integer arithmetic has no memory loads; assumption-driven
             // simplification is intentionally limited to its local exact
@@ -2258,7 +2255,7 @@ impl PureFactContext {
             MachineTerm::MemoryLoad(memory, pointer, kind) => {
                 MachineTerm::MemoryLoad(memory.clone(), pointer.clone(), *kind)
             }
-            MachineTerm::PointerAddress(_, _) => term.clone(),
+            MachineTerm::IntegerAddress(_, _) => term.clone(),
             term => match (term.as_binary(), term.as_unary()) {
                 (Some((op, left, right)), _) => op.build(
                     self.simplify_bitvector_under_assumptions(left),
@@ -3267,7 +3264,7 @@ mod shared_equality_dispatch_tests {
                         );
                         let width = if case == 12 { 8 } else { 4 };
                         sources.push(Proposition::ConditionIs(
-                            ConditionTerm::pointer_offset_equal(
+                            ConditionTerm::address_offset_equal(
                                 AddressOffset::scale_int32(value, width),
                                 AddressOffset::scale_int32(
                                     MachineTerm::Variable(Variable(981003)),
@@ -3370,7 +3367,7 @@ mod shared_equality_dispatch_tests {
                 );
                 let offset = |value| AddressOffset::scaled_int32_node(value, width);
                 let source = Proposition::ConditionIs(
-                    ConditionTerm::pointer_offset_equal(
+                    ConditionTerm::address_offset_equal(
                         offset(native_product),
                         offset(MachineTerm::Variable(Variable(983003))),
                     ),
@@ -3441,7 +3438,7 @@ mod intrinsic_context_tests {
             let address = Address::symbolic(Variable(986010));
             let value = Address::symbolic(Variable(986011));
             let application = Address::loaded_value(&memory, &address);
-            let goal = ConditionTerm::PointerEqual(Box::new(value.clone()), Box::new(application));
+            let goal = ConditionTerm::AddressEqual(Box::new(value.clone()), Box::new(application));
             assert_eq!(PureFactContext::decide_intrinsically(&goal), None);
             let before = VerificationSession::capture_state();
             let producer = PureFactContext::new();
@@ -3565,7 +3562,7 @@ mod wide_observation_tag_regression {
         let one = MachineTerm::uint64_constant(1);
         let next = MachineTerm::uint64_add(x.clone(), one.clone());
         let tagged = MachineTerm::uint64_add(
-            MachineTerm::pointer_address(Address::symbolic(Variable(993803))),
+            MachineTerm::integer_address(Address::symbolic(Variable(993803))),
             one,
         );
         let observed = |value: &MachineTerm| {

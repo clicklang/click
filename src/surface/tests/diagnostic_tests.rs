@@ -36,7 +36,7 @@ fn full_and_concise_reports_keep_named_pointer_prerequisites() {
     };
     let pointer = |p: &Address| Pointer::new(p.clone(), ProgramType::Int32Pointer);
     let requirement = Proposition::ConditionIs(
-        ConditionTerm::PointerValueEqual(
+        ConditionTerm::PointerEqual(
             Box::new(pointer(&names.node)),
             Box::new(pointer(&names.identity)),
         ),
@@ -1576,7 +1576,7 @@ fn empty_footprint_rejects_a_fact_aliased_write_and_effect_range() {
     let after = before.clone().store(alias.clone(), int32(1));
     let pre_state = ExecutionState::new().with_memory(before.clone());
     let aliases_global =
-        Proposition::ConditionIs(ConditionTerm::pointer_equal(alias.clone(), global), true);
+        Proposition::ConditionIs(ConditionTerm::address_equal(alias.clone(), global), true);
     let facts = [
         ExecutionPureFact::new(Proposition::MemoryMutatesOnly {
             before: before.clone(),

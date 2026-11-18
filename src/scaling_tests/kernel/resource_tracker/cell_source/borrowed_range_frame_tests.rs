@@ -86,7 +86,7 @@ fn borrowed_range_frame_is_indexed_full_width_and_authority_scoped() {
             typed_range_disjoint_from_pointer_evidence(&wider_range, &field, 8, &context).is_none()
         );
         let overlapping = context.clone().assume_condition(
-            ConditionTerm::pointer_equal(backing.base().clone(), field.clone()),
+            ConditionTerm::address_equal(backing.base().clone(), field.clone()),
             true,
         );
         assert!(!proof.checks(&backing, &field, 8, &overlapping));

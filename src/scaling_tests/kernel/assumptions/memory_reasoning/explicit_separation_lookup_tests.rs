@@ -33,7 +33,7 @@ fn explicit_separation_lookup_reads_only_related_blocks() {
         context =
             context.assume_proposition(separation(narrow(model.clone()), narrow(node.clone())));
         context =
-            context.assume_condition(ConditionTerm::pointer_equal(alias.clone(), model), true);
+            context.assume_condition(ConditionTerm::address_equal(alias.clone(), model), true);
         let (separate, separate_work) = crate::instrumentation::measure_deterministic_work(|| {
             context.memory_ranges_proven_disjoint_by_explicit_separation_for_memory_resolution(
                 &narrow(alias.clone()),
@@ -96,9 +96,9 @@ fn wide_separation_lookup_ignores_unrelated_wide_facts() {
         }
         context = context
             .assume_proposition(separation(wide(left.clone()), wide(right.clone())))
-            .assume_condition(ConditionTerm::pointer_equal(left_alias.clone(), left), true)
+            .assume_condition(ConditionTerm::address_equal(left_alias.clone(), left), true)
             .assume_condition(
-                ConditionTerm::pointer_equal(right_alias.clone(), right),
+                ConditionTerm::address_equal(right_alias.clone(), right),
                 true,
             );
         let (answers, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -152,7 +152,7 @@ fn wide_separation_lookup_scales_with_its_related_alias_chain() {
         for index in 1..=size {
             for side in [0, 1] {
                 context = context.assume_condition(
-                    ConditionTerm::pointer_equal(
+                    ConditionTerm::address_equal(
                         pointer(2 * index + side),
                         pointer(2 * (index - 1) + side),
                     ),

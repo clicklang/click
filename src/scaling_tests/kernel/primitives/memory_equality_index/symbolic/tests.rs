@@ -12,7 +12,7 @@ fn symbolic_footprint_selection_does_not_scan_same_base_ranges() {
     let n = MachineTerm::Variable(Variable(920_002));
     let empty = PureFactContext::new();
     let facts = empty.clone().assume_condition(
-        ConditionTerm::pointer_equal(base.clone(), alias.clone()),
+        ConditionTerm::address_equal(base.clone(), alias.clone()),
         true,
     );
     let mut samples = Vec::new();
@@ -80,7 +80,7 @@ fn symbolic_byte_read_consumer_refuses_ambiguous_suppliers_without_search() {
     let facts = empty
         .clone()
         .assume_condition(
-            ConditionTerm::pointer_equal(base.clone(), alias.clone()),
+            ConditionTerm::address_equal(base.clone(), alias.clone()),
             true,
         )
         .assume_condition(

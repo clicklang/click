@@ -3074,7 +3074,7 @@ fn collect_pointer_bound_variables(pointer: &Address, variables: &mut BTreeSet<V
         AddressBase::PureFunctionApplication(_) => {
             collect_proposition_capture_variables(
                 &Proposition::ConditionIs(
-                    ConditionTerm::PointerEqual(
+                    ConditionTerm::AddressEqual(
                         Box::new(pointer.clone()),
                         Box::new(pointer.clone()),
                     ),
@@ -3474,7 +3474,7 @@ fn collect_bitvector_bound_variables(term: &MachineTerm, variables: &mut BTreeSe
             collect_memory_bitvector_variables(memory.memory(), variables);
             collect_pointer_offset_bound_variables(&pointer.offset, variables);
         }
-        MachineTerm::PointerAddress(pointer, _) => {
+        MachineTerm::IntegerAddress(pointer, _) => {
             collect_pointer_offset_bound_variables(&pointer.offset, variables);
         }
         MachineTerm::IntegerToMachine { value, .. } => {
@@ -3575,7 +3575,7 @@ fn collect_condition_bound_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     match condition {
-        ConditionTerm::PointerValueEqual(left, right) => {
+        ConditionTerm::PointerEqual(left, right) => {
             for pointer in left.pointers().chain(right.pointers()) {
                 collect_pointer_offset_bound_variables(&pointer.offset, variables);
             }
@@ -3606,11 +3606,11 @@ fn collect_condition_bound_variables(
             float_condition
                 .for_each_bitvector_term(|term| collect_bitvector_bound_variables(term, variables));
         }
-        ConditionTerm::PointerOffsetEqual(left, right) => {
+        ConditionTerm::AddressOffsetEqual(left, right) => {
             collect_pointer_offset_bound_variables(left, variables);
             collect_pointer_offset_bound_variables(right, variables);
         }
-        ConditionTerm::PointerEqual(left, right) => {
+        ConditionTerm::AddressEqual(left, right) => {
             collect_pointer_offset_bound_variables(&left.offset, variables);
             collect_pointer_offset_bound_variables(&right.offset, variables);
         }
@@ -5549,9 +5549,9 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_common_condition(
                     ],
                 ));
             }
-            if let crate::kernel::KernelTermNode::PointerOffsetEqual { arguments } = leaf.node() {
+            if let crate::kernel::KernelTermNode::AddressOffsetEqual { arguments } = leaf.node() {
                 let offsets = map_common_substitution_offsets(arguments, &mut map_machine)?;
-                return Ok(KernelTerm::pointer_offset_equal(offsets));
+                return Ok(KernelTerm::address_offset_equal(offsets));
             }
             let mut map_address = |address: &crate::kernel::SharedAddress| {
                 if matches!(
@@ -5585,15 +5585,15 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_common_condition(
                     map_address(address)?,
                 ));
             }
-            if let crate::kernel::KernelTermNode::PointerValueEqual(pair) = leaf.node() {
+            if let crate::kernel::KernelTermNode::PointerEqual(pair) = leaf.node() {
                 let [a, b] = pair.arguments();
-                return Ok(KernelTerm::pointer_value_equal_raw([
+                return Ok(KernelTerm::pointer_equal_raw([
                     a.map_condition_addresses(&mut map_address)?,
                     b.map_condition_addresses(&mut map_address)?,
                 ]));
             }
-            if let crate::kernel::KernelTermNode::PointerEqual { arguments } = leaf.node() {
-                return Ok(KernelTerm::pointer_equal([
+            if let crate::kernel::KernelTermNode::AddressEqual { arguments } = leaf.node() {
+                return Ok(KernelTerm::address_equal([
                     map_address(&arguments[0])?,
                     map_address(&arguments[1])?,
                 ]));
@@ -5615,14 +5615,14 @@ pub(in crate::kernel) fn substitute_pointer_variable_in_common_condition(
     if crate::kernel::BooleanOperandView::Shared(condition).is_bool_value_form()
         || matches!(
             condition.node(),
-            crate::kernel::KernelTermNode::PointerValueEqual(_)
+            crate::kernel::KernelTermNode::PointerEqual(_)
         )
     {
         return crate::kernel::proof::term_rewrite::substitute_pointer_boolean_value(
             condition, from, to,
         );
     }
-    if let crate::kernel::KernelTermNode::PointerEqual { arguments } = condition.node() {
+    if let crate::kernel::KernelTermNode::AddressEqual { arguments } = condition.node() {
         use crate::kernel::{
             KernelAddressOffset as O, SharedAddress as A, SharedAddressBase,
             SharedAddressOffset as S,
@@ -5660,14 +5660,14 @@ pub(in crate::kernel) fn substitute_pointer_variable_in_common_condition(
                 None => address.clone(),
             });
         }
-        return Some(KernelTerm::pointer_equal([
+        return Some(KernelTerm::address_equal([
             mapped[0].clone(),
             mapped[1].clone(),
         ]));
     }
     if matches!(
         condition.node(),
-        crate::kernel::KernelTermNode::PointerOffsetEqual { .. }
+        crate::kernel::KernelTermNode::AddressOffsetEqual { .. }
     ) {
         return Some(condition.clone());
     }
@@ -5773,15 +5773,15 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_condition(
             substitute_bitvector_variable(value, from, to),
             *classification,
         ),
-        ConditionTerm::PointerOffsetEqual(left, right) => ConditionTerm::pointer_offset_equal(
+        ConditionTerm::AddressOffsetEqual(left, right) => ConditionTerm::address_offset_equal(
             substitute_bitvector_variable_in_pointer_offset(left, from, to),
             substitute_bitvector_variable_in_pointer_offset(right, from, to),
         ),
-        ConditionTerm::PointerValueEqual(left, right) => ConditionTerm::PointerValueEqual(
+        ConditionTerm::PointerEqual(left, right) => ConditionTerm::PointerEqual(
             Box::new(left.map_pointers(|p| substitute_bitvector_variable_in_pointer(p, from, to))),
             Box::new(right.map_pointers(|p| substitute_bitvector_variable_in_pointer(p, from, to))),
         ),
-        ConditionTerm::PointerEqual(left, right) => ConditionTerm::pointer_equal(
+        ConditionTerm::AddressEqual(left, right) => ConditionTerm::address_equal(
             substitute_bitvector_variable_in_pointer(left, from, to),
             substitute_bitvector_variable_in_pointer(right, from, to),
         ),
@@ -6084,7 +6084,7 @@ pub(crate) fn substitute_bitvector_variable(
                 read.bytes,
             )
         }
-        MachineTerm::PointerAddress(pointer, class) => MachineTerm::object_pointer_address(
+        MachineTerm::IntegerAddress(pointer, class) => MachineTerm::object_pointer_address(
             substitute_bitvector_variable_in_pointer(pointer, from, to),
             class.class(),
         ),
@@ -6905,11 +6905,11 @@ fn substitute_pointer_variable_in_condition(
                 right, from, to,
             )),
         ),
-        ConditionTerm::PointerValueEqual(..) => {
+        ConditionTerm::PointerEqual(..) => {
             crate::kernel::proof::term_rewrite::TermRewrite::for_pointer_variable(from, to)
                 .condition(condition)
         }
-        ConditionTerm::PointerEqual(left, right) => ConditionTerm::pointer_equal(
+        ConditionTerm::AddressEqual(left, right) => ConditionTerm::address_equal(
             substitute_pointer_variable_in_pointer(left, from, to),
             substitute_pointer_variable_in_pointer(right, from, to),
         ),
@@ -8360,7 +8360,7 @@ mod machine_integer_pointer_substitution_tests {
             offset: AddressOffset::Constant(12),
         };
         let bits =
-            MachineTerm::PointerAddress(Box::new(source), crate::kernel::AddressObjectClass::NONE);
+            MachineTerm::IntegerAddress(Box::new(source), crate::kernel::AddressObjectClass::NONE);
         let term =
             IntegerTerm::from_machine(crate::kernel::MachineIntegerType::UInt64, bits.clone())
                 .unwrap();
@@ -8378,7 +8378,7 @@ mod machine_integer_pointer_substitution_tests {
         };
         assert_eq!(
             observation.value(),
-            &MachineTerm::PointerAddress(
+            &MachineTerm::IntegerAddress(
                 Box::new(expected.clone()),
                 crate::kernel::AddressObjectClass::NONE
             )
@@ -8402,7 +8402,7 @@ mod machine_integer_pointer_substitution_tests {
         };
         assert_eq!(
             *value,
-            SpecExpression::Value(ProgramValue::UInt64(MachineTerm::PointerAddress(
+            SpecExpression::Value(ProgramValue::UInt64(MachineTerm::IntegerAddress(
                 Box::new(expected),
                 crate::kernel::AddressObjectClass::NONE,
             )))
@@ -8963,7 +8963,7 @@ mod integer_mixed_quantifier_tests {
         let inner_pointer = Variable(9_222);
         let replacement = IntegerTerm::from_machine(
             MachineIntegerType::UInt64,
-            MachineTerm::PointerAddress(
+            MachineTerm::IntegerAddress(
                 Box::new(Address::symbolic(inner_pointer)),
                 crate::kernel::AddressObjectClass::NONE,
             ),

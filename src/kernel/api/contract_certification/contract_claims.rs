@@ -2828,9 +2828,9 @@ pub(crate) fn completion_key(proposition: &Proposition) -> Proposition {
                 left,
                 right,
             } => left == right,
+            ConditionTerm::AddressEqual(left, right) => left == right,
             ConditionTerm::PointerEqual(left, right) => left == right,
-            ConditionTerm::PointerValueEqual(left, right) => left == right,
-            ConditionTerm::PointerOffsetEqual(left, right) => left == right,
+            ConditionTerm::AddressOffsetEqual(left, right) => left == right,
             _ => false,
         }
     }

@@ -3476,7 +3476,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     if matches!(
                         search_input.goal(),
                         Some(Proposition::ConditionIs(
-                            ConditionTerm::PointerEqual(..) | ConditionTerm::PointerValueEqual(..),
+                            ConditionTerm::AddressEqual(..) | ConditionTerm::PointerEqual(..),
                             true
                         ))
                     ) && proof.ends_in_empty_normalize_using() =>
@@ -3963,9 +3963,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                                     format: MachineIntegerType::Int64,
                                     relation: CompareRelation::Equal,
                                     ..
-                                } | ConditionTerm::PointerValueEqual(..)
-                                    | ConditionTerm::PointerEqual(..)
-                                    | ConditionTerm::PointerOffsetEqual(..)
+                                } | ConditionTerm::PointerEqual(..)
+                                    | ConditionTerm::AddressEqual(..)
+                                    | ConditionTerm::AddressOffsetEqual(..)
                                     | ConditionTerm::Float32(FloatCondition::Classification { .. })
                                     | ConditionTerm::Float64(FloatCondition::Classification { .. }),
                                 true
@@ -4631,7 +4631,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if matches!(
             search_input.goal(),
             Some(Proposition::ConditionIs(
-                ConditionTerm::PointerEqual(..) | ConditionTerm::PointerValueEqual(..),
+                ConditionTerm::AddressEqual(..) | ConditionTerm::PointerEqual(..),
                 true
             ))
         ) && let Ok(proof) = crate::kernel::search::ProofSearch::apply_normalization_closure(
@@ -7723,7 +7723,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // which cannot name that value at all.
         let pointer_goal = matches!(
             search_input.goal(),
-            Some(Proposition::ConditionIs(ConditionTerm::PointerEqual(..), _))
+            Some(Proposition::ConditionIs(ConditionTerm::AddressEqual(..), _))
         );
         if pointer_goal
             && let Some(surface) = surface_facts
@@ -8236,7 +8236,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // every historical pointer fact about that object, even when
         // none mentions an offset operand of this comparison.
         let equality_candidates = match &goal {
-            Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), value)
+            Proposition::ConditionIs(ConditionTerm::AddressEqual(left, right), value)
                 if left.base == right.base =>
             {
                 // External arguments share a block and carry the
@@ -8263,7 +8263,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 proof
                     .facts()
                     .load_equalities_mentioning(&Proposition::ConditionIs(
-                        ConditionTerm::PointerOffsetEqual(
+                        ConditionTerm::AddressOffsetEqual(
                             Box::new(left.clone()),
                             Box::new(right.clone()),
                         ),
@@ -10684,14 +10684,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         crate::kernel::search::record_discovery("try_selected_pointer_inequality_rewrite");
         if !matches!(
             goal,
-            Proposition::ConditionIs(ConditionTerm::PointerEqual(_, _), false)
+            Proposition::ConditionIs(ConditionTerm::AddressEqual(_, _), false)
         ) {
             return None;
         }
         for (kernel, source) in premises {
             if !matches!(
                 kernel,
-                Proposition::ConditionIs(ConditionTerm::PointerEqual(_, _), true)
+                Proposition::ConditionIs(ConditionTerm::AddressEqual(_, _), true)
             ) {
                 continue;
             }

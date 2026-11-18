@@ -181,10 +181,7 @@ mod tests {
         Pointer::new(Address::symbolic(Variable(id)), ProgramType::Int32Pointer)
     }
     fn equal(facts: PureFactContext, a: &Pointer, b: &Pointer) -> PureFactContext {
-        facts.assume_condition(
-            ConditionTerm::pointer_value_equal(a.clone(), b.clone()),
-            true,
-        )
+        facts.assume_condition(ConditionTerm::pointer_equal(a.clone(), b.clone()), true)
     }
     fn member(parent: &Pointer) -> Pointer {
         parent
@@ -251,7 +248,7 @@ mod tests {
         let selected = member(&parent);
         let returned = pointer(997_012);
         let numeric = PureFactContext::new().assume_condition(
-            ConditionTerm::pointer_equal(returned.address().clone(), selected.address().clone()),
+            ConditionTerm::address_equal(returned.address().clone(), selected.address().clone()),
             true,
         );
         assert_eq!(numeric.pointer_domain(&returned), PointerDomain::Unknown);

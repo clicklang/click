@@ -221,7 +221,7 @@ fn check_narrow_store_equation(format: Ty) {
             .machine_arithmetic(format, &read)
             .unwrap();
         let empty = PureFactContext::new().assume_condition(
-            ConditionTerm::pointer_equal(pointer.clone(), query.clone()),
+            ConditionTerm::address_equal(pointer.clone(), query.clone()),
             true,
         );
         assert!(
@@ -262,7 +262,7 @@ fn check_narrow_store_equation(format: Ty) {
                 &stored
             ));
             let after_alias = before_alias.assume_condition(
-                ConditionTerm::pointer_equal(pointer.clone(), query.clone()),
+                ConditionTerm::address_equal(pointer.clone(), query.clone()),
                 true,
             );
             assert!(narrow_equal(

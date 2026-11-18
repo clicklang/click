@@ -611,7 +611,7 @@ sequence below. These rows record planned scope, not completed implementation.
 | 10m | Migrate algebraic field and match-result storage. | Fields and match results retain shared values with existing constructor/arm identity and producer metadata. | Landed in [PR #3169](https://github.com/clicklang/click/pull/3169); all four pushed commits verified on upstream. |
 | 10n | Migrate theorem argument and recorded-state value storage. | Stored arguments and recorded values retain shared operands with unchanged substitution and state selection. | Landed in [PR #3181](https://github.com/clicklang/click/pull/3181); all six pushed commits verified on upstream. Validation and program-point integration evidence below. |
 | 10o | Migrate program-valued resource-field storage. | Program-valued fields retain shared operands while preserving resource identity and substitution. | Landed in [PR #3213](https://github.com/clicklang/click/pull/3213); all pushed commits verified on upstream. Local validation and final 648-check upstream integration passed. |
-| 10p | Migrate remaining expression payloads in sequence/resource descriptors. | Inventory and subdivide independent families before implementation; preserve legitimate opaque descriptor identities. | Planned; family split may be needed. |
+| 10p | Migrate remaining expression payloads in sequence/resource descriptors. | Inventory and subdivide independent families before implementation; preserve legitimate opaque descriptor identities. | In progress; family split below is authoritative. 10p1 and 10p2a landed; 10p2b landed in PR #3233; 10p3 is PR #3246; 10p4–10p6 remain. |
 | 10q | Migrate remaining native expression payloads in proposition outputs. | Proposition outputs retain shared operands with unchanged fact identity, raising/lowering and proof admission. | Planned. |
 | 10r | Remove obsolete machine compatibility caches and reverse bridges. | Remove only after their live readers migrate; account for any retained reader and reason. | Planned; after affected consumers. |
 | 10s | Remove obsolete Boolean, float and algebraic compatibility caches. | Remove only after their live readers migrate; preserve explicit native input/output boundaries. | Planned; after affected consumers. |
@@ -1065,8 +1065,8 @@ not a change to proof rules or snapshot architecture.
 | Subslice | Owning stores | Status |
 | --- | --- | --- |
 | 10p1 | `SequenceTermNode::Literal` evaluated elements and their evaluator/substitution handoffs. | Landed in [PR #3217](https://github.com/clicklang/click/pull/3217); all pushed commits verified upstream; 437 focused checks, all 1,909 regular scaling cases, selected proofs, fact stability and quality passed. |
-| 10p2 | Composite/token/instance `ResourceArguments`, `ResourceDescription` arguments and remaining Integer/algebraic resource fields. Preserve argument order, native identity classes and nominal resource identities. | Split: 10p2a landed in [PR #3220](https://github.com/clicklang/click/pull/3220); all seven pushed commits verified upstream; it implements Integer/algebraic fields (413 focused checks, all 1,915 regular scaling cases, resource-field proofs, fact stability and quality passed); 10p2b is published as [PR #3233](https://github.com/clicklang/click/pull/3233), with auto-merge requested; it implements argument stores (427 focused checks, all 1,917 regular scaling cases and quality passed; full regular proofs/fact stability passed). |
-| 10p3 | `MemoryRange` bounds and `AllocationSize` byte counts. Preserve signed/wide reading, bound provenance and existing identity/hash contracts. | Inventoried; pending. |
+| 10p2 | Composite/token/instance `ResourceArguments`, `ResourceDescription` arguments and remaining Integer/algebraic resource fields. Preserve argument order, native identity classes and nominal resource identities. | Split: 10p2a landed in [PR #3220](https://github.com/clicklang/click/pull/3220); all seven pushed commits verified upstream; it implements Integer/algebraic fields (413 focused checks, all 1,915 regular scaling cases, resource-field proofs, fact stability and quality passed); 10p2b landed in [PR #3233](https://github.com/clicklang/click/pull/3233), with all six pushed commits verified upstream; it implements argument stores (427 focused checks, all 1,917 regular scaling cases and quality passed; full regular proofs/fact stability passed). |
+| 10p3 | `MemoryRange` bounds and `AllocationSize` byte counts. Preserve signed/wide reading, bound provenance and existing identity/hash contracts. | Published as [PR #3246](https://github.com/clicklang/click/pull/3246), with auto-merge requested; 525 focused checks, all 1,919 regular scaling cases, 14 selected proofs, fact stability and quality passed; isolated upstream baseline limitation below. |
 | 10p4 | `IteratedMemory` endpoints, guard comparison value and selected holes. Preserve checked ownership transitions and opaque owner/address identities. | Inventoried; pending. |
 | 10p5 | `PublicationRight::observed` and `ConditionalMutexGuard::held`. Preserve channel/acquisition identities and protocol rules. | Inventoried; pending. |
 | 10p6 | `ResourceFact::Own` quantity. Preserve counting semantics and existing resource identity readers. | Inventoried; pending. |
@@ -1150,6 +1150,48 @@ terms or selected paths in the fact-stability report (121 legitimate refusals).
 After integrating upstream `f94b8b852`, all 427 focused checks, 24 selected
 entry/resource-field proof fixtures, fact stability and quality passed again.
 Full nightly was not run.
+
+### 10p3 Common range and allocation operands
+
+`MemoryRange` bounds and `AllocationSize` bytes now retain one immutable
+`StoredMachineTerm` carrier: exact native DTO input or an existing common
+program root. The wrapper adds no native cache; selected legacy readers reuse
+the root's existing compatibility slot. Native structural Eq/Ord/Hash/debug
+remain the descriptor contract, including raw versus typed constants. Range
+clone/rebase/spatial-key handoffs preserve roots and carrier metadata.
+
+The specification resource evaluator retains same-format Int32 and UInt64
+bounds directly. Mixed/signed-wide conversion and narrow-constant handling
+keep their existing explicit native boundary. Allocation token creation and
+size recovery retain shared byte-count operands. Source segment expressions,
+addresses, bound provenance and allocation identities remain legitimate inputs
+or metadata; native arithmetic/query/substitution APIs remain selected readers.
+
+The evaluator regression was red with six machine exports; the first fixed
+build passed all 524 focused checks. Native exact-syntax tests and growing-DAG
+range/token/size handoffs passed. Final width-refusal checks ensure a query for
+the wrong format returns before requesting native output. All 1,918 regular
+scaling cases and all 524 focused checks passed on the final tree. All 14 selected
+wide-range/allocation proofs, fact stability (zero changed terms/paths), and
+quality passed. After integrating upstream `f94b8b852` and the resource-argument
+slice, all 524 affected checks and quality passed again. No syntax, proof-rule,
+search-budget or snapshot change.
+
+Final review caught an unsafe equal-value shortcut in the native byte mapper:
+two call arguments can have the same observation ID but different producer
+payloads. The new regression failed on the exact returned argument payload;
+the mapper now always retains its native callback's exact result. On this final
+upstream-integrated tree, all 525 focused checks, all 1,919 regular scaling
+checks (two isolated and 1,917 remaining), all 14 selected proofs, fact stability
+(zero changed terms/paths) and quality passed. Native rewrite callbacks remain
+explicit compatibility boundaries; no equality rule changed.
+
+After merging upstream `58b0c2c9e`, all 525 focused checks and quality passed
+again. The additional isolated external-claim fixture fails on the unchanged
+upstream tree with the same separation obligation; it is a baseline limitation,
+not counted as a passing check. The direct-reader and native-producer isolation
+experiments were reverted, and its C/proof source remains unchanged. No new
+checker rule, index, budget, syntax or snapshot change was introduced.
 
 ## Chunk 3: machine-valued pure-function results
 

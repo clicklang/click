@@ -721,7 +721,7 @@ fn symbolic_address_bases_do_not_imply_non_aliasing() {
     };
 
     assert_eq!(
-        PureFactContext::new().decide(&ConditionTerm::pointer_equal(symbolic, concrete)),
+        PureFactContext::new().decide(&ConditionTerm::address_equal(symbolic, concrete)),
         None
     );
 }
@@ -3420,7 +3420,7 @@ fn loop_join_accepts_null_without_restoring_an_object_class() {
     let null = Pointer::new(Address::null(), ProgramType::Int32Pointer);
     let empty = PureFactContext::new();
     let known_null = empty.clone().assume_condition(
-        ConditionTerm::pointer_equal(unknown.address().clone(), Address::null()),
+        ConditionTerm::address_equal(unknown.address().clone(), Address::null()),
         true,
     );
     for (pointer, facts) in [(null, &empty), (unknown.clone(), &known_null)] {
@@ -3433,7 +3433,7 @@ fn loop_join_accepts_null_without_restoring_an_object_class() {
     let back = ExecutionState::new().with_local("parent", ProgramValue::Pointer(unknown.clone()));
     assert!(loop_state_components_match_at_back_edge(&head, &back, &empty, &[]).is_err());
     let nonnull = empty.assume_condition(
-        ConditionTerm::pointer_equal(unknown.address().clone(), Address::null()),
+        ConditionTerm::address_equal(unknown.address().clone(), Address::null()),
         false,
     );
     assert!(loop_state_components_match_at_back_edge(&head, &back, &nonnull, &[]).is_err());

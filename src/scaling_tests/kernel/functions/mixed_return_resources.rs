@@ -25,7 +25,7 @@ fn executed_body_return_axis(axis: &str) {
         let end = MachineTerm::Variable(Variable(9_920_000));
         let mut facts = PureFactContext::new()
             .assume_condition(
-                ConditionTerm::pointer_equal(pointer.clone(), neighbor.clone()),
+                ConditionTerm::address_equal(pointer.clone(), neighbor.clone()),
                 true,
             )
             .assume_condition(
@@ -46,7 +46,7 @@ fn executed_body_return_axis(axis: &str) {
             match axis {
                 "cross-block aliases" | "same-block aliases" => {
                     facts = facts.assume_condition(
-                        ConditionTerm::pointer_equal(pointer.clone(), other(index)),
+                        ConditionTerm::address_equal(pointer.clone(), other(index)),
                         true,
                     );
                 }
@@ -233,7 +233,7 @@ fn early_return_group_alias_work(symbolic_end: bool) -> Vec<[usize; 3]> {
             }
             for index in 0..count {
                 facts = facts.assume_condition(
-                    ConditionTerm::pointer_equal(
+                    ConditionTerm::address_equal(
                         pointer.clone(),
                         Address::symbolic(Variable(9_810_000 + index)),
                     ),
@@ -312,7 +312,7 @@ fn mixed_return_composition_ignores_related_aliases_and_retained_owners() {
                 match axis {
                     "aliases" => {
                         facts = facts.assume_condition(
-                            ConditionTerm::pointer_equal(pointer.clone(), other(index)),
+                            ConditionTerm::address_equal(pointer.clone(), other(index)),
                             true,
                         )
                     }
@@ -470,7 +470,7 @@ fn consumed_scalar_return_ignores_aliases_and_retained_owners() {
                 match axis {
                     "aliases" | "same block aliases" => {
                         facts = facts.assume_condition(
-                            ConditionTerm::pointer_equal(pointer.clone(), other(index)),
+                            ConditionTerm::address_equal(pointer.clone(), other(index)),
                             true,
                         )
                     }
@@ -568,7 +568,7 @@ fn mixed_occurrence_transfers_ignore_ambient_aliases_and_owners() {
                         other
                     };
                     facts = facts.assume_condition(
-                        ConditionTerm::pointer_equal(pointer.clone(), alias),
+                        ConditionTerm::address_equal(pointer.clone(), alias),
                         true,
                     );
                 }
@@ -818,7 +818,7 @@ fn fixed_range_transfer_work_ignores_length_aliases_and_retained_owners() {
                             }
                         };
                         facts = facts.assume_condition(
-                            ConditionTerm::pointer_equal(pointer.clone(), alias),
+                            ConditionTerm::address_equal(pointer.clone(), alias),
                             true,
                         );
                     }
@@ -908,7 +908,7 @@ fn fresh_allocation_returns_ignore_creation_history_aliases_and_retained_owners(
                     }
                     "aliases" => {
                         facts = facts.assume_condition(
-                            ConditionTerm::pointer_equal(
+                            ConditionTerm::address_equal(
                                 pointer.clone(),
                                 Address::symbolic(Variable(8_940_000 + u64::from(index))),
                             ),
@@ -1097,7 +1097,7 @@ fn flat_return_body_consumers_scale_with_output_and_ignore_ambient_state() {
                     }
                     "aliases" => {
                         facts = facts.assume_condition(
-                            ConditionTerm::pointer_equal(pointer.clone(), other),
+                            ConditionTerm::address_equal(pointer.clone(), other),
                             true,
                         )
                     }
@@ -1185,7 +1185,7 @@ fn flat_body_admission_ignores_retained_owners_and_aliases_on_hits_refusals_and_
                     match axis {
                         "aliases" => {
                             facts = facts.assume_condition(
-                                ConditionTerm::pointer_equal(pointer.clone(), other),
+                                ConditionTerm::address_equal(pointer.clone(), other),
                                 true,
                             )
                         }
@@ -1329,7 +1329,7 @@ fn composite_transfer_consumers_ignore_unrelated_inputs_aliases_and_creation_his
                 events = events.created(AddressBase::Heap(8_960_000 + u64::from(index)));
                 let alias = Address::symbolic(Variable(8_841_000 + u64::from(index)));
                 facts = facts
-                    .assume_condition(ConditionTerm::pointer_equal(pointer.clone(), alias), true);
+                    .assume_condition(ConditionTerm::address_equal(pointer.clone(), alias), true);
                 frame = frame.unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
                     Address::symbolic(Variable(8_842_000 + u64::from(index))),
                     0u32.into(),
@@ -1680,7 +1680,7 @@ fn existential_return_construction_scales_with_its_body_and_ignores_ambient_stat
                 match axis {
                     "aliases" => {
                         facts = facts.assume_condition(
-                            ConditionTerm::pointer_equal(pointer.clone(), other),
+                            ConditionTerm::address_equal(pointer.clone(), other),
                             true,
                         )
                     }
@@ -1769,7 +1769,7 @@ fn recursive_return_frontiers_ignore_depth_aliases_and_retained_state() {
                     match axis {
                         "aliases" => {
                             facts = facts.assume_condition(
-                                ConditionTerm::pointer_equal(pointer.clone(), other),
+                                ConditionTerm::address_equal(pointer.clone(), other),
                                 true,
                             )
                         }
@@ -1947,7 +1947,7 @@ fn specialized_return_producers_ignore_retained_state_and_scale_with_their_bodie
                             }
                             "aliases" => {
                                 facts = facts.assume_condition(
-                                    ConditionTerm::pointer_equal(pointer.clone(), other),
+                                    ConditionTerm::address_equal(pointer.clone(), other),
                                     true,
                                 )
                             }
@@ -2202,7 +2202,7 @@ fn ordinary_return_construction_and_normalization_ignore_alias_history() {
             let mut facts = PureFactContext::new();
             for index in 0..count {
                 facts = facts.assume_condition(
-                    ConditionTerm::pointer_equal(
+                    ConditionTerm::address_equal(
                         p.clone(),
                         Address::symbolic(Variable(8_914_100 + u64::from(index))),
                     ),
@@ -2272,7 +2272,7 @@ fn summary_transfer_construction_scales_with_clauses_not_retained_owners_or_alia
                 match axis {
                     "aliases" | "same-block aliases" => {
                         facts = facts.assume_condition(
-                            ConditionTerm::pointer_equal(
+                            ConditionTerm::address_equal(
                                 first.memory_own_range().unwrap().base().clone(),
                                 pointer,
                             ),
@@ -2416,7 +2416,7 @@ fn composite_parameter_footprints_scale_with_parts_not_the_frame_or_alias_classe
                 match axis {
                     "aliases" | "same-block aliases" => {
                         facts = facts.assume_condition(
-                            ConditionTerm::pointer_equal(
+                            ConditionTerm::address_equal(
                                 first.memory_own_range().unwrap().base().clone(),
                                 pointer,
                             ),
@@ -2557,7 +2557,7 @@ fn verified_output_partition_does_not_discover_the_callers_frame() {
                 let other = Address::symbolic(Variable(9_999_100 + i));
                 if aliases {
                     facts = facts.assume_condition(
-                        ConditionTerm::pointer_equal(pointer.clone(), other),
+                        ConditionTerm::address_equal(pointer.clone(), other),
                         true,
                     );
                 } else {
@@ -2794,7 +2794,7 @@ fn output_partitions_and_caller_admission_scale_with_the_delta_not_history() {
                     );
                 } else if axis == "aliases" {
                     facts = facts.assume_condition(
-                        ConditionTerm::pointer_equal(
+                        ConditionTerm::address_equal(
                             p.clone(),
                             Address::symbolic(Variable(8_916_100 + u64::from(index))),
                         ),
@@ -2948,7 +2948,7 @@ fn opaque_and_refused_family_dispatch_ignore_ambient_owners_and_aliases() {
                         }
                         "aliases" => {
                             facts = facts
-                                .assume_condition(ConditionTerm::pointer_equal(p.clone(), q), true)
+                                .assume_condition(ConditionTerm::address_equal(p.clone(), q), true)
                         }
                         "definitions" => definitions.push(CompositeResourceDefinition::new(
                             format!("unused_{index:04}"),
@@ -3054,7 +3054,7 @@ fn opaque_matched_envelopes_scale_with_selected_leaves_not_ambient_state() {
                         }
                         "aliases" => {
                             facts = facts
-                                .assume_condition(ConditionTerm::pointer_equal(p.clone(), q), true)
+                                .assume_condition(ConditionTerm::address_equal(p.clone(), q), true)
                         }
                         "definitions" => definitions.push(CompositeResourceDefinition::new(
                             format!("unused_{i:04}"),
@@ -3142,7 +3142,7 @@ fn cached_composite_expansion_keeps_split_owners_without_rechecking_the_frame() 
                 match axis {
                     "aliases" => {
                         facts = facts.assume_condition(
-                            ConditionTerm::pointer_equal(pointer.clone(), other),
+                            ConditionTerm::address_equal(pointer.clone(), other),
                             true,
                         );
                     }

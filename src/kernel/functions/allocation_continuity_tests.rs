@@ -275,7 +275,7 @@ fn continuity_requires_both_the_allocation_base_and_size() {
             &MachineTerm::constant(4),
             &assumptions,
         ),
-        AllocationContinuity::Undecided(ConditionTerm::pointer_equal(input, other)),
+        AllocationContinuity::Undecided(ConditionTerm::address_equal(input, other)),
     );
 }
 
@@ -391,7 +391,7 @@ fn allocation_companion_returns_through_a_proven_alias_only() {
     let missing = PureFactContext::new();
     let proven = missing
         .clone()
-        .assume_condition(ConditionTerm::pointer_equal(alias, base.clone()), true);
+        .assume_condition(ConditionTerm::address_equal(alias, base.clone()), true);
     let caller_events = caller.population_effects.creation.as_ref().unwrap();
     for (facts, accepted) in [(&missing, false), (&proven, true)] {
         let returned = transfer_population_call_facts(
@@ -429,7 +429,7 @@ fn a_return_alias_does_not_recreate_a_retired_cleanup_anchor() {
     let alias = Address::symbolic(Variable(984_002));
     let output = ResourceFact::own_allocation(alias.clone(), 4);
     let facts = PureFactContext::new()
-        .assume_condition(ConditionTerm::pointer_equal(alias, base.clone()), true);
+        .assume_condition(ConditionTerm::address_equal(alias, base.clone()), true);
     let returned = transfer_population_call_facts(
         callee.clone(),
         &callee,

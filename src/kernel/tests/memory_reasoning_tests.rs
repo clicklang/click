@@ -527,7 +527,7 @@ fn wide_offset_branches_publish_full_width_index_facts() {
                         (scaled, constant)
                     };
                     let mut facts = crate::kernel::ExecutionFacts::new();
-                    crate::kernel::reasoning::add_pointer_offset_equality_execution_pure_facts(
+                    crate::kernel::reasoning::add_address_offset_equality_execution_pure_facts(
                         &mut facts,
                         &PureFactContext::new(),
                         left,
@@ -572,7 +572,7 @@ fn wide_offset_branches_publish_full_width_index_facts() {
         (-1, i64::MIN, false),
     ] {
         let mut facts = crate::kernel::ExecutionFacts::new();
-        let _ = crate::kernel::reasoning::add_pointer_offset_equality_execution_pure_facts(
+        let _ = crate::kernel::reasoning::add_address_offset_equality_execution_pure_facts(
             &mut facts,
             &PureFactContext::new(),
             AddressOffset::scaled_int64_node(index.clone(), stride, unsigned),
@@ -619,7 +619,7 @@ fn an_index_disequality_needs_the_folds_to_be_sums() {
 
     let recorded = |assumptions: &PureFactContext, value: bool| {
         let mut facts = crate::kernel::ExecutionFacts::new();
-        crate::kernel::reasoning::add_pointer_offset_equality_execution_pure_facts(
+        crate::kernel::reasoning::add_address_offset_equality_execution_pure_facts(
             &mut facts,
             assumptions,
             summed.clone(),
@@ -667,7 +667,7 @@ fn an_index_disequality_needs_the_folds_to_be_sums() {
     // One scaled index on each side folds with no add at all, so it is the
     // index exactly and the disequality is recorded with no premise.
     let mut facts = crate::kernel::ExecutionFacts::new();
-    crate::kernel::reasoning::add_pointer_offset_equality_execution_pure_facts(
+    crate::kernel::reasoning::add_address_offset_equality_execution_pure_facts(
         &mut facts,
         &empty,
         scaled(&i),
@@ -694,7 +694,7 @@ fn a_sixty_four_bit_displacement_is_exact_only_where_a_fact_pins_it() {
     let value = MachineTerm::Variable(Variable(93_670));
     let wide = |unsigned: bool| AddressOffset::scaled_int64_node(value.clone(), 8, unsigned);
     let decide = |assumptions: &PureFactContext, unsigned: bool, target: i64| {
-        assumptions.decide(&ConditionTerm::pointer_offset_equal(
+        assumptions.decide(&ConditionTerm::address_offset_equal(
             wide(unsigned),
             AddressOffset::Constant(target),
         ))
@@ -1070,7 +1070,7 @@ fn target_directed_transport_preserves_pointer_field_across_disjoint_buffer_writ
     let assumptions = PureFactContext::new().assume_proposition(separation.clone());
     let source = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
     let target = Proposition::ConditionIs(
-        ConditionTerm::pointer_offset_equal(current_offset, old_offset),
+        ConditionTerm::address_offset_equal(current_offset, old_offset),
         true,
     );
 
@@ -1240,7 +1240,7 @@ fn exact_separation_resolves_contained_symbolic_ranges_without_general_search() 
     };
     let assumptions = assumptions
         .assume_proposition(Proposition::ConditionIs(
-            ConditionTerm::pointer_offset_equal(loaded_data_offset, data.offset.clone()),
+            ConditionTerm::address_offset_equal(loaded_data_offset, data.offset.clone()),
             true,
         ))
         .assume_proposition(Proposition::ConditionIs(
@@ -1296,7 +1296,7 @@ fn direct_resource_match_uses_exact_field_load_equalities() {
 
     let assumptions = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::pointer_offset_equal(loaded_data.offset, named_data.offset),
+            ConditionTerm::address_offset_equal(loaded_data.offset, named_data.offset),
             true,
         )
         .assume_condition(ConditionTerm::equal(loaded_length, named_length), true);
@@ -1849,7 +1849,7 @@ fn equivalent_field_derived_bases_frame_symbolic_index_store() {
     .expect("initializing the local preserves the owner's data field");
     // First connect the two explicit spellings of the array base.
     let address_equality = Proposition::ConditionIs(
-        ConditionTerm::pointer_equal(execution_data.clone(), resource_data.clone()),
+        ConditionTerm::address_equal(execution_data.clone(), resource_data.clone()),
         true,
     );
     let base_premises = [base_equality.clone()];
@@ -2089,7 +2089,7 @@ fn direct_transport_rewrites_loads_inside_pointer_equality() {
         offset: AddressOffset::Constant(0),
     };
     let fact = Proposition::ConditionIs(
-        ConditionTerm::pointer_equal(field_value, local_value.clone()),
+        ConditionTerm::address_equal(field_value, local_value.clone()),
         true,
     );
     let after = before.clone().with_block("local:result", 8);
@@ -2117,7 +2117,7 @@ fn direct_transport_rewrites_loads_inside_pointer_equality() {
     assert_eq!(
         target.as_ref(),
         &Proposition::ConditionIs(
-            ConditionTerm::pointer_equal(transported_field_value, local_value),
+            ConditionTerm::address_equal(transported_field_value, local_value),
             true,
         )
     );
@@ -2138,7 +2138,7 @@ fn packed_word_pointer_transport_requires_all_eight_bytes() {
         crate::kernel::LoadKind::Bits64,
     );
     let pointer = Pointer::from_read(
-        Address::integer_address(bits),
+        Address::from_integer_address(bits),
         ProgramType::VoidPointer,
         &before,
         &field,
@@ -2148,7 +2148,7 @@ fn packed_word_pointer_transport_requires_all_eight_bytes() {
         ProgramType::VoidPointer,
     );
     let source = Proposition::ConditionIs(
-        ConditionTerm::PointerValueEqual(Box::new(pointer), Box::new(parent)),
+        ConditionTerm::PointerEqual(Box::new(pointer), Box::new(parent)),
         true,
     );
     let context = PureFactContext::new().assume_proposition(source.clone());
@@ -2221,18 +2221,18 @@ fn simple_pointer_equality_composes_interleaved_aliases_in_the_graph() {
     };
     let assumptions = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::pointer_offset_equal(
+            ConditionTerm::address_offset_equal(
                 final_pointer.offset.clone(),
                 state_pointer.offset.clone(),
             ),
             true,
         )
         .assume_condition(
-            ConditionTerm::pointer_equal(state_pointer, local_pointer.clone()),
+            ConditionTerm::address_equal(state_pointer, local_pointer.clone()),
             true,
         )
         .assume_condition(
-            ConditionTerm::pointer_equal(local_pointer, Address::null()),
+            ConditionTerm::address_equal(local_pointer, Address::null()),
             true,
         );
 
@@ -2240,7 +2240,7 @@ fn simple_pointer_equality_composes_interleaved_aliases_in_the_graph() {
     // without a consumer walking the exact-alias adjacency index.
     assert!(assumptions.pointers_known_equal(&final_pointer, &Address::null()));
     assert_eq!(
-        assumptions.decide(&ConditionTerm::pointer_equal(
+        assumptions.decide(&ConditionTerm::address_equal(
             final_pointer,
             Address::null()
         )),
@@ -2658,7 +2658,7 @@ fn pointer_offset_fact_transport_does_not_plan_from_an_effect_summary() {
     };
     let expected = AddressOffset::scale_int32(MachineTerm::Variable(Variable(345)), 4);
     let fact = Proposition::ConditionIs(
-        ConditionTerm::pointer_offset_equal(
+        ConditionTerm::address_offset_equal(
             AddressOffset::scale_int32(
                 MachineTerm::MemoryLoad(
                     ProgramPoint::at(&(crate::kernel::intern_memory(before.clone()))),
@@ -2718,14 +2718,14 @@ fn equality_fact_matching_transports_both_pointer_offset_endpoints() {
         )
     };
     let fact = Proposition::ConditionIs(
-        ConditionTerm::pointer_offset_equal(
+        ConditionTerm::address_offset_equal(
             load_offset(&before, &left),
             load_offset(&before, &right),
         ),
         true,
     );
     let target = Proposition::ConditionIs(
-        ConditionTerm::pointer_offset_equal(
+        ConditionTerm::address_offset_equal(
             load_offset(&after, &left),
             load_offset(&after, &right),
         ),
@@ -2776,7 +2776,7 @@ fn memory_load_equality_combines_equal_pointer_base_and_zero_index() {
     };
     let assumptions = PureFactContext::new()
         .assume_proposition(Proposition::ConditionIs(
-            ConditionTerm::pointer_offset_equal(
+            ConditionTerm::address_offset_equal(
                 AddressOffset::scale_int32(data_load, 4),
                 AddressOffset::scale_int32(data, 4),
             ),
@@ -2817,7 +2817,7 @@ fn pointer_offset_equality_combines_equal_base_and_zero_index() {
     let target_offset = AddressOffset::scale_int32(target, 4);
     let assumptions = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::pointer_offset_equal(base_offset.clone(), target_offset.clone()),
+            ConditionTerm::address_offset_equal(base_offset.clone(), target_offset.clone()),
             true,
         )
         .assume_condition(
@@ -2826,7 +2826,7 @@ fn pointer_offset_equality_combines_equal_base_and_zero_index() {
         );
 
     assert_eq!(
-        assumptions.decide(&ConditionTerm::pointer_offset_equal(
+        assumptions.decide(&ConditionTerm::address_offset_equal(
             AddressOffset::add(base_offset, AddressOffset::scale_int32(index, 4),),
             target_offset,
         )),
@@ -2844,7 +2844,7 @@ fn a_struct_field_offset_is_distinct_from_offsets_off_its_stride_residue() {
     );
     for other in [0, 8, -8, 13] {
         assert_eq!(
-            ConditionTerm::pointer_offset_equal(field.clone(), AddressOffset::Constant(other)),
+            ConditionTerm::address_offset_equal(field.clone(), AddressOffset::Constant(other)),
             ConditionTerm::Constant(false),
             "offset {other}",
         );
@@ -2853,22 +2853,22 @@ fn a_struct_field_offset_is_distinct_from_offsets_off_its_stride_residue() {
     // strides allow it: `y * 4` can be `x * 8 + 4`, `y * 8` cannot.
     let other_index = MachineTerm::Variable(Variable(94));
     assert_eq!(
-        ConditionTerm::pointer_offset_equal(
+        ConditionTerm::address_offset_equal(
             field.clone(),
             AddressOffset::scale_int32(other_index.clone(), 8),
         ),
         ConditionTerm::Constant(false),
     );
     assert!(matches!(
-        ConditionTerm::pointer_offset_equal(
+        ConditionTerm::address_offset_equal(
             field.clone(),
             AddressOffset::scale_int32(other_index, 4),
         ),
-        ConditionTerm::PointerOffsetEqual(_, _),
+        ConditionTerm::AddressOffsetEqual(_, _),
     ));
     assert!(matches!(
-        ConditionTerm::pointer_offset_equal(field, AddressOffset::Constant(12)),
-        ConditionTerm::PointerOffsetEqual(_, _),
+        ConditionTerm::address_offset_equal(field, AddressOffset::Constant(12)),
+        ConditionTerm::AddressOffsetEqual(_, _),
     ));
 }
 
@@ -2879,7 +2879,7 @@ fn a_struct_field_offset_at_a_constant_is_decided_by_its_index() {
         AddressOffset::scale_int32(index.clone(), 8),
         AddressOffset::Constant(4),
     );
-    let at_twelve = ConditionTerm::pointer_offset_equal(field, AddressOffset::Constant(12));
+    let at_twelve = ConditionTerm::address_offset_equal(field, AddressOffset::Constant(12));
     for (value, decided) in [(true, true), (false, false)] {
         let assumptions = PureFactContext::new().assume_condition(
             ConditionTerm::equal(index.clone(), MachineTerm::constant(1)),
@@ -3883,7 +3883,7 @@ fn one_exact_pointer_equality_resolves_an_unresolved_pointer_and_nothing_else_do
     };
     let equal = |left: &Address, right: &Address| {
         Proposition::ConditionIs(
-            ConditionTerm::pointer_equal(left.clone(), right.clone()),
+            ConditionTerm::address_equal(left.clone(), right.clone()),
             true,
         )
     };
@@ -3926,7 +3926,7 @@ fn one_exact_pointer_equality_resolves_an_unresolved_pointer_and_nothing_else_do
 
     // A disequality is not an alias.
     let disequal = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
-        ConditionTerm::pointer_equal(symbolic.clone(), global.clone()),
+        ConditionTerm::address_equal(symbolic.clone(), global.clone()),
         false,
     ));
     assert!(!pointers_proven_distinct_for_memory_resolution(
@@ -5074,7 +5074,7 @@ fn assumptions_resolve_materialized_symbolic_memory_load_aliases() {
     for (index, pointer) in src_pointers.into_iter().enumerate() {
         let assumptions = PureFactContext::new()
             .assume_condition(
-                ConditionTerm::pointer_offset_equal(
+                ConditionTerm::address_offset_equal(
                     symbolic_src.offset.clone(),
                     pointer.offset.clone(),
                 ),
@@ -5169,7 +5169,7 @@ fn assumptions_reject_forall_based_on_a_shadowed_materialized_load_index() {
     );
     let proposition = Proposition::Implies(
         Box::new(Proposition::ConditionIs(
-            ConditionTerm::pointer_offset_equal(
+            ConditionTerm::address_offset_equal(
                 symbolic_src.offset.clone(),
                 src_pointers[0].offset.clone(),
             ),
@@ -5182,7 +5182,7 @@ fn assumptions_reject_forall_based_on_a_shadowed_materialized_load_index() {
             )),
             Box::new(Proposition::Implies(
                 Box::new(Proposition::ConditionIs(
-                    ConditionTerm::pointer_offset_equal(
+                    ConditionTerm::address_offset_equal(
                         symbolic_src.offset,
                         src_pointers[1].offset.clone(),
                     ),
@@ -5283,7 +5283,7 @@ fn assumptions_reject_forall_based_on_a_shadowed_prefix_index() {
         )),
         Box::new(Proposition::Implies(
             Box::new(Proposition::ConditionIs(
-                ConditionTerm::pointer_offset_equal(
+                ConditionTerm::address_offset_equal(
                     symbolic_src.offset,
                     AddressOffset::scaled_int32_node(i_bits.clone(), 4),
                 ),
@@ -5528,7 +5528,7 @@ fn wrapped_index_sum_does_not_decide_pointer_offsets_equal() {
         );
     let sum = AddressOffset::Add(Box::new(scaled(&i)), Box::new(scaled(&j)));
     assert_ne!(
-        assumptions.decide(&ConditionTerm::pointer_offset_equal(sum, scaled(&k))),
+        assumptions.decide(&ConditionTerm::address_offset_equal(sum, scaled(&k))),
         Some(true),
         "a wrapped index sum must not affirm pointer-offset equality"
     );
@@ -5543,7 +5543,7 @@ fn wrapped_index_sum_does_not_decide_pointer_offsets_equal() {
         true,
     );
     assert_eq!(
-        k_is_two.decide(&ConditionTerm::pointer_offset_equal(
+        k_is_two.decide(&ConditionTerm::address_offset_equal(
             with_base(scaled(&k)),
             with_base(AddressOffset::Constant(8)),
         )),
@@ -5554,7 +5554,7 @@ fn wrapped_index_sum_does_not_decide_pointer_offsets_equal() {
         true,
     );
     assert_eq!(
-        k_is_three.decide(&ConditionTerm::pointer_offset_equal(
+        k_is_three.decide(&ConditionTerm::address_offset_equal(
             with_base(scaled(&k)),
             with_base(AddressOffset::Constant(8)),
         )),
@@ -5566,7 +5566,7 @@ fn wrapped_index_sum_does_not_decide_pointer_offsets_equal() {
     let same =
         PureFactContext::new().assume_condition(ConditionTerm::equal(i.clone(), m.clone()), true);
     assert_eq!(
-        same.decide(&ConditionTerm::pointer_offset_equal(scaled(&i), scaled(&m))),
+        same.decide(&ConditionTerm::address_offset_equal(scaled(&i), scaled(&m))),
         Some(true)
     );
 }
@@ -6987,7 +6987,7 @@ fn memory_resolution_requires_the_loaded_cell_width() {
         .with_block("typed-cell", 8)
         .store(stored.clone(), uint16(7));
     let assumptions = PureFactContext::new().assume_condition(
-        ConditionTerm::pointer_equal(alias.clone(), stored.clone()),
+        ConditionTerm::address_equal(alias.clone(), stored.clone()),
         true,
     );
     for pointer in [&stored, &alias] {
@@ -7059,7 +7059,7 @@ fn symbolic_run_load_selection_checks_aliases_holes_and_width() {
             None
         );
         let alias = PureFactContext::new().assume_condition(
-            ConditionTerm::pointer_equal(read.clone(), base.offset_by_bytes(12)),
+            ConditionTerm::address_equal(read.clone(), base.offset_by_bytes(12)),
             true,
         );
         assert_eq!(
@@ -7071,7 +7071,7 @@ fn symbolic_run_load_selection_checks_aliases_holes_and_width() {
             offset: AddressOffset::Constant(0),
         };
         let base_alias = PureFactContext::new().assume_condition(
-            ConditionTerm::pointer_equal(other_base.clone(), base.clone()),
+            ConditionTerm::address_equal(other_base.clone(), base.clone()),
             true,
         );
         assert_eq!(
@@ -7557,7 +7557,7 @@ fn a_cached_parameter_partition_does_not_hide_aliases_or_wide_cells() {
     );
     let alias = assumptions
         .clone()
-        .assume_condition(ConditionTerm::pointer_equal(p.clone(), q.clone()), true);
+        .assume_condition(ConditionTerm::address_equal(p.clone(), q.clone()), true);
     assert!(
         !memory
             .without_possible_aliasing_cells(&p, 4, &alias)
@@ -7637,20 +7637,20 @@ fn a_parameter_partition_follows_transitive_interior_address_aliases() {
         original
             .clone()
             .assume_condition(
-                ConditionTerm::pointer_equal(write.clone(), foreign.clone()),
+                ConditionTerm::address_equal(write.clone(), foreign.clone()),
                 true,
             )
             .assume_condition(
-                ConditionTerm::pointer_equal(foreign.clone(), q.clone()),
+                ConditionTerm::address_equal(foreign.clone(), q.clone()),
                 true,
             ),
         original.clone().assume_condition(
             ConditionTerm::uint64_equal(
-                MachineTerm::PointerAddress(
+                MachineTerm::IntegerAddress(
                     Box::new(write.clone()),
                     crate::kernel::AddressObjectClass::NONE,
                 ),
-                MachineTerm::PointerAddress(
+                MachineTerm::IntegerAddress(
                     Box::new(q.clone()),
                     crate::kernel::AddressObjectClass::NONE,
                 ),
@@ -7730,8 +7730,8 @@ fn stated_separation_decides_pointer_forms_with_scoped_nonempty_evidence() {
             left: Box::new(Resource::Memory(memory_range(left.clone(), 0, end.clone()))),
             right: Box::new(Resource::Memory(memory_range(right.clone(), 0, end))),
         };
-        let comparison = ConditionTerm::pointer_equal(left.clone(), right.clone());
-        assert!(matches!(comparison, ConditionTerm::PointerEqual(_, _)));
+        let comparison = ConditionTerm::address_equal(left.clone(), right.clone());
+        assert!(matches!(comparison, ConditionTerm::AddressEqual(_, _)));
         let bare = PureFactContext::new();
         let fact = separation(1u32.into());
         let branch = bare.clone().assume_proposition(fact.clone());
@@ -7749,7 +7749,7 @@ fn stated_separation_decides_pointer_forms_with_scoped_nonempty_evidence() {
         assert!(!branch.contains_known(&equal));
         assert!(!bare.contains_known(&unequal));
         assert_eq!(
-            branch.decide(&ConditionTerm::pointer_equal(right.clone(), left.clone())),
+            branch.decide(&ConditionTerm::address_equal(right.clone(), left.clone())),
             Some(false)
         );
         assert_eq!(bare.decide(&comparison), None);
@@ -7766,7 +7766,7 @@ fn stated_separation_decides_pointer_forms_with_scoped_nonempty_evidence() {
         }
         if left.base != right.base {
             assert_eq!(
-                branch.decide(&ConditionTerm::pointer_offset_equal(
+                branch.decide(&ConditionTerm::address_offset_equal(
                     left.offset.clone(),
                     right.offset.clone()
                 )),
@@ -7787,12 +7787,12 @@ fn kept_call_frame_uses_transitive_model_pointer_classes() {
     let middle = pointer(950_002);
     let owner = pointer(950_003);
     let first_link = PureFactContext::new().assume_condition(
-        ConditionTerm::pointer_equal(first.clone(), middle.clone()),
+        ConditionTerm::address_equal(first.clone(), middle.clone()),
         true,
     );
     let assumptions = first_link
         .clone()
-        .assume_condition(ConditionTerm::pointer_equal(middle, owner.clone()), true);
+        .assume_condition(ConditionTerm::address_equal(middle, owner.clone()), true);
     assert!(assumptions.pointers_known_equal(&first, &owner));
     let ranges = ResourceContext::new_with_equalities(&assumptions).unchecked_with_fact(
         ResourceFact::own_memory(MemoryRange::new(owner.clone(), 2u32.into(), 4u32.into())),
@@ -7833,11 +7833,11 @@ fn kept_call_frame_with_loaded_owner_survives_equivalent_input_lineages() {
     let inputs = || {
         PureFactContext::new()
             .assume_condition(
-                ConditionTerm::pointer_equal(queried.clone(), middle.clone()),
+                ConditionTerm::address_equal(queried.clone(), middle.clone()),
                 true,
             )
             .assume_condition(
-                ConditionTerm::pointer_equal(middle.clone(), owner.clone()),
+                ConditionTerm::address_equal(middle.clone(), owner.clone()),
                 true,
             )
     };

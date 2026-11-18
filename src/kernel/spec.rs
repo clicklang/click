@@ -15,7 +15,7 @@ pub(in crate::kernel) use shared_machine::{
 pub(in crate::kernel) mod walk;
 
 type EvaluatedSpecResource = (Resource, ExecutionFacts, Vec<ProofObligation>);
-type SpecResourceBuilder = Box<dyn Fn(Vec<ProgramValue>) -> Option<Resource>>;
+type SpecResourceBuilder = Box<dyn Fn(Vec<ExecutionValue>) -> Option<Resource>>;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct SpecPropositionPath {
@@ -2879,7 +2879,7 @@ fn proposition_mentions_integer_variable(proposition: &Proposition, variable: Va
 
     fn condition_contains(condition: &ConditionTerm, variable: Variable) -> bool {
         match condition {
-            ConditionTerm::PointerValueEqual(left, right) => left
+            ConditionTerm::PointerEqual(left, right) => left
                 .pointers()
                 .chain(right.pointers())
                 .any(|p| integer_carrier_in_pointer(p, variable)),
@@ -2904,11 +2904,11 @@ fn proposition_mentions_integer_variable(proposition: &Proposition, variable: Va
                 integer_carrier_in_algebraic(left, variable)
                     || integer_carrier_in_algebraic(right, variable)
             }
-            ConditionTerm::PointerOffsetEqual(left, right) => {
+            ConditionTerm::AddressOffsetEqual(left, right) => {
                 integer_carrier_in_pointer_offset(left, variable)
                     || integer_carrier_in_pointer_offset(right, variable)
             }
-            ConditionTerm::PointerEqual(left, right) => {
+            ConditionTerm::AddressEqual(left, right) => {
                 integer_carrier_in_pointer(left, variable)
                     || integer_carrier_in_pointer(right, variable)
             }
@@ -4834,6 +4834,8 @@ fn concatenate_sequence_terms(left: SequenceTerm, right: SequenceTerm) -> Sequen
 #[cfg(test)]
 mod logical_field_storage_tests;
 #[cfg(test)]
+mod range_storage_tests;
+#[cfg(test)]
 mod resource_argument_storage_tests;
 #[cfg(test)]
 mod sequence_term_tests;
@@ -5084,48 +5086,69 @@ fn evaluate_spec_resource_at_state_in(
             let element_width = *element_width;
             (
                 vec![base.clone(), start.clone(), end.clone()],
-                Box::new(move |values| match values.as_slice() {
-                    // A range with an unsigned 64-bit bound is wide, here as
-                    // in a contract clause, so a `separate(...)` or
-                    // containment names the range the clause holds.
-                    [ProgramValue::Pointer(base), start, end]
-                        if crate::kernel::wide_range_bounds(start, end).is_some() =>
-                    {
-                        let (start, end) = crate::kernel::wide_range_bounds(start, end)?;
-                        Some(Resource::Memory(MemoryRange::from_pointer_value_wide(
-                            base,
-                            start,
-                            end,
-                            element_width,
-                        )))
+                Box::new(move |values| {
+                    if let [base, start, end] = values.as_slice() {
+                        let base_value = base.clone().into_native();
+                        if let ProgramValue::Pointer(base) = &base_value {
+                            if let Some(range) = MemoryRange::from_retained_bounds(
+                                base,
+                                start.clone(),
+                                end.clone(),
+                                element_width,
+                            ) {
+                                return Some(Resource::Memory(range));
+                            }
+                        }
                     }
-                    [
-                        ProgramValue::Pointer(base),
-                        ProgramValue::Int32(start),
-                        ProgramValue::Int32(end),
-                    ] => Some(Resource::Memory(MemoryRange::from_pointer_value(
-                        base,
-                        start.clone(),
-                        end.clone(),
-                        element_width,
-                    ))),
-                    // A constant unsigned 64-bit end over a 32-bit start is the
-                    // same number as a 32-bit bound, as a clause's segment
-                    // reads it.
-                    [
-                        ProgramValue::Pointer(base),
-                        ProgramValue::Int32(start),
-                        ProgramValue::UInt64(end),
-                    ] => {
-                        let end = i32::try_from(end.uint64_as_const()?).ok()?;
-                        Some(Resource::Memory(MemoryRange::from_pointer_value(
+                    // Mixed/signed-wide bounds retain their existing conversion
+                    // and narrow-constant policy at this explicit boundary.
+                    let values: Vec<_> = values
+                        .into_iter()
+                        .map(ExecutionValue::into_native)
+                        .collect();
+                    match values.as_slice() {
+                        // A range with an unsigned 64-bit bound is wide, here as
+                        // in a contract clause, so a `separate(...)` or
+                        // containment names the range the clause holds.
+                        [ProgramValue::Pointer(base), start, end]
+                            if crate::kernel::wide_range_bounds(start, end).is_some() =>
+                        {
+                            let (start, end) = crate::kernel::wide_range_bounds(start, end)?;
+                            Some(Resource::Memory(MemoryRange::from_pointer_value_wide(
+                                base,
+                                start,
+                                end,
+                                element_width,
+                            )))
+                        }
+                        [
+                            ProgramValue::Pointer(base),
+                            ProgramValue::Int32(start),
+                            ProgramValue::Int32(end),
+                        ] => Some(Resource::Memory(MemoryRange::from_pointer_value(
                             base,
                             start.clone(),
-                            MachineTerm::constant(end as u32),
+                            end.clone(),
                             element_width,
-                        )))
+                        ))),
+                        // A constant unsigned 64-bit end over a 32-bit start is the
+                        // same number as a 32-bit bound, as a clause's segment
+                        // reads it.
+                        [
+                            ProgramValue::Pointer(base),
+                            ProgramValue::Int32(start),
+                            ProgramValue::UInt64(end),
+                        ] => {
+                            let end = i32::try_from(end.uint64_as_const()?).ok()?;
+                            Some(Resource::Memory(MemoryRange::from_pointer_value(
+                                base,
+                                start.clone(),
+                                MachineTerm::constant(end as u32),
+                                element_width,
+                            )))
+                        }
+                        _ => None,
                     }
-                    _ => None,
                 }),
             )
         }
@@ -5134,7 +5157,7 @@ fn evaluate_spec_resource_at_state_in(
         }
     };
     Ok(
-        evaluate_spec_values_at_state_in(scope, &expressions, assumptions, budget)?
+        evaluate_spec_retained_values_at_state_in(scope, &expressions, assumptions, budget)?
             .into_iter()
             .filter_map(|path| {
                 build(path.values).map(|resource| (resource, path.facts, path.obligations))
@@ -8044,7 +8067,7 @@ pub(crate) fn refine_object_pointer_argument(
         memory,
         assumptions,
         |facts, pointer| {
-            facts.decide(&ConditionTerm::pointer_equal(
+            facts.decide(&ConditionTerm::address_equal(
                 pointer.clone(),
                 Address::null(),
             )) == Some(true)
@@ -8066,7 +8089,7 @@ pub(crate) fn refine_object_pointer_argument_using_facts(
         memory,
         assumptions,
         |facts, pointer| {
-            facts.exact_condition_value(&ConditionTerm::pointer_equal(
+            facts.exact_condition_value(&ConditionTerm::address_equal(
                 pointer.clone(),
                 Address::null(),
             )) == Some(true)
@@ -9997,7 +10020,7 @@ pub(super) fn program_value_comparison_proposition(
             ComparisonOperator::Equal | ComparisonOperator::NotEqual
         )
     {
-        let condition = ConditionTerm::pointer_value_equal(a.clone(), b.clone());
+        let condition = ConditionTerm::pointer_equal(a.clone(), b.clone());
         return Some(Proposition::ConditionIs(
             condition,
             operator == ComparisonOperator::Equal,

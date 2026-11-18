@@ -173,14 +173,14 @@ fn allocation_companion_alias_lookup_ignores_unrelated_storage_and_alias_stars()
             let mut facts = PureFactContext::new();
             for id in 0..size {
                 facts = facts.assume_condition(
-                    ConditionTerm::pointer_equal(
+                    ConditionTerm::address_equal(
                         base.clone(),
                         Address::symbolic(Variable(10_000_000 + id)),
                     ),
                     true,
                 );
                 facts = facts.assume_condition(
-                    ConditionTerm::pointer_equal(
+                    ConditionTerm::address_equal(
                         Address::symbolic(Variable(20_000_000 + id)),
                         Address::symbolic(Variable(30_000_000 + id)),
                     ),

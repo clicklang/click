@@ -14,7 +14,7 @@ impl PureFactContext {
         left: &ConditionTerm,
         right: &ConditionTerm,
     ) -> bool {
-        if let (ConditionTerm::PointerValueEqual(a, b), ConditionTerm::PointerValueEqual(c, d)) =
+        if let (ConditionTerm::PointerEqual(a, b), ConditionTerm::PointerEqual(c, d)) =
             (left, right)
         {
             let same_value =
@@ -46,7 +46,7 @@ impl PureFactContext {
         left: &ConditionTerm,
         right: &ConditionTerm,
     ) -> bool {
-        if let (ConditionTerm::PointerValueEqual(a, b), ConditionTerm::PointerValueEqual(c, d)) =
+        if let (ConditionTerm::PointerEqual(a, b), ConditionTerm::PointerEqual(c, d)) =
             (left, right)
         {
             let same_value =

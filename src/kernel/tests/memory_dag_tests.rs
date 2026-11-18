@@ -854,13 +854,13 @@ fn entry_separation_does_not_frame_a_store_after_its_bases_become_equal() {
     .expect("the entry-time partition initially supplies the hop");
     let assumptions = entry_assumptions
         .assume_condition(
-            ConditionTerm::pointer_equal(left.clone(), bridge.clone()),
+            ConditionTerm::address_equal(left.clone(), bridge.clone()),
             true,
         )
-        .assume_condition(ConditionTerm::pointer_equal(bridge, right.clone()), true);
+        .assume_condition(ConditionTerm::address_equal(bridge, right.clone()), true);
     assert_eq!(
         assumptions
-            .exact_condition_value(&ConditionTerm::pointer_equal(left.clone(), right.clone())),
+            .exact_condition_value(&ConditionTerm::address_equal(left.clone(), right.clone())),
         None,
         "the alias is established through the intermediate pointer, not a direct fact"
     );
@@ -920,7 +920,7 @@ fn equal_range_bases_keep_a_separation_for_disjoint_byte_intervals() {
     };
     let assumptions = PureFactContext::new()
         .assume_proposition(separation)
-        .assume_condition(ConditionTerm::pointer_equal(left, right), true);
+        .assume_condition(ConditionTerm::address_equal(left, right), true);
 
     assert!(
         !assumptions.memory_ranges_overlap_after_base_equality(&left_range, &right_range),
@@ -1673,7 +1673,7 @@ fn call_havoc_retains_exact_separation_and_positive_offset_steps() {
     let left_offset = AddressOffset::scale_int32(load(&called), 4);
     let right_offset = AddressOffset::scale_int32(load(&base), 4);
     let offset_goal = Proposition::ConditionIs(
-        ConditionTerm::pointer_offset_equal(left_offset.clone(), right_offset.clone()),
+        ConditionTerm::address_offset_equal(left_offset.clone(), right_offset.clone()),
         true,
     );
     let offset_derivation = with_extended_dag_bridging(|| {
@@ -3114,7 +3114,7 @@ fn seeded_pointer_read_context(
     alias: &Address,
 ) -> (PureFactContext, Address, Address) {
     let context = PureFactContext::new().assume_condition(
-        ConditionTerm::pointer_equal(address.clone(), alias.clone()),
+        ConditionTerm::address_equal(address.clone(), alias.clone()),
         true,
     );
     let left = Address::loaded_value(old, alias);
@@ -3225,13 +3225,13 @@ fn direct_pointer_reads_retain_their_projection_definitions() {
     let context = PureFactContext::new();
     assert!(!context.pointers_known_equal(&named, &observed));
     let context =
-        context.assume_condition(ConditionTerm::pointer_equal(address.clone(), alias), true);
+        context.assume_condition(ConditionTerm::address_equal(address.clone(), alias), true);
     assert!(
         context.pointers_known_equal(&named, &observed),
         "direct read names must use their producer-recorded projection edge"
     );
     assert!(context.equality_graph.knows_condition(
-        &ConditionTerm::pointer_value_equal(
+        &ConditionTerm::pointer_equal(
             Pointer::new(named.clone(), ProgramType::Int32Pointer),
             Pointer::new(observed.clone(), ProgramType::Int32Pointer),
         ),
@@ -3271,7 +3271,7 @@ fn pointer_read_producer_closes_seeded_state_equality_in_the_shared_graph() {
     // Source normalization precedes the address alias. Ordinary congruence
     // must propagate this later fact, with no producer retry or fold hook.
     let context =
-        context.assume_condition(ConditionTerm::pointer_equal(a.clone(), b.clone()), true);
+        context.assume_condition(ConditionTerm::address_equal(a.clone(), b.clone()), true);
     assert!(
         context.pointers_known_equal(&left, &right),
         "producer evidence should power the ordinary graph query without a fold-specific rule"
@@ -3372,7 +3372,7 @@ fn pointer_read_single_store_uses_only_its_branch_address_equality() {
     context.register_pointer_read(&right, &current, &read);
     let sibling = context.clone();
     let branch = context.clone().assume_condition(
-        ConditionTerm::pointer_equal(write, read.offset_by_bytes(16)),
+        ConditionTerm::address_equal(write, read.offset_by_bytes(16)),
         true,
     );
     assert!(!pointers_proven_equal_for_memory_resolution(
@@ -3410,7 +3410,7 @@ fn pointer_read_single_store_preservation_propagates_late_read_aliases() {
     context.register_pointer_read(&left, &old, &alias);
     context.register_pointer_read(&right, &current, &address);
     assert!(!context.pointers_known_equal(&left, &right));
-    let context = context.assume_condition(ConditionTerm::pointer_equal(address, alias), true);
+    let context = context.assume_condition(ConditionTerm::address_equal(address, alias), true);
     assert!(context.pointers_known_equal(&left, &right));
 }
 
@@ -3452,7 +3452,7 @@ fn pointer_read_producer_admits_recorded_cache_forgetting() {
     let alias = Address::symbolic(Variable(98_400));
     let alias_read = Address::loaded_value(&forgotten, &alias);
     branch.register_pointer_read(&alias_read, &forgotten, &alias);
-    let branch = branch.assume_condition(ConditionTerm::pointer_equal(address, alias), true);
+    let branch = branch.assume_condition(ConditionTerm::address_equal(address, alias), true);
     assert!(branch.pointers_known_equal(&left, &alias_read));
 }
 
@@ -3847,8 +3847,8 @@ fn two_edge_pointer_alias_witness_rechecks_each_named_premise() {
         crate::kernel::eval::declare_load_access_width(pointer, 4);
     }
     let memory = crate::kernel::intern_memory(SymbolicMemory::new());
-    let first = ConditionTerm::pointer_equal(left.clone(), middle.clone());
-    let second = ConditionTerm::pointer_equal(middle, right.clone());
+    let first = ConditionTerm::address_equal(left.clone(), middle.clone());
+    let second = ConditionTerm::address_equal(middle, right.clone());
     let assumptions = PureFactContext::new()
         .assume_condition(first.clone(), true)
         .assume_condition(second.clone(), true);
@@ -4145,10 +4145,8 @@ fn full_pointer_read_survives_a_join_of_stores_to_its_sibling() {
     else {
         panic!("pointer load")
     };
-    let facts = PureFactContext::new().assume_condition(
-        ConditionTerm::pointer_value_equal(child.clone(), q.clone()),
-        true,
-    );
+    let facts = PureFactContext::new()
+        .assume_condition(ConditionTerm::pointer_equal(child.clone(), q.clone()), true);
     let beside = Address {
         base: child.address().base.clone(),
         offset: AddressOffset::add(child.address().offset.clone(), AddressOffset::Constant(8)),
@@ -4277,8 +4275,8 @@ fn numeric_address_byte_gaps_preserve_cache_and_read_history() {
     for shift in [0, 4, 8, 16] {
         let premise = Proposition::ConditionIs(
             ConditionTerm::uint64_equal(
-                MachineTerm::pointer_address(q.clone()),
-                MachineTerm::pointer_address(p.offset_by_bytes(shift)),
+                MachineTerm::integer_address(q.clone()),
+                MachineTerm::integer_address(p.offset_by_bytes(shift)),
             ),
             true,
         );
@@ -4343,8 +4341,8 @@ fn anchored_byte_separation_checks_full_width_and_scope() {
     assert!(!check(&PureFactContext::new(), 8));
     let overlapping = context.assume_condition(
         ConditionTerm::uint64_equal(
-            MachineTerm::pointer_address(q.clone()),
-            MachineTerm::pointer_address(p.offset_by_bytes(4)),
+            MachineTerm::integer_address(q.clone()),
+            MachineTerm::integer_address(p.offset_by_bytes(4)),
         ),
         true,
     );
@@ -4363,11 +4361,11 @@ fn owned_byte_separation_survives_an_unknown_numeric_displacement() {
     );
     let address = PureFactContext::new().assume_condition(
         ConditionTerm::uint64_equal(
-            MachineTerm::pointer_address(q.clone()),
+            MachineTerm::integer_address(q.clone()),
             MachineTerm::Binary {
                 format: MachineIntegerType::UInt64,
                 op: MachineBinaryOp::Add,
-                left: Box::new(MachineTerm::pointer_address(p.clone())),
+                left: Box::new(MachineTerm::integer_address(p.clone())),
                 right: Box::new(MachineTerm::Variable(Variable(970_143))),
             },
         ),
@@ -4482,7 +4480,7 @@ fn seeded_mixed_width_aliases_still_invalidate_overlapping_reads() {
         .with_seeded_cells(word.clone(), 8, ProgramType::UInt64, 0, 1, source);
     assert!(memory.cells.contains_key(&word));
     let assumptions = PureFactContext::new().assume_condition(
-        ConditionTerm::pointer_equal(word.clone(), bytes.clone()),
+        ConditionTerm::address_equal(word.clone(), bytes.clone()),
         true,
     );
     let written = bytes.offset_by_bytes(4);
@@ -4507,11 +4505,11 @@ fn equal_object_origins_frame_neighbor_fields_without_equating_index_atoms() {
     let right = origin(9_882_102);
     let parent = Address::symbolic(Variable(9_882_103));
     let first = Proposition::ConditionIs(
-        ConditionTerm::pointer_equal(left.clone(), parent.clone()),
+        ConditionTerm::address_equal(left.clone(), parent.clone()),
         true,
     );
     let second =
-        Proposition::ConditionIs(ConditionTerm::pointer_equal(parent, right.clone()), true);
+        Proposition::ConditionIs(ConditionTerm::address_equal(parent, right.clone()), true);
     let context = PureFactContext::new()
         .assume_proposition(first.clone())
         .assume_proposition(second.clone());
@@ -4568,11 +4566,11 @@ fn stated_separation_frames_equal_model_and_program_origins() {
     let bridge = Address::symbolic(Variable(9_883_103));
     let node = origin(9_883_104);
     let first = Proposition::ConditionIs(
-        ConditionTerm::pointer_equal(parent.clone(), bridge.clone()),
+        ConditionTerm::address_equal(parent.clone(), bridge.clone()),
         true,
     );
     let second =
-        Proposition::ConditionIs(ConditionTerm::pointer_equal(bridge, entry.clone()), true);
+        Proposition::ConditionIs(ConditionTerm::address_equal(bridge, entry.clone()), true);
     let separation = Proposition::ResourceSeparate {
         left: Box::new(Resource::Memory(memory_range(
             parent.offset_by_bytes(8),
@@ -4800,7 +4798,7 @@ fn abstract_reads_follow_address_equalities_in_the_shared_graph() {
     let context = PureFactContext::new();
     assert!(!context.equality_graph.are_algebraic_equal(&a, &b));
     let context = context.assume_condition(
-        ConditionTerm::pointer_equal(left.clone(), right.clone()),
+        ConditionTerm::address_equal(left.clone(), right.clone()),
         true,
     );
     assert!(

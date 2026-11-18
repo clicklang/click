@@ -70,8 +70,8 @@ fn frame_with_unrelated_allocations(unrelated: usize) -> ResourceContext {
         ])
 }
 
-fn pointer_equal(left: Address, right: Address) -> ConditionTerm {
-    ConditionTerm::PointerEqual(Box::new(left), Box::new(right))
+fn address_equal(left: Address, right: Address) -> ConditionTerm {
+    ConditionTerm::AddressEqual(Box::new(left), Box::new(right))
 }
 
 fn symbolic_base(identity: u64) -> Address {
@@ -85,7 +85,7 @@ fn symbolic_base(identity: u64) -> Address {
 /// has a candidate to visit.
 fn assumptions_aliasing_the_target() -> PureFactContext {
     PureFactContext::new().assume_condition(
-        pointer_equal(heap_base(TARGET_HEAP), symbolic_base(2 * TARGET_HEAP)),
+        address_equal(heap_base(TARGET_HEAP), symbolic_base(2 * TARGET_HEAP)),
         true,
     )
 }
@@ -298,7 +298,7 @@ fn validity_is_logarithmic_in_unrelated_pointer_equalities() {
         let frame = frame_with_unrelated_allocations(2);
         let assumptions = (0..size).fold(assumptions_aliasing_the_target(), |facts, index| {
             facts.assume_condition(
-                pointer_equal(
+                address_equal(
                     symbolic_base(3 * TARGET_HEAP + 2 * index as u64),
                     symbolic_base(3 * TARGET_HEAP + 2 * index as u64 + 1),
                 ),
@@ -371,10 +371,10 @@ fn indexed_validity_still_finds_every_violation_kind() {
             .clone()
             .unchecked_with_fact(owned_range(other.clone(), 0, 4));
         let joined = PureFactContext::new()
-            .assume_condition(pointer_equal(heap_base(TARGET_HEAP), other.clone()), true);
+            .assume_condition(address_equal(heap_base(TARGET_HEAP), other.clone()), true);
         let crowded = (0..2 * size + 8).fold(joined.clone(), |facts, index| {
             facts.assume_condition(
-                pointer_equal(
+                address_equal(
                     symbolic_base(4 * TARGET_HEAP + 2 * index as u64),
                     symbolic_base(4 * TARGET_HEAP + 2 * index as u64 + 1),
                 ),
@@ -1178,7 +1178,7 @@ fn parameter_validity_still_refuses_related_overlaps() {
         "a parameter pinned to the address of an owned one"
     );
     let equal_pointer = PureFactContext::new().assume_condition(
-        ConditionTerm::pointer_equal(parameter_base(other), parameter_base(target)),
+        ConditionTerm::address_equal(parameter_base(other), parameter_base(target)),
         true,
     );
     assert!(
@@ -1915,7 +1915,7 @@ fn shared_view_offset_alias_lookup_is_indexed_and_preserves_occurrences() {
     let index = MachineTerm::Variable(Variable(3 * TARGET_HEAP));
     let displaced = base.offset_by_elements(index.clone(), 1);
     let facts = PureFactContext::new()
-        .assume_condition(pointer_equal(alias.clone(), displaced), true)
+        .assume_condition(address_equal(alias.clone(), displaced), true)
         .assume_condition(
             ConditionTerm::signed_less_equal(0u32.into(), index.clone()),
             true,
@@ -2318,11 +2318,11 @@ fn footprint_composition_does_not_decide_every_alias_pair() {
         let assumptions = (0..aliases).fold(ordered, |facts, index| {
             facts
                 .assume_condition(
-                    pointer_equal(argument_base(STRUCT), argument_base(995_000 + index)),
+                    address_equal(argument_base(STRUCT), argument_base(995_000 + index)),
                     true,
                 )
                 .assume_condition(
-                    pointer_equal(argument_base(ARRAY), argument_base(996_000 + index)),
+                    address_equal(argument_base(ARRAY), argument_base(996_000 + index)),
                     true,
                 )
         });
@@ -2368,11 +2368,11 @@ fn selected_ownership_overlap_ignores_ambient_aliases() {
         let assumptions = (0..count).fold(PureFactContext::new(), |facts, index| {
             facts
                 .assume_condition(
-                    pointer_equal(left.clone(), argument_base(999_000 + index)),
+                    address_equal(left.clone(), argument_base(999_000 + index)),
                     true,
                 )
                 .assume_condition(
-                    pointer_equal(right.clone(), argument_base(999_100 + index)),
+                    address_equal(right.clone(), argument_base(999_100 + index)),
                     true,
                 )
         });

@@ -1029,14 +1029,14 @@ fn native_unsigned_offset_projection_checks_full_width_bounds_and_scopes() {
         var: Variable(989_100),
         sort: Sort::ProgramInteger(MachineIntegerType::UInt64),
         body: Box::new(Proposition::ConditionIs(
-            ConditionTerm::pointer_offset_equal(native.clone(), narrow.clone()),
+            ConditionTerm::address_offset_equal(native.clone(), narrow.clone()),
             true,
         )),
     };
     assert_eq!(rewrite.proposition(&binder), binder);
     assert!(rewrite.refusal().is_none());
     let goal = Proposition::ConditionIs(
-        ConditionTerm::pointer_offset_equal(native.clone(), narrow),
+        ConditionTerm::address_offset_equal(native.clone(), narrow),
         true,
     );
     let premise = Proposition::ConditionIs(bound, true);

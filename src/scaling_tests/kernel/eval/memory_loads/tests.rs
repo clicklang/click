@@ -17,7 +17,7 @@ fn logical_cached_pointer_read_carries_its_current_cell_equation() {
     for size in [4u64, 16, 64, 256] {
         let mut memory = base.clone();
         let mut context = empty.clone().assume_condition(
-            ConditionTerm::pointer_equal(address.clone(), alias.clone()),
+            ConditionTerm::address_equal(address.clone(), alias.clone()),
             true,
         );
         for i in 0..size {
@@ -50,7 +50,7 @@ fn logical_cached_pointer_read_carries_its_current_cell_equation() {
         memory = memory
             .materialize_named_cell(address.clone(), ProgramValue::Pointer(cached_value.clone()));
         context = context.assume_condition(
-            ConditionTerm::pointer_value_equal(
+            ConditionTerm::pointer_equal(
                 cached_value.clone(),
                 Pointer::new(model.clone(), ProgramType::Int64Pointer),
             ),
@@ -112,7 +112,7 @@ fn logical_cached_pointer_read_carries_its_current_cell_equation() {
         assert!(!equal(&retained.restricted_to_facts(&[], &[])));
         assert!(!ResourceContext::new().permits_memory_read(&alias, 8, &retained));
         let missing_alias = empty.clone().assume_condition(
-            ConditionTerm::pointer_value_equal(
+            ConditionTerm::pointer_equal(
                 cached_value.clone(),
                 Pointer::new(model.clone(), ProgramType::Int64Pointer),
             ),
@@ -275,7 +275,7 @@ fn pointer_read_observations_check_frames_scope_and_scaling() {
     let base = SymbolicMemory::new();
     let empty = PureFactContext::new();
     let facts = empty.clone().assume_condition(
-        ConditionTerm::pointer_equal(address.clone(), alias.clone()),
+        ConditionTerm::address_equal(address.clone(), alias.clone()),
         true,
     );
     let read = |memory: &SymbolicMemory, address: &Address, purpose| {
@@ -466,7 +466,7 @@ fn logical_reads_of_a_returned_field_share_checked_alias_identity() {
     let memory =
         before.with_call_memory_havoc(Variable(944_020), &[range], &PureFactContext::new(), None);
     let facts = PureFactContext::new().assume_condition(
-        ConditionTerm::pointer_equal(alias.clone(), field.clone()),
+        ConditionTerm::address_equal(alias.clone(), field.clone()),
         true,
     );
     let read = |pointer, assumptions: &PureFactContext| {
@@ -623,7 +623,7 @@ fn logical_read_alias_samples(sizes: &[u64]) -> Vec<(usize, usize)> {
     let mut samples = Vec::new();
     for &size in sizes {
         let mut context = before.clone().assume_condition(
-            ConditionTerm::pointer_equal(owner.clone(), alias.clone()),
+            ConditionTerm::address_equal(owner.clone(), alias.clone()),
             true,
         );
         for i in 0..size {
@@ -640,7 +640,7 @@ fn logical_read_alias_samples(sizes: &[u64]) -> Vec<(usize, usize)> {
             context = context
                 .assume_proposition(Proposition::ResourceComposition(frame))
                 .assume_condition(
-                    ConditionTerm::pointer_equal(
+                    ConditionTerm::address_equal(
                         alias.clone(),
                         Address::symbolic(Variable(297_000 + i)),
                     ),
@@ -819,12 +819,12 @@ fn logical_scalar_read_meets_model_cell_through_later_external_alias() {
     let mut samples = Vec::new();
     for size in [8u64, 64, 512] {
         let mut context = before.clone().assume_condition(
-            ConditionTerm::pointer_equal(owner.clone(), alias.clone()),
+            ConditionTerm::address_equal(owner.clone(), alias.clone()),
             true,
         );
         for i in 0..size {
             context = context.assume_condition(
-                ConditionTerm::pointer_equal(
+                ConditionTerm::address_equal(
                     owner.clone(),
                     Address::symbolic(Variable(98_000 + i)),
                 ),
@@ -917,14 +917,14 @@ fn pointer_read_premises_register_definitions_before_transitive_queries() {
     };
     let bare = PureFactContext::new();
     let read = logical_pointer_read(&memory, &parent.offset_by_bytes(16), &bare);
-    let base_equality = ConditionTerm::pointer_equal(parent.clone(), base);
-    let read_equality = ConditionTerm::pointer_equal(stored.address().clone(), successor.clone());
+    let base_equality = ConditionTerm::address_equal(parent.clone(), base);
+    let read_equality = ConditionTerm::address_equal(stored.address().clone(), successor.clone());
     let mut samples = Vec::new();
     for size in [8u64, 32, 128, 512] {
         let mut ambient = bare.clone();
         for i in 0..size {
             ambient = ambient.assume_condition(
-                ConditionTerm::pointer_equal(
+                ConditionTerm::address_equal(
                     Address::symbolic(Variable(96_600 + i)),
                     Address::symbolic(Variable(97_600 + i)),
                 ),
@@ -1021,7 +1021,7 @@ fn seeded_pointer_cells_retain_their_typed_load_definition() {
             crate::kernel::cell_run_value(ProgramType::Int64Pointer, load);
         }
         let context = bare.clone().assume_condition(
-            ConditionTerm::pointer_equal(base.clone(), alias.clone()),
+            ConditionTerm::address_equal(base.clone(), alias.clone()),
             true,
         );
         let ((equal, work), map_work) = crate::persistent::measure_persistent_work(|| {
@@ -1071,12 +1071,12 @@ fn cached_pointer_value_keeps_its_defining_coordinates_and_scales() {
     let mut samples = Vec::new();
     for count in [4u64, 16, 64, 256] {
         let mut context = PureFactContext::new().assume_condition(
-            ConditionTerm::pointer_equal(owner.clone(), cursor.clone()),
+            ConditionTerm::address_equal(owner.clone(), cursor.clone()),
             true,
         );
         for i in 0..count {
             context = context.assume_condition(
-                ConditionTerm::pointer_equal(
+                ConditionTerm::address_equal(
                     Address::symbolic(Variable(196_000 + i)),
                     Address::symbolic(Variable(198_000 + i)),
                 ),
@@ -1167,7 +1167,7 @@ fn cached_pointer_reads_retain_their_current_cell_identity() {
             .clone()
             .require_owned_expression_loads()
             .assume_condition(
-                ConditionTerm::pointer_equal(alias.clone(), address.clone()),
+                ConditionTerm::address_equal(alias.clone(), address.clone()),
                 true,
             );
         let initial = intern_memory_ref(&memory);
@@ -1278,7 +1278,7 @@ fn logical_pointer_read_queries_do_not_scan_unrelated_definitions() {
     let b = Address::symbolic(Variable(92_221));
     let x = logical_pointer_read(&memory, &a, &context);
     let y = logical_pointer_read(&memory, &b, &context);
-    let branch = context.assume_condition(ConditionTerm::pointer_equal(a, b), true);
+    let branch = context.assume_condition(ConditionTerm::address_equal(a, b), true);
     assert!(branch.pointers_known_equal(&x, &y));
     for size in [16u64, 64, 256, 1024] {
         for i in 0..size {
@@ -1527,7 +1527,7 @@ fn cached_raw_pointer_names_ignore_unrelated_read_definitions() {
             .store(slot_a.clone(), first)
             .store(slot_b.clone(), second);
         let context = PureFactContext::new().assume_condition(
-            ConditionTerm::pointer_value_equal(
+            ConditionTerm::pointer_equal(
                 Pointer::new(a, ProgramType::Int32Pointer),
                 Pointer::new(b, ProgramType::Int32Pointer),
             ),
@@ -1583,7 +1583,7 @@ fn opaque_word_call_frame(size: u32) -> (SymbolicMemory, PureFactContext, Addres
         .prefer_symbolic_external_loads()
         .assume_condition(ConditionTerm::pointer_aligned(word.clone(), 8), true)
         .assume_condition(
-            ConditionTerm::pointer_equal(word.clone(), Address::null()),
+            ConditionTerm::address_equal(word.clone(), Address::null()),
             false,
         );
     let definition = CompositeResourceDefinition::new(
@@ -1683,7 +1683,7 @@ fn querying_an_opaque_word_pointer_does_not_search_unrelated_call_resources() {
                 },
             ));
             let related = context.assume_condition(
-                ConditionTerm::pointer_value_equal(pointer.clone(), bounded.clone()),
+                ConditionTerm::pointer_equal(pointer.clone(), bounded.clone()),
                 true,
             );
             assert_eq!(
@@ -1802,7 +1802,7 @@ fn complete_pointer_read_definitions_scale_with_selected_reads() {
         let mut context = PureFactContext::new();
         for i in 0..unrelated {
             context = context.assume_condition(
-                ConditionTerm::pointer_equal(
+                ConditionTerm::address_equal(
                     Address::symbolic(Variable(982_000 + i * 2)),
                     Address::symbolic(Variable(982_001 + i * 2)),
                 ),
@@ -1826,7 +1826,7 @@ fn complete_pointer_read_definitions_scale_with_selected_reads() {
                 Address::version_read(&memory, &slot),
                 ProgramType::Int32Pointer,
             );
-            queries.push(ConditionTerm::PointerValueEqual(
+            queries.push(ConditionTerm::PointerEqual(
                 Box::new(read),
                 Box::new(stored),
             ));
@@ -1931,7 +1931,7 @@ fn scalar_projection_congruence_scales_with_selected_versions() {
         };
         let alias = Address::symbolic(Variable(946_010));
         let mut facts = PureFactContext::new().assume_condition(
-            ConditionTerm::pointer_equal(field.clone(), alias.clone()),
+            ConditionTerm::address_equal(field.clone(), alias.clone()),
             true,
         );
         for i in 0..unrelated {
@@ -2023,7 +2023,7 @@ fn symbolic_logical_wide_reads_do_not_scan_ambient_cells_or_facts() {
             slot.clone(),
             ProgramValue::UInt64(MachineTerm::uint64_constant(7)),
         );
-        context = context.assume_condition(ConditionTerm::pointer_equal(slot, alias.clone()), true);
+        context = context.assume_condition(ConditionTerm::address_equal(slot, alias.clone()), true);
         // The first read catches up the reachable-cell index with the stores
         // constructed above. Charge that startup separately; the next read
         // uses a fresh pointer so a cached load cannot hide an ambient scan.

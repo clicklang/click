@@ -2358,18 +2358,43 @@ impl MemoryRange {
     /// Physical identity for separation only. This does not carry permission
     /// to access the bytes and must not be used for ownership or containment.
     pub(crate) fn spatial_key(&self) -> Self {
-        let (start, end) = self.bound_terms();
-        let constructor = if self.wide_bounds().is_some() {
-            Self::new_wide
-        } else {
-            Self::new_with_element_width
+        let carrier = Pointer::new(self.base.clone(), ProgramType::VoidPointer);
+        Self {
+            bounds_owner: carrier.bounds_owner.clone(),
+            carrier_bounds_known: carrier.bounds_are_known(),
+            provenance: std::sync::Arc::new(self.base.object_identity()),
+            typed_carrier: false,
+            formation_coverage: Default::default(),
+            ..self.clone()
+        }
+    }
+
+    pub(crate) fn from_retained_bounds(
+        base: &Pointer,
+        start: crate::kernel::ExecutionValue,
+        end: crate::kernel::ExecutionValue,
+        element_width: u32,
+    ) -> Option<Self> {
+        let kind = match (start.program_type(), end.program_type()) {
+            (ProgramType::Int32, ProgramType::Int32) => RangeIndexKind::Int32,
+            (ProgramType::UInt64, ProgramType::UInt64) => RangeIndexKind::UInt64,
+            _ => return None,
         };
-        constructor(
-            self.base().clone(),
-            start.clone(),
-            end.clone(),
-            self.element_width(),
+        let mut range = Self::new_with_element_width(
+            base.address().clone(),
+            MachineTerm::constant(0),
+            MachineTerm::constant(0),
+            element_width,
         )
+        .with_pointer_carrier(base);
+        range.start_bound = StoredMachineTerm::from_value(start)?;
+        range.end_bound = StoredMachineTerm::from_value(end)?;
+        range.kind = kind;
+        Some(range)
+    }
+
+    pub(crate) fn retained_bounds(&self) -> (&StoredMachineTerm, &StoredMachineTerm) {
+        (&self.start_bound, &self.end_bound)
     }
 
     pub fn new(base: Address, start: MachineTerm, end: MachineTerm) -> Self {
@@ -2395,8 +2420,8 @@ impl MemoryRange {
             provenance: std::sync::Arc::new(base.object_identity()),
             typed_carrier: false,
             base,
-            start_bound: start,
-            end_bound: end,
+            start_bound: StoredMachineTerm::new(MachineIntegerType::Int32, start),
+            end_bound: StoredMachineTerm::new(MachineIntegerType::Int32, end),
             element_width,
             kind: RangeIndexKind::Int32,
             formation_coverage: Default::default(),
@@ -2531,11 +2556,12 @@ impl MemoryRange {
     pub(crate) fn has_symbolic_bounds(&self) -> bool {
         match self.kind {
             RangeIndexKind::Int32 => {
-                self.start_bound.as_const().is_none() || self.end_bound.as_const().is_none()
+                self.start_bound.native_compat().as_const().is_none()
+                    || self.end_bound.native_compat().as_const().is_none()
             }
             RangeIndexKind::UInt64 => {
-                self.start_bound.uint64_as_const().is_none()
-                    || self.end_bound.uint64_as_const().is_none()
+                self.start_bound.native_compat().uint64_as_const().is_none()
+                    || self.end_bound.native_compat().uint64_as_const().is_none()
             }
         }
     }
@@ -2545,9 +2571,9 @@ impl MemoryRange {
         match self.kind {
             RangeIndexKind::Int32 => self
                 .base
-                .offset_by_elements(self.start_bound.clone(), self.element_width),
+                .offset_by_elements(self.start_bound.native_compat().clone(), self.element_width),
             RangeIndexKind::UInt64 => self.base.offset_by_typed_elements(
-                self.start_bound.clone(),
+                self.start_bound.native_compat().clone(),
                 self.element_width,
                 true,
                 true,
@@ -2560,9 +2586,9 @@ impl MemoryRange {
         match self.kind {
             RangeIndexKind::Int32 => self
                 .base
-                .offset_by_elements(self.end_bound.clone(), self.element_width),
+                .offset_by_elements(self.end_bound.native_compat().clone(), self.element_width),
             RangeIndexKind::UInt64 => self.base.offset_by_typed_elements(
-                self.end_bound.clone(),
+                self.end_bound.native_compat().clone(),
                 self.element_width,
                 true,
                 true,
@@ -2573,7 +2599,12 @@ impl MemoryRange {
     /// The bounds as signed 32-bit indices, or nothing for a wide range: for
     /// a reader that answers "unknown" where it cannot read the bounds.
     pub(crate) fn int32_bounds(&self) -> Option<(&MachineTerm, &MachineTerm)> {
-        (self.kind == RangeIndexKind::Int32).then_some((&self.start_bound, &self.end_bound))
+        (self.kind == RangeIndexKind::Int32).then(|| {
+            (
+                self.start_bound.native_compat(),
+                self.end_bound.native_compat(),
+            )
+        })
     }
 
     /// That this range's memory is live in `memory`. An `Int32` range
@@ -2608,12 +2639,20 @@ impl MemoryRange {
     /// reads their structure (the variables in them, a substitution into
     /// them) and never the numbers they denote.
     pub(crate) fn bound_terms(&self) -> (&MachineTerm, &MachineTerm) {
-        (&self.start_bound, &self.end_bound)
+        (
+            self.start_bound.native_compat(),
+            self.end_bound.native_compat(),
+        )
     }
 
     /// The bounds of a wide range, which no signed 32-bit reader may take.
     pub(crate) fn wide_bounds(&self) -> Option<(&MachineTerm, &MachineTerm)> {
-        (self.kind == RangeIndexKind::UInt64).then_some((&self.start_bound, &self.end_bound))
+        (self.kind == RangeIndexKind::UInt64).then(|| {
+            (
+                self.start_bound.native_compat(),
+                self.end_bound.native_compat(),
+            )
+        })
     }
 
     /// A reader of signed 32-bit bounds met a wide range. It was never
@@ -2815,13 +2854,13 @@ impl MemoryRange {
     #[track_caller]
     pub fn start(&self) -> &MachineTerm {
         self.assert_int32();
-        &self.start_bound
+        self.start_bound.native_compat()
     }
 
     #[track_caller]
     pub fn end(&self) -> &MachineTerm {
         self.assert_int32();
-        &self.end_bound
+        self.end_bound.native_compat()
     }
 
     /// The write set of memory no clause names: the largest valid span at

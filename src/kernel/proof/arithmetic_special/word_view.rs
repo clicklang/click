@@ -10,7 +10,7 @@ pub(super) enum Key {
     Shared(u64),
 }
 pub(super) enum Node<'a> {
-    PointerAddress(&'a Address),
+    IntegerAddress(&'a Address),
     Binary {
         format: MachineIntegerType,
         op: MachineBinaryOp,
@@ -43,8 +43,8 @@ impl<'a> Word<'a> {
                 right: Word(right),
             };
         }
-        if let Some(MachineTerm::PointerAddress(pointer, _)) = self.leaf() {
-            return Node::PointerAddress(pointer);
+        if let Some(MachineTerm::IntegerAddress(pointer, _)) = self.leaf() {
+            return Node::IntegerAddress(pointer);
         }
         Node::Other
     }

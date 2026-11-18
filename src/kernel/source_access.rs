@@ -45,7 +45,7 @@ impl StatementAssignSource {
             return None;
         }
         let mut fact = ExecutionPureFact::certified(Proposition::ConditionIs(
-            ConditionTerm::PointerEqual(
+            ConditionTerm::AddressEqual(
                 Box::new(parent.address().clone()),
                 Box::new(child.address().clone()),
             ),
@@ -198,7 +198,7 @@ impl ReferenceObservationSource {
                 Proposition::MemoryReadDefined { memory, pointer, value_type, at }
                 if expected_point == at && *retained_state == MemoryStateIdentity::of(memory) && expected == pointer && expected_type == value_type),
             ReferenceObservation::Borrow(birth) => matches!(proposition,
-                Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true)
+                Proposition::ConditionIs(ConditionTerm::AddressEqual(left, right), true)
                 if left.as_ref() == &birth.pointer && right.as_ref() == &birth.pointer),
         })
     }

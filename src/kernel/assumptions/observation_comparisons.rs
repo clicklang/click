@@ -436,7 +436,7 @@ impl ObservationComparisons {
 
     pub(super) fn adjust(&mut self, condition: &ConditionTerm, truth: bool) {
         let source = Proposition::ConditionIs(condition.clone(), truth);
-        if let ConditionTerm::PointerOffsetEqual(left, right) = condition {
+        if let ConditionTerm::AddressOffsetEqual(left, right) = condition {
             use crate::kernel::machine_integer::comparison::ComparisonOperand;
             fn operand(offset: &AddressOffset) -> Option<ComparisonOperand<'_>> {
                 match offset {
@@ -667,7 +667,7 @@ mod compound_observation_lookup_tests {
         let zero = MachineTerm::constant(0);
         for truth in [false, true] {
             for width in [4, 8] {
-                let source = ConditionTerm::PointerOffsetEqual(
+                let source = ConditionTerm::AddressOffsetEqual(
                     AddressOffset::Int32Scaled {
                         value: MachineOperandView::Shared(&root).retain(ty),
                         byte_width: width,

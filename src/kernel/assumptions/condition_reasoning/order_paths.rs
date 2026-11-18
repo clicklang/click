@@ -366,12 +366,12 @@ impl PureFactContext {
 
     fn decide_from_order_rules(&self, condition: &ConditionTerm) -> Option<bool> {
         match condition {
-            ConditionTerm::PointerEqual(left, right) if left == right => Some(true),
-            ConditionTerm::PointerEqual(left, right) => {
+            ConditionTerm::AddressEqual(left, right) if left == right => Some(true),
+            ConditionTerm::AddressEqual(left, right) => {
                 if self.pointers_known_equal(left, right) {
                     Some(true)
                 } else if left.base == right.base {
-                    self.decide_from_order_rules(&ConditionTerm::pointer_offset_equal(
+                    self.decide_from_order_rules(&ConditionTerm::address_offset_equal(
                         left.offset.clone(),
                         right.offset.clone(),
                     ))
@@ -398,8 +398,8 @@ impl PureFactContext {
                 }
                 self.decide_uint64_equality_extras(left, right)
             }
-            ConditionTerm::PointerOffsetEqual(left, right) if left == right => Some(true),
-            ConditionTerm::PointerOffsetEqual(left, right) => {
+            ConditionTerm::AddressOffsetEqual(left, right) if left == right => Some(true),
+            ConditionTerm::AddressOffsetEqual(left, right) => {
                 if pointer_offsets_proven_equal_for_memory_resolution(left, right, self) {
                     return Some(true);
                 }
@@ -507,14 +507,14 @@ impl PureFactContext {
                         true,
                     )
                     || self.has_condition_fact(
-                        ConditionTerm::pointer_offset_equal(
+                        ConditionTerm::address_offset_equal(
                             AddressOffset::scale_int32(left.clone(), 4),
                             AddressOffset::scale_int32(right.clone(), 4),
                         ),
                         true,
                     )
                     || self.has_condition_fact(
-                        ConditionTerm::pointer_offset_equal(
+                        ConditionTerm::address_offset_equal(
                             AddressOffset::scale_int32(right.clone(), 4),
                             AddressOffset::scale_int32(left.clone(), 4),
                         ),
@@ -556,14 +556,14 @@ impl PureFactContext {
                         right.clone(),
                     )) == Some(true)
                     || self.has_condition_fact(
-                        ConditionTerm::pointer_offset_equal(
+                        ConditionTerm::address_offset_equal(
                             AddressOffset::scale_int32(left.clone(), 4),
                             AddressOffset::scale_int32(right.clone(), 4),
                         ),
                         false,
                     )
                     || self.has_condition_fact(
-                        ConditionTerm::pointer_offset_equal(
+                        ConditionTerm::address_offset_equal(
                             AddressOffset::scale_int32(right.clone(), 4),
                             AddressOffset::scale_int32(left.clone(), 4),
                         ),
@@ -1703,7 +1703,7 @@ impl PureFactContext {
             return None;
         }
         // The null pointer's address is zero, which every alignment divides.
-        let null_fact = ConditionTerm::pointer_equal(pointer.clone(), Address::null());
+        let null_fact = ConditionTerm::address_equal(pointer.clone(), Address::null());
         if self.decide(&null_fact) == Some(true) {
             return Some((true, Some(Proposition::ConditionIs(null_fact, true))));
         }
@@ -1874,7 +1874,7 @@ impl PureFactContext {
             (Some(left), Some(right)) => {
                 if crate::kernel::eval::pointer_tags::same_tag_syntax(&left.tag, &right.tag) {
                     return self.decide_citing(
-                        &ConditionTerm::pointer_equal(left.pointer, right.pointer),
+                        &ConditionTerm::address_equal(left.pointer, right.pointer),
                         used,
                     );
                 }
@@ -1900,7 +1900,7 @@ impl PureFactContext {
                 ) == Some(false);
                 let distinct = tags_differ
                     || self.decide_citing(
-                        &ConditionTerm::pointer_equal(left.pointer.clone(), right.pointer.clone()),
+                        &ConditionTerm::address_equal(left.pointer.clone(), right.pointer.clone()),
                         used,
                     ) == Some(false);
                 let both_aligned = self.decide_citing(
@@ -1924,7 +1924,7 @@ impl PureFactContext {
                 let tag = tag_bound(form.tag.operand_view())?;
                 let alignment = tag.checked_add(1)?.checked_next_power_of_two()?;
                 let nonnull = self.decide_citing(
-                    &ConditionTerm::pointer_equal(form.pointer.clone(), Address::null()),
+                    &ConditionTerm::address_equal(form.pointer.clone(), Address::null()),
                     used,
                 ) == Some(false);
                 let aligned = self.decide_citing(

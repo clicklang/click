@@ -193,7 +193,7 @@ fn callback_contract_availability_uses_scoped_pointer_equality() {
         interface_type,
     );
     let alias =
-        Proposition::ConditionIs(ConditionTerm::pointer_equal(callback.clone(), target), true);
+        Proposition::ConditionIs(ConditionTerm::address_equal(callback.clone(), target), true);
     let mut samples = Vec::new();
     for size in [4, 64, 256] {
         let mut context = PureFactContext::new()
@@ -1335,7 +1335,7 @@ fn pointer_association_selected_guard_work_ignores_ambient_facts() {
         false,
     );
     let goal = Proposition::ConditionIs(
-        ConditionTerm::pointer_offset_equal(
+        ConditionTerm::address_offset_equal(
             AddressOffset::Add(
                 Box::new(AddressOffset::scale_int32(i.clone(), 1)),
                 Box::new(AddressOffset::Constant(4)),
@@ -1382,7 +1382,7 @@ fn pointer_association_selected_guard_work_ignores_ambient_facts() {
 #[test]
 fn uint64_pointer_association_selected_guard_work_ignores_other_facts() {
     let i = MachineTerm::Variable(Variable(198301));
-    let goal_condition = ConditionTerm::pointer_offset_equal(
+    let goal_condition = ConditionTerm::address_offset_equal(
         AddressOffset::Add(
             Box::new(AddressOffset::scale_int64(i.clone(), 1, true)),
             Box::new(AddressOffset::Constant(4)),
@@ -1405,7 +1405,7 @@ fn uint64_pointer_association_selected_guard_work_ignores_other_facts() {
     let bound = bound_of(&goal_condition);
     let other_bound = |n: u64| {
         let j = MachineTerm::Variable(Variable(199500 + n));
-        bound_of(&ConditionTerm::pointer_offset_equal(
+        bound_of(&ConditionTerm::address_offset_equal(
             AddressOffset::Add(
                 Box::new(AddressOffset::scale_int64(j.clone(), 1, true)),
                 Box::new(AddressOffset::Constant(4)),
@@ -1851,7 +1851,7 @@ fn equality_aware_pointer_fact_queries_ignore_unrelated_facts_and_old_states() {
             ));
         }
         context = context.assume_condition(
-            ConditionTerm::PointerEqual(Box::new(target.clone()), Box::new(alias.clone())),
+            ConditionTerm::AddressEqual(Box::new(target.clone()), Box::new(alias.clone())),
             true,
         );
         assert!(context.contains_known(&goal)); // warm selected registration
