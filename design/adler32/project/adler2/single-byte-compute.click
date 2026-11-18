@@ -237,7 +237,9 @@ impl adler2::Adler32 {
      solve();
      }
 
-     // Each promised equality was established above.
+     // Close the owned fields and the checked output equalities.
+     known();
+     known();
      known();
      known();
      known();

@@ -284,6 +284,7 @@ impl adler2::Adler32 {
      // The empty chunk iterators execute no body. Prove the scalar reduction
      // from its checked transition before following lane recombination.
      step_until(assignment(b, 0)); step();
+     have a == 1u32 by { known(); }
      have b == 0u32;
      // Neither chunk iterator has any bytes available to yield.
      step_until(loop(0));
@@ -393,7 +394,10 @@ impl adler2::Adler32 {
      have at(output_b, b) == 393126u32;
      step_until(function.exit);
      have self.b == 0;
-     solve() using { self.a == 1; self.b == 0; };
+     known();
+     known();
+     known();
+     known();
     }
 }
 

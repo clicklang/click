@@ -268,9 +268,11 @@ impl adler2::Adler32 {
      have to_integer(self.b) == old(adler_spec_b(bytes, 3, 1, 0)) by {
       rewrite(to_integer(self.b), to_integer(((((393126u32 + (1u32 + old((bytes[0] as u32)))) + ((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32)))) + (((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32))) + old((bytes[2] as u32))))) % 65521u32)); known();
      }
-     // Each promised equality was established above.
+     // Close the owned fields and the checked output equalities.
      known();
      known(); known(); known();
+     known();
+     known();
      known();
      known();
      known();

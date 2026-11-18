@@ -54,7 +54,7 @@ fn compute_proof_with_spec(contract: &str, specification: &str) -> String {
     // Function-contract imports are not admitted yet. Assemble one verification
     // unit from the canonical helper/getter bodies and this alternative compute
     // contract, rather than duplicating or assuming their interfaces.
-    let lemmas = if contract.contains("adler_recombine_difference(") {
+    let lemmas = if contract.contains("adler_recombine_") {
         RECOMBINATION
     } else {
         ""
@@ -1363,13 +1363,13 @@ fn charon_adler2_three_byte_compute_tools_recheck_original_contract() {
 fn charon_adler2_four_byte_compute_rejects_false_stored_iterator_observations() {
     reject_compute(
         FOUR_BYTE_COMPUTE,
-        "have (((loop(2).iter.len() * 4u64) as uint32) as int32) == 4;",
-        "have (((loop(2).iter.len() * 4u64) as uint32) as int32) == 8;",
+        "have loop(2).iter.v.len() == 4u64;",
+        "have loop(2).iter.v.len() == 8u64;",
     );
     reject_compute(
         FOUR_BYTE_COMPUTE,
-        "have adler_lane_vectors_consumed(4, (((loop(2).iter.len() * 4u64) as uint32) as int32)) == 0 by",
-        "have adler_lane_vectors_consumed(4, (((loop(2).iter.len() * 4u64) as uint32) as int32)) == 1 by",
+        "have loop(2).iter.v == old(bytes) + 4u64 by",
+        "have loop(2).iter.v == old(bytes) + 8u64 by",
     );
 }
 
@@ -1435,10 +1435,10 @@ fn charon_adler2_four_byte_compute_proves_original_body_and_rejects_false_output
 #[test]
 #[ignore = "nightly: wrong modulus and false remainder in the original four-byte computation"]
 fn charon_adler2_four_byte_compute_rejects_false_remainder_normalization() {
-    let goal = "have b_vec.0[0] == at(reduction_b, b_vec.0[0]) % 65521u32 by";
+    let goal = "have b_vec.0[0] == at(reduce_b, b_vec.0[0]) % statement(13).call(0).result by";
     for false_goal in [
-        "have b_vec.0[0] == at(reduction_b, b_vec.0[0]) % 251u32 by",
-        "have b_vec.0[0] == at(reduction_b, b_vec.0[0]) % 65521u32 + 1u32 by",
+        "have b_vec.0[0] == at(reduce_b, b_vec.0[0]) % 251u32 by",
+        "have b_vec.0[0] == at(reduce_b, b_vec.0[0]) % statement(13).call(0).result + 1u32 by",
     ] {
         reject_compute(FOUR_BYTE_COMPUTE, goal, false_goal);
     }
@@ -1452,27 +1452,32 @@ fn charon_adler2_four_byte_cursor_have_keeps_its_pre_regression_work_bound() {
     let source = compute_proof(FOUR_BYTE_COMPUTE);
     let offset = source.find("step_until(assignment(b, 0))").unwrap();
     let line = source[..offset].bytes().filter(|&b| b == b'\n').count() + 1;
+    let inputs = click::surface::ProgramInputs::program(&prepared);
     let (_, samples) = click::instrumentation::collect_tactic_work(|| {
-        click::surface::verify_sources_at(
-            &source,
-            &click::surface::ProgramInputs::program(&prepared),
-            line,
-            2,
-        )
+        click::surface::verify_sources_at(&source, &inputs, line, 2)
     });
-    // The unchanged imported body and proof identify this have at MIR
-    // statement 904, source tactic 58. Later independent proof refusals
-    // cannot substitute for a successfully checked event at this site;
-    // the existing full-body/tool tests still require the entire proof.
     let target = samples
         .iter()
         .find(|sample| {
             sample.tactic.claim.ends_with("_compute.contract")
-                && sample.tactic.statement_index == 904
-                && sample.tactic.source_index == 58
+                && sample.tactic.source_index == 18
                 && sample.tactic.tactic_name == "have"
         })
-        .expect("the original cursor equality must be reached");
+        .expect("the checked cursor advancement must be reached");
+    let position = click::surface::tactic_source_position(
+        &source,
+        &inputs,
+        &target.tactic.claim,
+        target.tactic.source_index,
+    )
+    .unwrap();
+    assert!(
+        source
+            .lines()
+            .nth(position.line - 1)
+            .unwrap()
+            .contains("have loop(2).iter.v == old(bytes) + 4u64")
+    );
     assert!(!target.failed, "{target:?}");
     assert!(target.work > 0 && target.work <= 192_075, "{target:?}");
 }
@@ -1483,22 +1488,11 @@ fn charon_adler2_four_byte_compute_rejects_false_native_step_bounds() {
     // The complete positive caller is checked by the existing computation
     // regression. These mutations target the bounds after both original calls,
     // independently of the final checksum expressions.
-    let post_step = FOUR_BYTE_COMPUTE
-        .split_once("// Both actual helper results satisfy the ceiling at next()'s new state.")
-        .unwrap()
-        .1;
     for field in ["a", "b"] {
         for lane in [0, 3] {
-            let bound = format!(
-                "have to_integer({field}_vec.0[{lane}]) <= adler_lane_{field}_ceiling(adler_lane_vectors_consumed(4, (((iter.len() * 4u64) as uint32) as int32))) by"
-            );
-            let changed = post_step.replacen(
-                &bound,
-                &format!("have to_integer({field}_vec.0[{lane}]) <= 0 by"),
-                1,
-            );
-            assert_ne!(post_step, changed);
-            reject_compute(FOUR_BYTE_COMPUTE, post_step, &changed);
+            let bound = format!("have to_integer({field}_vec.0[{lane}]) <= 255 by");
+            let changed = format!("have to_integer({field}_vec.0[{lane}]) <= 0 by");
+            reject_compute(FOUR_BYTE_COMPUTE, &bound, &changed);
         }
     }
     reject_compute(
@@ -1508,8 +1502,8 @@ fn charon_adler2_four_byte_compute_rejects_false_native_step_bounds() {
     );
     reject_compute(
         FOUR_BYTE_COMPUTE,
-        "// Both actual helper results satisfy the ceiling at next()'s new state.\n        have (((iter.len() * 4u64) as uint32) as int32) == at(lane_head, (((iter.len() * 4u64) as uint32) as int32)) - 4;",
-        "// Both actual helper results satisfy the ceiling at next()'s new state.\n        have (((iter.len() * 4u64) as uint32) as int32) == at(lane_head, (((iter.len() * 4u64) as uint32) as int32));",
+        "have loop(2).iter.v.len() == 0u64 by",
+        "have loop(2).iter.v.len() == 4u64 by",
     );
 }
 

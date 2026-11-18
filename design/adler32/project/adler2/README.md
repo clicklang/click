@@ -2,11 +2,11 @@
 
 > **Status.** The lane helpers and the empty, one-, two-, and three-byte
 > `compute` proofs check against the locked crate on the current verifier.
-> The serial boundary proofs read the real `ChunksExact` fields and use
-> source statement selectors for the arithmetic. The four-byte, small-batch,
-> and general proofs below still refer to the removed iterator model and
-> generated operand locals. The public and client proofs depend on the
-> general computation.
+> The four-byte boundary also checks the original vector path. These proofs
+> read the real `ChunksExact` fields and use source statement selectors for
+> the arithmetic. The small-batch and general proofs below still refer to
+> the removed iterator model and generated operand locals. The public and
+> client proofs depend on the general computation.
 
 The sections below describe the original proof structure.
 
