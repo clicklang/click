@@ -3834,6 +3834,13 @@ impl ConditionTerm {
     }
 
     pub(crate) fn pointer_equal(left: Pointer, right: Pointer) -> Self {
+        // A pointer equal to the null pointer is null: a comparison with null
+        // states address equality, as `p == 0` lowers
+        // (`surface::lowering::comparison_proposition`). Every producer
+        // builds that one term.
+        if left.is_null() || right.is_null() {
+            return Self::address_equal(left.address().clone(), right.address().clone());
+        }
         if (left.provenance() == right.provenance()
             && left.bounds() == right.bounds()
             && left.bounds_are_known() == right.bounds_are_known()
