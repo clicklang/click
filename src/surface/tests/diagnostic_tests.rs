@@ -1213,10 +1213,10 @@ fn maybe_throwing_step_diagnostic_teaches_outcomes_syntax() {
         message.contains("Use `outcomes` at this point"),
         "{message}"
     );
-    assert!(message.contains("returned => { step(); }"), "{message}");
-    assert!(message.contains("threw => { step(); }"), "{message}");
+    assert!(message.contains("returned => { }"), "{message}");
+    assert!(message.contains("threw => { }"), "{message}");
     assert!(
-        message.contains("all\ncontract claims are closed"),
+        message.contains("successor and close its contract claims"),
         "{message}"
     );
 }

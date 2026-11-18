@@ -508,7 +508,7 @@ pub(super) enum SurfacePathSelector {
     /// The arm of a `cases` split on this disjunction: `true` is its left
     /// side.
     Disjunction(ClickProposition),
-    CallOutcome,
+    CallOutcome([Option<String>; 2]),
     /// The arm of a constructor `match`, by its index in the written arms.
     /// The choice's `value` is unused.
     MatchArm(Arc<ProofMatch>, usize),
@@ -684,15 +684,26 @@ fn append_surface_step_to_leaves_ref(steps: &mut Vec<ProofStep>, step: &ProofSte
         append_surface_step_to_certificate(then_proof, step);
         append_surface_step_to_certificate(else_proof, step);
     } else if let Some(ProofStep::CallOutcomes {
+        payload_bindings,
         returned_proof,
         threw_proof,
+        ..
     }) = steps.last_mut()
     {
         if let ProofStep::CallOutcomes {
+            payload_bindings: selected_bindings,
             returned_proof: selected_returned,
             threw_proof: selected_threw,
         } = step
         {
+            if selected_bindings.iter().any(Option::is_some)
+                && selected_bindings != payload_bindings
+            {
+                // A written exit-time split introduces its own names. Keep
+                // that binding scope after the already-checked live split.
+                push_surface_step(steps, step);
+                return;
+            }
             for next in selected_returned.steps() {
                 append_surface_step_to_certificate(returned_proof, next);
             }
@@ -834,6 +845,7 @@ pub(super) fn append_surface_tactics_by_leaf(
         if let Some(ProofStep::CallOutcomes {
             returned_proof,
             threw_proof,
+            ..
         }) = steps.last_mut()
         {
             returned_proof
@@ -847,6 +859,7 @@ pub(super) fn append_surface_tactics_by_leaf(
             Some(ProofStep::If { .. } | ProofStep::Match { .. })
         ) {
             steps.push(ProofStep::CallOutcomes {
+                payload_bindings: [None, None],
                 returned_proof: Box::new(
                     ProofCertificate::from_steps(returned_steps.clone())
                         .map_err(|error| error.raw_summary().to_string())?,
@@ -929,6 +942,7 @@ pub(super) fn append_surface_tactics_by_leaf(
         } else if let Some(ProofStep::CallOutcomes {
             returned_proof,
             threw_proof,
+            ..
         }) = steps.last_mut()
         {
             // A call fork joins its returned arm's paths before its threw
@@ -1183,9 +1197,11 @@ pub(super) fn surface_branch_skeleton(steps: &[ProofStep]) -> Vec<ProofStep> {
             else_proof: arm(else_proof),
         },
         ProofStep::CallOutcomes {
+            payload_bindings,
             returned_proof,
             threw_proof,
         } => ProofStep::CallOutcomes {
+            payload_bindings: payload_bindings.clone(),
             returned_proof: arm(returned_proof),
             threw_proof: arm(threw_proof),
         },
@@ -1216,6 +1232,7 @@ pub(super) fn surface_has_repeated_branch_conditions(steps: &[ProofStep]) -> boo
                 ProofStep::CallOutcomes {
                     returned_proof,
                     threw_proof,
+                    ..
                 } => {
                     pending.push(returned_proof.steps());
                     pending.push(threw_proof.steps());
@@ -1294,13 +1311,19 @@ impl<'p> SurfacePathCursor<'p> {
 }
 
 fn synthesize_surface_cursors(paths: Vec<SurfacePathCursor<'_>>) -> Result<Vec<ProofStep>, String> {
-    // A lone path keeps the matches it went through: an arm's tactics name
-    // its bindings, so the `match` that binds them stays.
+    if paths.is_empty() {
+        return Ok(Vec::new());
+    }
+    // Retain the splits that bind names used by the arm's tactics.
     if paths.len() == 1
         && !paths[0]
             .choices()
             .iter()
-            .any(|choice| matches!(choice.selector, SurfacePathSelector::MatchArm(..)))
+            .any(|choice| match &choice.selector {
+                SurfacePathSelector::MatchArm(..) => true,
+                SurfacePathSelector::CallOutcome(bindings) => bindings.iter().any(Option::is_some),
+                _ => false,
+            })
     {
         return Ok(paths[0].steps().to_vec());
     }
@@ -1378,12 +1401,16 @@ fn synthesize_surface_cursors(paths: Vec<SurfacePathCursor<'_>>) -> Result<Vec<P
         return Ok(steps);
     }
 
-    if then_paths.is_empty() {
+    let binds_payload = matches!(
+        &first_choice.selector,
+        SurfacePathSelector::CallOutcome(bindings) if bindings.iter().any(Option::is_some)
+    );
+    if then_paths.is_empty() && !binds_payload {
         let mut tactics = prefix;
         tactics.extend(synthesize_surface_cursors(else_paths)?);
         return Ok(tactics);
     }
-    if else_paths.is_empty() {
+    if else_paths.is_empty() && !binds_payload {
         let mut tactics = prefix;
         tactics.extend(synthesize_surface_cursors(then_paths)?);
         return Ok(tactics);
@@ -1414,7 +1441,8 @@ fn synthesize_surface_cursors(paths: Vec<SurfacePathCursor<'_>>) -> Result<Vec<P
             left_proof: then_proof,
             right_proof: else_proof,
         },
-        SurfacePathSelector::CallOutcome => ProofStep::CallOutcomes {
+        SurfacePathSelector::CallOutcome(payload_bindings) => ProofStep::CallOutcomes {
+            payload_bindings,
             returned_proof: then_proof,
             threw_proof: else_proof,
         },
@@ -1462,6 +1490,7 @@ pub(super) enum PostExecutionTactic {
         else_tactics: DeferredArm,
     },
     CallOutcomes {
+        payload_bindings: [Option<String>; 2],
         returned_tactics: DeferredArm,
         threw_tactics: DeferredArm,
     },
@@ -1497,6 +1526,7 @@ impl PostExecutionTactic {
             Self::CallOutcomes {
                 returned_tactics,
                 threw_tactics,
+                ..
             } => vec![returned_tactics.as_slice(), threw_tactics.as_slice()],
             Self::Match { arms, .. } => arms.iter().map(|arm| arm.as_slice()).collect(),
             _ => Vec::new(),
@@ -1629,6 +1659,7 @@ mod proof_fact_store_tests {
             ProofStep::CallOutcomes {
                 returned_proof,
                 threw_proof,
+                ..
             },
         ] = steps.as_slice()
         else {
@@ -2004,6 +2035,7 @@ pub(super) fn append_loop_return_closers(
                 ProofStep::CallOutcomes {
                     returned_proof,
                     threw_proof,
+                    ..
                 } => {
                     visit(returned_proof.steps_mut(), by_loop)?;
                     visit(threw_proof.steps_mut(), by_loop)?;
@@ -2075,6 +2107,7 @@ pub(super) fn complete_loop_return_expansion(
                 ProofStep::CallOutcomes {
                     returned_proof,
                     threw_proof,
+                    ..
                 } => {
                     if let Some(found) = find(returned_proof.steps(), index)
                         .or_else(|| find(threw_proof.steps(), index))

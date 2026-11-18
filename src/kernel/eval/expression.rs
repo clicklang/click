@@ -3501,10 +3501,12 @@ fn read_retained_lvalue_paths_without_ranges(
                 if let Some(source) = source.and_then(|source| source.reference_access.as_ref())
                     && source.kind == crate::kernel::ReferenceAccessKind::Read
                 {
+                    let at = state.observation_point_id();
                     for path in &mut paths {
                         if matches!(path.outcome, ExpressionOutcome::Value(_)) {
                             let mut fact =
                                 ExecutionPureFact::certified(Proposition::MemoryReadDefined {
+                                    at,
                                     memory: state.memory.clone(),
                                     pointer: pointer.clone(),
                                     value_type: lvalue.value_type,
@@ -3518,6 +3520,7 @@ fn read_retained_lvalue_paths_without_ranges(
                                     source.clone(),
                                     pointer.clone(),
                                     &state.memory,
+                                    at,
                                     lvalue.value_type,
                                 );
                             path.facts.push(fact);

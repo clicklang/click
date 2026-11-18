@@ -2312,6 +2312,37 @@ fn scalar_int32_profile_catches_a_modular_throw_with_a_typed_payload() {
     let click_project = read_click_project(&sidecar, sidecar_source).unwrap();
     verify_program_prepared_project(&click_project, &prepared)
         .expect("a caught modular throw should satisfy a nonthrowing caller signature");
+    let with_payload = format!(
+        r#"{sidecar_source} by {{
+            outcomes {{
+                returned => {{ step_until(function.exit); }}
+                threw => {{ step_until(function.exit); }}
+            }}
+            outcomes {{
+                returned => {{ solve(); }}
+                threw(error) => {{ have error == 7 by known(); solve(); }}
+            }}
+        }}"#
+    );
+    let payload_project = click_project.with_entry_source(with_payload);
+    let expanded_payload = expand_project_claim_source_by_label(
+        &payload_project,
+        &ProgramInputs::program(&prepared),
+        "caller.contract",
+    )
+    .expect("expand the proof that names the caught payload at function exit");
+    assert!(
+        expanded_payload.contains("threw(error) =>"),
+        "{expanded_payload}"
+    );
+    click::surface::without_implicit_solve_for_claim("caller.contract", || {
+        verify_program_prepared_project(
+            &payload_project.with_entry_source(expanded_payload),
+            &prepared,
+        )
+        .map_err(|error| error.to_string())
+    })
+    .expect("the checked caught payload remains available on replay at function exit");
     let expanded = expand_project_claim_source_by_label(
         &click_project,
         &ProgramInputs::program(&prepared),
@@ -2439,11 +2470,10 @@ fn scalar_int32_profile_joins_a_caught_throw_inside_conditional_cleanup() {
                 step();
                 outcomes {
                     returned => {
-                        step(); // helper
                         step(); // destructor
                         step(); // retire the guard's automatic storage
                     }
-                    threw => { step(); step_until(function.exit); solve(); }
+                    threw => { step_until(function.exit); solve(); }
                 }
             } else { }
             step();
@@ -14912,8 +14942,8 @@ fn condition_calls_preserve_the_enclosing_catch_scope() {
         int32 choose(bool fail) { ensures result == 5 or result == 7; } by {
             step();
             outcomes {
-                returned => { step(); step_until(function.exit); solve(); }
-                threw => { step(); step_until(function.exit); solve(); }
+                returned => { step_until(function.exit); solve(); }
+                threw => { step_until(function.exit); solve(); }
             }
         }
     "#;
@@ -20741,8 +20771,8 @@ int32 fallible(int32 x, bool fail) throws Error { ensures result == x; exception
 int32 guarded(int32 x, bool fail) { requires fail == false; ensures result == x; } by {
     step();
     outcomes {
-        returned => { step(); step_until(function.exit); solve(); }
-        threw => { step(); have fail == true; have false by { contradiction(fail); }; solve(); }
+        returned => { step_until(function.exit); solve(); }
+        threw => { have fail == true; have false by { contradiction(fail); }; solve(); }
     }
 }
 int32 probe(int32 x, bool fail) throws Error { requires fail == false; ensures result == x; exceptional ensures true; }

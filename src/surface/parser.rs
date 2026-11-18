@@ -10730,22 +10730,43 @@ impl Parser {
             self.expect(Token::LBrace)?;
             let mut returned_tactics = None;
             let mut threw_tactics = None;
+            let mut payload_bindings = [None, None];
             while self.peek() != Some(&Token::RBrace) {
                 let arm = self.expect_ident("`returned` or `threw`")?;
-                self.expect(Token::FatArrow)?;
-                let tactics = self.parse_possibly_empty_tactic_block()?;
-                let slot = match arm.as_str() {
-                    "returned" => &mut returned_tactics,
-                    "threw" => &mut threw_tactics,
+                let (index, slot) = match arm.as_str() {
+                    "returned" => (0, &mut returned_tactics),
+                    "threw" => (1, &mut threw_tactics),
                     _ => {
                         return Err(self.error(format!(
                             "`outcomes` arms are `returned` and `threw`, got `{arm}`"
                         )));
                     }
                 };
-                if slot.replace(tactics).is_some() {
+                if slot.is_some() {
                     return Err(self.error(format!("duplicate `outcomes` arm `{arm}`")));
                 }
+                let binding = if self.peek() == Some(&Token::LParen) {
+                    self.expect(Token::LParen)?;
+                    let name = self.expect_ident("call payload name")?;
+                    self.refuse_cast_type_binder(&name)?;
+                    self.refuse_fact_name_in_scope(&name)?;
+                    self.expect(Token::RParen)?;
+                    Some(name)
+                } else {
+                    None
+                };
+                self.expect(Token::FatArrow)?;
+                let scope = self.names.scope();
+                let value_scope = self.loop_proof_value_names.clone();
+                if let Some(name) = &binding {
+                    self.bind_proof_name(name, false)?;
+                    self.names.set_scoped(NameKind::ContractBinding, name, true);
+                }
+                let tactics = self.parse_possibly_empty_tactic_block();
+                self.names.end(scope);
+                self.loop_proof_value_names = value_scope;
+                *slot = Some(tactics?);
+                payload_bindings[index] = binding;
                 if self.peek() == Some(&Token::Comma) {
                     self.position += 1;
                 }
@@ -10757,6 +10778,7 @@ impl Parser {
             };
             self.skip_redundant_semicolon();
             return Ok(ProofTactic::CallOutcomes(ProofCallOutcomes {
+                payload_bindings,
                 returned_tactics,
                 threw_tactics,
             }));

@@ -1509,9 +1509,9 @@ fn nonunit_memory_cannot_hide_behind_borrowed_child_custody() {
     )
     .unwrap();
     let body = bodies.get(outputs.occurrences[0].source).unwrap();
+    // An entry-borrow role without a selected input provides no byte custody.
     assert!(
-        !body
-            .boundary
+        body.boundary
             .iter()
             .any(|piece| piece.memory_own_range().is_some())
     );
@@ -1619,7 +1619,7 @@ fn flat_body_admission_uses_cold_coordinates_but_refuses_general_geometry() {
     general.synchronize_memory_equalities(&facts);
     assert!(matches!(
         general.admit_returned_frontier(body.boundary(), &facts),
-        FlatBodyAdmission::Unsupported
+        FlatBodyAdmission::Unestablished(_)
     ));
 }
 
@@ -2488,4 +2488,56 @@ fn an_opaque_return_frontier_cannot_hide_new_ownership_from_escrow() {
             )
             .is_ok()
     );
+}
+
+#[test]
+fn fact_only_view_expansion_keeps_ambient_child_identity_and_binding() {
+    let facts = PureFactContext::new();
+    let (parent, head, source, binding, definitions, memory) = selected_view_expansion_fixture();
+    let at = crate::kernel::ProgramPoint::of_memory(&memory);
+    let first = construct_composite_resource_body(
+        &parent,
+        &head,
+        &definitions,
+        &at,
+        &facts,
+        Some(source),
+        None,
+    )
+    .unwrap();
+    let child = first.raw_children[0].clone();
+    let (parent, ambient) =
+        parent.unchecked_with_facts_and_occurrences([child.clone(), head.clone()]);
+    for choice in [None, Some(source)] {
+        let body = construct_composite_resource_body(
+            &parent,
+            &head,
+            &definitions,
+            &at,
+            &facts,
+            choice,
+            None,
+        )
+        .unwrap();
+        let emitted = body.occurrences[0].1;
+        assert_ne!(emitted, ambient[0].1);
+        assert_eq!(
+            body.expanded.view_fact_for_occurrence(ambient[0].1),
+            Some(&child)
+        );
+        assert!(body.expanded.loan_dependency(ambient[0].1).is_none());
+        assert_eq!(
+            body.expanded.loan_dependency(emitted),
+            Some(&LoanViewBinding {
+                viewed: child.clone(),
+                ..binding.clone()
+            })
+        );
+        assert!(
+            body.expanded
+                .view_fact_for_occurrence(ambient[1].1)
+                .is_some()
+        );
+        assert!(body.expanded.view_fact_for_occurrence(source).is_none());
+    }
 }

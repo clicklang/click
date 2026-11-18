@@ -3095,6 +3095,7 @@ fn parses_outcomes_arms_in_either_order() {
     assert!(matches!(
         &tactics[0],
         ProofTactic::CallOutcomes(ProofCallOutcomes {
+            payload_bindings: _,
             returned_tactics,
             threw_tactics,
         }) if returned_tactics == &[ProofTactic::ExecuteUntil(CodeRegionRef::FunctionExit), ProofTactic::Solve]
