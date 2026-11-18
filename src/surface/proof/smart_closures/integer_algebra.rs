@@ -642,6 +642,39 @@ impl<'p, 'a> Algebra<'p, 'a> {
             expression: target,
         })
     }
+    /// Expose the mathematical operation while keeping each operand
+    /// evaluated at the selector of the original expression.
+    fn arithmetic_under_point(e: &Expr) -> Option<Expr> {
+        let (mut expression, selector) = match e {
+            Expr::At {
+                selector,
+                expression,
+            } => (expression.as_ref(), Some(selector)),
+            Expr::Old(expression) => (expression.as_ref(), None),
+            _ => return None,
+        };
+        while let Expr::IntegerContext(inner) = expression {
+            expression = inner;
+        }
+        let anchored = |operand: &Expr| {
+            let operand = Box::new(operand.clone());
+            Box::new(match selector {
+                Some(selector) => Expr::At {
+                    selector: selector.clone(),
+                    expression: operand,
+                },
+                None => Expr::Old(operand),
+            })
+        };
+        Some(match expression {
+            Expr::Add(a, b) => Expr::Add(anchored(a), anchored(b)),
+            Expr::Subtract(a, b) => Expr::Subtract(anchored(a), anchored(b)),
+            Expr::Multiply(a, b) => Expr::Multiply(anchored(a), anchored(b)),
+            Expr::Negate(a) => Expr::Negate(anchored(a)),
+            _ => return None,
+        })
+    }
+
     fn normalize(&mut self, e: &Expr) -> Result<Normal, ClickError> {
         self.charge(1)?;
         if self.depth >= 256 {
@@ -658,6 +691,19 @@ impl<'p, 'a> Algebra<'p, 'a> {
             });
         }
         let out = match e {
+            Expr::IntegerContext(value) => self.normalize(value)?,
+            Expr::At { .. } | Expr::Old(_)
+                if let Some(opened) = Self::arithmetic_under_point(e) =>
+            {
+                let opening = self.known(e.clone(), opened.clone())?;
+                let result = self.normalize(&opened)?;
+                self.record(
+                    e.clone(),
+                    result.expression.clone(),
+                    vec![ProofStep::Rewrite(opening), ProofStep::Known],
+                )?;
+                result
+            }
             Expr::Let {
                 name,
                 click_type: Some(ClickType::Integer),

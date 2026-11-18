@@ -21379,8 +21379,24 @@ fn integer_arithmetic_contract_let_expansion_preserves_the_integer_body() {
         .collect::<Vec<_>>();
     let expanded = expand_c_claim_source_by_label(source, &sources, "grow.contract")
         .expect("a C-valued let around Integer arithmetic must expand");
+    assert!(!expanded.contains("normalize()"), "{expanded}");
     crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &sources))
         .expect("the expanded Integer body must cold verify without implicit solving");
+}
+
+#[test]
+#[ignore = "nightly: expands and cold-verifies a pass-count loop"]
+fn historical_integer_algebra_leaves_expand_without_normalize() {
+    let (source, sources) = mdtest_sources("mdtests/a_loop_is_ranked_by_its_pass_count.md");
+    let sources = sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c_claim_source_by_label(&source, &sources, "doubled.contract")
+        .expect("the pass-count loop should expand");
+    assert!(!expanded.contains("normalize();"), "{expanded}");
+    crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &sources))
+        .expect("the expanded loop should cold verify");
 }
 
 #[test]
