@@ -1449,7 +1449,7 @@ loadability and memory-reasoning checks passed, followed by quality. This landed
 in [PR #3276](https://github.com/clicklang/click/pull/3276); all four pushed
 commits were verified upstream before the clean primary advanced through Git.
 
-### 10q3a Explicit native condition destructuring (in progress)
+### 10q3a Explicit native condition destructuring (landed)
 
 Selected nested `let` readers inspect `Proposition::condition_native()` rather
 than destructuring its condition storage directly. The view borrows the exact
@@ -1460,6 +1460,8 @@ results retain a local owner while their payload is inspected. All 675 selected
 condition/proposition/substitution checks passed, followed by 618 selected
 preservation, rewrite, Integer, surface synthesis and smart-closure checks.
 Quality passed. These prepare consumers; the output schema is unchanged.
+This landed in [PR #3277](https://github.com/clicklang/click/pull/3277); all seven
+pushed commits were verified upstream before the clean primary advanced through Git.
 
 ### 10q3b Condition pattern readers (in progress)
 
