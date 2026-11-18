@@ -2580,7 +2580,27 @@ fn collect_term_memory_loads(
             collect_pointer_offset_memory_loads(offset, current_memory, loads, seen_integers)
         }
         Term::ProgramValue(value) => {
-            collect_cvalue_memory_loads(value, current_memory, loads, seen_integers)
+            if let Some(root) = value.root()
+                && root.is_shared_machine_operand()
+                && !root.has_machine_conversions()
+                && let Some(format) =
+                    MachineIntegerType::from_program_type(value.value().program_type())
+            {
+                collect_shared_read_memory_loads(
+                    root,
+                    current_memory,
+                    loads,
+                    Some(format.format().byte_width()),
+                    seen_integers,
+                )
+            } else {
+                collect_cvalue_memory_loads(
+                    value.native_compat(),
+                    current_memory,
+                    loads,
+                    seen_integers,
+                )
+            }
         }
         Term::Sequence(sequence) => {
             collect_sequence_memory_loads(sequence, current_memory, loads, seen_integers)
@@ -10949,7 +10969,7 @@ mod dynamic_current_load_tests {
             Box::new(pointer.clone()),
             crate::kernel::LoadKind::Int32,
         );
-        let value = Term::ProgramValue(ProgramValue::Int64(load.clone()));
+        let value = Term::ProgramValue(ProgramValue::Int64(load.clone()).into());
         assert_eq!(
             current_memory_loads_in_term(&value, &memory).unwrap(),
             vec![(pointer.clone(), 8)]

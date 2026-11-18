@@ -7660,7 +7660,7 @@ pub(crate) fn prove_program_function_contract_refinement(
         || !values
             .iter()
             .zip(context.contract.value_arguments())
-            .all(|(term, value)| matches!(term, Term::ProgramValue(term) if term == value))
+            .all(|(term, value)| matches!(term, Term::ProgramValue(term) if term.native_compat() == value))
     {
         return None;
     }
@@ -7686,7 +7686,7 @@ pub(crate) fn prove_program_function_contract_refinement(
                 name: source.predicate_name(),
                 arguments: [
                     state.clone(),
-                    Term::ProgramValue(ProgramValue::Pointer(context.pointer.clone())),
+                    Term::ProgramValue(ProgramValue::Pointer(context.pointer.clone()).into()),
                 ]
                 .into_iter()
                 .chain(
@@ -7694,7 +7694,7 @@ pub(crate) fn prove_program_function_contract_refinement(
                         .value_arguments()
                         .iter()
                         .cloned()
-                        .map(Term::ProgramValue),
+                        .map(|value| Term::ProgramValue(value.into())),
                 )
                 .collect(),
             };
@@ -7814,10 +7814,15 @@ pub(crate) fn prove_executed_contract_refinement(
                 .predicate_name(),
             arguments: [
                 state.clone(),
-                Term::ProgramValue(ProgramValue::Pointer(pointer.clone())),
+                Term::ProgramValue(ProgramValue::Pointer(pointer.clone()).into()),
             ]
             .into_iter()
-            .chain(source_values.iter().cloned().map(Term::ProgramValue))
+            .chain(
+                source_values
+                    .iter()
+                    .cloned()
+                    .map(|value| Term::ProgramValue(value.into())),
+            )
             .collect(),
         };
         implication = Proposition::Implies(Box::new(premise), Box::new(implication));
@@ -7845,7 +7850,7 @@ fn executed_conclusion_values(
         .get(2..)?
         .iter()
         .map(|argument| match argument {
-            Term::ProgramValue(value) => Some(value.clone()),
+            Term::ProgramValue(value) => Some(value.native_compat().clone()),
             _ => None,
         })
         .collect::<Option<Vec<_>>>()?;

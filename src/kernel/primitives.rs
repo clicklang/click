@@ -2436,10 +2436,9 @@ impl SubobjectBounds {
     /// The fact that these opaque bounds cover `range`.
     pub(crate) fn coverage_fact(&self, range: &MemoryRange) -> Proposition {
         let pointer = |pointer: Address| {
-            Term::ProgramValue(ProgramValue::Pointer(Pointer::new(
-                pointer,
-                ProgramType::VoidPointer,
-            )))
+            Term::ProgramValue(
+                ProgramValue::Pointer(Pointer::new(pointer, ProgramType::VoidPointer)).into(),
+            )
         };
         let width = range.element_width();
         if let Some((start, end)) = range.wide_bounds() {
@@ -2448,8 +2447,8 @@ impl SubobjectBounds {
                 arguments: vec![
                     pointer(self.start.clone()),
                     pointer(range.base().clone()),
-                    Term::ProgramValue(ProgramValue::UInt64(start.clone())),
-                    Term::ProgramValue(ProgramValue::UInt64(end.clone())),
+                    Term::ProgramValue((ProgramValue::UInt64(start.clone())).into()),
+                    Term::ProgramValue((ProgramValue::UInt64(end.clone())).into()),
                 ],
             };
         }
@@ -13234,7 +13233,7 @@ pub enum Term {
     Bitvector32(MachineTerm),
     Integer(IntegerTerm),
     PointerOffset(AddressOffset),
-    ProgramValue(ProgramValue),
+    ProgramValue(StoredProgramValue),
     Sequence(SequenceTerm),
     Algebraic(AlgebraicTerm),
     // Outcomes carry ExecutionState. Keep them out of Term's inline size so cloning
@@ -13247,7 +13246,7 @@ impl Term {
     /// Consume an owned payload without cloning its native expression prefix.
     pub(crate) fn into_program_value_native(self) -> Option<ProgramValue> {
         match self {
-            Self::ProgramValue(value) => Some(value),
+            Self::ProgramValue(value) => Some(value.into()),
             _ => None,
         }
     }
@@ -13276,7 +13275,7 @@ impl Term {
     }
     pub(crate) fn program_value_native(&self) -> Option<&ProgramValue> {
         match self {
-            Self::ProgramValue(value) => Some(value),
+            Self::ProgramValue(value) => Some(value.native_compat()),
             _ => None,
         }
     }
@@ -13320,7 +13319,7 @@ mod term_payload_view_tests {
                 std::ptr::from_ref(right.as_ref()),
             ];
             let Some(ProgramValue::Pointer(pointer)) =
-                Term::ProgramValue(value).into_program_value_native()
+                Term::ProgramValue(value.into()).into_program_value_native()
             else {
                 unreachable!()
             };

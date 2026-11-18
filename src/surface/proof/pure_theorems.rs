@@ -2019,7 +2019,7 @@ fn contract_fact_values(fact: &Proposition) -> Option<Vec<ProgramValue>> {
         .get(2..)?
         .iter()
         .map(|argument| match argument {
-            Term::ProgramValue(value) => Some(value.clone()),
+            Term::ProgramValue(value) => Some(value.native_compat().clone()),
             _ => None,
         })
         .collect()

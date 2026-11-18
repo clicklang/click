@@ -2825,7 +2825,9 @@ fn proposition_mentions_integer_variable(proposition: &Proposition, variable: Va
             Term::Integer(term) => integer_carrier_in_integer(term, variable),
             Term::Bitvector32(term) => integer_carrier_in_bitvector(term, variable),
             Term::Condition(condition) => condition_contains(condition, variable),
-            Term::ProgramValue(value) => integer_carrier_in_program_value(value, variable),
+            Term::ProgramValue(value) => {
+                integer_carrier_in_program_value(value.native_compat(), variable)
+            }
             Term::Sequence(sequence) => sequence_contains_integer_variable(sequence, variable),
             Term::PointerOffset(offset) => integer_carrier_in_pointer_offset(offset, variable),
             Term::Algebraic(value) => integer_carrier_in_algebraic(value, variable),
@@ -5921,9 +5923,7 @@ fn lower_spec_predicate_proposition_at_state_in(
                     };
                     arguments.push(Term::Memory(memory.clone()));
                 }
-                arguments.push(Term::ProgramValue(
-                    argument_path.value.clone().into_native(),
-                ));
+                arguments.push(Term::ProgramValue(argument_path.value.clone().into()));
                 next_paths.push(SpecPropositionPath {
                     introductions: Vec::new(),
                     proposition: Proposition::Predicate { name, arguments },

@@ -290,10 +290,13 @@ fn callback_fact_lookup_scales_with_calls_not_unrelated_supported_facts() {
             name: FunctionContract::predicate_name_for(name),
             arguments: vec![
                 Term::ExecutionState(Box::new(state)),
-                Term::ProgramValue(ProgramValue::typed_pointer(
-                    pointer,
-                    ProgramType::FunctionPointer(CallbackSignature::from_encoded(91_000)),
-                )),
+                Term::ProgramValue(
+                    (ProgramValue::typed_pointer(
+                        pointer,
+                        ProgramType::FunctionPointer(CallbackSignature::from_encoded(91_000)),
+                    ))
+                    .into(),
+                ),
             ],
         }
     }
