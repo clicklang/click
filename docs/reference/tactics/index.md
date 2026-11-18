@@ -3758,10 +3758,12 @@ the head hold that borrow open until the head is unfolded or consumed.
 
 For an `authorized` family it creates one member and requires that family's
 owned `authority(...)`; `fold(authority(R(..)))` establishes an empty
-population. `let name = fold(resource, { field: value }, { slot: child })`
-constructs an instance with fields from the named children; a child whose owned
-resource has the slot's own name may be left out of the map, and a map left
-empty is left out.
+population. `let name = fold(resource, { field: value, slot: child })`
+constructs an instance from one input map. The resource declaration tells Click
+which entries are field values and which name held child instances. Entries
+can be written in either order. Include every named child of the selected
+arm, even when the held instance has the same name as the slot. An empty
+input map is optional.
 
 An instance name a proof binds, by `let name = fold(...)`, `unfold` or a call,
 names its instance only to the end of the block that holds it, like every other
@@ -3808,16 +3810,13 @@ expansion retains that proof. A failed proof names the body fact.
 
 A body fact over a witness the proof cannot name cannot be written as a
 requirement, so the fold is refused at it; the fold never searches. A missing
-body member, false body fact, or undecided guard fails. A slot is taken by name
-only for the arm the model selects, only from an owned, folded resource of the
-slot's family, and never from the fold's own result; otherwise the fold names
-the missing child.
+body member, false body fact, or undecided guard fails. A child binding must
+refer to an owned, folded resource of the slot's family.
 
-Click folds exactly the named resource, completing the child map before the
-kernel checks it; expansion keeps a bare fold unless the implicit closer proved
-a body fact, and profiling charges its body.
+Expansion prints a single input map and retains any
+proofs of body facts. Profiling charges the resource body.
 
-**Checked examples:** [`composite_resource_composes_token.md`](https://github.com/clicklang/click/blob/master/mdtests/composite_resource_composes_token.md), [`a_fold_takes_children_by_name.md`](https://github.com/clicklang/click/blob/master/mdtests/a_fold_takes_children_by_name.md), [`a_fold_does_not_take_an_unfolded_child_by_name.md`](https://github.com/clicklang/click/blob/master/mdtests/a_fold_does_not_take_an_unfolded_child_by_name.md), [`a_fold_does_not_take_a_child_of_another_family_by_name.md`](https://github.com/clicklang/click/blob/master/mdtests/a_fold_does_not_take_a_child_of_another_family_by_name.md), [`fold_proves_an_unstated_body_fact_by_implicit_solve.md`](https://github.com/clicklang/click/blob/master/mdtests/fold_proves_an_unstated_body_fact_by_implicit_solve.md), [`a_block_bound_instance_name_ends_with_its_block.md`](https://github.com/clicklang/click/blob/master/mdtests/a_block_bound_instance_name_ends_with_its_block.md), [`an_instance_bound_before_a_block_is_named_inside_it.md`](https://github.com/clicklang/click/blob/master/mdtests/an_instance_bound_before_a_block_is_named_inside_it.md)
+**Checked examples:** [`composite_resource_composes_token.md`](https://github.com/clicklang/click/blob/master/mdtests/composite_resource_composes_token.md), [`a_fold_binds_same_named_children_explicitly.md`](https://github.com/clicklang/click/blob/master/mdtests/a_fold_binds_same_named_children_explicitly.md), [`a_fold_rejects_an_unfolded_child.md`](https://github.com/clicklang/click/blob/master/mdtests/a_fold_rejects_an_unfolded_child.md), [`a_fold_requires_an_explicit_same_named_child.md`](https://github.com/clicklang/click/blob/master/mdtests/a_fold_requires_an_explicit_same_named_child.md), [`fold_proves_an_unstated_body_fact_by_implicit_solve.md`](https://github.com/clicklang/click/blob/master/mdtests/fold_proves_an_unstated_body_fact_by_implicit_solve.md), [`a_block_bound_instance_name_ends_with_its_block.md`](https://github.com/clicklang/click/blob/master/mdtests/a_block_bound_instance_name_ends_with_its_block.md), [`an_instance_bound_before_a_block_is_named_inside_it.md`](https://github.com/clicklang/click/blob/master/mdtests/an_instance_bound_before_a_block_is_named_inside_it.md)
 
 ### Folding with one obligation
 

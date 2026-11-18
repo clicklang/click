@@ -72,7 +72,7 @@ int chain_has_next(struct node* p) {
             branch {
                 true => {
                     step();
-                    let c = fold(chain_at(p), { model: old(c.model) }, { rest: n });
+                    let c = fold(chain_at(p), { model: old(c.model), rest: n });
                     have chain_rest(old(c.model)) == rest_model by {
                         rewrite(old(c.model), Chain::Link(identity, rest_model));
                         unfold(chain_rest(Chain::Link(identity, rest_model)));
@@ -88,7 +88,7 @@ int chain_has_next(struct node* p) {
                 false => {}
             }
             step();
-            let c = fold(chain_at(p), { model: old(c.model) }, { rest: n });
+            let c = fold(chain_at(p), { model: old(c.model), rest: n });
             have chain_rest(old(c.model)) == rest_model by {
                 rewrite(old(c.model), Chain::Link(identity, rest_model));
                 unfold(chain_rest(Chain::Link(identity, rest_model)));

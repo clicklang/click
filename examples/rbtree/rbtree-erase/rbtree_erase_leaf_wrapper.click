@@ -114,7 +114,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                         have parent_model == pid;
                         let { sibling: sibling, up: above } = unfold(remaining);
                         have parent_model != 0;
-                        let remaining = fold(ctx_at(0, root), { model: Context::Left(pid, gp, pc_model, sibling_model, above_model) }, { up: above });
+                        let remaining = fold(ctx_at(0, root), { model: Context::Left(pid, gp, pc_model, sibling_model, above_model), up: above, sibling: sibling });
                         have remaining.model == old(up.model) by { rewrite(remaining.model, Context::Left(pid, gp, pc_model, sibling_model, above_model)); known(); }
                         open(erase_callbacks(augment)) { step_until(function.exit); }
                         let hole = fold(rb_at(0), { model: RbTree::Empty });
@@ -136,7 +136,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                         }
                         have parent_model == pid;
                         let { sibling: sibling, up: above } = unfold(remaining);
-                        let remaining = fold(ctx_at(0, root), { model: Context::Right(pid, gp, pc_model, sibling_model, above_model) }, { up: above });
+                        let remaining = fold(ctx_at(0, root), { model: Context::Right(pid, gp, pc_model, sibling_model, above_model), up: above, sibling: sibling });
                         have remaining.model == old(up.model) by { rewrite(remaining.model, Context::Right(pid, gp, pc_model, sibling_model, above_model)); known(); }
                         open(erase_callbacks(augment)) { step_until(function.exit); }
                         let hole = fold(rb_at(0), { model: RbTree::Empty });

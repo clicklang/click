@@ -41,7 +41,7 @@ int read(int* p) {
         Quad::Zero => {
             unfold(c);
             step_until(function.exit);
-            let c = fold(cell(p), { model: Quad::Zero }, {});
+            let c = fold(cell(p), { model: Quad::Zero });
             have quad_code(old(c.model)) == 0 by {
                 rewrite(old(c.model), Quad::Zero);
                 unfold(quad_code(Quad::Zero));
@@ -52,7 +52,7 @@ int read(int* p) {
         Quad::One => {
             unfold(c);
             step_until(function.exit);
-            let c = fold(cell(p), { model: Quad::One }, {});
+            let c = fold(cell(p), { model: Quad::One });
             have quad_code(old(c.model)) == 1 by {
                 rewrite(old(c.model), Quad::One);
                 unfold(quad_code(Quad::One));
@@ -63,7 +63,7 @@ int read(int* p) {
         Quad::Two => {
             unfold(c);
             step_until(function.exit);
-            let c = fold(cell(p), { model: Quad::Two }, {});
+            let c = fold(cell(p), { model: Quad::Two });
             have quad_code(old(c.model)) == 2 by {
                 rewrite(old(c.model), Quad::Two);
                 unfold(quad_code(Quad::Two));
@@ -74,7 +74,7 @@ int read(int* p) {
         Quad::Other(value) => {
             unfold(c);
             step_until(function.exit);
-            let c = fold(cell(p), { model: Quad::Other(value) }, {});
+            let c = fold(cell(p), { model: Quad::Other(value) });
             have quad_code(old(c.model)) == value by {
                 rewrite(old(c.model), Quad::Other(value));
                 unfold(quad_code(Quad::Other(value)));

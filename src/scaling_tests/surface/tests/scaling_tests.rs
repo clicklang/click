@@ -3036,7 +3036,7 @@ fn wide_execution_match_project(width: usize) -> (String, String) {
                 "        Wide::V{index} => {{\n\
                  \x20           unfold(c);\n\
                  \x20           step_until(function.exit);\n\
-                 \x20           let c = fold(cell(p), {{ model: Wide::V{index} }}, {{}});\n\
+                 \x20           let c = fold(cell(p), {{ model: Wide::V{index} }});\n\
                  \x20           have wide_code(old(c.model)) == {index} by {{\n\
                  \x20               rewrite(old(c.model), Wide::V{index});\n\
                  \x20               unfold(wide_code(Wide::V{index}));\n\

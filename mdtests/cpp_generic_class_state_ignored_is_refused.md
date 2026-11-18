@@ -100,13 +100,13 @@ template<class T> void Stack<T>::push(T value) {
             unfold(state);
             step_until(function.exit);
             let tail = fold(nodes<T>(this->head->next), { items: List<T>::Nil });
-            let state = fold(nodes<T>(this->head), { items: List::Cons(value, List<T>::Nil) }, { tail: tail });
+            let state = fold(nodes<T>(this->head), { items: List::Cons(value, List<T>::Nil), tail: tail });
         },
         List::Cons(top, below) => {
             let { tail: rest } = unfold(state);
             step_until(function.exit);
-            let tail = fold(nodes<T>(this->head->next), { items: List::Cons(top, below) }, { tail: rest });
-            let state = fold(nodes<T>(this->head), { items: List::Cons(value, List::Cons(top, below)) }, { tail: tail });
+            let tail = fold(nodes<T>(this->head->next), { items: List::Cons(top, below), tail: rest });
+            let state = fold(nodes<T>(this->head), { items: List::Cons(value, List::Cons(top, below)), tail: tail });
         },
     }
 }
@@ -135,7 +135,7 @@ template<class T> bool Stack<T>::pop(T& out) {
                 },
                 List::Cons(next_value, next_items) => {
                     let { tail: next } = unfold(tail);
-                    let state = fold(nodes<T>(this->head), { items: List::Cons(next_value, next_items) }, { tail: next });
+                    let state = fold(nodes<T>(this->head), { items: List::Cons(next_value, next_items), tail: next });
                     solve();
                 },
             }

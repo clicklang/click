@@ -3910,8 +3910,8 @@ fn charon_recursive_drop_frees_every_node() {
     // The returned stack's list is the one its struct holds: a proof that
     // folds another is refused, checked alone in the retained session.
     let invalid = RECURSIVE_DROP_SIDECAR.replacen(
-        "let after = fold(nodes(result.head), { values: List<u32>::Nil }, {});",
-        "let after = fold(nodes(result.head), { values: List::Cons(0u32, List<u32>::Nil) }, {});",
+        "let after = fold(nodes(result.head), { values: List<u32>::Nil });",
+        "let after = fold(nodes(result.head), { values: List::Cons(0u32, List<u32>::Nil) });",
         1,
     );
     let proof = invalid.find("fn new(").unwrap();

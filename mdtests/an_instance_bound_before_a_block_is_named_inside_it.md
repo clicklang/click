@@ -34,7 +34,7 @@ void f(int32* q) {
     } else {
         have kk.v == 3;
     }
-    let b = fold(box(q), { v: 3 }, { k: kk });
+    let b = fold(box(q), { v: 3, k: kk });
 }
 ```
 

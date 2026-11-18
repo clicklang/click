@@ -46,7 +46,7 @@ void f(int32* q, int32* p2) {
     consumes p2[0..1];
 } by {
     let { k: x, u: ru } = unfold(r);
-    let r = fold(root(q), { u: ru }, { k: x });
+    let r = fold(root(q), { u: ru, k: x });
     let { first: x } = step(mk, {});
     have x.v == 1 by { solve(); }
     step();

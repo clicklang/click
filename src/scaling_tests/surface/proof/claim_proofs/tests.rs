@@ -164,7 +164,7 @@ void write(struct holder* h, int32 x{click_parameters}) {{
     let {{}} = unfold(before);
     step_until(function.exit);
     {haves}
-    let after = fold(cell_at(h->first), {{ value: x }}, {{}});
+    let after = fold(cell_at(h->first), {{ value: x }});
 }}"
         );
         let (verified, samples) = collect_tactic_work(|| {

@@ -49,11 +49,11 @@ int32 run() {
     step();
     fold(authority(ticket(b)));
     let s = fold(hit_cell(b), { hits: 5 });
-    let ctl = fold(box_control(b), { hits: 5 }, { stats: s });
+    let ctl = fold(box_control(b), { hits: 5, stats: s });
     let { hits: hits, stats: s } = unfold(ctl);
     step();
     fold(ticket(b));
-    let ctl = fold(box_control(b), { hits: hits }, { stats: s });
+    let ctl = fold(box_control(b), { hits: hits, stats: s });
     let { hits: later_hits, stats: later } = unfold(ctl);
     unfold(ticket(b));
     step();

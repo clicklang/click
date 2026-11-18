@@ -92,7 +92,7 @@ void inspect(struct node* parent, int32 side) {
                     have model->tag == at(rotation, parent->tag) by { rewrite(model->tag, sibling->tag); known(); }
                     let child = fold(cell(sibling), {model: Pair::At(model)});
                     have child.model == sm by { rewrite(child.model, Pair::At(model)); known(); }
-                    let tree_context = fold(parent_at(root), {model: Parent::Left(pid, sm)}, {c: child});
+                    let tree_context = fold(parent_at(root), { model: Parent::Left(pid, sm), c: child });
                     step(); step();
                 },
             }
@@ -120,7 +120,7 @@ void inspect(struct node* parent, int32 side) {
                     have model->tag == at(rotation, parent->tag) by { rewrite(model->tag, sibling->tag); known(); }
                     let child = fold(cell(sibling), {model: Pair::At(model)});
                     have child.model == sm by { rewrite(child.model, Pair::At(model)); known(); }
-                    let tree_context = fold(parent_at(root), {model: Parent::Right(pid, sm)}, {c: child});
+                    let tree_context = fold(parent_at(root), { model: Parent::Right(pid, sm), c: child });
                     step(); step();
                 },
             }

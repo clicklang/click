@@ -49,8 +49,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
             mark m3; step();
             have *((&node->__rb_parent_color) as (int32 **)) == at(m3, *((&node->__rb_parent_color) as (int32 **))) by solve();
             have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == ancestor by { known(); }
-            let focus = fold(sized_at(node), { model: SizedTree::Node(identity, ancestor, shade, value, left, right) }, { metadata: metadata, left: l, right: r });
-            let state = fold(sized_flip_state(root), { chain: old(state.chain), model: old(state.model), context: old(state.context) }, { focus: focus, path: path });
+            let focus = fold(sized_at(node), { model: SizedTree::Node(identity, ancestor, shade, value, left, right), metadata: metadata, left: l, right: r });
+            let state = fold(sized_flip_state(root), { chain: old(state.chain), model: old(state.model), context: old(state.context), focus: focus, path: path });
             apply(sized_flip_context_parent(state.chain));
             apply(sized_flip_depth_nonnegative(state.chain));
             have parent == sized_flip_parent(state.chain) by {
@@ -329,7 +329,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                         preserve(memory(root->rb_node), statement(1).statement(4).statement(0).statement(0));
                                                     }
                                                     have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node, at(recolor_0, root->rb_node)); known(); }
-                                                    let uncle_tree = fold(sized_at(u), { model: SizedTree::Node(u, g, Color::Black, uv, ul, ur) }, { metadata: u_size, left: u_left, right: u_right });
+                                                    let uncle_tree = fold(sized_at(u), { model: SizedTree::Node(u, g, Color::Black, uv, ul, ur), metadata: u_size, left: u_left, right: u_right });
                                                     mark recolor_1;
                                                     step();
                                                     have separate(statement(1).statement(4).statement(0).statement(1).footprint, memory(p->rb_left)) by {
@@ -387,7 +387,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                         rewrite(at(iteration,state.model), SizedTree::Node(current, above, red, count, lo, hi));
                                                         unfold(sized_value(SizedTree::Node(current, above, red, count, lo, hi))); known();
                                                     }
-                                                    let parent_tree = fold(sized_at(p), { model: SizedTree::Node(p, g, Color::Black, pv, at(iteration,state.model), other) }, { metadata: p_size, left: focus, right: other_tree });
+                                                    let parent_tree = fold(sized_at(p), { model: SizedTree::Node(p, g, Color::Black, pv, at(iteration,state.model), other), metadata: p_size, left: focus, right: other_tree });
                                                     mark recolor_2;
                                                     step();
                                                     have g->rb_left == at(recolor_2, g->rb_left) by solve();
@@ -440,8 +440,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                         rewrite(uncle, SizedTree::Node(u, ug, uc, uv, ul, ur));
                                                         unfold(sized_value(SizedTree::Node(u, ug, uc, uv, ul, ur))); normalize();
                                                     }
-                                                    let focus = fold(sized_at(g), { model: SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, SizedTree::Node(p, g, Color::Black, pv, at(iteration,state.model), other), SizedTree::Node(u, g, Color::Black, uv, ul, ur)) }, { metadata: g_size, left: parent_tree, right: uncle_tree });
-                                                    let state = fold(sized_flip_state(root), { chain: up, model: focus.model, context: sized_flip_context(up) }, { focus: focus, path: outer_path });
+                                                    let focus = fold(sized_at(g), { model: SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, SizedTree::Node(p, g, Color::Black, pv, at(iteration,state.model), other), SizedTree::Node(u, g, Color::Black, uv, ul, ur)), metadata: g_size, left: parent_tree, right: uncle_tree });
+                                                    let state = fold(sized_flip_state(root), { chain: up, model: focus.model, context: sized_flip_context(up), focus: focus, path: outer_path });
                                                     unfold(sized_flip_result(SizedFlipChain::LL(p, g, pv, gv, other, uncle, up), at(iteration,state.model)));
                                                     unfold(sized_recolor(SizedTree::Node(u, ug, uc, uv, ul, ur),Color::Black));
                                                     have sized_flip_result(state.chain,state.model) == sized_flip_result(old(state.chain),old(state.model)) by known();
@@ -695,7 +695,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                         preserve(memory(root->rb_node), statement(1).statement(4).statement(0).statement(0));
                                                     }
                                                     have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node, at(recolor_0, root->rb_node)); known(); }
-                                                    let uncle_tree = fold(sized_at(u), { model: SizedTree::Node(u, g, Color::Black, uv, ul, ur) }, { metadata: u_size, left: u_left, right: u_right });
+                                                    let uncle_tree = fold(sized_at(u), { model: SizedTree::Node(u, g, Color::Black, uv, ul, ur), metadata: u_size, left: u_left, right: u_right });
                                                     mark recolor_1;
                                                     step();
                                                     have separate(statement(1).statement(4).statement(0).statement(1).footprint, memory(p->rb_left)) by {
@@ -753,7 +753,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                         rewrite(at(iteration,state.model), SizedTree::Node(current, above, red, count, lo, hi));
                                                         unfold(sized_value(SizedTree::Node(current, above, red, count, lo, hi))); known();
                                                     }
-                                                    let parent_tree = fold(sized_at(p), { model: SizedTree::Node(p, g, Color::Black, pv, other, at(iteration,state.model)) }, { metadata: p_size, left: other_tree, right: focus });
+                                                    let parent_tree = fold(sized_at(p), { model: SizedTree::Node(p, g, Color::Black, pv, other, at(iteration,state.model)), metadata: p_size, left: other_tree, right: focus });
                                                     mark recolor_2;
                                                     step();
                                                     have g->rb_left == at(recolor_2, g->rb_left) by solve();
@@ -806,8 +806,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                         rewrite(uncle, SizedTree::Node(u, ug, uc, uv, ul, ur));
                                                         unfold(sized_value(SizedTree::Node(u, ug, uc, uv, ul, ur))); normalize();
                                                     }
-                                                    let focus = fold(sized_at(g), { model: SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, SizedTree::Node(p, g, Color::Black, pv, other, at(iteration,state.model)), SizedTree::Node(u, g, Color::Black, uv, ul, ur)) }, { metadata: g_size, left: parent_tree, right: uncle_tree });
-                                                    let state = fold(sized_flip_state(root), { chain: up, model: focus.model, context: sized_flip_context(up) }, { focus: focus, path: outer_path });
+                                                    let focus = fold(sized_at(g), { model: SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, SizedTree::Node(p, g, Color::Black, pv, other, at(iteration,state.model)), SizedTree::Node(u, g, Color::Black, uv, ul, ur)), metadata: g_size, left: parent_tree, right: uncle_tree });
+                                                    let state = fold(sized_flip_state(root), { chain: up, model: focus.model, context: sized_flip_context(up), focus: focus, path: outer_path });
                                                     unfold(sized_flip_result(SizedFlipChain::LR(p, g, pv, gv, other, uncle, up), at(iteration,state.model)));
                                                     unfold(sized_recolor(SizedTree::Node(u, ug, uc, uv, ul, ur),Color::Black));
                                                     have sized_flip_result(state.chain,state.model) == sized_flip_result(old(state.chain),old(state.model)) by known();
@@ -1066,7 +1066,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                         preserve(memory(root->rb_node), statement(1).statement(4).statement(10).statement(0));
                                                     }
                                                     have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node, at(recolor_0, root->rb_node)); known(); }
-                                                    let uncle_tree = fold(sized_at(u), { model: SizedTree::Node(u, g, Color::Black, uv, ul, ur) }, { metadata: u_size, left: u_left, right: u_right });
+                                                    let uncle_tree = fold(sized_at(u), { model: SizedTree::Node(u, g, Color::Black, uv, ul, ur), metadata: u_size, left: u_left, right: u_right });
                                                     mark recolor_1;
                                                     step();
                                                     have separate(statement(1).statement(4).statement(10).statement(1).footprint, memory(p->rb_left)) by {
@@ -1124,7 +1124,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                         rewrite(at(iteration,state.model), SizedTree::Node(current, above, red, count, lo, hi));
                                                         unfold(sized_value(SizedTree::Node(current, above, red, count, lo, hi))); known();
                                                     }
-                                                    let parent_tree = fold(sized_at(p), { model: SizedTree::Node(p, g, Color::Black, pv, at(iteration,state.model), other) }, { metadata: p_size, left: focus, right: other_tree });
+                                                    let parent_tree = fold(sized_at(p), { model: SizedTree::Node(p, g, Color::Black, pv, at(iteration,state.model), other), metadata: p_size, left: focus, right: other_tree });
                                                     mark recolor_2;
                                                     step();
                                                     have g->rb_left == at(recolor_2, g->rb_left) by solve();
@@ -1177,8 +1177,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                         rewrite(uncle, SizedTree::Node(u, ug, uc, uv, ul, ur));
                                                         unfold(sized_value(SizedTree::Node(u, ug, uc, uv, ul, ur))); normalize();
                                                     }
-                                                    let focus = fold(sized_at(g), { model: SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, SizedTree::Node(u, g, Color::Black, uv, ul, ur), SizedTree::Node(p, g, Color::Black, pv, at(iteration,state.model), other)) }, { metadata: g_size, left: uncle_tree, right: parent_tree });
-                                                    let state = fold(sized_flip_state(root), { chain: up, model: focus.model, context: sized_flip_context(up) }, { focus: focus, path: outer_path });
+                                                    let focus = fold(sized_at(g), { model: SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, SizedTree::Node(u, g, Color::Black, uv, ul, ur), SizedTree::Node(p, g, Color::Black, pv, at(iteration,state.model), other)), metadata: g_size, left: uncle_tree, right: parent_tree });
+                                                    let state = fold(sized_flip_state(root), { chain: up, model: focus.model, context: sized_flip_context(up), focus: focus, path: outer_path });
                                                     unfold(sized_flip_result(SizedFlipChain::RL(p, g, pv, gv, other, uncle, up), at(iteration,state.model)));
                                                     unfold(sized_recolor(SizedTree::Node(u, ug, uc, uv, ul, ur),Color::Black));
                                                     have sized_flip_result(state.chain,state.model) == sized_flip_result(old(state.chain),old(state.model)) by known();
@@ -1437,7 +1437,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                         preserve(memory(root->rb_node), statement(1).statement(4).statement(10).statement(0));
                                                     }
                                                     have root->rb_node == at(iteration, root->rb_node) by { rewrite(root->rb_node, at(recolor_0, root->rb_node)); known(); }
-                                                    let uncle_tree = fold(sized_at(u), { model: SizedTree::Node(u, g, Color::Black, uv, ul, ur) }, { metadata: u_size, left: u_left, right: u_right });
+                                                    let uncle_tree = fold(sized_at(u), { model: SizedTree::Node(u, g, Color::Black, uv, ul, ur), metadata: u_size, left: u_left, right: u_right });
                                                     mark recolor_1;
                                                     step();
                                                     have separate(statement(1).statement(4).statement(10).statement(1).footprint, memory(p->rb_left)) by {
@@ -1495,7 +1495,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                         rewrite(at(iteration,state.model), SizedTree::Node(current, above, red, count, lo, hi));
                                                         unfold(sized_value(SizedTree::Node(current, above, red, count, lo, hi))); known();
                                                     }
-                                                    let parent_tree = fold(sized_at(p), { model: SizedTree::Node(p, g, Color::Black, pv, other, at(iteration,state.model)) }, { metadata: p_size, left: other_tree, right: focus });
+                                                    let parent_tree = fold(sized_at(p), { model: SizedTree::Node(p, g, Color::Black, pv, other, at(iteration,state.model)), metadata: p_size, left: other_tree, right: focus });
                                                     mark recolor_2;
                                                     step();
                                                     have g->rb_left == at(recolor_2, g->rb_left) by solve();
@@ -1548,8 +1548,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                         rewrite(uncle, SizedTree::Node(u, ug, uc, uv, ul, ur));
                                                         unfold(sized_value(SizedTree::Node(u, ug, uc, uv, ul, ur))); normalize();
                                                     }
-                                                    let focus = fold(sized_at(g), { model: SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, SizedTree::Node(u, g, Color::Black, uv, ul, ur), SizedTree::Node(p, g, Color::Black, pv, other, at(iteration,state.model))) }, { metadata: g_size, left: uncle_tree, right: parent_tree });
-                                                    let state = fold(sized_flip_state(root), { chain: up, model: focus.model, context: sized_flip_context(up) }, { focus: focus, path: outer_path });
+                                                    let focus = fold(sized_at(g), { model: SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, SizedTree::Node(u, g, Color::Black, uv, ul, ur), SizedTree::Node(p, g, Color::Black, pv, other, at(iteration,state.model))), metadata: g_size, left: uncle_tree, right: parent_tree });
+                                                    let state = fold(sized_flip_state(root), { chain: up, model: focus.model, context: sized_flip_context(up), focus: focus, path: outer_path });
                                                     unfold(sized_flip_result(SizedFlipChain::RR(p, g, pv, gv, other, uncle, up), at(iteration,state.model)));
                                                     unfold(sized_recolor(SizedTree::Node(u, ug, uc, uv, ul, ur),Color::Black));
                                                     have sized_flip_result(state.chain,state.model) == sized_flip_result(old(state.chain),old(state.model)) by known();
@@ -1586,7 +1586,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                     let { metadata: metadata, left: l, right: r } = unfold(focus);
                                     step(); step();
                                     unfold(color_bit(Color::Black));
-                                    let focus = fold(sized_at(node), { model: SizedTree::Node(current, 0, Color::Black, count, lo, hi) }, { metadata: metadata, left: l, right: r });
+                                    let focus = fold(sized_at(node), { model: SizedTree::Node(current, 0, Color::Black, count, lo, hi), metadata: metadata, left: l, right: r });
                                     have sized_value(focus.model) == count by {
                                         rewrite(focus.model, SizedTree::Node(current, 0, Color::Black, count, lo, hi));
                                         unfold(sized_value(SizedTree::Node(current, 0, Color::Black, count, lo, hi))); normalize();
@@ -1608,7 +1608,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                         have above == 0 by known();
                                         rewrite(above, 0); normalize();
                                     }
-                                    let state = fold(sized_flip_state(root), { chain: at(iteration,state.chain), model: focus.model, context: SizedContext::Top }, { focus: focus, path: path });
+                                    let state = fold(sized_flip_state(root), { chain: at(iteration,state.chain), model: focus.model, context: SizedContext::Top, focus: focus, path: path });
                                     have sized_plug(state.context, state.model) == sized_flip_result(at(iteration,state.chain), at(iteration,state.model)) by known();
                                     have sized_plug(state.context, state.model) == sized_flip_result(old(state.chain), old(state.model)) by known();
                                     step();
@@ -1652,7 +1652,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                 rewrite(color_bit(color), 1); normalize();
                                             }
                                             step(); step(); step();
-                                            let path = fold(sized_context_at(node, root->rb_node, 0, count), { model: SizedContext::Left(a, gp, color, cached, sibling, up) }, { metadata: a_size, sibling: held_sibling, up: held_up });
+                                            let path = fold(sized_context_at(node, root->rb_node, 0, count), { model: SizedContext::Left(a, gp, color, cached, sibling, up), metadata: a_size, sibling: held_sibling, up: held_up });
                                             have sized_value(focus.model) == count by {
                                                 rewrite(focus.model, at(iteration,state.model));
                                                 rewrite(at(iteration,state.model), SizedTree::Node(current, above, red, count, lo, hi));
@@ -1670,7 +1670,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                 rewrite(focus.model, at(iteration,state.model));
                                                 rewrite(path.model, SizedContext::Left(a, gp, color, cached, sibling, up)); rewrite(SizedContext::Left(a, gp, color, cached, sibling, up), ctx); normalize();
                                             }
-                                            let state = fold(sized_flip_state(root), { chain: at(iteration,state.chain), model: focus.model, context: path.model }, { focus: focus, path: path });
+                                            let state = fold(sized_flip_state(root), { chain: at(iteration,state.chain), model: focus.model, context: path.model, focus: focus, path: path });
                                             have sized_plug(state.context, state.model) == sized_flip_result(at(iteration,state.chain), at(iteration,state.model)) by known();
                                             have sized_plug(state.context, state.model) == sized_flip_result(old(state.chain), old(state.model)) by known();
                                             step();
@@ -1694,7 +1694,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                 rewrite(color_bit(color), 1); normalize();
                                             }
                                             step(); step(); step();
-                                            let path = fold(sized_context_at(node, root->rb_node, 0, count), { model: SizedContext::Right(a, gp, color, cached, sibling, up) }, { metadata: a_size, sibling: held_sibling, up: held_up });
+                                            let path = fold(sized_context_at(node, root->rb_node, 0, count), { model: SizedContext::Right(a, gp, color, cached, sibling, up), metadata: a_size, sibling: held_sibling, up: held_up });
                                             have sized_value(focus.model) == count by {
                                                 rewrite(focus.model, at(iteration,state.model));
                                                 rewrite(at(iteration,state.model), SizedTree::Node(current, above, red, count, lo, hi));
@@ -1712,7 +1712,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                 rewrite(focus.model, at(iteration,state.model));
                                                 rewrite(path.model, SizedContext::Right(a, gp, color, cached, sibling, up)); rewrite(SizedContext::Right(a, gp, color, cached, sibling, up), ctx); normalize();
                                             }
-                                            let state = fold(sized_flip_state(root), { chain: at(iteration,state.chain), model: focus.model, context: path.model }, { focus: focus, path: path });
+                                            let state = fold(sized_flip_state(root), { chain: at(iteration,state.chain), model: focus.model, context: path.model, focus: focus, path: path });
                                             have sized_plug(state.context, state.model) == sized_flip_result(at(iteration,state.chain), at(iteration,state.model)) by known();
                                             have sized_plug(state.context, state.model) == sized_flip_result(old(state.chain), old(state.model)) by known();
                                             step();
