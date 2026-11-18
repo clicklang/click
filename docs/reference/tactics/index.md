@@ -1277,10 +1277,10 @@ Each proof starts with the parent assumptions. Facts established in one arm
 are local to that arm. An absent, extra, out-of-order, or unfinished arm
 fails. An ordinary conjunction can still be closed by `solve()`.
 
-Expansion writes a flat list when its conjunct proofs carry source goals.
-For a binary split of a lowered goal whose source has no separate conjunct
-labels, expansion can use `all positional { left => { ... } right => { ... } }`.
-The two positional arms select the lowered goal's immediate children.
+Expansion writes a flat list using the retained child goals or by raising
+their kernel propositions from the names in scope. Some existing proof
+certificates still use `all positional { left => { ... } right => { ... } }`.
+The positional arms select the lowered goal's immediate children.
 
 **Checked examples:** [Conjunction goals](https://github.com/clicklang/click/blob/master/mdtests/proof_both_and.md)
 

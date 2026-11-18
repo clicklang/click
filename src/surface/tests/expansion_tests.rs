@@ -24199,3 +24199,26 @@ fn indexed_iterated_ownership_expands_and_rechecks() {
         error.report()
     );
 }
+
+#[test]
+fn conjunction_expansion_raises_lowered_definedness_bounds() {
+    let source = r#"
+theorem increment_domain(x: int32) {
+    requires defined(x + 1);
+    ensures checked: defined(x + 1) by {
+        all positional {
+            left => { solve(); }
+            right => { solve(); }
+        }
+    }
+}
+"#;
+    let expanded = expand_c_claim_source_by_label(source, &[], "increment_domain.checked")
+        .expect("the definedness bounds should expand");
+    assert!(expanded.contains("all {"), "{expanded}");
+    assert!(!expanded.contains("all positional"), "{expanded}");
+    assert!(expanded.contains("2147483647"), "{expanded}");
+    assert!(expanded.contains("-2147483648"), "{expanded}");
+    crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &[]))
+        .expect("the raised bounds should replay without implicit solve");
+}

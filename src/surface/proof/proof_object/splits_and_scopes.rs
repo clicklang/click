@@ -500,9 +500,19 @@ impl<'a> Proof<'a> {
         let mut marker = self.checkpoint();
         for (slot, id) in marker.conjuncts.iter_mut().zip(ids) {
             let focused = self.focus_branch(id)?;
-            *slot = focused
-                .proposition_obligation()
-                .and_then(|goal| goal.presentation.surface.clone());
+            *slot = focused.proposition_obligation().and_then(|goal| {
+                // Lowering can create a conjunct without a written child
+                // clause. Raise its kernel term directly from the branch's
+                // source names. A conjunction is split into leaves by its
+                // certificate, so raising it here would rewalk its subtree.
+                goal.presentation.surface.clone().or_else(|| {
+                    let kernel = focused.goal()?;
+                    if matches!(kernel, Proposition::And(..)) {
+                        return None;
+                    }
+                    focused.structural_goal_spelling(kernel).map(Arc::new)
+                })
+            });
         }
         Ok(marker)
     }
