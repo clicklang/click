@@ -3411,6 +3411,20 @@ fn charon_result_errors_carry_a_crate_enum() {
     let prepared = p.prepared().unwrap();
     ProgramVerificationSession::new_program_prepared(RESULT_ERROR_SIDECAR, &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
+    let claim = "describe.contract";
+    let expanded = click::surface::expand_program_prepared_claim_source_by_label(
+        RESULT_ERROR_SIDECAR,
+        &prepared,
+        claim,
+    )
+    .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(!expanded.contains("__rust_checked_"), "{expanded}");
+    click::surface::without_implicit_solve_for_claim(claim, || {
+        ProgramVerificationSession::new_program_prepared(&expanded, &prepared)
+            .map(|_| ())
+            .map_err(|error| error.report())
+    })
+    .unwrap();
     for (before, after, expected) in [
         (
             "    ensures x == 0u32 implies result == Result<u32, ParseError>::Err(ParseError::Empty);\n    ensures x > 100u32 implies result == Result<u32, ParseError>::Err(ParseError::TooBig(x));\n    ensures x != 0u32 implies x <= 100u32 implies result == Result<u32, ParseError>::Ok(x);\n}\n\n// `?`",
