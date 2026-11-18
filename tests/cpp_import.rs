@@ -16708,6 +16708,40 @@ fn cpp_struct_reference_reads_print_as_fields_in_a_c_operation_offline() {
     );
 }
 
+#[test]
+#[ignore = "nightly: 2.2s for C++ import, expansion, and cold replay"]
+fn cpp_expansion_names_the_capture_by_its_call_result() {
+    let project = Project::with_fixture(
+        "capture.cpp",
+        "pick",
+        "int echo(int value) noexcept { return value; } int pick(int value) noexcept { if (echo(value) > 0) { return 1; } return 0; }",
+    );
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let text = r#"verifying "capture.cpp";
+int32 echo(int32 value) { requires value >= -100; ensures result >= -100; }
+int32 pick(int32 value) { requires value >= -100; ensures result >= 0; }
+"#;
+    let path = project.directory.join("pick.click");
+    fs::write(&path, text).unwrap();
+    let parsed = read_click_project(&path, text).unwrap();
+    let claim = "pick.ensures_0";
+    let expanded = click::surface::expand_project_claim_source_by_label(
+        &parsed,
+        &ProgramInputs::program(&import),
+        claim,
+    )
+    .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(expanded.contains("call(echo, 0).result"), "{expanded}");
+    assert!(!expanded.contains(".temporary("), "{expanded}");
+    click::surface::without_implicit_solve_for_claim(claim, || {
+        verify_program_prepared_project(&parsed.with_entry_source(expanded.clone()), &import)
+            .map(|_| ())
+            .map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
 /// `click expand` writes a branch condition over a scalar reference with the
 /// bare name the sidecar uses, and the expansion verifies.
 #[test]
