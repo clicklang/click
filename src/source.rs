@@ -2,6 +2,23 @@
 
 use std::{fmt, sync::Arc};
 
+/// Bound the constructor depth introduced by one byte string token.
+pub(crate) const BYTE_STRING_MAX_BYTES: usize = 64;
+
+/// Spell a byte sequence as a Click byte string, including the delimiters.
+pub(crate) fn click_byte_string(bytes: &[u8]) -> String {
+    let mut literal = String::from("b\"");
+    literal.extend(
+        bytes
+            .iter()
+            .copied()
+            .flat_map(std::ascii::escape_default)
+            .map(char::from),
+    );
+    literal.push('"');
+    literal
+}
+
 /// The compiler source location associated with an imported physical line.
 ///
 /// Preprocessed output does not preserve a meaningful macro-expanded column,

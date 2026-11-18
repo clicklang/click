@@ -701,6 +701,7 @@ pub(super) enum Token {
     /// A Rust lifetime, `'a`, by its name without the quote.
     Lifetime(String),
     String(String),
+    ByteString(std::sync::Arc<[u8]>),
     LBrace,
     RBrace,
     LParen,
@@ -767,6 +768,7 @@ impl Token {
             }
             Self::Lifetime(name) => format!("lifetime `'{name}`"),
             Self::String(value) => format!("string literal `\"{value}\"`"),
+            Self::ByteString(_) => "byte string literal".to_string(),
             other => format!("`{}`", other.spelling()),
         }
     }
@@ -786,7 +788,8 @@ impl Token {
             | Self::UInt64Number(_)
             | Self::CharLiteral(_)
             | Self::Lifetime(_)
-            | Self::String(_) => "",
+            | Self::String(_)
+            | Self::ByteString(_) => "",
             Self::LBrace => "{",
             Self::RBrace => "}",
             Self::LParen => "(",
@@ -822,6 +825,32 @@ impl Token {
             Self::Pipe => "|",
         }
     }
+}
+
+/// A byte string denotes the ordinary structural list of its byte values.
+fn byte_list_expression(bytes: &[u8]) -> ContractExpression {
+    let algebraic_type = AlgebraicTypeApplication {
+        rigid: false,
+        name: "List".to_string(),
+        arguments: vec![ClickType::Program(InterfaceType::UInt8)],
+    };
+    bytes.iter().rev().fold(
+        ContractExpression::AlgebraicConstructor {
+            algebraic_type: algebraic_type.clone(),
+            variant: "Nil".to_string(),
+            arguments: Vec::new(),
+        },
+        |tail, byte| ContractExpression::AlgebraicConstructor {
+            algebraic_type: algebraic_type.clone(),
+            variant: "Cons".to_string(),
+            arguments: vec![
+                ContractExpression::ProgramExpression(ProgramExpression::Value(
+                    crate::kernel::uint8(u32::from(*byte)),
+                )),
+                tail,
+            ],
+        },
+    )
 }
 
 type ContractBinaryConstructor =
@@ -16104,6 +16133,7 @@ impl Parser {
             Some(Token::UnsuffixedUInt64(value)) => {
                 Ok(ContractExpression::IntegerLiteral(value.to_string()))
             }
+            Some(Token::ByteString(bytes)) => Ok(byte_list_expression(&bytes)),
             Some(Token::UInt8Number(value)) => Ok(ContractExpression::ProgramExpression(
                 ProgramExpression::Value(crate::kernel::uint8(u32::from(value))),
             )),

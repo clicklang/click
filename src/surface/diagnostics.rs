@@ -7184,6 +7184,45 @@ fn describe_untyped_array_field_read(
     }))
 }
 
+// Preserve a parseable, shallow spelling for concrete lists that would
+// otherwise print one level of nested constructors per byte.
+fn describe_byte_list(mut expression: &ContractExpression) -> Option<String> {
+    let mut bytes = Vec::new();
+    while let ContractExpression::AlgebraicConstructor {
+        algebraic_type,
+        variant,
+        arguments,
+    } = expression
+    {
+        if algebraic_type.rigid
+            || algebraic_type.name != "List"
+            || algebraic_type.arguments != [ClickType::Program(InterfaceType::UInt8)]
+        {
+            return None;
+        }
+        match (variant.as_str(), arguments.as_slice()) {
+            ("Nil", []) => {
+                return (!bytes.is_empty()).then(|| crate::source::click_byte_string(&bytes));
+            }
+            ("Cons", [head, tail]) if bytes.len() < crate::source::BYTE_STRING_MAX_BYTES => {
+                let ContractExpression::ProgramExpression(ProgramExpression::Value(
+                    ProgramValue::UInt8(MachineTerm::Constant {
+                        format: MachineIntegerType::UInt8,
+                        bits,
+                    }),
+                )) = head
+                else {
+                    return None;
+                };
+                bytes.push(u8::try_from(*bits).ok()?);
+                expression = tail;
+            }
+            _ => return None,
+        }
+    }
+    None
+}
+
 pub(super) fn describe_contract_expression(expression: &ContractExpression) -> String {
     if matches!(expression, ContractExpression::Add(_, _)) {
         return describe_add_contract_expression(expression);
@@ -7256,6 +7295,9 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
             variant,
             arguments,
         } => {
+            if let Some(literal) = describe_byte_list(expression) {
+                return literal;
+            }
             let type_arguments = if algebraic_type.arguments.is_empty() {
                 String::new()
             } else {
