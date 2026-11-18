@@ -273,14 +273,14 @@ impl KernelTerm {
 
     pub(crate) fn pointer_argument_native(&self) -> Option<&PureFunctionArgument> {
         if let KernelTermNode::ArrayReference {
-            memory,
+            point,
             pointer,
             element_type,
         } = self.node()
         {
             return Some(self.0.argument_leaf.get_or_init(|| {
                 Box::new(PureFunctionArgument::ArrayRef {
-                    memory: memory.memory().clone(),
+                    memory: point.memory().clone(),
                     pointer: pointer.pointer_native().expect("array pointer").clone(),
                     element_type: *element_type,
                 })
@@ -295,14 +295,14 @@ impl KernelTerm {
     }
 
     pub(crate) fn shared_array_reference(
-        memory: SharedMemory,
+        point: ProgramPoint,
         pointer: KernelTerm,
         element_type: ProgramType,
     ) -> Self {
         Self::intern(
             KernelType::ArrayRef(element_type),
             KernelTermNode::ArrayReference {
-                memory,
+                point,
                 pointer,
                 element_type,
             },
@@ -313,13 +313,13 @@ impl KernelTerm {
     /// refines only its complete pointer payload.
     pub(crate) fn refined_pointer_argument(&self, pointer: &Pointer) -> Self {
         if let KernelTermNode::ArrayReference {
-            memory,
+            point,
             pointer: source,
             element_type,
         } = self.node()
         {
             return Self::shared_array_reference(
-                memory.clone(),
+                point.clone(),
                 source.refined_pointer_argument(pointer),
                 *element_type,
             );
@@ -344,9 +344,9 @@ impl KernelTerm {
             KernelTermNode::PointerCall { call, .. } => {
                 Self::shared_pointer_call(call.clone(), value)
             }
-            KernelTermNode::PointerRead {
-                memory, address, ..
-            } => Self::shared_pointer_read(value, memory.clone(), address.clone()),
+            KernelTermNode::PointerRead { point, address, .. } => {
+                Self::shared_pointer_read(value, point.clone(), address.clone())
+            }
             KernelTermNode::PointerArithmetic {
                 operation,
                 byte_width,

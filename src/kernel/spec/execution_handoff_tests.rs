@@ -440,7 +440,11 @@ fn pointer_lowering_keeps_producers_and_complete_metadata() {
             ),
             payload.clone(),
         ),
-        KernelTerm::shared_pointer_read(payload.clone(), memory.clone(), address.clone()),
+        KernelTerm::shared_pointer_read(
+            payload.clone(),
+            crate::kernel::ProgramPoint::at(&memory),
+            address.clone(),
+        ),
     ];
     for root in roots {
         let field = AlgebraicFieldResult::from_program(SpecValue::Shared(root.clone()))
@@ -469,12 +473,12 @@ fn pointer_lowering_keeps_producers_and_complete_metadata() {
             ) => assert_eq!(a, b),
             (
                 KernelTermNode::PointerRead {
-                    memory: a,
+                    point: a,
                     address: p,
                     ..
                 },
                 KernelTermNode::PointerRead {
-                    memory: b,
+                    point: b,
                     address: q,
                     ..
                 },

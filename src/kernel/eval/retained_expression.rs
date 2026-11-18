@@ -2055,10 +2055,13 @@ mod tests {
             panic!("call arguments")
         };
         assert_eq!(arguments[0], read_root);
-        let KernelTermNode::PointerRead { memory, .. } = arguments[0].node() else {
+        let KernelTermNode::PointerRead { point, .. } = arguments[0].node() else {
             panic!("state read")
         };
-        assert_eq!(memory, &crate::kernel::intern_memory_ref(&source_memory));
+        assert_eq!(
+            point.shared_memory(),
+            &crate::kernel::intern_memory_ref(&source_memory)
+        );
         let address = SymbolicMemory::local_pointer("pointer_step_cell");
         let stored = after
             .memory

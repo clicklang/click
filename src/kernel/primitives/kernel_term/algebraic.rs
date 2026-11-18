@@ -62,7 +62,7 @@ impl KernelTermImport {
                     AlgebraicTermNode::MemoryLoad { memory, pointer } => {
                         values.push(KernelTerm::algebraic_read(
                             term.algebraic_type.clone(),
-                            memory.clone(),
+                            ProgramPoint::at(memory),
                             SharedAddress::import(pointer),
                         ))
                     }
@@ -221,11 +221,11 @@ impl KernelTermExport {
                         let KernelType::Algebraic(ty) = root.ty() else {
                             unreachable!()
                         };
-                        let (memory, address) = read.parts();
+                        let (point, address) = read.parts();
                         values.push(PureFunctionArgument::Algebraic(AlgebraicTerm {
                             algebraic_type: ty.clone(),
                             node: AlgebraicTermNode::MemoryLoad {
-                                memory: memory.clone(),
+                                memory: point.shared_memory().clone(),
                                 pointer: Box::new(address.export()?),
                             },
                         }));

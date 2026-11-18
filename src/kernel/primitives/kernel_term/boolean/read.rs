@@ -5,10 +5,10 @@ use super::*;
 pub type KernelBooleanRead = KernelMemoryRead;
 
 impl KernelTerm {
-    pub(crate) fn boolean_read(memory: SharedMemory, address: SharedAddress) -> Self {
+    pub(crate) fn boolean_read(point: ProgramPoint, address: SharedAddress) -> Self {
         Self::intern(
             KernelType::Bool,
-            KernelTermNode::BoolRead(KernelMemoryRead::new(memory, address)),
+            KernelTermNode::BoolRead(KernelMemoryRead::new(point, address)),
         )
     }
     /// Explicit native read-leaf boundary, shared by diagnostics and stored-cell
@@ -17,12 +17,12 @@ impl KernelTerm {
         let KernelTermNode::BoolRead(read) = self.node() else {
             return None;
         };
-        let (memory, address) = read.parts();
+        let (point, address) = read.parts();
         let MachineTerm::BoolCast { value, .. } =
             self.0.machine_leaf.get_or_init(|| MachineTerm::BoolCast {
                 to: MachineIntegerType::UInt8,
                 value: Box::new(ConditionTerm::BoolLoad(
-                    memory.clone(),
+                    point.shared_memory().clone(),
                     Box::new(address.export().expect("retained Boolean read address")),
                 )),
             })
@@ -173,7 +173,7 @@ mod tests {
         assert_eq!(first, second);
         let roots = [first, second].map(|memory| {
             KernelTerm::boolean_read(
-                memory,
+                crate::kernel::ProgramPoint::at(&memory),
                 SharedAddress::import(&Address::symbolic(Variable(999320))),
             )
         });

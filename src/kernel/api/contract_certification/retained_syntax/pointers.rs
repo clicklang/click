@@ -202,7 +202,7 @@ impl<'a> Array<'a> {
             }),
             CallArgument::Shared(root) => {
                 let N::ArrayReference {
-                    memory,
+                    point,
                     pointer,
                     element_type,
                 } = root.node()
@@ -210,7 +210,7 @@ impl<'a> Array<'a> {
                     return None;
                 };
                 Some(Self {
-                    memory: memory.arena_id(),
+                    memory: point.shared_memory().arena_id(),
                     element_type: *element_type,
                     pointer: Value::Shared(pointer.pointer_payload()?),
                 })
