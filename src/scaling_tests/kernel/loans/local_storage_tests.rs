@@ -19,19 +19,29 @@ fn automatic_storage_retirement_lookup_scales_with_neither_loan_bucket() {
                 } else {
                     SymbolicMemory::local_lifetime_pointer(index, "unrelated")
                 };
-                let range = MemoryRange::new(base, 0u32.into(), MachineTerm::Variable(Variable(index)));
+                let range =
+                    MemoryRange::new(base, 0u32.into(), MachineTerm::Variable(Variable(index)));
                 let opening = lend_memory(&ledger, lender, borrower, range);
                 ledger = ledger.apply(&opening.transition).unwrap();
             }
             let (found, work) = crate::instrumentation::measure_deterministic_work(|| {
                 let size = &16u32.into();
-                assert!(ledger.automatic_storage_retirement_refusal(&other.base, size).is_none());
-                ledger.automatic_storage_retirement_refusal(&selected.base, size).is_some()
+                assert!(
+                    ledger
+                        .automatic_storage_retirement_refusal(&other.base, size)
+                        .is_none()
+                );
+                ledger
+                    .automatic_storage_retirement_refusal(&selected.base, size)
+                    .is_some()
             });
             assert_eq!(found, same_block);
             work
         });
-        assert!(samples.iter().all(|work| *work <= samples[0] + 24), "{samples:?}");
+        assert!(
+            samples.iter().all(|work| *work <= samples[0] + 24),
+            "{samples:?}"
+        );
     }
 }
 
