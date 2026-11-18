@@ -290,3 +290,73 @@ fn cached_integer_condition_variable_readers_reuse_the_produced_operands() {
         assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
 }
+
+#[test]
+fn minted_scalar_comparison_readers_reuse_selected_native_read_work() {
+    use crate::kernel::{
+        BooleanOperandView, CompareRelation, ConditionTerm, MachineTerm, StoredConditionTerm,
+    };
+    for size in [16, 64, 256] {
+        let _session = VerificationSession::enter();
+        let mut offset = MachineTerm::Variable(Variable(979200));
+        for n in 1..size {
+            offset = MachineTerm::Binary {
+                format: MachineIntegerType::Int32,
+                op: MachineBinaryOp::Add,
+                left: Box::new(offset),
+                right: Box::new(MachineTerm::Variable(Variable(979200 + n))),
+            };
+        }
+        let memory = crate::kernel::intern_memory(crate::kernel::SymbolicMemory::new());
+        let pointer = crate::kernel::Address {
+            base: AddressBase::Symbolic(Variable(979199)),
+            offset: crate::kernel::AddressOffset::scaled_int32_node(offset, 4),
+        };
+        let native = ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(MachineTerm::MemoryLoad(
+                crate::kernel::ProgramPoint::at(&memory),
+                Box::new(pointer),
+                LoadKind::Int32,
+            )),
+            right: Box::new(0.into()),
+        };
+        let stored = StoredConditionTerm::from_minted(native.clone());
+        let root = stored.root().expect("minted scalar comparison");
+        let exports = KernelTermExport::machine_export_count();
+        let repeats = 8;
+        for mode in [
+            FoldVariableRead::IntegerFree,
+            FoldVariableRead::ExpressionFree,
+            FoldVariableRead::MachineCapture,
+            FoldVariableRead::IntegerBinders,
+            FoldVariableRead::MachineBinders,
+        ] {
+            let mut expected = BTreeSet::new();
+            let (_, native_work) = crate::instrumentation::measure_deterministic_work(|| {
+                for _ in 0..repeats {
+                    expected.clear();
+                    collect_boolean_variables(
+                        BooleanOperandView::Native(&native),
+                        mode,
+                        &mut expected,
+                    );
+                }
+            });
+            let mut actual = BTreeSet::new();
+            let (_, shared_work) = crate::instrumentation::measure_deterministic_work(|| {
+                for _ in 0..repeats {
+                    actual.clear();
+                    collect_boolean_variables(BooleanOperandView::Shared(root), mode, &mut actual);
+                }
+            });
+            assert_eq!(actual, expected, "mode={mode:?}, size={size}");
+            assert!(
+                shared_work <= native_work + 2 * repeats,
+                "mode={mode:?}, size={size}, native={native_work}, shared={shared_work}"
+            );
+        }
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+}

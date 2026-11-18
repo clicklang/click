@@ -63,7 +63,12 @@ impl KernelTermImport {
             MachineTerm::MemoryLoad(point, address, kind) => {
                 KernelTerm::scalar_read_descriptor(format, point, address, *kind)
             }
-            MachineTerm::Variable(variable) if crate::kernel::eval::is_load_variable(variable) => {
+            // Exact field carriers retain the producer's written name. A
+            // registered name and its structural read have different native
+            // reader scopes and must not share a selected output slot.
+            MachineTerm::Variable(variable)
+                if !self.exact_field_inputs && crate::kernel::eval::is_load_variable(variable) =>
+            {
                 self.machine_input_requires_export = true;
                 crate::kernel::eval::registered_scalar_read_term(variable, format)
             }
