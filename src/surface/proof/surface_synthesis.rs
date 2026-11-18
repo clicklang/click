@@ -7622,11 +7622,18 @@ fn synthesize_surface_algebraic(
                             bound_variables,
                         )
                     }
+                    crate::kernel::AlgebraicValue::Program(
+                        value @ ProgramValue::UInt8(MachineTerm::Constant {
+                            format: MachineIntegerType::UInt8,
+                            ..
+                        }),
+                    ) => Some(ContractExpression::ProgramExpression(
+                        ProgramExpression::Value(value.clone()),
+                    )),
                     // A field of another scalar width that a binder names is
                     // spelled by that binder, which carries its own type;
                     // otherwise by the local, parameter or `result` holding
-                    // it, which carry theirs. A constant of such a width
-                    // would need its literal suffix and is not spelled.
+                    // it, which carry theirs.
                     crate::kernel::AlgebraicValue::Program(
                         ProgramValue::Bool(value @ MachineTerm::Variable(variable))
                         | ProgramValue::Int8(value @ MachineTerm::Variable(variable))
