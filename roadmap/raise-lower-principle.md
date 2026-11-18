@@ -1051,6 +1051,8 @@ including six signed/unsigned 8/16/32-bit field carriers. All 1,909 regular
 scaling cases and the sequence proof selection on that combined tree also passed.
 The full regular corpus
 above predates this final selected-literal fix; CI gates the published tree.
+After integrating upstream `306a1fec0`, all 648 Spec/API/resource/preservation
+and affected Surface checks passed, including the final literal-carrier fix.
 
 ### 10p Inventory and sequential descriptor families
 
