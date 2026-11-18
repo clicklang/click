@@ -7804,6 +7804,37 @@ fn bitwise_round_trip_operands(spelling: &str) -> [String; 4] {
 }
 
 #[test]
+fn nested_machine_conditionals_round_trip_after_rewrite() {
+    use MachineIntegerType as T;
+    for (format, spelling) in [
+        (T::Int32, "int32"),
+        (T::UInt32, "uint32"),
+        (T::Int64, "int64"),
+        (T::UInt64, "uint64"),
+    ] {
+        let mut fixture = ConditionalRoundTrip::new(format, spelling);
+        fixture.state = fixture.state.with_local(
+            "inner",
+            ProgramValue::of_bool(ConditionTerm::Variable(Variable(999712))),
+        );
+        for replacement in [
+            "y".into(),
+            format!("y & (7 as {spelling})"),
+            "if inner { y } else { z }".into(),
+            format!("if y < z {{ y }} else {{ 4 as {spelling} }}"),
+        ] {
+            let equality = fixture.lower(&format!("x == ({replacement})"));
+            for guard in ["flag", "not flag", "y < z", "y == z"] {
+                for reverse in [false, true] {
+                    let original = fixture.goal(guard, reverse, "x");
+                    fixture.check(&original, &equality, guard, reverse);
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn bitwise_arm_conditionals_round_trip_after_rewrite() {
     use crate::kernel::MachineIntegerType as T;
     for (format, spelling) in [
