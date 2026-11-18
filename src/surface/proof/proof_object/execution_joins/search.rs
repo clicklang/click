@@ -269,7 +269,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
             let split = if proof.is_at_call_outcomes_frontier()? {
                 proof
-                    .split_focused_call_outcomes()
+                    .split_focused_call_outcomes([None, None])
                     .map(|split| split.map(|(proof, record)| (proof, record, true)))
             } else if proof.is_at_execution_branch()? && !proof.is_at_enum_match_test()? {
                 proof

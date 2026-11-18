@@ -361,6 +361,7 @@ impl PureFactContext {
                 memory,
                 pointer,
                 value_type,
+                ..
             } => self.proves_memory_read_defined(memory, pointer, *value_type),
             Proposition::MemoryLoadable {
                 memory,
@@ -572,6 +573,7 @@ impl PureFactContext {
                 memory,
                 pointer,
                 value_type,
+                ..
             } => self.proves_memory_read_defined(memory, pointer, *value_type),
             Proposition::MemoryLoadable {
                 memory,

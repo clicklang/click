@@ -25,6 +25,47 @@ use super::*;
 /// many bytes minus one below the accessed byte.
 const WIDEST_INTEGER_CELL_BYTES: i64 = 8;
 
+/// Recover a retained byte without treating partial values as byte cells.
+pub(in crate::kernel) fn known_integer_byte(
+    memory: &SymbolicMemory,
+    pointer: &Address,
+    byte_order: Option<ByteOrder>,
+) -> Option<MachineTerm> {
+    if let Some(value) = memory.cells.get(pointer) {
+        match value {
+            ProgramValue::UInt8(bits) => return Some(bits.clone()),
+            ProgramValue::Int8(bits) => {
+                return Some(MachineTerm::machine_integer_cast(
+                    MachineIntegerType::Int8,
+                    MachineIntegerType::UInt8,
+                    bits.clone(),
+                ));
+            }
+            _ => {}
+        }
+    }
+    let cell = containing_integer_cell(memory, pointer, byte_order)?;
+    integer_cell_byte(&cell.value, cell.byte)
+}
+
+pub(in crate::kernel) fn mask_byte(value: MachineTerm, mask: u8) -> MachineTerm {
+    use MachineIntegerType::{UInt8, UInt32};
+    if mask == u8::MAX {
+        return value;
+    }
+    let word = MachineTerm::machine_integer_cast(UInt8, UInt32, value);
+    let bits = MachineTerm::bitwise_and_at(UInt32, word, MachineTerm::constant(u32::from(mask)));
+    MachineTerm::machine_integer_cast(UInt32, UInt8, bits)
+}
+
+pub(super) fn merge_byte_bits(left: MachineTerm, right: MachineTerm) -> MachineTerm {
+    use MachineIntegerType::{UInt8, UInt32};
+    let left = MachineTerm::machine_integer_cast(UInt8, UInt32, left);
+    let right = MachineTerm::machine_integer_cast(UInt8, UInt32, right);
+    let word = MachineTerm::bitwise_or_at(UInt32, left, right);
+    MachineTerm::machine_integer_cast(UInt32, UInt8, word)
+}
+
 /// A completed byte output for a declared uint32 relates its word and bytes.
 /// The equation names only the selected output state; initialization and
 /// authority come from the checked output transfer, not from this equation.

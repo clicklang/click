@@ -3509,6 +3509,11 @@ fn observable_heap_metadata_matches_for_load(
         left.heap.initialized.as_map(),
         right.heap.initialized.as_map(),
         observable,
+    ) && observable_entries_match(
+        candidates,
+        left.heap.initialized.partial_map(),
+        right.heap.initialized.partial_map(),
+        observable,
     ) && observable_elements_match(
         candidates,
         &left.heap.zeroed_allocations,

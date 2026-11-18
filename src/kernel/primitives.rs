@@ -157,6 +157,7 @@ pub(in crate::kernel) mod canonical_fact_set;
 mod composition_member_index;
 mod memory_equality_index;
 mod resource_algebra;
+pub(crate) use resource_algebra::coalesce_written_resource_descriptions;
 #[cfg(test)]
 pub(crate) use resource_algebra::take_whole_normalization_facts;
 mod arithmetic_domains;
@@ -6513,6 +6514,9 @@ impl AggregateInitializer {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct AggregateLayout {
+    /// The declared bits copied by an assignment of a local C bit-field
+    /// record. Padding is outside the assigned value.
+    pub(super) bit_field_bits: Option<std::num::NonZeroU32>,
     pub(super) size_bytes: u32,
     pub(super) alignment_bytes: u32,
     pub(super) fields: Vec<AggregateField>,
@@ -6532,6 +6536,18 @@ impl AggregateLayout {
             fields,
             unions: Vec::new(),
             value_type: None,
+            bit_field_bits: None,
+        }
+    }
+
+    pub(crate) fn bit_field_record(
+        size_bytes: u32,
+        alignment_bytes: u32,
+        field_bits: std::num::NonZeroU32,
+    ) -> Self {
+        Self {
+            bit_field_bits: Some(field_bits),
+            ..Self::new(size_bytes, alignment_bytes, Vec::new())
         }
     }
 
@@ -6564,6 +6580,7 @@ impl AggregateLayout {
             fields,
             unions,
             value_type: None,
+            bit_field_bits: None,
         }
     }
 
@@ -9707,6 +9724,14 @@ pub enum MemoryDerivation {
         pointer: Address,
         value: StoredMemoryValue,
     },
+    /// A write to the physical bytes of a bit-field representation. The
+    /// successor may know only some bits, so this is no evidence for a
+    /// load of the entire written byte.
+    RepresentationWrite {
+        base: SharedMemory,
+        pointer: Address,
+        bytes: u32,
+    },
     /// `base` with one block declared; no cell changes, so every load reads
     /// exactly what it read in `base`. This fourth edge kind was added after
     /// the initial DAG arc; without it, block declaration split the DAG into
@@ -9841,6 +9866,16 @@ pub enum MemoryDerivation {
 }
 
 impl MemoryDerivation {
+    /// The physical destination of a single checked write. A representation
+    /// write names a footprint without supplying a whole-byte value.
+    pub(in crate::kernel) fn single_write(&self) -> Option<(&Address, u32)> {
+        match self {
+            Self::Store { pointer, value, .. } => Some((pointer, value.byte_width())),
+            Self::RepresentationWrite { pointer, bytes, .. } => Some((pointer, *bytes)),
+            _ => None,
+        }
+    }
+
     /// The stores a `CellsSeeded` edge stands for, newest first: the order a
     /// walk from the produced state meets them in. `None` for every other
     /// edge kind.
@@ -9862,6 +9897,7 @@ impl MemoryDerivation {
         match self {
             Self::CellsSeeded { .. } => "CellsSeeded",
             Self::Store { .. } => "Store",
+            Self::RepresentationWrite { .. } => "RepresentationWrite",
             Self::BlockDeclared { .. } => "BlockDeclared",
             Self::HeapAllocated { .. } => "HeapAllocated",
             Self::HeapAllocationPending { .. } => "HeapAllocationPending",
@@ -9883,6 +9919,7 @@ impl MemoryDerivation {
     pub fn base(&self) -> &SharedMemory {
         match self {
             Self::Store { base, .. }
+            | Self::RepresentationWrite { base, .. }
             | Self::BlockDeclared { base, .. }
             | Self::HeapAllocated { base, .. }
             | Self::HeapAllocationPending { base, .. }
@@ -10145,7 +10182,10 @@ pub(crate) fn record_memory_derivation(result: &mut SymbolicMemory, derivation: 
         // or lifetimes. All other effects conservatively retain a fresh key.
         if interned_here {
             let versions = match derivation.as_ref() {
-                MemoryDerivation::Store { base, pointer, .. } if pointer.base.is_local_block() => {
+                MemoryDerivation::Store { base, pointer, .. }
+                | MemoryDerivation::RepresentationWrite { base, pointer, .. }
+                    if pointer.base.is_local_block() =>
+                {
                     let mut versions = arena.local_definedness_versions[base.id as usize].clone();
                     versions.changed = versions
                         .changed
@@ -10761,6 +10801,9 @@ pub struct ResourceContext {
     /// Derived trusted-kernel index. It never supplies ownership evidence.
     memory_equalities: std::sync::Mutex<memory_equality_index::MemoryPairings>,
     pub(super) storage: std::sync::Arc<ResourceContextStorage>,
+    /// Selected unfold custody, keyed by emitted occurrence. This is producer
+    /// evidence for framing a body's exchange, never a geometric match.
+    pub(super) framed_origins: PersistentMap<ResourceOccurrenceId, ResourceOccurrenceId>,
     /// Disposable projection, never ownership evidence or semantic identity.
     /// Immutable forks share even the cold cache; producers detach it before
     /// advancing only their own delta.
@@ -10781,6 +10824,7 @@ impl Clone for ResourceContext {
         Self {
             instance_consumptions: self.instance_consumptions.clone(),
             storage: self.storage.clone(),
+            framed_origins: self.framed_origins.clone(),
             observable_projection: self.observable_projection.clone(),
             loan_dependencies: self.loan_dependencies.clone(),
             structural_witnesses: self.structural_witnesses.clone(),
@@ -11050,6 +11094,14 @@ pub(super) struct ResourceContextIndex {
     /// The held facts as a canonical multiset: contexts holding the same
     /// facts share its root, so equality never walks them.
     pub(super) canonical: canonical_fact_set::CanonicalFactSet,
+    pub(super) boundary_memory: canonical_fact_set::CanonicalFactSet,
+    pub(super) boundary_memory_count: usize,
+    pub(super) boundary_frame_revision: std::sync::Arc<()>,
+    pub(super) boundary_non_nominal_count: usize,
+    pub(super) boundary_non_argument_or_nominal_count: usize,
+    pub(super) boundary_may_alias_argument_count: usize,
+    pub(super) boundary_private_entries: ResourceEntryIds,
+    pub(super) boundary_private_registry: Option<std::sync::Arc<()>>,
     pub(super) memory_facts: HashedOrdMap<ResourceFact, ()>,
     /// The owned facts of resources other than memory, each once: the
     /// non-memory members a composition is listed under
@@ -11094,6 +11146,7 @@ pub(super) struct ResourceContextIndex {
     /// so a kept set's identity can name them in constant work.
     pub(super) owned_composite_facts: HashedOrdMap<ResourceFact, usize>,
     pub(super) exact: PersistentMap<ResourceFact, ResourceEntryIds>,
+    written_normalization: resource_algebra::WrittenNormalizationIndex,
     /// Exact physical ranges with their access modes, only for observing
     /// partition separation. Entries still carry their original authority.
     pub(super) spatial_memory: PersistentMap<ResourceFact, ResourceEntryIds>,
@@ -11154,6 +11207,7 @@ pub(super) struct ResourceContextIndex {
     /// clothes: read as `u32`, a range starting below its base sorted past
     /// every range there is and its overlapping neighbour was never probed.
     pub(super) concrete_memory: PersistentMap<(Address, bool, i128, i128), ResourceEntryIds>,
+    constant_owned_intervals: memory_equality_index::ConstantOwnershipIntervals,
     /// All constant ranges, including known-empty ones, represented at this origin.
     pub(super) concrete_memory_by_base: PersistentMap<(Address, bool), usize>,
     /// Owned memory ranges keyed by their base's root: the block and the
@@ -11785,7 +11839,9 @@ impl ResourceInstance {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ResourceContextValidityError {
-    /// The bounded checker lacks indexed evidence; this is not an overlap claim.
+    /// A raw symbolic boundary needs this explicit separation premise.
+    UnestablishedOwnedBoundary(Box<Proposition>),
+    /// Opaque ownership lacks a finite indexed frontier.
     UnsupportedOwnershipBoundary,
     InvalidExclusiveAccess(ResourceFact),
     DuplicateOwnedResourceFact(ResourceFact),
@@ -11798,7 +11854,8 @@ pub enum ResourceContextValidityError {
 impl std::fmt::Display for ResourceContextValidityError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
-            Self::UnsupportedOwnershipBoundary => "ownership separation is outside the indexed checking fragment; provide explicit separation or a supported resource frontier",
+            Self::UnsupportedOwnershipBoundary => "ownership separation lacks an indexed finite frontier",
+            Self::UnestablishedOwnedBoundary(_) => "symbolic ownership boundary requires an explicit separation proof",
             Self::InvalidExclusiveAccess(_) => {
                 "field-bearing resource instances and mutex guards require exclusive ownership with quantity one"
             }
@@ -13294,8 +13351,11 @@ pub enum Proposition {
         wide: bool,
     },
     /// A typed read is valid in this state, including initialization.
-    /// This is a pure fact; it grants no resource access permission.
+    /// The point records where the observation was made. Memory provides
+    /// its initialization and lifetime information. Synthetic memory
+    /// queries can have no recorded point.
     MemoryReadDefined {
+        at: Option<program_point::ProgramPointId>,
         memory: SymbolicMemory,
         pointer: Address,
         value_type: ProgramType,
@@ -13544,10 +13604,12 @@ fn hash_atomic_proposition<H: Hasher>(atomic: &Proposition, state: &mut H) {
             wide.hash(state);
         }
         Proposition::MemoryReadDefined {
+            at,
             memory,
             pointer,
             value_type,
         } => {
+            at.hash(state);
             memory.hash(state);
             pointer.hash(state);
             value_type.hash(state);
@@ -13825,10 +13887,12 @@ fn clone_atomic_proposition(proposition: &Proposition) -> Proposition {
             wide: *wide,
         },
         Proposition::MemoryReadDefined {
+            at,
             memory,
             pointer,
             value_type,
         } => Proposition::MemoryReadDefined {
+            at: *at,
             memory: memory.clone(),
             pointer: pointer.clone(),
             value_type: *value_type,
@@ -14739,9 +14803,14 @@ pub struct PureFactContext {
     /// separation by ownership reads the compositions that can answer rather
     /// than every one the path stated.
     pub(super) composition_members: composition_member_index::CompositionMemberIndex,
+    /// Memory-view keys for validity checking, with the original point-bound
+    /// propositions retained as sources for explicit proof construction.
     pub(super) memory_read_defined_facts: crate::persistent::PersistentMap<
         (Address, ProgramType),
-        crate::persistent::PersistentSet<Proposition>,
+        crate::persistent::PersistentMap<
+            Proposition,
+            crate::persistent::PersistentSet<Proposition>,
+        >,
     >,
     pub(super) memory_loadable_facts: crate::persistent::PersistentMap<
         AddressBase,
@@ -14775,6 +14844,15 @@ pub struct PureFactContext {
     pub(super) resource_contains_facts: crate::persistent::PersistentMap<
         super::assumptions::ResourceContainsKey,
         crate::persistent::PersistentSet<Proposition>,
+    >,
+    /// Explicit separation from a complete retained raw-memory partition.
+    /// The canonical set in the value keeps the identity key alive.
+    pub(super) explicit_memory_boundaries: crate::persistent::PersistentMap<
+        (MemoryRange, usize),
+        (
+            canonical_fact_set::CanonicalFactSet,
+            std::sync::Arc<Proposition>,
+        ),
     >,
     pub(super) memory_separation_facts: crate::persistent::PersistentMap<
         (AddressBase, AddressBase),

@@ -403,6 +403,12 @@ impl MemoryStateLabels {
                 let value = self.legend_value(value.native());
                 format!("store {value} at address {address}")
             }
+            MemoryDerivation::RepresentationWrite { pointer, bytes, .. } => {
+                let address = self.pointer_value_name(pointer);
+                format!(
+                    "write a bit-field representation at address {address} spanning {bytes} bytes"
+                )
+            }
             MemoryDerivation::BranchJoin { incoming, .. } => {
                 let inputs = incoming
                     .iter()

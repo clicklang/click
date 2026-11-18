@@ -400,6 +400,63 @@ fn spelling_validation_cannot_defer_its_debts_to_a_statement_probe() {
 }
 
 #[test]
+fn definedness_round_trips_at_a_distinct_point_with_equal_memory() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let pointer = Address::symbolic(Variable(981_301));
+    let historical = ExecutionState::new()
+        .with_memory(SymbolicMemory::new())
+        .with_local(
+            "p",
+            ProgramValue::typed_pointer(pointer.clone(), ProgramType::Int32Pointer),
+        );
+    let current = historical.clone().with_memory(historical.memory().clone());
+    let selector = ProgramPointSelector::Mark("observed".into());
+    let mut points = RecordedStates::new();
+    points.insert(selector.clone(), historical.clone());
+    let _points = SynthesisRecordedPointsScope::enter(&points);
+    let fact = Proposition::MemoryReadDefined {
+        at: historical.program_point().id(),
+        memory: historical.memory().clone(),
+        pointer,
+        value_type: ProgramType::Int32,
+    };
+    let spelled = synthesize_surface_proposition(&fact, ParameterBinding::default(), &current)
+        .expect("the recorded observation has a source selector");
+    assert!(
+        matches!(&spelled, ClickProposition::At { selector: selected, .. } if selected == &selector)
+    );
+    let lowered = crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
+        &spelled,
+        &PureFactContext::new(),
+        ContractEnvironment::new(&BTreeMap::new(), &ClickArrayRefs::new()),
+        FixedStateFrame::new(&current, &current, None, &points),
+        SpecDefinitions::new(
+            &PredicateEnvironment::new(&[]),
+            &ClickFunctionEnvironment::new(&[]),
+        ),
+        FixedStateLoweringOptions::default(),
+    ).map(|(proposition, _, _, _)| proposition);
+    assert_eq!(lowered, Ok(fact));
+}
+
+#[test]
+fn old_read_shortcut_identifies_points_instead_of_equal_snapshots() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let entry = ExecutionState::new().with_memory(SymbolicMemory::new());
+    let frame = ExecutionState::at_state(&entry);
+    assert!(synthesis_states_share_program_point(&entry, &frame));
+    let later = entry.clone().with_memory(entry.memory().clone());
+    assert_eq!(entry.memory(), later.memory());
+    assert!(!synthesis_states_share_program_point(&entry, &later));
+    assert!(!synthesis_states_share_program_point(
+        &ExecutionState::new(),
+        &ExecutionState::new()
+    ));
+    let unnamed = ExecutionState::new();
+    assert!(synthesis_states_share_program_point(&unnamed, &unnamed));
+}
+
+#[test]
 fn qualified_static_read_spellings_retain_entry_and_current_epochs() {
     let _session = crate::kernel::VerificationSession::enter();
     let (entry, sources, loads) =
@@ -7686,4 +7743,87 @@ fn a_non_null_pointer_equality_spells_each_address_by_its_parameter() {
         crate::surface::printing::source_click_proposition(&surface),
         "address(node) == address(node)"
     );
+}
+
+#[test]
+fn call_capture_names_the_selected_result_at_its_declared_type() {
+    use crate::kernel::{LocalBindingId, LocalFunctionId};
+    use crate::languages::interface::ImportedFunction;
+
+    let capture = LocalBindingId::temporary(LocalFunctionId::new(None, "f".into()), 0);
+    capture.initialize_program_type(ProgramType::Int32);
+    let capture = crate::kernel::BindingName::from(capture);
+    let (call, result) = crate::kernel::program_call_value(0, "get", Vec::new());
+    let function = ImportedFunction::external(InterfaceType::Int32, "f".into(), Vec::new())
+        .with_prelowered_kernel_function(crate::kernel::program_function(
+            ProgramType::Int32,
+            "f",
+            Vec::new(),
+            crate::kernel::program_seq(call, crate::kernel::program_assign(&capture, result)),
+        ));
+    let layout = crate::surface::lowering::SourceExecutionLayout::for_function(&function).unwrap();
+    let term = MachineTerm::Variable(Variable(977_921));
+    let value = ProgramValue::Int32(term.clone());
+    let state = ExecutionState::new().with_local(&capture, value.clone());
+    let mut points = RecordedStates::new().with_source_layout(layout);
+    let expected =
+        ContractExpression::RegionResult(CodeRegionRef::Path(vec![SourcePathStep::Call(
+            "get".into(),
+            0,
+        )]));
+
+    let raise = |points: &RecordedStates, sought: &MachineTerm, state: &ExecutionState| {
+        let _scope = SynthesisRecordedPointsScope::enter(points);
+        synthesize_surface_bitvector(sought, ParameterBinding::default(), state, &BTreeMap::new())
+    };
+    let before = ProgramPointSelector::Mark("before".into());
+    points.insert(before.clone(), ExecutionState::new());
+    points.record_call_result(0, Some(value.clone()));
+    assert_eq!(raise(&points, &term, &state), Some(expected.clone()));
+    let saved = ProgramPointSelector::Mark("saved".into());
+    points.insert(saved.clone(), state.clone());
+
+    // The same static call runs again and its capture is assigned a new
+    // symbolic value. The earlier value is still named at the proof mark.
+    let newer = MachineTerm::Variable(Variable(977_922));
+    let newer_value = ProgramValue::Int32(newer.clone());
+    let current = state.clone().with_local(&capture, newer_value.clone());
+    points.record_call_result(0, Some(newer_value.clone()));
+    let historical = ContractExpression::At {
+        selector: saved,
+        expression: Box::new(expected.clone()),
+    };
+    assert_eq!(raise(&points, &newer, &current), Some(expected.clone()));
+    assert_eq!(raise(&points, &term, &current), Some(historical.clone()));
+
+    let lower = |expression| {
+        crate::surface::lowering::elaborate_fixed_state_expression(
+            expression,
+            BTreeMap::new(),
+            &current,
+            BTreeMap::new(),
+            BTreeMap::new(),
+            None,
+            &points,
+            SpecDefinitions::new(
+                &PredicateEnvironment::new(&[]),
+                &ClickFunctionEnvironment::new(&[]),
+            ),
+            BTreeSet::new(),
+            BTreeMap::new(),
+        )
+    };
+    assert_eq!(lower(&historical).unwrap(), SpecExpression::Value(value));
+    assert_eq!(
+        lower(&expected).unwrap(),
+        SpecExpression::Value(newer_value)
+    );
+    let missing = ContractExpression::At {
+        selector: before,
+        expression: Box::new(expected.clone()),
+    };
+    assert!(lower(&missing).unwrap_err().contains("at `before`"));
+
+    points.record_call_result(0, Some(ProgramValue::UInt32(term.clone())));
+    assert_ne!(raise(&points, &term, &state), Some(expected));
 }

@@ -3468,6 +3468,50 @@ fn read_retained_lvalue_paths_without_ranges(
                         obligations,
                     }]);
                 }
+                let bit_field_mask = match lvalue.access_class() {
+                    Some(CAccessClass::BitFieldByte(mask)) => Some(mask.get()),
+                    _ => None,
+                };
+                if let Some(mask) = bit_field_mask {
+                    let resolved =
+                        resolve_local_pointer_alias(state, pointer, &effective_assumptions);
+                    if !resolved.base.is_local_block()
+                        || !state.memory.access_in_bounds(&resolved, 1)
+                    {
+                        return Ok(vec![ExecutionValuePath {
+                            outcome: ExpressionOutcome::UndefinedBehavior(
+                                UndefinedBehavior::InvalidMemory,
+                            ),
+                            facts,
+                            obligations,
+                        }]);
+                    }
+                    if let Some(byte) = state.memory.heap.initialized.partial_byte(&resolved) {
+                        let outcome = if byte.mask & mask != mask {
+                            ExpressionOutcome::UndefinedBehavior(
+                                UndefinedBehavior::UninitializedRead,
+                            )
+                        } else if let Some(ProgramValue::UInt8(value)) = &byte.value {
+                            ExpressionOutcome::Value(
+                                ProgramValue::UInt8(super::byte_view::mask_byte(
+                                    value.clone(),
+                                    mask,
+                                ))
+                                .into(),
+                            )
+                        } else {
+                            ExpressionOutcome::RuntimeError(RuntimeError::FunctionContract(
+                                "bit-field read requires a retained value for the selected bits"
+                                    .into(),
+                            ))
+                        };
+                        return Ok(vec![ExecutionValuePath {
+                            outcome,
+                            facts,
+                            obligations,
+                        }]);
+                    }
+                }
                 let mut paths = evaluate_retained_memory_load_paths(
                     &state.memory,
                     pointer.clone(),
@@ -3481,6 +3525,19 @@ fn read_retained_lvalue_paths_without_ranges(
                     source,
                     budget.program_byte_order(),
                 );
+                if let Some(mask) = bit_field_mask {
+                    for path in &mut paths {
+                        if let ExpressionOutcome::Value(value) = &mut path.outcome
+                            && let ProgramValue::UInt8(bits) = value.native().as_ref()
+                        {
+                            *value = ProgramValue::UInt8(super::byte_view::mask_byte(
+                                bits.clone(),
+                                mask,
+                            ))
+                            .into();
+                        }
+                    }
+                }
                 // A pointer read from memory designates an object of the
                 // class its lvalue's type points to, unless it carries the
                 // class of the declaration that formed it.
@@ -3501,10 +3558,12 @@ fn read_retained_lvalue_paths_without_ranges(
                 if let Some(source) = source.and_then(|source| source.reference_access.as_ref())
                     && source.kind == crate::kernel::ReferenceAccessKind::Read
                 {
+                    let at = state.observation_point_id();
                     for path in &mut paths {
                         if matches!(path.outcome, ExpressionOutcome::Value(_)) {
                             let mut fact =
                                 ExecutionPureFact::certified(Proposition::MemoryReadDefined {
+                                    at,
                                     memory: state.memory.clone(),
                                     pointer: pointer.clone(),
                                     value_type: lvalue.value_type,
@@ -3518,6 +3577,7 @@ fn read_retained_lvalue_paths_without_ranges(
                                     source.clone(),
                                     pointer.clone(),
                                     &state.memory,
+                                    at,
                                     lvalue.value_type,
                                 );
                             path.facts.push(fact);

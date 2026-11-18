@@ -7,8 +7,7 @@ use crate::kernel::int32_constant;
 use crate::kernel::{CompareRelation, MachineCastSpelling, MachineIntegerType, OverflowOperation};
 mod observable;
 mod ownership_admission;
-use ownership_admission::PendingOwnershipAdmission;
-pub(crate) use ownership_admission::{FlatBodyAdmission, OwnershipAdmission};
+pub(crate) use ownership_admission::FlatBodyAdmission;
 
 /// A proof-aware composition query in progress on this thread. Bridging a
 /// query's state form to a carrier entry can itself ask whether a
@@ -446,7 +445,7 @@ pub(super) fn remove_resource_index_entry<K: Ord + Clone>(
 }
 
 /// One fact's share of `ResourceContextIndex::fact_hash`.
-fn resource_fact_content_hash(fact: &ResourceFact) -> u64 {
+pub(super) fn resource_fact_content_hash(fact: &ResourceFact) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     fact.hash(&mut hasher);
@@ -459,6 +458,20 @@ fn spatial_memory_fact_key(fact: &ResourceFact) -> Option<ResourceFact> {
         ResourceFact::Own(_, units) => ResourceFact::Own(resource, units.clone()),
         ResourceFact::View(_) => ResourceFact::View(resource),
     })
+}
+
+pub(super) fn nominal_ownership_block(block: &AddressBase) -> bool {
+    matches!(
+        block,
+        AddressBase::Heap(_)
+            | AddressBase::Temporary(_)
+            | AddressBase::Concrete(_)
+            | AddressBase::AutomaticLocal { .. }
+            | AddressBase::StaticObject { .. }
+            | AddressBase::AggregateReturn { .. }
+            | AddressBase::ContractResult
+            | AddressBase::ContractException
+    )
 }
 
 impl ResourceContextIndex {
@@ -494,6 +507,26 @@ impl ResourceContextIndex {
 
     fn with_inserted(&self, entry: ResourceEntryId, fact: &ResourceFact) -> Self {
         let mut result = self.clone();
+        result.written_normalization.insert(entry, fact);
+        if fact.is_own()
+            && !fact
+                .memory_own_range()
+                .is_some_and(|range| super::block_is_never_address_taken_local(&range.base().base))
+        {
+            result.boundary_frame_revision = std::sync::Arc::new(());
+        }
+
+        let registry = super::never_address_taken_locals_key();
+        if result
+            .boundary_private_registry
+            .as_ref()
+            .is_none_or(|prior| !std::sync::Arc::ptr_eq(prior, &registry))
+        {
+            result.boundary_private_registry = Some(registry);
+            result.boundary_private_entries = ResourceEntryIds::default();
+        }
+
+        let mut new_memory_range = false;
         if fact.memory_range().is_some() && !self.exact.contains_key(fact) {
             result.memory_facts.insert(fact.clone(), ());
         }
@@ -510,6 +543,7 @@ impl ResourceContextIndex {
                 .owned_memory_range_counts
                 .with_inserted(range.clone(), count + 1);
             if count == 0 {
+                new_memory_range = true;
                 result.owned_memory_ranges.insert(range.clone(), ());
             }
         }
@@ -624,6 +658,36 @@ impl ResourceContextIndex {
         let hash = resource_fact_content_hash(fact);
         result.fact_hash = result.fact_hash.wrapping_add(hash);
         result.canonical = result.canonical.with_inserted(fact, hash);
+        if let Some(range) = fact.memory_own_range() {
+            result.boundary_memory_count += 1;
+            if super::block_is_never_address_taken_local(&range.base().base) {
+                result.boundary_private_entries = result.boundary_private_entries.with_value(entry);
+            }
+            result.boundary_non_nominal_count +=
+                usize::from(!nominal_ownership_block(&range.base().base));
+            let block = &range.base().base;
+            result.boundary_non_argument_or_nominal_count += usize::from(
+                !nominal_ownership_block(block)
+                    && !matches!(
+                        block,
+                        AddressBase::ExternalArgument | AddressBase::ExternalObject(_)
+                    ),
+            );
+            result.boundary_may_alias_argument_count += usize::from(
+                !(nominal_ownership_block(block)
+                    && block.proven_distinct(&AddressBase::ExternalArgument)),
+            );
+            if new_memory_range {
+                if self.boundary_memory.identity() == self.canonical.identity()
+                    && fact.owned_quantity_term() == Some(&MachineTerm::constant(1))
+                {
+                    result.boundary_memory = result.canonical.clone();
+                    result.boundary_memory.prepare_footprint();
+                } else {
+                    result.boundary_memory = result.boundary_memory.with_memory_range(range);
+                }
+            }
+        }
         result.exact = insert_resource_index_entry(&result.exact, fact.clone(), entry);
         if let Some(key) = spatial_memory_fact_key(fact) {
             result.spatial_memory = insert_resource_index_entry(&result.spatial_memory, key, entry);
@@ -762,6 +826,11 @@ impl ResourceContextIndex {
                 }
             }
             if let Some((origin, start, end)) = constant_memory_coordinates(range) {
+                if mode && start < end {
+                    result
+                        .constant_owned_intervals
+                        .update(&origin, start, end, entry, true);
+                }
                 let base = (origin, mode);
                 // Empty intervals carry no overlap obligation and must not
                 // hide a nonempty predecessor from the neighbour check.
@@ -800,6 +869,26 @@ impl ResourceContextIndex {
 
     fn without_entry(&self, entry: ResourceEntryId, fact: &ResourceFact) -> Self {
         let mut result = self.clone();
+        result.written_normalization.remove(entry, fact);
+        if fact.is_own()
+            && !fact
+                .memory_own_range()
+                .is_some_and(|range| super::block_is_never_address_taken_local(&range.base().base))
+        {
+            result.boundary_frame_revision = std::sync::Arc::new(());
+        }
+
+        let registry = super::never_address_taken_locals_key();
+        if result
+            .boundary_private_registry
+            .as_ref()
+            .is_none_or(|prior| !std::sync::Arc::ptr_eq(prior, &registry))
+        {
+            result.boundary_private_registry = Some(registry);
+            result.boundary_private_entries = ResourceEntryIds::default();
+        }
+
+        let mut last_memory_range = false;
         if fact.memory_range().is_some()
             && self
                 .exact
@@ -824,6 +913,7 @@ impl ResourceContextIndex {
                 .copied()
                 .expect("owned range is indexed");
             if count == 1 {
+                last_memory_range = true;
                 result.owned_memory_range_counts =
                     result.owned_memory_range_counts.without_key(range);
                 result.owned_memory_ranges.remove(range);
@@ -964,6 +1054,34 @@ impl ResourceContextIndex {
         let hash = resource_fact_content_hash(fact);
         result.fact_hash = result.fact_hash.wrapping_sub(hash);
         result.canonical = result.canonical.without_one(fact, hash);
+        if let Some(range) = fact.memory_own_range() {
+            result.boundary_memory_count -= 1;
+            result.boundary_private_entries = result.boundary_private_entries.without_value(&entry);
+            result.boundary_non_nominal_count -=
+                usize::from(!nominal_ownership_block(&range.base().base));
+            let block = &range.base().base;
+            result.boundary_non_argument_or_nominal_count -= usize::from(
+                !nominal_ownership_block(block)
+                    && !matches!(
+                        block,
+                        AddressBase::ExternalArgument | AddressBase::ExternalObject(_)
+                    ),
+            );
+            result.boundary_may_alias_argument_count -= usize::from(
+                !(nominal_ownership_block(block)
+                    && block.proven_distinct(&AddressBase::ExternalArgument)),
+            );
+            if last_memory_range {
+                if self.boundary_memory.identity() == self.canonical.identity()
+                    && fact.owned_quantity_term() == Some(&MachineTerm::constant(1))
+                {
+                    result.boundary_memory = result.canonical.clone();
+                    result.boundary_memory.prepare_footprint();
+                } else {
+                    result.boundary_memory = result.boundary_memory.without_memory_range(range);
+                }
+            }
+        }
         result.exact = remove_resource_index_entry(&result.exact, fact, entry);
         if let Some(key) = spatial_memory_fact_key(fact) {
             result.spatial_memory =
@@ -1088,6 +1206,11 @@ impl ResourceContextIndex {
                 }
             }
             if let Some((origin, start, end)) = constant_memory_coordinates(range) {
+                if mode && start < end {
+                    result
+                        .constant_owned_intervals
+                        .update(&origin, start, end, entry, false);
+                }
                 let base = (origin, mode);
                 if start < end {
                     result.concrete_memory = remove_resource_index_entry(
@@ -2341,8 +2464,9 @@ impl ResourceContext {
                 }
             }
         }
-        // A changed description still needs separation from the withheld frame.
-        // Construct that successor once, retaining the exit's occurrence IDs.
+        // Unfolded children carry their selected body root's framing rule.
+        // Arbitrary additions still need a boundary with the withheld frame;
+        // occurrence identities alone never authorize a new footprint.
         if additions.iter().any(|(_, occurrence)| {
             restored
                 .storage
@@ -2358,9 +2482,32 @@ impl ResourceContext {
                     .map(|binding| (*occurrence, binding.clone()))
             })
             .collect::<Vec<_>>();
-        restored = restored
-            .compose_selected_occurrences(additions, assumptions)
-            .ok()?;
+        for (fact, occurrence) in additions {
+            if self
+                .framed_origins
+                .get(&occurrence)
+                .is_some_and(|root| body.owned_fact_for_occurrence(*root).is_some())
+            {
+                restored = restored
+                    .install_established_partition_occurrences(
+                        [(fact, Some(occurrence))],
+                        assumptions,
+                    )
+                    .ok()?
+                    .0;
+            } else {
+                restored = match restored.admit_selected_occurrences_without_discovery(
+                    [(fact, Some(occurrence))],
+                    assumptions,
+                ) {
+                    ownership_admission::OwnershipAdmission::Admitted { context, .. } => context,
+                    _ => return None,
+                };
+            }
+            if let Some(root) = self.framed_origins.get(&occurrence) {
+                restored.framed_origins = restored.framed_origins.with_inserted(occurrence, *root);
+            }
+        }
         for (occurrence, binding) in dependencies {
             restored = restored.with_loan_dependency(occurrence, binding);
         }
@@ -2783,6 +2930,7 @@ impl ResourceContext {
     }
 
     fn remove_entry_only(&mut self, entry: ResourceEntryId) -> ResourceFact {
+        self.framed_origins = self.framed_origins.without_key(&self.occurrence(entry));
         let previous = self.storage.clone();
         let fact = self.fact(entry).clone();
         let support = self.storage.supported_by.get(&entry).cloned();
@@ -3647,6 +3795,15 @@ impl ResourceContext {
             .collect()
     }
 
+    /// Select one actual written occurrence without enumerating equal heads.
+    pub(crate) fn first_exact_occurrence(
+        &self,
+        fact: &ResourceFact,
+    ) -> Option<ResourceOccurrenceId> {
+        let entry = self.storage.index.exact.get(fact)?.iter().next()?;
+        Some(self.occurrence(*entry))
+    }
+
     /// Return every exact occurrence for a representation, including viewed
     /// entries.  TrackedResource rewrites use this only after inserting the exact
     /// child representation, so the caller can attach a dependency to the
@@ -4384,6 +4541,11 @@ impl ResourceContext {
                         }
                     }
                 }
+                MemoryDerivation::RepresentationWrite { pointer, .. } => {
+                    // There is no corresponding whole-cell store fact to
+                    // establish a guarded iteration survived this write.
+                    dropped.extend(facts_in_block(&self, &pointer.base));
+                }
                 MemoryDerivation::CallHavoc { mutable_ranges, .. } => {
                     for range in mutable_ranges {
                         for fact in facts_in_block(&self, &range.base().base) {
@@ -4447,7 +4609,10 @@ impl ResourceContext {
             });
         let ambiguous_event = match derivation {
             MemoryDerivation::BranchJoin { .. } => true,
-            MemoryDerivation::Store { pointer, .. } => memory_block_may_alias(&pointer.base),
+            MemoryDerivation::Store { pointer, .. }
+            | MemoryDerivation::RepresentationWrite { pointer, .. } => {
+                memory_block_may_alias(&pointer.base)
+            }
             MemoryDerivation::CellsSeeded { run, .. } => memory_block_may_alias(&run.base().base),
             MemoryDerivation::CallHavoc { mutable_ranges, .. }
             | MemoryDerivation::LoopHavoc {
@@ -4485,19 +4650,25 @@ impl ResourceContext {
             }
         }
         match derivation {
-            MemoryDerivation::Store { .. } | MemoryDerivation::CellsSeeded { .. } => {
-                let stores = match derivation {
-                    MemoryDerivation::Store { pointer, value, .. } => {
-                        vec![(pointer.clone(), value.native().clone())]
-                    }
-                    _ => derivation.seeded_stores().expect("a CellsSeeded edge"),
+            MemoryDerivation::Store { .. }
+            | MemoryDerivation::RepresentationWrite { .. }
+            | MemoryDerivation::CellsSeeded { .. } => {
+                let stores = if let Some((pointer, width)) = derivation.single_write() {
+                    vec![(pointer.clone(), width)]
+                } else {
+                    derivation
+                        .seeded_stores()
+                        .expect("a CellsSeeded edge")
+                        .into_iter()
+                        .map(|(pointer, value)| (pointer, value.byte_width()))
+                        .collect()
                 };
-                for (pointer, value) in &stores {
+                for (pointer, width) in stores {
                     let write = MemoryRange::new_with_element_width(
                         pointer.clone(),
                         MachineTerm::constant(0),
                         MachineTerm::constant(1),
-                        value.byte_width(),
+                        width,
                     );
                     if memory_interval_nodes(&write).is_some() {
                         add_memory_interval_candidates(
@@ -5992,8 +6163,8 @@ impl ResourceContext {
         facts: impl IntoIterator<Item = ResourceFact>,
         assumptions: &PureFactContext,
     ) -> Result<Self, ResourceContextValidityError> {
-        self.try_compose_with_facts_delaying_normalization(facts, assumptions)
-            .map(|context| context.normalized(assumptions))
+        self.try_compose_with_facts_delaying_normalization_with_occurrences(facts, assumptions)
+            .map(|(context, inserted)| context.normalized_delta(inserted, assumptions))
     }
 
     pub(crate) fn try_compose_with_facts_delaying_normalization(
@@ -6010,29 +6181,15 @@ impl ResourceContext {
     /// instead of rediscovering a support by its fact value: an equal caller
     /// authority may already be live in the destination context.
     pub(crate) fn try_compose_with_facts_delaying_normalization_with_occurrences(
-        mut self,
+        self,
         facts: impl IntoIterator<Item = ResourceFact>,
         assumptions: &PureFactContext,
     ) -> Result<(Self, Vec<(ResourceFact, ResourceOccurrenceId)>), ResourceContextValidityError>
     {
-        // Construction owns initial attachment. In particular, prepare an
-        // empty input before insertion so it shares the already closed graph;
-        // a later read must not register or scan the resource input.
-        if self.storage.facts.is_empty() {
-            self.synchronize_memory_equalities(assumptions);
-        }
-        let mut inserted = Vec::new();
-        for fact in facts {
-            let entry = self.storage.next_entry_id;
-            self.insert_fact(fact.clone());
-            inserted.push((fact, self.occurrence(entry)));
-        }
-        let context = self;
-        if let Some(error) = context.validity_error(assumptions) {
-            return Err(error);
-        }
-        context.advance_prepared_memory_equalities(assumptions);
-        Ok((context, inserted))
+        // `self` is the retained resource partition. Establish only the new
+        // facts' relationship with it; its producer already established the
+        // old partition. Raw input validation remains an explicit operation.
+        self.try_compose_checked_ownership_and_occurrences(facts, assumptions)
     }
 
     pub(crate) fn try_compose_with_fact_with_occurrence(
@@ -6045,8 +6202,8 @@ impl ResourceContext {
                 std::iter::once(fact.clone()),
                 assumptions,
             )?;
-        let occurrence = inserted.pop().map(|(_, occurrence)| occurrence);
-        let context = context.normalized(assumptions);
+        let occurrence = inserted.last().map(|(_, occurrence)| *occurrence);
+        let context = context.normalized_delta(std::mem::take(&mut inserted), assumptions);
         let occurrence = occurrence.filter(|occurrence| {
             context
                 .storage
@@ -6064,7 +6221,7 @@ impl ResourceContext {
         facts: impl IntoIterator<Item = ResourceFact>,
         assumptions: &PureFactContext,
     ) -> Result<Self, ResourceContextValidityError> {
-        self.try_compose_with_legacy_discovery_and_occurrences(facts, assumptions)
+        self.try_compose_checked_ownership_and_occurrences(facts, assumptions)
             .map(|(context, _)| context)
     }
 
@@ -6122,11 +6279,11 @@ impl ResourceContext {
         (frame, transfer)
     }
 
-    /// Install outputs consumed jointly from an executed body's partition.
+    /// Install a partition constructed by executed custody or a verified rule.
     /// The producer retains the call's frame relationship; no overlap or
     /// exclusive-identity discovery is repeated at publication.
     pub(in crate::kernel) fn return_constructed_body(
-        transfer: crate::kernel::functions::ConstructedBodyReturn,
+        transfer: crate::kernel::functions::FramedReturnPartition,
         assumptions: &PureFactContext,
     ) -> (Self, Vec<(ResourceFact, ResourceOccurrenceId)>) {
         #[cfg(test)]
@@ -6170,6 +6327,74 @@ impl ResourceContext {
         (frame, transfer)
     }
 
+    pub(in crate::kernel) fn install_held_composite_body(
+        construction: crate::kernel::functions::HeldCompositeBody,
+        assumptions: &PureFactContext,
+    ) -> (Self, Vec<(ResourceFact, ResourceOccurrenceId)>) {
+        let (_source, frame, children) = construction.into_parts();
+        let (context, inserted) = frame.unchecked_with_facts_and_occurrences(children);
+        context.advance_prepared_memory_equalities(assumptions);
+        (context, inserted)
+    }
+
+    /// Install the body exposed by removal of one selected held composite.
+    /// Its definition supplies the relationship with the retained frame.
+    pub(crate) fn install_established_partition(
+        self,
+        body: impl IntoIterator<Item = ResourceFact>,
+        assumptions: &PureFactContext,
+    ) -> Result<(Self, Vec<(ResourceFact, ResourceOccurrenceId)>), ResourceContextValidityError>
+    {
+        self.install_established_partition_occurrences(
+            body.into_iter().map(|fact| (fact, None)),
+            assumptions,
+        )
+    }
+
+    fn install_established_partition_occurrences(
+        mut self,
+        body: impl IntoIterator<Item = (ResourceFact, Option<ResourceOccurrenceId>)>,
+        assumptions: &PureFactContext,
+    ) -> Result<(Self, Vec<(ResourceFact, ResourceOccurrenceId)>), ResourceContextValidityError>
+    {
+        let mut inserted = Vec::new();
+        for (fact, occurrence) in body {
+            // Preserve the constructor's direct contradictory-range refusal.
+            // Missing geometry is discharged by the selected parent's framed
+            // definition, never by searching for unrelated owners.
+            if fact.has_proven_positive_quantity(assumptions)
+                && let crate::kernel::primitives::memory_equality_index::ConstantOwnedOverlap::Overlap(
+                entry,
+            ) = self.constant_owned_overlap(&fact, assumptions)
+            {
+                return Err(
+                    ResourceContextValidityError::OverlappingOwnedMemoryResources {
+                        left: self
+                            .fact(entry)
+                            .memory_own_range()
+                            .expect("selected owner")
+                            .clone(),
+                        right: fact.memory_own_range().expect("queried owner").clone(),
+                    },
+                );
+            }
+            let entry = self.storage.next_entry_id;
+            self.insert_fact_with_support_occurrence_and_metadata_at(
+                fact.clone(),
+                None,
+                None,
+                None,
+                occurrence,
+            );
+            if let Some(error) = self.exclusive_validity_error(&fact) {
+                return Err(error);
+            }
+            inserted.push((fact, self.occurrence(entry)));
+        }
+        self.advance_prepared_memory_equalities(assumptions);
+        Ok((self, inserted))
+    }
+
     /// Apply the framed definitional exchange R * F -> body(R) * F.
     /// The instance rewrite constructs this body from the exclusively held
     /// parent after selecting its definition/arm and checking child identities.
@@ -6185,6 +6410,10 @@ impl ResourceContext {
         let _fast =
             crate::kernel::search::FastOperationScope::enter("instance unfold frame replacement");
         let parent = ResourceFact::own(Resource::Instance(instance.clone()));
+        let source = self
+            .unique_owned_occurrence_for_fact(&parent)
+            .map(|(source, _)| source);
+        let root = source.map(|source| self.framed_origins.get(&source).copied().unwrap_or(source));
         let Some(mut next) = self.without_exact_representation(&parent) else {
             return Ok(None);
         };
@@ -6192,7 +6421,15 @@ impl ResourceContext {
             next.synchronize_memory_equalities(assumptions);
         }
         for fact in body {
+            let entry = next.storage.next_entry_id;
             next.insert_fact(fact.clone());
+            if fact.is_own()
+                && let Some(root) = root
+            {
+                next.framed_origins = next
+                    .framed_origins
+                    .with_inserted(next.occurrence(entry), root);
+            }
             // Retain exact exclusive-identity checks. SymbolicMemory/frame overlap
             // discovery is the revalidation removed by this exchange rule.
             if let Some(error) = next.exclusive_validity_error(&fact) {
@@ -6207,7 +6444,7 @@ impl ResourceContext {
     /// member of the caller's block or root. Empty intervals have no overlap.
     /// Duplicate keys need only the first and last occurrences: after the
     /// caller excludes itself, one representative of the other owners remains.
-    fn constant_owned_neighbors(
+    pub(super) fn constant_owned_neighbors(
         &self,
         origin: &Address,
         start: i128,
@@ -6324,6 +6561,7 @@ impl ResourceContext {
     /// installed can recursively rediscover state and range separation
     /// through an unrelated call history. Only a conflict with the existing
     /// caller frame is new information at installation time.
+    #[cfg(test)]
     pub(crate) fn try_compose_certified_group_into_valid_context_delaying_normalization(
         self,
         facts: impl IntoIterator<Item = ResourceFact>,
@@ -6336,6 +6574,7 @@ impl ResourceContext {
         .map(|(context, _)| context)
     }
 
+    #[cfg(test)]
     pub(crate) fn try_compose_certified_group_into_valid_context_delaying_normalization_with_occurrences(
         self,
         facts: impl IntoIterator<Item = ResourceFact>,
@@ -6363,6 +6602,17 @@ impl ResourceContext {
         Ok((context, inserted))
     }
 
+    pub(super) fn missing_ownership_boundary(
+        &self,
+        fact: &ResourceFact,
+    ) -> Option<Box<Proposition>> {
+        let range = fact.memory_own_range()?;
+        Some(Box::new(Proposition::ResourceSeparate {
+            left: Box::new(Resource::Memory(range.clone())),
+            right: Box::new(self.storage.index.boundary_memory.footprint()),
+        }))
+    }
+
     fn admit_certified_memory_boundary(
         &self,
         fact: &ResourceFact,
@@ -6374,7 +6624,7 @@ impl ResourceContext {
         if self.storage.index.owned_memory_by_block.is_empty() {
             return Ok(());
         }
-        match self.constant_owned_overlap(fact, assumptions) {
+        match self.owned_boundary_overlap(fact, assumptions) {
             crate::kernel::primitives::memory_equality_index::ConstantOwnedOverlap::Clear => {}
             crate::kernel::primitives::memory_equality_index::ConstantOwnedOverlap::Overlap(
                 entry,
@@ -6391,25 +6641,55 @@ impl ResourceContext {
                 );
             }
             crate::kernel::primitives::memory_equality_index::ConstantOwnedOverlap::Unsupported => {
-                if let Some((error, _)) = self.legacy_memory_boundary_conflict(
-                    fact,
-                    self.storage.next_entry_id,
-                    assumptions,
-                ) {
-                    return Err(error);
-                }
+                return Err(ResourceContextValidityError::UnestablishedOwnedBoundary(
+                    self.missing_ownership_boundary(fact)
+                        .expect("owned memory boundary"),
+                ));
             }
         }
         Ok(())
+    }
+
+    pub(in crate::kernel) fn has_owned_facts(&self) -> bool {
+        self.storage.index.owned_count != 0
+    }
+
+    pub(in crate::kernel) fn ownership_frame_revision(
+        &self,
+    ) -> (std::sync::Arc<()>, std::sync::Arc<()>) {
+        (
+            self.storage.index.boundary_frame_revision.clone(),
+            super::never_address_taken_locals_key(),
+        )
+    }
+
+    /// The worker producer retained the current parent partition. Keep its
+    /// output occurrences and projections without rechecking that evidence.
+    pub(in crate::kernel) fn compose_framed_worker_outputs(
+        self,
+        outputs: &Self,
+        assumptions: &PureFactContext,
+        _partition: crate::kernel::threads::FramedWorkerOutputs,
+    ) -> Result<Self, ResourceContextValidityError> {
+        self.compose_output_partition(outputs, assumptions, true)
     }
 
     /// Join a constructed output partition with today's frame, preserving
     /// its occurrence identities, dependencies and cached projections. Only
     /// the boundary with that frame needs memory admission.
     pub(crate) fn compose_checked_outputs(
+        self,
+        outputs: &Self,
+        assumptions: &PureFactContext,
+    ) -> Result<Self, ResourceContextValidityError> {
+        self.compose_output_partition(outputs, assumptions, false)
+    }
+
+    fn compose_output_partition(
         mut self,
         outputs: &Self,
         assumptions: &PureFactContext,
+        framed: bool,
     ) -> Result<Self, ResourceContextValidityError> {
         if self.storage.facts.is_empty() {
             self.synchronize_memory_equalities(assumptions);
@@ -6417,7 +6697,9 @@ impl ResourceContext {
         let frame = self.clone();
         for (entry, fact) in outputs.storage.facts.iter() {
             crate::instrumentation::record_deterministic_work(1);
-            frame.admit_certified_memory_boundary(fact, assumptions)?;
+            if !framed {
+                frame.admit_certified_memory_boundary(fact, assumptions)?;
+            }
             let occurrence = outputs.occurrence(*entry);
             if self.storage.entry_by_occurrence.contains_key(&occurrence) {
                 return Err(ResourceContextValidityError::DuplicateOwnedResourceFact(
@@ -6515,13 +6797,6 @@ impl ResourceContext {
         assumptions: &PureFactContext,
     ) -> Option<ResourceContextValidityError> {
         self.validity_error_with_separation(assumptions, true)
-    }
-
-    pub(crate) fn validity_error_ignoring_separation(
-        &self,
-        assumptions: &PureFactContext,
-    ) -> Option<ResourceContextValidityError> {
-        self.validity_error_with_separation(assumptions, false)
     }
 
     fn validity_error_with_separation(
@@ -6737,6 +7012,9 @@ impl ResourceContext {
         self.validity_error(assumptions).is_none()
     }
 
+    /// Validate an assembled description before exposing its composition.
+    /// Held execution/proof partitions use `observable_facts_assuming_valid`;
+    /// this raw-input boundary must not recheck a producer's successor.
     pub fn observable_facts(
         &self,
         assumptions: &PureFactContext,
@@ -8103,6 +8381,125 @@ impl ResourceContext {
         self
     }
 
+    /// Coalesce only the written neighbors reached by this insertion. Every
+    /// successful iteration consumes one changed occurrence; unrelated facts,
+    /// aliases, projections, and loan dependencies retain their identities.
+    fn normalized_delta(
+        mut self,
+        inserted: Vec<(ResourceFact, ResourceOccurrenceId)>,
+        assumptions: &PureFactContext,
+    ) -> Self {
+        for (_, occurrence) in inserted {
+            let Some(mut entry) = self.storage.entry_by_occurrence.get(&occurrence).copied() else {
+                continue;
+            };
+            loop {
+                let fact = self.fact(entry).clone();
+                if !self.delta_normalization_eligible(entry) {
+                    break;
+                }
+                if fact.has_valid_exclusive_access()
+                    && fact.owned_quantity_term().and_then(MachineTerm::as_const) == Some(0)
+                {
+                    self.remove_entry(entry);
+                    break;
+                }
+                let mut merge = None;
+                for candidate in self.written_normalization_candidates(entry, &fact) {
+                    crate::instrumentation::record_deterministic_work(1);
+                    if !self.delta_normalization_eligible(candidate)
+                        || fact.is_own() && !self.fact(candidate).is_own()
+                    {
+                        continue;
+                    }
+                    if let Some(merged) =
+                        normalize_resource_fact_pair(self.fact(candidate), &fact, assumptions)
+                    {
+                        merge = Some((candidate, merged));
+                        break;
+                    }
+                }
+                let Some((candidate, merged)) = merge else {
+                    break;
+                };
+                // An absorbed view must not replace its unchanged owner.
+                if &merged == self.fact(candidate) {
+                    self.remove_entry(entry);
+                    break;
+                }
+                if merged == fact {
+                    self.remove_entry(candidate);
+                    continue;
+                }
+                self.remove_entry(entry);
+                self.remove_entry(candidate);
+                entry = self.storage.next_entry_id;
+                self.insert_fact(merged);
+            }
+        }
+        self.advance_prepared_memory_equalities(assumptions);
+        self
+    }
+
+    fn written_normalization_candidates(
+        &self,
+        entry: ResourceEntryId,
+        fact: &ResourceFact,
+    ) -> BTreeSet<ResourceEntryId> {
+        let mut candidates: BTreeSet<_> = self
+            .storage
+            .index
+            .written_normalization
+            .candidates(entry, fact)
+            .into_iter()
+            .collect();
+        if let Some(entries) = self.storage.index.by_resource.get(fact.resource()) {
+            candidates.extend(entries.iter().take(2).copied());
+        }
+        if let Resource::Composite { name, arguments } | Resource::Token { name, arguments } =
+            fact.resource()
+            && let Some(entries) =
+                self.storage
+                    .index
+                    .exact_shapes
+                    .get(&(fact.family(), name.clone(), arguments.len()))
+        {
+            candidates.extend(entries.iter().take(2).copied());
+        }
+        if fact.is_own()
+            && let Some(range) = fact.memory_own_range()
+            && let Some((origin, start, end)) = constant_memory_coordinates(range)
+            && let Some(count) = self
+                .storage
+                .index
+                .concrete_memory_by_base
+                .get(&(origin.clone(), true))
+            && let Some(neighbors) = self.constant_owned_neighbors(&origin, start, end, *count)
+        {
+            candidates.extend(neighbors);
+        }
+        candidates.remove(&entry);
+        candidates
+    }
+
+    fn delta_normalization_eligible(&self, entry: ResourceEntryId) -> bool {
+        let occurrence = self.occurrence(entry);
+        !self.storage.supported_by.contains_key(&entry)
+            && !self
+                .storage
+                .projections_by_support_occurrence
+                .contains_key(&occurrence)
+            && !self
+                .storage
+                .expansions_by_support_occurrence
+                .contains_key(&occurrence)
+            && self.loan_dependency(occurrence).is_none()
+            && !self
+                .structural_witnesses
+                .as_ref()
+                .is_some_and(|witnesses| witnesses.contains(occurrence))
+    }
+
     pub(in crate::kernel) fn normalized(self, assumptions: &PureFactContext) -> Self {
         self.normalized_with_byte_endpoints(assumptions, false, false)
     }
@@ -8129,6 +8526,19 @@ impl ResourceContext {
         byte_endpoints: bool,
         written_only: bool,
     ) -> Self {
+        // One retained nonzero fact has no partner to coalesce. Preserve the
+        // normalizer's input attachment, but do not discover alias/endpoint
+        // candidates for a merge that cannot exist. Zero units still take
+        // the ordinary cleanup path below.
+        if self.storage.facts.len() <= 1
+            && !self.storage.facts.iter().next().is_some_and(|(_, fact)| {
+                fact.has_valid_exclusive_access()
+                    && fact.owned_quantity_term().and_then(MachineTerm::as_const) == Some(0)
+            })
+        {
+            self.synchronize_memory_equalities(assumptions);
+            return self;
+        }
         if !self.storage.supported_by.is_empty()
             || !self.storage.expansions_by_support_occurrence.is_empty()
         {
@@ -8424,6 +8834,93 @@ enum ResourceNormalizationKey {
     MemoryNativeEnd(Address, u32, bool, WideNormalizationEndpointKey),
     MemoryByteStart(MemoryBaseRoot, bool, i64),
     MemoryByteEnd(MemoryBaseRoot, bool, i64),
+}
+
+/// Written normalization candidates are maintained with each resource delta.
+/// Querying a key nominates at most two entries (one may be the query itself).
+/// A missed or loan-bound nominee leaves the split representation intact.
+#[derive(Clone, Debug, Default)]
+pub(super) struct WrittenNormalizationIndex {
+    entries: PersistentMap<(ResourceNormalizationKey, bool), ResourceEntryIds>,
+}
+
+impl WrittenNormalizationIndex {
+    fn keys(fact: &ResourceFact) -> Vec<ResourceNormalizationKey> {
+        let Some(range) = fact.memory_range() else {
+            return Vec::new();
+        };
+        if constant_memory_coordinates(range).is_some() {
+            return Vec::new();
+        }
+        ResourceNormalizationIndex {
+            byte_endpoints: true,
+            written_only: true,
+            ..Default::default()
+        }
+        .keys(fact)
+        .into_iter()
+        .filter(|key| {
+            matches!(
+                key,
+                ResourceNormalizationKey::MemoryStart(..)
+                    | ResourceNormalizationKey::MemoryEnd(..)
+                    | ResourceNormalizationKey::MemoryNativeStart(..)
+                    | ResourceNormalizationKey::MemoryNativeEnd(..)
+                    | ResourceNormalizationKey::MemoryByteStart(..)
+                    | ResourceNormalizationKey::MemoryByteEnd(..)
+            )
+        })
+        .collect()
+    }
+
+    fn insert(&mut self, entry: ResourceEntryId, fact: &ResourceFact) {
+        for key in Self::keys(fact) {
+            self.entries = insert_resource_index_entry(&self.entries, (key, fact.is_own()), entry);
+        }
+    }
+
+    fn remove(&mut self, entry: ResourceEntryId, fact: &ResourceFact) {
+        for key in Self::keys(fact) {
+            self.entries = remove_resource_index_entry(&self.entries, &(key, fact.is_own()), entry);
+        }
+    }
+
+    fn candidates(&self, entry: ResourceEntryId, fact: &ResourceFact) -> Vec<ResourceEntryId> {
+        let mut candidates = BTreeSet::new();
+        for key in Self::keys(fact) {
+            use ResourceNormalizationKey::*;
+            let complementary = match key {
+                MemoryStart(base, own, position) => MemoryEnd(base, own, position),
+                MemoryEnd(base, own, position) => MemoryStart(base, own, position),
+                MemoryNativeStart(base, width, own, position) => {
+                    MemoryNativeEnd(base, width, own, position)
+                }
+                MemoryNativeEnd(base, width, own, position) => {
+                    MemoryNativeStart(base, width, own, position)
+                }
+                MemoryByteStart(base, own, position) => MemoryByteEnd(base, own, position),
+                MemoryByteEnd(base, own, position) => MemoryByteStart(base, own, position),
+                key => key,
+            };
+            for own in [fact.is_own(), !fact.is_own()] {
+                // An inserted owner does not consume ambient observations.
+                // Inserting a view may still be absorbed by an existing owner.
+                if fact.is_own() && !own {
+                    continue;
+                }
+                if let Some(entries) = self.entries.get(&(complementary.clone(), own)) {
+                    candidates.extend(
+                        entries
+                            .iter()
+                            .take(2)
+                            .copied()
+                            .filter(|candidate| *candidate != entry),
+                    );
+                }
+            }
+        }
+        candidates.into_iter().collect()
+    }
 }
 
 /// The adjacency coordinate one memory bound contributes to the
@@ -8894,6 +9391,69 @@ fn algebraic_pointer_arguments(arguments: &[AlgebraicValue]) -> impl Iterator<It
         AlgebraicValue::Program(ProgramValue::Pointer(pointer)) => Some(pointer.address()),
         _ => None,
     })
+}
+
+/// Coalesce an explicit description list without constructing ownership or
+/// resource indexes. This is representation only: callers retain the source
+/// partition/occurrence evidence, and no ambient context is inspected.
+pub(crate) fn coalesce_written_resource_descriptions(
+    facts: Vec<ResourceFact>,
+    assumptions: &PureFactContext,
+) -> Vec<ResourceFact> {
+    #[cfg(test)]
+    let _fast = crate::kernel::search::FastOperationScope::enter(
+        "bounded constructed description normalization",
+    );
+    let mut index = ResourceNormalizationIndex {
+        byte_endpoints: false,
+        written_only: true,
+        ..Default::default()
+    };
+    let mut slots = facts
+        .into_iter()
+        .map(|fact| {
+            crate::instrumentation::record_deterministic_work(1);
+            if fact.has_valid_exclusive_access()
+                && fact.owned_quantity_term().and_then(MachineTerm::as_const) == Some(0)
+            {
+                None
+            } else {
+                Some(fact)
+            }
+        })
+        .collect::<Vec<_>>();
+    for (position, fact) in slots.iter().enumerate() {
+        if let Some(fact) = fact {
+            index.insert(position, fact);
+        }
+    }
+    let mut position = 0;
+    while position < slots.len() {
+        let Some(left) = slots[position].clone() else {
+            position += 1;
+            continue;
+        };
+        let mut changed = false;
+        for candidate in index.candidates_after(position, &left, assumptions) {
+            crate::instrumentation::record_deterministic_work(1);
+            let Some(right) = slots[candidate].as_ref() else {
+                continue;
+            };
+            if let Some(merged) = normalize_resource_fact_pair(&left, right, assumptions) {
+                index.remove(position, &left);
+                index.remove(candidate, right);
+                slots[candidate] = None;
+                index.insert(position, &merged);
+                slots[position] = Some(merged);
+                changed = true;
+                break;
+            }
+        }
+        if !changed {
+            position += 1;
+        }
+    }
+    slots.into_iter().flatten().collect()
 }
 
 /// The block of a token or composite's first argument when that argument is
@@ -9763,7 +10323,7 @@ pub(in crate::kernel) fn resources_structurally_separate(
 /// Equal-content string literal blocks may be merged by the C implementation.
 /// They provide shared, read-only access, so two such literal facts do not
 /// compete for mutable ownership and cannot establish separation by spelling.
-fn string_literal_blocks_may_alias(left: &AddressBase, right: &AddressBase) -> bool {
+pub(super) fn string_literal_blocks_may_alias(left: &AddressBase, right: &AddressBase) -> bool {
     if left == right {
         return false;
     }
@@ -12918,6 +13478,67 @@ mod support_removal_tests {
             unrelated
                 .restore_frame_after_exchange(&body, &frame, &assumptions)
                 .is_none()
+        );
+    }
+
+    #[test]
+    fn frame_exchange_uses_selected_unfold_custody_but_refuses_unclassified_additions() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let facts = PureFactContext::new();
+        let range = |id| {
+            ResourceFact::own_memory(MemoryRange::new(
+                Address::symbolic(Variable(id)),
+                0u32.into(),
+                4u32.into(),
+            ))
+        };
+        let instance = ResourceInstance::new(
+            Variable(8_779_101),
+            "body".into(),
+            vec![].into(),
+            ResourceFieldSchema::new(vec![(
+                "tag".into(),
+                ResourceFieldType::Program(ProgramType::Int32),
+            )])
+            .unwrap(),
+            vec![ProgramValue::Int32(MachineTerm::constant(7)).into()].into(),
+        )
+        .unwrap();
+        let parent = ResourceFact::own(Resource::Instance(instance.clone()));
+        let child = range(8_779_102);
+        let held = range(8_779_103);
+        let body = ResourceContext::new().unchecked_with_fact(parent.clone());
+        let frame = body.clone().unchecked_with_fact(held.clone());
+        let exit = body
+            .clone()
+            .unfold_instance_body(&instance, [child.clone()], &facts)
+            .unwrap()
+            .unwrap();
+        let occurrence = exit.unique_owned_occurrence_for_fact(&child).unwrap().0;
+        let restored = exit
+            .restore_frame_after_exchange(&body, &frame, &facts)
+            .unwrap();
+        assert_eq!(restored.owned_fact_for_occurrence(occurrence), Some(&child));
+        assert!(restored.contains_exact_representation(&held));
+        let unclassified = body
+            .clone()
+            .without_exact_representation(&parent)
+            .unwrap()
+            .unchecked_with_fact(child.clone());
+        assert!(
+            unclassified
+                .restore_frame_after_exchange(&body, &frame, &facts)
+                .is_none()
+        );
+        let replaced = exit
+            .without_exact_representation(&child)
+            .unwrap()
+            .unchecked_with_fact(child);
+        assert!(
+            replaced
+                .restore_frame_after_exchange(&body, &frame, &facts)
+                .is_none(),
+            "a removed child's custody must not authorize a later description"
         );
     }
 

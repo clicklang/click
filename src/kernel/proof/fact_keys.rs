@@ -3180,6 +3180,7 @@ mod proposition_identity_tests {
         forall(
             variable,
             Proposition::MemoryReadDefined {
+                at: None,
                 memory: memory.clone(),
                 pointer: Address {
                     base: "local:defined-array".into(),
@@ -3706,6 +3707,7 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
             memory,
             pointer,
             value_type,
+            ..
         } => {
             if !ALLOW_LOADS {
                 return None;

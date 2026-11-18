@@ -1171,8 +1171,11 @@ fn check_segment_base_loadability(
     let Ok(values) = parameter_values(parameter_binding) else {
         return Ok(());
     };
-    let array_refs =
-        array_refs_for_parameters(parameter_binding.parameters, &values, state.memory());
+    let array_refs = array_refs_for_parameters(
+        parameter_binding.parameters,
+        &values,
+        &state.program_point(),
+    );
     // The address of the cell, not its content: a base whose address this
     // entry cannot evaluate is reported by the clause's own lowering.
     let Ok(ProgramValue::Pointer(cell)) =
@@ -1756,9 +1759,8 @@ pub(in crate::surface) fn resource_context_from_requirements(
     // reads the same parameter values and array references.
     let values =
         parameter_values(parameter_binding).map_err(|error| ClickError::new(error.message))?;
-    let clause_parameters =
-        ClauseParameters::new(parameter_binding.parameters, &values, state.memory())
-            .with_index(parameter_binding.index);
+    let clause_parameters = ClauseParameters::new(parameter_binding.parameters, &values, state)
+        .with_index(parameter_binding.index);
     for requirement in requires {
         if let Requirement::Resource(resource) = requirement {
             // This builds a provisional context under declared entry premises.
@@ -1873,7 +1875,7 @@ pub(in crate::surface) fn lower_resource_clause_at_state_with_assumptions(
     if matches!(resource, ResourceClause::MemoryAggregate { .. }) {
         let mut facts = lower_resource_clause_facts_with_values_mode_at_entry(
             resource,
-            &ClauseParameters::new(parameter_binding.parameters, &values, state.memory())
+            &ClauseParameters::new(parameter_binding.parameters, &values, state)
                 .with_index(parameter_binding.index),
             state,
             state,
@@ -1891,7 +1893,7 @@ pub(in crate::surface) fn lower_resource_clause_at_state_with_assumptions(
     }
     lower_resource_clause_with_values_mode_at_entry(
         resource,
-        &ClauseParameters::new(parameter_binding.parameters, &values, state.memory())
+        &ClauseParameters::new(parameter_binding.parameters, &values, state)
             .with_index(parameter_binding.index),
         state,
         state,
@@ -1950,12 +1952,12 @@ pub(in crate::surface) fn lower_resource_clause_at_current_locals_with_entry_and
     assumptions: &PureFactContext,
 ) -> Result<ResourceFact, ClickError> {
     let values = resource_clause_parameter_values(resource, parameter_binding)?;
-    let array_refs = array_refs_for_values(parameter_binding, &values, state.memory());
+    let array_refs = array_refs_for_values(parameter_binding, &values, &state.program_point());
     let (values, _) = contract_environment_at_state(&values, &array_refs, state);
     if matches!(resource, ResourceClause::MemoryAggregate { .. }) {
         let mut facts = lower_resource_clause_facts_with_values_mode_at_entry(
             resource,
-            &ClauseParameters::new(parameter_binding.parameters, &values, state.memory())
+            &ClauseParameters::new(parameter_binding.parameters, &values, state)
                 .with_index(parameter_binding.index),
             entry_state,
             state,
@@ -1973,7 +1975,7 @@ pub(in crate::surface) fn lower_resource_clause_at_current_locals_with_entry_and
     }
     lower_resource_clause_with_values_mode_at_entry(
         resource,
-        &ClauseParameters::new(parameter_binding.parameters, &values, state.memory())
+        &ClauseParameters::new(parameter_binding.parameters, &values, state)
             .with_index(parameter_binding.index),
         entry_state,
         state,
@@ -1994,7 +1996,7 @@ pub(in crate::surface) fn lower_resource_clause_facts_at_state_with_result_and_e
     let values = resource_clause_parameter_values(resource, parameter_binding)?;
     lower_resource_clause_facts_with_values_mode_at_entry(
         resource,
-        &ClauseParameters::new(parameter_binding.parameters, &values, state.memory())
+        &ClauseParameters::new(parameter_binding.parameters, &values, state)
             .with_index(parameter_binding.index),
         entry_state,
         state,
@@ -2011,7 +2013,7 @@ pub(in crate::surface) fn lower_resource_clause_facts_at_state_with_result_and_e
 struct ClauseParameters<'a> {
     parameters: &'a [crate::languages::interface::ImportedParameter],
     values: &'a BTreeMap<String, ProgramValue>,
-    memory: &'a SymbolicMemory,
+    state: &'a ExecutionState,
     index: Option<&'a crate::surface::ParameterIndex>,
     array_refs: std::cell::OnceCell<ClickArrayRefs>,
 }
@@ -2020,12 +2022,12 @@ impl<'a> ClauseParameters<'a> {
     fn new(
         parameters: &'a [crate::languages::interface::ImportedParameter],
         values: &'a BTreeMap<String, ProgramValue>,
-        memory: &'a SymbolicMemory,
+        state: &'a ExecutionState,
     ) -> Self {
         Self {
             parameters,
             values,
-            memory,
+            state,
             index: None,
             array_refs: std::cell::OnceCell::new(),
         }
@@ -2045,7 +2047,7 @@ impl<'a> ClauseParameters<'a> {
                 index: self.index,
                 naming: None,
             };
-            array_refs_for_values(binding, self.values, self.memory)
+            array_refs_for_values(binding, self.values, &self.state.program_point())
         })
     }
 }
@@ -2078,7 +2080,7 @@ fn lower_resource_clause_with_values_mode(
     let base_assumptions = PureFactContext::new();
     lower_resource_clause_with_values_mode_at_entry(
         resource,
-        &ClauseParameters::new(parameter_binding.parameters, values, state.memory())
+        &ClauseParameters::new(parameter_binding.parameters, values, state)
             .with_index(parameter_binding.index),
         state,
         state,
@@ -2625,7 +2627,7 @@ fn lower_resource_clause_facts_with_values_mode(
     let base_assumptions = PureFactContext::new();
     lower_resource_clause_facts_with_values_mode_at_entry(
         resource,
-        &ClauseParameters::new(parameter_binding.parameters, values, state.memory())
+        &ClauseParameters::new(parameter_binding.parameters, values, state)
             .with_index(parameter_binding.index),
         state,
         state,
@@ -3116,7 +3118,11 @@ fn loadable_requirement_props(
                 segment,
                 ContractEnvironment::new(
                     &values,
-                    &array_refs_for_parameters(parameter_binding.parameters, &values, memory),
+                    &array_refs_for_parameters(
+                        parameter_binding.parameters,
+                        &values,
+                        &state.program_point(),
+                    ),
                 )
                 .with_parameters(parameter_binding),
                 &state,
@@ -4041,10 +4047,10 @@ pub(in crate::surface) fn parameter_values_named(
 pub(in crate::surface) fn array_refs_for_values(
     parameter_binding: ParameterBinding<'_>,
     values: &BTreeMap<String, ProgramValue>,
-    memory: &SymbolicMemory,
+    point: &crate::kernel::ProgramPoint,
 ) -> ClickArrayRefs {
     let Some(index) = parameter_binding.index else {
-        return array_refs_for_parameters(parameter_binding.parameters, values, memory);
+        return array_refs_for_parameters(parameter_binding.parameters, values, point);
     };
     values
         .iter()
@@ -4057,8 +4063,8 @@ pub(in crate::surface) fn array_refs_for_values(
             Some((
                 name.clone(),
                 ClickArrayRef {
-                    memory: memory.clone(),
-                    pointer: pointer.address().clone(),
+                    point: point.clone(),
+                    pointer: pointer.pointer().clone(),
                     element_type,
                 },
             ))
@@ -4117,7 +4123,7 @@ fn resource_clause_parameter_values(
 pub(in crate::surface) fn array_refs_for_parameters(
     parameters: &[crate::languages::interface::ImportedParameter],
     values: &BTreeMap<String, ProgramValue>,
-    memory: &SymbolicMemory,
+    point: &crate::kernel::ProgramPoint,
 ) -> ClickArrayRefs {
     crate::instrumentation::record_deterministic_work(parameters.len());
     parameters
@@ -4130,8 +4136,8 @@ pub(in crate::surface) fn array_refs_for_parameters(
             Some((
                 parameter.name().to_string(),
                 ClickArrayRef {
-                    memory: memory.clone(),
-                    pointer: pointer.address().clone(),
+                    point: point.clone(),
+                    pointer: pointer.pointer().clone(),
                     element_type,
                 },
             ))

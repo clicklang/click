@@ -516,6 +516,7 @@ fn normalize_condition_selection(
         memory,
         pointer,
         value_type,
+        ..
     } = goal
         && crate::kernel::memory_history::read_is_of_a_recorded_store(
             memory,

@@ -610,6 +610,36 @@ impl Printer<'_> {
                 Some(atom(format!("<{place} is writable ({byte_width} bytes)>")))
             }
             Proposition::MemoryReadDefined {
+                at: Some(id),
+                pointer,
+                ..
+            } => {
+                let (point, naming) = self.labels.definedness_point_context(*id);
+                let Some(point) = point else {
+                    return Some(atom(format!("defined({})", self.place_at(pointer, depth))));
+                };
+                let place = naming
+                    .as_deref()
+                    .and_then(|(parameters, arguments)| {
+                        crate::surface::diagnostics::diagnostic_source_cell(
+                            pointer,
+                            ParameterBinding::new(parameters, arguments),
+                        )
+                    })
+                    .or_else(|| {
+                        if !self.source_mode() {
+                            return None;
+                        }
+                        if let Some(place) = naming.as_deref().and_then(|tables| {
+                            self.parameter_relative_pointer(pointer, depth, tables)
+                        }) {
+                            return Some(dereference(place));
+                        }
+                        Some(format!("*{}", self.labels.placeholder_pointer(pointer)))
+                    })?;
+                Some(atom(format!("at({point}, defined({place}))")))
+            }
+            Proposition::MemoryReadDefined {
                 memory, pointer, ..
             } => {
                 let place = self.place_read_in(memory, |printer| {
@@ -1981,7 +2011,9 @@ impl Printer<'_> {
         // An address past a pointer parameter by a term the structural
         // spellings cannot name, such as a quantifier binder, is an element
         // of that parameter, `&dst[k]`, or a byte offset from it.
-        if let Some(spelled) = self.parameter_relative_pointer(pointer, depth) {
+        if let Some(tables) = tables.as_deref()
+            && let Some(spelled) = self.parameter_relative_pointer(pointer, depth, tables)
+        {
             return Some(spelled);
         }
         // An address inside an allocation a local held is spelled from that
@@ -2170,32 +2202,38 @@ impl Printer<'_> {
 
     /// `pointer` as an element of, or a byte offset from, a pointer
     /// parameter whose value is `pointer` less one added offset term.
-    fn parameter_relative_pointer(&mut self, pointer: &Address, depth: usize) -> Option<Spelled> {
+    fn parameter_relative_pointer(
+        &mut self,
+        pointer: &Address,
+        depth: usize,
+        tables: &NamingTables,
+    ) -> Option<Spelled> {
         let AddressOffset::Add(base_offset, extra) = &pointer.offset else {
             return None;
         };
-        let tables = self.labels.naming.clone()?;
-        let name = tables
-            .0
-            .iter()
-            .zip(&tables.1)
-            .find_map(|(parameter, value)| match value {
-                crate::kernel::ProgramExpression::Value(crate::kernel::ProgramValue::Pointer(
-                    base,
-                )) if base.address().base == pointer.base
-                    && base.address().offset == **base_offset
-                    && parameter.name().len() <= 256 =>
-                {
-                    Some(parameter.name().to_string())
-                }
-                _ => None,
-            })?;
-        let width = self.named_element_width(&name);
+        let parameter =
+            tables
+                .0
+                .iter()
+                .zip(&tables.1)
+                .find_map(|(parameter, value)| match value {
+                    crate::kernel::ProgramExpression::Value(
+                        crate::kernel::ProgramValue::Pointer(base),
+                    ) if base.pointer().base == pointer.base
+                        && base.pointer().offset == **base_offset
+                        && parameter.name().len() <= 256 =>
+                    {
+                        Some(parameter)
+                    }
+                    _ => None,
+                })?;
+        let name = parameter.name();
+        let width = crate::surface::diagnostics::diagnostic_parameter_element_width(parameter);
         let index = match extra.as_ref() {
             AddressOffset::Int32Scaled { value, byte_width }
             | AddressOffset::Int64Scaled {
                 value, byte_width, ..
-            } if Some(*byte_width) == width => {
+            } if *byte_width == width && width > 0 => {
                 self.bitvector(value.structural_value(), None, depth + 1)
             }
             _ => None,
@@ -3227,6 +3265,51 @@ mod tests {
             source(&fact, &mut labels),
             "to_integer((a + b) * (a - b)) >= a and (a & b) == 0 implies not ((a & b) == 0)"
         );
+    }
+
+    #[test]
+    fn definedness_distinguishes_points_with_identical_memory() {
+        use crate::surface::{ProgramPointSelector, RecordedStates};
+
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer = Address::symbolic(Variable(7));
+        let pointer_value = ProgramValue::Pointer(PointerValue::new(
+            pointer.clone(),
+            ProgramType::Int32Pointer,
+        ));
+        let before = ExecutionState::new()
+            .with_local("before_ptr", pointer_value.clone())
+            .with_memory(SymbolicMemory::new());
+        let current = ExecutionState::new()
+            .with_local("current_ptr", pointer_value)
+            .with_memory(before.memory().clone());
+        assert!(before.memory().same_storage_roots(current.memory()));
+        assert!(before.observation_point_id().is_some());
+        assert!(current.observation_point_id().is_some());
+        assert_ne!(
+            before.observation_point_id(),
+            current.observation_point_id()
+        );
+
+        let mut recorded = RecordedStates::new();
+        recorded.insert(ProgramPointSelector::Mark("before".into()), before.clone());
+        let mut labels = MemoryStateLabels::with_state(ParameterBinding::default(), &current);
+        labels.recorded_states(&recorded);
+        let defined_at = |state: &ExecutionState| Proposition::MemoryReadDefined {
+            at: state.observation_point_id(),
+            memory: before.memory().clone(),
+            pointer: pointer.clone(),
+            value_type: ProgramType::Int32,
+        };
+        let historical = source(&defined_at(&before), &mut labels);
+        assert!(
+            historical.starts_with("at(before, defined("),
+            "{historical}"
+        );
+        assert!(historical.contains("before_ptr"), "{historical}");
+        let now = source(&defined_at(&current), &mut labels);
+        assert!(now.starts_with("defined("), "{now}");
+        assert!(now.contains("current_ptr"), "{now}");
     }
 
     #[test]

@@ -888,6 +888,76 @@ fn write_program_lvalue_paths_for_initialization(
                 };
                 obligations
             };
+            let value = if let Some(crate::kernel::effective_type::CAccessClass::BitFieldByte(
+                mask,
+            )) = &lvalue_classes.0
+            {
+                let ProgramValue::UInt8(incoming) = value else {
+                    unreachable!("bit-field byte store has type uint8");
+                };
+                if !pointer.base.is_local_block() || !state.memory.access_in_bounds(&pointer, 1) {
+                    return Ok(vec![StatementExecutionPath::new(
+                        StatementOutcome::UndefinedBehavior(UndefinedBehavior::InvalidMemory),
+                        facts,
+                        obligations,
+                    )]);
+                }
+                let mask = mask.get();
+                let initialized = &state.memory.heap.initialized;
+                let partial = initialized.partial_byte(&pointer);
+                let old_full = super::byte_view::known_integer_byte(
+                    &state.memory,
+                    &pointer,
+                    budget.program_byte_order(),
+                );
+                let before = if old_full.is_some() {
+                    u8::MAX
+                } else {
+                    initialized.mask_at(&pointer)
+                };
+                let preserve = before & !mask;
+                let written = super::byte_view::mask_byte(incoming, mask);
+                let combined = if preserve == 0 {
+                    written
+                } else if let Some(old) = old_full.or_else(|| {
+                    let ProgramValue::UInt8(value) = partial?.value.as_ref()? else {
+                        return None;
+                    };
+                    Some(value.clone())
+                }) {
+                    super::byte_view::merge_byte_bits(
+                        super::byte_view::mask_byte(old, preserve),
+                        written,
+                    )
+                } else {
+                    return Ok(vec![StatementExecutionPath::new(
+                        StatementOutcome::RuntimeError(RuntimeError::FunctionContract(
+                            "bit-field update requires the retained value of the other initialized bits in its byte".into(),
+                        )),
+                        facts,
+                        obligations,
+                    )]);
+                };
+                let value = ProgramValue::UInt8(combined);
+                if before | mask != u8::MAX {
+                    let mut state = state.clone();
+                    let memory = state.memory.clone().store_partial_byte(
+                        pointer,
+                        before | mask,
+                        value,
+                        &effective_assumptions,
+                    );
+                    state.set_memory(memory);
+                    return Ok(vec![StatementExecutionPath::new(
+                        StatementOutcome::Normal(Box::new(state)),
+                        facts,
+                        obligations,
+                    )]);
+                }
+                value
+            } else {
+                value
+            };
             // A one-byte store inside a wider integer cell updates that cell's
             // little-endian representation in place. The transition is then
             // exactly a store of the updated wider value at the cell's own
@@ -1171,16 +1241,16 @@ enum AggregateCopyDestination {
     ResultTemporary,
 }
 
-fn aggregate_assignment_write_outcome(
+fn memory_region_write_obligation_outcome(
     state: &ExecutionState,
-    target: &Pointer,
+    pointer: &Address,
     bytes: u32,
+    destination: &MemoryRange,
     assumptions: &PureFactContext,
     obligations: &mut Vec<ProofObligation>,
 ) -> Option<StatementOutcome> {
     #[cfg(test)]
-    let _fast = crate::kernel::search::FastOperationScope::enter("aggregate copy loan check");
-    let pointer = target.address();
+    let _fast = crate::kernel::search::FastOperationScope::enter("memory region write loan check");
     let storage =
         MemoryRange::new_with_element_width(pointer.clone(), 0u32.into(), 1u32.into(), bytes);
     if let Some(error) = super::super::mutexes::storage_write_refusal(state, &storage, assumptions)
@@ -1190,12 +1260,7 @@ fn aggregate_assignment_write_outcome(
     if let Some(outcome) = memory_write_ownership_outcome(state, storage, assumptions) {
         return Some(outcome);
     }
-    // Express the full destination, including padding, as a byte slice that
-    // the proof can name at the assignment's entry point.
-    let byte_pointer =
-        super::expression::cast_pointer_value(target.clone(), ProgramType::UInt8Pointer);
-    let destination = MemoryRange::from_pointer_value(&byte_pointer, 0u32.into(), bytes.into(), 1);
-    require_write_loan_separation(state, &destination, obligations);
+    require_write_loan_separation(state, destination, obligations);
     None
 }
 
@@ -1289,13 +1354,28 @@ fn execute_program_aggregate_copy_paths(
                 continue;
             }
             let write_refusal = match destination {
-                AggregateCopyDestination::Assignment => aggregate_assignment_write_outcome(
-                    state,
-                    &target_pointer,
-                    layout.size_bytes(),
-                    &copy_assumptions,
-                    &mut obligations,
-                ),
+                AggregateCopyDestination::Assignment => {
+                    // The byte slice covers the entire layout, including padding.
+                    let bytes = layout.size_bytes();
+                    let byte_pointer = super::expression::cast_pointer_value(
+                        target_pointer.clone(),
+                        ProgramType::UInt8Pointer,
+                    );
+                    let range = MemoryRange::from_pointer_value(
+                        &byte_pointer,
+                        0u32.into(),
+                        bytes.into(),
+                        1,
+                    );
+                    memory_region_write_obligation_outcome(
+                        state,
+                        target_pointer.pointer(),
+                        bytes,
+                        &range,
+                        &copy_assumptions,
+                        &mut obligations,
+                    )
+                }
                 AggregateCopyDestination::ResultTemporary => memory_write_permission_outcome(
                     state,
                     target_pointer.address(),

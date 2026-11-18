@@ -292,8 +292,8 @@ pub(in crate::surface) fn decode_predicate_arguments(
                 array_refs.insert(
                     parameter.name().to_string(),
                     ClickArrayRef {
-                        memory: memory.clone(),
-                        pointer: pointer.address().clone(),
+                        point: crate::kernel::ProgramPoint::of_memory(memory),
+                        pointer: pointer.pointer().clone(),
                         element_type,
                     },
                 );

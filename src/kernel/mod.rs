@@ -57,7 +57,7 @@ pub(crate) use functions::rewrite_resource_instance;
 pub(crate) use functions::rewrite_resource_instance_selecting_children;
 pub(crate) use functions::selected_instance_child_names;
 pub(crate) use functions::{
-    InstantiatedCompositeResourceFacts, instantiate_composite_resource_facts,
+    InstantiatedCompositeResourceFacts, instantiate_composite_resource_facts_at,
     instantiate_private_member_body_facts,
 };
 pub use resource_description::{ResourceDescription, ResourceReference};
@@ -247,6 +247,7 @@ pub(crate) use loops::{
 pub(crate) use memory_history::*;
 pub(crate) use model_fields::algebraic_value_variable;
 pub(crate) use primitives::ABSTRACT_VALUE_WIDTH;
+pub(crate) use primitives::coalesce_written_resource_descriptions;
 pub(crate) use primitives::resource_context_has_symbolic_range_read;
 pub use primitives::*;
 pub(crate) use reasoning::memory_effect_write_pointers;

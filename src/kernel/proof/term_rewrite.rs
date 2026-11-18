@@ -3545,6 +3545,7 @@ impl<'a> TermRewrite<'a> {
                 }
             }
             Proposition::MemoryReadDefined {
+                at,
                 memory,
                 pointer,
                 value_type,
@@ -3559,6 +3560,7 @@ impl<'a> TermRewrite<'a> {
                     return exhausted_proposition();
                 }
                 Proposition::MemoryReadDefined {
+                    at: *at,
                     memory: memory.clone(),
                     pointer,
                     value_type: *value_type,
