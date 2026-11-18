@@ -1064,8 +1064,8 @@ not a change to proof rules or snapshot architecture.
 
 | Subslice | Owning stores | Status |
 | --- | --- | --- |
-| 10p1 | `SequenceTermNode::Literal` evaluated elements and their evaluator/substitution handoffs. | Published as [PR #3217](https://github.com/clicklang/click/pull/3217), with auto-merge requested; 437 focused checks, all 1,909 regular scaling cases, selected proofs, fact stability and quality passed. |
-| 10p2 | Composite/token/instance `ResourceArguments`, `ResourceDescription` arguments and remaining Integer/algebraic resource fields. Preserve argument order, native identity classes and nominal resource identities. | Split: 10p2a implements Integer/algebraic fields (413 focused checks, all 1,915 regular scaling cases, resource-field proofs, fact stability and quality passed); 10p2b covers argument stores. |
+| 10p1 | `SequenceTermNode::Literal` evaluated elements and their evaluator/substitution handoffs. | Landed in [PR #3217](https://github.com/clicklang/click/pull/3217); all pushed commits verified upstream; 437 focused checks, all 1,909 regular scaling cases, selected proofs, fact stability and quality passed. |
+| 10p2 | Composite/token/instance `ResourceArguments`, `ResourceDescription` arguments and remaining Integer/algebraic resource fields. Preserve argument order, native identity classes and nominal resource identities. | Split: 10p2a implements Integer/algebraic fields (413 focused checks, all 1,915 regular scaling cases, resource-field proofs, fact stability and quality passed); 10p2b implements argument stores (427 focused checks, all 1,917 regular scaling cases and quality passed; full regular proofs/fact stability running). |
 | 10p3 | `MemoryRange` bounds and `AllocationSize` byte counts. Preserve signed/wide reading, bound provenance and existing identity/hash contracts. | Inventoried; pending. |
 | 10p4 | `IteratedMemory` endpoints, guard comparison value and selected holes. Preserve checked ownership transitions and opaque owner/address identities. | Inventoried; pending. |
 | 10p5 | `PublicationRight::observed` and `ConditionalMutexGuard::held`. Preserve channel/acquisition identities and protocol rules. | Inventoried; pending. |
@@ -1127,6 +1127,25 @@ The resource-field proof selection, fact stability (zero changed terms/paths)
 and quality checks passed; validation script exit is zero. PR delivery follows
 10p1. After integrating upstream `3557c0453`, all 413 affected checks and
 quality passed again. Full nightly was not run.
+
+### 10p2b Evaluated resource arguments
+
+Composite/token, instance and resource-description argument arrays now use the
+same immutable typed carrier as fields. Evaluating Composite/Token arguments
+stores existing `ExecutionValue` producers directly; instance, description and
+reference copies share that storage. Borrowed argument walkers, exact-arity
+pointer patterns and equality consumers use selected views. Native source DTOs
+remain `NativeResourceArguments`; native slice readers use an explicit borrowed
+or temporary `native_values` boundary rather than an enclosing cached array.
+Source resource ASTs and captured-entry expression rewrites remain source inputs.
+
+The actual evaluator regression was red with three machine exports and now
+passes with the original root and zero exports. Growing-DAG tests cover the
+evaluator and repeated instance/description/reference handoffs; exact native
+Eq/Ord/Hash/debug, pointer provenance and existing nominal identities remain
+unchanged. All 427 focused checks, all 1,917 regular scaling checks (two isolated
+and 1,915 remaining), and quality passed. Full regular proofs and fact stability
+are running; no nightly suite is required for this slice.
 
 ## Chunk 3: machine-valued pure-function results
 
