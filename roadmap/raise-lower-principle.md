@@ -1537,7 +1537,7 @@ independent scaling prerequisite:
 
 | Subslice | Boundary | Status |
 | --- | --- | --- |
-| 10q3d1 | Boolean, Integer and shared float comparison/classification outputs | PR #3281 passed all CI checks and is queued to merge. |
+| 10q3d1 | Boolean, Integer and shared float comparison/classification outputs | PR #3281 merged as `0f7849d09`; all seven pushed commits were verified upstream. |
 | 10q3d2a | Partial-borrow scaling contract | Separate flat selected-call work from bounded footprint publication; local candidate validated before upstream integration. |
 | 10q3d2b | Typed machine comparison outputs in `SpecValue::comparison_in` | Required after the prerequisite; preserve actual shared operands, exact canonical output and fold-alias refusal behavior. |
 
@@ -1572,9 +1572,12 @@ failed the new contract. On the initial 10q3d1 baseline, all 1,944 regular
 scaling checks and 68 affected checks passed. After integrating upstream
 `d5ca2616e`, all 1,949 regular scaling checks, 1,033 affected regular checks,
 12 new proof fixtures and quality passed. Nightly-only tests remained skipped.
-Only test counters and test code change; production algorithms and machine
-output remain unchanged. Later upstream changes receive affected integration
-checks before publication.
+After integrating `214cbacd7`, all 1,950 regular scaling checks, 208 affected
+checks, nine selected regular proof fixtures with fact auditing, and quality
+passed. The fixtures include the unchanged byte-storage frontier, proof-branch
+and loop refusals, and array-fold library and callers. Nightly fixtures were
+not run. Only test counters and test code change; production algorithms and
+machine output remain unchanged.
 
 10q3d2 remains part of this family. Its first activation passed 1,942 of
 1,943 scaling checks after the other eight regressions were repaired, but
