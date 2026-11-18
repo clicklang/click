@@ -1471,8 +1471,12 @@ fn frontier_loop_step_expansion_uses_the_current_invariant_lowering() {
     let expanded = expand_c_tactic_source_at(click_source, &[("fill_n.c", c_source)], line, column)
         .expect("the preservation store should expand");
 
-    // A bare `step()` is a simple tactic: its expansion is the source.
-    assert_eq!(expanded, click_source);
+    let expected = format!(
+        "{}step() by {{\n                        known();\n                    }}{}",
+        &click_source[..preserve_step],
+        &click_source[preserve_step + "step();".len()..],
+    );
+    assert_eq!(expanded, expected);
     verify_c_sources(&expanded, &[("fill_n.c", c_source)])
         .expect("the expanded store should use the invariant at the current frontier");
 }

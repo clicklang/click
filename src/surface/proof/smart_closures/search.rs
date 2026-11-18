@@ -3301,6 +3301,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 search_input.facts().assumptions(),
                 goal,
             )
+            // Weakening and two-premise transitivity can use one named lemma.
+            // Use a single normalization for longer chains of comparisons.
+            && chain.len() > 2
             // This path already names its complete evidence. The smart
             // budget charges selecting and spelling its edges.
             && let Some(pairs) = Self::resolve_solve_premises_unmeasured(
