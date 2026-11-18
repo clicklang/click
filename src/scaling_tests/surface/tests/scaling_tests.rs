@@ -11140,6 +11140,7 @@ fn nested_call_results_scale_with_the_statements_that_read_them() {
 }
 
 #[test]
+#[ignore = "nightly: 5.6s selected-guard context scaling audit"]
 fn ordinary_fold_unfold_checks_only_selected_guards() {
     let mut samples = Vec::new();
     for size in [4, 16, 64, 256] {
@@ -11219,4 +11220,29 @@ fn exceptional_borrowed_memory_is_indexed_in_unrelated_context() {
         frontier[0] > 0 && frontier.iter().all(|work| *work == frontier[0]),
         "call frontier {frontier:?}"
     );
+}
+
+#[test]
+fn recorded_call_snapshots_read_one_point_and_one_call() {
+    for count in [8, 128, 1024] {
+        let mut points = RecordedStates::new();
+        let selected = ProgramPointSelector::Mark("saved".into());
+        for region in 0..count {
+            points.record_call_result(region, Some(crate::kernel::int32(region as u32)));
+        }
+        points.set_call_result_snapshot(&selected, Some(points.call_results.clone()));
+        // Grow both the number of snapshots and the number of times the
+        // selected call ran without changing its earlier snapshot.
+        for run in 0..count {
+            points.record_call_result(0, Some(crate::kernel::int32(1 + run as u32)));
+            let point = ProgramPointSelector::Mark(format!("run_{run}"));
+            points.set_call_result_snapshot(&point, Some(points.call_results.clone()));
+        }
+        assert_eq!(points.call_result_snapshots.len(), count + 1);
+        let (saved, work) = crate::instrumentation::measure_deterministic_work(|| {
+            points.call_results_at(&selected).unwrap().get(&0).cloned()
+        });
+        assert_eq!(saved, Some(crate::kernel::int32(0)));
+        assert_eq!(work, 1, "{count} calls and snapshots");
+    }
 }

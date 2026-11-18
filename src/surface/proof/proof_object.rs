@@ -1673,7 +1673,7 @@ pub(in crate::surface::proof) fn register_recorded_state_names(
     retained_states: &crate::surface::RecordedStates,
 ) {
     labels.recorded_states(retained_states);
-    register_state_names(labels, &citable_states(retained_states));
+    register_state_names(labels, &citable_states(retained_states), retained_states);
     // Each exited loop's pass count, `loop(i).iterations`.
     for (name, iterations) in retained_states.loop_iteration_bindings() {
         if let crate::kernel::IntegerTerm::Variable(variable) = iterations {
@@ -1713,7 +1713,7 @@ fn register_call_result_name(
 /// persistent storage.
 fn citable_states(
     retained_states: &crate::surface::RecordedStates,
-) -> Vec<(String, ExecutionState)> {
+) -> Vec<(crate::surface::ProgramPointSelector, ExecutionState)> {
     use crate::surface::{CodeRegionRef, ProgramPointRef, ProgramPointSelector};
     let recent = retained_states.recent(NAMED_STATE_LIMIT);
     // The proof's own marks stay citable however many statements ran since:
@@ -1737,26 +1737,36 @@ fn citable_states(
                 CodeRegionRef::Region(_) | CodeRegionRef::Loop(_) | CodeRegionRef::Label(_)
             ),
         })
-        .map(|(selector, state)| {
-            (
-                crate::surface::diagnostics::describe_program_point_selector(selector),
-                state.clone(),
-            )
-        })
+        .map(|(selector, state)| (selector.clone(), state.clone()))
         .collect()
 }
 
 fn register_state_names(
     labels: &mut crate::surface::proof_diagnostics::render::MemoryStateLabels,
-    citable: &[(String, ExecutionState)],
+    citable: &[(ProgramPointSelector, ExecutionState)],
+    retained_states: &crate::surface::RecordedStates,
 ) {
     // A read of a state's memory is spelled against the locals it held,
     // as `at(point, p[1])`.
     for (point, state) in citable {
-        labels.source_state(state, point.clone());
+        labels.source_state(
+            state,
+            crate::surface::diagnostics::describe_program_point_selector(point),
+        );
     }
-    for (point, state) in citable {
+    for (selector, state) in citable {
+        let point = crate::surface::diagnostics::describe_program_point_selector(selector);
         for (name, stored) in state.locals().object_values() {
+            if let Some(result) =
+                retained_states.call_capture_expression(name, stored, Some(selector))
+            {
+                register_call_result_name(
+                    labels,
+                    crate::surface::diagnostics::describe_contract_expression(&result),
+                    stored.native().as_ref(),
+                );
+                continue;
+            }
             let value = stored.native();
             let value = value.as_ref();
             // A pointer's offset variable is not the pointer; a scalar
@@ -1876,12 +1886,19 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
                     if !name.named().is_some_and(|name| name.starts_with("__rust_"))
                         && let Some(variable) = diagnostic_value_variable(&value.native())
                     {
-                        labels.source_name(
-                            variable,
-                            name.named()
-                                .and_then(crate::surface::diagnostics::rust_variable_spelling)
-                                .unwrap_or_else(|| name.to_string()),
-                        );
+                        let spelling = execution
+                            .presentation
+                            .recorded_states
+                            .call_capture_expression(name, value, None)
+                            .map(|result| {
+                                crate::surface::diagnostics::describe_contract_expression(&result)
+                            })
+                            .or_else(|| {
+                                name.named()
+                                    .and_then(crate::surface::diagnostics::rust_variable_spelling)
+                            })
+                            .unwrap_or_else(|| name.to_string());
+                        labels.source_name(variable, spelling);
                     }
                 }
             }

@@ -397,8 +397,12 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
         } => loop_test
             .entry_condition()
             .map(|condition| {
-                surface_program_condition(condition, &execution.core.state)
-                    .map(|condition| ClickProposition::Not(Box::new(condition)))
+                surface_program_condition(
+                    condition,
+                    &execution.core.state,
+                    Some(&execution.presentation.recorded_states),
+                )
+                .map(|condition| ClickProposition::Not(Box::new(condition)))
             })
             .transpose()?,
         _ => None,

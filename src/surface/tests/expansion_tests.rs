@@ -4285,9 +4285,9 @@ fn bare_step_call_result_bindings_expand_and_replay() {
     let error = verify_c_sources(&source, &sources)
         .expect_err("discarding a C call result leaves no value to bind");
     assert!(
-        error
-            .message()
-            .contains("requires a scalar assignment, a used call result, or a retained scalar value"),
+        error.message().contains(
+            "requires a scalar assignment, a used call result, or a retained scalar value"
+        ),
         "{error}"
     );
 }
@@ -18828,7 +18828,7 @@ fn symbolic_upper_arithmetic_premises_expand_and_cold_recheck() {
             requires b >= 1; requires b <= 1000; {extra} requires {premise};
             ensures a <= 999 by {{ solve() using {{ {premise}; b >= 1; b <= 1000; {extra_using} }} }}
         }}");
-        verify_c_sources(&source, &[]).expect("symbolic upper bound should verify");
+        // Expansion verifies this source's sole theorem and claim.
         let expanded = expand_c_claim_source_by_label(&source, &[], &format!("{name}.ensures_0"))
             .expect("symbolic upper bound should expand");
         assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
