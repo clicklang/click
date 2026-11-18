@@ -341,28 +341,12 @@ impl<'a> Proof<'a> {
         let selected = lower_resource_clause_at_state(
             resource,
             context.parameter_binding(),
-            &execution.core.state,
+            execution.core.reached_state(),
         )?;
-        let (after_state, witness) = execution
+        let after_state = execution
             .core
-            .state
-            .checked_population_authority_exchange(&selected, establish, before_facts.assumptions())
+            .record_population_authority_rewrite(&before_facts, &selected, establish)
             .map_err(|message| self.step_error(message))?;
-        execution
-            .core
-            .record_population_authority_rewrite(
-                &before_facts,
-                &selected,
-                establish,
-                &witness,
-                &after_state,
-                &before_facts,
-            )
-            .map_err(|message| {
-                self.step_error(format!(
-                    "kernel rejected checked population authority `{operation}`: {message}"
-                ))
-            })?;
         execution.core.state = after_state.into();
         let branch = self
             .focused_branch()

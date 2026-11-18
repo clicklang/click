@@ -2074,6 +2074,11 @@ descriptions in the provisional lowering state. The checked join
 consumes those resources in both arms and constructs the owning
 successor from their common residual and the selected interface.
 
+Population authority proof steps construct the resource and creation-ledger
+exchange at the reached execution state. Recording publishes that successor.
+Replay checks the predecessor and the ledger transition identity before
+reusing the retained successor.
+
 The source tests in `tests/search_boundary.rs` pin the perimeter, including
 new/hidden references and duplicate caller edges. Runtime probes exercise
 raw-output admission and pending-return admission; the broader legacy routes

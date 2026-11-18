@@ -793,16 +793,13 @@ struct ReturnResourceObservation {
     semantic_facts: Vec<Proposition>,
 }
 
-/// A checked establish or retirement of source population authority. This is
-/// a state transition, so it has its own event and rechecks the exact exchange
-/// rather than using definitional composite-resource rewriting.
+/// The successor constructed by an authority establishment or retirement on
+/// the execution frontier. The event changes neither memory nor pure facts.
 #[derive(Clone)]
 pub(crate) struct CheckedPopulationAuthorityRewrite {
     before_state: ExecutionState,
     after_state: ExecutionState,
-    before_facts: PureFactStore,
-    after_facts: PureFactStore,
-    selected: ResourceFact,
+    description: crate::kernel::ResourceDescription,
     establish: bool,
     witness: CheckedPopulationAuthorityExchange,
 }
@@ -820,186 +817,47 @@ pub(crate) struct CheckedPopulationMemberRewrite {
     definition: CompositeResourceDefinition,
 }
 
-fn checks_population_authority_exchange(
-    before: &ExecutionState,
-    after: &ExecutionState,
-    selected: &ResourceFact,
-    establish: bool,
-    witness: &CheckedPopulationAuthorityExchange,
-    assumptions: &PureFactContext,
-) -> Result<(), String> {
-    let ResourceFact::Own(Resource::PopulationAuthority(description), quantity) = selected else {
-        return Err("population authority rewrite requires an owned authority".into());
-    };
-    if quantity.as_const() != Some(1) {
-        return Err("population authority rewrite requires unit ownership".into());
-    }
-    let Some([crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(pointer))]) =
-        (description.arguments()).fixed_values::<1>()
-    else {
-        return Err("population authority rewrite requires one pointer anchor".into());
-    };
-    let anchor = pointer.address();
-    let imported_retirement = !establish
-        && anchor.base == crate::kernel::AddressBase::ExternalArgument
-        && before
-            .population_effects
-            .creation
-            .as_ref()
-            .is_some_and(|events| events.recognizes_imported_population(description));
-    if imported_retirement {
-        before.population_effects.creation.as_ref().expect("imported population")
-            .check_imported_retirement(description, assumptions)
-            .map_err(|_| format!("Requires count({}(...)) == 0 and no outstanding member custody before authority retirement", description.family()))?;
-    }
-    if !imported_retirement
-        && (anchor.offset != crate::kernel::AddressOffset::Constant(0)
-            || !(matches!(&anchor.base, crate::kernel::AddressBase::Heap(_))
-                && before.memory.live_heap_block_size(anchor).is_some()
-                || anchor.base.is_local_block() && before.memory.has_block(&anchor.base)))
-    {
-        return Err("population authority rewrite requires live base storage".into());
-    }
-    let (Some(before_events), Some(after_events)) = (
-        before.population_effects.creation.as_ref(),
-        after.population_effects.creation.as_ref(),
-    ) else {
-        return Err("population authority rewrite requires creation history".into());
-    };
-    if !witness.matches(before_events, after_events, description, establish) {
-        return Err("population authority rewrite has mismatched creation evidence".into());
-    }
-    let expected_resources = if establish {
-        before
-            .resources
-            .clone()
-            .try_compose_with_fact(selected.clone(), assumptions)
-            .map_err(|error| {
-                format!("population authority establishment has invalid ownership: {error}")
-            })?
-    } else {
-        before
-            .resources
-            .clone()
-            .without_fact_incrementally(selected, assumptions)
-            .ok_or("population authority retirement lacks exact ownership")?
-    };
-    if !after
-        .resources
-        .same_exchange_from(&expected_resources, &before.resources)
-        || !Arc::ptr_eq(
-            &after.resources.loan_dependencies,
-            &expected_resources.loan_dependencies,
-        )
-    {
-        return Err("population authority rewrite has the wrong resource exchange".into());
-    }
-    let same_bindings = match (&before.resource_bindings, &after.resource_bindings) {
-        (None, None) => true,
-        (Some(left), Some(right)) => Arc::ptr_eq(left, right),
-        _ => false,
-    };
-    if !Arc::ptr_eq(
-        &before.instance_field_scope.storage,
-        &after.instance_field_scope.storage,
-    ) || !Arc::ptr_eq(
-        &before.instance_field_scope.loan_dependencies,
-        &after.instance_field_scope.loan_dependencies,
-    ) || !same_bindings
-        || !before
-            .locals
-            .bindings
-            .shares_root_with(&after.locals.bindings)
-        || !before.locals.slots.shares_root_with(&after.locals.slots)
-        || before.memory.diagnostic_identity() != after.memory.diagnostic_identity()
-        || before.loan_ledger != after.loan_ledger
-        || before.loan_participant != after.loan_participant
-        || before.loan_view_bindings != after.loan_view_bindings
-        || before.thread_ledger != after.thread_ledger
-        || before.mutex_ledger != after.mutex_ledger
-        || before.preserves_mutex_protocols != after.preserves_mutex_protocols
-        || before.mutex_input_reservations != after.mutex_input_reservations
-        || before.opaque_mutex_acquisitions != after.opaque_mutex_acquisitions
-        || before.named_mutex_authorities != after.named_mutex_authorities
-        || before.pending_thread_create != after.pending_thread_create
-        || before.population_access != after.population_access
-        || !before
-            .observed_population_families
-            .shares_storage_with(&after.observed_population_families)
-        || before.aggregate_destination != after.aggregate_destination
-        || before.next_local_frame != after.next_local_frame
-        || before.next_local_lifetime != after.next_local_lifetime
-        || before.enclosing_frame_holds_locals != after.enclosing_frame_holds_locals
-    {
-        return Err("population authority rewrite changed unrelated execution state".into());
-    }
-    Ok(())
-}
-
 impl CheckedPopulationAuthorityRewrite {
     pub(crate) fn before_state(&self) -> &ExecutionState {
         &self.before_state
     }
 
-    fn check(
+    fn construct(
         before_state: &ExecutionState,
-        before_facts: &PureFactStore,
         selected: &ResourceFact,
         establish: bool,
-        witness: &CheckedPopulationAuthorityExchange,
-        after_state: &ExecutionState,
-        after_facts: &PureFactStore,
+        assumptions: &PureFactContext,
     ) -> Result<Self, String> {
-        checks_population_authority_exchange(
-            before_state,
-            after_state,
-            selected,
-            establish,
-            witness,
-            before_facts.assumptions(),
-        )?;
-        if !after_facts
-            .introduced_since(before_facts)
-            .is_some_and(|introduced| introduced.is_empty())
-        {
-            return Err("population authority rewrite introduced unchecked pure facts".into());
-        }
+        let Resource::PopulationAuthority(description) = selected.resource() else {
+            return Err("Requires owns authority(R(p))".into());
+        };
+        let (after_state, witness) =
+            before_state.checked_population_authority_exchange(selected, establish, assumptions)?;
         Ok(Self {
             before_state: before_state.clone(),
-            after_state: after_state.clone(),
-            before_facts: before_facts.clone(),
-            after_facts: after_facts.clone(),
-            selected: selected.clone(),
+            after_state,
+            description: description.clone(),
             establish,
-            witness: witness.clone(),
+            witness,
         })
     }
 
-    fn advance_checked(
-        &self,
-        state: &ExecutionState,
-        facts: &PureFactStore,
-    ) -> Option<PureFactStore> {
-        if state.memory.diagnostic_identity() != self.before_state.memory.diagnostic_identity()
+    fn advance_checked(&self, state: &ExecutionState) -> Option<&ExecutionState> {
+        if !state.memory.same_storage_roots(&self.before_state.memory)
             || !state.shares_non_memory_storage_with(&self.before_state)
-            || facts.introduced_since(&self.before_facts).is_none()
-            || !self
-                .after_facts
-                .introduced_since(&self.before_facts)
-                .is_some_and(|introduced| introduced.is_empty())
-            || checks_population_authority_exchange(
-                state,
-                &self.after_state,
-                &self.selected,
-                self.establish,
-                &self.witness,
-                self.before_facts.assumptions(),
-            )
-            .is_err()
         {
             return None;
         }
-        Some(facts.clone())
+        let before_events = state.population_effects.creation.as_ref()?;
+        let after_events = self.after_state.population_effects.creation.as_ref()?;
+        self.witness
+            .matches(
+                before_events,
+                after_events,
+                &self.description,
+                self.establish,
+            )
+            .then_some(&self.after_state)
     }
 }
 
@@ -7730,10 +7588,10 @@ fn trace_completion_from_entry<E: std::borrow::Borrow<CheckedExecutionEvent>>(
                     let StatementOutcome::Return { state, .. } = outcome else {
                         return Err("population authority rewrite requires a returned state");
                     };
-                    rewrite
-                        .advance_checked(state, &rewrite.before_facts)
-                        .ok_or("population authority rewrite failed certificate check")?;
-                    **state = rewrite.after_state.clone();
+                    **state = rewrite
+                        .advance_checked(state)
+                        .ok_or("population authority rewrite failed certificate check")?
+                        .clone();
                 }
             }
             CheckedExecutionEvent::PopulationMemberRewrite(_) => {
@@ -10679,40 +10537,34 @@ impl ExecutionProofCore {
         .map_err(|error| error.message)
     }
 
-    /// Publish one authority establish or retirement only with the opaque
-    /// creation witness and its exact resource and state exchange.
+    /// Construct and publish one authority transition at the reached body.
     pub(crate) fn record_population_authority_rewrite(
         &mut self,
         before_facts: &PureFactStore,
         selected: &ResourceFact,
         establish: bool,
-        witness: &CheckedPopulationAuthorityExchange,
-        after_state: &ExecutionState,
-        after_facts: &PureFactStore,
-    ) -> Result<(), String> {
+    ) -> Result<ExecutionState, String> {
         if self.evidence_completed
             || (self.frontier.is_at_function_entry() && !self.frontier.entry_member_prefix)
         {
             return Err("population authority rewrite requires an active function body".into());
         }
-        let rewrite = CheckedPopulationAuthorityRewrite::check(
+        let rewrite = CheckedPopulationAuthorityRewrite::construct(
             self.reached_state(),
-            before_facts,
             selected,
             establish,
-            witness,
-            after_state,
-            after_facts,
+            before_facts.assumptions(),
         )?;
+        let successor = rewrite.after_state.clone();
         if self.evidence_state.is_some() {
-            self.evidence_state = Some(rewrite.after_state.clone());
+            self.evidence_state = Some(successor.clone());
         }
         for trace in self.execution_evidence.iter_mut() {
             trace.push(CheckedExecutionEvent::PopulationAuthorityRewrite(Box::new(
                 rewrite.clone(),
             )));
         }
-        Ok(())
+        Ok(successor)
     }
 
     pub(crate) fn record_population_member_rewrite(
