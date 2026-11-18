@@ -339,6 +339,16 @@ fn machine_comparison_and_guard_reads_are_bounded_on_hits_and_misses() {
                     |left, right| KernelTerm::machine_binary_shared(format, op, [left, right]);
                 let zero = operation(variable.clone(), literal(0));
                 assert!(bounded_comparison_operand(format, V::Shared(&zero), true).is_none());
+                if format.format().is_signed() {
+                    let minus_one =
+                        crate::kernel::machine_integer::range::constant_word(format, &(-1).into())
+                            .unwrap();
+                    let minus_one = KernelTerm::retained_native_machine_operand(format, &minus_one);
+                    let exceptional = operation(variable.clone(), minus_one);
+                    assert!(
+                        bounded_comparison_operand(format, V::Shared(&exceptional), true).is_none()
+                    );
+                }
                 let hit = operation(variable.clone(), literal(3));
                 assert!(bounded_comparison_operand(format, V::Shared(&hit), false).is_none());
                 (
@@ -347,14 +357,6 @@ fn machine_comparison_and_guard_reads_are_bounded_on_hits_and_misses() {
                     operation(variable.clone(), other.clone()),
                 )
             });
-            let division_hits = if format.format().is_signed() {
-                for (signed, ..) in &division_cases {
-                    assert!(bounded_comparison_operand(format, V::Shared(signed), true).is_none());
-                }
-                &division_cases[..0]
-            } else {
-                &division_cases[..]
-            };
             let mut cast_cases = Vec::new();
             for spelling in [
                 crate::kernel::MachineCastSpelling::Int64From32,
@@ -388,7 +390,7 @@ fn machine_comparison_and_guard_reads_are_bounded_on_hits_and_misses() {
                     .chain(std::iter::once(&unary_case))
                     .chain(&shift_cases)
                     .chain(wrapping_hits)
-                    .chain(division_hits)
+                    .chain(&division_cases)
                     .chain(&cast_cases)
                 {
                     for operands in [

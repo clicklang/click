@@ -403,14 +403,16 @@ fn bounded_comparison_operand(
                 _ => return None,
             }
         }
+        // Read the literal in the operator's format. Signed -1 can overflow
+        // for the minimum dividend, while an unsigned all-ones word is valid.
         O::Divide | O::Remainder
             if in_conditional
-                && !format.format().is_signed()
                 && arguments[0].variable().is_some()
                 && arguments[1]
                     .literal()
                     .and_then(|literal| format.constant_from_term(&literal))
-                    .is_some_and(|constant| constant.bits() != 0) =>
+                    .and_then(|constant| constant.to_i128())
+                    .is_some_and(|divisor| !matches!(divisor, 0 | -1)) =>
         {
             false
         }

@@ -7850,6 +7850,30 @@ fn literal_divisors_in_conditionals_round_trip_after_rewrite() {
 }
 
 #[test]
+fn signed_literal_divisors_in_conditionals_round_trip_after_rewrite() {
+    use crate::kernel::MachineIntegerType as T;
+    for (format, spelling) in [(T::Int32, "int32"), (T::Int64, "int64")] {
+        let fixture = ConditionalRoundTrip::new(format, spelling);
+        for op in ["/", "%"] {
+            for divisor in [3, 7, -3, -7] {
+                let equality = fixture.lower(&format!("x == (z {op} (({divisor}) as {spelling}))"));
+                for reverse in [false, true] {
+                    for (guards, then_value) in [
+                        (&["flag", "not flag"][..], "x"),
+                        (&["x < y", "x == y", "y <= x", "y != x"][..], "z"),
+                    ] {
+                        for guard in guards {
+                            let original = fixture.goal(guard, reverse, then_value);
+                            fixture.check(&original, &equality, guard, reverse);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn wrapping_product_in_conditionals_round_trip_after_rewrite() {
     use crate::kernel::MachineIntegerType as T;
     for (format, spelling, boundary) in [
