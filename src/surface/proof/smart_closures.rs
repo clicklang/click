@@ -4075,16 +4075,19 @@ pub(super) fn propositions_match_after_canonical_loads(
             (Proposition::Not(body), Proposition::Not(other_body)) => {
                 work.push((body, other_body));
             }
-            // A constant condition and a comparison decided without facts,
-            // which lowering retains as written (`1 == 0`, `p == p`), match
-            // by the truth they state. Two comparisons that are not
-            // constants still match only structurally, below: equal truth
-            // does not make two obligations the same.
+            // Conditions decided from their literals alone (`1 == 0`, a
+            // constant), or a constant against a comparison decided without
+            // facts (`p == p`), match by the truth they state. Two reflexive
+            // comparisons of different operands still match only
+            // structurally, below: equal truth does not make them the same
+            // obligation.
             (Proposition::ConditionIs(left, expected), Proposition::ConditionIs(right, other))
-                if (matches!(left, ConditionTerm::Constant(_))
-                    || matches!(right, ConditionTerm::Constant(_)))
-                    && closed_condition_value(left).is_some()
-                    && closed_condition_value(right).is_some() =>
+                if closed_condition_value(left).is_some()
+                    && closed_condition_value(right).is_some()
+                    && (matches!(left, ConditionTerm::Constant(_))
+                        || matches!(right, ConditionTerm::Constant(_))
+                        || (literal_closed_value(left).is_some()
+                            && literal_closed_value(right).is_some())) =>
             {
                 if (closed_condition_value(left) == Some(*expected))
                     != (closed_condition_value(right) == Some(*other))
@@ -4135,6 +4138,7 @@ pub(super) fn propositions_match_after_canonical_loads(
     true
 }
 
+use crate::kernel::machine_integer::comparison::closed_condition_value as literal_closed_value;
 use crate::kernel::machine_integer::comparison::fact_free_condition_value as closed_condition_value;
 
 #[test]
