@@ -471,9 +471,17 @@ default limits. The proof retains the focus node's typed parent and child
 links through initialization, then carries the root link through the
 recolor-to-black and black-parent exits. The stopping contracts return the
 tree at the entry root pointer and prove that the root pointer is unchanged.
-The arbitrary-length flip-chain proof and full-directory audit remain open.
+The full-directory audit remains open.
 
 All three proofs in `rbtree_size_insert_context_stop.click` also verify for
 a black parent on either side of the focused subtree. The proof states the
 parent equality for each concrete context and keeps the ancestor path folded
 through the read-only test. Its contracts prove the same unchanged root link.
+
+## Arbitrary-length insertion color-flip chains
+
+The chain proof now checks all four continuing orientations and both stopping
+cases. Owned frames retain the child links and the packed parent words through
+the recolorings. The checked `rb_parent` contract returns the typed parent
+from the packed word, which the next iteration needs. The insertion wrappers
+return the exact `sized_flip_result` at the unchanged entry root pointer.
