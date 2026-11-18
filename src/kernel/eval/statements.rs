@@ -1223,7 +1223,7 @@ fn write_program_lvalue_paths_for_initialization(
             if let ProgramValue::Pointer(stored) = &written_value {
                 facts.push(ExecutionPureFact::logical_read_equation(
                     stored.clone(),
-                    Address::loaded_value(
+                    Address::canonical_read(
                         &crate::kernel::intern_memory_ref(state.memory()),
                         &written_pointer,
                     ),

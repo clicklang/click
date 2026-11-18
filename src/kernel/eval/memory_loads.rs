@@ -169,7 +169,9 @@ pub(in crate::kernel) fn evaluate_retained_memory_load_paths(
             };
             // A checked, nonvolatile C read supplies its complete current-cell
             // equation. Ordinary observations do not publish this evidence.
-            let read = Address::loaded_value(&observed.0, &observed.1);
+            // The read is named by its version point, as the source place
+            // lowers, so the equation states what a written read of it means.
+            let read = Address::canonical_read(&observed.0, &observed.1);
             path.facts.push(
                 if matches!(value.program_type(), ProgramType::FunctionPointer(_)) {
                     ExecutionPureFact::checked_pointer_read_equation(value.clone(), read)
@@ -378,7 +380,7 @@ fn evaluate_logical_memory_load_paths_unbridged(
                     .inspect(|value| {
                         if let ProgramValue::Pointer(value) = value {
                             record_pointer_read_observation(value.address(), memory, &pointer);
-                            let current = Address::loaded_value(
+                            let current = Address::canonical_read(
                                 &crate::kernel::intern_memory_ref(memory),
                                 &pointer,
                             );
@@ -5256,6 +5258,46 @@ pub(in crate::kernel) fn symbolic_storage_cell_value(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_pointer_read_is_named_by_its_version_point() {
+        // A pointer cell read before and after a store to another object
+        // is one read: both name the cell's version point, as a Click read of
+        // that place lowers, rather than each exact memory state.
+        let _session = crate::kernel::VerificationSession::enter();
+        let cell = Address {
+            base: "version-point-pointer-cell".into(),
+            offset: AddressOffset::Constant(0),
+        };
+        let other = Address {
+            base: "version-point-other".into(),
+            offset: AddressOffset::Constant(0),
+        };
+        let memory = SymbolicMemory::new()
+            .with_block("version-point-pointer-cell", 8)
+            .with_block("version-point-other", 4);
+        let before = intern_memory_ref(&memory);
+        let after = crate::kernel::intern_memory(memory.store(other.clone(), int32(9)));
+        assert_eq!(
+            Address::canonical_read(&before, &cell),
+            Address::canonical_read(&after, &cell),
+            "a store to another object leaves the cell's version point"
+        );
+        assert_ne!(
+            Address::loaded_value(&before, &cell),
+            Address::loaded_value(&after, &cell),
+            "the per-state read names differ, which is what the version point removes"
+        );
+        // A store to the cell itself starts a new version.
+        let rewritten = crate::kernel::intern_memory(after.memory().clone().store(
+            cell.clone(),
+            ProgramValue::Pointer(Pointer::new(Address::null(), ProgramType::Int32Pointer)),
+        ));
+        assert_ne!(
+            Address::canonical_read(&after, &cell),
+            Address::canonical_read(&rewritten, &cell),
+        );
+    }
+
     #[test]
     fn exact_read_descriptors_and_comparison_identities_keep_distinct_roles() {
         let _session = crate::kernel::VerificationSession::enter();
