@@ -620,9 +620,9 @@ pub(in crate::kernel) fn evaluate_program_arguments_paths(
     .collect())
 }
 
-pub(in crate::kernel) fn evaluate_retained_program_arguments_paths(
+pub(in crate::kernel) fn evaluate_retained_program_arguments_paths<'a>(
     state: &ExecutionState,
-    arguments: &[ProgramExpression],
+    arguments: impl IntoIterator<Item = &'a ProgramExpression>,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
     environment: Option<&ExecutionEnvironment>,
@@ -644,12 +644,16 @@ pub(in crate::kernel) fn evaluate_retained_program_arguments_paths(
 
             let argument_assumptions =
                 assumptions_with_path_context(assumptions, &path.facts, &path.obligations);
-            for argument_path in crate::kernel::eval::evaluate_expression_value_paths(
+            let mut successors = crate::kernel::eval::evaluate_expression_value_paths(
                 state,
                 argument,
                 &argument_assumptions,
                 budget,
-            )? {
+            )?
+            .into_iter()
+            .peekable();
+            let mut accumulated = path.values;
+            while let Some(argument_path) = successors.next() {
                 let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
                     &path.facts,
                     &path.obligations,
@@ -660,6 +664,12 @@ pub(in crate::kernel) fn evaluate_retained_program_arguments_paths(
                     continue;
                 };
 
+                // Only a fork needs a copy of the values already evaluated.
+                let mut values = if successors.peek().is_some() {
+                    accumulated.clone()
+                } else {
+                    std::mem::take(&mut accumulated)
+                };
                 match argument_path.outcome {
                     ExpressionOutcome::Value(value) => {
                         let value = if matches!(argument, ProgramExpression::FunctionAddress(_)) {
@@ -672,7 +682,6 @@ pub(in crate::kernel) fn evaluate_retained_program_arguments_paths(
                         } else {
                             value
                         };
-                        let mut values = path.values.clone();
                         values.push(value);
                         next_paths.push(ArgumentsPath {
                             values,
@@ -683,14 +692,14 @@ pub(in crate::kernel) fn evaluate_retained_program_arguments_paths(
                     }
                     ExpressionOutcome::UndefinedBehavior(undefined_behavior) => {
                         next_paths.push(ArgumentsPath {
-                            values: path.values.clone(),
+                            values,
                             outcome: Some(FunctionOutcome::UndefinedBehavior(undefined_behavior)),
                             facts,
                             obligations,
                         })
                     }
                     ExpressionOutcome::RuntimeError(error) => next_paths.push(ArgumentsPath {
-                        values: path.values.clone(),
+                        values,
                         outcome: Some(FunctionOutcome::RuntimeError(error)),
                         facts,
                         obligations,

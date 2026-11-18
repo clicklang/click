@@ -4354,6 +4354,37 @@ fn execute_execution_statement_leaf_paths(
             zero_fill,
             declared_class,
         } => {
+            if let Some(fill) = zero_fill
+                && *constant
+                && let Some(element_type) = program_type.array_element_type()
+                && initializer.is_none()
+            {
+                let declared = declare_local(
+                    state,
+                    name,
+                    *program_type,
+                    *volatile,
+                    *pointee_volatile,
+                    true,
+                    *pointee_constant,
+                    declared_class.clone(),
+                );
+                return match declared {
+                    Ok(declared) => scalar_arrays::construct_const(
+                        &declared,
+                        name,
+                        element_type,
+                        fill,
+                        assumptions,
+                        budget,
+                    ),
+                    Err(error) => Ok(vec![StatementExecutionPath::new(
+                        StatementOutcome::RuntimeError(error),
+                        Vec::new().into(),
+                        Vec::new(),
+                    )]),
+                };
+            }
             let outcome = if *program_type == ProgramType::Void {
                 StatementOutcome::RuntimeError(RuntimeError::TypeMismatch)
             } else {
@@ -4465,15 +4496,16 @@ fn execute_execution_statement_leaf_paths(
                         if *constant
                             && initializer.is_none()
                             && zero_fill.is_none()
-                            && state.locals.is_uninitialized_object(name) =>
+                            && (state.locals.is_uninitialized_object(name)
+                                || state.locals.is_array_object(name)) =>
                     {
                         let block = state
                             .locals
                             .slot(name)
-                            .expect("declared scalar slot")
+                            .expect("declared automatic slot")
                             .base
                             .clone();
-                        state.set_memory(state.memory.clone().freeze_declared_scalar(&block));
+                        state.set_memory(state.memory.clone().freeze_declared_object(&block, None));
                         StatementOutcome::Normal(state)
                     }
                     outcome => outcome,

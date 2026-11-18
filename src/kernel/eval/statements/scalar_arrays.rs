@@ -262,3 +262,129 @@ fn expression_error(outcome: ExpressionOutcome) -> StatementOutcome {
         ExpressionOutcome::Value(_) => StatementOutcome::RuntimeError(RuntimeError::TypeMismatch),
     }
 }
+
+/// Evaluate explicit initializers, then install and seal the complete array in
+/// one declaration transition. Zero-filled gaps each take one retained run.
+pub(super) fn construct_const(
+    declared: &ExecutionState,
+    name: &BindingName,
+    element_type: ProgramType,
+    fill: &ZeroFill,
+    assumptions: &PureFactContext,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Vec<StatementExecutionPath>> {
+    let slot = declared.locals.slot(name).expect("declared array slot");
+    let bytes = fill.count.checked_mul(fill.stride);
+    let cells = fill.cells.as_ref();
+    let (Some(bytes), [cell]) = (bytes, cells) else {
+        return Ok(vec![path(
+            StatementOutcome::RuntimeError(RuntimeError::TypeMismatch),
+            Vec::new().into(),
+            Vec::new(),
+        )]);
+    };
+    if declared
+        .memory
+        .block_size(&slot.base)
+        .and_then(MachineTerm::as_const)
+        != Some(bytes)
+        || element_type.byte_width() != fill.stride
+        || cell.offset != 0
+        || cell.value_type != element_type
+    {
+        return Ok(vec![path(
+            StatementOutcome::RuntimeError(RuntimeError::TypeMismatch),
+            Vec::new().into(),
+            Vec::new(),
+        )]);
+    }
+    let mut zero_obligations = Vec::new();
+    let zero = crate::kernel::functions::coerce_program_value_with_pointee_constant(
+        cell.zero.clone(),
+        element_type,
+        cell.pointee_constant,
+        &mut zero_obligations,
+        &PureFactContext::new(),
+    )
+    .filter(|_| zero_obligations.is_empty());
+    let Some(zero) = zero else {
+        return Ok(vec![path(
+            StatementOutcome::RuntimeError(RuntimeError::TypeMismatch),
+            Vec::new().into(),
+            Vec::new(),
+        )]);
+    };
+
+    let mut paths = Vec::new();
+    for evaluation in crate::kernel::functions::evaluate_retained_program_arguments_paths(
+        declared,
+        fill.expressions(),
+        assumptions,
+        budget,
+        None,
+    )? {
+        let mut obligations = evaluation.obligations;
+        let outcome = match evaluation.outcome {
+            Some(FunctionOutcome::UndefinedBehavior(error)) => {
+                StatementOutcome::UndefinedBehavior(error)
+            }
+            Some(FunctionOutcome::RuntimeError(error)) => StatementOutcome::RuntimeError(error),
+            Some(_) => unreachable!("expression evaluation returns values or errors"),
+            None => {
+                let selected =
+                    assumptions_with_path_context(assumptions, &evaluation.facts, &obligations);
+                let build_runs = || {
+                    let mut runs = Vec::new();
+                    let mut next = 0;
+                    let mut push_run = |start, count, value| {
+                        if count != 0 {
+                            runs.push(ConstantRun {
+                                offset: start * fill.stride,
+                                stride: fill.stride,
+                                count,
+                                value,
+                            });
+                        }
+                    };
+                    for ((index, _), value) in fill.written_elements.iter().zip(evaluation.values) {
+                        crate::instrumentation::record_deterministic_work(1);
+                        if *index < next || *index >= fill.count {
+                            return None;
+                        }
+                        let value =
+                            crate::kernel::functions::coerce_program_value_with_pointee_constant(
+                                value.into_native(),
+                                element_type,
+                                cell.pointee_constant,
+                                &mut obligations,
+                                &selected,
+                            )?;
+                        push_run(next, *index - next, zero.clone());
+                        push_run(*index, 1, value);
+                        next = *index + 1;
+                    }
+                    push_run(next, fill.count - next, zero.clone());
+                    Some(runs)
+                };
+                match build_runs() {
+                    Some(runs) => {
+                        let memory = declared
+                            .memory
+                            .clone()
+                            .seed_fresh_declared_runs(slot, &runs)
+                            .with_initialized_object(slot, bytes)
+                            .freeze_declared_object(&slot.base, None);
+                        let mut state = declared.clone();
+                        state.set_memory(memory);
+                        StatementOutcome::Normal(Box::new(note_declared_population_storage(
+                            state, name,
+                        )))
+                    }
+                    None => StatementOutcome::RuntimeError(RuntimeError::TypeMismatch),
+                }
+            }
+        };
+        paths.push(path(outcome, evaluation.facts, obligations));
+    }
+    Ok(paths)
+}

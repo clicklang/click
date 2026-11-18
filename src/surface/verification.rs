@@ -4129,15 +4129,23 @@ fn c_statement_calls_recording(
                 }
                 calls.push(dependencies);
             }
+            syntax::CStatement::DeclareStructValue { .. } => calls.push(BTreeSet::new()),
             syntax::CStatement::Declare {
-                initializer: None, ..
-            }
-            | syntax::CStatement::DeclareStructValue { .. } => calls.push(BTreeSet::new()),
-            syntax::CStatement::Declare {
-                initializer: Some(expression),
+                initializer,
+                zero_fill,
                 ..
+            } => {
+                let mut dependencies = BTreeSet::new();
+                for expression in initializer.iter().chain(
+                    zero_fill
+                        .iter()
+                        .flat_map(|fill| fill.written_elements.iter().map(|(_, value)| value)),
+                ) {
+                    collect_function_addresses(expression, &mut dependencies);
+                }
+                calls.push(dependencies);
             }
-            | syntax::CStatement::Assign { expression, .. }
+            syntax::CStatement::Assign { expression, .. }
             | syntax::CStatement::HeapAllocate {
                 bytes: expression, ..
             }

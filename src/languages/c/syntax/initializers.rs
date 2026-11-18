@@ -15,6 +15,7 @@ impl Parser {
         interface_type: InterfaceType,
         array_shape: Option<&[u32]>,
         compact: bool,
+        constant: bool,
     ) -> Result<(Option<CZeroFill>, CStatement), CSyntaxError> {
         let (length, element_type) = match interface_type {
             InterfaceType::Int32Array(length) => (length, InterfaceType::Int32),
@@ -47,7 +48,51 @@ impl Parser {
             &mut written,
             &mut next,
         )?;
-        Ok(self.finish_local_array_initializer(name, element_type, length, written, compact))
+        self.finish_local_array_declaration(name, element_type, length, written, compact, constant)
+    }
+
+    pub(super) fn finish_local_array_declaration(
+        &self,
+        name: &BindingName,
+        element_type: InterfaceType,
+        length: u32,
+        mut written: Vec<(u32, CExpression)>,
+        compact: bool,
+        constant: bool,
+    ) -> Result<(Option<CZeroFill>, CStatement), CSyntaxError> {
+        if !constant {
+            return Ok(self.finish_local_array_initializer(
+                name,
+                element_type,
+                length,
+                written,
+                compact,
+            ));
+        }
+
+        for (_, expression) in &mut written {
+            crate::instrumentation::record_deterministic_work(1);
+            if self.expression_has_runtime_effect(expression)
+                || self.expression_contains_lowerable_expression(expression)
+            {
+                return Err(self.error_here("const automatic array initializers require expressions without calls, updates, or separately lowered checks"));
+            }
+            let mut names = BTreeSet::new();
+            super::super::address_taken::mentioned_names(expression, &mut names);
+            if names.contains(name) {
+                return Err(self.error_here("const automatic array initializers cannot refer to the array being initialized"));
+            }
+            convert_integer_constant(element_type, expression);
+        }
+        Ok((
+            Some(CZeroFill {
+                stride: element_type.abi_size_bytes(),
+                count: length,
+                cells: vec![(0, element_type, false, zero_initializer(element_type))].into(),
+                written_elements: written.into(),
+            }),
+            CStatement::Skip,
+        ))
     }
 
     /// Materialize already-parsed values only after the array's bound is
