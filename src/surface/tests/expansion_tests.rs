@@ -17718,6 +17718,53 @@ fn retained_int32_addition_expands_with_ordinary_bounds() {
     .unwrap();
 }
 
+#[test]
+#[ignore = "nightly: expands and replays an entire loop contract"]
+fn retained_int32_subtraction_expands_with_ordinary_bounds() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/loop_entry_memory_capture_countdown.md");
+    let source = std::fs::read_to_string(&path).unwrap();
+    let mdtest = crate::cli::parse_mdtest(&path, &source).unwrap();
+    let sources = mdtest
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let claim = "inspect.contract";
+    let expanded =
+        expand_c_claim_source_by_label(mdtest.click_source.as_deref().unwrap(), &sources, claim)
+            .unwrap();
+    assert!(
+        expanded.contains("apply(click::integer::subtract_le("),
+        "{expanded}"
+    );
+    let mut endpoints = 0;
+    let mut identities = 0;
+    for (goal, tactic) in expanded.lines().zip(expanded.lines().skip(1)) {
+        let goal = goal.trim_start();
+        if !goal.starts_with("have ") || !goal.contains(" - to_integer(") {
+            continue;
+        }
+        if goal.starts_with("have -2147483648 <= ") || goal.ends_with("<= 2147483647 by {") {
+            endpoints += 1;
+            assert!(
+                !tactic.contains("normalize("),
+                "{goal}\n{tactic}\n{expanded}"
+            );
+        } else if goal.starts_with("have to_integer(((at(")
+            && goal.contains(", n) - 1) as int32)) == ")
+        {
+            identities += 1;
+            assert_eq!(tactic.trim(), "known();", "{goal}\n{tactic}\n{expanded}");
+        }
+    }
+    assert!(endpoints >= 2 && identities > 0, "{expanded}");
+    without_implicit_solve_for_claim(claim, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| format!("{error:?}"))
+    })
+    .unwrap();
+}
+
 /// Expands every smart site of one claim in an iterated-ownership fixture and
 /// reverifies the result, checking that the indexed `unfold` and `fold` steps
 /// survive expansion as written.

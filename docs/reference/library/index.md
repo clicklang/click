@@ -6806,6 +6806,27 @@ theorem subtract_left_order(a: Integer, b: Integer, c: Integer) {
 }
 ```
 
+### `integer::subtract_le`
+
+```click
+theorem subtract_le(a: Integer, b: Integer, c: Integer, d: Integer) {
+    requires a <= b;
+    requires d <= c;
+    ensures a - c <= b - d by {
+        have a - c <= b - c by {
+            apply(integer::subtract_right_order(a, b, c)) using { a <= b; };
+        }
+        have b - c <= b - d by {
+            apply(integer::subtract_left_order(d, c, b)) using { d <= c; };
+        }
+        apply(integer::le_transitive(a - c, b - c, b - d)) using {
+            a - c <= b - c;
+            b - c <= b - d;
+        };
+    }
+}
+```
+
 ### `integer::negate_multiply`
 
 ```click

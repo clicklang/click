@@ -4937,6 +4937,10 @@ id = "library.theorem.integer::subtract_left_order"
 path = "reference/library/index.md#integersubtract_left_order"
 
 [[item]]
+id = "library.theorem.integer::subtract_le"
+path = "reference/library/index.md#integersubtract_le"
+
+[[item]]
 id = "library.theorem.integer::negate_multiply"
 path = "reference/library/index.md#integernegate_multiply"
 

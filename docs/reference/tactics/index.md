@@ -2234,6 +2234,7 @@ Arithmetic automation expands to ordinary proofs. Arithmetic operations correspo
 | Arithmetic operation | Ordinary law |
 | --- | --- |
 | Add two non-strict Integer bounds | `integer::add_le(a, b, c, d)` |
+| Subtract two Integer bounds with the right order reversed | `integer::subtract_le(a, b, c, d)` |
 | Scale an inequality by a nonnegative factor | `integer::multiply_order_nonnegative(a, b, factor)` |
 | Turn strict order into a successor bound | `integer::lt_step_le(a, b)` |
 | Restore strict order from a successor bound | `integer::step_le_lt(a, b)` |
