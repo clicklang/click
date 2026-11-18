@@ -2469,10 +2469,11 @@ pub(super) fn initial_claim_context_with_caller_owner(
     {
         if !requirement_pure_facts.contains(&fact) {
             requirement_pure_facts.push(fact);
-            entry_fact_origins.push(EntryFactOrigin::Derived);
         }
     }
-    debug_assert_eq!(requirement_pure_facts.len(), entry_fact_origins.len());
+    // Publishing an arm fact can also materialize consequences of entry
+    // requirements. Both the published facts and their consequences are derived.
+    entry_fact_origins.resize(requirement_pure_facts.len(), EntryFactOrigin::Derived);
     // Export the selected function-entry input in the final execution lineage.
     // Clause evaluation used a separate context with projection-derived read
     // facts excluded; its prepared index cannot stand in for this one. Entry
