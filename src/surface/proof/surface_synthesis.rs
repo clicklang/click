@@ -3181,6 +3181,14 @@ fn synthesize_surface_atomic_proposition(
             ..
         }
     );
+    let unsigned_word_equality = matches!(
+        condition,
+        ConditionTerm::Compare {
+            format: MachineIntegerType::UInt32,
+            relation: CompareRelation::Equal,
+            ..
+        }
+    );
     let operand = |term: &MachineTerm| {
         // Wide comparisons retain signedness at each read and operation.
         // Reconstruct their shared operands rather than defaulting a Bits64
@@ -3223,7 +3231,24 @@ fn synthesize_surface_atomic_proposition(
         } else {
             synthesize_surface_bitvector(term, parameter_binding, state, bound_variables)?
         };
-        if signed_order
+        // A bare sum in a reparsed equality can become Integer arithmetic.
+        // Give the generated uint32 word expression an explicit machine context.
+        if unsigned_word_equality
+            && matches!(
+                term,
+                MachineTerm::Binary {
+                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+                    op: MachineBinaryOp::Add | MachineBinaryOp::Subtract,
+                    ..
+                }
+            )
+            && matches!(
+                expression,
+                ContractExpression::Add(..) | ContractExpression::Subtract(..)
+            )
+        {
+            synthesize_uint32_operand(expression)
+        } else if signed_order
             && (bitvector_spells_uint32(term, parameter_binding, state, bound_variables)
                 || matches!(
                     expression,
@@ -3754,6 +3779,31 @@ fn raise_integer_operation(
     })
 }
 
+// A printed comparison operand or conditional arm can reparse arithmetic as
+// Integer. Keep the machine context of the bounded unsigned operation there.
+fn spell_wrapping_uint64_operand(
+    term: &crate::kernel::KernelTerm,
+    expression: SurfaceTerm,
+) -> Option<SurfaceTerm> {
+    use crate::kernel::KernelTermNode as Node;
+    if let Node::MachineBinary {
+        format: MachineIntegerType::UInt64,
+        operator: MachineBinaryOp::Add | MachineBinaryOp::Subtract,
+        arguments,
+    } = term.node()
+        && matches!(
+            arguments.each_ref().map(|child| child.node()),
+            [Node::Variable(_), Node::MachineLiteral(_)]
+                | [Node::MachineLiteral(_), Node::Variable(_)]
+        )
+        && matches!(expression, SurfaceTerm::Add(..) | SurfaceTerm::Subtract(..))
+    {
+        synthesize_observation_operand(expression, ProgramType::UInt64)
+    } else {
+        Some(expression)
+    }
+}
+
 fn raise_kernel_term_dispatch(
     term: &crate::kernel::KernelTerm,
     parameter_binding: ParameterBinding<'_>,
@@ -3852,11 +3902,14 @@ fn raise_kernel_term_dispatch(
             }
         }
         Node::BoolLiteral(value) => bool_literal(*value),
-        Node::BoolIf { arguments } | Node::MachineIf { arguments } => SurfaceTerm::If {
-            condition: Box::new(bool_truth(recurse(&arguments[0])?)),
-            then_branch: Box::new(recurse(&arguments[1])?),
-            else_branch: Box::new(recurse(&arguments[2])?),
-        },
+        Node::BoolIf { arguments } | Node::MachineIf { arguments } => {
+            let arm = |term| spell_wrapping_uint64_operand(term, recurse(term)?);
+            SurfaceTerm::If {
+                condition: Box::new(bool_truth(recurse(&arguments[0])?)),
+                then_branch: Box::new(arm(&arguments[1])?),
+                else_branch: Box::new(arm(&arguments[2])?),
+            }
+        }
         Node::BoolEqual { arguments } => proposition_bool_value(ClickProposition::Comparison {
             left: recurse(&arguments[0])?,
             operator: ComparisonOperator::Equal,
@@ -3897,7 +3950,7 @@ fn raise_kernel_term_dispatch(
                         .is_some_and(|value| value.uint64_as_const().is_some())
                 });
             let operand = |term| {
-                let expression = recurse(term)?;
+                let expression = spell_wrapping_uint64_operand(term, recurse(term)?)?;
                 if unsigned_literal {
                     Some(expression)
                 } else {
