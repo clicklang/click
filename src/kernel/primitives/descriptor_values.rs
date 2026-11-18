@@ -11,6 +11,11 @@ impl From<MachineTerm> for StoredMachineTerm {
         Self::new(MachineIntegerType::Int32, value)
     }
 }
+impl From<u32> for StoredMachineTerm {
+    fn from(value: u32) -> Self {
+        MachineTerm::constant(value).into()
+    }
+}
 impl StoredMachineTerm {
     pub(crate) fn new(ty: MachineIntegerType, value: MachineTerm) -> Self {
         let value = match ty {
@@ -47,6 +52,9 @@ impl StoredMachineTerm {
             }
         }
         Some(Self(value.into()))
+    }
+    pub(crate) fn as_const(&self) -> Option<u32> {
+        self.native_compat().as_const()
     }
     pub(crate) fn map_native(&self, rewrite: impl FnOnce(&MachineTerm) -> MachineTerm) -> Self {
         Self::new(

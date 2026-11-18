@@ -11587,7 +11587,7 @@ fn compare_support_graph(left: &ResourceContext, right: &ResourceContext) -> std
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum ResourceFact {
-    Own(Resource, Box<MachineTerm>),
+    Own(Resource, Box<StoredMachineTerm>),
     View(Resource),
 }
 
@@ -13169,7 +13169,7 @@ mod population_authority_spec_tests {
                 .try_compose_with_fact(
                     ResourceFact::Own(
                         Resource::PopulationAuthority(description.clone()),
-                        Box::new(MachineTerm::constant(2)),
+                        Box::new(MachineTerm::constant(2).into()),
                     ),
                     &assumptions,
                 )

@@ -77,7 +77,7 @@ pub(super) struct DeferredMemberExchange {
     pub(super) block: AddressBase,
     pub(super) description: super::ResourceDescription,
     pub(super) produce: bool,
-    pub(super) quantity: MachineTerm,
+    pub(super) quantity: crate::kernel::StoredMachineTerm,
     pub(super) exclusive: bool,
 }
 
@@ -1165,7 +1165,7 @@ impl ThreadContext {
                         &deferred.block,
                         &deferred.description,
                         deferred.produce,
-                        &deferred.quantity,
+                        deferred.quantity.native_compat(),
                         assumptions,
                     )
                 } else {
@@ -1173,7 +1173,7 @@ impl ThreadContext {
                         &deferred.block,
                         &deferred.description,
                         deferred.produce,
-                        &deferred.quantity,
+                        deferred.quantity.native_compat(),
                         assumptions,
                     )
                 }

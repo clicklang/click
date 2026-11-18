@@ -8841,7 +8841,7 @@ impl ExecutionState {
             .creation
             .as_ref()
             .ok_or("batch import requires the creation ledger")?
-            .import_observable_contract_population_quantity(description, quantity)
+            .import_observable_contract_population_quantity(description, quantity.native_compat())
             .map_err(|refusal| format!("batch population import refused: {refusal}"))?;
         let mut next = self.clone();
         Arc::make_mut(&mut next.population_effects).creation = Some(events);
@@ -9829,7 +9829,7 @@ impl ExecutionState {
                 &anchor.base,
                 &description,
                 produce,
-                quantity,
+                quantity.native_compat(),
                 assumptions,
             )
         } else {
@@ -9837,7 +9837,7 @@ impl ExecutionState {
                 &anchor.base,
                 &description,
                 produce,
-                quantity,
+                quantity.native_compat(),
                 assumptions,
             )
         };

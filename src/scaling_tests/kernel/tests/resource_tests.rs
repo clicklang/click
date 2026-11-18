@@ -1930,7 +1930,10 @@ fn incremental_quantity_consumption_normalizes_only_the_exact_resource_bucket() 
             name: "shared_name".to_string(),
             arguments: vec![int32(size + 1).into()].into(),
         };
-        let unit = ResourceFact::Own(target_resource.clone(), Box::new(MachineTerm::constant(1)));
+        let unit = ResourceFact::Own(
+            target_resource.clone(),
+            Box::new(MachineTerm::constant(1).into()),
+        );
         let required =
             ResourceFact::own_quantity(target_resource.clone(), MachineTerm::constant(2));
         let context = ResourceContext::new()

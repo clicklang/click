@@ -654,7 +654,8 @@ impl ResourceContextIndex {
                 result.iterated_by_block =
                     insert_resource_index_entry(&result.iterated_by_block, second.clone(), entry);
             }
-            if matches!(fact, ResourceFact::Own(_, quantity) if quantity.as_const() == Some(1)) {
+            if matches!(fact, ResourceFact::Own(_, quantity) if quantity.native_compat().as_const() == Some(1))
+            {
                 result.owned_iterated_by_clause = insert_resource_index_entry(
                     &result.owned_iterated_by_clause,
                     iterated.without_holes(),
@@ -1057,7 +1058,8 @@ impl ResourceContextIndex {
                 result.iterated_by_block =
                     remove_resource_index_entry(&result.iterated_by_block, second, entry);
             }
-            if matches!(fact, ResourceFact::Own(_, quantity) if quantity.as_const() == Some(1)) {
+            if matches!(fact, ResourceFact::Own(_, quantity) if quantity.native_compat().as_const() == Some(1))
+            {
                 result.owned_iterated_by_clause = remove_resource_index_entry(
                     &result.owned_iterated_by_clause,
                     &iterated.without_holes(),
@@ -1748,7 +1750,7 @@ impl ResourceContext {
             .iter()
             .filter_map(|entry| match self.fact(*entry) {
                 ResourceFact::Own(Resource::Instance(instance), quantity)
-                    if quantity.as_const() == Some(1) =>
+                    if quantity.native_compat().as_const() == Some(1) =>
                 {
                     Some(instance)
                 }
@@ -1791,7 +1793,7 @@ impl ResourceContext {
         else {
             return None;
         };
-        (quantity.as_const() == Some(1)).then_some(instance)
+        (quantity.native_compat().as_const() == Some(1)).then_some(instance)
     }
 
     /// A structural/unpublished context. Use `new_with_equalities` for a
@@ -10035,11 +10037,14 @@ fn exact_resource_fact_entails(
             ResourceFact::Own(available, available_quantity),
             ResourceFact::Own(required, required_quantity),
         ) => {
-            resource_quantity_at_least(available_quantity, required_quantity, assumptions)
-                && exact_resources_proven_equal(available, required, assumptions)
+            resource_quantity_at_least(
+                available_quantity.native_compat(),
+                required_quantity.native_compat(),
+                assumptions,
+            ) && exact_resources_proven_equal(available, required, assumptions)
         }
         (ResourceFact::Own(available, available_quantity), ResourceFact::View(required)) => {
-            resource_quantity_is_positive(available_quantity, assumptions)
+            resource_quantity_is_positive(available_quantity.native_compat(), assumptions)
                 && exact_resources_proven_equal(available, required, assumptions)
         }
         (ResourceFact::View(available), ResourceFact::View(required)) => {
@@ -10360,8 +10365,8 @@ fn consume_exact_resource_fact(
             unreachable!("checked above")
         };
         let residual = MachineTerm::subtract(
-            available_quantity.as_ref().clone(),
-            required_quantity.as_ref().clone(),
+            available_quantity.native_compat().clone(),
+            required_quantity.native_compat().clone(),
         );
         let residual_is_zero = residual.as_const() == Some(0)
             || quantity_condition_holds(
@@ -10446,7 +10451,9 @@ fn combine_exact_resource_facts(
 /// context.
 fn owner_observation_core(resource: &ResourceFact) -> Option<ResourceFact> {
     match resource {
-        ResourceFact::Own(resource, quantity) if constant_quantity_is_positive(quantity) => {
+        ResourceFact::Own(resource, quantity)
+            if constant_quantity_is_positive(quantity.native_compat()) =>
+        {
             Some(ResourceFact::View(resource.clone()))
         }
         ResourceFact::Own(_, _) => None,
@@ -10654,11 +10661,14 @@ macro_rules! impl_exact_resource_algebra {
                         // quantity is a count that is not the population's.
                         Some(ResourceFact::Own(
                             left.clone(),
-                            Box::new(population_quantity_sum(
-                                left_quantity,
-                                right_quantity,
-                                assumptions,
-                            )?),
+                            Box::new(
+                                population_quantity_sum(
+                                    left_quantity.native_compat(),
+                                    right_quantity.native_compat(),
+                                    assumptions,
+                                )?
+                                .into(),
+                            ),
                         ))
                     }
                     _ => combine_exact_resource_facts(left, right, assumptions),
@@ -10994,7 +11004,7 @@ impl ResourceFamilyAlgebra for IteratedResourceAlgebra {
         required: &ResourceFact,
         assumptions: &PureFactContext,
     ) -> bool {
-        let unit = |quantity: &MachineTerm| quantity.as_const() == Some(1);
+        let unit = |quantity: &StoredMachineTerm| quantity.as_const() == Some(1);
         let shape = match (available, required) {
             (ResourceFact::Own(_, available), ResourceFact::Own(_, required)) => {
                 unit(available) && unit(required)
@@ -11135,11 +11145,11 @@ fn memory_resource_fact_permits_write(
             _,
         ) => false,
         ResourceFact::Own(Resource::Memory(range), quantity) if range.wide_bounds().is_some() => {
-            resource_quantity_is_positive(quantity, assumptions)
+            resource_quantity_is_positive(quantity.native_compat(), assumptions)
                 && assumptions.pointer_access_in_wide_range(pointer, byte_width, range)
         }
         ResourceFact::Own(Resource::Memory(range), quantity) => {
-            resource_quantity_is_positive(quantity, assumptions)
+            resource_quantity_is_positive(quantity.native_compat(), assumptions)
                 && assumptions.pointer_access_in_range(
                     pointer,
                     byte_width,
@@ -13033,7 +13043,7 @@ impl ResourceFact {
                 | Resource::MutexLive(_)
                 | Resource::MutexUse(_)
                 | Resource::Publication(_)
-        ) || matches!(self, Self::Own(_, quantity) if quantity.as_const() == Some(1))
+        ) || matches!(self, Self::Own(_, quantity) if quantity.native_compat().as_const() == Some(1))
     }
 
     pub const ALLOCATION_RESOURCE_NAME: &'static str = "allocation";
@@ -13062,10 +13072,14 @@ impl ResourceFact {
     }
 
     pub fn own(resource: Resource) -> Self {
-        Self::Own(resource, Box::new(MachineTerm::constant(1)))
+        Self::Own(resource, Box::new(MachineTerm::constant(1).into()))
     }
 
     pub fn own_quantity(resource: Resource, quantity: MachineTerm) -> Self {
+        Self::own_quantity_stored(resource, quantity.into())
+    }
+
+    pub(crate) fn own_quantity_stored(resource: Resource, quantity: StoredMachineTerm) -> Self {
         Self::Own(resource, Box::new(quantity))
     }
 
@@ -13283,7 +13297,7 @@ impl ResourceFact {
         }
         match self {
             Self::Own(resource, quantity)
-                if resource_quantity_is_positive(quantity.as_ref(), assumptions) =>
+                if resource_quantity_is_positive(quantity.native_compat(), assumptions) =>
             {
                 Some(Self::View(resource.clone()))
             }
@@ -13387,14 +13401,14 @@ impl ResourceFact {
 
     pub fn owned_quantity(&self) -> Option<u32> {
         match self {
-            Self::Own(_, quantity) => quantity.as_const(),
+            Self::Own(_, quantity) => quantity.native_compat().as_const(),
             Self::View(_) => None,
         }
     }
 
     pub fn owned_quantity_term(&self) -> Option<&MachineTerm> {
         match self {
-            Self::Own(_, quantity) => Some(quantity.as_ref()),
+            Self::Own(_, quantity) => Some(quantity.native_compat()),
             Self::View(_) => None,
         }
     }

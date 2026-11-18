@@ -38,7 +38,7 @@ impl Renderer<'_> {
                     self.push("owns ");
                     self.resource(resource);
                     self.push(" x ");
-                    self.bitvector(quantity);
+                    self.bitvector(quantity.native_compat());
                 }
                 ResourceFact::View(resource) => {
                     self.push("views ");
@@ -169,7 +169,7 @@ mod tests {
         };
         let context = ResourceContext::new().unchecked_with_fact(ResourceFact::Own(
             field.clone(),
-            Box::new(MachineTerm::constant(1)),
+            Box::new(MachineTerm::constant(1).into()),
         ));
         let facts = [
             (
