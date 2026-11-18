@@ -43,6 +43,7 @@ fn conjunct_elimination_is_flat_against_unrelated_history_and_facts() {
             ))
         });
         let defined = |memory: &SymbolicMemory| Proposition::MemoryReadDefined {
+            at: None,
             memory: memory.clone(),
             pointer: base.clone(),
             value_type: ProgramType::UInt8,
@@ -56,11 +57,16 @@ fn conjunct_elimination_is_flat_against_unrelated_history_and_facts() {
             |from: &Proposition, to: &Proposition, context: &PureFactContext| match (from, to) {
                 (
                     Proposition::MemoryReadDefined {
+                        at: None,
                         memory: before,
                         pointer,
                         value_type,
                     },
-                    Proposition::MemoryReadDefined { memory: after, .. },
+                    Proposition::MemoryReadDefined {
+                        at: None,
+                        memory: after,
+                        ..
+                    },
                 ) => crate::kernel::memory_history::typed_read_has_same_memory_source(
                     before,
                     after,

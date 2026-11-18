@@ -462,7 +462,7 @@ pub(in crate::surface) fn lower_iterated_clause_with_values(
     })?;
     let element_width =
         contract_segment_element_width_for_result_type(parameters, &clause.element, None);
-    let array_refs = array_refs_for_parameters(parameters, values, state.memory());
+    let array_refs = array_refs_for_parameters(parameters, values, &state.program_point());
     let evaluate = |expression: &ProgramExpression, what: &str| {
         crate::surface::proof::evaluate_resource_fragment_through_kernel(
             expression,

@@ -2,8 +2,8 @@
 
 A goal about the result of a pure function returning a pointer prints that
 result as the call, so it can be written back into a proof. Before, it
-printed as `<pointer A>`, a label the report never defined. A read through
-the result prints as a read through the call.
+printed as `<pointer A>`, a label the report never defined. The array argument
+retains its entry-state spelling in the reported goal.
 
 ```c filename=a_pointer_valued_pure_call_prints_as_its_call.c
 unsigned char first(const unsigned char *p, unsigned long n)
@@ -32,5 +32,5 @@ uint8 first(const uint8* p, uint64 n) {
 ```
 
 ```expect
-fail: goal: opaque_first(p, n) == &p[1]
+fail: goal: opaque_first(old(p), n) == &p[1]
 ```

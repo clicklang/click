@@ -85,14 +85,22 @@ registers no terms or reads, runs no closure, and recovers no memory history.
 Complete-pointer equality supplies domain knowledge; numeric address equality
 and equality of widened byte views do not supply the original domain.
 
-Access matching uses a cached selected domain when the offered
-range retains known bounds, has the same object identity, and lies entirely
-inside that selected domain. Both endpoints are checked in their original
-32-bit or native-width coordinates. A wider enclosing range cannot stand for
-the selected domain. This supplies domain compatibility, not ownership,
-initialization, liveness or permission to dereference a one-past pointer.
-Pointer arithmetic and other bounds consumers still retain their existing
-checks and value-adoption path pending their separate migration.
+Access matching checks the requested bytes or clause range against the cached
+selected domain and checks the supplier's object identity. A broader holding
+can supply those bytes, including when adjacent holdings were coalesced.
+Both clause endpoints are checked in their original 32-bit or native-width
+coordinates. The supplier must separately cover the access and provide the
+required permission, initialization, and liveness.
+Arithmetic formation, member selection, read/write bounds, and clause ranges
+consult the same query. Access bounds reuse the context already prepared for
+ownership checking, including unresolved opaque-domain misses. Formation and
+member selection prepare an expression's fact delta only for an unresolved
+domain. Execution retains the original pointer's address,
+provenance and opaque domain; copying, local reads, nonvolatile loads and
+integer restoration do not adopt another value's metadata from facts.
+Explicit member selection and conversions still construct their own structural
+views. Complete stored-value equations remain the source of bounds knowledge;
+unknown domains still need the existing coverage and resource checks.
 
 The domain unit tests and deterministic scaling tests in
 `assumptions/pointer_domains.rs` cover cold queries after late equality

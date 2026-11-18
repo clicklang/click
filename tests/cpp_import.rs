@@ -2312,6 +2312,37 @@ fn scalar_int32_profile_catches_a_modular_throw_with_a_typed_payload() {
     let click_project = read_click_project(&sidecar, sidecar_source).unwrap();
     verify_program_prepared_project(&click_project, &prepared)
         .expect("a caught modular throw should satisfy a nonthrowing caller signature");
+    let with_payload = format!(
+        r#"{sidecar_source} by {{
+            outcomes {{
+                returned => {{ step_until(function.exit); }}
+                threw => {{ step_until(function.exit); }}
+            }}
+            outcomes {{
+                returned => {{ solve(); }}
+                threw(error) => {{ have error == 7 by known(); solve(); }}
+            }}
+        }}"#
+    );
+    let payload_project = click_project.with_entry_source(with_payload);
+    let expanded_payload = expand_project_claim_source_by_label(
+        &payload_project,
+        &ProgramInputs::program(&prepared),
+        "caller.contract",
+    )
+    .expect("expand the proof that names the caught payload at function exit");
+    assert!(
+        expanded_payload.contains("threw(error) =>"),
+        "{expanded_payload}"
+    );
+    click::surface::without_implicit_solve_for_claim("caller.contract", || {
+        verify_program_prepared_project(
+            &payload_project.with_entry_source(expanded_payload),
+            &prepared,
+        )
+        .map_err(|error| error.to_string())
+    })
+    .expect("the checked caught payload remains available on replay at function exit");
     let expanded = expand_project_claim_source_by_label(
         &click_project,
         &ProgramInputs::program(&prepared),
@@ -2439,11 +2470,10 @@ fn scalar_int32_profile_joins_a_caught_throw_inside_conditional_cleanup() {
                 step();
                 outcomes {
                     returned => {
-                        step(); // helper
                         step(); // destructor
                         step(); // retire the guard's automatic storage
                     }
-                    threw => { step(); step_until(function.exit); solve(); }
+                    threw => { step_until(function.exit); solve(); }
                 }
             } else { }
             step();
@@ -14912,8 +14942,8 @@ fn condition_calls_preserve_the_enclosing_catch_scope() {
         int32 choose(bool fail) { ensures result == 5 or result == 7; } by {
             step();
             outcomes {
-                returned => { step(); step_until(function.exit); solve(); }
-                threw => { step(); step_until(function.exit); solve(); }
+                returned => { step_until(function.exit); solve(); }
+                threw => { step_until(function.exit); solve(); }
             }
         }
     "#;
@@ -20741,8 +20771,8 @@ int32 fallible(int32 x, bool fail) throws Error { ensures result == x; exception
 int32 guarded(int32 x, bool fail) { requires fail == false; ensures result == x; } by {
     step();
     outcomes {
-        returned => { step(); step_until(function.exit); solve(); }
-        threw => { step(); have fail == true; have false by { contradiction(fail); }; solve(); }
+        returned => { step_until(function.exit); solve(); }
+        threw => { have fail == true; have false by { contradiction(fail); }; solve(); }
     }
 }
 int32 probe(int32 x, bool fail) throws Error { requires fail == false; ensures result == x; exceptional ensures true; }
@@ -21188,4 +21218,71 @@ int32 probe() { ensures result == 0; }
         verify_program_prepared_project(&parsed, &import).is_err(),
         "an unused reference must still reject retired record storage"
     );
+}
+
+#[test]
+#[ignore = "nightly: returned member write with sibling view and complete replay"]
+fn cpp_returned_member_pointer_write_retains_its_source_domain() {
+    let project = Project::with_fixture(
+        "reference.cpp",
+        "probe",
+        r#"
+struct Widget { int value; };
+struct Outer { int first; Widget child; };
+int* child(Outer& outer) noexcept { return &outer.child.value; }
+int probe(Outer& outer, int value) noexcept { auto* ref = child(outer); *ref = value; return outer.child.value; }
+"#,
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "reference.cpp";
+int32* child(Outer& outer) { views outer.first; views outer.child.value; ensures result == &outer.child.value; }
+int32 probe(Outer& outer, int32 value) { owns outer.child.value; views outer.first; ensures result == value; ensures outer.child.value == value; ensures outer.first == old(outer.first); } by {
+    step(); step(); step();
+    have ref == &outer.child.value by { known(); }
+    have separate(memory(outer.child.value), memory(outer.first)) by { known(); }
+    have separate(memory(ref[0]), memory(outer.first)) by {
+        rewrite(ref, &outer.child.value); known();
+    }
+    step();
+}
+"#;
+    let path = project.directory.join("arithmetic.click");
+    fs::write(&path, source).unwrap();
+    let mut parsed = read_click_project(&path, source).unwrap();
+    for (label, target) in [
+        ("child.ensures_0", "ensures result == &outer.child.value"),
+        ("probe.contract", "ensures result == value"),
+    ] {
+        let expanded =
+            expand_project_claim_source_by_label(&parsed, &ProgramInputs::program(&import), label)
+                .unwrap_or_else(|error| panic!("{}", error.report()));
+        let (session, _) =
+            ProgramVerificationSession::new_program_prepared_project(&parsed, &import)
+                .unwrap_or_else(|error| panic!("{}", error.report()));
+        let offset = expanded.find(target).unwrap();
+        let prefix = &expanded[..offset];
+        let line = prefix.bytes().filter(|b| *b == b'\n').count() + 1;
+        let column = prefix.rsplit('\n').next().unwrap().chars().count() + 1;
+        session
+            .verify_at_project(&expanded, line, column)
+            .unwrap_or_else(|error| panic!("{}", error.report()));
+        drop(session);
+        parsed = parsed.with_entry_source(expanded);
+    }
+    click::surface::without_implicit_solve(|| verify_program_prepared_project(&parsed, &import))
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    for bad in [
+        source.replace("owns outer.child.value;", "views outer.child.value;"),
+        source.replace(
+            "ensures result == &outer.child.value;",
+            "ensures (result as uint64) == (&outer.child.value as uint64);",
+        ),
+    ] {
+        let path = project.directory.join("bad.click");
+        fs::write(&path, &bad).unwrap();
+        let parsed = read_click_project(&path, &bad).unwrap();
+        assert!(verify_program_prepared_project(&parsed, &import).is_err());
+    }
 }

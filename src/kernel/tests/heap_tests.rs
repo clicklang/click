@@ -2389,6 +2389,7 @@ fn explicit_read_validity_is_typed_and_does_not_cross_havoc() {
     };
     let address = pointer.pointer().clone();
     let assumptions = PureFactContext::new().assume_proposition(Proposition::MemoryReadDefined {
+        at: None,
         memory: state.memory().clone(),
         pointer: address.clone(),
         value_type: ProgramType::Int32,
@@ -2417,6 +2418,7 @@ fn explicit_read_validity_is_typed_and_does_not_cross_havoc() {
         .free_heap_block(&address, &PureFactContext::new())
         .unwrap();
     let stale = Proposition::MemoryReadDefined {
+        at: None,
         memory: freed,
         pointer: address,
         value_type: ProgramType::Int32,
@@ -2441,6 +2443,7 @@ fn read_validity_transports_checked_aliases_without_crossing_writes_or_retiremen
         offset: AddressOffset::Constant(0),
     };
     let validity = Proposition::MemoryReadDefined {
+        at: None,
         memory: state.memory().clone(),
         pointer: address.clone(),
         value_type: ProgramType::Int32,
@@ -2492,6 +2495,7 @@ fn read_validity_transports_field_offsets_through_equal_base_pointers() {
         .unwrap();
     let assumptions = PureFactContext::new()
         .assume_proposition(Proposition::MemoryReadDefined {
+            at: None,
             memory: memory.clone(),
             pointer: field.clone(),
             value_type: ProgramType::Int32,

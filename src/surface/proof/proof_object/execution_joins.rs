@@ -1452,7 +1452,7 @@ impl<'a> Proof<'a> {
         statement_index: usize,
         execution_start_state: ExecutionState,
         proof_case_condition: Option<ProofCaseCondition>,
-        call_outcomes: bool,
+        call: Option<&CallOutcomeSplitPresentation>,
         arms: [CheckedExecutionJoinArm<'_>; 2],
     ) -> Result<CheckedExecutionJoinParts, ClickError> {
         // Both arms completed at function exit. Their outcomes remain
@@ -1462,6 +1462,7 @@ impl<'a> Proof<'a> {
         let ProofContext::Execution(context) = self.context.as_ref() else {
             unreachable!("terminal execution join retained a non-execution context")
         };
+        let call_outcomes = call.is_some();
         let proof_case_split = proof_case_condition.is_some();
         let has_terminal_cursor = arms.iter().any(|arm| {
             arm.execution.presentation.post_execution_tactics.len()
@@ -1551,12 +1552,12 @@ impl<'a> Proof<'a> {
             steps.extend_from_slice(body.steps());
             ProofCertificate::from_steps(steps)
         };
-        let then_proof = if proof_case_split {
+        let then_proof = if proof_case_split || call_outcomes {
             arms[0].certificate.clone()
         } else {
             terminal_certificate(&arms[0].certificate, empty_source_arms[0])?
         };
-        let else_proof = if proof_case_split {
+        let else_proof = if proof_case_split || call_outcomes {
             arms[1].certificate.clone()
         } else {
             terminal_certificate(&arms[1].certificate, empty_source_arms[1])?
@@ -1690,12 +1691,20 @@ impl<'a> Proof<'a> {
                     if path_evidence.call_routes.is_empty()
                         && let Some(edges) = arm_call_edges
                     {
-                        path_evidence.call_routes.push(edges[arm_path_index]);
+                        path_evidence
+                            .call_routes
+                            .push(CallOutcomeEdge::from_payloads(
+                                edges[arm_path_index],
+                                &arm.execution.presentation.terminal_call_payloads,
+                            ));
                     }
-                    if call_outcomes {
+                    if let Some(call) = call {
                         // An `outcomes` nested in this arm was joined first, so
                         // its edge follows this one.
-                        path_evidence.call_routes.insert(0, arm_index == 0);
+                        path_evidence.call_routes.insert(
+                            0,
+                            CallOutcomeEdge::from_payloads(arm_index == 0, &call.payloads),
+                        );
                     }
                     // A returned path of a summarized loop carries what the arm
                     // had established when its loop was summarized, not what the
@@ -1838,7 +1847,7 @@ impl<'a> Proof<'a> {
                 .presentation
                 .outcome_evidence
                 .iter()
-                .map(|path| path.call_routes.first().copied())
+                .map(|path| path.call_routes.first().map(|edge| edge.returned))
                 .collect();
         }
         execution.core.has_structured_branch_history = true;
@@ -1898,6 +1907,8 @@ impl<'a> Proof<'a> {
                     let mut capture = capture.clone();
                     capture.branch_skeleton = Arc::new(if call_outcomes {
                         vec![ProofTactic::CallOutcomes(ProofCallOutcomes {
+                            payload_bindings: call
+                                .map_or([None, None], |call| call.payload_bindings.clone()),
                             returned_tactics: capture.branch_skeleton.as_ref().clone(),
                             threw_tactics: Vec::new(),
                         })]
@@ -1913,6 +1924,8 @@ impl<'a> Proof<'a> {
                     let mut capture = capture.clone();
                     capture.branch_skeleton = Arc::new(if call_outcomes {
                         vec![ProofTactic::CallOutcomes(ProofCallOutcomes {
+                            payload_bindings: call
+                                .map_or([None, None], |call| call.payload_bindings.clone()),
                             returned_tactics: Vec::new(),
                             threw_tactics: capture.branch_skeleton.as_ref().clone(),
                         })]
@@ -1979,6 +1992,8 @@ impl<'a> Proof<'a> {
                 };
                 captured.branch_skeleton = Arc::new(if call_outcomes {
                     vec![ProofTactic::CallOutcomes(ProofCallOutcomes {
+                        payload_bindings: call
+                            .map_or([None, None], |call| call.payload_bindings.clone()),
                         returned_tactics: first,
                         threw_tactics: second,
                     })]
@@ -2026,6 +2041,7 @@ impl<'a> Proof<'a> {
                 attribution.source_index,
                 if call_outcomes {
                     PostExecutionTactic::CallOutcomes {
+                        payload_bindings: [None, None],
                         returned_tactics: Arc::new(then_post_execution),
                         threw_tactics: Arc::new(else_post_execution),
                     }
@@ -2076,8 +2092,9 @@ impl<'a> Proof<'a> {
             }
         }
 
-        let step = if call_outcomes {
+        let step = if let Some(call) = call {
             ProofStep::CallOutcomes {
+                payload_bindings: call.payload_bindings.clone(),
                 returned_proof: Box::new(then_proof),
                 threw_proof: Box::new(else_proof),
             }
@@ -2348,15 +2365,14 @@ impl<'a> Proof<'a> {
             record.statement_index,
             record.execution_start_state.clone(),
             None,
-            false,
+            None,
             arms,
         )?;
         self.resume_parent_after_sibling_join(record, ids, parts)
     }
 
     /// Joins the returned and caught-throw descendants of one live call.
-    /// The call has already been executed in each sibling, so the resulting
-    /// certificate retains one leading `step()` per arm.
+    /// Each arm certificate starts at its checked call successor.
     pub(in crate::surface::proof) fn join_focused_call_outcomes_terminal(
         &self,
         record: &ExecutionSplit<'a>,
@@ -2397,7 +2413,7 @@ impl<'a> Proof<'a> {
             record.statement_index,
             record.execution_start_state.clone(),
             None,
-            true,
+            record.call_outcomes.as_ref(),
             [returned_view, threw_view],
         )?;
         self.resume_parent_after_sibling_join(record, [returned_id, threw_id], parts)
@@ -2438,7 +2454,7 @@ impl<'a> Proof<'a> {
             record.parent_execution.core.frontier.next_statement_index,
             record.execution_start_state.clone(),
             Some(record.case_condition.clone()),
-            false,
+            None,
             [then_view, else_view],
         )?;
         self.resume_parent_after_sibling_join_from_marker(
@@ -3020,6 +3036,35 @@ impl<'a> Proof<'a> {
                 }
             })?;
         Ok(self.with_kernel_state(state))
+    }
+
+    pub(in crate::surface::proof) fn focus_call_outcome_arm(
+        &self,
+        record: &ExecutionSplit<'a>,
+        returned: bool,
+        parent: &Self,
+    ) -> Result<Self, ClickError> {
+        let focused = self.focus_split_arm(record, returned)?;
+        let call = record.call_outcomes.as_ref().expect("checked call split");
+        let arm = usize::from(!returned);
+        let bindings = &parent.state.locals().values;
+        let Some(name) = &call.payload_bindings[arm] else {
+            return Ok(focused.with_surface_local_scope(bindings));
+        };
+        let value = call.payloads[arm]
+            .clone()
+            .expect("binding checked at split");
+        Ok(
+            focused.with_surface_local_scope(&focused.scope_call_payload(
+                Some(bindings),
+                name,
+                value,
+            )),
+        )
+    }
+
+    pub(in crate::surface::proof) fn leave_call_outcome_arm(&self, parent: &Self) -> Self {
+        self.with_surface_local_scope(&parent.state.locals().values)
     }
 
     /// Focuses one proof-level execution case. No C transition is repeated;
@@ -3660,6 +3705,7 @@ impl<'a> Proof<'a> {
             split,
             arm_branches: arm_ids,
             condition_theorems,
+            call_outcomes: None,
             checked_split: CheckedExecutionSplit::Branch(prepared.checked_condition_split),
             base_facts,
             base_executions,
@@ -3682,6 +3728,7 @@ impl<'a> Proof<'a> {
     /// call.
     pub(in crate::surface::proof) fn split_focused_call_outcomes(
         &self,
+        payload_bindings: [Option<String>; 2],
     ) -> Result<Option<(Self, ExecutionSplit<'a>)>, ClickError> {
         let ProofContext::Execution(context) = self.context.as_ref() else {
             return Ok(None);
@@ -3717,6 +3764,28 @@ impl<'a> Proof<'a> {
             .expect("prepared call split has a throw transition");
         let normal = &prepared.transitions[normal_index];
         let thrown = &prepared.transitions[throw_index];
+        let StatementOutcome::Normal(returned_state) = &normal.outcome else {
+            unreachable!("selected the normal edge");
+        };
+        let StatementOutcome::Throw { value, .. } = &thrown.outcome else {
+            unreachable!("selected the exceptional edge");
+        };
+        let payloads = [
+            crate::surface::proof::cursor_execution::checked_returned_call_value(
+                &prepared.statement,
+                returned_state,
+            ),
+            Some(value.clone()),
+        ];
+        for (binding, payload) in payload_bindings.iter().zip(&payloads) {
+            if let Some(name) = binding
+                && payload.is_none()
+            {
+                return Err(self.step_error(format!(
+                    "`outcomes` cannot bind `{name}`: this call edge has no bindable payload"
+                )));
+            }
+        }
         let mut returned_execution = prepared.execution.clone();
         let mut returned_available_facts = available_facts.clone();
         let mut returned_introduced_facts = Vec::new();
@@ -3798,6 +3867,10 @@ impl<'a> Proof<'a> {
             arm_branches: arm_ids,
             condition_theorems: [Some(normal.theorem.clone()), Some(thrown.theorem.clone())],
             checked_split: CheckedExecutionSplit::CallOutcomes(checked_split),
+            call_outcomes: Some(CallOutcomeSplitPresentation {
+                payload_bindings,
+                payloads,
+            }),
             base_facts: [Some(returned_facts), Some(threw_facts)],
             base_executions: [Some(returned_execution), Some(threw_execution)],
             path_facts,
@@ -3963,6 +4036,7 @@ mod progress_tests {
             true,
         );
         let read = Proposition::MemoryReadDefined {
+            at: None,
             memory: SymbolicMemory::new(),
             pointer: Address::symbolic(Variable(71_001)),
             value_type: ProgramType::Int32,

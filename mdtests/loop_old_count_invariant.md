@@ -33,9 +33,12 @@ int32 loop_old_count_invariant(int32 p[3]) {
         initialize by {
             have i >= 0 and i <= 3 by {
                 both {
-                    normalize();
-                } and {
-                    normalize();
+                    left => {
+                        normalize();
+                    }
+                    right => {
+                        normalize();
+                    }
                 }
             }
             have old(permutation::count(p, 0, 3, p[0])) == old(permutation::count(p, 0, 3, p[0])) by {
@@ -47,10 +50,13 @@ int32 loop_old_count_invariant(int32 p[3]) {
             step();
             have i >= 0 and i <= 3 by {
                 both {
-                    have at(region(3).entry, i) >= at(region(3).entry, 0);
-                    solve() using { at(region(3).entry, i) >= at(region(3).entry, 0); at(region(3).entry, i) < at(region(3).entry, 3); };
-                } and {
-                    solve() using { at(region(3).entry, i) < at(region(3).entry, 3); };
+                    left => {
+                        have at(region(3).entry, i) >= at(region(3).entry, 0);
+                        solve() using { at(region(3).entry, i) >= at(region(3).entry, 0); at(region(3).entry, i) < at(region(3).entry, 3); };
+                    }
+                    right => {
+                        solve() using { at(region(3).entry, i) < at(region(3).entry, 3); };
+                    }
                 }
             }
         }

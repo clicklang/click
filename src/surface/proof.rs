@@ -7,7 +7,7 @@ use crate::kernel::MachineIntegerType;
 #[cfg(test)]
 use crate::kernel::binary_node;
 use crate::kernel::binary_term;
-use crate::kernel::{ExecutionFactSource, ExecutionFacts};
+use crate::kernel::{ExecutionFactSource, ExecutionFacts, StoredExecutionValue};
 use crate::kernel::{bits32_constant, constant_u32};
 use crate::surface::proof::driver::DriveProof as _;
 use std::sync::Arc;
@@ -964,6 +964,7 @@ enum InternalProofNode {
     CallOutcomes {
         index: usize,
         source_index: usize,
+        payload_bindings: [Option<String>; 2],
         returned_branch: Box<InternalProofNode>,
         threw_branch: Box<InternalProofNode>,
         continuation: Box<InternalProofNode>,
@@ -1296,6 +1297,7 @@ impl Clone for InternalProofNode {
                 InternalProofNode::CallOutcomes {
                     index,
                     source_index,
+                    payload_bindings,
                     returned_branch,
                     threw_branch,
                     continuation,
@@ -1303,6 +1305,7 @@ impl Clone for InternalProofNode {
                     InternalProofNode::CallOutcomes {
                         index: *index,
                         source_index: *source_index,
+                        payload_bindings: payload_bindings.clone(),
                         returned_branch: returned_branch.clone(),
                         threw_branch: threw_branch.clone(),
                         continuation: Box::new(InternalProofNode::Done),
@@ -1469,6 +1472,7 @@ fn build_internal_proof_at(
                 InternalProofNode::CallOutcomes {
                     index,
                     source_index,
+                    payload_bindings: outcomes.payload_bindings.clone(),
                     returned_branch: Box::new(build_internal_proof_at(
                         &outcomes.returned_tactics,
                         index + 1,
@@ -1982,7 +1986,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
         .with_index(&parameter_index);
     crate::surface::proof_diagnostics::render::enter_ambient_naming(
         ParameterBinding::new(parsed_function.parameters(), &arguments),
-        state.memory(),
+        &state,
     );
     crate::surface::diagnostics::enter_ambient_object_fields(parsed_function);
     let mut observed_population_families = BTreeSet::new();

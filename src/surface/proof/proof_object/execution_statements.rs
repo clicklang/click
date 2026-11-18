@@ -519,7 +519,7 @@ impl<'a> Proof<'a> {
         let array_refs = array_refs_for_parameters(
             context.parsed_function.parameters(),
             &values,
-            state.memory(),
+            &state.program_point(),
         );
         let (values, array_refs) = contract_environment_at_state(&values, &array_refs, state);
         evaluate_fixed_state_expression_through_kernel(
@@ -1010,7 +1010,7 @@ impl<'a> Proof<'a> {
         let array_refs = array_refs_for_parameters(
             context.parsed_function.parameters(),
             &values,
-            before.memory(),
+            &before.program_point(),
         );
         let (values, array_refs) = contract_environment_at_state(&values, &array_refs, before);
         let mut arguments = Vec::with_capacity(parameters.len());

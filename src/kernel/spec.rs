@@ -6572,15 +6572,15 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             // the contract retains the value from entry, never its permission.
             // Contract validation separately refuses current reads of fields
             // modified by the body, as for ordinary by-value parameter claims.
-            let memory = if state.memory.has_block(&slot.base) {
-                state.memory()
+            let selected = if state.memory.has_block(&slot.base) {
+                state
             } else {
-                entry.memory()
+                entry
             };
             evaluate_spec_expression_paths_with_algebraic_bindings_in(
                 SpecScope { state, ..scope },
                 &SpecExpression::MemoryLoad {
-                    point: SpecPoint::At(ProgramPoint::of_memory(memory)),
+                    point: SpecPoint::At(selected.program_point()),
                     pointer: Box::new(pointer),
                     value_type: *value_type,
                 },
@@ -7633,17 +7633,15 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     continue;
                 };
                 let pointer = pointer.into_pointer();
-                let memory = match memory {
-                    SpecPoint::Current => state.memory(),
-                    SpecPoint::FunctionEntry => match loop_entry_state {
-                        Some(entry_state) => entry_state.memory(),
-                        None => continue,
-                    },
-                    SpecPoint::LoopEntry => match loop_entry_state {
-                        Some(loop_entry_state) => loop_entry_state.memory(),
-                        None => continue,
-                    },
-                    SpecPoint::At(point) => point.memory(),
+                let (memory_view, selected_state) = match memory {
+                    SpecPoint::Current => (state.memory(), Some(state)),
+                    SpecPoint::FunctionEntry | SpecPoint::LoopEntry => {
+                        let Some(entry) = loop_entry_state else {
+                            continue;
+                        };
+                        (entry.memory(), Some(entry))
+                    }
+                    SpecPoint::At(point) => (point.memory(), None),
                 };
                 let mut obligations = pointer_path.obligations;
                 // A written definedness claim must retain the typed premise,
@@ -7653,20 +7651,24 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 if budget.checked_reads
                     && (budget.program_definedness
                         || !PureFactContext::new().proves_memory_read_defined(
-                            memory,
+                            memory_view,
                             &pointer,
                             *value_type,
                         ))
                 {
                     obligations.push(ProofObligation::new(Proposition::MemoryReadDefined {
-                        memory: memory.clone(),
+                        at: match memory {
+                            SpecPoint::At(point) => point.id(),
+                            _ => selected_state.and_then(ExecutionState::observation_point_id),
+                        },
+                        memory: memory_view.clone(),
                         pointer: pointer.clone(),
                         value_type: *value_type,
                     }));
                 }
                 paths.extend(spec_value_paths_in(
                     crate::kernel::eval::evaluate_logical_memory_load_paths(
-                        memory,
+                        memory_view,
                         pointer,
                         *value_type,
                         pointer_path.facts,
@@ -8022,18 +8024,30 @@ fn refine_object_pointer_argument_with_null(
     {
         return true;
     }
+    let names_declared_object = |value: &PointerValue| {
+        [value.pointer(), value.provenance()]
+            .into_iter()
+            .any(|object| {
+                object.offset == AddressOffset::Constant(0)
+                    && memory.declared_class(object).as_ref() == Some(object_class)
+            })
+    };
     if pointer.object_type_evidence().is_none()
         && (assumptions
             .equality_graph
             .has_object_type(pointer.pointer(), object_class)
-            // A modular result may have a symbolic address while its checked
-            // provenance already names the actual declared object.
-            || [pointer.pointer(), pointer.provenance()]
-                .into_iter()
-                .any(|object| {
-                    object.offset == AddressOffset::Constant(0)
-                        && memory.declared_class(object).as_ref() == Some(object_class)
-                })
+            || names_declared_object(pointer)
+            || {
+                // Complete-value equality can identify the declared object
+                // even when strict replay carries a symbolic result. Use
+                // the retained witness only for this class check.
+                let witness = assumptions
+                    .equality_graph
+                    .admitted
+                    .pointer_value_classes
+                    .representative(pointer);
+                witness != *pointer && names_declared_object(&witness)
+            }
             // A pointer the facts prove null meets the requirement too. It
             // keeps its written address rather than being respelled as null.
             || proves_null(assumptions, pointer.pointer()))
@@ -8882,7 +8896,7 @@ fn evaluate_spec_if_paths_in(
         let retained_comparison = !budget.machine_result_production_disabled
             && match &condition_path.proposition {
                 Proposition::ConditionIs(condition, _)
-                    if crate::kernel::machine_integer::comparison::is_simple_bitwise_comparison(
+                    if crate::kernel::machine_integer::comparison::is_bounded_bit_comparison(
                         condition,
                     ) =>
                 {

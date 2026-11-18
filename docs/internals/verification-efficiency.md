@@ -95,28 +95,35 @@ the producer and the frame it constructs before changing admission checks.
 Checking the same ownership description in isolation does not establish its
 relationship to a withheld frame.
 
-The current compatibility admission API mixes several callers.
 `try_compose_into_valid_context_delaying_normalization` delegates to
-`try_compose_with_legacy_discovery_and_occurrences`: it first calls
-`admit_without_discovery`, then resumes legacy discovery if indexed coverage
-is unsupported. The indexed operation returns an incomplete pending admission,
-not a valid successor, in that case. The compatibility wrapper can enumerate
-aliases and related roots even though its caller supplied every resource.
-Its name is not evidence that it satisfies the fast-part contract. See
-[`ownership_admission.rs`](https://github.com/clicklang/click/blob/master/src/kernel/primitives/resource_algebra/ownership_admission.rs)
-and [`legacy_search.rs`](https://github.com/clicklang/click/blob/master/src/kernel/primitives/resource_algebra/legacy_search.rs).
+`try_compose_checked_ownership_and_occurrences`, which uses
+`admit_without_discovery`. Unsupported geometry returns an explicit separation
+requirement and no successor; it never resumes alias or ownership discovery.
+Producer-published indexes cover constant intervals and a selected symbolic
+neighbor using direct bounds. Larger symbolic partitions can use a retained
+`separate(memory(new_range), frame)` premise, indexed when that explicit
+proposition is admitted. The frame key is a maintained canonical set of actual
+owned memory ranges; stale subsets cannot authorize a changed frame.
+The footprint is prepared only at producer deltas, never by a boundary query.
+Scratch contexts for later clause evaluation add memory read views; they do
+not publish temporary ownership beside the caller's frame. Entry and held-body
+clause lists construct their assumed separating partition directly, preserving
+bounded contradictory-range and exclusive-identity refusals. Removing a held
+composite supplies its body's relationship with the retained frame.
+See [`ownership_admission.rs`](https://github.com/clicklang/click/blob/master/src/kernel/primitives/resource_algebra/ownership_admission.rs)
+and [`ownership_boundary.rs`](https://github.com/clicklang/click/blob/master/src/kernel/primitives/memory_equality_index/ownership_boundary.rs).
 
 Distinguish these producer boundaries:
 
 | Producer or caller | Ownership evidence and current boundary |
 | --- | --- |
 | Instance unfold | `unfold_instance_body` consumes the selected parent and exposes its constructed body in the retained frame. It checks exclusive identities without rediscovering memory overlap. Evaluating the body description earlier is a separate operation. |
-| Return-clause evaluation | Executed-body returns consume each output from one persistent body context. Summary returns retain a clause-level rule for unchanged flat footprints, bind it to selected entry reservations, and record those outputs and checked entry borrows directly. Unjustified descriptions still use compatibility admission. |
-| Return composition | An executed body's `ConstructedBodyReturn` retains its constructed output group and captured caller frame; `finish` installs it directly. Summary paths restore selected entry borrows, consumed-cell transfers, and fresh-allocation outputs, then send remaining descriptions through compatibility admission. `ValidateDescriptions` deliberately does not turn a role marker into transfer evidence. |
-| Produced composite boundary | A retained child rule binds unchanged one-level parameter footprints to selected consumed inputs. Unguarded borrowed parameter-only children retain entry origin. Those children leave no new boundary; unmatched children and post-memory footprints still pass through `produced_composite_frontier_conflict`. |
+| Return-clause evaluation | Executed-body returns consume each output from one persistent body context. Verified function rules, scoped source-contract hypotheses and established named-contract premises construct their joint outputs beside the reserved-input frame. Description-only summaries retain finite consumed-footprint recipes and checked entry borrows; unjustified descriptions still require checked ownership admission. |
+| Return composition | `FramedReturnPartition` retains the output group and caller frame constructed by body custody or a function frame rule; `finish` installs it directly. Description-only paths restore selected entry borrows, consumed-cell transfers and fresh allocations, then admit remaining descriptions explicitly. `ValidateDescriptions` does not turn a role marker into transfer evidence. |
+| Produced composite boundary | Function frame rules cover the joint output partition, including post-memory footprints. Description-only summaries bind immutable leaves and fixed byte fragments to consumed inputs; supported entry borrows retain provenance. Unmatched children and post-memory footprints still pass through `produced_composite_frontier_conflict`. |
 | Iterated `take` and `scatter` | The checked hole/guard transition or hole-free whole-range consumption constructs the exposed memory directly in the same frame. Neither operation readmits it or normalizes the surrounding block. Source selection, guard reasoning, and the explicit hole list have separate costs. |
-| Call and suspended-loan recovery | `recover_returned_views` constructs recovery directly in the actual return residual, retaining output occurrences and supported cores. Each escrow is admitted once against that destination; publication receives its constructed context and explicit recovered hold occurrence IDs. There is no discarded entry-frame reconstruction or second insertion. Suspended recovery likewise uses today's parent frame. An unmatched output's relationship to withheld escrow remains a real boundary obligation, with compatibility discovery for unsupported geometry. |
-| Worker completion and loop-frame exchange | `compose_checked_outputs` checks only the checked worker group's boundary with today's parent frame, and retains output occurrences, projection support, loan dependencies and cached expansions in the resulting construction. It does not recheck output/output memory pairs. `restore_frame_after_exchange` admits the changed loop partition directly with the exit's selected occurrence IDs and retains that successor; it no longer checks a temporary context and reinserts the same facts. Newly described output must still establish its boundary with the current or withheld frame. Unsupported geometry retains compatibility discovery. |
+| Call and suspended-loan recovery | `recover_returned_views` constructs recovery directly in the actual return residual, retaining output occurrences and supported cores. Each escrow is admitted once against that destination; publication receives its constructed context and explicit recovered hold occurrence IDs. There is no discarded entry-frame reconstruction or second insertion. Suspended recovery likewise uses today's parent frame. A constructed framed partition retains its escrow boundary token. An unmatched description's relationship to withheld escrow remains a boundary obligation, with explicit separation required for unsupported geometry. |
+| Worker completion and loop-frame exchange | `compose_checked_outputs` checks only the checked worker group's boundary with today's parent frame, and retains output occurrences, projection support, loan dependencies and cached expansions in the resulting construction. It does not recheck output/output memory pairs. `restore_frame_after_exchange` admits the changed loop partition directly with the exit's selected occurrence IDs and retains that successor; it no longer checks a temporary context and reinserts the same facts. Newly described output must still establish its boundary with the current or withheld frame. Unsupported geometry requires explicit separation. |
 | Instance and authority bookkeeping | Some callers add only an instance identity or an exclusive authority. Those facts do not have a raw memory footprint for alias discovery; do not classify every use of the generic API as a memory scan. |
 
 Whole-range iterated guard checking selects a retained universal equality by
@@ -154,28 +161,18 @@ Freshness alone therefore does not justify skipping group construction. A
 body-return construction retains the outputs of joint consumption rather
 than reconstructing ownership from independent descriptions and checking it again.
 
-Fresh measurements against `da5639eb1d`, with two fixed descriptors and
-4, 16, and 64 exact pointer aliases, distinguish indexed intervals from the
-symbolic-endpoint fallback. Setup of the ambient alias facts is outside the
-measurement; early-group work includes construction of its context and both
-admissions.
-
-| Measured operation | Adjacent slices: work at 4 / 16 / 64 aliases | Overlap refusal: work at 4 / 16 / 64 aliases |
-| --- | --- | --- |
-| Raw insertion into a prepared frame, constant endpoints | 228 / 228 / 228 | 74 / 74 / 74 |
-| Early return group, constant endpoints | 261 / 261 / 261 | 93 / 93 / 93 |
-| Early return group, symbolic upper endpoint | 337 / 349 / 397 | 382 / 550 / 1222 |
-
-The symbolic case returns `q[1..n]` beside `p[0..1]` on success, or
-`q[0..n]` beside `p[0..1]` on refusal, with `p == q` and `2 <= n <= 16`.
-Additional aliases change neither the two descriptors nor the result. The
-diagnostic `symbolic_return_group_admission_work` retains both semantic
-controls and prints the counts; it does not assert that the fallback meets
-the fast-part contract. The constant-endpoint regression is
-`constant_return_group_admission_ignores_ambient_aliases`. Both live in
-[`the return scaling tests`](https://github.com/clicklang/click/blob/master/src/scaling_tests/kernel/functions/mixed_return_resources.rs).
-These measurements cover admission of evaluated descriptions, not a complete
-source call, and do not establish an impractical real-world proof workload.
+The former symbolic-endpoint discovery fallback is removed. The active
+`symbolic_boundaries_are_bounded_as_owners_aliases_and_explicit_frames_grow`
+regression checks 4/16/64 owners, cross-block aliases, same-block offset aliases,
+explicit whole-frame proofs, and views retained after an owner is removed.
+`unsupported_admission_never_discovers_related_owners_or_aliases` covers prompt
+refusal when the indexed fragment does not establish the relationship.
+The raw-output and pending-return probes in
+`fallback_inventory_tests.rs` now run successfully under the discovery guard.
+These measurements cover admission, not the complete source-call pipeline.
+The source fixture
+`a_symbolic_return_boundary_uses_its_explicit_frame_proof.md` supplies a
+whole-frame proof using the existing separation laws.
 
 #### Executed-body return construction
 
@@ -188,11 +185,33 @@ after consumption succeeds. Missing custody, overlapping slices and duplicate
 exclusive units fail with the joint-return refusal; no early raw-group
 overlap search runs for this path.
 
-`ConstructedBodyReturn` carries this output group with its captured frame to
+`FramedReturnPartition` carries this output group with its captured frame to
 `ResourceContext::return_constructed_body`. Installation assigns destination
 occurrences directly and retains the source-to-destination mapping. It does
 not repeat consumption, discover overlap, or revalidate the produced group.
 The old Boolean joint-custody pass is not run again after construction.
+
+At function application, `ReturnResourceComposition::FramedTransfers` uses a
+retained `VerifiedFunctionRule` to construct the joint output partition beside
+the checked input reservation's frame. It does not reconstruct that relationship
+from pointer geometry or composite descriptions. Targeted verification and
+expansion carry the same frame rule conditionally under scoped source-contract
+hypotheses; those hypotheses never certify an unselected body. Named calls and
+callbacks retain their established predicate premise alongside the instantiated
+interface in `EstablishedFunctionContract`. That premise grants the same
+conditional frame rule through application without inspecting a source body.
+A nominal declaration or external description receives no such capability. The source regression
+`verified_outputs_retain_the_callers_frame.md` verifies, expands and replays a
+returned pointer field with no equality postcondition.
+`named_contract_outputs_retain_the_callers_frame.md` checks the corresponding
+selected named and abstract callback calls. Their deterministic scaling control
+holds the call fixed beside 4/16/64 owners or aliases, and the source proof
+expands and replays without implicit solving.
+Singleton normalization preserves a nonzero fact and its occurrence directly,
+while retaining normal index attachment. There is no second fact to coalesce,
+so it does not enumerate aliases or endpoint spellings. Zero quantities retain
+the ordinary cleanup path. The direct singleton and complete-callback scaling
+regressions cover the alias growth this avoids during input reservation.
 
 Folded heads can describe memory through post-call reads. Their existing
 composite-footprint boundary rule remains, against the retained frame and

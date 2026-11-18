@@ -1138,12 +1138,11 @@ pub(super) fn describe_multiple_statement_successors_guidance(
     r#"
 `step()` cannot choose between the two successors of this call. Use `outcomes` at this point:
 outcomes {
-    returned => { step(); }
-    threw => { step(); }
+    returned => { }
+    threw => { }
 }
-The `step()` in each arm advances the selected path; add the remaining
-`step()`, `step_until(function.exit)`, and `solve()` tactics inside that arm until all
-contract claims are closed.
+`outcomes` advances the call along each edge. Continue each arm from its checked
+successor and close its contract claims.
 "#
     .to_string()
 }

@@ -87,13 +87,11 @@ int32 guarded2(int32& first_cell, int32& second_cell, bool should_throw) {
     outcomes {
         returned => {
             step();
-            step();
             have second_cell == old(second_cell);
             step_until(function.exit);
             solve();
         }
         threw => {
-            step();
             step();
             have second_cell == old(second_cell);
             step_until(function.exit);
