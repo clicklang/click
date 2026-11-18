@@ -1186,6 +1186,13 @@ checks (two isolated and 1,917 remaining), all 14 selected proofs, fact stabilit
 (zero changed terms/paths) and quality passed. Native rewrite callbacks remain
 explicit compatibility boundaries; no equality rule changed.
 
+After merging upstream `58b0c2c9e`, all 525 focused checks and quality passed
+again. The additional isolated external-claim fixture fails on the unchanged
+upstream tree with the same separation obligation; it is a baseline limitation,
+not counted as a passing check. The direct-reader and native-producer isolation
+experiments were reverted, and its C/proof source remains unchanged. No new
+checker rule, index, budget, syntax or snapshot change was introduced.
+
 ## Chunk 3: machine-valued pure-function results
 
 Finish the remaining machine-valued call-result boundaries in six sequential
