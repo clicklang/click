@@ -337,9 +337,9 @@ impl ProgramPoint {
 
     /// This point with its memory's values renamed: the same place on the
     /// path, its memory spelled with substituted variables.
-    pub(crate) fn with_renamed_memory(&self, memory: SymbolicMemory) -> Self {
+    pub(crate) fn with_renamed_memory(&self, memory: SharedMemory) -> Self {
         Self {
-            memory: intern_memory(memory),
+            memory,
             path: self.path.clone(),
         }
     }

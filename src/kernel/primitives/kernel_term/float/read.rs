@@ -13,12 +13,12 @@ impl KernelFloatType {
 impl KernelTerm {
     pub(crate) fn float_read(
         format: KernelFloatType,
-        memory: SharedMemory,
+        point: ProgramPoint,
         address: SharedAddress,
     ) -> Self {
         Self::intern(
             KernelType::Program(format.program_type()),
-            KernelTermNode::FloatRead(KernelMemoryRead::new(memory, address)),
+            KernelTermNode::FloatRead(KernelMemoryRead::new(point, address)),
         )
     }
 
@@ -29,10 +29,10 @@ impl KernelTerm {
             return None;
         };
         let format = FloatOperandView::from_shared(self)?.format();
-        let (memory, address) = read.parts();
+        let (point, address) = read.parts();
         Some(self.0.machine_leaf.get_or_init(|| {
             MachineTerm::MemoryLoad(
-                ProgramPoint::at(memory),
+                point.clone(),
                 Box::new(address.export().expect("float read address")),
                 format.load_kind(),
             )
@@ -70,11 +70,15 @@ mod tests {
                 let KernelTermNode::FloatRead(read) = root.node() else {
                     panic!("float read")
                 };
-                assert_eq!(read.parts().0.arena_id(), memory.arena_id());
+                assert_eq!(read.parts().0.shared_memory().arena_id(), memory.arena_id());
                 assert_eq!(read.parts().1, &address);
                 assert_eq!(
                     root,
-                    KernelTerm::float_read(format, memory.clone(), address.clone())
+                    KernelTerm::float_read(
+                        format,
+                        crate::kernel::ProgramPoint::at(&memory),
+                        address.clone()
+                    )
                 );
                 assert_eq!(root.float_read_native(), Some(&source));
                 assert_eq!(

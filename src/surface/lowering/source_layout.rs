@@ -153,6 +153,10 @@ struct SourceExecutionLayoutData {
     /// `<region>.result`, and the call region of each frontend result
     /// temporary, which no other name spells.
     call_results: BTreeMap<usize, crate::kernel::BindingName>,
+    /// The producing call step of a frontend temporary assigned its result.
+    call_captures: BTreeMap<crate::kernel::BindingName, u32>,
+    /// Source call ordinals in prelowered bodies, in executable region order.
+    named_calls: Option<NamedCalls>,
     allocation_regions: BTreeSet<usize>,
     /// The source path of the statement each region belongs to: the inverse
     /// of `source_statements`, for spelling a region by its statement.
@@ -169,6 +173,25 @@ struct SourceExecutionLayoutData {
     /// The function's loop regions, counted once for every loop's clause
     /// validation rather than once per loop.
     loop_region_count: std::sync::OnceLock<usize>,
+}
+
+#[derive(Debug, Default)]
+struct NamedCalls {
+    in_function: BTreeMap<String, Vec<usize>>,
+    in_statement: BTreeMap<Vec<u32>, BTreeMap<String, Vec<usize>>>,
+}
+
+impl NamedCalls {
+    fn regions(&self, path: Option<&[u32]>, callee: &str) -> &[usize] {
+        crate::instrumentation::record_deterministic_work(1);
+        let calls = match path {
+            Some(path) => self.in_statement.get(path),
+            None => Some(&self.in_function),
+        };
+        calls
+            .and_then(|calls| calls.get(callee))
+            .map_or(&[], Vec::as_slice)
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -805,6 +828,22 @@ impl SourceExecutionLayout {
                             crate::surface::call_source_spelling(function_name).to_string(),
                         );
                     }
+                    if let ProgramStatement::Assign {
+                        name,
+                        expression:
+                            ProgramExpression::StepResult {
+                                step,
+                                origin: crate::kernel::StepOrigin::Call(_),
+                                ..
+                            },
+                        ..
+                    } = statement
+                        && name
+                            .local_id()
+                            .is_some_and(crate::kernel::LocalBindingId::is_temporary)
+                    {
+                        layout.call_captures.insert(name.clone(), *step);
+                    }
                     if let ProgramStatement::CallConstruct { target, .. }
                     | ProgramStatement::HeapAllocate { target, .. } = statement
                     {
@@ -893,6 +932,27 @@ impl SourceExecutionLayout {
                 })
                 .collect::<Vec<_>>();
             layout.loop_paths.extend(loops);
+        }
+        if !layout.call_captures.is_empty() {
+            let mut named = NamedCalls::default();
+            for (region, callee) in &layout.call_targets {
+                crate::instrumentation::record_deterministic_work(1);
+                named
+                    .in_function
+                    .entry(callee.clone())
+                    .or_default()
+                    .push(*region);
+                if let Some(path) = layout.region_paths.get(region) {
+                    named
+                        .in_statement
+                        .entry(path.clone())
+                        .or_default()
+                        .entry(callee.clone())
+                        .or_default()
+                        .push(*region);
+                }
+            }
+            layout.named_calls = Some(named);
         }
         // A construction return already contains the completed result in the
         // caller's destination. Retire private value parameters at its checked
@@ -1564,6 +1624,32 @@ impl SourceExecutionLayout {
         self.data.call_results.get(&region)
     }
 
+    pub(in crate::surface) fn has_call_captures(&self) -> bool {
+        !self.data.call_captures.is_empty()
+    }
+
+    /// The source selector of the call that produced a frontend capture.
+    pub(in crate::surface) fn call_capture_source(
+        &self,
+        binding: &crate::kernel::BindingName,
+    ) -> Option<(usize, crate::surface::CodeRegionRef)> {
+        use crate::surface::{CodeRegionRef, SourcePathStep};
+        crate::instrumentation::record_deterministic_work(1);
+        let step = self.data.call_captures.get(binding)?;
+        let region = self.step_region(*step)?;
+        let callee = self.data.call_targets.get(&region)?;
+        let path = self.data.region_paths.get(&region).map(Vec::as_slice);
+        let calls = self.data.named_calls.as_ref()?.regions(path, callee);
+        let ordinal = calls.binary_search(&region).ok()?;
+        let mut steps = path
+            .unwrap_or_default()
+            .iter()
+            .map(|index| SourcePathStep::Statement(*index as usize))
+            .collect::<Vec<_>>();
+        steps.push(SourcePathStep::Call(callee.clone(), ordinal));
+        Some((region, CodeRegionRef::Path(steps)))
+    }
+
     /// The number of the call inside an expression that `region` is.
     pub(in crate::surface) fn is_aggregate_result(&self, region: usize) -> bool {
         self.data.aggregate_results.contains_key(&region)
@@ -1620,6 +1706,15 @@ impl SourceExecutionLayout {
         // calls, in the order they run.
         match steps {
             [SourcePathStep::Call(function, index)] => {
+                if let Some(named) = &data.named_calls {
+                    let calls = named.regions(None, function);
+                    return calls.get(*index).copied().ok_or_else(|| {
+                        format!(
+                            "this function calls `{function}` {} time(s), so it has no `call({function}, {index})`",
+                            calls.len()
+                        )
+                    });
+                }
                 let calls = data
                     .calls
                     .iter()
@@ -1718,6 +1813,16 @@ impl SourceExecutionLayout {
                     });
                 }
                 SourcePathStep::Call(function, index) if last => {
+                    if let Some(named) = &data.named_calls {
+                        let calls = named.regions(Some(&path), function);
+                        return calls.get(*index).copied().ok_or_else(|| {
+                            format!(
+                                "`{}` calls `{function}` {} time(s), so it has no `call({function}, {index})`",
+                                describe(&path),
+                                calls.len()
+                            )
+                        });
+                    }
                     let calls = own(&path)
                         .iter()
                         .filter(|region| data.call_targets.get(region) == Some(function))
@@ -2798,6 +2903,8 @@ mod source_execution_layout_tests {
                 prior_steps: BTreeMap::new(),
                 operator_regions: BTreeMap::new(),
                 call_results: BTreeMap::new(),
+                call_captures: BTreeMap::new(),
+                named_calls: None,
                 allocation_regions: BTreeSet::new(),
                 region_paths: BTreeMap::new(),
                 loop_paths: BTreeMap::new(),

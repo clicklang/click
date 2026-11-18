@@ -781,6 +781,15 @@ fn synthesize_state_local(term: &MachineTerm) -> Option<ContractExpression> {
                 crate::kernel::MachineIntegerType::from_program_type(value.program_type()).is_some()
             })
         })?;
+        if let Some(result) = SYNTHESIS_RECORDED_POINTS.with(|slot| {
+            slot.borrow().as_ref()?.call_capture_expression(
+                name,
+                state.locals().get(name)?,
+                Some(selector),
+            )
+        }) {
+            return Some(result);
+        }
         Some(ContractExpression::At {
             selector: selector.clone(),
             expression: Box::new(if crate::surface::is_click_value_name(name) {
@@ -800,7 +809,15 @@ fn synthesize_state_local(term: &MachineTerm) -> Option<ContractExpression> {
 fn synthesize_recorded_local(term: &MachineTerm) -> Option<ContractExpression> {
     SYNTHESIS_RECORDED_POINTS.with(|slot| {
         let slot = slot.borrow();
-        let (selector, name, _) = slot.as_ref()?.point_naming_integer(term)?;
+        let points = slot.as_ref()?;
+        let (selector, name, state) = points.point_naming_integer(term)?;
+        if let Some(result) = state
+            .locals()
+            .get(name)
+            .and_then(|value| points.call_capture_expression(name, value, Some(selector)))
+        {
+            return Some(result);
+        }
         Some(ContractExpression::At {
             selector: selector.clone(),
             expression: Box::new(if crate::surface::is_click_value_name(name) {
@@ -3555,7 +3572,8 @@ fn raise_algebraic_read(
     else {
         return None;
     };
-    let (memory, address) = read.parts();
+    let (point, address) = read.parts();
+    let memory = point.shared_memory();
     let same_address = |pointer: &Address| address.syntax_equal(&SharedAddress::import(pointer));
     if let Some((parameter, _)) = parameter_binding
         .parameters
@@ -3751,7 +3769,7 @@ fn raise_kernel_term_dispatch(
             | Node::MachineCast { .. }
             | Node::MachineIf { .. }
     ) && let Some(named) =
-        synthesize_named_integer_local(state.locals().names_holding_kernel_integer(term))
+        synthesize_named_integer_local(state, state.locals().names_holding_kernel_integer(term))
     {
         return Some(named);
     }
@@ -3976,11 +3994,11 @@ fn raise_kernel_term_dispatch(
         }
         Node::ProgramParameter { .. } => unreachable!("parameter envelope was peeled"),
         Node::PointerCall { call, .. } => recurse(call)?,
-        Node::ArrayReference {
-            memory, pointer, ..
-        } => synthesize_at_memory(memory, state, |selected| {
-            raise_kernel_term(pointer, parameter_binding, selected, bound_variables)
-        })?,
+        Node::ArrayReference { point, pointer, .. } => {
+            synthesize_at_memory(point.shared_memory(), state, |selected| {
+                raise_kernel_term(pointer, parameter_binding, selected, bound_variables)
+            })?
+        }
 
         Node::PointerRead { value, .. }
         | Node::PointerArithmetic { value, .. }
@@ -4253,9 +4271,11 @@ fn synthesize_unsigned_comparison(
                     })
             })
             .map(|name| {
-                ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                    surface_local_name(name),
-                ))
+                synthesize_call_capture(state, name).unwrap_or_else(|| {
+                    ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                        surface_local_name(name),
+                    ))
+                })
             })
             .or_else(|| {
                 let expression =
@@ -4749,10 +4769,37 @@ fn synthesize_population_entry_count(
     )))
 }
 
+fn synthesize_call_capture(
+    state: &ExecutionState,
+    name: &crate::kernel::BindingName,
+) -> Option<ContractExpression> {
+    if !name
+        .local_id()
+        .is_some_and(crate::kernel::LocalBindingId::is_temporary)
+    {
+        return None;
+    }
+    SYNTHESIS_RECORDED_POINTS.with(|slot| {
+        let slot = slot.borrow();
+        let points = slot.as_ref()?;
+        let value = state.locals().get(name)?;
+        points
+            .call_capture_expression(name, value, None)
+            .or_else(|| {
+                let selector = points.point_name(state.program_point_id()?)?;
+                points.call_capture_expression(name, value, Some(selector))
+            })
+    })
+}
+
 fn synthesize_named_integer_local<'a>(
+    state: &ExecutionState,
     mut holders: impl Iterator<Item = &'a crate::kernel::BindingName>,
 ) -> Option<SurfaceTerm> {
     if let Some(name) = holders.next() {
+        if let Some(result) = synthesize_call_capture(state, name) {
+            return Some(result);
+        }
         return Some(if crate::surface::is_click_value_name(name) {
             ContractExpression::ProgramBinding(name.to_string())
         } else {
@@ -4851,7 +4898,8 @@ fn synthesize_surface_bitvector(
             ProgramExpression::Value(ProgramValue::UInt32(term.clone())),
         ));
     }
-    if let Some(named) = synthesize_named_integer_local(state.locals().names_holding_integer(term))
+    if let Some(named) =
+        synthesize_named_integer_local(state, state.locals().names_holding_integer(term))
     {
         return Some(named);
     }
@@ -6841,6 +6889,11 @@ fn synthesize_surface_pointer_expression(
     if let Some(pointer) =
         synthesize_surface_pointer(pointer, parameter_binding, state, bound_variables)
     {
+        if let ProgramExpression::Variable(name) = &pointer
+            && let Some(result) = synthesize_call_capture(state, name)
+        {
+            return Some(result);
+        }
         return Some(ContractExpression::ProgramExpression(pointer));
     }
     if let Some(result) = state_call_result(
@@ -6902,6 +6955,17 @@ fn synthesize_recorded_pointer_expression(
     candidates.into_iter().find_map(|(selector, state)| {
         let expression =
             synthesize_surface_pointer(pointer, parameter_binding, &state, bound_variables)?;
+        if let ProgramExpression::Variable(name) = &expression
+            && let Some(result) = SYNTHESIS_RECORDED_POINTS.with(|slot| {
+                slot.borrow().as_ref()?.call_capture_expression(
+                    name,
+                    state.locals().get(name)?,
+                    Some(&selector),
+                )
+            })
+        {
+            return Some(result);
+        }
         Some(ContractExpression::At {
             selector,
             expression: Box::new(ContractExpression::ProgramExpression(expression)),

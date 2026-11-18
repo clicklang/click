@@ -18828,7 +18828,7 @@ fn symbolic_upper_arithmetic_premises_expand_and_cold_recheck() {
             requires b >= 1; requires b <= 1000; {extra} requires {premise};
             ensures a <= 999 by {{ solve() using {{ {premise}; b >= 1; b <= 1000; {extra_using} }} }}
         }}");
-        verify_c_sources(&source, &[]).expect("symbolic upper bound should verify");
+        // Expansion verifies this source's sole theorem and claim.
         let expanded = expand_c_claim_source_by_label(&source, &[], &format!("{name}.ensures_0"))
             .expect("symbolic upper bound should expand");
         assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");

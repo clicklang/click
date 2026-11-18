@@ -71,23 +71,32 @@ fn assert_narrow_cast_work(size: u64) {
     );
 }
 
-// Run each size independently so the containment timeout measures one case.
+// Keep the same per-cast bounds at several small gate sizes. The original
+// stress sizes run independently nightly so containment still measures one case.
+#[test]
+fn narrow_cast_words_intern_in_work_linear_in_the_casts_8() {
+    assert_narrow_cast_work(8);
+}
+
 #[test]
 fn narrow_cast_words_intern_in_work_linear_in_the_casts_16() {
     assert_narrow_cast_work(16);
 }
 
 #[test]
+#[ignore = "nightly: 1.4s in a four-worker test selection"]
 fn narrow_cast_words_intern_in_work_linear_in_the_casts_64() {
     assert_narrow_cast_work(64);
 }
 
 #[test]
+#[ignore = "nightly: 6.1s in a four-worker test selection"]
 fn narrow_cast_words_intern_in_work_linear_in_the_casts_256() {
     assert_narrow_cast_work(256);
 }
 
 #[test]
+#[ignore = "nightly: 6.1s in a four-worker test selection"]
 fn narrow_cast_words_intern_in_work_linear_in_the_casts_512() {
     assert_narrow_cast_work(512);
 }

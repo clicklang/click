@@ -159,14 +159,22 @@ fn program_branch_condition_at_frontier(
     else {
         return Ok(None);
     };
-    if !super::same_branch_condition(
-        &surface_program_condition(&source, &execution.core.state)?,
-        condition,
-    ) {
+    let canonical = surface_program_condition(
+        &source,
+        &execution.core.state,
+        Some(&execution.presentation.recorded_states),
+    )?;
+    if !super::same_branch_condition(&canonical, condition)
+        && !(context.constants.source_layout.has_call_captures()
+            && super::same_branch_condition(
+                &surface_program_condition(&source, &execution.core.state, None)?,
+                condition,
+            ))
+    {
         return Ok(None);
     }
     Ok(Some(surface_at_program_point(
-        condition,
+        &canonical,
         &ProgramPointRef {
             region: CodeRegionRef::Region(statement_index),
             kind: ProgramPointKind::Entry,

@@ -717,7 +717,7 @@ mod tests {
             KernelTerm::variable(KernelType::Algebraic(ty.clone()), Variable(999764)),
             KernelTerm::algebraic_read(
                 ty.clone(),
-                intern_memory(SymbolicMemory::new()),
+                crate::kernel::ProgramPoint::at(&intern_memory(SymbolicMemory::new())),
                 SharedAddress::import(&Address::symbolic(Variable(999765))),
             ),
         ];
