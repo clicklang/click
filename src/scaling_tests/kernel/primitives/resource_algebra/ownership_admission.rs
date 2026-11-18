@@ -422,7 +422,7 @@ fn entry_argument_and_automatic_storage_boundaries_do_not_visit_owner_blocks() {
                 let _fast = crate::kernel::search::FastOperationScope::enter(
                     "allocation-class boundary scaling",
                 );
-                frame.returned_boundary_conflict(&[output], &facts)
+                frame.checked_frontier_boundary_conflict(&[output], &facts)
             });
             assert!(matches!(result, Ok(None)));
             samples.push(work);
