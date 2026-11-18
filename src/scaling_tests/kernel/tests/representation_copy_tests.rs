@@ -118,3 +118,53 @@ fn replacing_copy_initialization_visits_only_the_copied_runs() {
         "{measurements:?}"
     );
 }
+
+#[test]
+fn typed_bit_field_copy_work_tracks_named_bytes() {
+    let source = heap_pointer("local:bit-source");
+    let destination = heap_pointer("local:bit-destination");
+    let full_mask = std::num::NonZeroU8::MAX;
+    let mut measurements = Vec::new();
+    for words in [4u32, 16, 64] {
+        let size = 4 * words;
+        let masks: Vec<_> = (0..words).map(|index| (4 * index + 1, full_mask)).collect();
+        let mut samples = Vec::new();
+        for unrelated in [0, 64, 256] {
+            let mut memory = SymbolicMemory::new()
+                .with_uninitialized_block(source.base.clone(), size)
+                .with_uninitialized_block(destination.base.clone(), size);
+            for index in 0..unrelated {
+                let address = heap_pointer(&format!("local:bit-unrelated-{index}"));
+                memory = memory.store(address, crate::kernel::uint8(1));
+            }
+            for &(offset, _) in &masks {
+                memory = memory.store(source.offset_by_bytes(offset), crate::kernel::uint8(7));
+            }
+            let (copied, work) = crate::instrumentation::measure_deterministic_work(|| {
+                memory.copy_local_bit_field_record(&source, &destination, size, &masks)
+            });
+            let copied = copied.unwrap();
+            for &(offset, _) in &masks {
+                assert_eq!(
+                    copied.known_value(&destination.offset_by_bytes(offset)),
+                    Some(crate::kernel::uint8(7))
+                );
+                assert!(
+                    !copied.has_initialized_bytes_at(&destination.offset_by_bytes(offset - 1), 1)
+                );
+            }
+            samples.push(work);
+        }
+        assert!(
+            samples.windows(2).all(|pair| pair[0] == pair[1]),
+            "{samples:?}"
+        );
+        measurements.push(samples[0]);
+    }
+    assert!(
+        measurements
+            .windows(2)
+            .all(|pair| pair[0] < pair[1] && pair[1] <= 4 * pair[0]),
+        "{measurements:?}"
+    );
+}
