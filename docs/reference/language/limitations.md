@@ -90,7 +90,7 @@ value positions when that function is declared in the translation unit.
 
 Packed layout and general bit-field layouts remain outside the baseline.
 [Local integer bit-fields](c.md#local-integer-bit-fields) support named members
-in one allocation word on the x86-64 target. Typed field access through a
+across multiple allocation words on the x86-64 target. Typed field access through a
 pointer requires a fixed local alias. Character accesses and modeled
 `memcpy` can use the local record's representation. Named enum fields use
 the four-byte scalar ABI representation; broader

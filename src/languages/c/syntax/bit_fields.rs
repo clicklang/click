@@ -1,13 +1,14 @@
 //! Named int bit-fields in automatic records and fixed local pointers to them.
 use super::bit_field_layout::IntBitField;
 use super::*;
+use crate::kernel::BitFieldBytes;
+use std::num::NonZeroU8;
 use std::sync::Arc;
 
-/// One physical slice of the struct's unsigned allocation word.
+/// One named member at its target ABI position.
 #[derive(Clone, Copy, Debug)]
 struct Slice {
-    shift: u32,
-    mask: u32,
+    placement: IntBitField,
     signed: bool,
 }
 
@@ -16,7 +17,6 @@ pub(super) struct BitFieldRecord {
     names: BTreeMap<String, usize>,
     fields: Vec<Slice>,
     storage: RecordLayout,
-    complete_mask: u32,
 }
 
 impl BitFieldRecord {
@@ -80,7 +80,8 @@ impl LocalBitFields {
 
     fn read(&self, field: Slice) -> CExpression {
         let mut selected = None;
-        for (offset, mask) in byte_slices(field.mask) {
+        for (offset, mask) in field.byte_masks() {
+            crate::instrumentation::record_deterministic_work(1);
             let byte = CExpression::Field {
                 pointer: Box::new(self.byte_address(offset)),
                 field_type: InterfaceType::UInt8,
@@ -96,7 +97,7 @@ impl LocalBitFields {
             let bits = scalar_cast(byte, InterfaceType::UInt32);
             let positioned = CExpression::ShiftLeft(
                 Box::new(bits),
-                Box::new(CExpression::Int32Literal(8 * offset)),
+                Box::new(CExpression::Int32Literal(8 * (offset % 4))),
             );
             selected = Some(match selected {
                 None => positioned,
@@ -105,17 +106,17 @@ impl LocalBitFields {
         }
         let shifted = CExpression::ShiftRight(
             Box::new(selected.expect("nonempty field")),
-            Box::new(CExpression::Int32Literal(field.shift)),
+            Box::new(CExpression::Int32Literal(field.placement.shift_in_word())),
         );
         field.promote(shifted)
     }
 
     fn store_bytes(
         &self,
-        mask: u32,
+        bytes: impl Iterator<Item = (u32, NonZeroU8)>,
         mut value_at: impl FnMut(u32) -> CExpression,
     ) -> impl Iterator<Item = CStatement> {
-        byte_slices(mask).map(move |(offset, mask)| CStatement::Store {
+        bytes.map(move |(offset, mask)| CStatement::Store {
             pointer: self.byte_address(offset),
             value: value_at(offset),
             value_type: Some(InterfaceType::UInt8),
@@ -145,16 +146,18 @@ impl LocalBitFields {
     }
 }
 
-fn byte_slices(mask: u32) -> impl Iterator<Item = (u32, std::num::NonZeroU8)> {
-    mask.to_le_bytes()
-        .into_iter()
-        .enumerate()
-        .filter_map(|(offset, mask)| Some((offset as u32, std::num::NonZeroU8::new(mask)?)))
-}
-
 impl Slice {
+    fn byte_masks(self) -> impl Iterator<Item = (u32, NonZeroU8)> {
+        self.placement.byte_masks().map(|(offset, mask)| {
+            (
+                u32::try_from(offset).expect("byte offset validated with record size"),
+                NonZeroU8::new(mask).expect("byte intersects the field"),
+            )
+        })
+    }
+
     fn promote(self, bits: CExpression) -> CExpression {
-        let width = self.mask.count_ones();
+        let width = self.placement.width();
         if !self.signed && width == 32 {
             return bits;
         }
@@ -172,7 +175,7 @@ impl Slice {
 
 enum RecordInitializer {
     Unwritten,
-    Literal(u32),
+    Literal(BTreeMap<u32, u8>),
     Copy(LocalBitFields),
 }
 
@@ -220,7 +223,6 @@ impl Parser {
         let mut names = BTreeMap::new();
         let mut fields = Vec::new();
         let mut cursor = 0;
-        let mut complete_mask = 0;
         loop {
             if !matches!(
                 field_type.interface_type,
@@ -254,20 +256,10 @@ impl Parser {
                 let Some(placement) = placement else {
                     return Err(self.error_at_previous("bit-field width must be between 1 and 32"));
                 };
-                let Some((shift, mask)) = placement.first_word_slice() else {
-                    return Err(
-                        self.error_at_previous("bit-fields must fit in one 32-bit allocation word")
-                    );
-                };
                 if names.insert(name.clone(), fields.len()).is_some() {
                     return Err(self.error_at_previous(format!("duplicate bit-field `{name}`")));
                 }
-                fields.push(Slice {
-                    shift,
-                    mask,
-                    signed,
-                });
-                complete_mask |= mask;
+                fields.push(Slice { placement, signed });
                 cursor = placement.end_bit();
                 if self.peek() != Some(&Token::Comma) {
                     break;
@@ -287,13 +279,26 @@ impl Parser {
         if self.structs.contains_key(&tag) || self.bit_field_records.contains_key(&tag) {
             return Err(self.error_at_previous(format!("duplicate struct declaration `{tag}`")));
         }
-        // The layout defines the allocation. The bit-field registry alone
-        // describes C members, so ordinary aggregate lowering cannot treat
-        // these slices as separately addressable cells.
+        let size = u32::try_from(cursor.div_ceil(32) * 4)
+            .map_err(|_| self.error_at_previous(format!("struct `{tag}` layout is too large")))?;
+        // Keep only the bytes containing named members, in declaration
+        // order. Adjacent fields can share a byte.
+        let mut members: Vec<(u32, NonZeroU8)> = Vec::new();
+        for (offset, bits) in fields.iter().flat_map(|field| field.byte_masks()) {
+            if let Some((previous, mask)) = members.last_mut()
+                && *previous == offset
+            {
+                *mask = *mask | bits;
+            } else {
+                members.push((offset, bits));
+            }
+        }
+        // The allocation has no individually addressable scalar members.
         let mut storage =
-            RecordLayout::from_explicit_fields_with_structs(Vec::new(), 4, 4, &BTreeMap::new())
-                .expect("one aligned allocation word");
-        storage.bit_field_bits = std::num::NonZeroU32::new(complete_mask);
+            RecordLayout::from_explicit_fields_with_structs(Vec::new(), size, 4, &BTreeMap::new())
+                .expect("aligned bit-field record");
+        let members: BitFieldBytes = members.into();
+        storage.bit_field_bytes = Some(members);
         storage.class = Some(
             crate::kernel::effective_type::CStructContentsBuilder::default().build(tag.clone()),
         );
@@ -303,7 +308,6 @@ impl Parser {
                 names,
                 fields,
                 storage,
-                complete_mask,
             }),
         );
         Ok(())
@@ -360,10 +364,15 @@ impl Parser {
         let mut statements = vec![declaration];
         match initializer {
             RecordInitializer::Unwritten => {}
-            RecordInitializer::Literal(value) => {
-                let bytes = value.to_le_bytes();
-                statements.extend(object.store_bytes(object.record.complete_mask, |offset| {
-                    CExpression::UInt8Literal(bytes[offset as usize])
+            RecordInitializer::Literal(values) => {
+                let members = object
+                    .record
+                    .storage
+                    .bit_field_bytes
+                    .as_deref()
+                    .expect("bit-field layout");
+                statements.extend(object.store_bytes(members.iter().copied(), |offset| {
+                    CExpression::UInt8Literal(values.get(&offset).copied().unwrap_or(0))
                 }));
             }
             RecordInitializer::Copy(source) => statements.push(object.copy_from(&source)),
@@ -452,11 +461,11 @@ impl Parser {
     fn parse_bit_field_initializer(
         &mut self,
         record: &BitFieldRecord,
-    ) -> Result<u32, CSyntaxError> {
+    ) -> Result<BTreeMap<u32, u8>, CSyntaxError> {
         self.expect(Token::LBrace)?;
-        let mut word = 0;
+        let mut bytes = BTreeMap::new();
         let mut index = 0;
-        let mut selected = 0;
+        let mut selected = BTreeSet::new();
         loop {
             if self.peek() == Some(&Token::Dot) {
                 self.position += 1;
@@ -470,7 +479,7 @@ impl Parser {
                 .fields
                 .get(index)
                 .ok_or_else(|| self.error_here("too many bit-field initializers"))?;
-            if selected & field.mask != 0 {
+            if !selected.insert(index) {
                 return Err(self.error_here("repeated bit-field initializers are not supported"));
             }
             let value = self.parse_assignment()?;
@@ -481,8 +490,10 @@ impl Parser {
                         .error_here("bit-field initializers currently require integer literals"));
                 }
             };
-            word |= (value << field.shift) & field.mask;
-            selected |= field.mask;
+            let positioned = (value << field.placement.shift_in_word()).to_le_bytes();
+            for (offset, mask) in field.byte_masks() {
+                *bytes.entry(offset).or_insert(0) |= positioned[(offset % 4) as usize] & mask.get();
+            }
             index += 1;
             if self.peek() != Some(&Token::Comma) {
                 break;
@@ -493,7 +504,7 @@ impl Parser {
             }
         }
         self.expect(Token::RBrace)?;
-        Ok(word)
+        Ok(bytes)
     }
 
     pub(super) fn local_bit_field_object(&self) -> Option<&LocalBitFields> {
@@ -626,15 +637,15 @@ impl Parser {
         let temporary = self.hidden_bit_field_binding("value", InterfaceType::UInt32);
         let positioned = CExpression::ShiftLeft(
             Box::new(scalar_cast(value, InterfaceType::UInt32)),
-            Box::new(CExpression::Int32Literal(field.shift)),
+            Box::new(CExpression::Int32Literal(field.placement.shift_in_word())),
         );
         let evaluation =
             scalar_declaration(temporary.clone(), InterfaceType::UInt32, Some(positioned));
         let statements = std::iter::once(evaluation)
-            .chain(object.store_bytes(field.mask, |offset| {
+            .chain(object.store_bytes(field.byte_masks(), |offset| {
                 CExpression::ShiftRight(
                     Box::new(CExpression::Variable(temporary.clone())),
-                    Box::new(CExpression::Int32Literal(8 * offset)),
+                    Box::new(CExpression::Int32Literal(8 * (offset % 4))),
                 )
             }))
             .collect();

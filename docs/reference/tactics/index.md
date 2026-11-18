@@ -253,8 +253,10 @@ forces the goal, as `is_rb(Node(.., left, right)) == 1` forces
 such as a `match` arm's `up.model == Context::Left(..)`, is replaced by it:
 the fact is first restated as a `have` by rewriting with that equation. The proof is ordinary checked steps: `if` the goal
 holds, `known`; otherwise a proof `if` on each condition met before the
-goal's, and at each end `have f(args) != k` by `unfold` and
-`normalize() using` the conditions taken, then `contradiction`. At most 16
+goal's. At each end, expansion proves an equation between the application and
+the selected branch's literal using `unfold`, selected arm equations and
+`known()`. It rewrites the claimed value comparison with the equation and
+closes the branch with `contradiction`. At most 16
 connected function facts are read, each up to 16 ends; a `match` that its
 arguments do not decide, or an end that is not a constant, is a miss. See
 [`solve_reads_a_condition_out_of_a_definition.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_reads_a_condition_out_of_a_definition.md)
@@ -1617,6 +1619,12 @@ and symbolic matches are opaque operands; their identical occurrences may
 cancel, but this check never unfolds a call or resolves a read. It does not
 invoke the general atomic prover.
 
+Direct computation also recognizes the neutral bitwise identities `0 & x == 0`
+and `0 | x == x` at a native word's own format, in either operand order. Intrinsic
+alignment of a null, heap, global or static address reads only that address's
+block registration and constant byte offset. It does not search alignment facts
+or infer alignment for a symbolic offset.
+
 The same fixed local check accepts intrinsic machine type ranges and
 constant-divisor quotient, remainder, and right-shift bounds. A written
 machine `+`, `-`, or `*` observation equals its exact Integer expression when
@@ -1791,9 +1799,18 @@ nonnegative operands. Pointer translation names its equality first and scalar
 bounds after it; tagged-word rules name their word equality first (when used)
 and then the alignment facts. One finite classification proves the matching
 reflexive IEEE comparison. These are fixed local rules over explicit inputs;
-none selects premises or expands a polynomial. Generated proofs use ordinary
-normalization steps; legacy `rules` certificates remain accepted as authored
-compatibility syntax.
+none selects premises or expands a polynomial.
+
+For a reflexive `float` or `double` comparison, `solve` expands to
+`known()` when the exact `isfinite(x)` fact is available for the common
+operand. Restricted `solve() using` must select that fact. For example,
+`isfinite(x)` establishes `x == x`, `x <= x` and `not(x < x)`.
+
+For supported native unsigned address words, `solve` emits ordinary `have`
+goals, `apply(click::integer::...) using`, rewrites, and `known()`: alignment
+weakening, scalar element offsets, low-tag projections and high-mask recovery
+name their local laws and retain the unsigned width explicitly. Remaining
+legacy forms still use the compatibility normalization path.
 
 **Accepts** a goal that `normalize()` accepts after this reduction, when every
 cited premise is accepted:
@@ -2213,10 +2230,11 @@ Arithmetic automation expands to ordinary proofs. Arithmetic operations correspo
 
 Integer composition plans expand their premise, addition, scaling, and
 equality-direction nodes into ordinary `have`, `apply(...) using`, `rewrite`,
-and explicit `normalize()` steps. Each intermediate fact is established once;
-later nodes reuse it. Context-free identities relate the plan's flat affine
-forms to the written operands, so expansion does not re-enter arithmetic
-search. Integer antisymmetry uses `integer::le_antisymmetric`.
+and `known()` steps. Each intermediate fact is established once and later
+nodes reuse it. Context-free identities relate the plan's flat affine forms
+to the written operands. Expansion uses checked `normalize()` when the
+bounded algebra emitter cannot spell an identity. Integer antisymmetry uses
+`integer::le_antisymmetric`.
 
 Strict Integer premises and goals use the successor-order law. Linear
 refutations that use the negated goal once become direct compositions;
@@ -2225,12 +2243,68 @@ ranges and constant-divisor quotient, shift, and remainder bounds use
 `known()`. Rounding and endpoint exclusions use ordinary Integer laws.
 Machine operation and cast identities use `known()` after their exact Integer
 bounds have been proved. Literal shifts and nonnegative literal masks expand
-to these leaves, explicit product bounds, and rounding laws. A root conditional
-with an available guard expands to a `known()` arm equation and a rewrite. Signed intervals expand to ordinary bounds and observation identities;
-specialized selected rules normalize from explicit inputs, while polynomial
+to these leaves, explicit product bounds, and rounding laws. Numeric conditionals
+at the root or nested inside arithmetic, casts, observations and call arguments
+expand to `known()` arm equations and rewrites when their guards are selected.
+Outer arms are selected before examining their contents; an inactive arm is
+not detached and evaluated. Multiple conditionals are reduced in source order,
+with at most 64 rewrites and 4096 visited source nodes under the solve deadline.
+Binders and historical point expressions keep their scope and are not traversed.
+Arithmetic after selection uses ordinary emitters. Omitted guards remain
+unavailable to restricted solve, even when present in the ambient context.
+See [`nested_conditional_explicit_arm_equations.md`](https://github.com/clicklang/click/blob/master/mdtests/nested_conditional_explicit_arm_equations.md).
+Boolean and constructor-valued conditionals use the same arm equations.
+For example, from `flag == true`, `known()` proves
+`(if flag { Some(x) } else { None }) == Some(x)`. Nested selections expose
+one arm at a time and retain each proof as an explicit rewrite. A Boolean
+comparison with a literal can also use the selected arm's exact truth fact.
+Definition refutations whose unfolding also needs constructor-match reduction
+can retain a checked `normalize() using` step with the selected branch facts.
+See [the explicit arm proofs](https://github.com/clicklang/click/blob/master/mdtests/non_numeric_conditional_arm_equations.md).
+
+Scalar signed interval claims, operation bounds, and narrowed casts expand
+through selected Integer and machine-observation proofs, without `normalize()`.
+Their intermediate facts replay with implicit solving disabled. Widened unsigned
+sums such as `(a as int64) + (b as int64) <= 30i64`, from selected
+`a <= 10u32` and `b <= 20u32`, also expand through exact operation ranges,
+widening identities, and ordinary Integer arithmetic. Each operand is widened
+before addition. The route supports uint8/uint16 source ranges, uint32 values
+above `INT32_MAX`, and nonnegative int64 constants through `UINT32_MAX`.
+Missing selected bounds and bounds one below the attainable sum are refused.
+See [`widened_unsigned_sum_bounds.md`](https://github.com/clicklang/click/blob/master/mdtests/widened_unsigned_sum_bounds.md)
+and its adjacent refusal fixture. Retained-read
+and history adapters keep their compatibility normalizer while read/state
+transport is migrated separately; they do not select a different memory state
+or version point. Other specialized selected rules
+normalize from explicit inputs, while polynomial
 search emits separate distribution and rewrite steps. All library proofs use
 ordinary tactics. The [library reference](../library/index.md#foundational-integer-order-axioms)
 states the named laws' exact guards.
+
+Integer inequality composition writes the equalities that convert bounds
+to and from `left - right <= 0`. `known()` checks the local equalities,
+and the algebra emitter writes named laws and rewrites for coefficient
+rearrangements. A cited fact that is false by computation can close with
+`contradiction(fact)` directly.
+
+Bounded cast identities expand by proving the exact destination range from
+the selected bounds and then closing the observation equality with
+`known()`. Native and Integer spellings of the source bounds can be cited.
+For example, a signed value bounded from 1 through 100 keeps its Integer
+value when cast to `uint32`.
+
+Scalar-pointer offset translation expands through the named
+`integer::<pointee>_pointer_translate_int32` /
+`<pointee>_pointer_translate_uint64` laws, explicit
+Integer displacement equalities, and proved pointer-association helpers.
+Nested element offsets are associated only after proving the native index sum
+is exact: signed definedness or an unsigned nonwrapping upper bound. This
+route supports scalar pointees with int32/uint64 indices and preserves element
+strides and the selected pointer relation. It uses at most 64 offsets per
+source chain, 64 selected ambient premises, and 4096 emitter operations under
+the solve deadline. Mixed symbolic
+index families and unsupported pointer forms retain compatibility behavior.
+See [`pointer_offset_explicit_bridge.md`](https://github.com/clicklang/click/blob/master/mdtests/pointer_offset_explicit_bridge.md).
 
 ### Rewriting
 
@@ -4081,8 +4155,9 @@ decided:
 - After the function exit, or inside `have ... by { ... }`: observe at the
   frontier before.
 
-An `observe` whose guard is undecided currently succeeds and adds nothing.
-That is not a guarantee; decide the guard first.
+When projecting a composite body, `observe` reports an undecided guard and
+names the condition to prove or refute. A known-false guard selects an empty
+body and succeeds.
 
 **Failure, checking, and tools:**
 
@@ -4166,3 +4241,21 @@ proof, introduce a function absent from the generated scope, or replace a
 missing premise. Establish that premise in a `have` proof or use `solve()` to
 plan the required steps. The checked example is
 `mdtests/termination_ordinary_proof_steps.md`.
+
+### Explicit `Integer` algebra expansion
+
+Coefficient algebra and polynomial identities selected by `solve()` expand
+to applications of Integer distributivity, associativity, commutativity and
+sign laws, followed by explicit rewrites and `known()` additive or numeric
+leaves. Calls, reads, folds, and machine observations remain opaque operands.
+Polynomial discovery uses the existing tactic budget and a 4096-step output
+bound; it does not run inside `known()`. Supporting library proofs use
+ordinary tactics.
+
+Nonnegative quotient shifts use `integer::nonnegative_quotient_shift`: for
+`d != 0`, `1 <= d`, `0 <= x` and `0 <= k`,
+`truncating_quotient(x + d*k,d) == truncating_quotient(x,d)+k`.
+Automatic selection currently uses positive literal divisors and proves each
+sign guard from the selected premises. Missing selected guards are refused.
+
+Checked example: [`explicit_integer_algebra_laws.md`](https://github.com/clicklang/click/blob/master/mdtests/explicit_integer_algebra_laws.md).

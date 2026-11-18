@@ -1258,9 +1258,9 @@ exists.
 
 A guarded body may contain itself directly. `unfold(list(node))` exposes one
 nonnull node and the still-folded `list(node->next)` tail; `fold` performs the
-reverse step. Unknown guards remain opaque to observation and automatic
-resource expansion, while explicit `fold` and `unfold` report that the guard
-must first be proved true or false. Unguarded self-recursion and mutual
+reverse step. Unknown guards remain opaque during automatic projection. Explicit
+`observe`, `fold`, and `unfold` report that the guard must first be proved
+true or false. Unguarded self-recursion and mutual
 resource cycles remain rejected.
 
 Declared resource identity respects proved equality of its arguments. This is

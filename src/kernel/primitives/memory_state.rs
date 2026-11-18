@@ -5535,7 +5535,7 @@ impl SymbolicMemory {
         source: &Address,
         destination: &Address,
         bytes: u32,
-        field_bits: std::num::NonZeroU32,
+        field_bytes: &[(u32, std::num::NonZeroU8)],
     ) -> Result<Self, UndefinedBehavior> {
         if !source.base.is_local_block()
             || !destination.base.is_local_block()
@@ -5559,16 +5559,14 @@ impl SymbolicMemory {
         let initialized = &mut Arc::make_mut(&mut self.heap).initialized;
         initialized.forget(destination, bytes);
         initialized.forget_symbolic_offsets(&destination.base);
-        for (offset, members) in field_bits.get().to_le_bytes().into_iter().enumerate() {
-            if members == 0 {
-                continue;
-            }
-            let from = source.offset_by_bytes(offset as u32);
-            let to = destination.offset_by_bytes(offset as u32);
+        for &(offset, members) in field_bytes {
+            crate::instrumentation::record_deterministic_work(1);
+            let from = source.offset_by_bytes(offset);
+            let to = destination.offset_by_bytes(offset);
             let full =
                 crate::kernel::eval::known_integer_byte(&snapshot, &from, Some(ByteOrder::Little));
             let source_initialization = &snapshot.heap.initialized;
-            let mask = members
+            let mask = members.get()
                 & if full.is_some() {
                     u8::MAX
                 } else {

@@ -173,10 +173,20 @@ impl SpecValue {
             program_value_bitvector_term(&value)?,
         )
     }
+    #[cfg(test)]
     pub(super) fn comparison(
         &self,
         op: ComparisonOperator,
         right: &Self,
+    ) -> ExecutionResult<Option<Proposition>> {
+        self.comparison_in(op, right, false)
+    }
+
+    pub(super) fn comparison_in(
+        &self,
+        op: ComparisonOperator,
+        right: &Self,
+        conditional_guard: bool,
     ) -> ExecutionResult<Option<Proposition>> {
         if let (Some((format, left)), Some((right_format, right))) =
             (self.machine(), right.machine())
@@ -203,12 +213,18 @@ impl SpecValue {
                 ComparisonOperator::GreaterThan => CompareRelation::GreaterThan,
                 ComparisonOperator::GreaterEqual => CompareRelation::GreaterEqual,
             };
-            return Ok(Some(Proposition::ConditionIs(
-                crate::kernel::machine_integer::comparison::logical_condition_for_operand_views(
+            use crate::kernel::machine_integer::comparison;
+            let condition = if conditional_guard {
+                comparison::logical_conditional_guard_for_operand_views(
                     format,
                     relation,
                     [left, right],
-                ),
+                )
+            } else {
+                comparison::logical_condition_for_operand_views(format, relation, [left, right])
+            };
+            return Ok(Some(Proposition::ConditionIs(
+                condition,
                 op != ComparisonOperator::NotEqual,
             )));
         }
