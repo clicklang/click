@@ -86,18 +86,24 @@ fn if_ensuring_arm_did_not_end() -> ClickError {
 
 /// The refusal for a proof `if` whose arms are both live and end apart.
 /// What follows the `if` is checked once, so there must be one state to
-/// check it from.
-fn proof_if_arms_do_not_rejoin() -> ClickError {
-    ClickError::new(
-        "the arms of this proof `if` do not rejoin: with tactics written after the `if`, both arms must end at the same program point in the same state. Say what the arms agree on with `if P ensuring { ... } then { ... } else { ... }`, or move the tactics after the `if` into the arms",
-    )
+/// check it from. When nothing is written after it, what follows is the
+/// implicit tail that ends the proof, and the refusal says so.
+fn proof_if_arms_do_not_rejoin(nothing_written_after: bool) -> ClickError {
+    ClickError::new(if nothing_written_after {
+        "the arms of this proof `if` do not rejoin: nothing is written after the `if`, but the implicit tail that ends the proof follows it and is checked once, so each arm must reach the function exit or end where the other does, in the same state. End each arm with `step_until(function.exit);`, or say what the arms agree on with `if P ensuring { ... } then { ... } else { ... }`"
+    } else {
+        "the arms of this proof `if` do not rejoin: with tactics written after the `if`, both arms must end at the same program point in the same state. Say what the arms agree on with `if P ensuring { ... } then { ... } else { ... }`, or move the tactics after the `if` into the arms"
+    })
 }
 
-/// The refusal for a `cases` whose arms are live and end apart.
-fn cases_arms_do_not_rejoin() -> ClickError {
-    ClickError::new(
-        "the arms of this `cases` do not rejoin: with tactics written after the `cases`, every arm must end at the same program point in the same state. Move the tactics after the `cases` into its arms",
-    )
+/// The refusal for a `cases` whose arms are live and end apart, worded as
+/// [`proof_if_arms_do_not_rejoin`] is.
+fn cases_arms_do_not_rejoin(nothing_written_after: bool) -> ClickError {
+    ClickError::new(if nothing_written_after {
+        "the arms of this `cases` do not rejoin: nothing is written after the `cases`, but the implicit tail that ends the proof follows it and is checked once, so each arm must reach the function exit or end where the others do, in the same state. End each arm with `step_until(function.exit);`"
+    } else {
+        "the arms of this `cases` do not rejoin: with tactics written after the `cases`, every arm must end at the same program point in the same state. Move the tactics after the `cases` into its arms"
+    })
 }
 
 /// The refusal for a proof `if` after execution whose condition is open on
@@ -1620,9 +1626,9 @@ fn advance_case_split_arms<'a>(
                     .try_join_focused_execution_if(record)?
                     .ok_or_else(|| {
                         if record.is_cases() {
-                            cases_arms_do_not_rejoin()
+                            cases_arms_do_not_rejoin(ends_after_split(continuation))
                         } else {
-                            proof_if_arms_do_not_rejoin()
+                            proof_if_arms_do_not_rejoin(ends_after_split(continuation))
                         }
                     })?,
             };
@@ -4419,7 +4425,11 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                                 .join_focused_execution_if_interface(&record, assertions.clone())?,
                             None => advanced
                                 .try_join_focused_execution_if(&record)?
-                                .ok_or_else(proof_if_arms_do_not_rejoin)?,
+                                .ok_or_else(|| {
+                                    proof_if_arms_do_not_rejoin(
+                                        !ends_at_join && ends_after_split(continuation),
+                                    )
+                                })?,
                         };
                         proof = joined.restore_execution_tactic_attribution(&owner)?;
                         region = continuation;
