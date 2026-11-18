@@ -3341,6 +3341,7 @@ fn execute_verified_function_applications_with_suspension(
             name,
             interface_name,
             candidate_ordinal,
+            has_exact_write_ranges,
             storage,
             evidence,
             framed_rule,
@@ -3359,9 +3360,13 @@ fn execute_verified_function_applications_with_suspension(
         // lends; the caller's other active loans (its own contract inputs,
         // an enclosing call's loans) are checked here, so a summary can
         // never havoc memory that is lent elsewhere.
-        let write_requirements = if suspended.is_some() {
-            // Worker admission still checks its own and the parent's loans
-            // before publishing the separately recoverable worker state.
+        let write_requirements = if suspended.is_some()
+            || application.representation_copy.is_some()
+            || !has_exact_write_ranges
+        {
+            // Worker admission and representation copies have their own
+            // effect rules. Folded or guarded projections can also widen an
+            // effect to a span containing bytes the callee cannot write.
             if let Some(diagnostic) = entry_state.loan_ledger().and_then(|ledger| {
                 transfer.memory_effects.iter().find_map(|range| {
                     ledger.memory_access_refusal(
@@ -5339,6 +5344,7 @@ struct PreparedVerifiedFunctionCall<'a> {
     name: &'a str,
     interface_name: &'a str,
     candidate_ordinal: usize,
+    has_exact_write_ranges: bool,
     /// Concrete declaration identity for global and static storage lowering.
     /// This is not evidence that the function body was checked.
     storage: Option<&'a ProgramFunction>,
@@ -6839,6 +6845,16 @@ fn prepare_verified_function_call<'a>(
                 );
         }
     }
+    let has_exact_write_ranges = if contract_interface.resource_derived_mutable_frame() {
+        projection_range_sources
+            .iter()
+            .all(|(_, source)| source.memory_own_range().is_some())
+    } else {
+        contract_interface
+            .contract_mutable()
+            .iter()
+            .all(|segment| segment.guard().is_none())
+    };
     transfer.memory_effects = mutable_ranges.clone();
     // A resource-derived call is authorized by exactly these checked inputs,
     // borrowed and consumed alike: its write set is projected from them
@@ -6898,6 +6914,7 @@ fn prepare_verified_function_call<'a>(
         name: application.name,
         interface_name: application.interface_name,
         candidate_ordinal,
+        has_exact_write_ranges,
         storage: application.storage,
         evidence: application.evidence,
         framed_rule: application.framed_rule,
