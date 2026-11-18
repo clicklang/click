@@ -1,7 +1,7 @@
 use super::*;
 
 #[cfg(test)]
-mod observation_partition_tests {
+mod scaling_tests {
     include!("../../scaling_tests/surface/proof/resources/observation_partition_tests.rs");
 }
 use crate::kernel::ExecutionFactSource;
