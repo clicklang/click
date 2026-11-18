@@ -11,6 +11,7 @@ pub(crate) use completion::{
 };
 
 mod retained_context;
+use retained_context::expand_certification_exit;
 pub(crate) use retained_context::{RetainedClosingEntry, RetainedClosingFootprint};
 
 mod closing;
@@ -1324,6 +1325,7 @@ fn prepare_function_claim_path(
         assumptions,
         facts: facts.into(),
         projection: None,
+        exit: Default::default(),
     };
     prepare_closing_path(
         function,
@@ -1584,20 +1586,15 @@ fn prepare_closing_path(
         )
         .map_err(|error| error.to_string())?
     };
-    let mut claim_exit_state = raw_exit_state.clone();
-    claim_exit_state.set_memory(exit_memory.clone());
-    let Some(post_resources) =
-        super::super::super::functions::expand_all_composite_resource_facts_at_state(
-            claim_exit_state.resources(),
-            function.composite_resource_definitions(),
-            &claim_exit_state,
+    let mut claim_exit_state = (**raw_exit_state).clone().with_memory(exit_memory.clone());
+    let post_resources = entry
+        .prepare_exit_projection(
+            function,
+            raw_exit_state,
+            &mut claim_exit_state,
             &assumptions,
         )
-    else {
-        return Err("the exit resource context cannot be expanded"
-            .to_string()
-            .into());
-    };
+        .ok_or_else(|| "the exit resource context cannot be expanded".to_string())?;
     let post_resources = with_unmatched_instance_body_views(
         post_resources,
         claim_exit_state.resources().facts(),
@@ -1706,7 +1703,7 @@ fn prepare_closing_path(
         caller_state: caller_state.clone(),
         arguments: arguments.to_vec(),
         outcome: outcome.clone(),
-        exit_state: Some(*claim_exit_state),
+        exit_state: Some(claim_exit_state),
         entry_state,
         required_resources,
         checked_required_resources,
@@ -2555,7 +2552,14 @@ impl<'a> FunctionEnsureGoalContext<'a> {
                 assumptions,
             )?;
         entry_state = entry_state.with_resource_context(expanded_entry_resources);
-        Self::at_entry(function, caller_state, entry_state, outcome, assumptions)
+        Self::at_entry(
+            function,
+            caller_state,
+            entry_state,
+            outcome,
+            assumptions,
+            None,
+        )
     }
 
     pub(crate) fn from_retained_entry(
@@ -2570,6 +2574,7 @@ impl<'a> FunctionEnsureGoalContext<'a> {
             entry.state.clone(),
             outcome,
             assumptions,
+            Some(entry),
         )
     }
 
@@ -2579,6 +2584,7 @@ impl<'a> FunctionEnsureGoalContext<'a> {
         entry_state: ExecutionState,
         outcome: &FunctionOutcome,
         assumptions: &PureFactContext,
+        retained_entry: Option<&RetainedClosingEntry>,
     ) -> Option<Self> {
         let FunctionOutcome::Return {
             value,
@@ -2594,16 +2600,18 @@ impl<'a> FunctionEnsureGoalContext<'a> {
             function,
         )
         .ok()?;
-        let claim_return_state = return_state.clone().with_memory(exit_memory.clone());
-        let post_resources =
-            crate::kernel::functions::expand_all_composite_resource_facts_at_state(
-                claim_return_state.resources(),
-                function.composite_resource_definitions(),
-                &claim_return_state,
+        let mut claim_return_state = (**return_state).clone().with_memory(exit_memory.clone());
+        let resources = match retained_entry {
+            Some(entry) => entry.prepare_exit_projection(
+                function,
+                return_state,
+                &mut claim_return_state,
                 assumptions,
-            )?;
+            )?,
+            None => expand_certification_exit(function, &claim_return_state, assumptions)?,
+        };
         let mut post_state = entry_state.clone().with_memory(exit_memory);
-        post_state = post_state.with_resource_context(post_resources);
+        post_state = post_state.with_resource_context(resources);
         post_state.observed_population_families = return_state.observed_population_families.clone();
         // Preserve checked body consumption evidence when reconstructing the exit.
         post_state.population_effects = return_state.population_effects.clone();
@@ -3746,6 +3754,7 @@ mod retained_contract_input_tests {
             state.clone(),
             &outcome,
             &PureFactContext::new(),
+            None,
         )
         .unwrap();
         assert!(
