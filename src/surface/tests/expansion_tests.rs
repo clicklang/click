@@ -1,6 +1,42 @@
 use super::*;
 
 #[test]
+#[ignore = "nightly: iterated owner stable-view refusal and cold replay"]
+fn iterated_owner_borrow_still_refuses_without_transport() {
+    let (source, sources) =
+        mdtest_sources("mdtests/viewed_memory_call_frame_rejects_an_iterated_owner_borrow.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    assert!(!source.contains("transport("));
+    let report = verify_c_sources(&source, &sources).unwrap_err().report();
+    assert!(report.contains("`root.contract`"), "{report}");
+    assert!(report.contains("stable-view"), "{report}");
+    assert!(
+        report.contains("selected resource `views b[0]`"),
+        "{report}"
+    );
+
+    // Check the two callee proofs with the intentionally refused caller claim
+    // omitted. The control keeps the original C and callee contracts.
+    let (control, _) = source.split_once("\nint32 root(").unwrap();
+    verify_c_sources(control, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
+    let mut expanded = control.to_owned();
+    for label in ["touch.contract", "keep.contract"] {
+        expanded = expand_c_claim_source_by_label(&expanded, &sources, label)
+            .unwrap_or_else(|error| panic!("{}", error.report()));
+    }
+    assert!(!expanded.contains("transport("), "{expanded}");
+    for label in ["touch.contract", "keep.contract"] {
+        without_implicit_solve_for_claim(label, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+    }
+}
+
+#[test]
 #[ignore = "nightly: fold framing, C read authority, and cold replay"]
 fn preserved_fold_does_not_grant_c_read_authority() {
     let (source, sources) = mdtest_sources("mdtests/fold_read_transport_grants_no_c_read.md");
