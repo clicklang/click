@@ -477,6 +477,12 @@ private:
     Json field;
   };
 
+  struct LoweredReturnedMember {
+    LoweredCall call;
+    Json reference_type;
+    Json field;
+  };
+
   // These statements have no runtime operation. A concrete successful
   // static_assert was checked by pinned Clang; never erase a dependent or
   // failed assertion. Its source remains covered by the import closure.
@@ -2118,13 +2124,22 @@ private:
         result["arguments"] = std::move(operation->arguments);
         result["value_type"] = std::move(*value_type);
       } else if (const auto *member = llvm::dyn_cast<clang::MemberExpr>(left)) {
-        auto lowered = lower_member(member, function);
-        if (!lowered) {
-          return std::nullopt;
+        const auto *call = llvm::dyn_cast<clang::CallExpr>(member->getBase()->IgnoreParens());
+        if (call != nullptr && !member->isArrow() && binary->getOpcode() == clang::BO_Assign) {
+          auto lowered = lower_returned_member(member, call, function);
+          if (!lowered) return std::nullopt;
+          result["kind"] = "call_store";
+          result["callee"] = std::move(lowered->call.callee);
+          result["arguments"] = std::move(lowered->call.arguments);
+          result["value_type"] = std::move(lowered->reference_type);
+          result["field"] = std::move(lowered->field);
+        } else {
+          auto lowered = lower_member(member, function);
+          if (!lowered) return std::nullopt;
+          result["kind"] = "member_store";
+          result["object"] = std::move(lowered->object);
+          result["field"] = std::move(lowered->field);
         }
-        result["kind"] = "member_store";
-        result["object"] = std::move(lowered->object);
-        result["field"] = std::move(lowered->field);
       } else if (const auto *subscript =
                      llvm::dyn_cast<clang::ArraySubscriptExpr>(left)) {
         auto pointer = lower_subscript_pointer(subscript, function);
@@ -4763,13 +4778,24 @@ private:
     }
     llvm::json::Object result;
     if (const auto *member = llvm::dyn_cast<clang::MemberExpr>(source)) {
-      auto lowered = lower_member(member, function);
-      if (!lowered) {
-        return std::nullopt;
+      if (const auto *call = llvm::dyn_cast<clang::CallExpr>(member->getBase()->IgnoreParens());
+          call != nullptr && !member->isArrow()) {
+        auto lowered = lower_returned_member(member, call, function);
+        if (!lowered) return std::nullopt;
+        llvm::json::Object projection;
+        projection["reference_type"] = std::move(lowered->reference_type);
+        projection["field"] = std::move(lowered->field);
+        result["kind"] = "observer_call";
+        result["callee"] = std::move(lowered->call.callee);
+        result["arguments"] = std::move(lowered->call.arguments);
+        result["returned_member"] = std::move(projection);
+      } else {
+        auto lowered = lower_member(member, function);
+        if (!lowered) return std::nullopt;
+        result["kind"] = "member_load";
+        result["object"] = std::move(lowered->object);
+        result["field"] = std::move(lowered->field);
       }
-      result["kind"] = "member_load";
-      result["object"] = std::move(lowered->object);
-      result["field"] = std::move(lowered->field);
     } else if (const auto *subscript =
                    llvm::dyn_cast<clang::ArraySubscriptExpr>(source)) {
       auto pointer = lower_subscript_pointer(subscript, function);
@@ -6119,6 +6145,29 @@ private:
     result["name"] = field->getNameAsString();
     result["span"] = span(member->getMemberNameInfo().getSourceRange());
     return Json(std::move(result));
+  }
+
+  std::optional<LoweredReturnedMember>
+  lower_returned_member(const clang::MemberExpr *member, const clang::CallExpr *call,
+                        const clang::FunctionDecl *function) {
+    const auto *field = llvm::dyn_cast<clang::FieldDecl>(member->getMemberDecl());
+    const auto *owner = field == nullptr ? nullptr :
+        llvm::dyn_cast_or_null<clang::CXXRecordDecl>(field->getParent()->getDefinition());
+    const auto *callee = call->getDirectCallee();
+    const auto *reference = callee == nullptr ? nullptr :
+        callee->getReturnType()->getAs<clang::LValueReferenceType>();
+    if (owner == nullptr || member->isArrow() || !call->isLValue() ||
+        reference == nullptr || !reference->getPointeeType()->isRecordType()) {
+      fail(member->getMemberLoc(),
+           "C++ call member access requires a direct field of a returned record lvalue reference");
+      return std::nullopt;
+    }
+    if (!validate_member_object(member, owner)) return std::nullopt;
+    auto operation = lower_call_operation(call, function, true);
+    auto reference_type = lower_type(callee->getReturnType(), call->getExprLoc());
+    if (!operation || !reference_type) return std::nullopt;
+    return LoweredReturnedMember{
+        std::move(*operation), std::move(*reference_type), field_reference(member, field)};
   }
 
   std::optional<LoweredMember>

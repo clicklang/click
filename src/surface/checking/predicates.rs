@@ -224,14 +224,7 @@ pub(in crate::surface) fn instantiate_predicate_definition(
 pub(in crate::surface) fn decode_predicate_arguments(
     definition: &PredicateDefinition,
     arguments: &[Term],
-) -> Result<
-    (
-        ExecutionState,
-        BTreeMap<String, ProgramValue>,
-        ClickArrayRefs,
-    ),
-    String,
-> {
+) -> Result<(ExecutionState, ProgramValueBindings, ClickArrayRefs), String> {
     let expanded_len = 1 + definition
         .parameters()
         .iter()
@@ -251,7 +244,7 @@ pub(in crate::surface) fn decode_predicate_arguments(
                 definition.name()
             ));
         };
-        let mut values = BTreeMap::new();
+        let mut values = ProgramValueBindings::new();
         let mut array_refs = BTreeMap::new();
         let mut default_memory = None;
         let mut index = 1;

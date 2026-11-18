@@ -3032,7 +3032,7 @@ fn execute_step_from_frontier_position_selecting_path(
         execution
             .presentation
             .recorded_states
-            .record_loop_iterations(loop_index, iterations);
+            .record_loop_iterations_root(loop_index, iterations.clone());
     }
 
     execution

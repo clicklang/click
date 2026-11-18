@@ -26,6 +26,15 @@ impl IntBitField {
         Some(Self { start_bit, width })
     }
 
+    pub(super) fn start_bit(self) -> u64 {
+        self.start_bit
+    }
+
+    /// An unnamed zero-width int member advances placement to a unit boundary.
+    pub(super) fn next_word(cursor: u64) -> Option<u64> {
+        cursor.div_ceil(32).checked_mul(32)
+    }
+
     pub(super) fn shift_in_word(self) -> u32 {
         (self.start_bit % 32) as u32
     }

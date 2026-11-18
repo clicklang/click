@@ -57,7 +57,12 @@ checked. Each one costs completeness, expansion, or a readable report.
   value. A non-void call's result is `<region>.result`, including calls whose
   source discards the return value. The checked call transition retains the
   exact returned value, and its exit records it by region in
-  `RecordedStates::call_results`. Lowering reads that value directly;
+  `RecordedStates::call_results`. Stored call results and named theorem bindings
+  retain their `ExecutionValue` producer in immutable `RetainedProgramValue`
+  carriers: existing shared roots survive region, state and argument handoffs;
+  explicit native inputs retain their syntax contract. Selected compatibility
+  readers borrow native output through the existing root-owned cache. No
+  ambient binding map is exported. Lowering reads the selected value directly;
   integer and Boolean synthesis uses a reverse term index, and algebraic
   synthesis (a Rust enum a call returned) an index from the value to the
   first call that returned it (`algebraic_call_results`). Replacing or removing
@@ -101,7 +106,7 @@ checked. Each one costs completeness, expansion, or a readable report.
   `iterations` (kernel placeholder `LOOP_ITERATIONS_VARIABLE`, bound per phase
   by `LoopIterationsScope`), and each path past the loop carries it on its
   correspondence metadata to the exit, which records it by loop in
-  `RecordedStates::loop_iterations` with a reverse index from the variable:
+  `RecordedStates::loop_iterations` as an Integer root, with a reverse index from the variable:
   it is raised `loop(i).iterations` in one lookup.
   Recorded points index each integer value, and each pointer's block, by the
   point and the local it was first given to (`RecordedStates::value_points`
@@ -452,10 +457,13 @@ unselected reads and invalid shifts. Checking selects the arm when needed.
 The comparison boundary recognizes fixed-size native conditionals. The guard can
 be a Boolean variable or a 32/64-bit comparison, and the comparison operands and
 arms can be literal or variable leaves, one bitwise operation (`&`, `|`, `^`, `~`)
-over such leaves, or one right shift or unsigned left shift of a leaf by an
-in-range literal count.
-Standalone comparisons recognize the same operands. Even intrinsically decided
-guards in these forms retain their conditional; checking selects the arm. The
+over such leaves, a right shift or unsigned left shift by an in-range literal
+count, or an unsigned sum, difference, or product over a variable and a literal. The
+comparison or conditional result type can identify a `uint32` operation whose
+node carries the shared 32-bit word encoding.
+Standalone comparisons also recognize the bounded bitwise and shift operands.
+Even intrinsically decided guards in these forms retain their conditional;
+checking selects the arm. The
 reader inspects only the operator and its immediate leaves. Negated Boolean
 variables use the same guard with swapped arms. This preserves the comparison
 family without exporting arithmetic DAGs or using ambient facts to select an arm.

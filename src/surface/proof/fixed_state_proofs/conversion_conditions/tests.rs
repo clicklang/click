@@ -10,7 +10,7 @@ use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
 
 /// `probe(p, index)` with `p` an external `int32*` argument and `index`
 /// symbolic: the shape a pure theorem's parameters reach a lowering in.
-fn indexed_pointer_site() -> (BTreeMap<String, ProgramValue>, ExecutionState) {
+fn indexed_pointer_site() -> (ProgramValueBindings, ExecutionState) {
     let pointer = ProgramValue::typed_pointer(
         Address {
             base: AddressBase::ExternalArgument,
@@ -18,7 +18,7 @@ fn indexed_pointer_site() -> (BTreeMap<String, ProgramValue>, ExecutionState) {
         },
         ProgramType::Int32Pointer,
     );
-    let values = BTreeMap::from([
+    let values = ProgramValueBindings::from([
         ("p".to_string(), pointer),
         (
             "index".to_string(),
@@ -29,7 +29,7 @@ fn indexed_pointer_site() -> (BTreeMap<String, ProgramValue>, ExecutionState) {
 }
 
 /// The pointer `p` was passed, as the kernel holds it.
-fn pointer_base(values: &BTreeMap<String, ProgramValue>) -> Address {
+fn pointer_base(values: &ProgramValueBindings) -> Address {
     let ProgramValue::Pointer(pointer) = &values["p"] else {
         unreachable!("the probe binds `p` to a pointer");
     };
@@ -37,7 +37,7 @@ fn pointer_base(values: &BTreeMap<String, ProgramValue>) -> Address {
 }
 
 /// The cell `(p + index) as (int32 *)[0]`, as the kernel indexes it.
-fn indexed_cell(values: &BTreeMap<String, ProgramValue>) -> Address {
+fn indexed_cell(values: &ProgramValueBindings) -> Address {
     Address {
         base: pointer_base(values).base,
         offset: AddressOffset::Add(

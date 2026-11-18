@@ -1,6 +1,111 @@
 use super::*;
 
 #[test]
+#[ignore = "nightly: ranked search proof, expansion, and cold replay"]
+fn ranked_search_preserves_its_reads_without_transport() {
+    let (source, c_sources) = mdtest_sources("mdtests/search_terminates_by_unmarked_count.md");
+    check_ranked_search_without_transport(&source, &c_sources);
+
+    // Writing zero leaves the counted cell unmarked and cannot prove descent.
+    let unmarked = c_sources[0]
+        .1
+        .replace("visited[cur] = 1;", "visited[cur] = 0;");
+    assert_ne!(unmarked, c_sources[0].1);
+    let source = inline_unmarked_count_lemmas(&source);
+    assert!(verify_c_sources(&source, &[(c_sources[0].0.as_str(), unmarked.as_str())]).is_err());
+}
+
+#[test]
+#[ignore = "nightly: saved-array application proof, expansion, and cold replay"]
+fn ranked_search_applies_point_update_with_a_saved_array() {
+    let (source, c_sources) =
+        mdtest_sources("mdtests/preserve_apply_names_its_missing_viewable.md");
+    check_ranked_search_without_transport(&source, &c_sources);
+
+    // Removing the observation makes the application prove the saved range's
+    // current viewability from ownership, as in the original fixture.
+    let without_observation = source.replace("observe(at(iter, visited)[0..n]);", "");
+    assert_ne!(without_observation, source);
+    let (name, c) = &c_sources[0];
+    verify_c_sources(
+        &inline_unmarked_count_lemmas(&without_observation),
+        &[(name, c)],
+    )
+    .unwrap_or_else(|error| panic!("{}", error.report()));
+}
+
+fn inline_unmarked_count_lemmas(source: &str) -> String {
+    // The in-memory verifier needs the fixture's file import in the same unit.
+    source.replace(
+        r#"import "unmarked_count_lemmas.click";"#,
+        include_str!("../../../mdtests/unmarked_count_lemmas.click"),
+    )
+}
+
+fn check_ranked_search_without_transport(source: &str, c_sources: &[(String, String)]) {
+    assert!(!source.contains("transport("));
+    let source = inline_unmarked_count_lemmas(source);
+    let sources = c_sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    with_proof_trace("search", || {
+        verify_c_sources(&source, &sources).unwrap_or_else(|error| {
+            panic!(
+                "{}\n{}",
+                error.report(),
+                error.trace_context_report().unwrap_or_default()
+            )
+        });
+    });
+
+    let label = "search.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, label)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim(label, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
+#[ignore = "nightly: iterated owner stable-view refusal and cold replay"]
+fn iterated_owner_borrow_still_refuses_without_transport() {
+    let (source, sources) =
+        mdtest_sources("mdtests/viewed_memory_call_frame_rejects_an_iterated_owner_borrow.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    assert!(!source.contains("transport("));
+    let report = verify_c_sources(&source, &sources).unwrap_err().report();
+    assert!(report.contains("`root.contract`"), "{report}");
+    assert!(report.contains("stable-view"), "{report}");
+    assert!(
+        report.contains("selected resource `views b[0]`"),
+        "{report}"
+    );
+
+    // Check the two callee proofs with the intentionally refused caller claim
+    // omitted. The control keeps the original C and callee contracts.
+    let (control, _) = source.split_once("\nint32 root(").unwrap();
+    verify_c_sources(control, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
+    let mut expanded = control.to_owned();
+    for label in ["touch.contract", "keep.contract"] {
+        expanded = expand_c_claim_source_by_label(&expanded, &sources, label)
+            .unwrap_or_else(|error| panic!("{}", error.report()));
+    }
+    assert!(!expanded.contains("transport("), "{expanded}");
+    for label in ["touch.contract", "keep.contract"] {
+        without_implicit_solve_for_claim(label, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+    }
+}
+
+#[test]
 #[ignore = "nightly: fold framing, C read authority, and cold replay"]
 fn preserved_fold_does_not_grant_c_read_authority() {
     let (source, sources) = mdtest_sources("mdtests/fold_read_transport_grants_no_c_read.md");

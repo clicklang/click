@@ -6544,15 +6544,9 @@ impl AggregateLayout {
         }
     }
 
-    pub(crate) fn bit_field_record(
-        size_bytes: u32,
-        alignment_bytes: u32,
-        field_bytes: BitFieldBytes,
-    ) -> Self {
-        Self {
-            bit_field_bytes: Some(field_bytes),
-            ..Self::new(size_bytes, alignment_bytes, Vec::new())
-        }
+    pub(crate) fn with_bit_field_bytes(mut self, field_bytes: Option<BitFieldBytes>) -> Self {
+        self.bit_field_bytes = field_bytes;
+        self
     }
 
     /// The layout of an object that holds one value of `value_type`, a type
@@ -12709,9 +12703,9 @@ impl ResourceSpec {
     /// Current arguments remain state-dependent; source spellings remain intact.
     pub(crate) fn with_captured_entry_parameters(
         mut self,
-        entry_values: &BTreeMap<String, ProgramValue>,
+        entry_values: &impl NamedBindingMap<ProgramValue>,
     ) -> Self {
-        fn capture(term: &mut ResourceTerm, entry_values: &BTreeMap<String, ProgramValue>) {
+        fn capture(term: &mut ResourceTerm, entry_values: &impl NamedBindingMap<ProgramValue>) {
             match term {
                 ResourceTerm::Instance { resource, .. } => capture(resource, entry_values),
                 ResourceTerm::Composite {

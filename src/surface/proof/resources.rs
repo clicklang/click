@@ -524,10 +524,10 @@ fn dynamic_body_fact_dependency(
                 }
             },
             Proposition::MemoryReadDefined {
+                at,
                 memory,
                 pointer,
                 value_type,
-                ..
             } => {
                 // Definedness is an observation of the same cell as a load.
                 // Retain its access dependency, including loads in its address.
@@ -539,7 +539,12 @@ fn dynamic_body_fact_dependency(
                     binder,
                     selected,
                 )?;
-                if memory == state.memory() {
+                // The point identifies the observation even when two states
+                // share a memory view. Synthetic facts may have no point.
+                let is_current = at
+                    .and_then(|point| state.observation_point_id().map(|current| point == current))
+                    .unwrap_or_else(|| memory == state.memory());
+                if is_current {
                     check_load(
                         pointer.clone(),
                         value_type.byte_width(),
@@ -829,7 +834,7 @@ pub(in crate::surface) fn pair_instance_body_clause_presentations(
     click_function_environment: &ClickFunctionEnvironment,
     instance: &ResourceInstance,
     records: &[crate::kernel::ResourceBodyClauseRecord],
-    function_values: &BTreeMap<String, ProgramValue>,
+    function_values: &ProgramValueBindings,
     proof_bindings: Option<&[String]>,
 ) -> Result<Vec<ResourceClausePresentation>, ClickError> {
     let Some(first) = records.first() else {
@@ -5874,6 +5879,36 @@ void child_release(struct child* obj) {
     #[test]
     fn dynamic_definedness_requires_live_view_binding_and_keeps_owner_scalar_distinct() {
         check_dynamic_current_fact_dependencies(true, false);
+    }
+
+    #[test]
+    fn dynamic_definedness_uses_the_observation_point_for_loan_dependencies() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let earlier = ExecutionState::new().with_memory(SymbolicMemory::new());
+        let current = earlier.clone().with_memory(earlier.memory().clone());
+        let earlier_point = earlier.observation_point_id().unwrap();
+        let current_point = current.observation_point_id().unwrap();
+        assert_ne!(earlier_point, current_point);
+        assert!(earlier.memory().same_storage_roots(current.memory()));
+
+        let assumptions = PureFactContext::new();
+        let no_views = DynamicViewDependencyIndex::new(&[], &[], &assumptions);
+        let dependency_at = |at| {
+            let fact = Proposition::MemoryReadDefined {
+                at,
+                memory: earlier.memory().clone(),
+                pointer: Address {
+                    base: AddressBase::ExternalArgument,
+                    offset: AddressOffset::Constant(0),
+                },
+                value_type: ProgramType::Int32,
+            };
+            dynamic_body_fact_dependency(&fact, &current, &assumptions, &no_views)
+        };
+
+        assert!(dependency_at(Some(earlier_point)).unwrap().is_none());
+        assert!(dependency_at(Some(current_point)).is_err());
+        assert!(dependency_at(None).is_err());
     }
 
     /// A guarded universal read depends on a view of every cell its guard
