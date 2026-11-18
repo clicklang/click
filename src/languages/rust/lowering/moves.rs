@@ -653,8 +653,13 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                     cx.shared_array_initialize(target, source)?
                 }
                 S::SharedArrayMove { target, source } => cx.shared_array_move(target, source)?,
-                S::SharedArrayNext { iterator, option } => {
-                    cx.shared_array_next(iterator, option)?
+                S::SharedArrayNext {
+                    iterator,
+                    option,
+                    payload,
+                    taken,
+                } => {
+                    cx.shared_array_next(iterator, option.as_deref(), payload.as_deref(), *taken)?
                 }
                 S::ChunkInitialize {
                     target,
