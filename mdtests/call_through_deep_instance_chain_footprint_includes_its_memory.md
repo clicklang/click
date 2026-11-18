@@ -107,16 +107,16 @@ void overwrite(struct node* p) {
     let { tag: t1, child: c0 } = unfold(c1);
     let { tag: t0 } = unfold(c0);
     step_until(function.exit);
-    let c0 = fold(layer0(p), { tag: t0 }, {});
-    let c1 = fold(layer1(p), { tag: t1 }, { child: c0 });
-    let c2 = fold(layer2(p), { tag: t2 }, { child: c1 });
-    let c3 = fold(layer3(p), { tag: t3 }, { child: c2 });
-    let c4 = fold(layer4(p), { tag: t4 }, { child: c3 });
-    let c5 = fold(layer5(p), { tag: t5 }, { child: c4 });
-    let c6 = fold(layer6(p), { tag: t6 }, { child: c5 });
-    let c7 = fold(layer7(p), { tag: t7 }, { child: c6 });
-    let c8 = fold(layer8(p), { tag: t8 }, { child: c7 });
-    let w = fold(layer9(p), { tag: t9 }, { child: c8 });
+    let c0 = fold(layer0(p), { tag: t0 });
+    let c1 = fold(layer1(p), { tag: t1, child: c0 });
+    let c2 = fold(layer2(p), { tag: t2, child: c1 });
+    let c3 = fold(layer3(p), { tag: t3, child: c2 });
+    let c4 = fold(layer4(p), { tag: t4, child: c3 });
+    let c5 = fold(layer5(p), { tag: t5, child: c4 });
+    let c6 = fold(layer6(p), { tag: t6, child: c5 });
+    let c7 = fold(layer7(p), { tag: t7, child: c6 });
+    let c8 = fold(layer8(p), { tag: t8, child: c7 });
+    let w = fold(layer9(p), { tag: t9, child: c8 });
     solve();
 }
 
@@ -136,16 +136,16 @@ void caller(struct node* p) {
     let { tag: t0 } = unfold(c0);
     step();
     have p->value == 0 by solve();
-    let c0 = fold(layer0(p), { tag: t0 }, {});
-    let c1 = fold(layer1(p), { tag: t1 }, { child: c0 });
-    let c2 = fold(layer2(p), { tag: t2 }, { child: c1 });
-    let c3 = fold(layer3(p), { tag: t3 }, { child: c2 });
-    let c4 = fold(layer4(p), { tag: t4 }, { child: c3 });
-    let c5 = fold(layer5(p), { tag: t5 }, { child: c4 });
-    let c6 = fold(layer6(p), { tag: t6 }, { child: c5 });
-    let c7 = fold(layer7(p), { tag: t7 }, { child: c6 });
-    let c8 = fold(layer8(p), { tag: t8 }, { child: c7 });
-    let w = fold(layer9(p), { tag: t9 }, { child: c8 });
+    let c0 = fold(layer0(p), { tag: t0 });
+    let c1 = fold(layer1(p), { tag: t1, child: c0 });
+    let c2 = fold(layer2(p), { tag: t2, child: c1 });
+    let c3 = fold(layer3(p), { tag: t3, child: c2 });
+    let c4 = fold(layer4(p), { tag: t4, child: c3 });
+    let c5 = fold(layer5(p), { tag: t5, child: c4 });
+    let c6 = fold(layer6(p), { tag: t6, child: c5 });
+    let c7 = fold(layer7(p), { tag: t7, child: c6 });
+    let c8 = fold(layer8(p), { tag: t8, child: c7 });
+    let w = fold(layer9(p), { tag: t9, child: c8 });
     mark before;
     step(overwrite, { w: w });
     let { tag: at9, child: ac8 } = unfold(w);
@@ -161,16 +161,16 @@ void caller(struct node* p) {
     have p->value == at(before, p->value) by {
         solve();
     }
-    let ac0 = fold(layer0(p), { tag: at0 }, {});
-    let ac1 = fold(layer1(p), { tag: at1 }, { child: ac0 });
-    let ac2 = fold(layer2(p), { tag: at2 }, { child: ac1 });
-    let ac3 = fold(layer3(p), { tag: at3 }, { child: ac2 });
-    let ac4 = fold(layer4(p), { tag: at4 }, { child: ac3 });
-    let ac5 = fold(layer5(p), { tag: at5 }, { child: ac4 });
-    let ac6 = fold(layer6(p), { tag: at6 }, { child: ac5 });
-    let ac7 = fold(layer7(p), { tag: at7 }, { child: ac6 });
-    let ac8 = fold(layer8(p), { tag: at8 }, { child: ac7 });
-    let w = fold(layer9(p), { tag: at9 }, { child: ac8 });
+    let ac0 = fold(layer0(p), { tag: at0 });
+    let ac1 = fold(layer1(p), { tag: at1, child: ac0 });
+    let ac2 = fold(layer2(p), { tag: at2, child: ac1 });
+    let ac3 = fold(layer3(p), { tag: at3, child: ac2 });
+    let ac4 = fold(layer4(p), { tag: at4, child: ac3 });
+    let ac5 = fold(layer5(p), { tag: at5, child: ac4 });
+    let ac6 = fold(layer6(p), { tag: at6, child: ac5 });
+    let ac7 = fold(layer7(p), { tag: at7, child: ac6 });
+    let ac8 = fold(layer8(p), { tag: at8, child: ac7 });
+    let w = fold(layer9(p), { tag: at9, child: ac8 });
 }
 ```
 

@@ -53,7 +53,7 @@ void inspect(struct node* root) {
                             step();
                             have child == sid;
                             let sub = fold(cell(root->left), { model: Identity::At(sid) });
-                            let tree = fold(parent_at(root), { model: Parent::At(pid, Identity::At(sid)) }, { child: sub });
+                            let tree = fold(parent_at(root), { model: Parent::At(pid, Identity::At(sid)), child: sub });
                             step(); step();
                         },
                     }

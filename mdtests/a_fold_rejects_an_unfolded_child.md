@@ -1,16 +1,13 @@
-# A fold does not take an unfolded child by name
+# A fold rejects an unfolded child
 
-A child the fold's map leaves out defaults to the in-scope resource of the
-same name only while that resource is owned in folded form. Here `left` was
-unfolded and not folded again, so the fold names the missing child and why
-the in-scope `left` does not fill it.
+An explicit child binding has to name an instance still owned in folded form.
 
-```c filename=a_fold_does_not_take_an_unfolded_child_by_name.c
+```c filename=a_fold_rejects_an_unfolded_child.c
 int32 read_left(int32* p, int32* lp, int32* rp) { return *lp; }
 ```
 
 ```click
-verifying "a_fold_does_not_take_an_unfolded_child_by_name.c";
+verifying "a_fold_rejects_an_unfolded_child.c";
 
 spec enum Tree { Leaf(int32), Branch(int32, int32*, Tree, int32*, Tree) }
 resource tree(p: int32*) {
@@ -37,11 +34,11 @@ int32 read_left(int32* p, int32* lp, int32* rp) {
     let { left: left, right: right } = unfold(root);
     unfold(left);
     step_until(function.exit);
-    let root = fold(tree(p), { model: old(root.model) });
+    let root = fold(tree(p), { model: old(root.model), left: left, right: right });
     solve();
 }
 ```
 
 ```expect
-fail: fold of `tree` must supply its named child `left` in its child map: `{ left: name }`; the in-scope `left` is not owned in folded form here
+fail: child `left` is not owned in folded form
 ```

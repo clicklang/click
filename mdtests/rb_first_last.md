@@ -745,8 +745,10 @@ struct rb_node* rb_first(const struct rb_root* root) {
                      entry_left, entry_right) => {
             let { left: entry_l, right: entry_r } = unfold(t);
             have root->rb_node != 0;
-            let t = fold(rb_at(n), { model: old(t.model) },
-                         { left: entry_l, right: entry_r });
+            let t = fold(rb_at(n), {
+                model: old(t.model),
+                left: entry_l, right: entry_r
+            });
             let ctx = fold(ctx_at(n, root), { model: Context::Top });
             have ctx_all_left(ctx.model) == 1 by {
                 rewrite(ctx.model, Context::Top);
@@ -797,8 +799,9 @@ struct rb_node* rb_first(const struct rb_root* root) {
                                 known();
                             }
                             let frame = fold(ctx_at(n->rb_left, root), {
-                                model: Context::Left(n, parent, color, right_model, ctx.model)
-                            }, { sibling: rt, up: ctx });
+                                model: Context::Left(n, parent, color, right_model, ctx.model),
+                                sibling: rt, up: ctx
+                            });
                             step();
                         }
                     }
@@ -821,8 +824,9 @@ struct rb_node* rb_first(const struct rb_root* root) {
                         normalize();
                     }
                     let sub = fold(rb_at(n), {
-                        model: RbTree::Node(identity, parent, color, left_model, right_model)
-                    }, { left: l, right: rt });
+                        model: RbTree::Node(identity, parent, color, left_model, right_model),
+                        left: l, right: rt
+                    });
                     have rb_left(sub.model) == RbTree::Empty by {
                         rewrite(sub.model, RbTree::Node(identity, parent, color, left_model, right_model));
                         rewrite(rb_left(RbTree::Node(identity, parent, color, left_model,
@@ -903,8 +907,10 @@ struct rb_node* rb_last(const struct rb_root* root) {
                      entry_left, entry_right) => {
             let { left: entry_l, right: entry_r } = unfold(t);
             have root->rb_node != 0;
-            let t = fold(rb_at(n), { model: old(t.model) },
-                         { left: entry_l, right: entry_r });
+            let t = fold(rb_at(n), {
+                model: old(t.model),
+                left: entry_l, right: entry_r
+            });
             let ctx = fold(ctx_at(n, root), { model: Context::Top });
             have ctx_all_right(ctx.model) == 1 by {
                 rewrite(ctx.model, Context::Top);
@@ -955,8 +961,9 @@ struct rb_node* rb_last(const struct rb_root* root) {
                                 known();
                             }
                             let frame = fold(ctx_at(n->rb_right, root), {
-                                model: Context::Right(n, parent, color, left_model, ctx.model)
-                            }, { sibling: l, up: ctx });
+                                model: Context::Right(n, parent, color, left_model, ctx.model),
+                                sibling: l, up: ctx
+                            });
                             step();
                         }
                     }
@@ -979,8 +986,9 @@ struct rb_node* rb_last(const struct rb_root* root) {
                         normalize();
                     }
                     let sub = fold(rb_at(n), {
-                        model: RbTree::Node(identity, parent, color, left_model, right_model)
-                    }, { left: l, right: rt });
+                        model: RbTree::Node(identity, parent, color, left_model, right_model),
+                        left: l, right: rt
+                    });
                     have rb_right(sub.model) == RbTree::Empty by {
                         rewrite(sub.model, RbTree::Node(identity, parent, color, left_model, right_model));
                         rewrite(rb_right(RbTree::Node(identity, parent, color, left_model,

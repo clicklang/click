@@ -79,8 +79,8 @@ tactic split_sized_tree(p: struct rb_node*) {
             have sized_identity(right_model) != p by {
                 rewrite(sized_identity(right_model), p->rb_right); known();
             }
-            let structure = fold(rb_at(p), { model: RbTree::Node(identity, parent, color, sized_shape(left_model), sized_shape(right_model)) }, { left: left_structure, right: right_structure });
-            let metadata = fold(sized_metadata_at(p), { model: SizedTree::Node(identity, parent, color, value, left_model, right_model) }, { value_cell: cell, left: left_metadata, right: right_metadata });
+            let structure = fold(rb_at(p), { model: RbTree::Node(identity, parent, color, sized_shape(left_model), sized_shape(right_model)), left: left_structure, right: right_structure });
+            let metadata = fold(sized_metadata_at(p), { model: SizedTree::Node(identity, parent, color, value, left_model, right_model), value_cell: cell, left: left_metadata, right: right_metadata });
             have structure.model == sized_shape(old(tree.model)) by {
                 rewrite(old(tree.model), SizedTree::Node(identity, parent, color, value, left_model, right_model));
                 unfold(sized_shape(SizedTree::Node(identity, parent, color, value, left_model, right_model))); normalize();
@@ -134,7 +134,7 @@ tactic rb_identity_at(p: struct rb_node*) {
         },
         RbTree::Node(identity, parent, color, left_model, right_model) => {
             let { left: left, right: right } = unfold(tree);
-            let checked = fold(rb_at(p), { model: RbTree::Node(identity, parent, color, left_model, right_model) }, { left: left, right: right });
+            let checked = fold(rb_at(p), { model: RbTree::Node(identity, parent, color, left_model, right_model), left: left, right: right });
             have rb_identity(checked.model) == p by {
                 rewrite(checked.model, RbTree::Node(identity, parent, color, left_model, right_model));
                 unfold(rb_identity(RbTree::Node(identity, parent, color, left_model, right_model))); known();
@@ -206,7 +206,7 @@ tactic join_sized_tree(p: struct rb_node*) {
             have sized_parent_is(right_model, p) == 1 by {
                 rewrite(sized_parent_is(right_model, p), rb_parent_is(sized_shape(right_model), p)); known();
             }
-            let tree = fold(sized_at(p), { model: SizedTree::Node(identity, parent, color, value, left_model, right_model) }, { metadata: cell, left: left, right: right });
+            let tree = fold(sized_at(p), { model: SizedTree::Node(identity, parent, color, value, left_model, right_model), metadata: cell, left: left, right: right });
         },
     }
 }

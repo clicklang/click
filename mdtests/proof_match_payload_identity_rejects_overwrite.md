@@ -42,14 +42,14 @@ void probe(struct node *p) {
                 unfold(identity(Tag::At(id, color))); normalize();
             }
             let {kid: original_kid} = unfold(a);
-            let joined = fold(frame(), {model: Tag::At(id, color)}, {kid: original_kid});
+            let joined = fold(frame(), { model: Tag::At(id, color), kid: original_kid });
             match joined.model {
                 Tag::At(other, other_color) => {
                     have joined.model == Tag::At(other, other_color);
                     let {kid: kid} = unfold(joined);
                     step();
                     have (other->tag & 1) == 1;
-                    let b = fold(frame(), {model: Tag::At(id, color)}, {kid: kid});
+                    let b = fold(frame(), { model: Tag::At(id, color), kid: kid });
                 },
             }
         },

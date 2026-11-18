@@ -2646,7 +2646,7 @@ void f(struct node* p) {
             mark before_store;
             have p->right == link by { known(); }
             step();
-            let t = fold(tree(id), { model: Tree::Node(id, link, lm, rm) }, { left: l, right: r });
+            let t = fold(tree(id), { model: Tree::Node(id, link, lm, rm), left: l, right: r });
             step_until(function.exit); solve();
         },
     }
@@ -4411,7 +4411,7 @@ verifying "f.c";
 resource cell(p: int32*, index: int32) { field value: int32; owns *p; }
 resource holder(p: int32*) { field value: int32; owns child: cell(p, 1); fact child.value == value; }
 void f(int32* p) { consumes c: cell(p, 0); ensures true; } by {
-    let h = fold(holder(p), { value: c.value }, { child: c });
+    let h = fold(holder(p), { value: c.value, child: c });
 }
 "#;
     let c = "void f(int *p) {}";

@@ -80,8 +80,9 @@ void bump_n(struct cell* node, int32 n) {
                     step();
                     step();
                     let l = fold(list_at(node), {
-                        model: CellList::Cons(identity, 7, tail_model)
-                    }, { tail: t });
+                        model: CellList::Cons(identity, 7, tail_model),
+                        tail: t
+                    });
                 },
             }
         }

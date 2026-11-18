@@ -54,7 +54,7 @@ int32 touch(int32 n) {
         Chain::Nil => { contradiction(c.model == Chain::Nil); },
         Chain::Link(rest_model) => {
             let { rest: r } = unfold(c);
-            let d = fold(chain(n), { model: Chain::Link(rest_model) }, { rest: r });
+            let d = fold(chain(n), { model: Chain::Link(rest_model), rest: r });
             have d.model == old(c.model);
             step();
             solve();

@@ -31,11 +31,13 @@ tactic sized_link_replacement_distinct(child: struct rb_node*, replacement: stru
                 known();
             }
             let frames = fold(sized_context_at(child, root->rb_node, 0, previous), {
-                model: SizedContext::Left(a, above, shade, value, sibling_model, up_model)
-            }, { metadata: metadata, sibling: sibling, up: up });
+                model: SizedContext::Left(a, above, shade, value, sibling_model, up_model),
+                metadata: metadata, sibling: sibling, up: up
+            });
             let link = fold(sized_link_at(child, root, previous), {
-                model: SizedContext::Left(a, above, shade, value, sibling_model, up_model)
-            }, { frames: frames });
+                model: SizedContext::Left(a, above, shade, value, sibling_model, up_model),
+                frames: frames
+            });
             have sized_context_parent(link.model, 0) == a by {
                 rewrite(link.model, SizedContext::Left(a, above, shade, value, sibling_model, up_model));
                 unfold(sized_context_parent(SizedContext::Left(a, above, shade, value, sibling_model, up_model), 0)); normalize();
@@ -55,11 +57,13 @@ tactic sized_link_replacement_distinct(child: struct rb_node*, replacement: stru
                 known();
             }
             let frames = fold(sized_context_at(child, root->rb_node, 0, previous), {
-                model: SizedContext::Right(a, above, shade, value, sibling_model, up_model)
-            }, { metadata: metadata, sibling: sibling, up: up });
+                model: SizedContext::Right(a, above, shade, value, sibling_model, up_model),
+                metadata: metadata, sibling: sibling, up: up
+            });
             let link = fold(sized_link_at(child, root, previous), {
-                model: SizedContext::Right(a, above, shade, value, sibling_model, up_model)
-            }, { frames: frames });
+                model: SizedContext::Right(a, above, shade, value, sibling_model, up_model),
+                frames: frames
+            });
             have sized_context_parent(link.model, 0) == a by {
                 rewrite(link.model, SizedContext::Right(a, above, shade, value, sibling_model, up_model));
                 unfold(sized_context_parent(SizedContext::Right(a, above, shade, value, sibling_model, up_model), 0)); normalize();

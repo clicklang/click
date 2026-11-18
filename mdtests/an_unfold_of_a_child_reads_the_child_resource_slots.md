@@ -40,8 +40,8 @@ int32 get(int32* p) {
     let { v: kv } = unfold(k);
     step_until(function.exit);
     let k = fold(cell(p), { v: kv });
-    let m = fold(mid(p), { w: k.v }, { x: k });
-    let t = fold(top(p), { x: tx }, { c: m });
+    let m = fold(mid(p), { w: k.v, x: k });
+    let t = fold(top(p), { x: tx, c: m });
     solve();
 }
 ```

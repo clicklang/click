@@ -151,11 +151,13 @@ struct node* rotate_left(
             step();
             step();
             let lower = fold(tree_at(node), {
-                model: Shape::Node(node, l.model, m.model)
-            }, { left: l, right: m });
+                model: Shape::Node(node, l.model, m.model),
+                left: l, right: m
+            });
             let rotated = fold(tree_at(pivot), {
-                model: Shape::Node(pivot, lower.model, z.model)
-            }, { left: lower, right: z });
+                model: Shape::Node(pivot, lower.model, z.model),
+                left: lower, right: z
+            });
             have shape_left(old(r.model)) == middle_model by {
                 rewrite(old(r.model), Shape::Node(pivot_node, middle_model, far_model));
                 unfold(shape_left(Shape::Node(pivot_node, middle_model, far_model)));

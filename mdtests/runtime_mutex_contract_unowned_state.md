@@ -37,7 +37,7 @@ void initialize(struct counter *counter) {
     requires aligned(&counter->mu, 8);
     owns state: counter_state(counter);
 } by {
-    let wrapped = fold(package(counter), { tag: state.value }, { child: state });
+    let wrapped = fold(package(counter), { tag: state.value, child: state });
     let { lifetime: mutex_lifetime } = step(pthread_mutex_init, { state: state });
 }
 ```

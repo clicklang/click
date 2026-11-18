@@ -33,7 +33,7 @@ void write(struct cell* c, int32 v) {
 } by {
     let {} = unfold(before);
     step_until(function.exit);
-    let after = fold(cell_at(c), { value: v }, {});
+    let after = fold(cell_at(c), { value: v });
 }
 
 void move_out(struct cell* c, struct cell* d, int32 x) {

@@ -23,15 +23,15 @@ void preserve(int32* p, int32 flag) {
     let { item: item } = unfold(parent);
     unfold(item);
     let item = fold(cell(p), { value: old(parent.value) });
-    let parent = fold(box(p), { value: old(parent.value) }, { item: item });
+    let parent = fold(box(p), { value: old(parent.value), item: item });
     if flag == 0 {
         let { item: item } = unfold(parent);
         unfold(item);
         let replacement = fold(cell(p), { value: old(parent.value) });
-        let parent = fold(box(p), { value: old(parent.value) }, { item: replacement });
+        let parent = fold(box(p), { value: old(parent.value), item: replacement });
     } else {
         let { item: item } = unfold(parent);
-        let parent = fold(box(p), { value: old(parent.value) }, { item: item });
+        let parent = fold(box(p), { value: old(parent.value), item: item });
     }
 }
 ```

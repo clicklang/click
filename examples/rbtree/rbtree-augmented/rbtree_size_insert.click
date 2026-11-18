@@ -37,7 +37,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
         normalize();
     }
     step(); step(); step(); step();
-    let tree = fold(sized_at(node), { model: old(tree.model) }, { metadata: metadata, left: left, right: right });
+    let tree = fold(sized_at(node), { model: old(tree.model), metadata: metadata, left: left, right: right });
     loop {
         owns root->rb_node;
         owns tree: sized_at(node);
@@ -56,8 +56,9 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                 unfold(color_bit(Color::Black)); solve();
             }
             let tree = fold(sized_at(node), {
-                model: SizedTree::Node(node, 0, Color::Black, sized_value(old(tree.model)), sized_left(old(tree.model)), sized_right(old(tree.model)))
-            }, { metadata: metadata, left: left, right: right });
+                model: SizedTree::Node(node, 0, Color::Black, sized_value(old(tree.model)), sized_left(old(tree.model)), sized_right(old(tree.model))),
+                metadata: metadata, left: left, right: right
+            });
             have tree.model == sized_recolor(old(tree.model), Color::Black) by {
                 rewrite(old(tree.model), SizedTree::Node(node, 0, Color::Red, sized_value(old(tree.model)), sized_left(old(tree.model)), sized_right(old(tree.model))));
                 unfold(sized_recolor(SizedTree::Node(node, 0, Color::Red, sized_value(old(tree.model)), sized_left(old(tree.model)), sized_right(old(tree.model))), Color::Black));

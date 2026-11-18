@@ -54,7 +54,7 @@ void keep(struct node* h) {
                 requires id != 0 by solve();
                 requires id == id by normalize();
             }
-            let g = fold(holder_at(h), { model: Cell::At(id) }, { child: c });
+            let g = fold(holder_at(h), { model: Cell::At(id), child: c });
             step_until(function.exit);
             solve();
         },

@@ -555,7 +555,7 @@ int produce(struct root* root, const struct callbacks* augment) {
     ensures out_value(out.model) == old(cell.model);
 } by {
     step_until(function.exit);
-    let out = fold(out_at(root, 0), { model: Out::Done(cell.model) }, { whole: cell });
+    let out = fold(out_at(root, 0), { model: Out::Done(cell.model), whole: cell });
     solve();
 }
 
