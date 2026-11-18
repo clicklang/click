@@ -147,7 +147,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(None);
         };
         let kernel = search_input.lower_integer_surface_proposition(&canonical, "product bound")?;
-        let Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(a, b), true) = &kernel else {
+        let Some((ConditionTerm::IntegerLessEqual(a, b), true)) = (&kernel).condition_native()
+        else {
             return Ok(None);
         };
         let (product, target, lower) = if let Some(target) = a.as_const() {
@@ -184,7 +185,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 vec![premise]
             };
             for premise in readings {
-                let Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(a, b), true) = premise
+                let Some((ConditionTerm::IntegerLessEqual(a, b), true)) =
+                    premise.condition_native()
                 else {
                     continue;
                 };
@@ -8138,7 +8140,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         else {
             return None;
         };
-        let Proposition::ConditionIs(
+        let condition_source = search_input.goal()?;
+        let Some((
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
@@ -8164,11 +8167,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 right,
             },
             true,
-        ) = search_input.goal()?
+        )) = condition_source.condition_native()
         else {
             return None;
         };
-        let Proposition::ConditionIs(
+        let Some((
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
@@ -8176,7 +8179,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 right: b,
             },
             true,
-        ) = equality
+        )) = equality.condition_native()
         else {
             return None;
         };
@@ -8869,7 +8872,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if !matches!(search_input.context.as_ref(), ProofContext::FixedState(_)) {
             return None;
         }
-        let Proposition::ConditionIs(
+        let Some((
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
@@ -8877,7 +8880,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 right: goal_upper,
             },
             true,
-        ) = goal
+        )) = goal.condition_native()
         else {
             return None;
         };
@@ -8906,7 +8909,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             right: surface_value.clone(),
         };
         for (kernel, surface) in premise_pairs {
-            let Proposition::ConditionIs(
+            let Some((
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
@@ -8914,7 +8917,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     right,
                 },
                 true,
-            ) = kernel
+            )) = kernel.condition_native()
             else {
                 continue;
             };

@@ -750,7 +750,7 @@ fn plan_explicit_signed_antisymmetry(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
-    let Proposition::ConditionIs(
+    let Some((
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
@@ -758,7 +758,7 @@ fn plan_explicit_signed_antisymmetry(
             right,
         },
         true,
-    ) = goal
+    )) = goal.condition_native()
     else {
         return None;
     };
@@ -3281,7 +3281,7 @@ pub(super) fn plan_explicit_le_transitive_constant_lower(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
-    let Proposition::ConditionIs(
+    let Some((
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessEqual,
@@ -3289,7 +3289,7 @@ pub(super) fn plan_explicit_le_transitive_constant_lower(
             right: goal_value,
         },
         true,
-    ) = goal
+    )) = goal.condition_native()
     else {
         return None;
     };
@@ -3423,7 +3423,7 @@ fn plan_explicit_greater_equal_to_reversed_less_equal(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
-    let Proposition::ConditionIs(
+    let Some((
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessEqual,
@@ -3431,12 +3431,12 @@ fn plan_explicit_greater_equal_to_reversed_less_equal(
             right: goal_greater,
         },
         true,
-    ) = goal
+    )) = goal.condition_native()
     else {
         return None;
     };
     for (kernel, surface) in premise_pairs {
-        let Proposition::ConditionIs(
+        let Some((
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterEqual,
@@ -3444,7 +3444,7 @@ fn plan_explicit_greater_equal_to_reversed_less_equal(
                 right: lower,
             },
             true,
-        ) = kernel
+        )) = kernel.condition_native()
         else {
             continue;
         };
@@ -3518,7 +3518,7 @@ fn plan_explicit_greater_equal_transitive(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
-    let Proposition::ConditionIs(
+    let Some((
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterEqual,
@@ -3526,7 +3526,7 @@ fn plan_explicit_greater_equal_transitive(
             right: goal_first,
         },
         true,
-    ) = goal
+    )) = goal.condition_native()
     else {
         return None;
     };
@@ -3559,7 +3559,7 @@ pub(super) fn plan_explicit_negated_strict_successor_bound(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
-    let Proposition::ConditionIs(
+    let Some((
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterEqual,
@@ -3567,7 +3567,7 @@ pub(super) fn plan_explicit_negated_strict_successor_bound(
             right: goal_lower,
         },
         true,
-    ) = goal
+    )) = goal.condition_native()
     else {
         return None;
     };
@@ -3616,7 +3616,7 @@ pub(super) fn plan_explicit_increment_greater_equal_lower_bound(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
-    let Proposition::ConditionIs(
+    let Some((
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterEqual,
@@ -3624,7 +3624,7 @@ pub(super) fn plan_explicit_increment_greater_equal_lower_bound(
             right: goal_lower,
         },
         true,
-    ) = goal
+    )) = goal.condition_native()
     else {
         return None;
     };
@@ -3658,7 +3658,7 @@ pub(super) fn plan_explicit_increment_strict_greater_lower_bound(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
-    let Proposition::ConditionIs(
+    let Some((
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterThan,
@@ -3666,7 +3666,7 @@ pub(super) fn plan_explicit_increment_strict_greater_lower_bound(
             right: goal_lower,
         },
         true,
-    ) = goal
+    )) = goal.condition_native()
     else {
         return None;
     };
@@ -3700,7 +3700,7 @@ pub(super) fn plan_explicit_increment_strict_greater_from_strict_lower(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
-    let Proposition::ConditionIs(
+    let Some((
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterThan,
@@ -3708,7 +3708,7 @@ pub(super) fn plan_explicit_increment_strict_greater_from_strict_lower(
             right: goal_lower,
         },
         true,
-    ) = goal
+    )) = goal.condition_native()
     else {
         return None;
     };
@@ -3829,7 +3829,7 @@ fn plan_explicit_constant_strict_upper_bound_weakening(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
-    let Proposition::ConditionIs(
+    let Some((
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
@@ -3837,7 +3837,7 @@ fn plan_explicit_constant_strict_upper_bound_weakening(
             right: goal_upper,
         },
         true,
-    ) = goal
+    )) = goal.condition_native()
     else {
         return None;
     };
@@ -3879,7 +3879,7 @@ pub(super) fn plan_explicit_increment_constant_upper_bound(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
-    let Proposition::ConditionIs(
+    let Some((
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessEqual,
@@ -3887,7 +3887,7 @@ pub(super) fn plan_explicit_increment_constant_upper_bound(
             right: goal_upper,
         },
         true,
-    ) = goal
+    )) = goal.condition_native()
     else {
         return None;
     };
@@ -3927,7 +3927,7 @@ fn plan_explicit_constant_lower_bound_weakening(
     let bits32_constant!(goal_constant) = goal_lower else {
         return None;
     };
-    let Proposition::ConditionIs(
+    let Some((
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessEqual,
@@ -3935,7 +3935,7 @@ fn plan_explicit_constant_lower_bound_weakening(
             right: _,
         },
         true,
-    ) = goal
+    )) = goal.condition_native()
     else {
         return None;
     };
@@ -4091,7 +4091,7 @@ pub(super) fn plan_explicit_one_plus_strictly_increases(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
-    let Proposition::ConditionIs(
+    let Some((
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
@@ -4099,7 +4099,7 @@ pub(super) fn plan_explicit_one_plus_strictly_increases(
             right: sum,
         },
         true,
-    ) = goal
+    )) = goal.condition_native()
     else {
         return None;
     };
@@ -4478,7 +4478,7 @@ pub(super) fn plan_explicit_le_and_not_lt_implies_eq(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
-    let Proposition::ConditionIs(
+    let Some((
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
@@ -4486,7 +4486,7 @@ pub(super) fn plan_explicit_le_and_not_lt_implies_eq(
             right,
         },
         true,
-    ) = goal
+    )) = goal.condition_native()
     else {
         return None;
     };
@@ -4542,7 +4542,7 @@ pub(super) fn plan_pointer_advanced_load_equality(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
-    let Proposition::ConditionIs(
+    let Some((
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
@@ -4550,7 +4550,7 @@ pub(super) fn plan_pointer_advanced_load_equality(
             right,
         },
         true,
-    ) = goal
+    )) = goal.condition_native()
     else {
         return None;
     };
@@ -4560,8 +4560,8 @@ pub(super) fn plan_pointer_advanced_load_equality(
     );
 
     for (pointer_kernel, pointer_surface) in premise_pairs {
-        let Proposition::ConditionIs(ConditionTerm::AddressEqual(fact_left, fact_right), true) =
-            pointer_kernel
+        let Some((ConditionTerm::AddressEqual(fact_left, fact_right), true)) =
+            pointer_kernel.condition_native()
         else {
             continue;
         };
@@ -4662,7 +4662,7 @@ pub(super) fn plan_explicit_ge_and_not_gt_implies_eq(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
-    let Proposition::ConditionIs(
+    let Some((
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
@@ -4670,12 +4670,12 @@ pub(super) fn plan_explicit_ge_and_not_gt_implies_eq(
             right,
         },
         true,
-    ) = goal
+    )) = goal.condition_native()
     else {
         return None;
     };
     for (ge_kernel, ge_surface) in premise_pairs {
-        let Proposition::ConditionIs(
+        let Some((
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterEqual,
@@ -4683,7 +4683,7 @@ pub(super) fn plan_explicit_ge_and_not_gt_implies_eq(
                 right: ge_right,
             },
             true,
-        ) = ge_kernel
+        )) = ge_kernel.condition_native()
         else {
             continue;
         };

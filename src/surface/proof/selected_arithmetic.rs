@@ -186,7 +186,7 @@ enum Establish {
 fn observed_operation_format(
     identity: &Proposition,
 ) -> Option<crate::kernel::MachineIntegerFormat> {
-    let Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true) = identity else {
+    let Some((ConditionTerm::IntegerEqual(left, right), true)) = identity.condition_native() else {
         return None;
     };
     [left, right].into_iter().find_map(|side| {

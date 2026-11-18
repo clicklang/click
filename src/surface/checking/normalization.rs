@@ -692,8 +692,8 @@ mod tests {
             // The rewritten goal reads the target at the observed state,
             // named as a read: the read-over-write authority relates it to
             // the latest overwrite stored there.
-            let Proposition::ConditionIs(ConditionTerm::Compare { left, right, .. }, true) =
-                &rewritten
+            let Some((ConditionTerm::Compare { left, right, .. }, true)) =
+                (&rewritten).condition_native()
             else {
                 panic!("the rewrite keeps the comparison: {rewritten:?}");
             };

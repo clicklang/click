@@ -121,7 +121,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     &eq(d.clone(), d.clone()),
                     "quotient shift divisor",
                 )?;
-                let Proposition::ConditionIs(ConditionTerm::IntegerEqual(value, _), true) = kernel
+                let Some((ConditionTerm::IntegerEqual(value, _), true)) = kernel.condition_native()
                 else {
                     continue;
                 };

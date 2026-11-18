@@ -30,7 +30,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(None);
         };
         let goal = input.lower_integer_surface_proposition(&surface, "multiplication order")?;
-        let Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(left, right), true) = goal
+        let Some((ConditionTerm::IntegerLessEqual(left, right), true)) = goal.condition_native()
         else {
             return Ok(None);
         };
@@ -85,15 +85,15 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 };
                 let l = product(first, factor);
                 let r = product(second, factor);
-                if (left != l && left != product(factor, first))
-                    || (right != r && right != product(factor, second))
+                if (left != &l && left != &product(factor, first))
+                    || (right != &r && right != &product(factor, second))
                 {
                     continue;
                 }
                 let mut proof = input.clone();
                 for (source, actual, canonical) in [
-                    (if negative { b } else { a }, &left, &l),
-                    (if negative { a } else { b }, &right, &r),
+                    (if negative { b } else { a }, left, &l),
+                    (if negative { a } else { b }, right, &r),
                 ] {
                     if actual == canonical {
                         continue;

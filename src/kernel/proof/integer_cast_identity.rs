@@ -46,7 +46,7 @@ fn check_as_written(
     if bounds.len() != 2 {
         return Err(invalid());
     }
-    let Proposition::ConditionIs(ConditionTerm::IntegerEqual(a, b), true) = result else {
+    let Some((ConditionTerm::IntegerEqual(a, b), true)) = result.condition_native() else {
         return Err(invalid());
     };
     // Two observations with one value reading (rule W: a widening's value
@@ -197,7 +197,7 @@ mod tests {
                     );
                     assert_eq!(expected == number, min <= number && number <= max);
                 }
-                let Proposition::ConditionIs(ConditionTerm::IntegerEqual(a, b), true) = &goal
+                let Some((ConditionTerm::IntegerEqual(a, b), true)) = (&goal).condition_native()
                 else {
                     unreachable!()
                 };

@@ -622,7 +622,7 @@ fn rewrite_with_admitted_equality_reading(
 /// constant, is also kept as written. The check is the equality's own two
 /// operands; nothing else is consulted.
 fn signed_byte_equality_as_byte_equality(equality: &Proposition) -> Option<Proposition> {
-    let Proposition::ConditionIs(
+    let Some((
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
@@ -630,7 +630,7 @@ fn signed_byte_equality_as_byte_equality(equality: &Proposition) -> Option<Propo
             right: to,
         },
         true,
-    ) = equality
+    )) = equality.condition_native()
     else {
         return None;
     };
@@ -2705,11 +2705,11 @@ mod tests {
                 Proposition::ConditionIs(ConditionTerm::signed_less_equal(read, 7u32.into()), true);
             let equality = Proposition::ConditionIs(ConditionTerm::equal(index, 0u32.into()), true);
             let rewritten = rewrite_with_admitted_equality(&goal, &equality).unwrap();
-            let Proposition::ConditionIs(ConditionTerm::Compare { left, .. }, true) = rewritten
+            let Some((ConditionTerm::Compare { left, .. }, true)) = rewritten.condition_native()
             else {
                 panic!("rewritten scalar comparison");
             };
-            assert!(matches!(*left, MachineTerm::MemoryLoad(..)));
+            assert!(matches!(left.as_ref(), MachineTerm::MemoryLoad(..)));
             let observed = crate::kernel::eval::scalar_read_observation(
                 crate::kernel::MachineOperandView::Legacy(&left),
             )

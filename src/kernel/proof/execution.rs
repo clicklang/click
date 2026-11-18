@@ -5854,7 +5854,7 @@ pub(super) struct CheckedInterfaceLoadDefinition {
 
 impl CheckedInterfaceLoadDefinition {
     fn check(proposition: &Proposition) -> Option<Self> {
-        let Proposition::ConditionIs(
+        let Some((
             crate::kernel::ConditionTerm::Compare {
                 format:
                     crate::kernel::MachineIntegerType::Int32 | crate::kernel::MachineIntegerType::UInt32,
@@ -5863,7 +5863,7 @@ impl CheckedInterfaceLoadDefinition {
                 right,
             },
             true,
-        ) = proposition
+        )) = proposition.condition_native()
         else {
             return None;
         };

@@ -4113,7 +4113,7 @@ fn matched_resource_integer_binding_does_not_capture_free_integer_field() {
     let (_, unfolded_facts) =
         rewrite_resource_instance(&state, &instance, &definition, &assumptions, true).unwrap();
     let free_field_fact = unfolded_facts.iter().any(|fact| {
-        let Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true) = fact else {
+        let Some((ConditionTerm::IntegerEqual(left, right), true)) = fact.condition_native() else {
             return false;
         };
         (left.as_ref() == &IntegerTerm::var(binding)

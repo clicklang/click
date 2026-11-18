@@ -2476,8 +2476,8 @@ mod tests {
         let Proposition::Implies(_, conclusion) = empty.proposition() else {
             unreachable!()
         };
-        let Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true) =
-            conclusion.as_ref()
+        let Some((ConditionTerm::IntegerEqual(left, right), true)) =
+            conclusion.as_ref().condition_native()
         else {
             unreachable!()
         };
@@ -2495,8 +2495,8 @@ mod tests {
             unreachable!()
         };
         assert!(matches!(guard.as_ref(), Proposition::ConditionIs(_, true)));
-        let Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, _), true) =
-            conclusion.as_ref()
+        let Some((ConditionTerm::IntegerEqual(left, _), true)) =
+            conclusion.as_ref().condition_native()
         else {
             unreachable!()
         };
@@ -2564,8 +2564,8 @@ mod tests {
                 true
             )
         ));
-        let Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true) =
-            conclusion.as_ref()
+        let Some((ConditionTerm::IntegerEqual(left, right), true)) =
+            conclusion.as_ref().condition_native()
         else {
             unreachable!()
         };
@@ -2615,8 +2615,8 @@ mod tests {
             Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, _), true)
                 if left.as_ref() == &prior
         )));
-        let Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true) =
-            conclusion.as_ref()
+        let Some((ConditionTerm::IntegerEqual(left, right), true)) =
+            conclusion.as_ref().condition_native()
         else {
             unreachable!()
         };
@@ -2648,7 +2648,8 @@ mod tests {
             &replacement,
         )
         .expect("the application occurs on the arithmetic spine");
-        let Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(_, right), true) = &rewritten
+        let Some((ConditionTerm::IntegerLessEqual(_, right), true)) =
+            (&rewritten).condition_native()
         else {
             unreachable!()
         };
@@ -2799,8 +2800,8 @@ mod tests {
             let Proposition::Implies(_, conclusion) = theorem.proposition() else {
                 unreachable!()
             };
-            let Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true) =
-                conclusion.as_ref()
+            let Some((ConditionTerm::IntegerEqual(left, right), true)) =
+                conclusion.as_ref().condition_native()
             else {
                 unreachable!()
             };
@@ -2826,8 +2827,8 @@ mod tests {
         let Proposition::Implies(_, conclusion) = theorem.proposition() else {
             unreachable!()
         };
-        let Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true) =
-            conclusion.as_ref()
+        let Some((ConditionTerm::IntegerEqual(left, right), true)) =
+            conclusion.as_ref().condition_native()
         else {
             unreachable!()
         };
@@ -2857,8 +2858,8 @@ mod tests {
         let Proposition::Implies(_, conclusion) = theorem.proposition() else {
             unreachable!()
         };
-        let Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, _), true) =
-            conclusion.as_ref()
+        let Some((ConditionTerm::IntegerEqual(left, _), true)) =
+            conclusion.as_ref().condition_native()
         else {
             unreachable!()
         };
@@ -3115,7 +3116,7 @@ mod tests {
                 &IntegerTerm::constant_i64(3).into(),
             )
             .unwrap();
-            let Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, _), true) = rewritten
+            let Some((ConditionTerm::IntegerEqual(left, _), true)) = rewritten.condition_native()
             else {
                 unreachable!()
             };
@@ -3129,7 +3130,7 @@ mod tests {
                 &IntegerTerm::constant_i64(0).into(),
             )
             .unwrap();
-            let Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, _), true) = zero else {
+            let Some((ConditionTerm::IntegerEqual(left, _), true)) = zero.condition_native() else {
                 unreachable!()
             };
             assert!(left.as_const().is_none(), "zero substitution stays opaque");

@@ -846,10 +846,15 @@ mod tests {
         let (mut preservation, goal) = abstract_fixture(8);
         assert_eq!(preservation.apply(|_| true).unwrap(), goal);
         let result = &mut preservation.result;
-        let Proposition::ConditionIs(ConditionTerm::AlgebraicEqual(_, old), true) = result else {
+        let Some((condition, true)) = result.condition_native() else {
+            unreachable!()
+        };
+        let mut condition = condition.clone();
+        let ConditionTerm::AlgebraicEqual(_, old) = &mut condition else {
             unreachable!()
         };
         old.algebraic_type = TypeParameterName::intern("WrongTransportValue").algebraic_type();
+        *result = Proposition::ConditionIs(condition, true);
         assert!(
             preservation.apply(|_| true).is_err(),
             "abstract types must agree"
@@ -872,14 +877,17 @@ mod tests {
             Some(goal)
         );
         let mut wrong_domain = preservation.clone();
-        let Proposition::ConditionIs(ConditionTerm::PointerEqual(left, _), true) =
-            &mut wrong_domain.result
-        else {
+        let Some((condition, true)) = wrong_domain.result.condition_native() else {
+            panic!("distinct complete read domains");
+        };
+        let mut condition = condition.clone();
+        let ConditionTerm::PointerEqual(left, _) = &mut condition else {
             panic!("distinct complete read domains");
         };
         **left = (**left)
             .clone()
             .with_provenance(std::sync::Arc::new(Address::symbolic(Variable(8_399_099))));
+        wrong_domain.result = Proposition::ConditionIs(condition, true);
         assert!(
             wrong_domain
                 .apply(|_| true)

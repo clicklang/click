@@ -10616,7 +10616,7 @@ fn generated_load_binding_matches_proposition(
     else {
         return true;
     };
-    let Proposition::ConditionIs(
+    let Some((
         ConditionTerm::Compare {
             format: _,
             relation: CompareRelation::Equal,
@@ -10624,7 +10624,7 @@ fn generated_load_binding_matches_proposition(
             right,
         },
         true,
-    ) = proposition
+    )) = proposition.condition_native()
     else {
         return false;
     };

@@ -27,10 +27,10 @@ pub(super) fn check(
     if bounds.len() != 2 {
         return Err(invalid());
     }
-    let Proposition::ConditionIs(ConditionTerm::IntegerEqual(a, b), true) = premises
+    let Some((ConditionTerm::IntegerEqual(a, b), true)) = (premises
         .get(bounds[0])
-        .ok_or(Error::InvalidPremise(bounds[0]))?
-    else {
+        .ok_or(Error::InvalidPremise(bounds[0]))?)
+    .condition_native() else {
         return Err(invalid());
     };
     let (lo, hi, equality) = relation(

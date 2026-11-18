@@ -114,7 +114,7 @@ pub(super) fn has_retained_read_source(proposition: &ClickProposition) -> bool {
 /// The cast's destination and which written operand holds the original value.
 fn bounded_cast_shape(goal: &Proposition) -> Option<(crate::kernel::MachineIntegerFormat, bool)> {
     use crate::kernel::machine_integer::conversion;
-    let Proposition::ConditionIs(ConditionTerm::IntegerEqual(a, b), true) = goal else {
+    let Some((ConditionTerm::IntegerEqual(a, b), true)) = goal.condition_native() else {
         return None;
     };
     for (cast, original, original_on_left) in [(a, b, false), (b, a, true)] {

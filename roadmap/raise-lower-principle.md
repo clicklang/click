@@ -1404,6 +1404,9 @@ selected volatile, substitution, collection and frontend checks passed again,
 followed by quality. The outcome parent's ten pushed commits were verified
 upstream before the clean primary advanced through Git.
 
+The volatile-event slice landed in [PR #3273](https://github.com/clicklang/click/pull/3273);
+all six pushed commits were verified upstream.
+
 ### 10q2b1 Loadability-count storage (landed)
 
 `MemoryLoadable::bytes` uses the existing machine carrier. Native constructor
@@ -1422,7 +1425,7 @@ terms/paths; quality passed. Full nightly was not run. This is
 [PR #3275](https://github.com/clicklang/click/pull/3275); all three pushed
 commits were verified upstream before the clean primary advanced through Git.
 
-### 10q2b2 Retained loadability-count production (in progress)
+### 10q2b2 Retained loadability-count production (landed)
 
 Range-to-loadability production retains machine bounds directly when either
 endpoint already has a common root. Native-only ranges retain the original
@@ -1441,7 +1444,21 @@ passed. Fact stability recorded 121 refusals and zero changed terms/paths;
 quality passed. Full nightly was not run.
 
 After integrating upstream `2ada6bd35`, all 1,143 affected function, execution,
-loadability and memory-reasoning checks passed, followed by quality.
+loadability and memory-reasoning checks passed, followed by quality. This landed
+in [PR #3276](https://github.com/clicklang/click/pull/3276); all four pushed
+commits were verified upstream before the clean primary advanced through Git.
+
+### 10q3a Explicit native condition destructuring (in progress)
+
+Selected nested `let` readers inspect `Proposition::condition_native()` rather
+than destructuring its condition storage directly. The view borrows the exact
+native payload and truth marker; no proposition is cloned or reconstructed.
+This prepares the logical-condition carrier switch, without changing matching,
+refusal behavior, theorem rules or the output schema. Temporary owned producer
+results retain a local owner while their payload is inspected. All 675 selected
+condition/proposition/substitution checks passed, followed by 618 selected
+preservation, rewrite, Integer, surface synthesis and smart-closure checks.
+Quality passed. These prepare consumers; the output schema is unchanged.
 
 ## Chunk 3: machine-valued pure-function results
 

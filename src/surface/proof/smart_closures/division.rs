@@ -361,7 +361,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(None);
         };
         let kernel = input.lower_integer_surface_proposition(&surface, "division bound")?;
-        let Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(left, right), true) = kernel
+        let Some((ConditionTerm::IntegerLessEqual(left, right), true)) = kernel.condition_native()
         else {
             return Ok(None);
         };

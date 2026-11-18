@@ -2942,14 +2942,15 @@ impl<'a> Proof<'a> {
                     .into_iter()
                     .next()
                     .unwrap_or(lowered);
-            let Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(value, _), true) = lowered
+            let Some((ConditionTerm::IntegerLessEqual(value, _), true)) =
+                lowered.condition_native()
             else {
                 continue;
             };
             if value.as_ref() == term {
                 return Some(expression.clone());
             }
-            observed.push((expression, value));
+            observed.push((expression, value.clone()));
         }
         // Only on a miss, and only a widening of a narrow value, is read
         // through: the observation the planner reads a native narrow
@@ -3059,10 +3060,8 @@ impl<'a> Proof<'a> {
                 }
                 _ => continue,
             };
-            let Proposition::ConditionIs(
-                crate::kernel::ConditionTerm::IntegerLessEqual(left, right),
-                true,
-            ) = &bound
+            let Some((crate::kernel::ConditionTerm::IntegerLessEqual(left, right), true)) =
+                (&bound).condition_native()
             else {
                 return None;
             };
@@ -4000,8 +3999,8 @@ fn asserted_condition_proposition(condition: &ProgramExpression) -> ClickProposi
 fn literal_requirement_spelling(
     requirement: &UnresolvedRequirement,
 ) -> Option<RequirementSpelling> {
-    let Proposition::ConditionIs(ConditionTerm::Constant(value), polarity) =
-        &requirement.proposition
+    let Some((ConditionTerm::Constant(value), polarity)) =
+        (&requirement.proposition).condition_native()
     else {
         return None;
     };
@@ -4911,7 +4910,7 @@ fn mirrored_order_goal(goal: &Proposition) -> Option<Proposition> {
 fn swapped_bitvector_equality(fact: &Proposition) -> Option<Proposition> {
     // A 32-bit equality swaps at `int32` (rule K6); an 8- or 16-bit one at
     // its own format.
-    let Proposition::ConditionIs(
+    let Some((
         ConditionTerm::Compare {
             format:
                 format @ (MachineIntegerType::Int32
@@ -4925,7 +4924,7 @@ fn swapped_bitvector_equality(fact: &Proposition) -> Option<Proposition> {
             right,
         },
         value,
-    ) = fact
+    )) = fact.condition_native()
     else {
         return None;
     };
@@ -5314,7 +5313,7 @@ enum UnsignedOrder {
 fn unsigned_order_parts(
     proposition: &Proposition,
 ) -> Option<(UnsignedOrder, MachineTerm, MachineTerm)> {
-    let Proposition::ConditionIs(
+    let Some((
         ConditionTerm::Compare {
             format: MachineIntegerType::UInt32,
             relation:
@@ -5326,7 +5325,7 @@ fn unsigned_order_parts(
             right,
         },
         true,
-    ) = proposition
+    )) = proposition.condition_native()
     else {
         return None;
     };

@@ -2556,7 +2556,7 @@ fn evaluate_spec_integer_expression_paths_in(
 /// interned states uses their O(1) identity equality; arbitrary memory
 /// contents are never traversed here.
 pub(crate) fn is_verified_load_variable_defining_fact(proposition: &Proposition) -> bool {
-    let Proposition::ConditionIs(
+    let Some((
         ConditionTerm::Compare {
             relation: CompareRelation::Equal,
             left,
@@ -2564,7 +2564,7 @@ pub(crate) fn is_verified_load_variable_defining_fact(proposition: &Proposition)
             ..
         },
         true,
-    ) = proposition
+    )) = proposition.condition_native()
     else {
         return false;
     };

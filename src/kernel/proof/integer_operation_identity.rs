@@ -29,7 +29,7 @@ pub(super) fn check(
     if bounds.len() != 2 {
         return Err(invalid());
     }
-    let Proposition::ConditionIs(ConditionTerm::IntegerEqual(a, b), true) = result else {
+    let Some((ConditionTerm::IntegerEqual(a, b), true)) = result.condition_native() else {
         return Err(invalid());
     };
     let (ty, value, stated) = if let Some((ty, value)) = mathematical(a) {
@@ -147,7 +147,7 @@ mod tests {
             for subtract in [false, true] {
                 let (premises, goal, _) = inputs(ty, subtract, min.clone(), max.clone());
                 assert!(check_rule(vec![0, 1], &goal, &premises).is_ok());
-                let Proposition::ConditionIs(ConditionTerm::IntegerEqual(a, b), true) = &goal
+                let Some((ConditionTerm::IntegerEqual(a, b), true)) = (&goal).condition_native()
                 else {
                     unreachable!()
                 };

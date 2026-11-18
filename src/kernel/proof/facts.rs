@@ -2475,7 +2475,7 @@ impl PureFactStore {
                 if crate::instrumentation::deadline_exceeded_with_work(1) {
                     return false;
                 }
-                let Proposition::ConditionIs(
+                let Some((
                     ConditionTerm::Overflows {
                         format,
                         op,
@@ -2483,7 +2483,7 @@ impl PureFactStore {
                         right,
                     },
                     false,
-                ) = candidate.as_ref()
+                )) = candidate.as_ref().condition_native()
                 else {
                     return false;
                 };

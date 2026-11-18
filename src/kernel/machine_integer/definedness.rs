@@ -136,11 +136,11 @@ pub(crate) fn overflow_query_of_integer_bound(
     bound: &Proposition,
     formats: impl Iterator<Item = MachineIntegerType>,
 ) -> Option<OverflowQueryView> {
-    let Proposition::ConditionIs(
+    let Some((
         ConditionTerm::IntegerLessEqual(first, second)
         | ConditionTerm::IntegerGreaterEqual(first, second),
         true,
-    ) = bound
+    )) = bound.condition_native()
     else {
         return None;
     };
@@ -270,11 +270,11 @@ mod shared_query_tests {
         bound: &Proposition,
         formats: impl Iterator<Item = MachineIntegerType>,
     ) -> Option<Proposition> {
-        let Proposition::ConditionIs(
+        let Some((
             ConditionTerm::IntegerLessEqual(first, second)
             | ConditionTerm::IntegerGreaterEqual(first, second),
             true,
-        ) = bound
+        )) = bound.condition_native()
         else {
             return None;
         };

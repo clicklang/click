@@ -21,7 +21,7 @@ pub(super) fn check(
     if bounds.len() != 2 {
         return Err(invalid());
     }
-    let Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true) = result else {
+    let Some((ConditionTerm::IntegerEqual(left, right), true)) = result.condition_native() else {
         return Err(invalid());
     };
     let IntegerTerm::TruncatingQuotient(sum, d) = left.as_ref() else {

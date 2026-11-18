@@ -27,10 +27,10 @@ pub(super) fn check(
     } else {
         return Err(invalid());
     };
-    let Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(lo, hi), true) = premises
+    let Some((ConditionTerm::IntegerLessEqual(lo, hi), true)) = (premises
         .get(bounds[0])
-        .ok_or(Error::InvalidPremise(bounds[0]))?
-    else {
+        .ok_or(Error::InvalidPremise(bounds[0]))?)
+    .condition_native() else {
         return Err(invalid());
     };
     let (endpoint, lower) = if hi == term {

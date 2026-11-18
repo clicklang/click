@@ -2139,7 +2139,7 @@ pub fn resolve_minted_load_variables(
         if !fact.certified {
             continue;
         }
-        let Proposition::ConditionIs(
+        let Some((
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
@@ -2147,7 +2147,7 @@ pub fn resolve_minted_load_variables(
                 right,
             },
             true,
-        ) = fact.proposition()
+        )) = fact.proposition().condition_native()
         else {
             continue;
         };
@@ -8391,7 +8391,8 @@ mod machine_integer_pointer_substitution_tests {
         );
         let rewritten =
             substitute_pointer_variable_in_proposition(&proposition, binder, &replacement);
-        let Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, _), true) = rewritten else {
+        let Some((ConditionTerm::IntegerEqual(left, _), true)) = rewritten.condition_native()
+        else {
             panic!("unexpected proposition")
         };
         let IntegerTerm::Machine(observation) = left.as_ref() else {

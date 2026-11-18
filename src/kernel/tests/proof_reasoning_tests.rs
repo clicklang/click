@@ -545,11 +545,11 @@ fn pointer_substitution_replaces_the_block_and_preserves_the_offset() {
 
     let substituted =
         crate::kernel::substitute_pointer_variable_in_proposition(&proposition, from, &replacement);
-    let Proposition::ConditionIs(ConditionTerm::AddressEqual(left, _), true) = substituted else {
+    let Some((ConditionTerm::AddressEqual(left, _), true)) = substituted.condition_native() else {
         panic!("pointer substitution changed the proposition shape");
     };
     assert_eq!(
-        *left,
+        **left,
         Address {
             base: AddressBase::Symbolic(Variable(90_101)),
             offset: AddressOffset::Constant(12),
@@ -6935,8 +6935,8 @@ fn uint32_division_integer_bridges_match_unsigned_boundary_models() {
                     panic!("Integer guard missing");
                 };
                 assert!(PureFactContext::new().proves_exact(integer_guard));
-                let Proposition::ConditionIs(ConditionTerm::IntegerEqual(a, b), true) =
-                    conclusion.as_ref()
+                let Some((ConditionTerm::IntegerEqual(a, b), true)) =
+                    conclusion.as_ref().condition_native()
                 else {
                     panic!("observation equality missing");
                 };
@@ -7798,8 +7798,8 @@ fn unsigned_u16_packing_bridges_match_disjoint_fields_and_retain_both_bounds() {
                         PureFactContext::new().proves_exact(high_guard),
                         high <= 65535
                     );
-                    let Proposition::ConditionIs(ConditionTerm::IntegerEqual(packed, exact), true) =
-                        conclusion.as_ref()
+                    let Some((ConditionTerm::IntegerEqual(packed, exact), true)) =
+                        conclusion.as_ref().condition_native()
                     else {
                         panic!("missing observation equality");
                     };

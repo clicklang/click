@@ -133,7 +133,7 @@ fn exact_constant_of(
     fact: &Proposition,
     term: &MachineTerm,
 ) -> Option<i64> {
-    let Proposition::ConditionIs(
+    let Some((
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
@@ -147,7 +147,7 @@ fn exact_constant_of(
             right,
         },
         true,
-    ) = fact
+    )) = fact.condition_native()
     else {
         return None;
     };

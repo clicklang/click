@@ -2339,7 +2339,7 @@ pub(crate) fn is_load_variable(variable: &Variable) -> bool {
 /// equations are true by construction, so path wrapping treats them as
 /// ambient truths rather than premises.
 pub(crate) fn is_load_variable_defining_fact(proposition: &Proposition) -> bool {
-    let Proposition::ConditionIs(
+    let Some((
         ConditionTerm::Compare {
             format: _,
             relation: CompareRelation::Equal,
@@ -2347,7 +2347,7 @@ pub(crate) fn is_load_variable_defining_fact(proposition: &Proposition) -> bool 
             right,
         },
         true,
-    ) = proposition
+    )) = proposition.condition_native()
     else {
         return false;
     };

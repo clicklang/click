@@ -1163,7 +1163,7 @@ impl LoadAddressCongruenceEvidence {
         proposition: &Proposition,
         assumptions: &PureFactContext,
     ) -> bool {
-        let Proposition::ConditionIs(
+        let Some((
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
@@ -1171,7 +1171,7 @@ impl LoadAddressCongruenceEvidence {
                 right,
             },
             true,
-        ) = proposition
+        )) = proposition.condition_native()
         else {
             return false;
         };

@@ -312,7 +312,7 @@ fn cited_premises_only(
 fn cast_identity_bounds(goal: &Proposition, premises: &[Proposition]) -> Option<Vec<usize>> {
     use crate::kernel::IntegerTerm;
     use crate::kernel::machine_integer::conversion::{cast_operands, narrow_widening};
-    let Proposition::ConditionIs(ConditionTerm::IntegerEqual(a, b), true) = goal else {
+    let Some((ConditionTerm::IntegerEqual(a, b), true)) = goal.condition_native() else {
         return None;
     };
     let (observed, original): (&IntegerTerm, &IntegerTerm) = [(a, b), (b, a)]
@@ -334,9 +334,7 @@ fn cast_identity_bounds(goal: &Proposition, premises: &[Proposition]) -> Option<
             let readings =
                 crate::kernel::machine_integer::comparison::integer_observations_of_native_comparison(premise);
             std::iter::once(premise).chain(&readings).any(|reading| {
-                let Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(left, right), true) =
-                    reading
-                else {
+                let Some((ConditionTerm::IntegerLessEqual(left, right), true)) = reading.condition_native() else {
                     return false;
                 };
                 let (endpoint, operand) = if lower { (left, right) } else { (right, left) };
@@ -540,7 +538,7 @@ fn is_pointer_relation(p: &Proposition) -> bool {
     )
 }
 fn is_signed_scalar_bound(p: &Proposition) -> bool {
-    let Proposition::ConditionIs(
+    let Some((
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
@@ -566,7 +564,7 @@ fn is_signed_scalar_bound(p: &Proposition) -> bool {
             right: _,
         },
         true,
-    ) = p
+    )) = p.condition_native()
     else {
         return false;
     };

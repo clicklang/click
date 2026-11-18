@@ -1492,10 +1492,8 @@ impl<'a> Proof<'a> {
             facts = facts.with_kernel_checked_fact(derived.clone());
             let branch = match self.focused_obligation() {
                 Some(Obligation::Proposition(goal)) => {
-                    let Proposition::ConditionIs(
-                        ConditionTerm::IntegerEqual(unfolded, replacement),
-                        true,
-                    ) = &derived
+                    let Some((ConditionTerm::IntegerEqual(unfolded, replacement), true)) =
+                        (&derived).condition_native()
                     else {
                         return Err(self.step_error(
                             "the restated fold law did not produce an Integer equation",
@@ -1771,7 +1769,7 @@ impl<'a> Proof<'a> {
         equality: &Proposition,
     ) -> Result<Option<(Proposition, Option<Proposition>)>, ClickError> {
         let name = &application.name;
-        let Proposition::ConditionIs(ConditionTerm::IntegerEqual(whole, folded), true) = equality
+        let Some((ConditionTerm::IntegerEqual(whole, folded), true)) = equality.condition_native()
         else {
             return Err(self.step_error(format!(
                 "`unfold({name}(...))` applies to an `Integer`-valued pure function whose body is a range fold"

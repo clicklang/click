@@ -3032,7 +3032,7 @@ impl ScalarReadBridgeSide for MachineTerm {
     }
 
     fn equality_sides(proposition: &Proposition) -> Option<(Self, Self)> {
-        let Proposition::ConditionIs(
+        let Some((
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
@@ -3040,7 +3040,7 @@ impl ScalarReadBridgeSide for MachineTerm {
                 right,
             },
             true,
-        ) = proposition
+        )) = proposition.condition_native()
         else {
             return None;
         };
