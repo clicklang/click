@@ -1653,7 +1653,16 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // Prefer a direct composition before introducing a negated goal.
         // Refutation remains the fallback for strictness, ranges, and the
         // other rules outside the ordinary composition fragment.
+        // Refutation proves only `<=` goals, so an Integer equality, such as
+        // a 128-bit `a == b` from `a <= b` and `b <= a`, is composed directly
+        // from its two bounds or not at all.
+        let equality_goal = crate::kernel::proof::integer_arithmetic::integer_affine_claim(goal)
+            .is_some_and(|claim| {
+                claim.relation
+                    == crate::kernel::proof::integer_arithmetic::IntegerAffineRelation::Equal
+            });
         if (generated_scalar_goal
+            || equality_goal
             || (goal_values.is_empty()
                 && integer_composition::parts(goal).is_some()
                 && candidates

@@ -566,6 +566,11 @@ pub(super) fn observed_native_surface_comparison(
             } if matches!(body.as_ref(), ContractExpression::Binding(value) if value == name) => {
                 true
             }
+            // A theorem's `let n: int32 = v + 1;` binds a machine value, but
+            // a body written as an Integer, `to_integer(n)`, is the operand's
+            // value. Observing the whole `let` again would place that Integer
+            // inside a machine cast.
+            ContractExpression::Let { body, .. } => written_integer(body),
             ContractExpression::IntegerLiteral(_) => true,
             ContractExpression::Negate(inner)
             | ContractExpression::Old(inner)
@@ -1058,9 +1063,7 @@ fn written_integer_observations_with_entry<'s>(
         };
         if let ClickProposition::Comparison { left, right, .. } = comparison {
             for side in [left, right] {
-                if matches!(side, ContractExpression::IntegerLiteral(_))
-                    || matches!(side, ContractExpression::Call { name, .. } if name == "to_integer")
-                {
+                if matches!(side, ContractExpression::IntegerLiteral(_)) || observed_integer(side) {
                     continue;
                 }
                 let side = match selector {
@@ -1479,6 +1482,18 @@ fn kernel_upper_bound_split_candidate(
     Some((variable, pivot.retain(MachineIntegerType::Int32)))
 }
 
+/// An Integer observation, `to_integer(x)`, possibly under the `let`s of a
+/// theorem statement, `let n: int32 = v + 1; to_integer(n)`.
+fn observed_integer(operand: &ContractExpression) -> bool {
+    match operand {
+        ContractExpression::Call { name, arguments } => {
+            name == "to_integer" && arguments.len() == 1
+        }
+        ContractExpression::Let { body, .. } => observed_integer(body),
+        _ => false,
+    }
+}
+
 // These split conditions come from a native int32 bound. Shield their pivot
 // arithmetic from Integer specification arithmetic when printed.
 fn native_int32_split_operand(operand: ContractExpression) -> ContractExpression {
@@ -1848,25 +1863,47 @@ impl<'a> Proof<'a> {
                 right,
             } if !claim.terms.is_empty() => {
                 // An exact observation's native operand is the value it
-                // observes: `x as int32`, not `to_integer(x) as int32`.
-                let native = |operand| ContractExpression::CUnary {
-                    operand: Box::new(match operand {
-                        ContractExpression::Call {
+                // observes: `x as int32`, not `to_integer(x) as int32`. A
+                // theorem `let` around an observation keeps its binding:
+                // `let n: int32 = v + 1; to_integer(n)` is natively
+                // `let n: int32 = v + 1; n as int32`.
+                fn native(operand: ContractExpression) -> ContractExpression {
+                    match operand {
+                        ContractExpression::Let {
                             name,
-                            mut arguments,
-                        } if name == "to_integer" && arguments.len() == 1 => arguments.remove(0),
-                        operand => operand,
-                    }),
-                    lowered: ProgramExpression::Cast {
-                        expression: Box::new(ProgramExpression::Value(crate::kernel::int32(0))),
-                        target_type: crate::kernel::ProgramType::Int32,
-                        integer_mode: crate::kernel::IntegerCastMode::CConversion,
-                        pointee_struct: None,
-                        pointee_volatile: false,
-                        pointee_constant: false,
-                        explicit_qualification: false,
-                    },
-                };
+                            click_type,
+                            value,
+                            body,
+                        } if observed_integer(&body) => ContractExpression::Let {
+                            name,
+                            click_type,
+                            value,
+                            body: Box::new(native(*body)),
+                        },
+                        operand => ContractExpression::CUnary {
+                            operand: Box::new(match operand {
+                                ContractExpression::Call {
+                                    name,
+                                    mut arguments,
+                                } if name == "to_integer" && arguments.len() == 1 => {
+                                    arguments.remove(0)
+                                }
+                                operand => operand,
+                            }),
+                            lowered: ProgramExpression::Cast {
+                                expression: Box::new(ProgramExpression::Value(
+                                    crate::kernel::int32(0),
+                                )),
+                                target_type: crate::kernel::ProgramType::Int32,
+                                integer_mode: crate::kernel::IntegerCastMode::CConversion,
+                                pointee_struct: None,
+                                pointee_volatile: false,
+                                pointee_constant: false,
+                                explicit_qualification: false,
+                            },
+                        },
+                    }
+                }
                 ClickProposition::Comparison {
                     left: native(left),
                     operator,
@@ -2006,8 +2043,7 @@ impl<'a> Proof<'a> {
             .iter()
             .any(|node| matches!(node, SignedArithmeticNode::AffinePremise { .. }));
         let observe_operand = |operand: ContractExpression| {
-            if matches!(&operand, ContractExpression::Call { name, arguments } if name == "to_integer" && arguments.len() == 1)
-            {
+            if observed_integer(&operand) {
                 operand
             } else {
                 ContractExpression::Call {
