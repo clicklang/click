@@ -188,6 +188,7 @@ does. Verifying plain C needs no compiler or system headers; see the
 | `<stddef.h>` | user space | `NULL` |
 | `<string.h>` | user space | `memcpy`, `memcmp`, `memset`, `strlen`, and `NULL` |
 | `<stdlib.h>` | user space | `malloc`, `calloc`, `realloc`, `free`, and `NULL` |
+| `<stdio.h>` | user space | opaque `FILE` and the hosted `stdout` handle |
 | `<stdarg.h>` | user space | the `va_list` type only, so prototypes that take one parse; `va_start`, `va_arg`, `va_copy` and `va_end` are not provided, since variadic bodies are not modeled |
 | `<sys/types.h>` | user space | `ssize_t` and `off_t`, both `long` on LP64 |
 | `<pthread.h>` | user space | the modeled pthread subset; see [the modeled binding](#conditional-modeled-pthread-binding) |
@@ -1959,7 +1960,40 @@ are supported.
 <!-- verified-example: mdtests/string_literals_reject_write.md -->
 <!-- verified-example: mdtests/concatenated_string_literals.md -->
 
+## Hosted standard output
+
+The userspace target supplies `stdout` as a stable, nonnull `FILE *`
+through the projected `<stdio.h>`. The pointee type is incomplete.
+Copying the handle preserves the stream's identity, and the sidecar
+can refer to its value as `stdout`.
+
+Hosted startup supplies one `click::c::stdio::stream(stdout)` instance
+with an empty write history. A `main` contract can name it with a single
+`owns` clause. The stream resource carries proof state for the C handle.
+Other program-entry preconditions remain unsupported.
+
+<!-- verified-example: mdtests/hosted_stdout_stream_follows_file_pointer_alias.md -->
+
 ## Formatted output
+
+On the hosted target, `printf("literal")` uses `stdout` and
+`fprintf(file, "literal")` uses its `FILE *` argument. Both use the projected
+`<stdio.h>` and require ownership of `stream(file)` for the target handle.
+The model supports literal output and `%%`, including concatenated C
+literals and truncation at the first NUL. It accepts up to 64 requested bytes
+per call. Each attempt adds the bytes and the return value to the front of
+`write_history`. The return is the byte count on success or negative on
+error. A failure can produce partial output, and success can leave data
+buffered. The [stdio specification library](../library/index.md#clickcstdio)
+defines `write_requests` for projecting the history onto just the requests.
+
+`click verify` reports these imported assumptions as `printf: "<format>"`
+or `fprintf: "<format>"`. Hosted `main` may use the original K&R
+`main() { ... }` spelling, and reaching the end of a hosted parameterless
+`int main` returns zero. The original example is in
+`examples/hello-world/`.
+
+<!-- verified-example: mdtests/printf_and_fprintf_share_the_streams_write_history.md -->
 
 A call to `snprintf`, declared as `int snprintf(char *s, size_t n, const char
 *format, ...)`, is modeled when its format is a string literal. The format
@@ -1991,9 +2025,9 @@ The contract, for `buffer`, `size`, and the arguments `a0`, `a1`, ...:
   negative, which follows from the count's `INT_MAX` bound;
 - ensures each character at an index below `size - 1` is the format's
   character there, stated with the functions of
-  [`click::format`](../library/index.md#decimal-formatting): `%u` writes
-  `format::decimal_digit(a as uint64, k)` for `k < format::decimal_length(...)`,
-  a field width `format::padded_digit`, and `%d` `format::signed_digit`;
+  [`click::c::stdio`](../library/index.md#decimal-formatting): `%u` writes
+  `stdio::decimal_digit(a as uint64, k)` for `k < stdio::decimal_length(...)`,
+  a field width `stdio::padded_digit`, and `%d` `stdio::signed_digit`;
 - ensures the terminator follows the output when it fits and is the last byte
   of the buffer when it does not, stated both at the count and at
   `result as uint64`, and that the bytes after the terminator are unchanged
@@ -2002,10 +2036,10 @@ The contract, for `buffer`, `size`, and the arguments `a0`, `a1`, ...:
   may read a buffer `snprintf` filled, such as a local array it passes on as a
   `%s` argument.
 
-A proof that names these functions imports `click::format`. The theorems
-`format::decimal_length_n` (for 1 to 10 digits), `format::pow10_e`, and
-`format::decimal_digit_of_length` evaluate them; the last needs `k < n`, and
-`format::pow10_e` gives its power `format::pow10(n - 1u64 - k)` for known `n`
+A proof that names these functions imports `click::c::stdio`. The theorems
+`stdio::decimal_length_n` (for 1 to 10 digits), `stdio::pow10_e`, and
+`stdio::decimal_digit_of_length` evaluate them; the last needs `k < n`, and
+`stdio::pow10_e` gives its power `stdio::pow10(n - 1u64 - k)` for known `n`
 and `k`
 (`mdtests/snprintf_with_a_literal_format_states_each_character.md`,
 `mdtests/snprintf_counts_the_characters_that_do_not_fit.md`,

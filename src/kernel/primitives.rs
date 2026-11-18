@@ -159,7 +159,10 @@ mod memory_equality_index;
 mod sequence_values;
 pub use sequence_values::{SequenceValues, SequenceValuesIter};
 mod descriptor_values;
-pub use descriptor_values::{StoredConditionTerm, StoredMachineTerm, StoredProgramValue};
+pub use descriptor_values::{
+    StoredAlgebraicTerm, StoredConditionTerm, StoredIntegerTerm, StoredMachineTerm,
+    StoredProgramValue,
+};
 mod resource_fields;
 pub(crate) use resource_fields::StoredResourceField;
 pub use resource_fields::{ResourceFieldValue, ResourceFieldValues};
@@ -4265,6 +4268,10 @@ pub enum SpecExpression {
         point: SpecPoint,
         pointer: Box<SpecExpression>,
         value_type: ProgramType,
+        /// Surface `exact(place)`: the read named by the selected state's own
+        /// memory, with no version walk (`design/exact-reads.md`). An ordinary
+        /// read (`false`) names the cell's version point.
+        exact: bool,
     },
     /// A field of a by-value parameter, not a dereference of a C pointer.
     /// Its logical value remains available after the parameter storage ends.

@@ -194,7 +194,7 @@ pub(in crate::surface) fn contract_array_ref_element_type(
         | ContractExpression::ProgramBinding(name) => {
             array_refs.get(name).map(|array_ref| array_ref.element_type)
         }
-        ContractExpression::Old(expression) => {
+        ContractExpression::Old(expression) | ContractExpression::Exact(expression) => {
             contract_array_ref_element_type(array_refs, expression)
         }
         ContractExpression::At { expression, .. } => {

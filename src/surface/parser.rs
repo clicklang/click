@@ -224,6 +224,8 @@ pub(in crate::surface) struct ProgramLayouts {
     /// A C definition's execution name, indexed by translation unit and source spelling.
     pub(in crate::surface) qualified_functions: BTreeMap<(String, String), String>,
     pub(in crate::surface) program_object_names: BTreeMap<String, std::sync::Arc<BTreeSet<String>>>,
+    /// Library-provided C values with stable identities in the selected profile.
+    pub(in crate::surface) hosted_stdout: BTreeMap<String, ProgramValue>,
     /// The other members of each function's recursive C component, for the
     /// functions in a component of two or more. An expression `decreases`
     /// measure ranks calls to these functions too.
@@ -868,6 +870,8 @@ struct Parser {
     loop_predicate_bodies: BTreeMap<String, ClickProposition>,
     resource_parameters: BTreeMap<String, usize>,
     program_object_names_by_function: BTreeMap<String, std::sync::Arc<BTreeSet<String>>>,
+    hosted_stdout_by_function: BTreeMap<String, ProgramValue>,
+    hosted_stdout: Option<ProgramValue>,
     recursion_peers_by_function: BTreeMap<String, Vec<String>>,
     /// Click library modules the program's C declarations bring.
     implied_library_modules: BTreeSet<&'static str>,
@@ -1618,6 +1622,7 @@ impl Parser {
         parser.string_literal_values = layouts.string_literal_values;
         parser.string_literal_owners = layouts.string_literal_owners;
         parser.program_object_names_by_function = layouts.program_object_names;
+        parser.hosted_stdout_by_function = layouts.hosted_stdout;
         parser.rust_enum_types = layouts.rust_enum_types;
         parser.recursion_peers_by_function = layouts.recursion_peers;
         parser
@@ -1945,6 +1950,8 @@ impl Parser {
             loop_proof_value_names: Default::default(),
             loop_predicate_bodies: BTreeMap::new(),
             program_object_names_by_function: BTreeMap::new(),
+            hosted_stdout_by_function: BTreeMap::new(),
+            hosted_stdout: None,
             recursion_peers_by_function: BTreeMap::new(),
             implied_library_modules: path_library_modules,
             library_module,
@@ -4989,6 +4996,10 @@ impl Parser {
                 .get(&table_name)
                 .cloned(),
         );
+        let previous_hosted_stdout = std::mem::replace(
+            &mut self.hosted_stdout,
+            self.hosted_stdout_by_function.get(&table_name).cloned(),
+        );
         let previous_c_parameter_types = std::mem::replace(
             &mut self.names.program_parameter_types,
             signature
@@ -5546,6 +5557,7 @@ impl Parser {
             .replace(NameKind::VoidPointerParameter, previous_void_pointer_params);
         self.names.program_parameter_types = previous_c_parameter_types;
         self.names.program_object_names = previous_c_object_names;
+        self.hosted_stdout = previous_hosted_stdout;
         self.rust_loop_iterators = previous_loop_iterators;
         let parameter_struct_casts = std::mem::replace(
             &mut self.names.parameter_struct_casts,
@@ -6136,6 +6148,14 @@ impl Parser {
         self.refuse_unknown_loop_value(&name)?;
         if let Some(expression) = self.take_rust_vec_method(&name)? {
             return Ok(expression);
+        }
+        if name == "stdout"
+            && let Some(value) = &self.hosted_stdout
+        {
+            return Ok(ContractExpression::QualifiedC {
+                name,
+                lowered: ProgramExpression::Value(value.clone()),
+            });
         }
         let name = self.take_rust_slice_len(&name).unwrap_or(name);
         Ok(ContractExpression::ProgramExpression(
@@ -8903,6 +8923,7 @@ impl Parser {
 
         if matches!(self.peek(), Some(Token::Ident(_)))
             && self.peek_ident() != Some("old")
+            && self.peek_ident() != Some("exact")
             && self.peek_ident() != Some("at")
             && !(self.peek_ident() == Some("program")
                 && self.peek_next() == Some(&Token::ColonColon))
@@ -11221,7 +11242,10 @@ impl Parser {
                 let start = self.position;
                 let application = if self.peek_ident().is_some()
                     && self.peek_next() == Some(&Token::LParen)
-                    && !matches!(self.peek_ident(), Some("at" | "old" | "forall" | "exists"))
+                    && !matches!(
+                        self.peek_ident(),
+                        Some("at" | "old" | "exact" | "forall" | "exists")
+                    )
                 {
                     let application = self.parse_theorem_application()?;
                     if self.peek() == Some(&Token::RParen) {
@@ -13750,6 +13774,7 @@ impl Parser {
                     .map(str::to_string)
             }
             ContractExpression::Old(inner)
+            | ContractExpression::Exact(inner)
             | ContractExpression::At {
                 expression: inner, ..
             } => self.contract_expression_struct_name(inner),
@@ -14504,6 +14529,7 @@ impl Parser {
                 .or_else(|| self.names.aggregate_objects.get(name))
                 .cloned(),
             ContractExpression::Old(inner)
+            | ContractExpression::Exact(inner)
             | ContractExpression::At {
                 expression: inner, ..
             } => self.contract_expression_struct_name(inner),
@@ -14946,6 +14972,7 @@ impl Parser {
                     let surface_base = expression.clone();
                     let base = match &expression {
                         ContractExpression::Old(inner)
+                        | ContractExpression::Exact(inner)
                         | ContractExpression::At {
                             expression: inner, ..
                         } => contract_expression_as_program_expression(inner),
@@ -15836,6 +15863,13 @@ impl Parser {
             self.expect(Token::RParen)?;
             self.refuse_result_in_program_point_expression(None, &expression)?;
             return Ok(ContractExpression::Old(Box::new(expression)));
+        }
+
+        if self.peek_ident() == Some("exact") && self.peek_next() == Some(&Token::LParen) {
+            self.position += 2;
+            let place = self.parse_contract_expression()?;
+            self.expect(Token::RParen)?;
+            return Ok(ContractExpression::Exact(Box::new(place)));
         }
 
         if self.peek_ident() == Some("at") && self.peek_next() == Some(&Token::LParen) {
@@ -18868,5 +18902,50 @@ impl ProgramLayouts {
         for object in unit.global_aggregate_arrays.values() {
             self.register_static_binding(object.kernel_name());
         }
+    }
+}
+
+#[cfg(test)]
+mod exact_syntax_tests {
+    use super::*;
+
+    /// `exact(place)` is a built-in form wherever an expression is read, and
+    /// its printed spelling parses back to the same term.
+    #[test]
+    fn an_exact_read_parses_and_prints_back() {
+        for source in [
+            "exact(p[0])",
+            "exact(exact(p[i])[j])",
+            "at(saved, exact(p[0]))",
+        ] {
+            let parsed = Parser::new(source)
+                .unwrap()
+                .parse_contract_expression()
+                .unwrap();
+            let printed = crate::surface::diagnostics::describe_contract_expression(&parsed);
+            assert_eq!(printed, source);
+            let reparsed = Parser::new(&printed)
+                .unwrap()
+                .parse_contract_expression()
+                .unwrap();
+            assert_eq!(reparsed, parsed, "{source}");
+        }
+        let ContractExpression::Exact(place) = Parser::new("exact(p[0])")
+            .unwrap()
+            .parse_contract_expression()
+            .unwrap()
+        else {
+            panic!("`exact(...)` is its own form")
+        };
+        assert!(!matches!(place.as_ref(), ContractExpression::Exact(_)));
+        // A proposition that starts with `exact(` is a comparison, not a
+        // predicate call.
+        assert!(matches!(
+            Parser::new("exact(p[0]) == p[0]")
+                .unwrap()
+                .parse_proposition()
+                .unwrap(),
+            ClickProposition::Comparison { .. }
+        ));
     }
 }

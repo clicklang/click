@@ -82,6 +82,7 @@ fn worker() -> (VerifiedFunctionRule, VerifiedFunctionTerminationRule) {
                     crate::kernel::program_expression::variable("p"),
                 )),
                 value_type: ProgramType::Int32,
+                exact: false,
             },
             operator: ComparisonOperator::Equal,
             right: SpecExpression::Value(int32(77)),

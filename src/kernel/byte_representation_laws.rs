@@ -34,6 +34,7 @@ pub(crate) fn prove_uint32_from_le_bytes(pointer: Pointer) -> Result<Theorem, St
         point: SpecPoint::Current,
         pointer: Box::new(base.clone()),
         value_type: ProgramType::UInt32,
+        exact: false,
     };
     let (defined, _, _) = super::api::program_lower_spec_proposition_at_state(
         &state,
@@ -60,6 +61,7 @@ pub(crate) fn prove_uint32_from_le_bytes(pointer: Pointer) -> Result<Theorem, St
                     byte_width: 1,
                 }),
                 value_type: ProgramType::UInt8,
+                exact: false,
             }),
             ProgramType::UInt32,
         )

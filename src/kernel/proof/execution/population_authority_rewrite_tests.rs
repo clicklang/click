@@ -667,6 +667,7 @@ fn consuming_private_member_publishes_definedness_at_the_current_point() {
                 program_expression::variable("p"),
             )),
             value_type: ProgramType::Int32,
+            exact: false,
         })],
     )
     .with_authorized(true);

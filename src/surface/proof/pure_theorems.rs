@@ -2789,6 +2789,7 @@ pub(super) fn click_function_applications(
             }
             ContractExpression::Field { base, .. }
             | ContractExpression::Old(base)
+            | ContractExpression::Exact(base)
             | ContractExpression::At {
                 expression: base, ..
             }
