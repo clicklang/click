@@ -281,7 +281,7 @@ fn fixed_state_failure_names_kernel_values_held_in_live_locals() {
     let state = ExecutionState::new()
         .with_local("len", ProgramValue::UInt64(len.clone()))
         .with_local("chunk_size", ProgramValue::UInt64(size.clone()))
-        .with_local("__rust_checked_94", ProgramValue::UInt64(size.clone()));
+        .with_local("__rust_mir_94", ProgramValue::UInt64(size.clone()));
     let remainder = MachineTerm::uint64_remainder(len, size.clone());
     let goal = Proposition::ConditionIs(
         ConditionTerm::Compare {

@@ -3936,10 +3936,19 @@ fn enum_switch_proof_match(
     let ProgramExpression::EnumIs { value, .. } = test else {
         return None;
     };
-    let ProgramExpression::Variable(name) = value.as_ref() else {
-        return None;
+    let (scrutinee, name, native) = match value.as_ref() {
+        ProgramExpression::Variable(name) => (
+            ContractExpression::ProgramExpression(ProgramExpression::Variable(name.clone())),
+            name.to_string(),
+            state.locals().get_native(name)?,
+        ),
+        ProgramExpression::StepResult { step, .. } => (
+            crate::surface::diagnostics::step_result_expression(*step)?,
+            "field".into(),
+            state.step_result(*step)?.native(),
+        ),
+        _ => return None,
     };
-    let native = state.locals().get_native(name)?;
     let ProgramValue::Parameter(term) = native.as_ref() else {
         return None;
     };
@@ -3977,7 +3986,7 @@ fn enum_switch_proof_match(
         })
         .collect();
     Some(ProofMatch {
-        scrutinee: ContractExpression::ProgramExpression(ProgramExpression::Variable(name.clone())),
+        scrutinee,
         ensuring: None,
         arms,
     })

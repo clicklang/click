@@ -325,6 +325,21 @@ fn observe_operand(mut value: ProgramExpression) -> ProgramExpression {
     value
 }
 
+fn typed_value_step(
+    steps: Vec<u32>,
+    expression: ProgramExpression,
+    value_type: ProgramType,
+    pointee_constant: bool,
+) -> ProgramStatement {
+    ProgramStatement::StepValue {
+        aggregate_layout: None,
+        steps,
+        expression,
+        value_type: Some(value_type),
+        pointee_constant,
+    }
+}
+
 /// Whether `value` is a local or a literal, possibly converted: a read with
 /// no work of its own that names itself.
 fn direct_operand(value: &ProgramExpression) -> bool {
@@ -905,7 +920,6 @@ fn lower_function(
         import_identity: identity.map(std::sync::Arc::from),
         mir_point: None,
         mir_nodes: BTreeMap::new(),
-        next_temporary: 0,
         next_result_step: std::cell::Cell::new(next_result_step),
         loop_iterators: Vec::new(),
         locals,
@@ -993,7 +1007,6 @@ struct Context<'a> {
     import_identity: Option<std::sync::Arc<str>>,
     mir_point: Option<super::borrow_frontiers::MirPoint>,
     mir_nodes: BTreeMap<usize, usize>,
-    next_temporary: u32,
     next_result_step: std::cell::Cell<u32>,
     /// The iterator each loop advances, by loop index in preorder.
     loop_iterators: Vec<Option<crate::languages::interface::RustLoopIterator>>,
@@ -1549,19 +1562,12 @@ impl Context<'_> {
         if !self.locals.contains(name) {
             return Err(format!("unknown Rust local `{name}`"));
         }
-        // A memory-backed local's value is computed into a temporary and
-        // stored to its object.
         if let Some(&value_type) = self.memory_values.get(name) {
-            let temporary = self.fresh_temporary()?;
-            let assign = self.assign(&temporary, e)?;
+            let (prefix, value) = self.prepared_expr(e)?;
             let address = self.address(&E::Local { name: name.into() })?;
             return Ok(program_seq(
-                program_seq(program_declare(&temporary, value_type), assign),
-                program_typed_store(
-                    address,
-                    crate::kernel::program_expression::variable(&temporary),
-                    value_type,
-                ),
+                prefix,
+                program_typed_store(address, value, value_type),
             ));
         }
         if let Some((length, expected)) = self.shared_scalar_slices.get(name).cloned() {
@@ -1782,19 +1788,6 @@ impl Context<'_> {
         Ok((checks, values))
     }
 
-    /// A fresh local name for a value the lowering introduces.
-    fn fresh_temporary(&mut self) -> Result<String, String> {
-        loop {
-            let name = format!("__rust_checked_{}", self.next_temporary);
-            self.next_temporary = self
-                .next_temporary
-                .checked_add(1)
-                .ok_or("Rust temporary identity exhausted")?;
-            if self.locals.insert(name.clone()) {
-                return Ok(name);
-            }
-        }
-    }
     /// Stage an operand if a later expression could change it or reading it
     /// involves work. A guard observes the result and its final use ends it.
     fn read_operand(
@@ -1831,13 +1824,7 @@ impl Context<'_> {
             crate::kernel::program_expression::cast(value, interface_type)
         };
         Ok((
-            ProgramStatement::StepValue {
-                aggregate_layout: None,
-                steps: vec![step],
-                expression,
-                value_type: Some(interface_type),
-                pointee_constant: constant,
-            },
+            typed_value_step(vec![step], expression, interface_type, constant),
             ProgramExpression::StepResult {
                 step,
                 origin: crate::kernel::StepOrigin::Value("Rust operand"),
@@ -1936,38 +1923,32 @@ impl Context<'_> {
                     if *left_type != Type::Bool || *right_type != Type::Bool {
                         return Err("Rust logical operators require bool operands".into());
                     }
-                    let left_name = self.fresh_temporary()?;
-                    let prefix = program_seq(
-                        left_prefix,
-                        program_seq(
-                            program_declare(&left_name, ProgramType::Bool),
-                            program_assign(
-                                &left_name,
-                                crate::kernel::program_expression::cast(
-                                    left_value,
-                                    ProgramType::Bool,
-                                ),
-                            ),
-                        ),
-                    );
+                    let step = self.result_step();
                     let (right_prefix, right_value) = self.prepared_expr(right)?;
-                    let condition = if operator == "and" {
-                        crate::kernel::program_expression::variable(&left_name)
-                    } else {
-                        crate::kernel::program_expression::not(
-                            crate::kernel::program_expression::variable(&left_name),
-                        )
-                    };
-                    let update = program_seq(
+                    let right = program_seq(
                         right_prefix,
-                        program_assign(
-                            &left_name,
-                            crate::kernel::program_expression::cast(right_value, ProgramType::Bool),
-                        ),
+                        typed_value_step(vec![step], right_value, ProgramType::Bool, false),
                     );
+                    let skipped_value = ProgramExpression::Value(crate::kernel::bool_value(
+                        u32::from(operator == "or"),
+                    ));
+                    let skipped =
+                        typed_value_step(vec![step], skipped_value, ProgramType::Bool, false);
+                    let (kind, yes, no) = if operator == "and" {
+                        (OperatorKind::And, right, skipped)
+                    } else {
+                        (OperatorKind::Or, skipped, right)
+                    };
                     return Ok((
-                        program_seq(prefix, program_if(condition, update, program_skip())),
-                        crate::kernel::program_expression::variable(left_name),
+                        program_seq(
+                            left_prefix,
+                            program_if(branch_condition(left_value), yes, no),
+                        ),
+                        ProgramExpression::StepResult {
+                            step,
+                            origin: StepOrigin::Operator(kind),
+                            ends: true,
+                        },
                     ));
                 }
                 let (right_prefix, right_value) = self.prepared_expr(right)?;

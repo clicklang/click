@@ -108,3 +108,61 @@ fn direct_operands_are_read_without_capture_locals() {
     let body = format!("{:?}", caller.prelowered_kernel_function().unwrap().body());
     assert!(!body.contains("__rust_checked"), "{body}");
 }
+
+#[test]
+fn nested_enum_match_keeps_the_projection_until_its_last_test() {
+    use crate::languages::rust::schema::RustExport;
+    use crate::surface::ProgramVerificationSession;
+    use serde_json::json;
+
+    let span = json!({"line": 1, "column": 1});
+    let inner = json!({"kind": "enum", "name": "Inner"});
+    let outer = json!({"kind": "enum", "name": "Outer"});
+    let export: RustExport = serde_json::from_value(json!({
+        "schema": super::super::schema::SCHEMA,
+        "compiler_commit": "test", "target": super::super::schema::TARGET,
+        "edition": "2021", "overflow_checks": true, "panic": "abort",
+        "mir_opt_level": 0, "logical_source": "nested.rs", "records": [],
+        "enums": [
+            {"name": "Inner", "variants": [
+                {"name": "A", "fields": []},
+                {"name": "B", "fields": []},
+                {"name": "C", "fields": []}
+            ]},
+            {"name": "Outer", "generic": "Option", "arguments": [inner], "variants": [
+                {"name": "None", "fields": []},
+                {"name": "Some", "fields": [inner]}
+            ]}
+        ],
+        "functions": [
+            {"name": "make", "return_type": outer, "parameters": [], "body": [],
+             "mir": null, "external": true, "span": span},
+            {"name": "choose", "return_type": {"kind": "i32"}, "parameters": [],
+             "body": [], "span": span, "mir": {"locals": [], "blocks": [
+                {"statements": [], "terminator": {"kind": "call", "function": "make",
+                    "arguments": [], "destination": "unused", "target": 1, "result": 0}},
+                {"statements": [], "terminator": {"kind": "switch",
+                    "scrutinee": {"kind": "enum_field", "name": "Outer", "variant": "Some",
+                        "index": 0, "base": {"kind": "call_result", "call": 0, "function": "make"}},
+                    "cases": [
+                        {"label": {"kind": "variant", "name": "A"}, "target": 2},
+                        {"label": {"kind": "variant", "name": "B"}, "target": 3}
+                    ], "otherwise": 4}},
+                {"statements": [], "terminator": {"kind": "return_value",
+                    "value": {"kind": "integer", "value": 1}}},
+                {"statements": [], "terminator": {"kind": "return_value",
+                    "value": {"kind": "integer", "value": 2}}},
+                {"statements": [], "terminator": {"kind": "return_value",
+                    "value": {"kind": "integer", "value": 3}}}
+             ]}}
+        ]
+    }))
+    .unwrap();
+    let prepared = super::super::import::prepared_for_test(export).unwrap();
+    let source = r#"verifying "nested.rs";
+extern fn make() -> Option<Inner> { ensures result == Option<Inner>::Some(Inner::B); }
+fn choose() -> i32 { ensures result == 2; }
+"#;
+    ProgramVerificationSession::new_program_prepared(source, &prepared)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+}

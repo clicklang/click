@@ -581,24 +581,11 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                 } else if callee.return_type == Type::Unit {
                     program_call(function, arguments_values)
                 } else if let Some(&value_type) = cx.memory_values.get(destination.as_str()) {
-                    // A memory-backed local, a borrowed enum or `Vec`,
-                    // receives the result through a temporary stored to its
-                    // object.
-                    let temporary = cx.fresh_temporary()?;
+                    let (call, result) = cx.call_value(function, arguments_values);
                     let address = cx.address(&E::Local {
                         name: destination.clone(),
                     })?;
-                    program_seq(
-                        program_seq(
-                            program_declare(&temporary, value_type),
-                            cx.call_then_assign(&temporary, function, arguments_values),
-                        ),
-                        program_typed_store(
-                            address,
-                            crate::kernel::program_expression::variable(&temporary),
-                            value_type,
-                        ),
-                    )
+                    program_seq(call, program_typed_store(address, result, value_type))
                 } else {
                     cx.call_then_assign(destination, function, arguments_values)
                 };
@@ -1461,38 +1448,49 @@ fn switch(
             exits,
         )?);
     }
-    // A match on an enum field of an enum, `Err(ParseError::Empty)`, tests a
-    // local bound to that field, so the test splits as one on any enum local.
-    let mut bound_field = None;
-    let bound_local;
-    let scrutinee = if let E::EnumField {
-        name,
-        variant,
-        index,
-        ..
-    } = scrutinee
-        && let Some(field_enum) = super::nested_enum_field_type(name, variant, *index)?
-    {
-        let local = cx.fresh_temporary()?;
-        bound_field = Some(Sited::at(
-            site,
-            program_seq(
-                program_declare_with_all_qualifiers(
-                    &local,
-                    field_enum.to_kernel_type(),
-                    false,
-                    false,
-                    false,
-                    false,
-                ),
-                program_assign(&local, cx.expr(scrutinee)?),
-            ),
-        ));
-        bound_local = E::Local { name: local };
-        &bound_local
-    } else {
-        scrutinee
+    let field_type = match scrutinee {
+        E::EnumField {
+            name,
+            variant,
+            index,
+            ..
+        } => super::nested_enum_field_type(name, variant, *index)?.map(|ty| ty.to_kernel_type()),
+        _ => None,
     };
+    if groups.len() == 1 {
+        let body = bodies.pop().expect("one match arm");
+        return Ok(if let Some(value_type) = field_type {
+            let projection = cx.expr(scrutinee)?;
+            Sited::at(
+                site,
+                typed_value_step(Vec::new(), projection, value_type, false),
+            )
+            .then(body)
+        } else {
+            body
+        });
+    }
+    // Read a nested enum projection once, even when its base is itself a
+    // retained call result. Only the last test can end it on both edges.
+    let capture = if let Some(value_type) = field_type {
+        let step = cx.result_step();
+        let projection = cx.expr(scrutinee)?;
+        Some((
+            Sited::at(
+                site,
+                typed_value_step(vec![step], projection, value_type, false),
+            ),
+            ProgramExpression::StepResult {
+                step,
+                origin: StepOrigin::Value("Rust enum field"),
+                ends: true,
+            },
+            value_type,
+        ))
+    } else {
+        None
+    };
+    let mut has_later_test = false;
     let mut chain = None;
     for ((target, labels), body) in groups.iter().zip(bodies).rev() {
         let Some(rest) = chain else {
@@ -1502,16 +1500,29 @@ fn switch(
         if otherwise == Some(*target) {
             return Err("a Rust match's otherwise arm must come last".into());
         }
+        let (value, body) = match &capture {
+            Some((_, value, ty)) if has_later_test => {
+                // The false edge still needs the projection. End it before
+                // entering this arm, which can return or start another loop.
+                let end = typed_value_step(Vec::new(), value.clone(), *ty, false);
+                (
+                    observe_operand(value.clone()),
+                    Sited::unsited(end).then(body),
+                )
+            }
+            Some((_, value, _)) => (value.clone(), body),
+            None => (cx.expr(scrutinee)?, body),
+        };
         let mut condition = None;
         for label in labels {
             // An enum arm tests its variant; the `if` it becomes steps and
             // splits as any other.
             let test = match label {
-                SwitchLabel::Value { value } => {
-                    crate::kernel::program_expression::equal(cx.expr(scrutinee)?, cx.expr(value)?)
+                SwitchLabel::Value { value: label_value } => {
+                    crate::kernel::program_expression::equal(value.clone(), cx.expr(label_value)?)
                 }
                 SwitchLabel::Variant { name } => ProgramExpression::EnumIs {
-                    value: Box::new(cx.expr(scrutinee)?),
+                    value: Box::new(value.clone()),
                     variant: name.clone(),
                 },
             };
@@ -1526,10 +1537,11 @@ fn switch(
             body,
             rest,
         ));
+        has_later_test = true;
     }
     let chain = chain.ok_or_else(|| "Rust match without arms".to_string())?;
-    Ok(match bound_field {
-        Some(bound) => bound.then(chain),
+    Ok(match capture {
+        Some((capture, _, _)) => capture.then(chain),
         None => chain,
     })
 }
@@ -1718,7 +1730,6 @@ mod tests {
                 import_identity: None,
                 mir_point: None,
                 mir_nodes: BTreeMap::new(),
-                next_temporary: 0,
                 next_result_step: std::cell::Cell::new(0),
                 loop_iterators: Vec::new(),
                 locals: BTreeSet::new(),
