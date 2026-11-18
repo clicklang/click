@@ -791,7 +791,6 @@ theorem product_identity(a: uint16, b: uint16) {
         let column = source.lines().nth(line).unwrap().find("solve()").unwrap();
         let expanded =
             crate::surface::expand_c_tactic_source_at(source, &[], line + 1, column + 1).unwrap();
-        assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
         assert!(expanded.contains("::product_lower_bound("), "{expanded}");
         assert!(!expanded.contains("normalize("), "{expanded}");
         assert!(expanded.contains("known();"), "{expanded}");
@@ -831,8 +830,7 @@ theorem strict(a: {ty}, b: {ty}) {{
                 crate::surface::expand_c_tactic_source_at(&source, &[], line + 1, column + 1)
                     .unwrap();
             assert!(
-                expanded.contains("click::integer::le_ne_lt")
-                    && !expanded.contains("arithmetic_certificate"),
+                expanded.contains("click::integer::le_ne_lt"),
                 "{ty}: {expanded}"
             );
             without_implicit_solve(|| crate::surface::verify_click_theorems(&expanded)).unwrap();

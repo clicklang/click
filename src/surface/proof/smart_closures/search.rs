@@ -3787,7 +3787,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(Some(enumerated));
         }
         // A pure goal that its own signed bounds already decide gets the one
-        // checked arithmetic certificate, not a case split over those same
+        // checked arithmetic step, not a case split over those same
         // bounds. The certificate reads the goal's own bound buckets and
         // emits a single leaf, while the split searches for a pivot and then
         // owes a proof on each arm — including a dead arm closed only by a
@@ -9063,7 +9063,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     }
 
     /// Specialization can expose an arithmetic consequence without changing
-    /// any read. Keep that consequence as ordinary arithmetic certificates,
+    /// any read. Keep that consequence as ordinary arithmetic steps,
     /// rather than asking legacy transport to rediscover it. This runs only
     /// in search; checking the emitted steps never enters arithmetic planning.
     fn try_universal_steps_with_arithmetic(

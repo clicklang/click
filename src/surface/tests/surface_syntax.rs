@@ -71,7 +71,6 @@ fn integer_solve_expansion_rechecks_without_smart_search() {
         let verified = verify_click_theorems(&source).unwrap();
         let expanded = verified[0].expanded_proof_source().unwrap();
         if parameters.contains("y: Integer") {
-            assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
             assert!(expanded.contains("le_antisymmetric"), "{expanded}");
         } else {
             assert!(expanded.contains("normalize();"), "{expanded}");
@@ -1216,7 +1215,7 @@ fn rejects_removed_fold_tactic_syntax() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_07")]
-fn parses_and_prints_arithmetic_certificates() {
+fn parses_and_prints_solve_using_premise_lists() {
     let source = r#"
         theorem arithmetic_forms(n: int32) {
             requires 1 < n;
@@ -1228,7 +1227,7 @@ fn parses_and_prints_arithmetic_certificates() {
             }
         }
     "#;
-    let file = parse(source).expect("arithmetic certificates should parse");
+    let file = parse(source).expect("`solve() using` premise lists should parse");
     let SourceProof::Script(tactics) = file.theorem_definitions()[0].ensures()[0].proof() else {
         panic!("expected an explicit theorem proof");
     };
@@ -1253,7 +1252,7 @@ fn parses_and_prints_arithmetic_certificates() {
     let reparsed = parse(&format!(
         "theorem arithmetic_forms(n: int32) {{ requires 1 < n; ensures 0 <= n - 2 by {{ {printed} }} }}"
     ))
-    .expect("printed arithmetic certificates should parse");
+    .expect("printed `solve() using` premise lists should parse");
     assert_eq!(
         reparsed.theorem_definitions()[0].ensures()[0].proof(),
         file.theorem_definitions()[0].ensures()[0].proof()
@@ -1279,7 +1278,6 @@ fn signed_compound_expansion_uses_ordinary_operations_and_rejects_false_goal() {
     let expanded = verified[0]
         .expanded_proof_source()
         .expect("compound arithmetic should expand");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
 
     let rechecked_source = source.replace(
         "by {\n                solve() using {\n                    0 <= n;\n                    n <= 100;\n                }\n            }",
@@ -1310,7 +1308,6 @@ fn float_reflexive_smart_expansion_has_one_finite_premise_and_rechecks() {
     let expanded = verified[0]
         .expanded_proof_source()
         .expect("float reflexivity should expand");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert_eq!(
         expanded.matches("isfinite(value);").count(),
         1,
@@ -1338,7 +1335,6 @@ fn signed_arithmetic_smart_planner_expands_to_ordinary_proof() {
     let expanded = verified[0]
         .expanded_proof_source()
         .expect("smart arithmetic should expand");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(
         expanded.contains("normalize"),
         "ordinary interval normalization expected: {expanded}"
@@ -1394,7 +1390,6 @@ fn integer_arithmetic_uses_checked_unified_certificate_without_replanning() {
     let expanded = verified[0]
         .expanded_proof_source()
         .expect("Integer arithmetic should expand");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(!expanded.contains("solve() using"), "{expanded}");
     let rechecked = source.replace("by { solve() using { x == 1; } }", &expanded);
     let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
@@ -1424,7 +1419,6 @@ fn integer_arithmetic_using_proves_a_chain_longer_than_three_premises() {
     let expanded = verified[0]
         .expanded_proof_source()
         .expect("the chain proof should expand");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("click::integer::"), "{expanded}");
     let rechecked = source.replace(
         "by {\n                solve() using { a <= b; b < c; c <= d; d <= e; }\n            }",
@@ -1477,7 +1471,6 @@ fn signed_arithmetic_smart_planner_preserves_explicit_definedness() {
     let expanded = verified[0]
         .expanded_proof_source()
         .expect("definedness proof should expand");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("defined"), "{expanded}");
     let rechecked = source.replace(
         "by {\n                solve() using {\n                    0 <= a;\n                    0 <= b;\n                    defined(a + b);\n                }\n            }",
@@ -1514,7 +1507,6 @@ fn signed_arithmetic_smart_planner_handles_deep_supported_terms_iteratively() {
     let expanded = verified[0]
         .expanded_proof_source()
         .expect("deep arithmetic should expand");
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     let rechecked = source.replace("by { solve() using { 0 <= n; n <= 100; } }", &expanded);
     crate::surface::without_implicit_solve(|| verify_click_theorems(&rechecked))
         .expect("deep ordinary expansion should replay without search");
@@ -1610,7 +1602,7 @@ fn pure_bare_apply_builds_a_checked_proof_object_certificate() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_13")]
-fn pure_solve_exposes_an_explicit_arithmetic_certificate() {
+fn pure_solve_exposes_explicit_arithmetic_steps() {
     let source = r#"
         theorem positive_is_nonnegative(x: int32) {
             requires 0 < x;
@@ -1620,7 +1612,6 @@ fn pure_solve_exposes_an_explicit_arithmetic_certificate() {
 
     let verified = verify_click_theorems(source).expect("solve theorem should verify");
     let expanded = verified[0].expanded_proof_source().unwrap();
-    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(expanded.contains("click::integer::"), "{expanded}");
 }
 
@@ -5299,7 +5290,7 @@ test_batches! {
         parses_and_prints_structural_induction_arms,
         parses_and_prints_pure_function_unfold,
         rejects_removed_fold_tactic_syntax,
-        parses_and_prints_arithmetic_certificates,
+        parses_and_prints_solve_using_premise_lists,
     ],
     surface_syntax_batch_09: [
         signed_compound_expansion_uses_ordinary_operations_and_rejects_false_goal,
@@ -5318,7 +5309,7 @@ test_batches! {
         signed_arithmetic_smart_planner_preserves_explicit_definedness,
         verifies_pure_theorem_definition,
         pure_bare_apply_builds_a_checked_proof_object_certificate,
-        pure_solve_exposes_an_explicit_arithmetic_certificate,
+        pure_solve_exposes_explicit_arithmetic_steps,
     ],
     surface_syntax_batch_14: [
         pure_solve_after_unfold_exposes_an_explicit_certificate,

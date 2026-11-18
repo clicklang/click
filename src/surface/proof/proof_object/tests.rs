@@ -6774,7 +6774,7 @@ fn fixed_state_predecessor_solve_builds_checked_scope_with_logarithmic_local_upd
 /// failed silently, and solve fell through to a costlier search. One small
 /// context keeps its certificate in the gate.
 #[test]
-fn fixed_state_predecessor_solve_closes_with_one_arithmetic_certificate() {
+fn fixed_state_predecessor_solve_closes_with_one_arithmetic_step() {
     check_fixed_state_predecessor_solve(&[16]);
 }
 
@@ -7168,7 +7168,7 @@ fn fixed_state_order_solve_builds_its_theorem_path_with_logarithmic_local_update
             "size {size} fixed-state order solve allocated {allocations} persistent nodes (bound {allocation_bound})"
         );
         assert!(closed.is_complete());
-        // The selected three-premise chain is one arithmetic certificate.
+        // The selected three-premise chain is one arithmetic step.
         assert!(
             ordinary_arithmetic_work_size(closed.certificate().steps()).is_some(),
             "{:?}",
@@ -7186,7 +7186,7 @@ fn fixed_state_single_premise_arithmetic_solves_retain_indexed_theorem_steps() {
 }
 
 /// The goals [`fixed_state_single_premise_arithmetic_solves_retain_indexed_theorem_steps`]
-/// lost when their bridge lemmas became arithmetic certificates: a
+/// lost when their bridge lemmas became arithmetic steps: a
 /// definedness goal is the `int32_defined` rule, and a negated premise names
 /// its operands. One small context keeps them in the gate.
 #[test]
@@ -8000,7 +8000,7 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
 
 #[test]
 #[ignore = "nightly: 2.9s in the parallel gate"]
-fn le_and_not_lt_equality_solve_retains_one_indexed_arithmetic_certificate() {
+fn le_and_not_lt_equality_solve_retains_one_indexed_arithmetic_step() {
     let click_file = crate::surface::parse("")
         .expect("an empty source should still admit the standard theorem prelude");
     let predicate_environment = PredicateEnvironment::new(&[]);
@@ -8298,7 +8298,7 @@ fn ge_and_not_gt_equality_solve_retains_one_indexed_theorem_application() {
 
 #[test]
 #[ignore = "nightly: 1.6s in the parallel gate"]
-fn le_and_neq_strict_solve_retains_one_indexed_arithmetic_certificate() {
+fn le_and_neq_strict_solve_retains_one_indexed_arithmetic_step() {
     let click_file = crate::surface::parse("")
         .expect("an empty source should still admit the standard theorem prelude");
     let predicate_environment = PredicateEnvironment::new(&[]);

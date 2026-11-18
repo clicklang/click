@@ -3580,7 +3580,7 @@ fn integer_kernel_root_work(term: &crate::kernel::KernelTerm) -> usize {
     }
 }
 
-/// Arithmetic certificate operands remain typed common roots.
+/// Arithmetic step operands remain typed common roots.
 /// Bindings are looked up by name; neither facts nor unrelated bindings are
 /// traversed. Native condition storage is an explicit final output adapter.
 pub(in crate::surface) fn lower_surface_integer_term(

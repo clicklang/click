@@ -1974,7 +1974,7 @@ pub(super) fn native_viewability_restriction_steps(
 
 /// Plan a narrow range with one computed upper endpoint through the explicit
 /// signed operation identity. Search applies these steps under its budget;
-/// replay retains the resulting arithmetic certificates and library steps.
+/// replay retains the resulting arithmetic steps and library steps.
 pub(super) fn computed_viewability_restriction_steps(
     source: &ClickProposition,
     target: &ClickProposition,
@@ -2604,7 +2604,7 @@ pub(super) fn recorded_wide_order_pairs(
 
 /// A recorded 64-bit order chain closed by Integer arithmetic over its
 /// links: `arithmetic() using` the chain's premises, which expands to the
-/// explicit arithmetic certificate. A link whose source premise is not
+/// explicit arithmetic step. A link whose source premise is not
 /// written as `<`, `<=`, `>` or `>=` (a negated order, say) is left to other
 /// routes.
 pub(super) fn plan_recorded_wide_order_path(

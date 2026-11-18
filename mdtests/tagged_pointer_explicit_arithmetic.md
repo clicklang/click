@@ -1,4 +1,4 @@
-# A tag equality closes by an explicit `rules` arithmetic certificate
+# A tag equality closes by `solve() using` its selected premises
 
 Arithmetic search expands to ordinary proof steps, with the selected premises
 stated explicitly in `solve() using { ... }`.
