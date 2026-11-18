@@ -1075,10 +1075,7 @@ impl MutexContext {
         let mut state = self.state.clone();
         state.resources = state
             .resources
-            .try_compose_with_facts_delaying_normalization(
-                [initialization.resource_fact(&mutex)],
-                &PureFactContext::new(),
-            )
+            .insert_checked_mutex_authority(initialization.resource_fact(&mutex))
             .map_err(|_| "mutex lifetime authority conflicts with current resources")?;
         state.mutex_ledger = Some(ledger.with_inserted(
             mutex,
@@ -1189,10 +1186,7 @@ impl MutexContext {
         let mut state = self.state.clone();
         let initialization = MutexInitialization::fresh(storage_bytes)?;
         state.resources = resources
-            .try_compose_with_facts_delaying_normalization(
-                [initialization.resource_fact(&mutex)],
-                assumptions,
-            )
+            .insert_checked_mutex_authority(initialization.resource_fact(&mutex))
             .map_err(|_| "mutex lifetime authority conflicts with current resources")?;
         state.mutex_ledger = Some(ledger.with_inserted(
             mutex,
@@ -1573,7 +1567,7 @@ impl MutexContext {
             epoch,
         };
         state.resources = resources
-            .try_compose_with_facts_delaying_normalization([guard.resource_fact()], assumptions)
+            .insert_checked_mutex_authority(guard.resource_fact())
             .map_err(|error| {
                 MutexTransitionError::OwnedRefusal(format!(
                     "mutex guard conflicts with current authority: {error}"
@@ -1734,6 +1728,9 @@ impl MutexContext {
             resources
         };
         let resources = if ledger.storage_consumed(mutex) {
+            // The ledger identifies the storage that initialization consumed.
+            // Check its separation from the current frame, which may have
+            // acquired owners since initialization.
             let bytes = ledger
                 .get(mutex)
                 .expect("initialized mutex")
