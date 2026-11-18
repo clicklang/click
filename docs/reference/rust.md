@@ -806,6 +806,15 @@ with its arguments, `let { after: c } = step(generic_resources::write<u32>(cell,
 x), { before: b });`. A generic resource's parameters are abstract types
 bound by `Copy` or `Clone` only, and it takes no callable parameters
 ([`design/charon-trial/generic-resources`](https://github.com/clicklang/click/blob/master/design/charon-trial/generic-resources/cells.click)).
+A use's type arguments are scalars or crate types named by path, so
+`owned_box<boxed::Cell>(b)` is written out at `boxed::Cell`'s layout. A
+resource may own a value of an abstract type in its own allocation through
+a raw pointer to it: `resource owned_box<T>(p: *mut T) { ...; owns
+allocation(p, sizeof(T)); owns *p; }`. There `sizeof(T)` is an allocation's
+size only, the word a value of `T` takes in the generic layout and the type
+argument's own size at each instance; anywhere else it is refused ("the size
+of an abstract type is not the same at every type argument")
+(`charon_generic_resource_owns_a_value_of_any_type_in_its_allocation`).
 
 A generic trait's object may carry state, as any trait's does (below). Its
 object is a generic resource of the trait's type parameters,

@@ -3185,6 +3185,95 @@ fn charon_boxes_allocate_read_write_and_free_their_struct() {
     }
 }
 
+/// A generic resource over an abstract type, `owned_box<T>(p: *mut T)`,
+/// owns a value of any type in its own allocation, `allocation(p,
+/// sizeof(T))` and `*p`, and is written out at a crate struct,
+/// `owned_box<boxed::Cell>`, at that struct's layout. `make` produces it and
+/// `read` consumes it to free the box. `sizeof(T)` names no number outside
+/// an allocation's size.
+#[test]
+fn charon_generic_resource_owns_a_value_of_any_type_in_its_allocation() {
+    let p = Project::from_fixture("design/charon-trial/boxes");
+    fs::write(p.root.join("borrow.click"), BOX_SIDECAR).unwrap();
+    let prepared = p.prepared().unwrap();
+    let before = "fn boxed::make(x: u32) -> Box<boxed::Cell> {
+    produces allocation(result, sizeof(boxed::Cell));
+    produces *result;
+    ensures aligned(result, 4);
+    ensures result.value == x;
+}
+
+fn boxed::read(b: Box<boxed::Cell>) -> u32 {
+    consumes allocation(b, sizeof(boxed::Cell));
+    consumes *b;
+    ensures result == old(b.value);
+}";
+    let after = "resource owned_box<T>(p: *mut T) {
+    field live: bool;
+    fact live;
+    owns allocation(p, sizeof(T));
+    owns *p;
+    fact p != 0;
+}
+
+fn boxed::make(x: u32) -> Box<boxed::Cell> {
+    produces b: owned_box<boxed::Cell>(result);
+    ensures aligned(result, 4);
+    ensures result.value == x;
+} by {
+    step_until(function.exit);
+    let b = fold(owned_box<boxed::Cell>(result), { live: true }, {});
+}
+
+fn boxed::read(b: Box<boxed::Cell>) -> u32 {
+    consumes c: owned_box<boxed::Cell>(b);
+    ensures result == old(b.value);
+} by {
+    let {} = unfold(c);
+    step_until(function.exit);
+}";
+    assert!(BOX_SIDECAR.contains(before));
+    let sidecar = BOX_SIDECAR.replacen(before, after, 1);
+    for function in ["boxed::make", "boxed::read", "boxed::through"] {
+        verify_rust_function(&sidecar, &prepared, function)
+            .unwrap_or_else(|error| panic!("{function}: {error:?}"));
+    }
+    for (function, before, after, expected) in [
+        (
+            "boxed::read",
+            "    ensures result == old(b.value);\n} by",
+            "    ensures result == old(b.value) + 1u32;\n} by",
+            "boxed::read.ensures_0",
+        ),
+        // Without the resource, `read` cannot free the box.
+        (
+            "boxed::read",
+            "    consumes c: owned_box<boxed::Cell>(b);\n",
+            "    views b.value;\n",
+            "not a live heap allocation",
+        ),
+        // The generic layout's word is no fact about `T`.
+        (
+            "boxed::read",
+            "    fact p != 0;\n}",
+            "    fact p != 0;\n    fact sizeof(T) == 8;\n}",
+            "the size of an abstract type is not the same at every type argument",
+        ),
+    ] {
+        assert!(sidecar.contains(before), "{before}");
+        let invalid = sidecar.replacen(before, after, 1).replacen(
+            "    let {} = unfold(c);\n",
+            "",
+            usize::from(after.contains("views")),
+        );
+        let error = verify_rust_function(&invalid, &prepared, function)
+            .expect_err("a claim the box program does not meet must fail");
+        let rendered = format!("{error:?} {error}");
+        let rendered = click::languages::rust::names::display_rust_names(&rendered);
+        assert!(rendered.contains(expected), "{rendered}");
+    }
+}
+
 /// The return place a drop follows is a local named `result`: `read` writes
 /// it with the box's field, then frees the box, then returns it. A proof
 /// steps to that write and reads `result` before the free.

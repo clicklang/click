@@ -15793,9 +15793,19 @@ impl Parser {
                 if parsed_type.interface_type == InterfaceType::Void {
                     return Err(self.error("`sizeof(void)` is not supported"));
                 }
+                // An allocation's size, `allocation(p, sizeof(T))`, is the
+                // size of the object it holds: at the abstract `T`, the word
+                // a value of `T` takes in the generic layout, and at each
+                // instance the type argument's own. No other use may read
+                // the generic layout's number.
                 if let InterfaceType::Parameter(_) = parsed_type.interface_type {
-                    return Err(self.error(
-                        "the size of an abstract type is not the same at every type argument",
+                    if !allocation_size {
+                        return Err(self.error(
+                            "the size of an abstract type is not the same at every type argument",
+                        ));
+                    }
+                    return Ok(ContractExpression::ProgramExpression(
+                        ProgramExpression::Value(int32(8)),
                     ));
                 }
                 match &parsed_type.struct_name {
