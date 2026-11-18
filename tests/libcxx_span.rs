@@ -230,3 +230,70 @@ bool probe(const std::span<int>& s) {
     );
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+#[ignore = "nightly: pinned libc++ copy assignment import, proof replay, and negative controls"]
+fn libcxx_span_assignment_carries_abstract_state() {
+    let (root, import) = libcxx_fixture(
+        "abstract-assignment",
+        "#include <span>\nvoid probe(std::span<int>& dst, const std::span<int>& src) noexcept { dst = src; }\n",
+        &["libcxx/include/c++/v1/span"],
+    );
+    assert!(matches!(
+        import.export().functions[0].body.as_slice(),
+        [click::languages::cpp::CppStatement::Call { .. }]
+    ));
+    let library = "
+abstract resource span_state(s: const std::span<int>*) {
+    field data: int32*;
+    field size: uint64;
+}
+extern std::span<int>& std::span<int>::operator=(const std::span<int>& src) {
+    owns target: span_state(this);
+    owns source: span_state(&src);
+    ensures source.data == old(source.data);
+    ensures source.size == old(source.size);
+    ensures target.data == old(source.data);
+    ensures target.size == old(source.size);
+    ensures &result == this;
+}";
+    let client = "
+void probe(std::span<int>& dst, const std::span<int>& src) {
+    owns target: span_state(&dst);
+    owns source: span_state(&src);
+    ensures source.data == old(source.data);
+    ensures source.size == old(source.size);
+    ensures target.data == old(source.data);
+    ensures target.size == old(source.size);
+} by {
+    step(std::span<int>::operator=, { target: target, source: source });
+}";
+    check(
+        &root,
+        &import,
+        &format!("{library}\n{client}"),
+        &[
+            (
+                format!(
+                    "{library}\n{}",
+                    client.replace(
+                        "{ target: target, source: source }",
+                        "{ target: source, source: target }"
+                    )
+                ),
+                "named resource instance does not match its contract",
+            ),
+            (
+                format!(
+                    "{library}\n{}",
+                    client.replace(
+                        "target.size == old(source.size)",
+                        "target.size == old(target.size)"
+                    )
+                ),
+                "unclosed goal",
+            ),
+        ],
+    );
+    fs::remove_dir_all(root).unwrap();
+}

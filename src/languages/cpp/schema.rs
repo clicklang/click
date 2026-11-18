@@ -1546,7 +1546,9 @@ impl CppExport {
                     })?;
                     format!(
                         "{record_name}_{}",
-                        if member == "operator+=" {
+                        if member == "operator=" {
+                            "operator_assign"
+                        } else if member == "operator+=" {
                             "operator_add_assign"
                         } else if member == "operator-=" {
                             "operator_subtract_assign"

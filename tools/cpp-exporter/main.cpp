@@ -1028,7 +1028,24 @@ private:
     return record;
   }
 
-  std::optional<Json> lower_parameter(const clang::ParmVarDecl *parameter) {
+  std::optional<Json> lower_parameter(
+      const clang::ParmVarDecl *parameter,
+      const clang::FunctionDecl *opaque = nullptr) {
+    // An unnamed opaque parameter has no Clang USR and cannot be used by a
+    // body. Its declaration and argument slot still give it a stable identity.
+    auto parameter_metadata = [&] {
+      llvm::json::Object result;
+      if (opaque != nullptr && parameter->getName().empty()) {
+        const std::string slot = std::to_string(parameter->getFunctionScopeIndex());
+        result["declaration_id"] = declaration_id(opaque) + "@argument" + slot;
+        result["name"] = "__click_argument_" + slot;
+      } else {
+        result["declaration_id"] = declaration_id(parameter);
+        result["name"] = parameter->getNameAsString();
+      }
+      result["span"] = span(parameter->getSourceRange());
+      return result;
+    };
     if (std_function_prototype(parameter->getType()) != nullptr) {
       const auto *reference = parameter->getType()->getAs<clang::LValueReferenceType>();
       if (reference != nullptr && !reference->getPointeeType().isConstQualified()) {
@@ -1039,11 +1056,8 @@ private:
       auto value_type = lower_type(parameter->getType(), parameter->getLocation());
       if (!value_type)
         return std::nullopt;
-      llvm::json::Object result;
-      result["declaration_id"] = declaration_id(parameter);
-      result["name"] = parameter->getNameAsString();
+      auto result = parameter_metadata();
       result["value_type"] = std::move(*value_type);
-      result["span"] = span(parameter->getSourceRange());
       return Json(std::move(result));
     }
     const auto *reference =
@@ -1118,11 +1132,8 @@ private:
     if (!value_type) {
       return std::nullopt;
     }
-    llvm::json::Object result;
-    result["declaration_id"] = declaration_id(parameter);
-    result["name"] = parameter->getNameAsString();
+    auto result = parameter_metadata();
     result["value_type"] = std::move(*value_type);
-    result["span"] = span(parameter->getSourceRange());
     if (!state_.error.empty()) {
       return std::nullopt;
     }
@@ -1937,6 +1948,13 @@ private:
         // lifetime evidence while stripping only implicit qualification casts.
         while (const auto *cast = llvm::dyn_cast_or_null<clang::ImplicitCastExpr>(assignment_rhs))
           assignment_rhs = cast->getSubExpr()->IgnoreParens();
+        if (method != nullptr && method->isCopyAssignmentOperator() &&
+            !method->isDeleted() && !method->isVirtual() &&
+            (is_axiom(method) || is_external(method)) &&
+            operation->getNumArgs() == 2 && operation->getArg(0)->isLValue() &&
+            operation->getArg(1)->isLValue() &&
+            !llvm::isa_and_nonnull<clang::MaterializeTemporaryExpr>(assignment_rhs))
+          return lower_call(operation, function);
         if (method != nullptr && method->isCopyAssignmentOperator() &&
             method->isTrivial() && !method->isDeleted() && !method->isVirtual() &&
             method->getParent()->hasTrivialDestructor() && operation->getNumArgs() == 2 &&
@@ -6588,6 +6606,9 @@ private:
     std::string name = method->getNameAsString();
     if (method->isOverloadedOperator()) {
       switch (method->getOverloadedOperator()) {
+      case clang::OO_Equal:
+        name = "operator_assign";
+        break;
       case clang::OO_PlusEqual:
         name = "operator_add_assign";
         break;
@@ -6599,7 +6620,7 @@ private:
         break;
       default:
         fail(method->getLocation(), "the supported C++ operator methods are "
-                                    "operator+=, operator-= and operator[] only");
+                                    "operator=, operator+=, operator-= and operator[] only");
         return {};
       }
     }
@@ -6799,7 +6820,7 @@ private:
              "default arguments of standard-library constructors are not modeled");
         return std::nullopt;
       }
-      auto lowered = lower_parameter(parameter);
+      auto lowered = lower_parameter(parameter, declaration);
       if (!lowered)
         return std::nullopt;
       parameters.push_back(std::move(*lowered));
