@@ -563,7 +563,7 @@ fn dynamic_body_fact_dependency(
                 Ok(())
             }
             Proposition::MemoryLoadable { bytes, .. } => walk_term(
-                &Term::Bitvector32(bytes.clone()),
+                &Term::Bitvector32(bytes.native_compat().clone()),
                 state,
                 assumptions,
                 temporary_views,

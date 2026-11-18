@@ -1516,7 +1516,7 @@ fn evaluate_retained_memory_load_case(
         let proposition = Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: pointer.clone(),
-            bytes: MachineTerm::constant(value_type.byte_width()),
+            bytes: (MachineTerm::constant(value_type.byte_width())).into(),
             wide: false,
         };
         if purpose == LoadPurpose::Validity {
@@ -6063,7 +6063,7 @@ mod tests {
             .assume_proposition(Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: cell.clone(),
-                bytes: MachineTerm::constant(8),
+                bytes: (MachineTerm::constant(8)).into(),
                 wide: false,
             });
         let paths = evaluate_spec_memory_load_paths(
@@ -6115,7 +6115,7 @@ mod tests {
                     .assume_proposition(Proposition::MemoryLoadable {
                         memory: memory.clone(),
                         base: cell.clone(),
-                        bytes: MachineTerm::constant(8),
+                        bytes: (MachineTerm::constant(8)).into(),
                         wide: false,
                     });
                 for logical in [false, true] {
@@ -7122,7 +7122,7 @@ mod tests {
             PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: field.clone(),
-                bytes: MachineTerm::constant(bytes),
+                bytes: (MachineTerm::constant(bytes)).into(),
                 wide: false,
             })
         };

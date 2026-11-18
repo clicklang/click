@@ -47,7 +47,7 @@ fn memory_view_miss_does_not_scan_other_bases_in_one_block() {
             context = context.assume_proposition(Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: pointer(720_000 + index),
-                bytes: MachineTerm::constant(4),
+                bytes: (MachineTerm::constant(4)).into(),
                 wide: false,
             });
         }
@@ -256,7 +256,14 @@ fn ambiguous_view_buckets_keep_exact_and_selected_evidence() {
                     let fact = Proposition::MemoryLoadable {
                         memory: source,
                         base: base.clone(),
-                        bytes: span(index * 4),
+                        bytes: crate::kernel::StoredMachineTerm::new(
+                            if wide {
+                                crate::kernel::MachineIntegerType::UInt64
+                            } else {
+                                crate::kernel::MachineIntegerType::Int32
+                            },
+                            span(index * 4),
+                        ),
                         wide,
                     };
                     if index == size / 2 {
@@ -284,9 +291,13 @@ fn ambiguous_view_buckets_keep_exact_and_selected_evidence() {
                             unreachable!()
                         };
                         assert!(if wide {
-                            context.proves_native_memory_loadable(memory, &base, bytes)
+                            context.proves_native_memory_loadable(
+                                memory,
+                                &base,
+                                bytes.native_compat(),
+                            )
                         } else {
-                            context.proves_memory_loadable(memory, &base, bytes)
+                            context.proves_memory_loadable(memory, &base, bytes.native_compat())
                         });
                     }
                 });

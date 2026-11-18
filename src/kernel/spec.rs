@@ -2942,7 +2942,7 @@ fn proposition_mentions_integer_variable(proposition: &Proposition, variable: Va
             integer_carrier_in_pointer(pointer, variable)
         }
         Proposition::MemoryLoadable { base, bytes, .. } => {
-            integer_carrier_in_bitvector(bytes, variable)
+            integer_carrier_in_bitvector(bytes.native_compat(), variable)
                 || integer_carrier_in_pointer(base, variable)
         }
         Proposition::MemoryMutatesOnly { writes, .. } => writes
@@ -5379,11 +5379,12 @@ fn lower_spec_memory_loadable_at_state_in(
                 proposition: Proposition::MemoryLoadable {
                     memory: memory.clone(),
                     base,
-                    bytes: crate::kernel::memory_range_byte_count(
+                    bytes: (crate::kernel::memory_range_byte_count(
                         range_start,
                         range_end,
                         element_width,
-                    ),
+                    ))
+                    .into(),
                     wide: false,
                 },
                 facts: path.facts,

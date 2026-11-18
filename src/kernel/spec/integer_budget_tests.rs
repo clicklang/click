@@ -267,7 +267,7 @@ fn integer_fold_loadable_obligation_keeps_carriers_separate() {
             base: AddressBase::Concrete("array".into()),
             offset: AddressOffset::scaled_int32_node(integer_address, 4),
         },
-        bytes: MachineTerm::constant(4),
+        bytes: (MachineTerm::constant(4)).into(),
         wide: false,
     };
     let wrapped = integer_range_fold_body_obligation(
@@ -301,7 +301,7 @@ fn integer_fold_loadable_obligation_keeps_carriers_separate() {
             base: AddressBase::Concrete("array".into()),
             offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(shared_id), 4),
         },
-        bytes: MachineTerm::constant(4),
+        bytes: (MachineTerm::constant(4)).into(),
         wide: false,
     };
     let wrapped =
@@ -343,7 +343,7 @@ fn integer_fold_loadable_obligation_sees_integer_in_registered_pointer() {
             base: AddressBase::Concrete("array".into()),
             offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(load), 4),
         },
-        bytes: MachineTerm::constant(4),
+        bytes: (MachineTerm::constant(4)).into(),
         wide: false,
     };
     let index: IntegerFoldIndexResult = IntegerRangeFoldIndex::Int32 {
@@ -367,7 +367,7 @@ fn integer_fold_loadable_obligation_sees_integer_in_registered_pointer() {
             base: AddressBase::Concrete("array".into()),
             offset: AddressOffset::Variable(load),
         },
-        bytes: MachineTerm::constant(4),
+        bytes: (MachineTerm::constant(4)).into(),
         wide: false,
     };
     let direct_wrapped =
@@ -418,7 +418,7 @@ fn integer_fold_loadable_obligation_keeps_accumulator_for_two_hop_direct_offset(
             base: AddressBase::Concrete("array".into()),
             offset: AddressOffset::Variable(outer),
         },
-        bytes: MachineTerm::constant(4),
+        bytes: (MachineTerm::constant(4)).into(),
         wide: false,
     };
     let index: IntegerFoldIndexResult = IntegerRangeFoldIndex::Int32 {
@@ -468,7 +468,7 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
     let loadable = Proposition::MemoryLoadable {
         memory: registered_memory.as_ref().clone(),
         base: registered_pointer.clone(),
-        bytes: MachineTerm::constant(4),
+        bytes: (MachineTerm::constant(4)).into(),
         wide: false,
     };
     let exact = drop_verified_load_definition_conjuncts(Proposition::And(
@@ -526,7 +526,7 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
         Box::new(Proposition::MemoryLoadable {
             memory: registered_memory.as_ref().clone(),
             base: registered_pointer.clone(),
-            bytes: MachineTerm::constant(4),
+            bytes: (MachineTerm::constant(4)).into(),
             wide: false,
         }),
     ))
@@ -552,7 +552,7 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
         Box::new(Proposition::MemoryLoadable {
             memory: memory.as_ref().clone(),
             base: pointer,
-            bytes: MachineTerm::constant(4),
+            bytes: (MachineTerm::constant(4)).into(),
             wide: false,
         }),
     ))
@@ -689,7 +689,7 @@ fn integer_existential_branch_filters_exact_load_definitions_only() {
     let loadable = Proposition::MemoryLoadable {
         memory: registered_memory.as_ref().clone(),
         base: registered_pointer.clone(),
-        bytes: MachineTerm::constant(4),
+        bytes: (MachineTerm::constant(4)).into(),
         wide: false,
     };
     let marker = Proposition::ConditionIs(ConditionTerm::Constant(true), true);

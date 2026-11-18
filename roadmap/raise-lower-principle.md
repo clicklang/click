@@ -1323,7 +1323,7 @@ opaque state/event/resource identities and existing proof rules are not payloads
 to erase. Selected native checking/rewriting/raising adapters stay explicit and
 are accounted for in 10r–10t; they are not evidence that a store is migrated.
 
-### 10q1 Evaluated proposition outcomes (in progress)
+### 10q1 Evaluated proposition outcomes (landed)
 
 The expression-evaluation and memory-load proposition schemas use
 `ExpressionOutcome<StoredProgramValue>`, preserving exact native value identity
@@ -1356,7 +1356,7 @@ holds. Logical conditions and remaining term payloads retain their own slices.
 10q2 is split before implementation into independent volatile-value and
 loadability-count PRs; its original scope and proof rules are unchanged.
 
-### 10q2a Volatile-event values (in progress)
+### 10q2a Volatile-event values (landed)
 
 `VolatileAccess::value` uses the exact program-value carrier. Native inputs
 retain their syntax; variable collection and substitution use retained values.
@@ -1387,6 +1387,25 @@ After integrating upstream `2d5b4c37a` and its Rust frontend changes, all 245
 selected volatile, substitution, collection and frontend checks passed again,
 followed by quality. The outcome parent's ten pushed commits were verified
 upstream before the clean primary advanced through Git.
+
+The volatile-event slice landed in [PR #3273](https://github.com/clicklang/click/pull/3273);
+all six pushed commits were verified upstream.
+
+### 10q2b1 Loadability-count storage (in progress)
+
+`MemoryLoadable::bytes` uses the existing machine carrier. Native constructor
+fields retain their prior structure and explicitly select Int32 or UInt64
+storage from the existing `wide` flag. Native expression syntax, width metadata
+and count identity are unchanged. Collection and substitution retain shared
+operands; selected native checking, rewriting and raising reads remain explicit.
+
+This PR prepares storage and consumers. Range count producers keep their
+existing native arithmetic until 10q2b2, which owns canonical subtraction,
+common-base cancellation, multiplication and wide product spelling. Native
+format/hash and growing-root clone regressions cover the carrier boundary.
+All 409 affected checks, 1,938 regular scaling cases and quality passed.
+The regular proof/fact-stability suite is running; its result will be recorded
+before this slice is marked complete. Full nightly is excluded.
 
 ## Chunk 3: machine-valued pure-function results
 

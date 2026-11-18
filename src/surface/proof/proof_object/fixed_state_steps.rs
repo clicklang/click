@@ -3208,10 +3208,11 @@ impl<'a> Proof<'a> {
                 base,
                 bytes,
                 wide: true,
-            } => self
-                .facts()
-                .assumptions()
-                .proves_native_memory_loadable(memory, base, bytes),
+            } => self.facts().assumptions().proves_native_memory_loadable(
+                memory,
+                base,
+                bytes.native_compat(),
+            ),
             _ => {
                 return Some(format!(
                     "no checked source proof was constructed for `{target}`"

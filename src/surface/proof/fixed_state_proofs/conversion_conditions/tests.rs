@@ -85,7 +85,7 @@ fn an_expression_form_names_itself_its_cell_and_its_repair() {
         &unproved(Proposition::MemoryLoadable {
             memory: state.memory().clone(),
             base: indexed_cell(&values),
-            bytes: MachineTerm::constant(4),
+            bytes: (MachineTerm::constant(4)).into(),
             wide: false,
         }),
         &PureFactContext::new(),
@@ -130,19 +130,20 @@ fn a_program_expression_form_lists_the_premises_it_consulted() {
         .assume_proposition(Proposition::MemoryLoadable {
             memory: state.memory().clone(),
             base: pointer_base(&values),
-            bytes: binary_node!(
+            bytes: (binary_node!(
                 Int32,
                 Multiply,
                 Box::new(MachineTerm::Variable(Variable(1))),
                 Box::new(MachineTerm::constant(4)),
-            ),
+            ))
+            .into(),
             wide: false,
         });
     let message = refuse_unproved_conversion_bounds(
         &unproved(Proposition::MemoryLoadable {
             memory: state.memory().clone(),
             base: indexed_cell(&values),
-            bytes: MachineTerm::constant(4),
+            bytes: (MachineTerm::constant(4)).into(),
             wide: false,
         }),
         &assumptions,
@@ -207,7 +208,7 @@ fn established_conditions_are_named_beside_the_missing_one() {
     let loadable = Proposition::MemoryLoadable {
         memory: state.memory().clone(),
         base: indexed_cell(&values),
-        bytes: MachineTerm::constant(4),
+        bytes: (MachineTerm::constant(4)).into(),
         wide: false,
     };
     let message = refuse_unproved_conversion_bounds(
@@ -268,7 +269,7 @@ fn an_assumable_obligation_is_not_refused() {
         Proposition::MemoryLoadable {
             memory: state.memory().clone(),
             base: indexed_cell(&values),
-            bytes: MachineTerm::constant(4),
+            bytes: (MachineTerm::constant(4)).into(),
             wide: false,
         },
     )];

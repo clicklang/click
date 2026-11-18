@@ -669,7 +669,7 @@ fn collect_proposition_bitvector_variables_one(
         } => {
             collect_memory_bitvector_variables(memory, variables);
             collect_pointer_bitvector_variables(base, variables);
-            collect_bitvector_variables(bytes, variables);
+            collect_expression_value_bitvector_variables(bytes.value(), variables);
         }
         Proposition::ResourceSeparate { left, right } => {
             collect_resource_bitvector_variables(left, variables);

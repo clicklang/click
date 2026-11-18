@@ -2623,16 +2623,19 @@ impl MemoryRange {
                 Proposition::MemoryLoadable {
                     memory: memory.clone(),
                     base,
-                    bytes,
+                    bytes: (bytes).into(),
                     wide: false,
                 }
             }
             Some((start, end)) => Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: self.start_pointer(),
-                bytes: wide_loadable_byte_count(
-                    MachineTerm::uint64_subtract(end.clone(), start.clone()),
-                    self.element_width,
+                bytes: crate::kernel::StoredMachineTerm::new(
+                    crate::kernel::MachineIntegerType::UInt64,
+                    wide_loadable_byte_count(
+                        MachineTerm::uint64_subtract(end.clone(), start.clone()),
+                        self.element_width,
+                    ),
                 ),
                 wide: true,
             },
@@ -3178,7 +3181,7 @@ fn collect_stated_loadable_span_guards(
             if !every_spelling {
                 return;
             }
-            let (elements, width) = match bytes {
+            let (elements, width) = match bytes.native_compat() {
                 MachineTerm::Binary {
                     format: MachineIntegerType::UInt64,
                     op: MachineBinaryOp::Multiply,
@@ -3193,7 +3196,7 @@ fn collect_stated_loadable_span_guards(
                         _ => return,
                     }
                 }
-                _ => (bytes, 1),
+                _ => (bytes.native_compat(), 1),
             };
             let guard = Proposition::ConditionIs(
                 ConditionTerm::uint64_less_equal(
@@ -3207,12 +3210,13 @@ fn collect_stated_loadable_span_guards(
             }
         }
         Proposition::MemoryLoadable { bytes, .. } => {
-            let Some(element_width) = stated_span_element_width(bytes) else {
+            let Some(element_width) = stated_span_element_width(bytes.native_compat()) else {
                 return;
             };
-            let Some(element_count) =
-                crate::kernel::reasoning::element_count_from_bytes(bytes, element_width)
-            else {
+            let Some(element_count) = crate::kernel::reasoning::element_count_from_bytes(
+                bytes.native_compat(),
+                element_width,
+            ) else {
                 return;
             };
             let endpoints = if every_spelling {
@@ -4045,7 +4049,7 @@ impl ExecutionEnvironment {
                                 }) || resource_context_has_symbolic_range_read(
                                     state.resources(),
                                     base,
-                                    bytes,
+                                    bytes.native_compat(),
                                     assumptions,
                                 ))
                             }

@@ -2203,7 +2203,7 @@ pub(super) fn plan_explicit_loadability_transport(
 ) -> Option<Vec<ProofTactic>> {
     let goal_width;
     let goal_bytes = match goal {
-        Proposition::MemoryLoadable { bytes, .. } => bytes,
+        Proposition::MemoryLoadable { bytes, .. } => bytes.native_compat(),
         Proposition::MemoryReadDefined { value_type, .. } => {
             goal_width = MachineTerm::constant(value_type.byte_width());
             &goal_width
@@ -2238,7 +2238,7 @@ pub(super) fn plan_explicit_loadability_transport(
     sources.sort_by_key(|(kernel, surface)| match kernel {
         Proposition::MemoryLoadable { bytes, .. } => (
             (!surface_is_range(surface)) as u8,
-            (bytes == goal_bytes) as u8,
+            (bytes.native_compat() == goal_bytes) as u8,
         ),
         Proposition::MemoryReadDefined { .. } => (0, 0),
         _ => unreachable!(),
@@ -5286,7 +5286,7 @@ mod selected_premise_tests {
                 base: AddressBase::ExternalArgument,
                 offset: AddressOffset::Constant(0),
             },
-            bytes: MachineTerm::constant(4),
+            bytes: (MachineTerm::constant(4)).into(),
             wide: false,
         };
         let surface = ClickProposition::Loadable {

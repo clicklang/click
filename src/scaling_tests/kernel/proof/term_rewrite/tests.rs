@@ -904,7 +904,7 @@ fn checked_substitution_collector_reuses_registered_load_dag() {
                 base: AddressBase::Concrete("array".into()),
                 offset: AddressOffset::Variable(load),
             },
-            bytes: MachineTerm::constant(4),
+            bytes: (MachineTerm::constant(4)).into(),
             wide: false,
         };
         let mut proposition = atom.clone();

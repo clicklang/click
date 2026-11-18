@@ -495,7 +495,7 @@ pub fn execution_state_justifies_loadability_obligation(
             let loadable = Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: pointer.clone(),
-                bytes: MachineTerm::constant(value_type.byte_width()),
+                bytes: (MachineTerm::constant(value_type.byte_width())).into(),
                 wide: false,
             };
             execution_state_justifies_loadability_obligation(state, &loadable, assumptions)
@@ -522,11 +522,15 @@ pub fn execution_state_justifies_loadability_obligation(
                     None => crate::kernel::resource_context_has_symbolic_range_read(
                         state.resources(),
                         base,
-                        bytes,
+                        bytes.native_compat(),
                         assumptions,
                     ),
                 }
-                || assumptions.proves_memory_loadable_for_memory_resolution(memory, base, bytes)
+                || assumptions.proves_memory_loadable_for_memory_resolution(
+                    memory,
+                    base,
+                    bytes.native_compat(),
+                )
                 || symbolic_base_aliases_a_held_cell(memory, base, assumptions)
         }
         _ => true,
@@ -649,11 +653,14 @@ pub fn loadable_covered_by_fact(assumptions: &PureFactContext, goal: &Propositio
                 // constant-size cell even when its symbolic byte offset is too wide
                 // for this rule's signed arithmetic.
                 if assumptions
-                    .simplify_bitvector_under_assumptions(bytes)
+                    .simplify_bitvector_under_assumptions(bytes.native_compat())
                     .as_const()
                     .is_some_and(|byte_width| {
                         assumptions.proves_loadable_cell_from_region_elements(
-                            fact_base, fact_bytes, base, byte_width,
+                            fact_base,
+                            fact_bytes.native_compat(),
+                            base,
+                            byte_width,
                         )
                     })
                 {
@@ -669,11 +676,11 @@ pub fn loadable_covered_by_fact(assumptions: &PureFactContext, goal: &Propositio
                     MachineIntegerType::Int32,
                 );
                 let width = assumptions.simplify_machine_operand_under_assumptions(
-                    Operand::Legacy(bytes),
+                    bytes.operand_view(),
                     MachineIntegerType::Int32,
                 );
                 let span = assumptions.simplify_machine_operand_under_assumptions(
-                    Operand::Legacy(fact_bytes),
+                    fact_bytes.operand_view(),
                     MachineIntegerType::Int32,
                 );
                 if let (Some(delta), Some(width), Some(span)) = (
@@ -1887,10 +1894,11 @@ fn program_function_contract_entry_facts(
                 base: range
                     .base()
                     .offset_by_elements(range.start().clone(), width),
-                bytes: MachineTerm::multiply(
+                bytes: (MachineTerm::multiply(
                     MachineTerm::subtract(range.end().clone(), range.start().clone()),
                     MachineTerm::constant(width),
-                ),
+                ))
+                .into(),
                 wide: false,
             },
         );
@@ -3097,8 +3105,8 @@ pub(crate) fn propositions_alpha_equivalent(left: &Proposition, right: &Proposit
             },
         ) => {
             canonicalize_pointer_loads(left_base) == canonicalize_pointer_loads(right_base)
-                && canonicalize_atomic_loads(left_bytes)
-                    == canonicalize_atomic_loads(right_bytes)
+                && canonicalize_atomic_loads(left_bytes.native_compat())
+                    == canonicalize_atomic_loads(right_bytes.native_compat())
                 // Loadability depends on the state's blocks, not its
                 // cached cell values. Retired automatic blocks are part of
                 // the state marker too.
@@ -3422,7 +3430,7 @@ pub(super) fn resources_certify_loadability(
             || crate::kernel::resource_context_has_symbolic_range_read(
                 resources,
                 base,
-                bytes,
+                bytes.native_compat(),
                 assumptions,
             ))
 }

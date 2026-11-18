@@ -2322,7 +2322,7 @@ fn builtin_obligation_solver_proves_trivial_props() {
         &Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: pointer.clone(),
-            bytes: MachineTerm::constant(4),
+            bytes: (MachineTerm::constant(4)).into(),
             wide: false,
         }
     ));
@@ -2358,10 +2358,11 @@ mod loadable_range_narrowing {
         Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: origin.offset_by_int32_elements(start.clone()),
-            bytes: MachineTerm::multiply(
+            bytes: (MachineTerm::multiply(
                 MachineTerm::subtract(end.clone(), start.clone()),
                 MachineTerm::constant(4),
-            ),
+            ))
+            .into(),
             wide: false,
         }
     }
@@ -2564,10 +2565,11 @@ mod loadable_range_narrowing {
         let byte_goal = Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: origin.offset_by_elements(c.clone(), 1),
-            bytes: MachineTerm::multiply(
+            bytes: (MachineTerm::multiply(
                 MachineTerm::subtract(d.clone(), c.clone()),
                 MachineTerm::constant(1),
-            ),
+            ))
+            .into(),
             wide: false,
         };
         let assumptions = assume_orders(segment(&memory, &a, &b), &inside(&a, &b, &c, &d));
@@ -2587,7 +2589,7 @@ fn empty_memory_range_is_vacuously_loadable() {
             base: "not-live".into(),
             offset: AddressOffset::Variable(Variable(1)),
         },
-        bytes: MachineTerm::constant(0),
+        bytes: (MachineTerm::constant(0)).into(),
         wide: false,
     };
 
@@ -2607,13 +2609,13 @@ fn deferred_obligations_keep_contextual_memory_proofs_explicit() {
     let range = Proposition::MemoryLoadable {
         memory: memory.clone(),
         base: base.clone(),
-        bytes: MachineTerm::constant(8),
+        bytes: (MachineTerm::constant(8)).into(),
         wide: false,
     };
     let element = Proposition::MemoryLoadable {
         memory,
         base: base.offset_by_int32_elements(MachineTerm::constant(1)),
-        bytes: MachineTerm::constant(4),
+        bytes: (MachineTerm::constant(4)).into(),
         wide: false,
     };
     let assumptions = PureFactContext::new().assume_proposition(range);
@@ -2690,19 +2692,19 @@ fn memory_derivation_records_the_selected_range_candidate() {
             base: "unrelated".into(),
             offset: AddressOffset::Constant(0),
         },
-        bytes: MachineTerm::constant(64),
+        bytes: (MachineTerm::constant(64)).into(),
         wide: false,
     };
     let selected = Proposition::MemoryLoadable {
         memory: memory.clone(),
         base: data.clone(),
-        bytes: MachineTerm::constant(8),
+        bytes: (MachineTerm::constant(8)).into(),
         wide: false,
     };
     let target = Proposition::MemoryLoadable {
         memory,
         base: data.offset_by_int32_elements(MachineTerm::constant(1)),
-        bytes: MachineTerm::constant(4),
+        bytes: (MachineTerm::constant(4)).into(),
         wide: false,
     };
     let assumptions = PureFactContext::new()
@@ -2729,16 +2731,17 @@ fn loadable_symbolic_subrange_proves_an_indexed_cell() {
     let range = Proposition::MemoryLoadable {
         memory: memory.clone(),
         base: data.offset_by_int32_elements(split.clone()),
-        bytes: MachineTerm::multiply(
+        bytes: (MachineTerm::multiply(
             MachineTerm::subtract(len.clone(), split.clone()),
             MachineTerm::constant(4),
-        ),
+        ))
+        .into(),
         wide: false,
     };
     let target = Proposition::MemoryLoadable {
         memory,
         base: data.offset_by_int32_elements(index.clone()),
-        bytes: MachineTerm::constant(4),
+        bytes: (MachineTerm::constant(4)).into(),
         wide: false,
     };
     // Reading `[split..len]` as its element count needs that count to be a
@@ -2783,19 +2786,19 @@ fn adjacent_loadable_regions_certify_their_concatenation() {
     let prefix = Proposition::MemoryLoadable {
         memory: memory.clone(),
         base: data.clone(),
-        bytes: MachineTerm::constant(8),
+        bytes: (MachineTerm::constant(8)).into(),
         wide: false,
     };
     let next_cell = Proposition::MemoryLoadable {
         memory: memory.clone(),
         base: data.offset_by_int32_elements(MachineTerm::constant(2)),
-        bytes: MachineTerm::constant(4),
+        bytes: (MachineTerm::constant(4)).into(),
         wide: false,
     };
     let goal = Proposition::MemoryLoadable {
         memory: memory.clone(),
         base: data.clone(),
-        bytes: MachineTerm::constant(12),
+        bytes: (MachineTerm::constant(12)).into(),
         wide: false,
     };
     let assumptions = PureFactContext::new()
@@ -2817,7 +2820,7 @@ fn adjacent_loadable_regions_certify_their_concatenation() {
     let stored_goal = Proposition::MemoryLoadable {
         memory: stored_memory,
         base: data.clone(),
-        bytes: MachineTerm::constant(12),
+        bytes: (MachineTerm::constant(12)).into(),
         wide: false,
     };
     let stored_assumptions = PureFactContext::new().assume_proposition(prefix.clone());
@@ -2832,7 +2835,7 @@ fn adjacent_loadable_regions_certify_their_concatenation() {
     let gap = Proposition::MemoryLoadable {
         memory,
         base: data.offset_by_int32_elements(MachineTerm::constant(4)),
-        bytes: MachineTerm::constant(4),
+        bytes: (MachineTerm::constant(4)).into(),
         wide: false,
     };
     let assumptions = PureFactContext::new()
@@ -2841,7 +2844,7 @@ fn adjacent_loadable_regions_certify_their_concatenation() {
     let too_wide = Proposition::MemoryLoadable {
         memory: SymbolicMemory::new(),
         base: data,
-        bytes: MachineTerm::constant(16),
+        bytes: (MachineTerm::constant(16)).into(),
         wide: false,
     };
     assert!(!crate::kernel::search::ProofSearch::proves(
@@ -2903,7 +2906,7 @@ fn field_derived_capacity_range_covers_a_shorter_live_prefix() {
         .assume_proposition(Proposition::MemoryLoadable {
             memory: after_cap,
             base: range_data,
-            bytes: MachineTerm::multiply(cap.clone(), MachineTerm::constant(4)),
+            bytes: (MachineTerm::multiply(cap.clone(), MachineTerm::constant(4))).into(),
             wide: false,
         })
         .assume_condition(
@@ -2932,7 +2935,7 @@ fn field_derived_capacity_range_covers_a_shorter_live_prefix() {
     let target = Proposition::MemoryLoadable {
         memory: entry_memory,
         base: entry_data.offset_by_int32_elements(index),
-        bytes: MachineTerm::constant(4),
+        bytes: (MachineTerm::constant(4)).into(),
         wide: false,
     };
 
@@ -3000,7 +3003,7 @@ fn quantified_int32_fact_does_not_certify_an_instantiated_load() {
     let target = Proposition::MemoryLoadable {
         memory,
         base: data.offset_by_int32_elements(MachineTerm::Variable(target_index)),
-        bytes: MachineTerm::constant(4),
+        bytes: (MachineTerm::constant(4)).into(),
         wide: false,
     };
 
@@ -3055,7 +3058,7 @@ fn quantified_loadability_fact_certifies_an_instantiated_load() {
             Box::new(Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: data.offset_by_int32_elements(MachineTerm::Variable(fact_index)),
-                bytes: MachineTerm::constant(4),
+                bytes: (MachineTerm::constant(4)).into(),
                 wide: false,
             }),
         ),
@@ -3069,7 +3072,7 @@ fn quantified_loadability_fact_certifies_an_instantiated_load() {
         &Proposition::MemoryLoadable {
             memory,
             base: data.offset_by_int32_elements(MachineTerm::Variable(target_index)),
-            bytes: MachineTerm::constant(4),
+            bytes: (MachineTerm::constant(4)).into(),
             wide: false,
         }
     ));
@@ -3421,7 +3424,7 @@ fn quantified_int32_fact_does_not_certify_its_complete_guarded_range() {
     let target = Proposition::MemoryLoadable {
         memory: memory.clone(),
         base: data.clone(),
-        bytes: MachineTerm::multiply(length.clone(), MachineTerm::constant(4)),
+        bytes: (MachineTerm::multiply(length.clone(), MachineTerm::constant(4))).into(),
         wide: false,
     };
 
@@ -3434,7 +3437,7 @@ fn quantified_int32_fact_does_not_certify_its_complete_guarded_range() {
         &Proposition::MemoryLoadable {
             memory: memory.with_block("other-state", 4),
             base: data.clone(),
-            bytes: MachineTerm::multiply(length.clone(), MachineTerm::constant(4)),
+            bytes: (MachineTerm::multiply(length.clone(), MachineTerm::constant(4))).into(),
             wide: false,
         }
     ));
@@ -3446,7 +3449,7 @@ fn quantified_int32_fact_does_not_certify_its_complete_guarded_range() {
                 base: "other-data".into(),
                 offset: AddressOffset::Constant(0),
             },
-            bytes: MachineTerm::multiply(length, MachineTerm::constant(4)),
+            bytes: (MachineTerm::multiply(length, MachineTerm::constant(4))).into(),
             wide: false,
         }
     ));
@@ -4734,7 +4737,7 @@ fn known_memory_block_bounds_prove_symbolic_element_access() {
         &Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: pointer.clone(),
-            bytes: MachineTerm::constant(4),
+            bytes: (MachineTerm::constant(4)).into(),
             wide: false,
         }
     ));
@@ -4773,7 +4776,7 @@ fn symbolic_int32_range_directly_proves_constant_element_loadable() {
         .assume_proposition(Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: base.clone(),
-            bytes: MachineTerm::multiply(length, MachineTerm::constant(4)),
+            bytes: (MachineTerm::multiply(length, MachineTerm::constant(4))).into(),
             wide: false,
         });
 
@@ -4782,7 +4785,7 @@ fn symbolic_int32_range_directly_proves_constant_element_loadable() {
         &Proposition::MemoryLoadable {
             memory,
             base: base.offset_by_int32_elements(MachineTerm::constant(1)),
-            bytes: MachineTerm::constant(4),
+            bytes: (MachineTerm::constant(4)).into(),
             wide: false,
         }
     ));
@@ -4811,13 +4814,13 @@ fn assumptions_prove_forall_int32_array_range_body() {
     let loadable_index = Proposition::MemoryLoadable {
         memory: memory.clone(),
         base: indexed_pointer,
-        bytes: MachineTerm::constant(4),
+        bytes: (MachineTerm::constant(4)).into(),
         wide: false,
     };
     let assumptions = PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
         memory,
         base,
-        bytes: MachineTerm::constant(12),
+        bytes: (MachineTerm::constant(12)).into(),
         wide: false,
     });
 
@@ -4844,7 +4847,7 @@ fn loadability_transports_to_state_with_symbolic_index_bounds() {
         .assume_proposition(Proposition::MemoryLoadable {
             memory: range_memory,
             base: base.clone(),
-            bytes: MachineTerm::constant(12),
+            bytes: (MachineTerm::constant(12)).into(),
             wide: false,
         })
         .assume_condition(
@@ -4876,7 +4879,7 @@ fn loadability_transports_to_state_with_symbolic_index_bounds() {
         &Proposition::MemoryLoadable {
             memory: state_memory,
             base: base.offset_by_int32_elements(index),
-            bytes: MachineTerm::constant(4),
+            bytes: (MachineTerm::constant(4)).into(),
             wide: false,
         }
     ));
@@ -4899,13 +4902,13 @@ fn loadability_same_base_span_uses_graph_for_byte_count() {
     let fact = Proposition::MemoryLoadable {
         memory: before.clone(),
         base: base.clone(),
-        bytes: bytes(a.clone()),
+        bytes: (bytes(a.clone())).into(),
         wide: false,
     };
     let goal = Proposition::MemoryLoadable {
         memory: after.clone(),
         base: base.clone(),
-        bytes: bytes(b.clone()),
+        bytes: (bytes(b.clone())).into(),
         wide: false,
     };
     let premise = ConditionTerm::equal(a, b.clone());
@@ -4928,7 +4931,7 @@ fn loadability_same_base_span_uses_graph_for_byte_count() {
     let other_base = Proposition::MemoryLoadable {
         memory: after,
         base: Address::symbolic(Variable(90_304)),
-        bytes: bytes(b),
+        bytes: (bytes(b)).into(),
         wide: false,
     };
     assert!(!with_premise.proves_atomic_without_search(&other_base));
@@ -5333,7 +5336,7 @@ fn builtin_obligation_solver_discharges_concrete_invariant() {
     let invariant = Proposition::MemoryLoadable {
         memory: memory.clone(),
         base: pointer,
-        bytes: MachineTerm::constant(4),
+        bytes: (MachineTerm::constant(4)).into(),
         wide: false,
     };
     let state = ExecutionState::new()
@@ -7352,7 +7355,14 @@ fn native_loadability_transport_pins_span_domain_and_lifetime() {
     let fact = |memory: SymbolicMemory, bytes, wide| Proposition::MemoryLoadable {
         memory,
         base: base.clone(),
-        bytes,
+        bytes: crate::kernel::StoredMachineTerm::new(
+            if wide {
+                crate::kernel::MachineIntegerType::UInt64
+            } else {
+                crate::kernel::MachineIntegerType::Int32
+            },
+            bytes,
+        ),
         wide,
     };
     let source = fact(live.clone(), MachineTerm::uint64_constant(8), true);
@@ -7414,7 +7424,10 @@ fn native_loadability_transport_pins_span_domain_and_lifetime() {
     let external_fact = |memory| Proposition::MemoryLoadable {
         memory,
         base: external.clone(),
-        bytes: MachineTerm::uint64_constant(8),
+        bytes: crate::kernel::StoredMachineTerm::new(
+            crate::kernel::MachineIntegerType::UInt64,
+            MachineTerm::uint64_constant(8),
+        ),
         wide: true,
     };
     let context = PureFactContext::new().assume_proposition(external_fact(live));
@@ -7437,7 +7450,10 @@ fn native_loadability_prefix_coverage_retains_full_width_bounds() {
     let range = |bytes| Proposition::MemoryLoadable {
         memory: memory.clone(),
         base: base.clone(),
-        bytes,
+        bytes: crate::kernel::StoredMachineTerm::new(
+            crate::kernel::MachineIntegerType::UInt64,
+            bytes,
+        ),
         wide: true,
     };
     for held in [
@@ -7506,7 +7522,10 @@ fn native_loadability_prefix_coverage_preserves_lifetime_and_base() {
     let range = |memory: SymbolicMemory, base: Address, bytes| Proposition::MemoryLoadable {
         memory,
         base,
-        bytes: MachineTerm::uint64_constant(bytes),
+        bytes: crate::kernel::StoredMachineTerm::new(
+            crate::kernel::MachineIntegerType::UInt64,
+            MachineTerm::uint64_constant(bytes),
+        ),
         wide: true,
     };
     let context = PureFactContext::new().assume_proposition(range(live.clone(), base.clone(), 8));
@@ -7566,7 +7585,10 @@ fn native_loadability_window_checks_offset_end_and_retirement() {
     let range = |memory: SymbolicMemory, base: Address, bytes| Proposition::MemoryLoadable {
         memory,
         base,
-        bytes: MachineTerm::uint64_constant(bytes),
+        bytes: crate::kernel::StoredMachineTerm::new(
+            crate::kernel::MachineIntegerType::UInt64,
+            MachineTerm::uint64_constant(bytes),
+        ),
         wide: true,
     };
     let context =
@@ -7656,13 +7678,19 @@ fn native_loadability_window_requires_every_full_width_guard() {
     let source = Proposition::MemoryLoadable {
         memory: memory.clone(),
         base,
-        bytes: held.clone(),
+        bytes: crate::kernel::StoredMachineTerm::new(
+            crate::kernel::MachineIntegerType::UInt64,
+            held.clone(),
+        ),
         wide: true,
     };
     let goal = Proposition::MemoryLoadable {
         memory,
         base: target,
-        bytes: requested.clone(),
+        bytes: crate::kernel::StoredMachineTerm::new(
+            crate::kernel::MachineIntegerType::UInt64,
+            requested.clone(),
+        ),
         wide: true,
     };
     let le =

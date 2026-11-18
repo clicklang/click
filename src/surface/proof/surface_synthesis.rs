@@ -1364,7 +1364,7 @@ pub(in crate::surface::proof) fn synthesize_source_projection_proposition_with_b
     if let Proposition::MemoryLoadable { base, bytes, .. } = proposition {
         match synthesize_exact_external_zero_based_byte_range(
             base,
-            bytes,
+            bytes.native_compat(),
             parameter_binding,
             state,
             bound_variables,
@@ -2673,7 +2673,7 @@ fn synthesize_surface_atomic_proposition(
     {
         let loadable = synthesize_zero_based_loadable_segment(
             base,
-            bytes,
+            bytes.native_compat(),
             parameter_binding,
             state,
             bound_variables,
@@ -2681,7 +2681,7 @@ fn synthesize_surface_atomic_proposition(
         .or_else(|| {
             synthesize_named_range_loadable_segment(
                 base,
-                bytes,
+                bytes.native_compat(),
                 parameter_binding,
                 state,
                 bound_variables,

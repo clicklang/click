@@ -398,3 +398,53 @@ mod proposition_outcome_tests {
         assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
 }
+
+#[cfg(test)]
+mod loadable_count_tests {
+    use super::*;
+    use std::hash::{Hash, Hasher};
+    #[test]
+    fn loadable_count_inputs_keep_exact_native_format_and_hash() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let debug = |value: &dyn std::fmt::Debug| format!("{value:?}");
+        for wide in [false, true] {
+            for bytes in [
+                MachineTerm::constant(7),
+                MachineTerm::uint32_constant(7),
+                MachineTerm::uint64_constant(7),
+                MachineTerm::Variable(Variable(10993681)),
+            ] {
+                let stored = StoredMachineTerm::new(
+                    if wide {
+                        MachineIntegerType::UInt64
+                    } else {
+                        MachineIntegerType::Int32
+                    },
+                    bytes.clone(),
+                );
+                let fact = Proposition::MemoryLoadable {
+                    memory: SymbolicMemory::new(),
+                    base: Address::symbolic(Variable(10993682)),
+                    bytes: stored,
+                    wide,
+                };
+                let Proposition::MemoryLoadable {
+                    bytes: stored,
+                    wide: actual,
+                    ..
+                } = &fact
+                else {
+                    unreachable!()
+                };
+                assert_eq!(*actual, wide);
+                assert_eq!(stored.native_compat(), &bytes);
+                assert_eq!(debug(stored), debug(&bytes));
+                let mut a = std::collections::hash_map::DefaultHasher::new();
+                let mut b = std::collections::hash_map::DefaultHasher::new();
+                stored.hash(&mut a);
+                bytes.hash(&mut b);
+                assert_eq!(a.finish(), b.finish());
+            }
+        }
+    }
+}

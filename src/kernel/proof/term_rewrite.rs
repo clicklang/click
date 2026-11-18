@@ -1421,7 +1421,7 @@ fn collect_integer_substitution_variables_with_carriers(
                 if carriers.exhausted() {
                     return;
                 }
-                collect_bitvector_carriers(bytes, carriers);
+                collect_bitvector_carriers(bytes.native_compat(), carriers);
             }
             Proposition::ResourceViewable { resource, .. } => {
                 collect_resource_carriers(resource, carriers)
@@ -3514,18 +3514,25 @@ impl<'a> TermRewrite<'a> {
                 if !self.source_variables_reserved {
                     let mut variables = self.new_carrier_variables();
                     collect_pointer_carriers(base, &mut variables);
-                    collect_bitvector_carriers(bytes, &mut variables);
+                    collect_bitvector_carriers(bytes.native_compat(), &mut variables);
                     self.reserve_source_variables(variables);
                 }
                 let base = self.pointer(base);
-                let bytes = self.bits(bytes);
+                let bytes = self.bits(bytes.native_compat());
                 if self.checked_work_exhausted() {
                     return exhausted_proposition();
                 }
                 Proposition::MemoryLoadable {
                     memory: memory.clone(),
                     base,
-                    bytes,
+                    bytes: crate::kernel::StoredMachineTerm::new(
+                        if *wide {
+                            crate::kernel::MachineIntegerType::UInt64
+                        } else {
+                            crate::kernel::MachineIntegerType::Int32
+                        },
+                        bytes,
+                    ),
                     wide: *wide,
                 }
             }
@@ -8782,7 +8789,7 @@ mod tests {
                 base: AddressBase::ExternalArgument,
                 offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(source), 4),
             },
-            bytes: MachineTerm::constant(4),
+            bytes: (MachineTerm::constant(4)).into(),
             wide: false,
         };
         let mut proposition = atom.clone();

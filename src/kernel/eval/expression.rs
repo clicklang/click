@@ -1492,7 +1492,7 @@ pub(super) fn evaluate_native_expression_paths(
                         Proposition::MemoryLoadable {
                             memory: state.memory().clone(),
                             base: pointer.address().clone(),
-                            bytes: MachineTerm::constant(width),
+                            bytes: (MachineTerm::constant(width)).into(),
                             wide: false,
                         },
                         Some("reference binding requires live storage for the complete referent"),

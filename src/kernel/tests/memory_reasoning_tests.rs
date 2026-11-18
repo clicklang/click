@@ -75,13 +75,13 @@ fn loadability_coverage_refuses_a_wrapped_byte_end() {
     let assumptions = PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
         memory: memory.clone(),
         base: base.clone(),
-        bytes: MachineTerm::constant(0x4000_0000),
+        bytes: (MachineTerm::constant(0x4000_0000)).into(),
         wide: false,
     });
     let goal = Proposition::MemoryLoadable {
         memory,
         base: base.offset_by_bytes(0x4000_0001),
-        bytes: MachineTerm::constant(0xc000_0000),
+        bytes: (MachineTerm::constant(0xc000_0000)).into(),
         wide: false,
     };
     assert!(
@@ -101,13 +101,13 @@ fn loadability_coverage_refuses_a_negative_signed_additive_shift() {
     let assumptions = PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
         memory: memory.clone(),
         base: base.clone(),
-        bytes: MachineTerm::add(count.clone(), MachineTerm::constant(1)),
+        bytes: (MachineTerm::add(count.clone(), MachineTerm::constant(1))).into(),
         wide: false,
     });
     let goal = Proposition::MemoryLoadable {
         memory,
         base,
-        bytes: MachineTerm::add(count, MachineTerm::constant(0x8000_0000)),
+        bytes: (MachineTerm::add(count, MachineTerm::constant(0x8000_0000))).into(),
         wide: false,
     };
     assert!(
@@ -126,13 +126,13 @@ fn loadability_coverage_compares_wide_concrete_spans_exactly() {
     let assumptions = PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
         memory: memory.clone(),
         base: base.clone(),
-        bytes: MachineTerm::constant(u32::MAX),
+        bytes: (MachineTerm::constant(u32::MAX)).into(),
         wide: false,
     });
     let covered = Proposition::MemoryLoadable {
         memory: memory.clone(),
         base: base.offset_by_bytes(0x8000_0000),
-        bytes: MachineTerm::constant(1),
+        bytes: (MachineTerm::constant(1)).into(),
         wide: false,
     };
     assert!(crate::kernel::api::loadable_covered_by_fact(
@@ -143,7 +143,7 @@ fn loadability_coverage_compares_wide_concrete_spans_exactly() {
     let beyond = Proposition::MemoryLoadable {
         memory,
         base: base.offset_by_bytes(0x8000_0000),
-        bytes: MachineTerm::constant(0x8000_0000),
+        bytes: (MachineTerm::constant(0x8000_0000)).into(),
         wide: false,
     };
     assert!(!crate::kernel::api::loadable_covered_by_fact(
@@ -162,13 +162,13 @@ fn loadability_coverage_refuses_a_wrapped_pointer_displacement() {
     let assumptions = PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
         memory: memory.clone(),
         base: base.clone(),
-        bytes: MachineTerm::constant(100),
+        bytes: (MachineTerm::constant(100)).into(),
         wide: false,
     });
     let goal = Proposition::MemoryLoadable {
         memory,
         base: base.offset_by_int32_elements(MachineTerm::constant(0x4000_0001)),
-        bytes: MachineTerm::constant(4),
+        bytes: (MachineTerm::constant(4)).into(),
         wide: false,
     };
     assert!(
@@ -1002,7 +1002,7 @@ fn loadability_transports_across_long_certified_effect_chain() {
     let mut assumptions = PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
         memory: before,
         base: loadable.clone(),
-        bytes: MachineTerm::constant(4),
+        bytes: (MachineTerm::constant(4)).into(),
         wide: false,
     });
     for value in 0..12 {
@@ -1020,7 +1020,7 @@ fn loadability_transports_across_long_certified_effect_chain() {
         &Proposition::MemoryLoadable {
             memory: after,
             base: loadable,
-            bytes: MachineTerm::constant(4),
+            bytes: (MachineTerm::constant(4)).into(),
             wide: false,
         }
     ));
@@ -1518,7 +1518,7 @@ fn memory_loadable_candidates_ignore_unrelated_address_bases() {
     let mut assumptions = PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
         memory: memory.clone(),
         base: target.clone(),
-        bytes: MachineTerm::constant(8),
+        bytes: (MachineTerm::constant(8)).into(),
         wide: false,
     });
     for index in 0..128 {
@@ -1528,7 +1528,7 @@ fn memory_loadable_candidates_ignore_unrelated_address_bases() {
                 base: format!("indexed-viewable-unrelated-{index}").into(),
                 offset: AddressOffset::Constant(0),
             },
-            bytes: MachineTerm::constant(4),
+            bytes: (MachineTerm::constant(4)).into(),
             wide: false,
         });
     }
@@ -1539,7 +1539,7 @@ fn memory_loadable_candidates_ignore_unrelated_address_bases() {
         &Proposition::MemoryLoadable {
             memory,
             base: target,
-            bytes: MachineTerm::constant(4),
+            bytes: (MachineTerm::constant(4)).into(),
             wide: false,
         }
     ));
@@ -5634,7 +5634,7 @@ fn quantified_load_witness_does_not_certify_loadability_in_a_freed_state() {
         &Proposition::MemoryLoadable {
             memory: live,
             base: cell.clone(),
-            bytes: MachineTerm::constant(4),
+            bytes: (MachineTerm::constant(4)).into(),
             wide: false,
         }
     ));
@@ -5643,7 +5643,7 @@ fn quantified_load_witness_does_not_certify_loadability_in_a_freed_state() {
         &Proposition::MemoryLoadable {
             memory: freed,
             base: cell,
-            bytes: MachineTerm::constant(4),
+            bytes: (MachineTerm::constant(4)).into(),
             wide: false,
         }
     ));
@@ -5688,7 +5688,7 @@ fn freed_external_allocation_is_not_still_available() {
     let assumptions = PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
         memory: live.clone(),
         base: base.clone(),
-        bytes: MachineTerm::constant(8),
+        bytes: (MachineTerm::constant(8)).into(),
         wide: false,
     });
     assert!(crate::kernel::search::ProofSearch::proves(
@@ -5696,7 +5696,7 @@ fn freed_external_allocation_is_not_still_available() {
         &Proposition::MemoryLoadable {
             memory: live,
             base: base.clone(),
-            bytes: MachineTerm::constant(4),
+            bytes: (MachineTerm::constant(4)).into(),
             wide: false,
         }
     ));
@@ -5705,7 +5705,7 @@ fn freed_external_allocation_is_not_still_available() {
         &Proposition::MemoryLoadable {
             memory: freed,
             base,
-            bytes: MachineTerm::constant(4),
+            bytes: (MachineTerm::constant(4)).into(),
             wide: false,
         }
     ));
@@ -5977,7 +5977,7 @@ mod wrapped_assumed_span_is_refused {
             .assume_proposition(Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: array_base(0),
-                bytes: MachineTerm::multiply(count_term.clone(), MachineTerm::constant(4)),
+                bytes: (MachineTerm::multiply(count_term.clone(), MachineTerm::constant(4))).into(),
                 wide: false,
             })
             .assume_condition(
@@ -6008,7 +6008,7 @@ mod wrapped_assumed_span_is_refused {
         let assumptions = PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: range_base.clone(),
-            bytes: range_bytes.clone(),
+            bytes: (range_bytes.clone()).into(),
             wide: false,
         });
         let wrapped_base = array_base(0x2000_0000);
@@ -6141,10 +6141,11 @@ mod wrapped_assumed_span_is_refused {
         let wrapped = PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: array_base(0),
-            bytes: MachineTerm::multiply(
+            bytes: (MachineTerm::multiply(
                 MachineTerm::constant(WRAPPING_COUNT),
                 MachineTerm::constant(4),
-            ),
+            ))
+            .into(),
             wide: false,
         });
         // `1 << 30` four-byte elements scale to `0` bytes: the fact is true
@@ -6156,10 +6157,11 @@ mod wrapped_assumed_span_is_refused {
         let widest = PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: array_base(0),
-            bytes: MachineTerm::multiply(
+            bytes: (MachineTerm::multiply(
                 MachineTerm::constant(WRAPPING_COUNT - 1),
                 MachineTerm::constant(4),
-            ),
+            ))
+            .into(),
             wide: false,
         });
         assert!(
@@ -6178,7 +6180,7 @@ mod wrapped_assumed_span_is_refused {
             .assume_proposition(Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: array_base(0),
-                bytes: MachineTerm::Variable(count),
+                bytes: (MachineTerm::Variable(count)).into(),
                 wide: false,
             })
             .assume_condition(
@@ -6213,7 +6215,7 @@ mod stated_range_guard_derivation {
                 base: "arg-memory".into(),
                 offset: AddressOffset::Constant(0),
             },
-            bytes: MachineTerm::multiply(count, MachineTerm::constant(4)),
+            bytes: (MachineTerm::multiply(count, MachineTerm::constant(4))).into(),
             wide: false,
         }
     }
@@ -6358,7 +6360,7 @@ mod stated_range_guard_derivation {
                 base: "arg-memory".into(),
                 offset: AddressOffset::Constant(0),
             },
-            bytes: count.clone(),
+            bytes: (count.clone()).into(),
             wide: false,
         };
         assert_eq!(
@@ -6380,7 +6382,7 @@ mod stated_range_guard_derivation {
                 base: "arg-memory".into(),
                 offset: AddressOffset::Constant(0),
             },
-            bytes: MachineTerm::constant(4),
+            bytes: (MachineTerm::constant(4)).into(),
             wide: false,
         };
         assert!(crate::kernel::stated_loadable_span_guards(&cell).is_empty());
@@ -7365,7 +7367,7 @@ fn a_byte_range_narrows_by_its_endpoints() {
         .assume_proposition(Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: base.clone(),
-            bytes: n.clone(),
+            bytes: (n.clone()).into(),
             wide: false,
         })
         .assume_condition(
@@ -7399,7 +7401,7 @@ mod loadable_span_graph_tests {
         let fact = Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: base.clone(),
-            bytes: range_bytes.clone(),
+            bytes: (range_bytes.clone()).into(),
             wide: false,
         };
         let premise = ConditionTerm::equal(var(9_320_001), var(9_320_002));
@@ -8114,14 +8116,14 @@ fn loadability_coverage_ignores_other_blocks() {
             let goal = Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: base.clone(),
-                bytes: MachineTerm::constant(16),
+                bytes: (MachineTerm::constant(16)).into(),
                 wide: false,
             };
             let mut assumptions =
                 PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
                     memory: memory.clone(),
                     base: base.clone(),
-                    bytes: MachineTerm::constant(8),
+                    bytes: (MachineTerm::constant(8)).into(),
                     wide: false,
                 });
             for index in 0..unrelated {
@@ -8131,7 +8133,7 @@ fn loadability_coverage_ignores_other_blocks() {
                         base: format!("coverage-unrelated-{index}").into(),
                         offset: AddressOffset::Constant(0),
                     },
-                    bytes: MachineTerm::constant(8),
+                    bytes: (MachineTerm::constant(8)).into(),
                     wide: false,
                 });
             }

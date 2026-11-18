@@ -3228,7 +3228,10 @@ mod tests {
         let only_viewable = facts.assume_proposition(Proposition::MemoryLoadable {
             memory: SymbolicMemory::new(),
             base,
-            bytes: whole,
+            bytes: crate::kernel::StoredMachineTerm::new(
+                crate::kernel::MachineIntegerType::UInt64,
+                whole,
+            ),
             wide: true,
         });
         assert!(

@@ -1726,25 +1726,25 @@ fn loadable_bound_check_bridges_len_forms_across_block_and_prune_edges() {
         .assume_proposition(Proposition::MemoryLoadable {
             memory: entry.clone(),
             base: arc_pointer(0),
-            bytes: MachineTerm::constant(4),
+            bytes: (MachineTerm::constant(4)).into(),
             wide: false,
         })
         .assume_proposition(Proposition::MemoryLoadable {
             memory: entry.clone(),
             base: arc_pointer(8),
-            bytes: MachineTerm::constant(4),
+            bytes: (MachineTerm::constant(4)).into(),
             wide: false,
         })
         .assume_proposition(Proposition::MemoryLoadable {
             memory: entry.clone(),
             base: arc_pointer(12),
-            bytes: MachineTerm::constant(4),
+            bytes: (MachineTerm::constant(4)).into(),
             wide: false,
         })
         .assume_proposition(Proposition::MemoryLoadable {
             memory: entry.clone(),
             base: arc_pointer(16),
-            bytes: MachineTerm::constant(32),
+            bytes: (MachineTerm::constant(32)).into(),
             wide: false,
         })
         .assume_condition(

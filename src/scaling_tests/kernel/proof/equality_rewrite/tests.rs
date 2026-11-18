@@ -499,7 +499,7 @@ fn same_block_pointer_view_rewrite_preserves_span_and_selected_work() {
             base: AddressBase::ExternalArgument,
             offset: AddressOffset::add(source, AddressOffset::Constant(2)),
         },
-        bytes: span.clone(),
+        bytes: (span.clone()).into(),
         wide: false,
     };
     assert!(
@@ -545,7 +545,7 @@ fn same_block_pointer_view_rewrite_preserves_span_and_selected_work() {
             base.offset,
             AddressOffset::add(target.clone(), AddressOffset::Constant(2))
         );
-        assert_eq!(bytes, &span);
+        assert_eq!(bytes.native_compat(), &span);
         costs.push(work);
     }
     assert!(costs.iter().all(|cost| *cost == costs[0]), "{costs:?}");
@@ -565,7 +565,7 @@ fn pointer_view_rewrite_preserves_state_span_and_ambient_scaling() {
     let goal = Proposition::MemoryLoadable {
         memory: memory.clone(),
         base: source,
-        bytes: span.clone(),
+        bytes: (span.clone()).into(),
         wide: false,
     };
     assert!(
@@ -599,7 +599,7 @@ fn pointer_view_rewrite_preserves_state_span_and_ambient_scaling() {
             memory.diagnostic_identity()
         );
         assert_eq!(base, &target);
-        assert_eq!(bytes, &span);
+        assert_eq!(bytes.native_compat(), &span);
         costs.push(work);
     }
     assert!(costs.iter().all(|cost| *cost == costs[0]), "{costs:?}");

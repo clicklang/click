@@ -2045,9 +2045,15 @@ fn pointer_has_object_provenance_evidence(
                 };
                 // A wide fact's count is an unsigned 64-bit term.
                 let positive = if *wide {
-                    ConditionTerm::uint64_less_than(MachineTerm::constant(0), bytes.clone())
+                    ConditionTerm::uint64_less_than(
+                        MachineTerm::constant(0),
+                        bytes.native_compat().clone(),
+                    )
                 } else {
-                    ConditionTerm::signed_greater_than(bytes.clone(), MachineTerm::constant(0))
+                    ConditionTerm::signed_greater_than(
+                        bytes.native_compat().clone(),
+                        MachineTerm::constant(0),
+                    )
                 };
                 crate::kernel::reasoning::memory_range_still_available(
                     memory,
@@ -3692,7 +3698,7 @@ fn held_range_membership(
             facts,
             MachineOperandView::Legacy(&MachineTerm::constant(0)),
             offset.operand_view(),
-            MachineOperandView::Legacy(bytes),
+            bytes.operand_view(),
             true,
             false,
             false,

@@ -3343,7 +3343,7 @@ mod tests {
                         base: "alpha".into(),
                         offset: AddressOffset::Constant(0),
                     },
-                    bytes: MachineTerm::Variable(variable),
+                    bytes: (MachineTerm::Variable(variable)).into(),
                     wide: false,
                 }),
             )),

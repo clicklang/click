@@ -52,7 +52,14 @@ fn selected_view_checks_alias_coordinates_without_enumerating_the_class() {
             let fact = Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: source.clone(),
-                bytes: span(16),
+                bytes: crate::kernel::StoredMachineTerm::new(
+                    if wide {
+                        crate::kernel::MachineIntegerType::UInt64
+                    } else {
+                        crate::kernel::MachineIntegerType::Int32
+                    },
+                    span(16),
+                ),
                 wide,
             };
             let mut context = PureFactContext::new().assume_proposition(fact);
@@ -67,7 +74,14 @@ fn selected_view_checks_alias_coordinates_without_enumerating_the_class() {
                 context.proves_atomic_without_search(&Proposition::MemoryLoadable {
                     memory: memory.clone(),
                     base: pointer.clone(),
-                    bytes: span(bytes),
+                    bytes: crate::kernel::StoredMachineTerm::new(
+                        if wide {
+                            crate::kernel::MachineIntegerType::UInt64
+                        } else {
+                            crate::kernel::MachineIntegerType::Int32
+                        },
+                        span(bytes),
+                    ),
                     wide,
                 })
             };
@@ -230,7 +244,14 @@ fn selected_views_follow_same_block_aliases_without_walking_the_star() {
                 PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
                     memory: memory.clone(),
                     base: source.clone(),
-                    bytes: span(16),
+                    bytes: crate::kernel::StoredMachineTerm::new(
+                        if wide {
+                            crate::kernel::MachineIntegerType::UInt64
+                        } else {
+                            crate::kernel::MachineIntegerType::Int32
+                        },
+                        span(16),
+                    ),
                     wide,
                 });
             for index in 0..size {
@@ -247,7 +268,14 @@ fn selected_views_follow_same_block_aliases_without_walking_the_star() {
                             context.proves_atomic_without_search(&Proposition::MemoryLoadable {
                                 memory: memory.clone(),
                                 base: query.clone(),
-                                bytes: span(bytes),
+                                bytes: crate::kernel::StoredMachineTerm::new(
+                                    if wide {
+                                        crate::kernel::MachineIntegerType::UInt64
+                                    } else {
+                                        crate::kernel::MachineIntegerType::Int32
+                                    },
+                                    span(bytes)
+                                ),
                                 wide,
                             }),
                             expected

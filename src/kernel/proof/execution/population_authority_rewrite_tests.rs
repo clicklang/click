@@ -354,7 +354,7 @@ fn member_exchange_requires_both_external_body_ownership_and_checked_span() {
     let span = |bytes| Proposition::MemoryLoadable {
         memory: owned.memory().clone(),
         base: external.clone(),
-        bytes: MachineTerm::constant(bytes),
+        bytes: (MachineTerm::constant(bytes)).into(),
         wide: false,
     };
     let small = PureFactStore::default().with_fact(span(1));

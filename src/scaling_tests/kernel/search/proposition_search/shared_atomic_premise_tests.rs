@@ -171,13 +171,19 @@ fn native_view_prefix_retains_only_its_order_path() {
         let source = Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: base.clone(),
-            bytes: n.clone(),
+            bytes: crate::kernel::StoredMachineTerm::new(
+                crate::kernel::MachineIntegerType::UInt64,
+                n.clone(),
+            ),
             wide: true,
         };
         let goal = Proposition::MemoryLoadable {
             memory,
             base,
-            bytes: MachineTerm::uint64_constant(1),
+            bytes: crate::kernel::StoredMachineTerm::new(
+                crate::kernel::MachineIntegerType::UInt64,
+                MachineTerm::uint64_constant(1),
+            ),
             wide: true,
         };
         let mut context = PureFactContext::new()

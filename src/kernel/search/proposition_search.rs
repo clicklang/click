@@ -283,13 +283,13 @@ impl super::ProofSearch<PureFactContext> {
                 base,
                 bytes,
                 wide: true,
-            } => context.proves_native_memory_loadable(memory, base, bytes),
+            } => context.proves_native_memory_loadable(memory, base, bytes.native_compat()),
             Proposition::MemoryLoadable {
                 memory,
                 base,
                 bytes,
                 wide: false,
-            } => context.proves_memory_loadable(memory, base, bytes),
+            } => context.proves_memory_loadable(memory, base, bytes.native_compat()),
             Proposition::MemoryCanStore {
                 memory,
                 pointer,
@@ -728,7 +728,8 @@ impl super::ProofSearch<PureFactContext> {
             bytes,
             wide: false,
         } = proposition
-            && let Some(premises) = context.adjacent_loadable_region_facts(memory, base, bytes)
+            && let Some(premises) =
+                context.adjacent_loadable_region_facts(memory, base, bytes.native_compat())
             && (!exclude_exact_goal || !premises.contains(&proposition.clone()))
             && let Some(found) = trial(&premises)
         {
@@ -756,7 +757,8 @@ impl super::ProofSearch<PureFactContext> {
                 exclude_exact_goal,
             )?;
             let sources = atomic_context_from_facts(context, &conditions, &propositions);
-            if let Some(premises) = sources.adjacent_loadable_region_facts(memory, base, bytes)
+            if let Some(premises) =
+                sources.adjacent_loadable_region_facts(memory, base, bytes.native_compat())
                 && let Some(found) = trial(&premises)
             {
                 return Some(found);
@@ -2280,7 +2282,10 @@ fn native_view_prefix_premises(
         return None;
     }
     let coverage = Proposition::ConditionIs(
-        ConditionTerm::uint64_less_equal(bytes.clone(), source_bytes.clone()),
+        ConditionTerm::uint64_less_equal(
+            bytes.native_compat().clone(),
+            source_bytes.native_compat().clone(),
+        ),
         true,
     );
     let mut premises = vec![source.clone()];

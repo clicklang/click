@@ -1540,7 +1540,7 @@ mod tests {
                 base: AddressBase::ExternalArgument,
                 offset: AddressOffset::Constant(0),
             },
-            bytes: MachineTerm::constant(1),
+            bytes: (MachineTerm::constant(1)).into(),
             wide: false,
         }
     }

@@ -3098,7 +3098,7 @@ fn viewability_alone_cannot_certify_initialization_of_external_storage() {
                 PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
                     memory: memory.clone(),
                     base: pointer.clone(),
-                    bytes: MachineTerm::constant(value_type.byte_width()),
+                    bytes: (MachineTerm::constant(value_type.byte_width())).into(),
                     wide: false,
                 });
             assert_eq!(
@@ -3125,7 +3125,7 @@ fn typed_read_initialization_accepts_only_complete_cached_byte_coverage() {
         let context = PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: pointer.clone(),
-            bytes: MachineTerm::constant(8),
+            bytes: (MachineTerm::constant(8)).into(),
             wide: false,
         });
         assert_eq!(

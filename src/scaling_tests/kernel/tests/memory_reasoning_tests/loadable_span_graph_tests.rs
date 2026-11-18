@@ -13,7 +13,7 @@ fn direct_loadable_span_graph_queries_scale_without_fact_index() {
         let fact = Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: base.clone(),
-            bytes: range_bytes.clone(),
+            bytes: (range_bytes.clone()).into(),
             wide: false,
         };
         let mut context = PureFactContext::new().assume_proposition(fact);
@@ -54,7 +54,7 @@ fn filing_a_loadable_fact_in_a_fork_shares_every_other_block() {
     let loadable = |id: u64| Proposition::MemoryLoadable {
         memory: memory.clone(),
         base: Address::symbolic(Variable(9_330_000 + id)),
-        bytes: span(var(id)),
+        bytes: (span(var(id))).into(),
         wide: false,
     };
     let mut parent = PureFactContext::new();

@@ -294,7 +294,7 @@ fn cached_body_loadability_work_is_linear_in_cache_delta_and_selected_facts() {
                 base: "body".into(),
                 offset: crate::kernel::AddressOffset::Constant(i64::from(index) * 4),
             },
-            bytes: MachineTerm::constant(4),
+            bytes: (MachineTerm::constant(4)).into(),
             wide: false,
         };
         let allowed = (0..size).map(|index| view(before.clone(), index)).collect();
@@ -334,7 +334,7 @@ fn return_materialized_reads_scale_with_the_selected_cells() {
             let fact = Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: pointer,
-                bytes: MachineTerm::constant(4),
+                bytes: (MachineTerm::constant(4)).into(),
                 wide: false,
             };
             let roots = base.with_fact(fact.clone());
@@ -994,7 +994,7 @@ fn interface_read_premises_are_indexed_and_check_the_exact_range() {
             base: block.into(),
             offset: AddressOffset::Constant(0),
         },
-        bytes: MachineTerm::constant(width),
+        bytes: (MachineTerm::constant(width)).into(),
         wide: false,
     };
     let goal = readable(memory.clone(), "selected".into(), 4);

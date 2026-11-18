@@ -128,13 +128,13 @@ fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
     let view = Proposition::MemoryLoadable {
         memory: memory.clone(),
         base: storage.clone(),
-        bytes: MachineTerm::constant(4),
+        bytes: (MachineTerm::constant(4)).into(),
         wide: false,
     };
     let goal = Proposition::MemoryLoadable {
         memory: memory.clone(),
         base: result.clone(),
-        bytes: MachineTerm::constant(4),
+        bytes: (MachineTerm::constant(4)).into(),
         wide: false,
     };
     assert!(!crate::kernel::search::ProofSearch::proves(
@@ -156,7 +156,7 @@ fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
                     base: format!("unrelated-view-{index}").into(),
                     offset: AddressOffset::Constant(0),
                 },
-                bytes: MachineTerm::constant(4),
+                bytes: (MachineTerm::constant(4)).into(),
                 wide: false,
             });
         }
@@ -169,7 +169,7 @@ fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
             &Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: result.offset_by_bytes(4),
-                bytes: MachineTerm::constant(4),
+                bytes: (MachineTerm::constant(4)).into(),
                 wide: false,
             }
         ));
@@ -191,7 +191,7 @@ fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
         .assume_proposition(Proposition::MemoryLoadable {
             memory: before,
             base: local,
-            bytes: MachineTerm::constant(4),
+            bytes: (MachineTerm::constant(4)).into(),
             wide: false,
         });
     assert!(!crate::kernel::search::ProofSearch::proves(
@@ -199,7 +199,7 @@ fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
         &Proposition::MemoryLoadable {
             memory: after,
             base: result,
-            bytes: MachineTerm::constant(4),
+            bytes: (MachineTerm::constant(4)).into(),
             wide: false,
         }
     ));
@@ -219,7 +219,7 @@ fn memory_loadable_query_ignores_same_block_unrelated_pointer_shapes() {
                 PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
                     memory: memory.clone(),
                     base: target.clone(),
-                    bytes: MachineTerm::constant(8),
+                    bytes: (MachineTerm::constant(8)).into(),
                     wide: false,
                 });
             for index in 0..size {
@@ -229,7 +229,7 @@ fn memory_loadable_query_ignores_same_block_unrelated_pointer_shapes() {
                         base: target.base.clone(),
                         offset: AddressOffset::Constant(index as i64),
                     },
-                    bytes: MachineTerm::constant(4),
+                    bytes: (MachineTerm::constant(4)).into(),
                     wide: false,
                 });
             }
@@ -239,7 +239,7 @@ fn memory_loadable_query_ignores_same_block_unrelated_pointer_shapes() {
                     &Proposition::MemoryLoadable {
                         memory: memory.clone(),
                         base: target.clone(),
-                        bytes: MachineTerm::constant(4),
+                        bytes: (MachineTerm::constant(4)).into(),
                         wide: false,
                     },
                 )
@@ -398,10 +398,10 @@ fn shifted_constant_view_spans_match_without_ambient_search() {
             Box::new(index.clone()),
         )
     };
-    let source = |bytes| Proposition::MemoryLoadable {
+    let source = |bytes: MachineTerm| Proposition::MemoryLoadable {
         memory: memory.clone(),
         base: base.clone(),
-        bytes,
+        bytes: (bytes).into(),
         wide: false,
     };
     for width in [1, 2, 4, 8, 16] {

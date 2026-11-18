@@ -6,13 +6,13 @@ fn loadability_explanation_ignores_unrelated_objects() {
     let missing = Proposition::MemoryLoadable {
         memory: state.memory().clone(),
         base: pointer_base(&values),
-        bytes: MachineTerm::constant(4),
+        bytes: (MachineTerm::constant(4)).into(),
         wide: false,
     };
     let covering = Proposition::MemoryLoadable {
         memory: state.memory().clone(),
         base: pointer_base(&values),
-        bytes: MachineTerm::constant(8),
+        bytes: (MachineTerm::constant(8)).into(),
         wide: false,
     };
     let mut samples = Vec::new();
@@ -28,7 +28,7 @@ fn loadability_explanation_ignores_unrelated_objects() {
                     base: AddressBase::Heap(index),
                     offset: AddressOffset::Constant(0),
                 },
-                bytes: MachineTerm::constant(8),
+                bytes: (MachineTerm::constant(8)).into(),
                 wide: false,
             });
         }
