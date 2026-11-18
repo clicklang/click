@@ -96,6 +96,19 @@ pub(crate) fn prepare_function_contract_entry_cases(
         })
         .map(|fact| fact.proposition().clone())
         .collect();
+    // An unconditional finite entry has one case and its producer already
+    // expanded it. Guarded and recursive definitions use the existing
+    // case-specific route, where a branch can expose a different body.
+    let reuse_entry = !function
+        .contract_interface()
+        .composite_definitions_need_entry_cases
+        && function
+            .resource_requires()
+            .iter()
+            .chain(function.resource_ensures())
+            .all(|clause| clause.guard().is_none());
+    #[cfg(test)]
+    let produced_state = resources.state.clone();
     let closing_entry = Arc::new(RetainedClosingEntry::from_producer(
         state.clone(),
         function,
@@ -106,6 +119,22 @@ pub(crate) fn prepare_function_contract_entry_cases(
         base_assumptions.clone(),
         closing_facts,
     ));
+    if reuse_entry {
+        return Ok(PreparedContractEntryCases {
+            identity: Arc::new(()),
+            guard_cases: vec![Vec::new()],
+            function: function.clone(),
+            closing_entry: closing_entry.clone(),
+            closing_footprint: std::sync::OnceLock::new(),
+            cases: vec![PreparedContractEntryCase {
+                #[cfg(test)]
+                assumptions: base_assumptions,
+                #[cfg(test)]
+                entry_state: produced_state,
+                closing_entry,
+            }],
+        });
+    }
     let resource_condition_cases = contract_resource_condition_cases(
         state,
         function,
@@ -785,7 +814,7 @@ fn collect_shallow_term_variables(term: &MachineTerm, variables: &mut BTreeSet<V
         // the base expression (for example the owner parameter), not to
         // that index.
         MachineTerm::MemoryLoad(_, _, _) => {}
-        MachineTerm::PointerAddress(_, _) | MachineTerm::IntegerToMachine { .. } => {}
+        MachineTerm::IntegerAddress(_, _) | MachineTerm::IntegerToMachine { .. } => {}
     }
 }
 
@@ -3129,11 +3158,11 @@ fn pointer_offsets_equal_with_resolved_atoms(
     };
     let atoms_match = |left: &AddressOffset, right: &AddressOffset| {
         if left == right
-            || assumptions.exact_condition_value(&ConditionTerm::pointer_offset_equal(
+            || assumptions.exact_condition_value(&ConditionTerm::address_offset_equal(
                 left.clone(),
                 right.clone(),
             )) == Some(true)
-            || assumptions.exact_condition_value(&ConditionTerm::pointer_offset_equal(
+            || assumptions.exact_condition_value(&ConditionTerm::address_offset_equal(
                 right.clone(),
                 left.clone(),
             )) == Some(true)
@@ -3277,7 +3306,7 @@ pub(crate) fn condition_holds_by_memory_resolution(
         // Two complete reads of one cell carry one value even where each spells
         // its coordinate from its own base (`n + 8` and `old(n) + 8`), as the
         // state-modulo condition matchers already accept.
-        (ConditionTerm::PointerValueEqual(left, right), true) => assumptions
+        (ConditionTerm::PointerEqual(left, right), true) => assumptions
             .contains_known(&Proposition::ConditionIs(condition.clone(), true))
             || (assumptions.pointer_provenance_match(left, right)
                 && (pointers_proven_equal_for_memory_resolution(
@@ -3289,12 +3318,12 @@ pub(crate) fn condition_holds_by_memory_resolution(
                     right.address(),
                     assumptions,
                 ))),
-        (ConditionTerm::PointerEqual(left, right), true) => {
+        (ConditionTerm::AddressEqual(left, right), true) => {
             pointers_proven_equal_for_memory_resolution(left, right, assumptions)
                 || assumptions.pointers_known_equal(left, right)
                 || pointer_read_has_recorded_value(left, right, assumptions)
         }
-        (ConditionTerm::PointerOffsetEqual(left, right), true) => {
+        (ConditionTerm::AddressOffsetEqual(left, right), true) => {
             pointer_offsets_proven_equal_for_memory_resolution(left, right, assumptions)
                 || pointer_offsets_equal_with_resolved_atoms(left, right, assumptions)
         }
@@ -3629,6 +3658,25 @@ mod prepared_entry_cases_tests {
             function,
             arguments,
         )
+    }
+
+    #[test]
+    fn unconditional_case_shares_the_produced_closing_entry() {
+        let (state, function, arguments) = fixture(0, 0);
+        let opened = crate::kernel::proof::OpenedContractEntry::open(
+            &state,
+            &function,
+            &arguments,
+            &Vec::<Proposition>::new(),
+            &ExecutionEnvironment::new(),
+        )
+        .unwrap();
+        let prepared = opened.prepared_cases();
+        assert_eq!(prepared.case_count(), 1);
+        assert!(Arc::ptr_eq(
+            &prepared.cases[0].closing_entry,
+            &prepared.closing_entry
+        ));
     }
 
     #[test]

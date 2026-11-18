@@ -156,7 +156,7 @@ pub(in crate::surface) fn normalize_condition_without_assumptions(
     condition: &ConditionTerm,
 ) -> Option<bool> {
     match condition {
-        ConditionTerm::PointerValueEqual(_, _) => {
+        ConditionTerm::PointerEqual(_, _) => {
             crate::kernel::SelectedFacts::from_propositions(&[]).decide_selected_condition(condition)
         }
 
@@ -329,8 +329,8 @@ pub(in crate::surface) fn normalize_condition_without_assumptions(
         | ConditionTerm::Overflows { .. }
         | ConditionTerm::Float32(_)
         | ConditionTerm::Float64(_)
-        | ConditionTerm::PointerOffsetEqual(_, _)
-        | ConditionTerm::PointerEqual(_, _) => None,
+        | ConditionTerm::AddressOffsetEqual(_, _)
+        | ConditionTerm::AddressEqual(_, _) => None,
         // A `Bool` value decides by its shape, as the kernel decides it
         // with no facts.
         ConditionTerm::BoolApplication(_)
@@ -375,7 +375,7 @@ pub(in crate::surface) fn evaluate_bitvector_constant(term: &MachineTerm) -> Opt
         | MachineTerm::PureFunctionApplication { .. }
         | MachineTerm::ClickFunctionApplication { .. }
         | MachineTerm::AlgebraicMatch { .. }
-        | MachineTerm::PointerAddress(_, _)
+        | MachineTerm::IntegerAddress(_, _)
         | MachineTerm::MemoryLoad(_, _, _) => None,
         binary_term!(Bits32, Add, left, right) => Some(
             evaluate_bitvector_constant(left)?.wrapping_add(evaluate_bitvector_constant(right)?),
@@ -551,7 +551,7 @@ pub(in crate::surface) fn normalize_bitvector(term: &MachineTerm) -> MachineTerm
         MachineTerm::MemoryLoad(memory, pointer, kind) => {
             MachineTerm::MemoryLoad(memory.clone(), pointer.clone(), *kind)
         }
-        MachineTerm::PointerAddress(_, _) => term.clone(),
+        MachineTerm::IntegerAddress(_, _) => term.clone(),
         term => match (term.as_binary(), term.as_unary()) {
             (Some((op, left, right)), _) => {
                 op.build(normalize_bitvector(left), normalize_bitvector(right))
@@ -682,7 +682,7 @@ mod tests {
                 true,
             );
             let equality =
-                Proposition::ConditionIs(ConditionTerm::pointer_equal(source, target), true);
+                Proposition::ConditionIs(ConditionTerm::address_equal(source, target), true);
             let rewritten = rewrite_proposition_by_exact_equality(
                 &goal,
                 &equality,
@@ -751,7 +751,7 @@ mod tests {
             },
             true,
         );
-        let equality = Proposition::ConditionIs(ConditionTerm::pointer_equal(source, target), true);
+        let equality = Proposition::ConditionIs(ConditionTerm::address_equal(source, target), true);
         let rewritten = rewrite_proposition_by_exact_equality(
             &goal,
             &equality,
@@ -797,7 +797,7 @@ mod tests {
             )
         };
         let equality = Proposition::ConditionIs(
-            ConditionTerm::pointer_equal(source.clone(), target.clone()),
+            ConditionTerm::address_equal(source.clone(), target.clone()),
             true,
         );
         let goal = Proposition::And(
@@ -859,7 +859,7 @@ mod tests {
         let left = AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(41)), 4);
         let right = AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(42)), 4);
         let equality = Proposition::ConditionIs(
-            ConditionTerm::PointerOffsetEqual(Box::new(left.clone()), Box::new(right.clone())),
+            ConditionTerm::AddressOffsetEqual(Box::new(left.clone()), Box::new(right.clone())),
             true,
         );
         let pointer = |offset| Address {
@@ -871,7 +871,7 @@ mod tests {
             offset: AddressOffset::Constant(0),
         };
         let goal = Proposition::ConditionIs(
-            ConditionTerm::pointer_equal(pointer(left), null.clone()),
+            ConditionTerm::address_equal(pointer(left), null.clone()),
             true,
         );
 
@@ -882,7 +882,7 @@ mod tests {
                 std::slice::from_ref(&equality),
             )
             .unwrap(),
-            Proposition::ConditionIs(ConditionTerm::pointer_equal(pointer(right), null), true,),
+            Proposition::ConditionIs(ConditionTerm::address_equal(pointer(right), null), true,),
         );
     }
 
@@ -928,7 +928,7 @@ mod tests {
             true,
         );
         let data_is_alias = Proposition::ConditionIs(
-            ConditionTerm::PointerOffsetEqual(Box::new(data_offset), Box::new(alias_offset)),
+            ConditionTerm::AddressOffsetEqual(Box::new(data_offset), Box::new(alias_offset)),
             true,
         );
         let available = [index_is_zero.clone(), data_is_alias.clone()];
@@ -978,7 +978,7 @@ mod tests {
             true,
         );
         let base_equality = Proposition::ConditionIs(
-            ConditionTerm::PointerOffsetEqual(
+            ConditionTerm::AddressOffsetEqual(
                 Box::new(AddressOffset::scale_int32(source.clone(), 4)),
                 Box::new(AddressOffset::scale_int32(target.clone(), 4)),
             ),

@@ -29,7 +29,7 @@ fn bounded_pointer_value_skips_unrelated_facts_cells_and_history() {
                 ProgramValue::Int32(MachineTerm::constant(1)),
             );
             context = context.assume_condition(
-                ConditionTerm::pointer_equal(
+                ConditionTerm::address_equal(
                     Address::symbolic(Variable(9_881_000 + 2 * index)),
                     Address::symbolic(Variable(9_881_001 + 2 * index)),
                 ),
@@ -59,18 +59,18 @@ fn bounded_pointer_value_skips_unrelated_facts_cells_and_history() {
             offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(9_880_303)), 4),
         };
         context = context.assume_condition(
-            ConditionTerm::pointer_equal(write_alias.clone(), wide_address.clone()),
+            ConditionTerm::address_equal(write_alias.clone(), wide_address.clone()),
             true,
         );
         let parent = Address::symbolic(Variable(9_880_304));
         let parent_alias = Address::symbolic(Variable(9_880_305));
         context = context.assume_condition(
-            ConditionTerm::pointer_equal(parent.clone(), parent_alias.clone()),
+            ConditionTerm::address_equal(parent.clone(), parent_alias.clone()),
             true,
         );
         let value =
-            MachineTerm::PointerAddress(Box::new(parent), crate::kernel::AddressObjectClass::NONE);
-        let wanted = MachineTerm::PointerAddress(
+            MachineTerm::IntegerAddress(Box::new(parent), crate::kernel::AddressObjectClass::NONE);
+        let wanted = MachineTerm::IntegerAddress(
             Box::new(parent_alias),
             crate::kernel::AddressObjectClass::NONE,
         );
@@ -110,8 +110,8 @@ fn complete_read_domains_use_numeric_storage_classes_without_scanning_other_clas
         let mut facts = PureFactContext::new();
         let equal = |a: Address, b: Address| {
             ConditionTerm::uint64_equal(
-                MachineTerm::pointer_address(a),
-                MachineTerm::pointer_address(b),
+                MachineTerm::integer_address(a),
+                MachineTerm::integer_address(b),
             )
         };
         for index in 0..size {
@@ -292,7 +292,7 @@ fn packed_word_transport_visits_only_the_selected_word_and_delta() {
                 ProgramValue::Int32(MachineTerm::constant(index)),
             );
             context = context.assume_condition(
-                ConditionTerm::pointer_equal(
+                ConditionTerm::address_equal(
                     Address::symbolic(Variable(9_892_000 + 2 * u64::from(index))),
                     Address::symbolic(Variable(9_892_001 + 2 * u64::from(index))),
                 ),
@@ -306,7 +306,7 @@ fn packed_word_transport_visits_only_the_selected_word_and_delta() {
             LoadKind::Bits64,
         );
         let value = Pointer::from_read(
-            Address::integer_address(bits),
+            Address::from_integer_address(bits),
             ProgramType::VoidPointer,
             &before,
             &field,
@@ -316,7 +316,7 @@ fn packed_word_transport_visits_only_the_selected_word_and_delta() {
             ProgramType::VoidPointer,
         );
         let source = Proposition::ConditionIs(
-            ConditionTerm::PointerValueEqual(Box::new(value), Box::new(parent)),
+            ConditionTerm::PointerEqual(Box::new(value), Box::new(parent)),
             true,
         );
         context = context.assume_proposition(source.clone());
@@ -464,7 +464,7 @@ fn complete_word_record_at_bounded_stop_has_flat_lookup_work() {
         }
         let target = Address::symbolic(Variable(9_887_001));
         let value = ProgramValue::PointerInteger(PointerIntegerValue {
-            numeric: Box::new(ProgramValue::UInt64(MachineTerm::pointer_address(
+            numeric: Box::new(ProgramValue::UInt64(MachineTerm::integer_address(
                 target.clone(),
             ))),
             pointer: Box::new(Pointer::new(target, ProgramType::Int32Pointer)),
@@ -507,7 +507,7 @@ fn complete_word_frame_reuses_named_versions_across_observations() {
         // This is the actual read producer, not a warm-up of the query:
         // its provenance names the pre-observation version of the word.
         let value = Pointer::from_read(
-            Address::integer_address(MachineTerm::uint64_constant(8)),
+            Address::from_integer_address(MachineTerm::uint64_constant(8)),
             ProgramType::Int32Pointer,
             &before,
             &field,
@@ -517,7 +517,7 @@ fn complete_word_frame_reuses_named_versions_across_observations() {
             ProgramValue::UInt64(MachineTerm::uint64_constant(1)),
         ));
         let target = Pointer::from_read(
-            Address::integer_address(MachineTerm::uint64_constant(8)),
+            Address::from_integer_address(MachineTerm::uint64_constant(8)),
             ProgramType::Int32Pointer,
             &after,
             &field,

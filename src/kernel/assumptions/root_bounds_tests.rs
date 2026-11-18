@@ -22,14 +22,13 @@ fn a_full_pointer_equality_connects_a_read_bounds_to_owned_root_storage() {
     let read = read_pointer(981_001);
     let held = MemoryRange::new(base.clone(), 0u32.into(), 8u32.into());
     let before = PureFactContext::new().assume_condition(
-        ConditionTerm::pointer_equal(read.address().clone(), base),
+        ConditionTerm::address_equal(read.address().clone(), base),
         true,
     );
     assert!(!before.access_provenance_match(read.access_provenance(), &held));
-    let after = before.clone().assume_condition(
-        ConditionTerm::pointer_value_equal(read.clone(), stored),
-        true,
-    );
+    let after = before
+        .clone()
+        .assume_condition(ConditionTerm::pointer_equal(read.clone(), stored), true);
     assert!(after.access_provenance_match(read.access_provenance(), &held));
     assert!(!before.access_provenance_match(read.access_provenance(), &held));
     let resources = ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(held));
@@ -59,10 +58,8 @@ fn a_known_subobject_bounds_does_not_grant_root_storage_access() {
             width: 4u32.into(),
         }));
     let read = read_pointer(981_003);
-    let facts = PureFactContext::new().assume_condition(
-        ConditionTerm::pointer_value_equal(read.clone(), bounded),
-        true,
-    );
+    let facts = PureFactContext::new()
+        .assume_condition(ConditionTerm::pointer_equal(read.clone(), bounded), true);
     let held = MemoryRange::new(base, 0u32.into(), 8u32.into());
     assert!(facts.provenance_equal(read.provenance(), &held.provenance));
     assert!(

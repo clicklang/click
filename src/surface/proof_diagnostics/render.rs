@@ -1981,17 +1981,17 @@ impl Renderer<'_> {
                 self.push(" = ");
                 self.algebraic(b);
             }
-            ConditionTerm::PointerOffsetEqual(a, b) => {
+            ConditionTerm::AddressOffsetEqual(a, b) => {
                 self.offset(a, 0);
                 self.push(" = ");
                 self.offset(b, 0);
             }
-            ConditionTerm::PointerValueEqual(a, b) => {
+            ConditionTerm::PointerEqual(a, b) => {
                 self.pointer(a.address());
                 self.push(" == ");
                 self.pointer(b.address());
             }
-            ConditionTerm::PointerEqual(a, b) => {
+            ConditionTerm::AddressEqual(a, b) => {
                 self.pointer(a);
                 self.push(" = ");
                 self.pointer(b);
@@ -2360,7 +2360,7 @@ impl Renderer<'_> {
                 }
                 self.push(" }");
             }
-            MachineTerm::PointerAddress(pointer, _) => {
+            MachineTerm::IntegerAddress(pointer, _) => {
                 self.push("address(");
                 self.pointer(pointer);
                 self.push(")");

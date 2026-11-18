@@ -14,7 +14,7 @@ fn fold_copied_wide_word_preserves_scope_width_and_scales() {
     let word = MachineTerm::Variable(Variable(710_000));
     let copied = MachineTerm::Variable(Variable(710_001));
     let changed = MachineTerm::Variable(Variable(710_002));
-    let address = MachineTerm::PointerAddress(
+    let address = MachineTerm::IntegerAddress(
         Box::new(Address::symbolic(Variable(710_003))),
         crate::kernel::AddressObjectClass::NONE,
     );
@@ -107,7 +107,7 @@ fn a_narrow_equality_between_wide_words_is_not_an_alias() {
     let _session = crate::kernel::VerificationSession::enter();
     let word = MachineTerm::Variable(Variable(730_000));
     let copied = MachineTerm::Variable(Variable(730_001));
-    let address = MachineTerm::PointerAddress(
+    let address = MachineTerm::IntegerAddress(
         Box::new(Address::symbolic(Variable(730_003))),
         crate::kernel::AddressObjectClass::NONE,
     );
@@ -201,7 +201,7 @@ fn fold_nonnull_fact_uses_an_exact_composite_pointer_alias() {
     // A pure pointer argument observes the complete value; a numeric address
     // alias suffices for nonnull above, but cannot rewrite this argument.
     let context = context.assume_condition(
-        ConditionTerm::pointer_value_equal(
+        ConditionTerm::pointer_equal(
             Pointer::new(model.clone(), ProgramType::Int32Pointer),
             Pointer::new(program.clone(), ProgramType::Int32Pointer),
         ),

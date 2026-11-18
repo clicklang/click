@@ -1539,8 +1539,23 @@ fn project_folded_resource_observable_facts_with_store(
     Ok(())
 }
 
+pub(super) enum ResourceObservationSuccessor {
+    NamedCells(SymbolicMemory),
+    Legacy(Box<ExecutionState>),
+}
+
+impl ResourceObservationSuccessor {
+    pub(super) fn input(&self) -> crate::kernel::proof::ResourceObservationInput<'_> {
+        use crate::kernel::proof::ResourceObservationInput;
+        match self {
+            Self::NamedCells(memory) => ResourceObservationInput::NamedCells(memory),
+            Self::Legacy(state) => ResourceObservationInput::Legacy(state),
+        }
+    }
+}
+
 pub(super) struct CheckedResourceObservation {
-    pub(super) state: ExecutionState,
+    pub(super) successor: ResourceObservationSuccessor,
     pub(super) facts: PureFactStore,
     pub(super) added_facts: Vec<Proposition>,
     pub(super) observed_resource: ResourceFact,
@@ -1561,7 +1576,7 @@ pub(super) fn observe_composite_resource_for_proof(
     tactic_index: usize,
 ) -> Result<CheckedResourceObservation, ClickError> {
     let mut facts = ProofResourcePureFacts::new(facts);
-    let (state, observed_resource) = observe_composite_resource_with_facts(
+    let (successor, observed_resource) = observe_composite_resource_with_facts(
         function,
         resource_environment,
         resource,
@@ -1575,7 +1590,7 @@ pub(super) fn observe_composite_resource_for_proof(
         tactic_index,
     )?;
     Ok(CheckedResourceObservation {
-        state,
+        successor,
         facts: facts.facts,
         added_facts: facts.added,
         observed_resource,
@@ -1595,7 +1610,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
     spec_definitions: SpecDefinitions<'_>,
     claim_label: &str,
     tactic_index: usize,
-) -> Result<(ExecutionState, ResourceFact), ClickError> {
+) -> Result<(ResourceObservationSuccessor, ResourceFact), ClickError> {
     let requested_resource = lower_resource_clause_at_state(resource, parameter_binding, &state)?;
     let assumptions = available_pure_facts.assumptions().clone();
     let viewed_resource = ResourceFact::View(requested_resource.resource().clone());
@@ -1786,7 +1801,10 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
     if counts_population {
         // A population observation names checked count/quantity facts only.
         // Member bodies remain folded, with their custody and memory unchanged.
-        return Ok((state, abstract_resource));
+        return Ok((
+            ResourceObservationSuccessor::Legacy(Box::new(state)),
+            abstract_resource,
+        ));
     }
     let underlying_resource = match resource {
         ResourceClause::Quantified { resource, .. } => resource.as_ref(),
@@ -1799,7 +1817,10 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
             ..
         }
     ) {
-        return Ok((state, abstract_resource));
+        return Ok((
+            ResourceObservationSuccessor::Legacy(Box::new(state)),
+            abstract_resource,
+        ));
     }
     if explicit_quantity {
         let quantity = abstract_resource
@@ -1822,7 +1843,10 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
             // The count lower bound remains valid for zero or an undecided
             // nonnegative quantity. The population body, however, grants
             // authority only when the held quantity is proved positive.
-            return Ok((state, abstract_resource));
+            return Ok((
+                ResourceObservationSuccessor::Legacy(Box::new(state)),
+                abstract_resource,
+            ));
         }
     }
     let definition = composite_resource_law_definition(
@@ -1859,15 +1883,17 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
     // A viewed composite is itself a checked loan projection.  Its children
     // are fresh occurrences, so remember the exact bundle before projecting
     // the body; equal resource terms are not sufficient to recover it later.
-    let borrowed_parent_binding = unique_borrowed_resource_dependency(&state, &abstract_resource)
-        .map_err(|message| {
-            ClickError::new(format!(
-                "`{claim_label}` tactic {tactic_index}: `observe` refused ambiguous loan dependency: {message}"
-            ))
-        })?;
-    let witness_opening = state
-        .resources()
-        .open_structural_witness(&abstract_resource, &assumptions);
+    let construct = state.loan_view_bindings().is_empty();
+    let borrowed_parent_binding = if construct {
+        None
+    } else {
+        unique_borrowed_resource_dependency(&state, &abstract_resource)
+            .map_err(|message| {
+                ClickError::new(format!(
+                    "`{claim_label}` tactic {tactic_index}: `observe` refused ambiguous loan dependency: {message}"
+                ))
+            })?
+    };
     let (memory, contained_resources, body_projected) = apply_composite_observation_law_with_facts(
         resource_environment,
         definition,
@@ -1977,6 +2003,15 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
             }
         }
     }
+    if construct {
+        return Ok((
+            ResourceObservationSuccessor::NamedCells(memory),
+            abstract_resource,
+        ));
+    }
+    let witness_opening = state
+        .resources()
+        .open_structural_witness(&abstract_resource, &assumptions);
     let all_viewed_contained_resources = contained_resources
         .facts()
         .iter()
@@ -2064,9 +2099,11 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
         )?;
     }
     Ok((
-        state
-            .with_memory_of(&fact_state)
-            .with_resource_context_and_loan_dependencies(resources, dependency_bindings),
+        ResourceObservationSuccessor::Legacy(Box::new(
+            state
+                .with_memory_of(&fact_state)
+                .with_resource_context_and_loan_dependencies(resources, dependency_bindings),
+        )),
         abstract_resource,
     ))
 }

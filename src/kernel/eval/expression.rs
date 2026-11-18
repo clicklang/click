@@ -1028,7 +1028,9 @@ fn cast_program_value_to_type_with_integer_origin(
                         // A logical cast must name the same value before its
                         // own relationship is assumed. Numeric address choices
                         // belong to execution, never to this carrier's name.
-                        record.pointer.with_address(Address::integer_address(bits))
+                        record
+                            .pointer
+                            .with_address(Address::from_integer_address(bits))
                     }
                     PointerIntegerKind::Tagged => {
                         let bits =
@@ -4455,7 +4457,7 @@ mod pointer_integer_cast_identity_tests {
             Address::symbolic(Variable(997_001)),
             ProgramType::Int32Pointer,
         );
-        let bits = MachineTerm::pointer_address(source.address().clone());
+        let bits = MachineTerm::integer_address(source.address().clone());
         let context = PureFactContext::new();
         let cast = |origin| {
             cast_program_value_to_type_with_integer_origin(
@@ -4475,10 +4477,8 @@ mod pointer_integer_cast_identity_tests {
             panic!("pointer")
         };
         assert_eq!(first.address(), second.address());
-        let context = context.assume_condition(
-            ConditionTerm::pointer_value_equal(first, source.clone()),
-            true,
-        );
+        let context =
+            context.assume_condition(ConditionTerm::pointer_equal(first, source.clone()), true);
         let resources = ResourceContext::new().unchecked_with_fact(ResourceFact::view_memory(
             MemoryRange::from_pointer_value(&source, 0u32.into(), 1u32.into(), 4),
         ));
@@ -4571,15 +4571,12 @@ mod packed_word_contract_tests {
             width: 4u32.into(),
         }));
         let numeric = empty.assume_condition(
-            ConditionTerm::pointer_equal(reconstructed.address().clone(), target.address().clone()),
+            ConditionTerm::address_equal(reconstructed.address().clone(), target.address().clone()),
             true,
         );
         assert!(!numeric.pointer_provenance_match(&reconstructed, &target));
         let relation = Proposition::ConditionIs(
-            ConditionTerm::PointerValueEqual(
-                Box::new(reconstructed.clone()),
-                Box::new(target.clone()),
-            ),
+            ConditionTerm::PointerEqual(Box::new(reconstructed.clone()), Box::new(target.clone())),
             true,
         );
         let full = numeric.assume_proposition(relation.clone());

@@ -732,8 +732,9 @@ fn advance_execution_proof_statement(
                 state: exit_state, ..
             } = &transition.outcome
             {
-                let footprint = crate::kernel::RegionFootprint::transition(
+                let footprint = crate::kernel::RegionFootprint::statement_transition(
                     format!("region({statement_index}).footprint"),
+                    statement,
                     &context.state,
                     exit_state,
                     &transition.execution_facts,

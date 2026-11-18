@@ -794,7 +794,7 @@ impl Printer<'_> {
                 };
                 return Some(negate(name, polarity));
             }
-            ConditionTerm::PointerValueEqual(left, right) => {
+            ConditionTerm::PointerEqual(left, right) => {
                 let left = self.cvalue(
                     &crate::kernel::ProgramValue::Pointer((**left).clone()),
                     depth,
@@ -810,7 +810,7 @@ impl Printer<'_> {
                     operand(right, SHIFT)
                 )));
             }
-            ConditionTerm::PointerEqual(left, right) => {
+            ConditionTerm::AddressEqual(left, right) => {
                 if !self.source_mode() {
                     if self.mode == Mode::ExactIdentity
                         && [left, right]
@@ -857,7 +857,7 @@ impl Printer<'_> {
                     }
                 )));
             }
-            ConditionTerm::PointerOffsetEqual(left, right) => {
+            ConditionTerm::AddressOffsetEqual(left, right) => {
                 if !self.source_mode() {
                     return None;
                 }
@@ -1727,7 +1727,7 @@ impl Printer<'_> {
                     spelled_arms.join(", ")
                 )))
             }
-            B::PointerAddress(pointer, _) => {
+            B::IntegerAddress(pointer, _) => {
                 let pointer = self.pointer(pointer, depth)?;
                 Some(cast("uint64", pointer))
             }

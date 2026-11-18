@@ -7,7 +7,7 @@ fn offset(id: u64) -> AddressOffset {
 }
 
 fn guard() -> ConditionTerm {
-    ConditionTerm::pointer_offset_equal(offset(51), offset(52))
+    ConditionTerm::address_offset_equal(offset(51), offset(52))
 }
 
 fn choice() -> MachineTerm {

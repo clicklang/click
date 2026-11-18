@@ -36,7 +36,7 @@ fn full_and_concise_reports_keep_named_pointer_prerequisites() {
     };
     let pointer = |p: &Address| Pointer::new(p.clone(), ProgramType::Int32Pointer);
     let requirement = Proposition::ConditionIs(
-        ConditionTerm::PointerValueEqual(
+        ConditionTerm::PointerEqual(
             Box::new(pointer(&names.node)),
             Box::new(pointer(&names.identity)),
         ),
@@ -62,6 +62,42 @@ fn full_and_concise_reports_keep_named_pointer_prerequisites() {
         assert!(report.contains("goal: node == identity"), "{report}");
         assert!(!report.contains("<pointer"), "{report}");
     }
+}
+
+#[test]
+fn pointer_cast_goal_keeps_its_written_operands_in_diagnostics() {
+    let c = "float* next32(float* p) { return p + 1; }";
+    let source = r#"
+        verifying "cast.c";
+        float* next32(float* p) {
+            views p[0..2];
+            ensures result == (p as (uint8 *) as (void *) as (float *)) + 1;
+            ensures result as (uint8 *) == p as (uint8 *) + 4;
+        } by {
+            step();
+            have result == (p as (uint8 *) as (void *) as (float *)) + 1 by {
+                known();
+            }
+        }
+    "#;
+    let assert_goal = |report: String| {
+        let goal = report
+            .lines()
+            .find_map(|line| line.trim_start().strip_prefix("goal: "))
+            .unwrap_or_else(|| panic!("expected a goal in {report}"));
+        assert!(goal.starts_with("result =="), "{report}");
+        for cast in ["as (uint8 *)", "as (void *)", "as (float *)"] {
+            assert!(goal.contains(cast), "{report}");
+        }
+    };
+    let sources = [("cast.c", c)];
+    let error = verify_c_sources(source, &sources).unwrap_err();
+    assert_goal(error.concise_report());
+    assert_goal(error.report());
+    with_proof_trace("next32", || {
+        let error = verify_c_sources(source, &sources).unwrap_err();
+        assert_goal(error.trace_context_report().unwrap());
+    });
 }
 
 fn assert_subobject_access_reports(c: &str, source: &str, ordinary_goal: &str, trace_goal: &str) {
@@ -1540,7 +1576,7 @@ fn empty_footprint_rejects_a_fact_aliased_write_and_effect_range() {
     let after = before.clone().store(alias.clone(), int32(1));
     let pre_state = ExecutionState::new().with_memory(before.clone());
     let aliases_global =
-        Proposition::ConditionIs(ConditionTerm::pointer_equal(alias.clone(), global), true);
+        Proposition::ConditionIs(ConditionTerm::address_equal(alias.clone(), global), true);
     let facts = [
         ExecutionPureFact::new(Proposition::MemoryMutatesOnly {
             before: before.clone(),

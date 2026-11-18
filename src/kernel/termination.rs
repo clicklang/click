@@ -865,7 +865,7 @@ fn call_passes_witness_child(
             let expected = expected.address();
             let actual = actual.address();
             if expected != actual
-                && assumptions.decide(&ConditionTerm::pointer_equal(
+                && assumptions.decide(&ConditionTerm::address_equal(
                     actual.clone(),
                     expected.clone(),
                 )) != Some(true)

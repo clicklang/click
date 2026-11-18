@@ -467,7 +467,7 @@ fn established_callback_frame_rule_ignores_unrelated_owners_and_aliases() {
             if aliases {
                 for i in 0..count {
                     facts = facts.assume_condition(
-                        ConditionTerm::pointer_equal(
+                        ConditionTerm::address_equal(
                             Address::symbolic(Variable(8_960_000)),
                             Address::symbolic(Variable(8_962_000 + i)),
                         ),

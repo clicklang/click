@@ -273,7 +273,7 @@ pub(super) fn incompatible_pointer_argument(
             if pointee.may_designate(&object) || pointer.is_null() {
                 return None;
             }
-            if assumptions.decide(&ConditionTerm::pointer_equal(
+            if assumptions.decide(&ConditionTerm::address_equal(
                 pointer.address().clone(),
                 Address::null(),
             )) == Some(true)
@@ -315,7 +315,7 @@ pub(super) fn incompatible_pointer_return(
     if pointee.may_designate(&object) || pointer.is_null() {
         return None;
     }
-    if assumptions.decide(&ConditionTerm::pointer_equal(
+    if assumptions.decide(&ConditionTerm::address_equal(
         pointer.address().clone(),
         Address::null(),
     )) == Some(true)

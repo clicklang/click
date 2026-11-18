@@ -30,7 +30,7 @@ fn constructed_exit_and_observation_do_not_revisit_the_ambient_partition() {
             for index in 0..count {
                 if axis == "aliases" {
                     facts = facts.assume_condition(
-                        ConditionTerm::pointer_equal(
+                        ConditionTerm::address_equal(
                             pointer.clone(),
                             Address::symbolic(Variable(8_918_200 + u64::from(index))),
                         ),

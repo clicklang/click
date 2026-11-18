@@ -334,6 +334,10 @@ impl PartialOrd for LoanViewBindings {
 pub(crate) struct ReturnedViewAuthority(LoanViewBinding);
 
 impl LoanViewBindings {
+    pub(crate) fn is_empty(&self) -> bool {
+        self.state.map.is_empty()
+    }
+
     pub(crate) fn from_state(state: Arc<LoanViewBindingsState>) -> Self {
         Self { state }
     }

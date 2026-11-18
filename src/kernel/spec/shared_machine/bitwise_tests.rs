@@ -339,7 +339,7 @@ fn retained_pointer_masks_admit_alignment_without_exporting_operands() {
     let _session = VerificationSession::enter();
     let f = MachineIntegerType::UInt64;
     let pointer = Address::symbolic(Variable(995625));
-    let address = MachineTerm::PointerAddress(
+    let address = MachineTerm::IntegerAddress(
         Box::new(pointer.clone()),
         crate::kernel::AddressObjectClass::NONE,
     );

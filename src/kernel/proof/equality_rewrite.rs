@@ -279,14 +279,14 @@ pub(crate) fn reverse_equality(equality: &Proposition) -> Option<Proposition> {
         Proposition::ConditionIs(ConditionTerm::IntegerEqual(a, b), true) => {
             ConditionTerm::IntegerEqual(b.clone(), a.clone())
         }
-        Proposition::ConditionIs(ConditionTerm::PointerOffsetEqual(a, b), true) => {
-            ConditionTerm::PointerOffsetEqual(b.clone(), a.clone())
-        }
-        Proposition::ConditionIs(ConditionTerm::PointerValueEqual(a, b), true) => {
-            ConditionTerm::PointerValueEqual(b.clone(), a.clone())
+        Proposition::ConditionIs(ConditionTerm::AddressOffsetEqual(a, b), true) => {
+            ConditionTerm::AddressOffsetEqual(b.clone(), a.clone())
         }
         Proposition::ConditionIs(ConditionTerm::PointerEqual(a, b), true) => {
             ConditionTerm::PointerEqual(b.clone(), a.clone())
+        }
+        Proposition::ConditionIs(ConditionTerm::AddressEqual(a, b), true) => {
+            ConditionTerm::AddressEqual(b.clone(), a.clone())
         }
         _ => return None,
     };
@@ -714,10 +714,10 @@ fn equality_is_vacuous(equality: &Proposition) -> bool {
             };
             sign_cast_of(left, right) || sign_cast_of(right, left)
         }
-        Proposition::ConditionIs(ConditionTerm::PointerOffsetEqual(left, right), true) => {
+        Proposition::ConditionIs(ConditionTerm::AddressOffsetEqual(left, right), true) => {
             left == right
         }
-        Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) => left == right,
+        Proposition::ConditionIs(ConditionTerm::AddressEqual(left, right), true) => left == right,
         _ => false,
     }
 }
@@ -1117,7 +1117,7 @@ fn rewrite_term(term: &MachineTerm, from: &MachineTerm, to: &MachineTerm) -> Mac
                 offset: rewrite_offset(&pointer.offset, from, to),
             },
         ),
-        MachineTerm::PointerAddress(pointer, class) => MachineTerm::object_pointer_address(
+        MachineTerm::IntegerAddress(pointer, class) => MachineTerm::object_pointer_address(
             Address {
                 base: pointer.base.clone(),
                 offset: rewrite_offset(&pointer.offset, from, to),
@@ -1251,8 +1251,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
             ))
         };
     }
-    if let Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, right), true) = equality
-    {
+    if let Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) = equality {
         let mut rewrite = super::term_rewrite::TermRewrite::for_pointer_value_exact(left, right);
         let rewritten = rewrite.proposition(goal);
         if rewrite.refusal().is_some() {
@@ -1266,7 +1265,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
         return rewrite_atomic_proposition_by_exact_equality(
             goal,
             &Proposition::ConditionIs(
-                ConditionTerm::pointer_equal(left.address().clone(), right.address().clone()),
+                ConditionTerm::address_equal(left.address().clone(), right.address().clone()),
                 true,
             ),
         );
@@ -1274,7 +1273,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
     if matches!(
         goal,
         Proposition::ConditionIs(
-            ConditionTerm::PointerValueEqual(..) | ConditionTerm::PointerEqual(..),
+            ConditionTerm::PointerEqual(..) | ConditionTerm::AddressEqual(..),
             _
         )
     ) && let Proposition::ConditionIs(
@@ -1634,7 +1633,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 MachineTerm::MemoryLoad(_, pointer, _) => {
                     rewrite_read_address(term, rewrite_pointer(pointer))
                 }
-                MachineTerm::PointerAddress(pointer, class) => {
+                MachineTerm::IntegerAddress(pointer, class) => {
                     MachineTerm::object_pointer_address(rewrite_pointer(pointer), class.class())
                 }
                 MachineTerm::Variable(_) => rewrite_through_load_variable(term, &rewrite_pointer)
@@ -1704,7 +1703,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 wide,
             } => Proposition::MemoryLoadable {
                 // Same-block pointer equalities use offsets rather than the
-                // PointerEqual carrier. Substitute the selected address while
+                // AddressEqual carrier. Substitute the selected address while
                 // retaining the exact state and readable byte span.
                 memory: memory.clone(),
                 base: Address {
@@ -1715,17 +1714,17 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 wide: *wide,
             },
             Proposition::ConditionIs(
-                ConditionTerm::PointerOffsetEqual(goal_left, goal_right),
+                ConditionTerm::AddressOffsetEqual(goal_left, goal_right),
                 expected,
             ) => Proposition::ConditionIs(
-                ConditionTerm::PointerOffsetEqual(
+                ConditionTerm::AddressOffsetEqual(
                     Box::new(rewrite_offset(goal_left, left, right)),
                     Box::new(rewrite_offset(goal_right, left, right)),
                 ),
                 *expected,
             ),
             Proposition::ConditionIs(
-                ConditionTerm::PointerEqual(goal_left, goal_right),
+                ConditionTerm::AddressEqual(goal_left, goal_right),
                 expected,
             ) => {
                 let rewrite_pointer = |pointer: &Address| Address {
@@ -1733,7 +1732,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                     offset: rewrite_offset(&pointer.offset, left, right),
                 };
                 Proposition::ConditionIs(
-                    ConditionTerm::pointer_equal(
+                    ConditionTerm::address_equal(
                         rewrite_pointer(goal_left),
                         rewrite_pointer(goal_right),
                     ),
@@ -1883,7 +1882,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
         }
         return Ok(rewritten);
     }
-    if let Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) = equality {
+    if let Proposition::ConditionIs(ConditionTerm::AddressEqual(left, right), true) = equality {
         // A field or array access keeps its base pointer's block and adds a
         // displacement. An equality of the bases therefore also rewrites the
         // address of that access, with the same displacement on the right.
@@ -2059,7 +2058,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 }
             }
             Proposition::ConditionIs(
-                ConditionTerm::PointerEqual(goal_left, goal_right),
+                ConditionTerm::AddressEqual(goal_left, goal_right),
                 expected,
             ) => Proposition::ConditionIs(
                 // Replacing one side can land both pointers in the same
@@ -2068,17 +2067,17 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 // through the canonicalizing constructor so the rewritten
                 // goal is the term an ordinary lowering would produce and a
                 // later `known` or `normalize() using` can see it.
-                ConditionTerm::pointer_equal(
+                ConditionTerm::address_equal(
                     rewrite_pointer(goal_left),
                     rewrite_pointer(goal_right),
                 ),
                 *expected,
             ),
             Proposition::ConditionIs(
-                ConditionTerm::PointerValueEqual(goal_left, goal_right),
+                ConditionTerm::PointerEqual(goal_left, goal_right),
                 expected,
             ) => Proposition::ConditionIs(
-                ConditionTerm::PointerValueEqual(
+                ConditionTerm::PointerEqual(
                     Box::new(goal_left.map_addresses(&rewrite_pointer)),
                     Box::new(goal_right.map_addresses(&rewrite_pointer)),
                 ),
@@ -2504,18 +2503,18 @@ fn rewrite_atomic_proposition_by_exact_equality(
                     // Pointer goals contain the same int32 terms inside their
                     // offsets; substituting the proven equality there is the same
                     // exact term congruence, with work bounded by the goal.
-                    ConditionTerm::PointerOffsetEqual(goal_left, goal_right) => {
-                        ConditionTerm::PointerOffsetEqual(
+                    ConditionTerm::AddressOffsetEqual(goal_left, goal_right) => {
+                        ConditionTerm::AddressOffsetEqual(
                             Box::new(rewrite_offset_term(goal_left, left, right)),
                             Box::new(rewrite_offset_term(goal_right, left, right)),
                         )
                     }
-                    ConditionTerm::PointerEqual(goal_left, goal_right) => {
+                    ConditionTerm::AddressEqual(goal_left, goal_right) => {
                         let rewrite_pointer = |pointer: &Address| Address {
                             base: pointer.base.clone(),
                             offset: rewrite_offset_term(&pointer.offset, left, right),
                         };
-                        ConditionTerm::pointer_equal(
+                        ConditionTerm::address_equal(
                             rewrite_pointer(goal_left),
                             rewrite_pointer(goal_right),
                         )
@@ -2655,7 +2654,7 @@ mod tests {
                 },
             };
             let goal = Proposition::ConditionIs(
-                ConditionTerm::pointer_equal(pointer.clone(), Address::symbolic(Variable(1081003))),
+                ConditionTerm::address_equal(pointer.clone(), Address::symbolic(Variable(1081003))),
                 true,
             );
             let equality = Proposition::ConditionIs(
@@ -2722,7 +2721,7 @@ mod tests {
         let other = from.clone();
         let rewritten_other = to.clone();
         let cited =
-            Proposition::ConditionIs(ConditionTerm::pointer_equal(from.clone(), to.clone()), true);
+            Proposition::ConditionIs(ConditionTerm::address_equal(from.clone(), to.clone()), true);
         let facts = PureFactStore::default().with_fact(cited.clone());
         let read = |address: &Address| {
             Address::symbolic(crate::kernel::eval::load_variable_for_exact_cell(
@@ -2738,12 +2737,12 @@ mod tests {
             input = read(&input);
             expected = read(&expected);
             let goal = Proposition::ConditionIs(
-                ConditionTerm::pointer_equal(input.clone(), other.clone()),
+                ConditionTerm::address_equal(input.clone(), other.clone()),
                 true,
             );
             let result = facts.check_equality_rewrite(&goal, &cited).unwrap();
             let wanted = Proposition::ConditionIs(
-                ConditionTerm::pointer_equal(expected.clone(), rewritten_other.clone()),
+                ConditionTerm::address_equal(expected.clone(), rewritten_other.clone()),
                 true,
             );
             assert_eq!(result.proposition(), &wanted, "read depth {depth}");
@@ -2759,7 +2758,7 @@ mod tests {
         let memory = SymbolicMemory::new().store(to.clone(), stored);
         let memory = crate::kernel::intern_memory(memory);
         let cited =
-            Proposition::ConditionIs(ConditionTerm::pointer_equal(from.clone(), to.clone()), true);
+            Proposition::ConditionIs(ConditionTerm::address_equal(from.clone(), to.clone()), true);
         let facts = PureFactStore::default().with_fact(cited.clone());
         let mut input = from.clone();
         let mut expected = to.clone();
@@ -2767,11 +2766,11 @@ mod tests {
             input = Address::version_read(&memory, &input);
             expected = Address::version_read(&memory, &expected);
             let goal = Proposition::ConditionIs(
-                ConditionTerm::pointer_equal(input.clone(), from.clone()),
+                ConditionTerm::address_equal(input.clone(), from.clone()),
                 true,
             );
             let wanted = Proposition::ConditionIs(
-                ConditionTerm::pointer_equal(expected.clone(), to.clone()),
+                ConditionTerm::address_equal(expected.clone(), to.clone()),
                 true,
             );
             assert_eq!(
@@ -2789,11 +2788,11 @@ mod tests {
         );
         let _ = later.symbolic_pointer_version_load(&to, ProgramType::Int32Pointer);
         let goal = Proposition::ConditionIs(
-            ConditionTerm::pointer_equal(input.offset_by_bytes(8), from.clone()),
+            ConditionTerm::address_equal(input.offset_by_bytes(8), from.clone()),
             true,
         );
         let wanted = Proposition::ConditionIs(
-            ConditionTerm::pointer_equal(expected.offset_by_bytes(8), to.clone()),
+            ConditionTerm::address_equal(expected.offset_by_bytes(8), to.clone()),
             true,
         );
         assert_eq!(
@@ -2827,10 +2826,10 @@ mod tests {
         let input = read(&from);
         let expected = read(&to);
         let cited =
-            Proposition::ConditionIs(ConditionTerm::pointer_equal(from.clone(), to.clone()), true);
+            Proposition::ConditionIs(ConditionTerm::address_equal(from.clone(), to.clone()), true);
         let facts = PureFactStore::default().with_fact(cited.clone());
-        let goal = Proposition::ConditionIs(ConditionTerm::pointer_equal(input, from), true);
-        let wanted = Proposition::ConditionIs(ConditionTerm::pointer_equal(expected, to), true);
+        let goal = Proposition::ConditionIs(ConditionTerm::address_equal(input, from), true);
+        let wanted = Proposition::ConditionIs(ConditionTerm::address_equal(expected, to), true);
         assert_eq!(
             facts
                 .check_equality_rewrite(&goal, &cited)
@@ -4226,7 +4225,7 @@ mod wide_range_reader_tests {
             child: Box::new(Resource::Memory(wide.clone())),
         };
         let equality = Proposition::ConditionIs(
-            ConditionTerm::PointerOffsetEqual(
+            ConditionTerm::AddressOffsetEqual(
                 Box::new(offset),
                 Box::new(AddressOffset::Constant(0)),
             ),
@@ -4362,8 +4361,8 @@ mod numeric_address_annotation_tests {
             Address::symbolic(Variable(998_822)),
         );
         check(
-            Address::integer_address(MachineTerm::Variable(Variable(998_823))),
-            Address::integer_address(MachineTerm::Variable(Variable(998_824))),
+            Address::from_integer_address(MachineTerm::Variable(Variable(998_823))),
+            Address::from_integer_address(MachineTerm::Variable(Variable(998_824))),
         );
     }
 }

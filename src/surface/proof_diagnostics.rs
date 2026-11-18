@@ -127,6 +127,13 @@ pub(crate) trait ProofDiagnosticState: Send + Sync {
     }
 
     fn kernel_goal(&self) -> Option<&Proposition>;
+
+    /// The retained written goal when the source spelling carries pointer
+    /// information that an address rendering could lose.
+    fn written_pointer_goal(&self) -> Option<&super::ClickProposition> {
+        None
+    }
+
     fn premises(&self, limit: usize) -> Vec<&Proposition>;
     fn premise_count(&self) -> usize;
     fn proof_trace(
@@ -267,6 +274,20 @@ fn render_search_reason(
 impl ProofFailureDiagnostic {
     pub(crate) fn kernel_goal(&self) -> Option<&Proposition> {
         self.state.as_ref()?.kernel_goal()
+    }
+
+    pub(in crate::surface) fn render_goal(
+        &self,
+        labels: &mut render::MemoryStateLabels,
+    ) -> Option<String> {
+        let state = self.state.as_ref()?;
+        if let Some(goal) = state.written_pointer_goal() {
+            return Some(super::printing::source_click_proposition(goal));
+        }
+        Some(render::render_proposition_labeled(
+            state.kernel_goal()?,
+            labels,
+        ))
     }
 
     pub(crate) fn premises(&self, limit: usize) -> Vec<&Proposition> {
@@ -536,9 +557,9 @@ fn render_diagnostic_labeled(
         .is_some_and(|state| requirement_is_goal(state.as_ref()));
     if requirement_is_goal {
         // Printed with the requirement above.
-    } else if let Some(goal) = diagnostic.kernel_goal() {
+    } else if let Some(goal) = diagnostic.render_goal(labels) {
         rendered.push_str("\n  goal: ");
-        rendered.push_str(&render::render_proposition_labeled(goal, labels));
+        rendered.push_str(&goal);
         if let Some(history) = diagnostic
             .state
             .as_ref()
@@ -694,10 +715,10 @@ pub(crate) fn render_search_failures(summary: &str, failures: &[ProofSearchFailu
         if let Some(goal) = failure
             .diagnostic
             .as_ref()
-            .and_then(|diagnostic| diagnostic.kernel_goal())
+            .and_then(|diagnostic| diagnostic.render_goal(&mut labels))
         {
             rendered.push_str("; goal: ");
-            rendered.push_str(&render::render_proposition_labeled(goal, &mut labels));
+            rendered.push_str(&goal);
         }
     }
     if failures.len() > 8 {

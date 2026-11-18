@@ -1,7 +1,7 @@
 use super::api::{
     int8, int16, int32, normalize_exact_memory_loads_in_pointer_offset, uint8, uint16, uint32,
 };
-use super::memory_history::{AtomicMemoryLoadEqualityEvidence, PointerOffsetEqualityEvidence};
+use super::memory_history::{AddressOffsetEqualityEvidence, AtomicMemoryLoadEqualityEvidence};
 use super::reasoning::{
     collect_or_cases, instantiate_range_fold_step, memory_states_proven_equal_at_pointer,
     pointers_proven_equal_for_memory_resolution, resource_context_has_read,
@@ -828,7 +828,7 @@ pub enum MachineTerm {
     /// Checked tag identities can recover address bits, never pointer bounds.
     /// The annotation retains the source object class for a later cast and
     /// does not participate in equality, ordering, or hashing.
-    PointerAddress(Box<Address>, AddressObjectClass),
+    IntegerAddress(Box<Address>, AddressObjectClass),
     IntegerToMachine {
         value: SharedIntegerTerm,
         destination: MachineIntegerType,
@@ -984,8 +984,8 @@ impl std::fmt::Debug for MachineTerm {
                 .field(pointer)
                 .field(kind)
                 .finish(),
-            Self::PointerAddress(pointer, class) => f
-                .debug_tuple("PointerAddress")
+            Self::IntegerAddress(pointer, class) => f
+                .debug_tuple("IntegerAddress")
                 .field(pointer)
                 .field(class)
                 .finish(),
@@ -1277,10 +1277,10 @@ pub enum ConditionTerm {
     },
     Float32(FloatCondition),
     Float64(FloatCondition),
-    PointerOffsetEqual(Box<AddressOffset>, Box<AddressOffset>),
-    PointerEqual(Box<Address>, Box<Address>),
+    AddressOffsetEqual(Box<AddressOffset>, Box<AddressOffset>),
+    AddressEqual(Box<Address>, Box<Address>),
     /// Specification pointer equality includes the designated object and bounds.
-    PointerValueEqual(Box<Pointer>, Box<Pointer>),
+    PointerEqual(Box<Pointer>, Box<Pointer>),
     IntegerLessThan(SharedIntegerTerm, SharedIntegerTerm),
     IntegerLessEqual(SharedIntegerTerm, SharedIntegerTerm),
     IntegerGreaterThan(SharedIntegerTerm, SharedIntegerTerm),
@@ -1339,9 +1339,9 @@ enum ConditionIdentity<'a> {
     },
     Float32(&'a FloatCondition),
     Float64(&'a FloatCondition),
-    PointerOffsetEqual(&'a AddressOffset, &'a AddressOffset),
-    PointerEqual(&'a Address, &'a Address),
-    PointerValueEqual(&'a Pointer, &'a Pointer),
+    AddressOffsetEqual(&'a AddressOffset, &'a AddressOffset),
+    AddressEqual(&'a Address, &'a Address),
+    PointerEqual(&'a Pointer, &'a Pointer),
     IntegerLessThan(&'a SharedIntegerTerm, &'a SharedIntegerTerm),
     IntegerLessEqual(&'a SharedIntegerTerm, &'a SharedIntegerTerm),
     IntegerGreaterThan(&'a SharedIntegerTerm, &'a SharedIntegerTerm),
@@ -1531,9 +1531,9 @@ impl ConditionTerm {
             },
             Self::Float32(condition) => I::Float32(condition),
             Self::Float64(condition) => I::Float64(condition),
-            Self::PointerOffsetEqual(left, right) => I::PointerOffsetEqual(left, right),
+            Self::AddressOffsetEqual(left, right) => I::AddressOffsetEqual(left, right),
+            Self::AddressEqual(left, right) => I::AddressEqual(left, right),
             Self::PointerEqual(left, right) => I::PointerEqual(left, right),
-            Self::PointerValueEqual(left, right) => I::PointerValueEqual(left, right),
             // An Integer comparison is one fact with the comparison of its
             // sides read through their observations' value relations
             // (rule W): `to_integer(x as int32) <= 7` and
@@ -6662,6 +6662,9 @@ pub struct FunctionContractInterface {
     pub(crate) contract_claims: Vec<FunctionContractClaim>,
     pub(crate) opaque_contract_supported: bool,
     pub(crate) composite_resource_definitions: Vec<CompositeResourceDefinition>,
+    /// Shape summary built with the registered definitions. Substitution
+    /// changes operands without changing guard presence or recursion.
+    pub(crate) composite_definitions_need_entry_cases: bool,
     /// Sorted names of the abstract families that are not `authorized`.
     /// Abstract families have no definition here, so only a name on this list
     /// is known to take no part in population accounting.
@@ -14387,7 +14390,7 @@ pub(crate) enum AtomicPropositionDerivationEvidence {
     WidenedUnsignedSumBound,
     MemoryDag(Box<AtomicMemoryLoadEqualityEvidence>),
     LoadAddressCongruence(Box<LoadAddressCongruenceEvidence>),
-    PointerOffsetMemoryDag(Box<PointerOffsetEqualityEvidence>),
+    PointerOffsetMemoryDag(Box<AddressOffsetEqualityEvidence>),
     BitvectorEqualityPath(Vec<BitvectorEqualityDerivationStep>),
     Int32PinnedConstantEquality(Box<DirectBitvectorEqualityEvidence>),
     ForallInt32Instantiation(Box<ForallInt32InstantiationEvidence>),
@@ -14683,7 +14686,7 @@ pub struct PureFactContext {
     /// together with the fact itself. Derived incrementally from
     /// `condition_facts`: every equality against the null pointer files its
     /// other side here. A comparison of two pointers in one block is a
-    /// `PointerOffsetEqual` that no longer names the block, so this index is
+    /// `AddressOffsetEqual` that no longer names the block, so this index is
     /// what lets "one of these is null and the other is not" be two keyed
     /// lookups instead of a scan. The conclusion is about the offset terms
     /// alone: if `B + left` is null and `B + right` is not, then `left` and
@@ -14725,10 +14728,10 @@ pub struct PureFactContext {
     /// from, each filed as its own condition so a walk can cite it exactly:
     /// [`super::assumptions::OrderFactsByLower`].
     pub(super) order_facts_by_lower: super::assumptions::OrderFactsByLower,
-    /// True `PointerOffsetEqual` facts by each side's state shape
+    /// True `AddressOffsetEqual` facts by each side's state shape
     /// (`offset_state_shape`), the candidates
     /// `has_pointer_offset_state_fact` checks.
-    pub(super) pointer_offset_equalities_by_shape:
+    pub(super) address_offset_equalities_by_shape:
         crate::persistent::PersistentMap<u64, crate::persistent::PersistentSet<ConditionTerm>>,
     pub(super) observation_comparisons:
         super::assumptions::observation_comparisons::ObservationComparisons,
@@ -15182,7 +15185,7 @@ pub(super) struct CertifiedMemoryStore {
     pub(super) value: ProgramValue,
     pub(super) authorized_range: Option<MemoryRange>,
     pub(super) source: super::StatementStoreSource,
-    pub(super) value_equation: Option<Proposition>,
+    pub(super) value_equation: Option<Arc<Proposition>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

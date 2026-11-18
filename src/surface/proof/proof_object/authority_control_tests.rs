@@ -130,7 +130,7 @@ fn opening_control_retains_loaded_pointer_facts() {
     assert!(
         introduced.iter().any(|fact| matches!(
             fact,
-            Proposition::ConditionIs(ConditionTerm::PointerValueEqual(..), true)
+            Proposition::ConditionIs(ConditionTerm::PointerEqual(..), true)
         )),
         "open must retain the newly constructed pointer identity: {introduced:?}"
     );

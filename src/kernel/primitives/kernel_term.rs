@@ -102,11 +102,11 @@ pub enum KernelTermNode {
         relation: CompareRelation,
         arguments: [KernelTerm; 2],
     },
-    PointerValueEqual(KernelPointerEquality),
-    PointerEqual {
+    PointerEqual(KernelPointerEquality),
+    AddressEqual {
         arguments: [SharedAddress; 2],
     },
-    PointerOffsetEqual {
+    AddressOffsetEqual {
         arguments: [SharedAddressOffset; 2],
     },
     IntegerCompare {
@@ -197,7 +197,7 @@ pub enum KernelTermNode {
         address: SharedAddress,
     },
     /// Address observation retains its exact prepared address and object annotation.
-    PointerAddress {
+    IntegerAddress {
         address: SharedAddress,
         object_class: Option<crate::kernel::effective_type::CAccessClass>,
     },
@@ -424,10 +424,10 @@ impl NodeKey {
             | KernelTermNode::PointerCall { .. }
             | KernelTermNode::ArrayReference { .. }
             | KernelTermNode::MemoryLoad { .. }
-            | KernelTermNode::PointerAddress { .. }
-            | KernelTermNode::PointerOffsetEqual { .. }
-            | KernelTermNode::PointerEqual { .. }
-            | KernelTermNode::PointerValueEqual(_)
+            | KernelTermNode::IntegerAddress { .. }
+            | KernelTermNode::AddressOffsetEqual { .. }
+            | KernelTermNode::AddressEqual { .. }
+            | KernelTermNode::PointerEqual(_)
             | KernelTermNode::BoolRead(_)
             | KernelTermNode::AlgebraicRead(_)
             | KernelTermNode::FloatRead(_) => true,
@@ -512,7 +512,7 @@ impl NodeKey {
             KernelTermNode::MachineLiteral(_)
             | KernelTermNode::ThreadHandle(_)
             | KernelTermNode::MemoryLoad { .. }
-            | KernelTermNode::PointerAddress { .. } => true,
+            | KernelTermNode::IntegerAddress { .. } => true,
             KernelTermNode::FloatConvert { destination, .. } => {
                 MachineIntegerType::from_program_type(*destination).is_some()
             }
@@ -536,7 +536,7 @@ impl NodeKey {
             _ => false,
         };
         let machine_conversions = match &node {
-            KernelTermNode::PointerAddress { .. } => true,
+            KernelTermNode::IntegerAddress { .. } => true,
             KernelTermNode::Fold(_) | KernelTermNode::Match(_) => shared_machine_operand,
             KernelTermNode::Call { .. } => shared_machine_operand,
             KernelTermNode::MachineIf { .. } => true,
@@ -1101,7 +1101,7 @@ impl KernelTerm {
             self.node(),
             KernelTermNode::Legacy(_)
                 | KernelTermNode::Call { .. }
-                | KernelTermNode::PointerAddress { .. }
+                | KernelTermNode::IntegerAddress { .. }
         ) && rewritten == original
         {
             return self.clone();

@@ -326,7 +326,7 @@ impl ChildArgumentTrace {
             );
             for pointer in &self.related {
                 let fact = Proposition::ConditionIs(
-                    ConditionTerm::pointer_equal(self.actual.clone(), pointer.clone()),
+                    ConditionTerm::address_equal(self.actual.clone(), pointer.clone()),
                     true,
                 );
                 output.push_str(&format!(
@@ -1307,7 +1307,7 @@ mod tests {
         let read = Address::loaded_value(&memory, &address);
         let target = Address::function("callback");
         let fact = TraceFact {
-            kernel: Proposition::ConditionIs(ConditionTerm::pointer_equal(read, target), true),
+            kernel: Proposition::ConditionIs(ConditionTerm::address_equal(read, target), true),
         };
         let mut labels = MemoryStateLabels::default();
         let mut ordinary = String::new();
@@ -1358,7 +1358,7 @@ mod tests {
         let rid = Address::symbolic(crate::kernel::Variable(700_002));
         let facts = [a.clone(), b.clone()].map(|value| TraceFact {
             kernel: Proposition::ConditionIs(
-                ConditionTerm::pointer_equal(value, rid.clone()),
+                ConditionTerm::address_equal(value, rid.clone()),
                 true,
             ),
         });
@@ -1984,7 +1984,7 @@ mod tests {
                     source_tactic_path: Some(vec![0]),
                     facts: vec![TraceFact {
                         kernel: Proposition::ConditionIs(
-                            ConditionTerm::pointer_equal(
+                            ConditionTerm::address_equal(
                                 Address::loaded_value(
                                     &crate::kernel::intern_memory(SymbolicMemory::new()),
                                     &Address::null(),

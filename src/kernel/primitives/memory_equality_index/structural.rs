@@ -175,7 +175,7 @@ mod tests {
         assert!(slot.permits_memory_read(&base, 8, &empty));
         assert!(!slot.permits_memory_read(&base, 9, &empty));
         let alias = Address::symbolic(Variable(873_001));
-        let equal = empty.assume_condition(ConditionTerm::pointer_equal(base, alias.clone()), true);
+        let equal = empty.assume_condition(ConditionTerm::address_equal(base, alias.clone()), true);
         assert!(equal.pointers_known_equal(&alias, &Address::symbolic(Variable(873_000)),));
         assert!(slot.permits_memory_read(&alias, 4, &equal));
         assert!(

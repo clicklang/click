@@ -1550,7 +1550,7 @@ fn collect_condition_operand_reads(
 
 fn collect_condition_reads(condition: &ConditionTerm, reads: &mut Vec<ResourceRead>) {
     match condition {
-        ConditionTerm::PointerValueEqual(left, right) => {
+        ConditionTerm::PointerEqual(left, right) => {
             for pointer in left.pointers().chain(right.pointers()) {
                 collect_pointer_reads(pointer, reads);
             }
@@ -1567,11 +1567,11 @@ fn collect_condition_reads(condition: &ConditionTerm, reads: &mut Vec<ResourceRe
         ConditionTerm::Float32(float) | ConditionTerm::Float64(float) => {
             float.for_each_bitvector_term(|term| collect_bitvector_reads(term, reads));
         }
-        ConditionTerm::PointerOffsetEqual(left, right) => {
+        ConditionTerm::AddressOffsetEqual(left, right) => {
             collect_offset_reads(left, reads);
             collect_offset_reads(right, reads);
         }
-        ConditionTerm::PointerEqual(left, right) => {
+        ConditionTerm::AddressEqual(left, right) => {
             collect_pointer_reads(left, reads);
             collect_pointer_reads(right, reads);
         }

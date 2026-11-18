@@ -71,7 +71,7 @@ fn retained_resource_fields_preserve_lvalues_and_scale_with_expression() {
                 };
                 read.address() != stored.address()
                     && PureFactContext::new().equality_graph.knows_condition(
-                        &ConditionTerm::PointerValueEqual(
+                        &ConditionTerm::PointerEqual(
                             Box::new(read.clone()),
                             Box::new(stored.clone()),
                         ),

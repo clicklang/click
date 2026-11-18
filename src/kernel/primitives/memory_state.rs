@@ -568,7 +568,7 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                         tasks.push(HavocIdentityTask::Text(")"));
                         tasks.push(HavocIdentityTask::Pointer(*pointer));
                     }
-                    MachineTerm::PointerAddress(pointer, _) => {
+                    MachineTerm::IntegerAddress(pointer, _) => {
                         identity.push_str("address(");
                         tasks.push(HavocIdentityTask::Text(")"));
                         tasks.push(HavocIdentityTask::Pointer(*pointer));
@@ -606,7 +606,7 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
             HavocIdentityTask::Condition(condition) => {
                 crate::instrumentation::record_deterministic_work(1);
                 match condition {
-                    ConditionTerm::PointerValueEqual(left, right) => {
+                    ConditionTerm::PointerEqual(left, right) => {
                         let _ = write!(identity, "pveq({left:?},{right:?});");
                     }
 
@@ -658,14 +658,14 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                             is_float64: true,
                         });
                     }
-                    ConditionTerm::PointerOffsetEqual(left, right) => {
+                    ConditionTerm::AddressOffsetEqual(left, right) => {
                         identity.push_str("coe(");
                         tasks.push(HavocIdentityTask::Text(")"));
                         tasks.push(HavocIdentityTask::PointerOffset(*right));
                         tasks.push(HavocIdentityTask::Text(","));
                         tasks.push(HavocIdentityTask::PointerOffset(*left));
                     }
-                    ConditionTerm::PointerEqual(left, right) => {
+                    ConditionTerm::AddressEqual(left, right) => {
                         identity.push_str("cpe(");
                         tasks.push(HavocIdentityTask::Text(")"));
                         tasks.push(HavocIdentityTask::Pointer(*right));
@@ -866,7 +866,7 @@ mod call_havoc_local_retention_tests {
                 ProgramValue::Int32(MachineTerm::constant(7)),
             );
         let facts = PureFactContext::new().assume_condition(
-            ConditionTerm::pointer_equal(alias.clone(), pointer.offset_by_bytes(1)),
+            ConditionTerm::address_equal(alias.clone(), pointer.offset_by_bytes(1)),
             true,
         );
         let range = MemoryRange::new_with_element_width(alias, 0u32.into(), 1u32.into(), 1);
@@ -912,7 +912,7 @@ mod call_havoc_local_retention_tests {
             MachineTerm::constant(1),
         );
         let assumptions = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
-            ConditionTerm::pointer_equal(symbolic, local.clone()),
+            ConditionTerm::address_equal(symbolic, local.clone()),
             true,
         ));
         let unrelated_range = MemoryRange::new(
@@ -1771,6 +1771,22 @@ impl LocalEnvironment {
             | Some(LocalBinding::ArrayObject { .. })
             | Some(LocalBinding::AggregateObject { .. })
             | None => None,
+        }
+    }
+
+    pub(crate) fn nonvolatile_scalar(
+        &self,
+        name: &BindingName,
+        expected_type: ProgramType,
+    ) -> Option<&StoredExecutionValue> {
+        match self.binding(name)? {
+            LocalBinding::Object {
+                value,
+                program_type,
+                volatile: false,
+                ..
+            } if *program_type == expected_type => Some(value),
+            _ => None,
         }
     }
 
@@ -10887,7 +10903,7 @@ mod contract_retirement_tests {
         };
         let assumptions = aliases.iter().fold(PureFactContext::new(), |facts, alias| {
             facts.assume_proposition(Proposition::ConditionIs(
-                ConditionTerm::pointer_equal(alias.clone(), base.clone()),
+                ConditionTerm::address_equal(alias.clone(), base.clone()),
                 true,
             ))
         });
@@ -11047,7 +11063,7 @@ mod join_allocation_spelling_tests {
             offset: AddressOffset::Constant(0),
         };
         let assumptions = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
-            ConditionTerm::pointer_equal(p.clone(), q.clone()),
+            ConditionTerm::address_equal(p.clone(), q.clone()),
             true,
         ));
         assert!(!assumptions.is_inconsistent());
@@ -11070,11 +11086,11 @@ mod join_allocation_spelling_tests {
         let p = heap_base(924_021);
         let q = heap_base(924_025);
         assert_eq!(
-            ConditionTerm::pointer_equal(p.clone(), q.clone()),
+            ConditionTerm::address_equal(p.clone(), q.clone()),
             ConditionTerm::Constant(false)
         );
         let assumptions = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
-            ConditionTerm::pointer_equal(p, q),
+            ConditionTerm::address_equal(p, q),
             true,
         ));
         assert!(assumptions.is_inconsistent());

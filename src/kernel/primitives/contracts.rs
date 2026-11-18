@@ -865,6 +865,7 @@ impl FunctionContractInterface {
             contract_claims: Vec::new(),
             opaque_contract_supported: true,
             composite_resource_definitions: Vec::new(),
+            composite_definitions_need_entry_cases: false,
             ordinary_abstract_families: Vec::new(),
             predicate_unfoldings: Vec::new(),
             recursion_measure: Vec::new(),
@@ -1519,7 +1520,16 @@ impl ProgramFunction {
         definitions.sort_by(|left, right| left.name().cmp(right.name()));
         super::super::thread_confinement::propagate_thread_confinement(&mut definitions);
         super::super::owned_footprint_reach::propagate_owned_footprint_reach(&mut definitions);
-        Arc::make_mut(&mut self.contract_interface).composite_resource_definitions = definitions;
+        let interface = Arc::make_mut(&mut self.contract_interface);
+        interface.composite_definitions_need_entry_cases = definitions.iter().any(|definition| {
+            definition.is_recursive()
+                || definition.condition().is_some()
+                || definition
+                    .contains()
+                    .iter()
+                    .any(|clause| clause.guard().is_some())
+        });
+        interface.composite_resource_definitions = definitions;
         let rule =
             super::super::functions::SummaryResourceTransferRule::compile(&self.contract_interface);
         Arc::make_mut(&mut self.contract_interface).resource_transfer_rule = Arc::new(rule);

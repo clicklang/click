@@ -206,7 +206,7 @@ mod tests {
             ),
             (
                 Proposition::ConditionIs(
-                    ConditionTerm::PointerEqual(Box::new(p.clone()), Box::new(Address::null())),
+                    ConditionTerm::AddressEqual(Box::new(p.clone()), Box::new(Address::null())),
                     false,
                 ),
                 "is false",
@@ -217,7 +217,7 @@ mod tests {
             ),
             (
                 Proposition::ConditionIs(
-                    ConditionTerm::PointerOffsetEqual(
+                    ConditionTerm::AddressOffsetEqual(
                         Box::new(p.offset.clone()),
                         Box::new(AddressOffset::Constant(16)),
                     ),

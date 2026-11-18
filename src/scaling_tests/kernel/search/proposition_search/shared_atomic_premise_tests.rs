@@ -59,7 +59,7 @@ fn solve_reduces_connected_pointer_premises_before_spelling() {
         let middle = pointer(2);
         let right = pointer(3);
         let equality =
-            |left, right| Proposition::ConditionIs(ConditionTerm::pointer_equal(left, right), true);
+            |left, right| Proposition::ConditionIs(ConditionTerm::address_equal(left, right), true);
         let first = equality(left.clone(), middle.clone());
         let second = equality(middle.clone(), right.clone());
         let goal = equality(left, right);
@@ -224,7 +224,7 @@ fn solve_retains_common_base_pointer_equality_for_load_congruence() {
             ),
         };
         let equality =
-            |left, right| Proposition::ConditionIs(ConditionTerm::pointer_equal(left, right), true);
+            |left, right| Proposition::ConditionIs(ConditionTerm::address_equal(left, right), true);
         let required = equality(pointer(0), pointer(1));
         let mut context = PureFactContext::new().assume_proposition(required.clone());
         for index in 2..count {

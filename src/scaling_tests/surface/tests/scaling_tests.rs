@@ -2142,7 +2142,7 @@ fn read_defined_and_separation_selection_try_indexed_sources_first() {
             vec![
                 read_defined(address.clone()),
                 Proposition::ConditionIs(
-                    ConditionTerm::pointer_equal(alias.clone(), address),
+                    ConditionTerm::address_equal(alias.clone(), address),
                     true,
                 ),
             ],
@@ -6868,7 +6868,7 @@ fn atomic_memory_evidence_cites_only_connected_conditions() {
             vec![
                 loadable(Address::symbolic(Variable(470_002)), 16),
                 Proposition::ConditionIs(
-                    ConditionTerm::pointer_equal(
+                    ConditionTerm::address_equal(
                         Address::symbolic(Variable(470_002)),
                         Address::null(),
                     ),
@@ -6900,7 +6900,7 @@ fn atomic_memory_evidence_cites_only_connected_conditions() {
                     context = context
                         .assume_proposition(equal(471_000 + 2 * index, 471_001 + 2 * index))
                         .assume_proposition(Proposition::ConditionIs(
-                            ConditionTerm::pointer_equal(
+                            ConditionTerm::address_equal(
                                 Address::symbolic(Variable(475_000 + index)),
                                 Address::null(),
                             ),

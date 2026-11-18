@@ -384,7 +384,7 @@ fn nested_operators_register_the_pointer_arguments_they_use() {
     // A pure pointer argument includes its provenance and bounds. Numeric
     // address equality alone must not identify these function applications.
     assert!(!graph.are_uint64_equal(&a, &b));
-    graph.add_pointer_value_equality(
+    graph.add_pointer_equality(
         &crate::kernel::Pointer::new(p, ProgramType::Int32Pointer),
         &crate::kernel::Pointer::new(q, ProgramType::Int32Pointer),
     );
@@ -455,7 +455,7 @@ fn common_call_operands_register_complete_pointer_arguments() {
     assert!(!graph.are_int32_equal_views(V::Shared(&a), V::Shared(&b)));
     graph.add_equality(p.address(), q.address());
     assert!(!graph.are_int32_equal_views(V::Shared(&a), V::Shared(&b)));
-    graph.add_pointer_value_equality(&p, &q);
+    graph.add_pointer_equality(&p, &q);
     assert!(graph.are_int32_equal_views(V::Shared(&a), V::Shared(&b)));
     assert_eq!(KernelTermExport::machine_export_count(), exports);
 }

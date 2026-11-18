@@ -74,11 +74,11 @@ fn separation_candidates_preserve_derived_aliases_and_loaded_bases() {
     assert!(separated(&holds(pinned)));
     let transitive = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::pointer_equal(base(alias.clone()), base(middle.clone())),
+            ConditionTerm::address_equal(base(alias.clone()), base(middle.clone())),
             true,
         )
         .assume_condition(
-            ConditionTerm::pointer_equal(base(middle), base(a.clone())),
+            ConditionTerm::address_equal(base(middle), base(a.clone())),
             true,
         );
     assert!(separated(&holds(transitive)));
@@ -130,7 +130,7 @@ fn separation_candidates_follow_a_block_alias_to_the_owner() {
         PureFactContext::new().assume_proposition(Proposition::ResourceComposition(frame.clone()));
     assert!(!query(&unrelated), "an unowned range proves nothing");
     let aliased = unrelated.assume_condition(
-        ConditionTerm::pointer_equal(loaded.clone(), parameter.clone()),
+        ConditionTerm::address_equal(loaded.clone(), parameter.clone()),
         true,
     );
     assert!(query(&aliased));
@@ -386,7 +386,7 @@ fn owned_range_access_survives_learning_a_symbolic_pointer_alias() {
     );
     let resources = ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(range));
     let assumptions = PureFactContext::new().assume_condition(
-        ConditionTerm::pointer_equal(cell.clone(), slot.clone()),
+        ConditionTerm::address_equal(cell.clone(), slot.clone()),
         true,
     );
     for pointer in [&cell, &slot] {
@@ -430,7 +430,7 @@ fn owned_range_read_survives_learning_a_symbolic_pointer_alias() {
     );
     let resources = ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(range));
     let assumptions = PureFactContext::new().assume_condition(
-        ConditionTerm::pointer_equal(slot.clone(), cell.clone()),
+        ConditionTerm::address_equal(slot.clone(), cell.clone()),
         true,
     );
     for pointer in [&cell, &slot] {
@@ -476,8 +476,8 @@ fn owned_memory_consumption_survives_a_late_transitive_displaced_alias() {
     );
     for reverse in [false, true] {
         let links = [
-            ConditionTerm::pointer_equal(owner_root.clone(), middle.clone()),
-            ConditionTerm::pointer_equal(middle.clone(), Address::symbolic(Variable(212))),
+            ConditionTerm::address_equal(owner_root.clone(), middle.clone()),
+            ConditionTerm::address_equal(middle.clone(), Address::symbolic(Variable(212))),
         ];
         let mut assumptions = empty.clone();
         for link in if reverse {
@@ -539,13 +539,13 @@ fn paired_memory_index_tracks_resource_deltas_and_displaced_merges() {
     let mut assumptions = empty.clone();
     for i in 2..20 {
         assumptions = assumptions.assume_condition(
-            ConditionTerm::pointer_equal(alias.clone(), Address::symbolic(Variable(810_000 + i))),
+            ConditionTerm::address_equal(alias.clone(), Address::symbolic(Variable(810_000 + i))),
             true,
         );
         resources.synchronize_memory_equalities(&assumptions);
     }
     assumptions =
-        assumptions.assume_condition(ConditionTerm::pointer_equal(alias.clone(), shifted), true);
+        assumptions.assume_condition(ConditionTerm::address_equal(alias.clone(), shifted), true);
     resources.synchronize_memory_equalities(&assumptions);
     let required = cell(alias.clone());
     let consumed = resources
@@ -602,7 +602,7 @@ fn paired_memory_index_consumes_inside_a_displaced_aliased_range() {
             MachineTerm::constant(4),
         )));
     let assumptions = PureFactContext::new()
-        .assume_condition(ConditionTerm::pointer_equal(owner, alias.clone()), true);
+        .assume_condition(ConditionTerm::address_equal(owner, alias.clone()), true);
     let required = ResourceFact::own_memory(MemoryRange::new(
         Address {
             base: alias.base.clone(),
@@ -663,7 +663,7 @@ fn owned_fragment_reservation_checks_aliases_gaps_and_linear_consumption() {
             .is_none()
     );
     let facts = empty.clone().assume_condition(
-        ConditionTerm::pointer_equal(
+        ConditionTerm::address_equal(
             Address {
                 base: base.base.clone(),
                 offset: AddressOffset::Constant(8),
@@ -1345,7 +1345,7 @@ fn instance_memory_guard_requires_a_proved_case_and_exposes_only_that_case() {
     else {
         panic!("fixture pointer");
     };
-    let guard = ConditionTerm::pointer_equal(pointer.address().clone(), Address::null());
+    let guard = ConditionTerm::address_equal(pointer.address().clone(), Address::null());
     let unknown = PureFactContext::new();
     assert!(rewrite_resource_instance(&state, &instance, &definition, &unknown, true).is_err());
     for is_null in [false, true] {
@@ -3634,7 +3634,7 @@ fn composite_resource_arguments_respect_proven_pointer_equality() {
         arguments: vec![ProgramValue::pointer(right_pointer.clone()).into()].into(),
     });
     let assumptions = PureFactContext::new().assume_condition(
-        ConditionTerm::PointerValueEqual(
+        ConditionTerm::PointerEqual(
             Box::new(Pointer::new(left_pointer, ProgramType::Int32Pointer)),
             Box::new(Pointer::new(right_pointer, ProgramType::Int32Pointer)),
         ),
@@ -3705,7 +3705,7 @@ fn resource_separation_transports_across_equal_memory_ranges() {
             right: Box::new(original_resource),
         })
         .assume_condition(
-            ConditionTerm::pointer_equal(original_data, equal_data),
+            ConditionTerm::address_equal(original_data, equal_data),
             true,
         )
         .assume_condition(ConditionTerm::equal(original_length, equal_length), true);
@@ -3809,7 +3809,7 @@ fn equal_cross_block_pointer_bases_cannot_be_owned_twice() {
         MachineTerm::constant(1),
     );
     let assumptions = PureFactContext::new().assume_condition(
-        ConditionTerm::pointer_equal(symbolic.clone(), argument.clone()),
+        ConditionTerm::address_equal(symbolic.clone(), argument.clone()),
         true,
     );
 
@@ -3869,7 +3869,7 @@ fn equal_content_string_literals_remain_readable_without_separation_evidence() {
     let first_range = range(first.clone());
     let second_range = range(second.clone());
     let assumptions =
-        PureFactContext::new().assume_condition(ConditionTerm::pointer_equal(first, second), true);
+        PureFactContext::new().assume_condition(ConditionTerm::address_equal(first, second), true);
 
     assert!(memory_ranges_proven_overlapping(
         &first_range,
@@ -7469,7 +7469,7 @@ fn owned_root_neighbors_keep_alias_and_duplicate_refusals() {
     );
     let aliases = assumptions
         .clone()
-        .assume_condition(ConditionTerm::pointer_equal(p, q), true);
+        .assume_condition(ConditionTerm::address_equal(p, q), true);
     assert!(context.is_valid(&aliases));
     assert!(
         !context
@@ -7579,7 +7579,7 @@ fn exact_alias_owned_neighbors_preserve_translations_and_branch_isolation() {
     let p = Address::symbolic(Variable(995_650));
     let q = Address::symbolic(Variable(995_651));
     let assumptions = PureFactContext::new()
-        .assume_condition(ConditionTerm::pointer_equal(p.clone(), q.clone()), true);
+        .assume_condition(ConditionTerm::address_equal(p.clone(), q.clone()), true);
     let owned = |base, start: u32, end: u32| {
         ResourceFact::own_memory(MemoryRange::new_with_element_width(
             base,
@@ -7632,7 +7632,7 @@ fn exact_alias_owned_neighbors_retain_symbolic_ranges() {
     let index = MachineTerm::var(Variable(995_662));
     let end = MachineTerm::add(index.clone(), 1u32.into());
     let assumptions = PureFactContext::new()
-        .assume_condition(ConditionTerm::pointer_equal(p.clone(), q.clone()), true)
+        .assume_condition(ConditionTerm::address_equal(p.clone(), q.clone()), true)
         .assume_condition(
             ConditionTerm::signed_less_than(index.clone(), 6u32.into()),
             true,
@@ -7673,7 +7673,7 @@ fn exact_alias_owned_neighbors_keep_nonzero_displacements() {
         offset: AddressOffset::add(q.offset.clone(), AddressOffset::Constant(8)),
     };
     let assumptions = PureFactContext::new()
-        .assume_condition(ConditionTerm::pointer_equal(p.clone(), displaced), true);
+        .assume_condition(ConditionTerm::address_equal(p.clone(), displaced), true);
     let owned = |base, start: u32| {
         ResourceFact::own_memory(MemoryRange::new_with_element_width(
             base,
@@ -7702,7 +7702,7 @@ fn owner_only_base_buckets_follow_persistent_consumption_and_reinsertion() {
     let index = MachineTerm::var(Variable(995_712));
     let end = MachineTerm::add(index.clone(), 1u32.into());
     let assumptions = PureFactContext::new()
-        .assume_condition(ConditionTerm::pointer_equal(p.clone(), q.clone()), true)
+        .assume_condition(ConditionTerm::address_equal(p.clone(), q.clone()), true)
         .assume_condition(
             ConditionTerm::signed_less_than(4u32.into(), end.clone()),
             true,
@@ -7743,7 +7743,7 @@ fn skipping_unowned_alias_blocks_keeps_local_and_cross_block_refusals() {
     let p = Address::symbolic(Variable(995_800));
     let q = Address::symbolic(Variable(995_801));
     let assumptions = PureFactContext::new()
-        .assume_condition(ConditionTerm::pointer_equal(p.clone(), q.clone()), true);
+        .assume_condition(ConditionTerm::address_equal(p.clone(), q.clone()), true);
     for native in [false, true] {
         let range = |base, start: u32| {
             if native {
@@ -7831,7 +7831,7 @@ fn direct_constant_overlap_keeps_byte_widths_translations_and_alias_refusals() {
     let p = Address::symbolic(Variable(995_950));
     let q = Address::symbolic(Variable(995_951));
     let assumptions = PureFactContext::new()
-        .assume_condition(ConditionTerm::pointer_equal(p.clone(), q.clone()), true);
+        .assume_condition(ConditionTerm::address_equal(p.clone(), q.clone()), true);
     for native in [false, true] {
         let range = |base, start: u32, end: u32, width| {
             if native {

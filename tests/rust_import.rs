@@ -1072,6 +1072,42 @@ fn charon_chunk_project() -> Project {
     fs::write(p.root.join("borrow.click"), CHARON_CHUNK_SIDECAR).unwrap();
     p
 }
+/// A chunk loop's `next` binds its chunk itself: the `Option` MIR returns,
+/// its tag test and its temporary are gone.
+#[test]
+fn charon_chunk_loops_bind_their_chunk_without_an_option() {
+    use click::languages::rust::schema::{MirStatement, Type};
+    let prepared = charon_chunk_project().prepared().unwrap();
+    let mut bound = 0;
+    for function in &prepared.export().functions {
+        let Some(mir) = &function.mir else { continue };
+        assert!(
+            !mir.locals
+                .iter()
+                .any(|local| local.value_type == Type::ChunkOption),
+            "{}",
+            function.name
+        );
+        for statement in mir.blocks.iter().flat_map(|block| &block.statements) {
+            if let MirStatement::ChunkNext {
+                option,
+                payload,
+                taken,
+                ..
+            } = statement
+            {
+                assert_eq!(option, &None, "{}: {statement:?}", function.name);
+                assert!(
+                    payload.is_none() || *taken == Some(true),
+                    "{}: {statement:?}",
+                    function.name
+                );
+                bound += usize::from(payload.is_some());
+            }
+        }
+    }
+    assert!(bound > 0);
+}
 /// The imports and the slice spelling a claim about a library iterator
 /// needs.
 const LIBRARY_CHUNKS: &str = "import click::integer;";
@@ -3375,6 +3411,20 @@ fn charon_result_errors_carry_a_crate_enum() {
     let prepared = p.prepared().unwrap();
     ProgramVerificationSession::new_program_prepared(RESULT_ERROR_SIDECAR, &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
+    let claim = "describe.contract";
+    let expanded = click::surface::expand_program_prepared_claim_source_by_label(
+        RESULT_ERROR_SIDECAR,
+        &prepared,
+        claim,
+    )
+    .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(!expanded.contains("__rust_checked_"), "{expanded}");
+    click::surface::without_implicit_solve_for_claim(claim, || {
+        ProgramVerificationSession::new_program_prepared(&expanded, &prepared)
+            .map(|_| ())
+            .map_err(|error| error.report())
+    })
+    .unwrap();
     for (before, after, expected) in [
         (
             "    ensures x == 0u32 implies result == Result<u32, ParseError>::Err(ParseError::Empty);\n    ensures x > 100u32 implies result == Result<u32, ParseError>::Err(ParseError::TooBig(x));\n    ensures x != 0u32 implies x <= 100u32 implies result == Result<u32, ParseError>::Ok(x);\n}\n\n// `?`",

@@ -2779,6 +2779,14 @@ impl CheckedIteratedStep {
     }
 }
 
+/// Surface can request naming of cells for an ordinary observation. The
+/// kernel builds the successor's resource partition from the selected body.
+/// Borrowed and counted observations retain their existing checking route.
+pub(crate) enum ResourceObservationInput<'a> {
+    NamedCells(&'a SymbolicMemory),
+    Legacy(&'a ExecutionState),
+}
+
 /// Kernel-checked evidence for one source-ordered, non-consuming, one-layer
 /// observation of a folded composite resource. The event advances no C
 /// source; it changes only the ghost-resource representation and the exact
@@ -2795,12 +2803,35 @@ impl CheckedResourceObservation {
         &self.before_state
     }
 
+    #[cfg(test)]
     fn check(
         function: &ProgramFunction,
         before_state: &ExecutionState,
         before_facts: &PureFactStore,
         observed: &ResourceFact,
         after_state: &ExecutionState,
+        after_facts: &PureFactStore,
+        derivations: &PersistentOrderedSet<Theorem>,
+        call_events: &CheckedCallEvents,
+    ) -> Result<Self, &'static str> {
+        Self::certify(
+            function,
+            before_state,
+            before_facts,
+            observed,
+            ResourceObservationInput::Legacy(after_state),
+            after_facts,
+            derivations,
+            call_events,
+        )
+    }
+
+    fn certify(
+        function: &ProgramFunction,
+        before_state: &ExecutionState,
+        before_facts: &PureFactStore,
+        observed: &ResourceFact,
+        input: ResourceObservationInput<'_>,
         after_facts: &PureFactStore,
         derivations: &PersistentOrderedSet<Theorem>,
         call_events: &CheckedCallEvents,
@@ -2817,6 +2848,9 @@ impl CheckedResourceObservation {
             _ => true,
         };
         if counted {
+            let ResourceObservationInput::Legacy(after_state) = input else {
+                return Err("count observation requires the ledger observation rule");
+            };
             let unchanged = before_state.memory.diagnostic_identity()
                 == after_state.memory.diagnostic_identity()
                 && before_state.shares_non_memory_storage_with(after_state)
@@ -2881,9 +2915,7 @@ impl CheckedResourceObservation {
                 definition: None,
             });
         }
-        if !before_state.loan_bindings_are_consistent()
-            || !after_state.loan_bindings_are_consistent()
-        {
+        if !before_state.loan_bindings_are_consistent() {
             return Err("resource observation carries mismatched loan dependency sidecar");
         }
         let load_equality_capture =
@@ -2902,22 +2934,40 @@ impl CheckedResourceObservation {
             return Err("resource observation evidence requires a composite resource");
         };
         let definition = function
-            .composite_resource_definitions()
-            .iter()
-            .find(|definition| definition.name() == name)
+            .composite_resource_definition(name)
             .cloned()
             .ok_or("the observed composite definition is not registered on the function")?;
 
-        let mut concrete_after = after_state.clone();
-        concrete_after.set_memory(before_state.memory.clone());
-        concrete_after = concrete_after.with_resource_context(before_state.resources.clone());
-        if concrete_after != *before_state
-            || (memory_only_adds_named_cells(before_state.memory(), after_state.memory()).is_err()
-                && !crate::kernel::api::contract_certification::memories_definitionally_equal(
-                    before_state.memory(),
-                    after_state.memory(),
-                    assumptions,
-                ))
+        let named_state;
+        let (after_state, construct) = match input {
+            ResourceObservationInput::NamedCells(memory) => {
+                // The input describes memory naming only. No caller-supplied
+                // locals, resource context, or loan ledger enters construction.
+                named_state = before_state
+                    .clone()
+                    .with_memory_continuing(before_state, memory.clone());
+                (&named_state, true)
+            }
+            ResourceObservationInput::Legacy(after_state) => {
+                if !after_state.loan_bindings_are_consistent() {
+                    return Err("resource observation carries mismatched loan dependency sidecar");
+                }
+                let mut concrete_after = after_state.clone();
+                concrete_after.set_memory(before_state.memory.clone());
+                concrete_after =
+                    concrete_after.with_resource_context(before_state.resources.clone());
+                if concrete_after != *before_state {
+                    return Err("resource observation changed concrete execution state");
+                }
+                (after_state, false)
+            }
+        };
+        if memory_only_adds_named_cells(before_state.memory(), after_state.memory()).is_err()
+            && !crate::kernel::api::contract_certification::memories_definitionally_equal(
+                before_state.memory(),
+                after_state.memory(),
+                assumptions,
+            )
         {
             return Err("resource observation changed concrete execution state");
         }
@@ -2971,31 +3021,64 @@ impl CheckedResourceObservation {
                 .filter(|fact| !before_state.resources().contains_exact_representation(fact))
                 .collect::<Vec<_>>()
         };
-        let Some(resource_delta) = after_state
-            .resources()
-            .facts()
-            .strip_prefix(before_state.resources().facts())
-        else {
-            return Err("resource observation changed an existing resource representation");
-        };
-        if resource_delta != expected_views.as_slice() {
-            return Err("resource observation produced an unchecked resource delta");
-        }
-        if let Some((support_occurrence, support)) = observation_support {
-            if !after_state
+        let after_state = if construct {
+            if !before_state.loan_view_bindings().is_empty() {
+                return Err(
+                    "resource observation with loan bindings requires the loan projection rule",
+                );
+            }
+            let resources = before_state.resources().clone();
+            let witness = (!body_is_already_exposed)
+                .then(|| resources.open_structural_witness(observed, assumptions))
+                .flatten();
+            let resources = match observation_support {
+                Some((occurrence, support)) => resources
+                    .unchecked_with_supported_facts_from_occurrence_with_memory(
+                        occurrence,
+                        support,
+                        expected_views,
+                        after_state.memory(),
+                    ),
+                None => resources.unchecked_with_facts(expected_views),
+            };
+            after_state
+                .clone()
+                .with_resource_context(resources.with_opened_structural_witnesses(
+                    witness,
+                    &raw_children,
+                    true,
+                    assumptions,
+                ))
+        } else {
+            let Some(resource_delta) = after_state
                 .resources()
-                .support_occurrence_is_live(support_occurrence, support)
-            {
-                return Err("resource observation support is stale or malformed");
+                .facts()
+                .strip_prefix(before_state.resources().facts())
+            else {
+                return Err("resource observation changed an existing resource representation");
+            };
+            if resource_delta != expected_views.as_slice() {
+                return Err("resource observation produced an unchecked resource delta");
             }
-            if expected_views.iter().any(|fact| {
-                !after_state
+            if let Some((support_occurrence, support)) = observation_support {
+                if !after_state
                     .resources()
-                    .has_supported_projection(fact, support_occurrence, support)
-            }) {
-                return Err("resource observation views are missing their owned support");
+                    .support_occurrence_is_live(support_occurrence, support)
+                {
+                    return Err("resource observation support is stale or malformed");
+                }
+                if expected_views.iter().any(|fact| {
+                    !after_state.resources().has_supported_projection(
+                        fact,
+                        support_occurrence,
+                        support,
+                    )
+                }) {
+                    return Err("resource observation views are missing their owned support");
+                }
             }
-        }
+            after_state.clone()
+        };
 
         let introduced = after_facts
             .introduced_since(before_facts)
@@ -3276,10 +3359,9 @@ impl OpenedContractEntry {
             // keep the entry producer's form, avoiding extra read-over-write
             // equations being admitted as independent premises.
             let selected = match fact {
-                Proposition::ConditionIs(
-                    crate::kernel::ConditionTerm::PointerValueEqual(..),
-                    _,
-                ) => contract.explicitly_states(fact),
+                Proposition::ConditionIs(crate::kernel::ConditionTerm::PointerEqual(..), _) => {
+                    contract.explicitly_states(fact)
+                }
                 _ => contract.states(fact),
             };
             if selected && kept.insert(fact.clone()) {
@@ -6718,9 +6800,9 @@ pub(super) fn checked_interface_pointer_equality(
     matches!(
         goal,
         Proposition::ConditionIs(
-            crate::kernel::ConditionTerm::PointerEqual(_, _)
-                | crate::kernel::ConditionTerm::PointerValueEqual(_, _)
-                | crate::kernel::ConditionTerm::PointerOffsetEqual(_, _),
+            crate::kernel::ConditionTerm::AddressEqual(_, _)
+                | crate::kernel::ConditionTerm::PointerEqual(_, _)
+                | crate::kernel::ConditionTerm::AddressOffsetEqual(_, _),
             true
         )
     ) && super::fact_reasoning::normalize_using_conditions(goal, &[], facts).is_ok()
@@ -8444,7 +8526,9 @@ impl ExecutionProofCore {
             .map(|view| self.checked_call_events.new_event(view))
             .collect::<Vec<_>>();
         let before = match checked_evidence_conclusion(&theorem) {
-            Proposition::ProgramStatementVerifies { state, .. } => Some(state.as_ref()),
+            Proposition::ProgramStatementVerifies {
+                state, statement, ..
+            } => Some((state.as_ref(), statement.as_ref())),
             _ => None,
         };
         let after = match &outcome {
@@ -8457,9 +8541,10 @@ impl ExecutionProofCore {
             | StatementOutcome::Throw { state, .. } => Some(state.as_ref()),
             _ => None,
         };
-        self.last_footprint = before.zip(after).map(|(before, after)| {
-            crate::kernel::RegionFootprint::transition(
+        self.last_footprint = before.zip(after).map(|((before, statement), after)| {
+            crate::kernel::RegionFootprint::statement_transition(
                 format!("region({}).footprint", self.frontier.next_statement_index),
+                statement,
                 before,
                 after,
                 execution_facts,
@@ -10399,22 +10484,23 @@ impl ExecutionProofCore {
         arguments: &[ProgramExpression],
         before_facts: &PureFactStore,
         observed: &ResourceFact,
-        after_state: &ExecutionState,
+        input: ResourceObservationInput<'_>,
         after_facts: &PureFactStore,
-    ) -> Result<(), &'static str> {
+    ) -> Result<ExecutionState, &'static str> {
         if self.evidence_completed {
             return Err("a resource observation was recorded after the trace completed");
         }
-        let mut observation = CheckedResourceObservation::check(
+        let mut observation = CheckedResourceObservation::certify(
             function,
             self.reached_state(),
             before_facts,
             observed,
-            after_state,
+            input,
             after_facts,
             &self.function_entry_derivations,
             &self.checked_call_events,
         )?;
+        let successor = observation.after_state.clone();
         if self.frontier.is_at_function_entry() && !self.frontier.entry_member_prefix {
             observation.before_state = crate::kernel::program_function_entry_state(
                 &observation.before_state,
@@ -10437,7 +10523,7 @@ impl ExecutionProofCore {
                 observation.clone(),
             )));
         }
-        Ok(())
+        Ok(successor)
     }
 
     /// Applies the verified rule of tactic `name` at the reached state and

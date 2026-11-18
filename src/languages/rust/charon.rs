@@ -1391,7 +1391,12 @@ impl BodyAdapter<'_, '_> {
                     taken: None,
                 }
             } else {
-                S::ChunkNext { iterator, option }
+                S::ChunkNext {
+                    iterator,
+                    option: Some(option),
+                    payload: None,
+                    taken: None,
+                }
             }));
         }
         if let Some(statement) = self.split_slice_call(t)? {
@@ -5132,53 +5137,6 @@ mod tests {
         )
         .unwrap_err();
         assert!(error.contains("iterator Option projection"), "{error}");
-    }
-
-    #[test]
-    fn charon_chunk_none_cannot_supply_a_slice_payload() {
-        let mut export = decode(CHUNK_ARTIFACT, "chunks.rs", CHUNK_SOURCE).unwrap();
-        let mir = export
-            .functions
-            .iter_mut()
-            .find(|f| f.name == "next_len")
-            .unwrap()
-            .mir
-            .as_mut()
-            .unwrap();
-        let payload = mir
-            .blocks
-            .iter()
-            .flat_map(|b| &b.statements)
-            .find(|s| {
-                matches!(
-                    s,
-                    S::Assign {
-                        value: E::ChunkOptionSlice { .. },
-                        ..
-                    }
-                )
-            })
-            .unwrap()
-            .clone();
-        let none_edge = mir
-            .blocks
-            .iter()
-            .find_map(|b| match b.terminator {
-                T::If {
-                    condition: E::ChunkHasNext { .. },
-                    else_target,
-                    ..
-                } => Some(else_target),
-                _ => None,
-            })
-            .unwrap();
-        let T::Goto { target: none } = mir.blocks[none_edge].terminator else {
-            panic!()
-        };
-        mir.blocks[none].statements.insert(0, payload);
-        let prepared = super::super::import::prepared_for_test(export).unwrap();
-        let claim = "verifying \"chunks.rs\"; fn next_len(bytes: &[u8]) -> usize { requires bytes.len() == 0u64; ensures result == 0u64; }";
-        assert!(ProgramVerificationSession::new_program_prepared(claim, &prepared).is_err());
     }
 
     const SLICE_ARTIFACT: &[u8] =

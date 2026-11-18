@@ -1474,17 +1474,17 @@ pub(in crate::surface::proof) fn reverse_kernel_equality(
             },
             true,
         )),
-        Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, right), true) => {
+        Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) => {
             Some(Proposition::ConditionIs(
-                ConditionTerm::PointerValueEqual(right.clone(), left.clone()),
+                ConditionTerm::PointerEqual(right.clone(), left.clone()),
                 true,
             ))
         }
-        Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) => Some(
-            Proposition::ConditionIs(ConditionTerm::PointerEqual(right, left), true),
+        Proposition::ConditionIs(ConditionTerm::AddressEqual(left, right), true) => Some(
+            Proposition::ConditionIs(ConditionTerm::AddressEqual(right, left), true),
         ),
-        Proposition::ConditionIs(ConditionTerm::PointerOffsetEqual(left, right), true) => Some(
-            Proposition::ConditionIs(ConditionTerm::PointerOffsetEqual(right, left), true),
+        Proposition::ConditionIs(ConditionTerm::AddressOffsetEqual(left, right), true) => Some(
+            Proposition::ConditionIs(ConditionTerm::AddressOffsetEqual(right, left), true),
         ),
         _ => None,
     }
