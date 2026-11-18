@@ -948,6 +948,29 @@ impl PreparedThreadCreate<'_> {
     }
 }
 
+#[cfg(test)]
+fn test_entry_evidence(assumptions: &PureFactContext, proposition: &Proposition) -> bool {
+    use super::Resource;
+
+    // The unit-test driver has no Surface proof script. Apply the
+    // separation-conjunction law to its explicit loan footprint and use
+    // ordinary atomic checks for the leaves.
+    fn separates(assumptions: &PureFactContext, left: &Resource, right: &Resource) -> bool {
+        match right {
+            Resource::Star(parts) => {
+                separates(assumptions, left, &parts.0) && separates(assumptions, left, &parts.1)
+            }
+            _ => assumptions.proves_resource_separate(left, right),
+        }
+    }
+
+    assumptions.proves_atomic_without_search(proposition)
+        || matches!(
+            proposition,
+            Proposition::ResourceSeparate { left, right } if separates(assumptions, left, right)
+        )
+}
+
 /// One parent path. Clones share immutable roots, just like ordinary C state;
 /// a successful join consumes its entry in the successor path's registry.
 #[derive(Clone)]
@@ -1079,7 +1102,17 @@ impl ThreadContext {
                 environment,
                 budget,
             )?
-            .map(PreparedThreadCreate::success))
+            .and_then(|mut prepared| {
+                if prepared
+                    .take_obligations()
+                    .iter()
+                    .all(|obligation| test_entry_evidence(assumptions, obligation.proposition()))
+                {
+                    Ok(prepared.success())
+                } else {
+                    Err("worker create requires entry evidence".to_string())
+                }
+            }))
     }
 
     pub(super) fn join(

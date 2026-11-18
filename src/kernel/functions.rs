@@ -3368,10 +3368,9 @@ fn execute_verified_function_applications_with_suspension(
                 caller_state.memory(),
             )
         };
-        let write_requirements = if suspended.is_some() || !has_exact_write_ranges {
-            // Worker admission has its own effect rules. Folded or guarded
-            // projections can widen an effect to a span containing bytes
-            // the callee cannot write.
+        let write_requirements = if !has_exact_write_ranges {
+            // An unresolved projection can widen an effect to bytes the
+            // callee cannot write. Keep its conservative admission check.
             if let Some(diagnostic) = entry_state.loan_ledger().and_then(|ledger| {
                 transfer.memory_effects.iter().find_map(|range| {
                     ledger.memory_access_refusal(
@@ -3395,7 +3394,11 @@ fn execute_verified_function_applications_with_suspension(
                 &transfer.memory_effects,
                 call_site,
                 interface.contract_requires().len(),
-                "verified call write separation",
+                if suspended.is_some() {
+                    "suspended worker write separation"
+                } else {
+                    "verified call write separation"
+                },
             )
         };
         // A checked mutex-use call may execute runtime lock/unlock operations.
@@ -4586,11 +4589,6 @@ fn execute_verified_function_applications_with_suspension(
                     &output_resources,
                     interface,
                     &allocation_assumptions,
-                    if suspended.is_some() {
-                        post_state.loan_ledger()
-                    } else {
-                        None
-                    },
                     caller_state,
                     &post_state,
                 )
@@ -4808,6 +4806,7 @@ fn execute_verified_function_applications_with_suspension(
                     })
                 && worker_effects
                     .iter()
+                    .chain(&retired_allocations)
                     .all(|range| is_external_memory_pointer(range.base()))
                 && output_resources.facts().iter().all(|fact| match fact {
                     ResourceFact::Own(Resource::Memory(range), quantity) => {
@@ -4846,6 +4845,19 @@ fn execute_verified_function_applications_with_suspension(
                     deferred: deferred_exchange.clone(),
                 })
             };
+            // The checked partition has already separated projected writes
+            // from views issued to this worker. A whole allocation may
+            // exceed that projection, so retirement also protects the loans
+            // opened by the worker's entry transfer.
+            obligations.extend(write_requirements);
+            obligations.extend(verified_call_loan_requirements(
+                entry_state.loan_ledger(),
+                &retired_allocations,
+                call_site,
+                interface.contract_requires().len() + transfer.memory_effects.len(),
+                "suspended worker allocation retirement separation",
+            ));
+            worker_effects.extend(retired_allocations);
             completions.push((
                 super::threads::WorkerCompletion::checked(
                     plan,
@@ -5127,15 +5139,13 @@ fn execute_verified_function_applications_with_suspension(
         // The retirement ranges are the consumed allocation tokens at
         // entry. Return facts may decide continuity, but they cannot prove
         // that retiring one of those allocations was permitted.
-        if suspended.is_none() {
-            obligations.extend(verified_call_loan_requirements(
-                entry_state.loan_ledger(),
-                &retired_allocations,
-                call_site,
-                interface.contract_requires().len() + transfer.memory_effects.len(),
-                "verified call allocation retirement separation",
-            ));
-        }
+        obligations.extend(verified_call_loan_requirements(
+            entry_state.loan_ledger(),
+            &retired_allocations,
+            call_site,
+            interface.contract_requires().len() + transfer.memory_effects.len(),
+            "verified call allocation retirement separation",
+        ));
         paths.push(FunctionPath {
             outcome,
             facts,
@@ -9975,7 +9985,6 @@ fn apply_verified_heap_allocation_delta(
     output_resources: &ResourceContext,
     interface: &FunctionContractInterface,
     assumptions: &PureFactContext,
-    worker_ledger: Option<&LoanLedger>,
     mutex_state: &ExecutionState,
     output_state: &ExecutionState,
 ) -> Result<VerifiedAllocationDelta, VerifiedAllocationDeltaError> {
@@ -10180,19 +10189,6 @@ fn apply_verified_heap_allocation_delta(
             ));
         }
         let allocation_range = bytes.byte_range(base.clone());
-        // Suspended worker admission still checks before publishing its
-        // separately recoverable state. Ordinary calls carry an obligation.
-        if let Some(diagnostic) = worker_ledger.and_then(|ledger| {
-            ledger.memory_access_refusal(
-                &allocation_range,
-                &allocation_assumptions,
-                LoanRefusalOperation::MemoryAccess,
-            )
-        }) {
-            return Err(VerifiedAllocationDeltaError::Runtime(
-                RuntimeError::LoanRefusal(Box::new(diagnostic)),
-            ));
-        }
         if let Some(error) = super::mutexes::storage_retirement_refusal(
             mutex_state,
             &allocation_range,

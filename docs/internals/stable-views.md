@@ -373,7 +373,12 @@ summary as synchronous calls, but keeps the worker's output resources and
 postconditions in an opaque completion registry. Spawn requires termination
 evidence for the exact verified function. Failed creation preserves the
 parent; an empty or ambiguous summary refuses rather than removing its path.
-Successful creation exposes only the mutable-footprint havoc to the parent.
+Creation requires entry separation for each exact worker write range against
+existing loans. A whole-allocation retirement also covers loans opened by the
+worker transfer. Both conditions are checked at `pthread_create`, before
+either runtime outcome can be used. Successful creation exposes the write
+and retirement effects to the parent. An unresolved write projection keeps
+its conservative admission check.
 
 Join composes the explicit worker output delta into the current parent frame
 and closes just that worker's loans against the current ledger. It never
