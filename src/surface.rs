@@ -533,15 +533,28 @@ pub(crate) fn rust_iterator_method(
         }
         // A slice field reads as a slice parameter does: `iter.v` is its
         // data and `iter.v.len()` its length.
-        (K::Chunks, "v") => variable("v"),
-        (K::Chunks, "v.len()") => variable("v_len"),
-        (K::Chunks, "rem") => variable("rem"),
-        (K::Chunks, "rem.len()") => variable("rem_len"),
-        (K::Chunks, "chunk_size") => variable("chunk_size"),
-        (K::Chunks, "len()") => ProgramExpression::Divide(
-            Box::new(variable("v_len")),
-            Box::new(variable("chunk_size")),
-        ),
+        (K::Chunks, "v" | "v.len()" | "rem" | "rem.len()" | "chunk_size" | "len()") => {
+            let fields = iterator
+                .chunk_fields
+                .as_ref()
+                .ok_or("missing chunk iterator fields")?;
+            let field = match accessor {
+                "v" => &fields.remaining,
+                "v.len()" => &fields.remaining_length,
+                "rem" => &fields.remainder,
+                "rem.len()" => &fields.remainder_length,
+                "chunk_size" => &fields.size,
+                _ => {
+                    return Ok(ContractExpression::ProgramExpression(
+                        ProgramExpression::Divide(
+                            Box::new(ProgramExpression::Variable(fields.remaining_length.clone())),
+                            Box::new(ProgramExpression::Variable(fields.size.clone())),
+                        ),
+                    ));
+                }
+            };
+            ProgramExpression::Variable(field.clone())
+        }
         _ => {
             return Err(format!(
                 "`iter.{accessor}` is not an accessor of this loop's {} iterator{}",
@@ -578,25 +591,25 @@ pub(crate) fn rust_iterator_method(
 pub(crate) fn rust_iterator_spelling(
     iterators: &[Option<crate::languages::interface::RustLoopIterator>],
     current: Option<usize>,
-    name: &str,
+    name: &crate::kernel::BindingName,
 ) -> Option<String> {
-    iterators.iter().enumerate().find_map(|(index, iterator)| {
-        let iterator = iterator.as_ref()?;
+    let variable = ContractExpression::ProgramExpression(ProgramExpression::Variable(name.clone()));
+    let accessor_of = |iterator: &crate::languages::interface::RustLoopIterator| {
         rust_iterator_accessors(iterator.kind)
             .iter()
-            .find_map(|accessor| {
-                (rust_iterator_method(iterator, accessor).ok()?
-                    == ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                        (name.to_string()).into(),
-                    )))
-                .then(|| {
-                    if current == Some(index) {
-                        format!("iter.{accessor}")
-                    } else {
-                        format!("loop({index}).iter.{accessor}")
-                    }
-                })
+            .find(|accessor| {
+                rust_iterator_method(iterator, accessor).ok().as_ref() == Some(&variable)
             })
+    };
+    if let Some(index) = current
+        && let Some(Some(iterator)) = iterators.get(index)
+        && let Some(accessor) = accessor_of(iterator)
+    {
+        return Some(format!("iter.{accessor}"));
+    }
+    iterators.iter().enumerate().find_map(|(index, iterator)| {
+        let accessor = accessor_of(iterator.as_ref()?)?;
+        Some(format!("loop({index}).iter.{accessor}"))
     })
 }
 

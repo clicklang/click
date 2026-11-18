@@ -1264,6 +1264,28 @@ fn charon_chunks_check_boundaries_authority_and_false_claims() {
         );
     }
 }
+#[test]
+#[ignore = "nightly: expand and replay a chunk iterator proof"]
+fn charon_chunk_iterator_fields_expand_and_replay() {
+    let prepared = charon_chunk_project().prepared().unwrap();
+    let claim = "walk.contract";
+    let expanded = click::surface::expand_program_prepared_claim_source_by_label(
+        CHARON_CHUNK_SIDECAR,
+        &prepared,
+        claim,
+    )
+    .unwrap();
+    assert_ne!(expanded, CHARON_CHUNK_SIDECAR);
+    assert!(!expanded.contains("<chunk iterator "), "{expanded}");
+    assert!(!expanded.contains("__rust_mir"), "{expanded}");
+    click::surface::without_implicit_solve_for_claim(claim, || {
+        ProgramVerificationSession::new_program_prepared(&expanded, &prepared)
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
 #[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: 21 s, over the gate's per-test budget (2026-10-06)"]

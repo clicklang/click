@@ -83,6 +83,16 @@ enum LocalBindingKind {
     Temporary,
     LoopEscape,
     EnumerateCount,
+    ChunkIterator(ChunkIteratorField),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+enum ChunkIteratorField {
+    Remaining,
+    RemainingLength,
+    Remainder,
+    RemainderLength,
+    Size,
 }
 
 #[derive(Debug)]
@@ -158,8 +168,35 @@ impl LocalBindingId {
         }))
     }
 
-    pub(crate) fn is_enumerate_count(&self) -> bool {
-        self.0.kind == LocalBindingKind::EnumerateCount
+    pub(crate) fn chunk_iterator_fields(owner: LocalFunctionId, ordinal: u32) -> [Self; 5] {
+        use ChunkIteratorField::*;
+        [
+            (Remaining, ProgramType::UInt8Pointer),
+            (RemainingLength, ProgramType::UInt64),
+            (Remainder, ProgramType::UInt8Pointer),
+            (RemainderLength, ProgramType::UInt64),
+            (Size, ProgramType::UInt64),
+        ]
+        .map(|(field, ty)| {
+            Self(Arc::new(LocalDeclaration {
+                owner: owner.clone(),
+                parameter: false,
+                kind: LocalBindingKind::ChunkIterator(field),
+                ordinal,
+                scope_depth: 0,
+                spelling: None,
+                program_type: OnceLock::from(ty),
+                array_shape: OnceLock::new(),
+                struct_name: OnceLock::new(),
+            }))
+        })
+    }
+
+    pub(crate) fn is_iterator_field(&self) -> bool {
+        matches!(
+            self.0.kind,
+            LocalBindingKind::EnumerateCount | LocalBindingKind::ChunkIterator(_)
+        )
     }
 
     pub fn is_temporary(&self) -> bool {
@@ -258,6 +295,9 @@ impl Hash for LocalBindingId {
             LocalBindingKind::Temporary => (&self.0.owner, 2u8, self.0.ordinal).hash(state),
             LocalBindingKind::LoopEscape => (&self.0.owner, 3u8, self.0.ordinal).hash(state),
             LocalBindingKind::EnumerateCount => (&self.0.owner, 4u8, self.0.ordinal).hash(state),
+            LocalBindingKind::ChunkIterator(field) => {
+                (&self.0.owner, 9u8, self.0.ordinal, field).hash(state)
+            }
         }
     }
 }
@@ -292,8 +332,24 @@ impl std::fmt::Display for CanonicalLocalBinding<'_> {
         if id.0.kind == LocalBindingKind::LoopEscape {
             return f.write_str("<loop escape>");
         }
-        if id.is_enumerate_count() {
+        if id.0.kind == LocalBindingKind::EnumerateCount {
             return f.write_str("<enumeration count>");
+        }
+        if let LocalBindingKind::ChunkIterator(field) = id.0.kind {
+            let field = match field {
+                ChunkIteratorField::Remaining => "remaining pointer",
+                ChunkIteratorField::RemainingLength => "remaining length",
+                ChunkIteratorField::Remainder => "remainder pointer",
+                ChunkIteratorField::RemainderLength => "remainder length",
+                ChunkIteratorField::Size => "chunk size",
+            };
+            return write!(
+                f,
+                "<chunk iterator {field} of {:?}::{}.local({})>",
+                id.source(),
+                id.function(),
+                id.ordinal()
+            );
         }
         if let Some(source) = id.source() {
             write!(f, "{source:?}::")?;

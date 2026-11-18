@@ -932,7 +932,7 @@ fn lower_function(
         enumerate_fields: BTreeMap::new(),
         shared_array_options: BTreeMap::new(),
         shared_scalar_slices,
-        mir_chunk_iterators: BTreeSet::new(),
+        mir_chunk_iterators: BTreeMap::new(),
         chunk_options: BTreeSet::new(),
         local_arrays: BTreeSet::new(),
         owned_locals: BTreeSet::new(),
@@ -1021,7 +1021,7 @@ struct Context<'a> {
     enumerate_fields: BTreeMap<String, BindingName>,
     shared_array_options: BTreeMap<String, ProgramType>,
     shared_scalar_slices: BTreeMap<String, (String, ProgramType)>,
-    mir_chunk_iterators: BTreeSet<String>,
+    mir_chunk_iterators: BTreeMap<String, crate::languages::interface::ChunkIteratorFields>,
     chunk_options: BTreeSet<String>,
     local_arrays: BTreeSet<String>,
     owned_locals: BTreeSet<String>,
@@ -2306,16 +2306,11 @@ impl Context<'_> {
             return self.slice_parts(place);
         }
         if let E::ChunkRemainder { iterator } = e {
-            if !self.mir_chunk_iterators.contains(iterator) {
-                return Err("unknown Rust chunk iterator".into());
-            }
+            use crate::kernel::program_expression::variable;
+            let fields = self.chunk_iterator(iterator)?;
             return Ok((
-                crate::kernel::program_expression::variable(
-                    self.binding(&format!("{iterator}_rem")),
-                ),
-                crate::kernel::program_expression::variable(
-                    self.binding(&format!("{iterator}_rem_len")),
-                ),
+                variable(fields.remainder.clone()),
+                variable(fields.remainder_length.clone()),
             ));
         }
         if let E::ArrayToSlice { array, mutable } = e {
