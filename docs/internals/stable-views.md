@@ -231,8 +231,10 @@ addresses require separation from the ledger's live memory footprint,
 including same-value writes. A nested reader reborrows the local loan through
 its exact resource binding.
 
-Modeled pthread mutex operations and verified summaries carry separation for
-their representation writes. Modular construction checks the destination
+Modeled pthread mutex operations carry separation for their representation
+writes. Modular mutex protocol summaries use a conservative check for
+representation coordinates without a checked caller-side spelling. Modular
+construction checks the destination
 fields, or the complete result span for a construction return. Fresh
 aggregate result temporaries cannot have a prior loan. Initialization of
 automatic storage checks the active-loan index for the storage identity.

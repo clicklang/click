@@ -30,23 +30,15 @@ void outer(struct holder *holder, int32 *out, int32 *value) {
     owns out[0..1];
     views value[0..1];
     requires separate(memory(out[0..1]), memory(holder->mu));
-    requires separate(memory(((&holder->mu) as (uint8 *))[0..40]), memory(value[0..1]));
     ensures *out == *value;
-} by {
-    step();
-    solve();
 }
 int32 run(struct holder *holder, int32 *out, int32 *value) {
     owns holder->mu;
     owns out[0..1];
     views value[0..1];
     requires separate(memory(out[0..1]), memory(holder->mu));
-    requires separate(memory(((&holder->mu) as (uint8 *))[0..40]), memory(value[0..1]));
     requires aligned(&holder->mu, 8);
     ensures result == *value;
-} by {
-    step_until(function.exit);
-    solve();
 }
 ```
 

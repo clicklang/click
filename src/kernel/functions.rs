@@ -3368,7 +3368,7 @@ fn execute_verified_function_applications_with_suspension(
                 caller_state.memory(),
             )
         };
-        let mut write_requirements = if !has_exact_write_ranges {
+        let write_requirements = if !has_exact_write_ranges {
             // An unresolved projection can widen an effect to bytes the
             // callee cannot write. Keep its conservative admission check.
             if let Some(diagnostic) = entry_state.loan_ledger().and_then(|ledger| {
@@ -3445,21 +3445,37 @@ fn execute_verified_function_applications_with_suspension(
                 mutex_storage_effects.push(range);
             }
         }
-        let mutex_effect_ledger = transfer
-            .stable_view_plan
-            .as_ref()
-            .map(|plan| &plan.ledger)
-            .or_else(|| entry_state.loan_ledger());
-        let first_mutex_ordinal =
-            interface.contract_requires().len() + transfer.memory_effects.len();
-        write_requirements.extend(verified_call_loan_requirements(
-            mutex_effect_ledger,
-            &mutex_storage_effects,
-            call_site,
-            first_mutex_ordinal,
-            "verified call mutex storage write separation",
-        ));
-        let first_retirement_ordinal = first_mutex_ordinal + mutex_storage_effects.len();
+        // A protocol summary retains the storage coordinates from the
+        // selected authority. Until those coordinates have a checked
+        // caller-side spelling, keep the conservative guard for this effect.
+        if let Some(diagnostic) = mutex_storage_effects.iter().find_map(|range| {
+            transfer
+                .stable_view_plan
+                .as_ref()
+                .and_then(|plan| {
+                    plan.ledger.memory_access_refusal(
+                        range,
+                        &effective_assumptions,
+                        LoanRefusalOperation::MemoryAccess,
+                    )
+                })
+                .or_else(|| {
+                    entry_state.loan_ledger().and_then(|ledger| {
+                        ledger.memory_access_refusal(
+                            range,
+                            &effective_assumptions,
+                            LoanRefusalOperation::MemoryAccess,
+                        )
+                    })
+                })
+        }) {
+            paths.push(FunctionPath::new(
+                FunctionOutcome::RuntimeError(RuntimeError::LoanRefusal(Box::new(diagnostic))),
+                facts,
+                obligations,
+            ));
+            continue;
+        }
         let copy_initialization = if let Some(effect) = application.representation_copy
             && !transfer.memory_effects.is_empty()
         {
@@ -4843,7 +4859,7 @@ fn execute_verified_function_applications_with_suspension(
                 entry_state.loan_ledger(),
                 &retired_allocations,
                 call_site,
-                first_retirement_ordinal,
+                interface.contract_requires().len() + transfer.memory_effects.len(),
                 "suspended worker allocation retirement separation",
             ));
             worker_effects.extend(retired_allocations);
@@ -5132,7 +5148,7 @@ fn execute_verified_function_applications_with_suspension(
             entry_state.loan_ledger(),
             &retired_allocations,
             call_site,
-            first_retirement_ordinal,
+            interface.contract_requires().len() + transfer.memory_effects.len(),
             "verified call allocation retirement separation",
         ));
         paths.push(FunctionPath {
