@@ -124,8 +124,7 @@ impl ExecutionValue {
         let value = Self::retain_native(value);
         match value {
             Self::Native(ProgramValue::Pointer(pointer)) => {
-                KernelTerm::shared_pointer_value(SharedPointerValue::import_produced(&pointer))
-                    .into()
+                KernelTerm::shared_pointer_value(SharedPointer::import_produced(&pointer)).into()
             }
             value => value,
         }
@@ -199,7 +198,7 @@ impl ExecutionValue {
             Self::Shared(root) => root.clone(),
             Self::Native(ProgramValue::Pointer(pointer)) => {
                 KernelTerm::retained_pointer_read(pointer).unwrap_or_else(|| {
-                    KernelTerm::shared_pointer_value(SharedPointerValue::import_produced(pointer))
+                    KernelTerm::shared_pointer_value(SharedPointer::import_produced(pointer))
                 })
             }
             Self::Native(value) => {
@@ -902,7 +901,7 @@ mod tests {
                 "local_source".into(),
                 vec![],
             ),
-            SharedPointerValue::import(&pointer),
+            SharedPointer::import(&pointer),
         );
         let stored = StoredExecutionValue::from(ExecutionValue::Shared(root.clone()));
         let native = StoredExecutionValue::from(ProgramValue::Pointer(pointer.clone()));
@@ -947,7 +946,7 @@ mod tests {
                     .unwrap()
                     .pointer_payload()
                     .unwrap()
-                    .same_source_payload(&SharedPointerValue::import(&expected))
+                    .same_source_payload(&SharedPointer::import(&expected))
             );
             assert_eq!(value.pointer().unwrap().pointee_constant(), constant);
             assert_eq!(value.pointer().unwrap().pointee_volatile(), volatile);
@@ -973,7 +972,7 @@ mod tests {
         )
         .with_pointee_constant(true);
         let native = ProgramValue::Pointer(pointer.clone());
-        let root = KernelTerm::shared_pointer_value(SharedPointerValue::import(&pointer));
+        let root = KernelTerm::shared_pointer_value(SharedPointer::import(&pointer));
         let retained = StoredMemoryValue::from(ExecutionValue::Shared(root.clone()));
         let native_cell = StoredMemoryValue::from(native.clone());
         assert_eq!(retained, native_cell);
@@ -1017,7 +1016,7 @@ mod tests {
                 "stored_source".into(),
                 vec![],
             ),
-            SharedPointerValue::import(&pointer),
+            SharedPointer::import(&pointer),
         );
         let memory = SymbolicMemory::new()
             .with_block(address.base.clone(), C_POINTER_BYTE_WIDTH)

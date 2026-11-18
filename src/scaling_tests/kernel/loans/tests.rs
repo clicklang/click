@@ -1631,3 +1631,67 @@ fn escrow_restoration_ignores_unrelated_frame_owners() {
         "escrow restoration scanned unrelated state: {samples:?}"
     );
 }
+
+#[test]
+fn composite_lending_checks_only_the_selected_frontier() {
+    for conflicting in [false, true] {
+        let mut samples = Vec::new();
+        for count in [4_u32, 16, 64] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let assumptions = PureFactContext::new();
+            let (ledger, caller, callee) = participants();
+            let head = composite("cell", true);
+            let owned = if conflicting {
+                memory(0, 1, true)
+            } else {
+                memory(4, 8, true)
+            };
+            let mut resources =
+                ResourceContext::new().unchecked_with_facts([head.clone(), owned.clone()]);
+            for index in 0..count {
+                resources =
+                    resources.unchecked_with_fact(memory(16 + index * 8, 20 + index * 8, true));
+            }
+            let (support, _) = resources.unique_owned_occurrence_for_fact(&head).unwrap();
+            let backing = CompositeLoanBacking::from_checked_expansion(
+                support,
+                head,
+                vec![memory(0, 4, true)],
+            )
+            .unwrap();
+            let backings = BTreeMap::from([(support, backing)]);
+            let requirements = [
+                CheckedResourceFact {
+                    role: ResourceTransferRole::Consume,
+                    ..checked(owned.clone())
+                },
+                checked(composite("cell", false)),
+            ];
+            let (plan, work) = crate::instrumentation::measure_deterministic_work(|| {
+                plan_stable_view_transfer_with_bindings_and_composites(
+                    &resources,
+                    &requirements,
+                    &assumptions,
+                    &ledger,
+                    caller,
+                    callee,
+                    &LoanViewBindings::default(),
+                    &backings,
+                )
+            });
+            if conflicting {
+                assert!(matches!(
+                    plan,
+                    Err(StableViewPlanError::ConflictingRequirement(_))
+                ));
+            } else {
+                assert_eq!(plan.unwrap().stable_views().len(), 1);
+            }
+            samples.push(work);
+        }
+        assert!(
+            samples.iter().all(|work| *work <= samples[0] + 32),
+            "conflicting={conflicting}: {samples:?}"
+        );
+    }
+}

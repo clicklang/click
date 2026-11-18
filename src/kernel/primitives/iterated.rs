@@ -10,7 +10,7 @@
 //! The fact denotes the separating conjunction, over every index `k` in
 //! `lo..hi` that is not a hole, of `base[s * k + a..s * k + b]` when the guard
 //! holds at `k` and of nothing when it does not. A hole is an index whose
-//! element the proof has taken out (`take`) or whose guard a C store has just
+//! element an indexed `unfold` exposed or whose guard a C store has just
 //! changed from false; the fact makes no claim about a hole. The checked
 //! operations that change holes, and the store rule that keeps the guard
 //! honest while the fact is held, are in `crate::kernel::iterated`.
@@ -241,6 +241,14 @@ impl IteratedMemory {
             self.upper.native_compat().clone(),
             self.guard.cell_width,
         )
+    }
+
+    /// The immutable clause coordinates, independent of its open slots.
+    pub(crate) fn without_holes(&self) -> Self {
+        Self {
+            holes: Arc::from([]),
+            ..self.clone()
+        }
     }
 
     pub(crate) fn with_hole(&self, index: MachineTerm) -> Self {

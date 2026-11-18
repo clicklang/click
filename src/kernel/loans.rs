@@ -3761,33 +3761,26 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
                     assumptions,
                 )?
             } else if let Some(backing) = composite_backings.get(&support) {
-                let remaining = residual
-                    .clone()
-                    .without_selected_fact_with_origins(
-                        support,
-                        &selected,
-                        assumptions,
-                        &mut split_origins,
-                    )
-                    .ok_or(StableViewPlanError::MissingResource(selected.clone()))?;
-                // The exclusive requirements were reserved out of `residual`
-                // before any view was planned, so the residual alone cannot
-                // see a callee contract that asks to own bytes its own viewed
-                // composite covers.  Put the reserved owners back beside the
-                // frontier: this is the caller's partition as the contract
-                // actually demands it, and a self-overlapping contract is
-                // refused here rather than handing the callee an owner and a
-                // view of the same authority (law 1, law 8).
-                let protected = remaining
-                    .clone()
-                    .unchecked_with_facts(
-                        transferred_ownership
-                            .iter()
-                            .map(|requirement| requirement.fact.clone()),
-                    )
-                    .unchecked_with_facts(backing.pieces.clone());
-                if protected.validity_error(assumptions).is_some() {
-                    return Err(StableViewPlanError::ConflictingRequirement(selected));
+                // The entry partition still contains the owners reserved for
+                // the call. Check only the selected frontier against it, so
+                // an owned requirement cannot overlap a composite view even
+                // after reservation removed it from the residual. The
+                // frontier's internal partition was checked at expansion.
+                // A materialized adapter already consumed these pieces
+                // from this partition before inserting the head. Its
+                // restoration recipe carries that separation through the
+                // lend. The ordinary and folded-owner adapter paths still
+                // check the boundary for their described backing.
+                if backing.restored.is_empty() {
+                    match caller_resources
+                        .checked_frontier_boundary_conflict(&backing.pieces, assumptions)
+                    {
+                        Ok(None) => {}
+                        Ok(Some(_)) => {
+                            return Err(StableViewPlanError::ConflictingRequirement(selected));
+                        }
+                        Err(error) => return Err(composition_conflict(error, &selected)),
+                    }
                 }
                 planned_ledger.lend_composite(
                     caller,

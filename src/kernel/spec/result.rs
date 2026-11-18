@@ -253,6 +253,22 @@ impl SpecValue {
         }
         let left = self.native();
         let right = right.native();
+        if let (ProgramValue::Pointer(a), ProgramValue::Pointer(b)) =
+            (left.numeric_value(), right.numeric_value())
+            && a == b
+            && !a.is_null()
+            && let Some(held) = match op {
+                ComparisonOperator::Equal => Some(true),
+                ComparisonOperator::NotEqual => Some(false),
+                _ => None,
+            }
+        {
+            // Lowering is structural: `p == p` keeps its comparison.
+            return Ok(Some(Proposition::ConditionIs(
+                ConditionTerm::logical_pointer_value_equal(a.clone(), b.clone()),
+                held,
+            )));
+        }
         Ok(bool_comparison_proposition(&left, op, &right)
             .transpose()?
             .or_else(|| program_value_comparison_proposition(&left, op, &right)))

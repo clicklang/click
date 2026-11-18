@@ -2187,7 +2187,7 @@ impl<'a> Proof<'a> {
         unfold_surface_predicates(predicates, elaborated.as_ref().unwrap_or(surface), names)
     }
 
-    /// `take`, `give`, `gather`, or `scatter`: one checked kernel step on
+    /// Apply one checked kernel step on
     /// iterated guarded ownership. The kernel performs the step from the
     /// running state; this reads only its operands.
     pub(super) fn apply_execution_iterated_step(
@@ -2209,89 +2209,33 @@ impl<'a> Proof<'a> {
             )));
         }
         let state = &*execution.core.state;
-        let parameters = context.parsed_function.parameters();
-        let element =
-            |element: &IteratedElement| -> Result<crate::kernel::MemoryRange, ClickError> {
-                let captured;
-                let segment = match element {
-                    IteratedElement::Current(segment) => segment,
-                    IteratedElement::SavedBase { base, start, end } => {
-                        let evaluate = |expression: &ContractExpression| {
-                            let expression =
-                                self.substitute_fixed_state_locals_in_expression(expression)?;
-                            let names = contract_expression_referenced_names(&expression);
-                            let (values, array_refs) = contract_environment_for_names(
-                                context.parameter_binding(),
-                                &names,
-                                state,
-                            )?;
-                            evaluate_fixed_state_expression_through_kernel(
-                                &expression,
-                                self.facts().assumptions(),
-                                ContractEnvironment::new(&values, &array_refs)
-                                    .with_parameters(context.parameter_binding()),
-                                FixedStateFrame::new(
-                                    context.old_reference_state(&execution.core.frontier, state),
-                                    state,
-                                    None,
-                                    &execution.presentation.recorded_states,
-                                ),
-                                context.spec_definitions,
-                                &BTreeSet::new(),
-                            )
-                            .map(ProgramExpression::Value)
-                            .map_err(|message| {
-                                self.step_error(format!("`{name}` operand: {message}"))
-                            })
-                        };
-                        let base = evaluate(base)?;
-                        let start = evaluate(start)?;
-                        let end = evaluate(end)?;
-                        captured = ContractSegment {
-                            state: ContractSegmentState::Current,
-                            surface: ContractSegmentSurface::Range {
-                                base: ContractExpression::ProgramExpression(base.clone()),
-                                start: ContractExpression::ProgramExpression(start.clone()),
-                                end: ContractExpression::ProgramExpression(end.clone()),
-                            },
-                            base,
-                            start,
-                            end,
-                            uninitialized: false,
-                        };
-                        &captured
-                    }
-                };
-                let resource = ResourceClause::OwnMemory(segment.clone());
-                let lowered = match element {
-                    IteratedElement::Current(_) => {
-                        lower_resource_clause_at_current_locals_with_assumptions(
-                            &resource,
-                            context.parameter_binding(),
-                            state,
-                            None,
-                            self.facts().assumptions(),
-                        )
-                    }
-                    // All three operands are captured values: there are no
-                    // C locals or parameters left to populate or resolve.
-                    IteratedElement::SavedBase { .. } => lower_resource_clause_at_state(
-                        &resource,
-                        ParameterBinding::new(&[], &[]),
-                        state,
-                    ),
-                }?;
-                lowered
-                    .memory_own_range()
-                    .cloned()
-                    .ok_or_else(|| self.step_error(format!("`{name}` expects a memory range")))
-            };
+        let evaluate = |expression: &ContractExpression| {
+            let expression = self.substitute_fixed_state_locals_in_expression(expression)?;
+            let names = contract_expression_referenced_names(&expression);
+            let (values, array_refs) =
+                contract_environment_for_names(context.parameter_binding(), &names, state)?;
+            evaluate_fixed_state_expression_through_kernel(
+                &expression,
+                self.facts().assumptions(),
+                ContractEnvironment::new(&values, &array_refs)
+                    .with_parameters(context.parameter_binding()),
+                FixedStateFrame::new(
+                    context.old_reference_state(&execution.core.frontier, state),
+                    state,
+                    None,
+                    &execution.presentation.recorded_states,
+                ),
+                context.spec_definitions,
+                &BTreeSet::new(),
+            )
+            .map_err(|message| self.step_error(format!("`{name}` operand: {message}")))
+        };
         let template = |resource: &ResourceClause| {
             iterated_template_for_resource(
                 context.resource_environment,
                 resource,
                 name,
-                ParameterBinding::new(parameters, context.arguments),
+                context.parameter_binding(),
                 state,
                 context.claim_label,
                 context.tactic_index,
@@ -2299,12 +2243,36 @@ impl<'a> Proof<'a> {
             )
         };
         let step = match tactic {
-            IteratedTactic::Take(segment) => crate::kernel::IteratedStep::Take {
-                element: element(segment)?,
-            },
-            IteratedTactic::Give(segment) => crate::kernel::IteratedStep::Give {
-                element: element(segment)?,
-            },
+            IteratedTactic::UnfoldSlot(slot) | IteratedTactic::FoldSlot(slot) => {
+                let selected = match &slot.point {
+                    Some(point) => selected_program_state(
+                        point,
+                        context.old_reference_state(&execution.core.frontier, state),
+                        &execution.presentation.recorded_states,
+                    )
+                    .map_err(|message| self.step_error(message))?,
+                    None => state,
+                };
+                let template = iterated_template_for_resource(
+                    context.resource_environment,
+                    &slot.resource,
+                    name,
+                    context.parameter_binding(),
+                    selected,
+                    context.claim_label,
+                    context.tactic_index,
+                    self.facts().assumptions(),
+                )?;
+                let ProgramValue::Int32(index) = evaluate(&slot.index)? else {
+                    return Err(self.step_error(format!("`{name}` slot index must be int32")));
+                };
+                match tactic {
+                    IteratedTactic::UnfoldSlot(_) => {
+                        crate::kernel::IteratedStep::UnfoldSlot { template, index }
+                    }
+                    _ => crate::kernel::IteratedStep::FoldSlot { template, index },
+                }
+            }
             IteratedTactic::Gather(resource) => crate::kernel::IteratedStep::Gather {
                 template: template(resource)?,
             },

@@ -4316,6 +4316,17 @@ fn rust_split_at_metadata_and_reads_verify() {
     fs::write(p.root.join("borrow.click"), &sidecar).unwrap();
     let prepared = p.prepared().unwrap();
     ProgramVerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
+    let claim = "right_first.ensures_0";
+    let expanded =
+        click::surface::expand_program_prepared_claim_source_by_label(&sidecar, &prepared, claim)
+            .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(!expanded.contains("__rust_checked_"), "{expanded}");
+    click::surface::without_implicit_solve_for_claim(claim, || {
+        ProgramVerificationSession::new_program_prepared(&expanded, &prepared)
+            .map(|_| ())
+            .map_err(|error| error.report())
+    })
+    .unwrap();
     assert!(prepared.export().functions.iter().flat_map(|f| f.mir.as_ref().unwrap().blocks.iter()).flat_map(|b| &b.statements).any(|s|
         matches!(s, click::languages::rust::schema::MirStatement::SliceSplit { left, right, .. } if left != right)));
     for incorrect in [

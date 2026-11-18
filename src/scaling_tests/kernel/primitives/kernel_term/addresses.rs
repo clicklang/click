@@ -149,13 +149,13 @@ fn complete_pointer_conditions_keep_shared_domains_through_rewrites_and_observat
                 .unwrap();
         }
         let values = [999802, 999803].map(|variable| {
-            let source = SharedPointerValue::import(&Pointer::new(
+            let source = SharedPointer::import(&Pointer::new(
                 Address::symbolic(Variable(variable)),
                 ProgramType::Int32Pointer,
             ));
             let mut value = source.node().clone();
             value.address = SharedAddress::new(value.address.node().base.clone(), offset.clone());
-            SharedPointerValue::new(value)
+            SharedPointer::new(value)
         });
         let root = KernelTerm::pointer_value_equal_raw(values.clone());
         let one = KernelTermImport::default()

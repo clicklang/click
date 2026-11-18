@@ -3487,9 +3487,14 @@ fn allocation_result_names_survive_reassignment_and_follow_state_scope() {
     let lowered =
         relower_written_proposition_with_states(&surface, &current, &current, &retained_states)
             .unwrap();
+    // Lowering is structural: the two spellings of one allocation keep
+    // their comparison, which checking decides.
     assert_eq!(
         lowered,
-        Proposition::ConditionIs(ConditionTerm::Constant(true), true)
+        Proposition::ConditionIs(
+            ConditionTerm::PointerEqual(Box::new(first.clone()), Box::new(first.clone())),
+            true
+        )
     );
     retained_states.insert(point.clone(), state(&second));
     assert!(retained_states.allocation_result(&first).is_none());
@@ -4198,7 +4203,10 @@ fn volatile_read_event_results_raise_and_lower_exactly() {
                 true,
             ),
             ProgramValue::Pointer(pointer) => Proposition::ConditionIs(
-                ConditionTerm::pointer_equal(pointer.address().clone(), pointer.address().clone()),
+                ConditionTerm::PointerEqual(
+                    Box::new(pointer.address().clone()),
+                    Box::new(pointer.address().clone()),
+                ),
                 true,
             ),
             _ => unreachable!(),
@@ -4652,8 +4660,7 @@ fn common_match_surface_preserves_typed_binders_and_relowers_nested_results() {
 #[test]
 fn common_pointer_calls_round_trip_nested_source_calls() {
     use crate::kernel::{
-        AddressBase, KernelTerm, KernelTermImport, Pointer, PureFunctionArgument,
-        SharedPointerValue,
+        AddressBase, KernelTerm, KernelTermImport, Pointer, PureFunctionArgument, SharedPointer,
     };
     let _session = crate::kernel::VerificationSession::enter();
     let declarations = "function select(p: int32*) -> int32* { p }";
@@ -4708,7 +4715,7 @@ fn common_pointer_calls_round_trip_nested_source_calls() {
         // Reconstruct the same nested common roots that the producer test
         // checks, keeping inner calls as children rather than exporting them.
         fn common(pointer: &Pointer) -> KernelTerm {
-            let value = SharedPointerValue::import(pointer);
+            let value = SharedPointer::import(pointer);
             let AddressBase::PureFunctionApplication(application) = &pointer.base else {
                 return KernelTerm::shared_pointer_value(value);
             };
@@ -7806,7 +7813,7 @@ fn wrapping_product_in_conditionals_round_trip_after_rewrite() {
 }
 
 #[test]
-fn a_non_null_pointer_equality_spells_each_address_by_its_parameter() {
+fn a_reflexive_pointer_equality_raises_as_contract_equality_that_lowers_back() {
     use crate::kernel::Pointer;
     let _session = crate::kernel::VerificationSession::enter();
     let node = Pointer::new(
@@ -7822,19 +7829,29 @@ fn a_non_null_pointer_equality_spells_each_address_by_its_parameter() {
         node.clone(),
     ))];
     let binding = ParameterBinding::new(&parameters, &arguments);
-    let state = ExecutionState::new();
-    let equality = Proposition::ConditionIs(
-        ConditionTerm::PointerEqual(
-            Box::new(node.address().clone()),
-            Box::new(node.address().clone()),
-        ),
-        true,
-    );
-    let surface = synthesize_surface_proposition(&equality, binding, &state).unwrap();
-    assert_eq!(
-        crate::surface::printing::source_click_proposition(&surface),
-        "address(node) == address(node)"
-    );
+    let state = ExecutionState::new().with_local("node", ProgramValue::Pointer(node.clone()));
+    // A fold of `fact p == identity` with both sides `node` owes this
+    // pointer equality. It raises as contract `==`, not as the weaker
+    // address-word equality, and lowering keeps its node.
+    for (held, expected) in [(true, "node == node"), (false, "node != node")] {
+        let equality = Proposition::ConditionIs(
+            ConditionTerm::PointerEqual(
+                Box::new(node.address().clone()),
+                Box::new(node.address().clone()),
+            ),
+            held,
+        );
+        let surface = synthesize_surface_proposition(&equality, binding, &state).unwrap();
+        assert_eq!(
+            crate::surface::printing::source_click_proposition(&surface),
+            expected
+        );
+        assert_eq!(
+            relower_written_proposition(&surface, &state).unwrap(),
+            equality,
+            "{expected}"
+        );
+    }
 }
 
 #[test]
@@ -7918,4 +7935,36 @@ fn call_capture_names_the_selected_result_at_its_declared_type() {
 
     points.record_call_result(0, Some(ProgramValue::UInt32(term.clone())));
     assert_ne!(raise(&points, &term, &state), Some(expected));
+}
+
+#[test]
+fn widening_casts_in_conditionals_round_trip_after_rewrite() {
+    use MachineIntegerType as T;
+    for (destination, spelling) in [(T::Int64, "int64"), (T::UInt64, "uint64")] {
+        for source in [T::Int32, T::UInt32] {
+            let mut fixture = ConditionalRoundTrip::new(destination, spelling);
+            fixture.state = fixture.state.with_local(
+                "w",
+                source.value_from_term(MachineTerm::Variable(Variable(999712))),
+            );
+            let equality = fixture.lower(&format!("x == (w as {spelling})"));
+            for reverse in [false, true] {
+                for (guard, arm) in [
+                    ("flag", "x"),
+                    ("not flag", "x"),
+                    ("x < y", "z"),
+                    ("x == y", "z"),
+                    ("y <= x", "z"),
+                    ("y != x", "z"),
+                ] {
+                    fixture.check(
+                        &fixture.goal(guard, reverse, arm),
+                        &equality,
+                        guard,
+                        reverse,
+                    );
+                }
+            }
+        }
+    }
 }

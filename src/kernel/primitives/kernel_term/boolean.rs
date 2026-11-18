@@ -283,7 +283,7 @@ impl<'a> BooleanOperandView<'a> {
         Some((memory.clone(), SharedAddress::import(address)))
     }
 
-    pub(crate) fn pointer_values(self) -> Option<[SharedPointerValue; 2]> {
+    pub(crate) fn pointer_values(self) -> Option<[SharedPointer; 2]> {
         if let Self::Shared(root) = self
             && let KernelTermNode::PointerValueEqual(pair) = root.node()
         {
@@ -292,7 +292,7 @@ impl<'a> BooleanOperandView<'a> {
         let ConditionTerm::PointerValueEqual(a, b) = self.native_leaf()? else {
             return None;
         };
-        Some([SharedPointerValue::import(a), SharedPointerValue::import(b)])
+        Some([SharedPointer::import(a), SharedPointer::import(b)])
     }
 
     pub(crate) fn pointer_addresses(self) -> Option<[SharedAddress; 2]> {
@@ -600,8 +600,8 @@ impl KernelTermImport {
             },
             Old::PointerValueEqual(a, b) => {
                 return KernelTerm::pointer_value_equal_raw([
-                    SharedPointerValue::import(a),
-                    SharedPointerValue::import(b),
+                    SharedPointer::import(a),
+                    SharedPointer::import(b),
                 ]);
             }
             Old::PointerEqual(a, b) => Node::PointerEqual {

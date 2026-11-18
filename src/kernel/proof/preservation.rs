@@ -212,7 +212,7 @@ fn preserve_field(
             crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(a)),
             crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(b)),
         ) if a.program_type() == b.program_type() => {
-            ConditionTerm::pointer_value_equal(a.clone(), b.clone())
+            ConditionTerm::logical_pointer_value_equal(a.clone(), b.clone())
         }
         (
             crate::kernel::ResourceFieldValue::Program(ProgramValue::Int32(a)),
@@ -279,7 +279,7 @@ fn observation_equality(
     }
     let condition = match (kind, after, before) {
         (ReadType::Pointer(_), ProgramValue::Pointer(a), ProgramValue::Pointer(b)) => {
-            ConditionTerm::pointer_value_equal(a, b)
+            ConditionTerm::logical_pointer_value_equal(a, b)
         }
         (ReadType::PointerAddress, ProgramValue::Pointer(a), ProgramValue::Pointer(b)) => {
             ConditionTerm::pointer_equal(a.address().clone(), b.address().clone())
