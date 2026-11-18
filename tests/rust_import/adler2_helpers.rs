@@ -1228,18 +1228,11 @@ fn recheck_compute_tools(contract: &str, bytes: usize) {
     assert_cli(&p, &["profile"]);
     let source = fs::read_to_string(p.root.join("borrow.click")).unwrap();
     let site = if bytes == 4 {
-        "have ((__rust_mir_115_remaining as u32) as i32) == 3".to_owned()
-    } else if bytes == 1 {
-        "step_until(assignment(__rust_mir_144, 0))".to_owned()
+        "step_until(loop(4).statement(0));"
     } else {
-        // The last tail byte's stored-iterator observation: the slice
-        // iterator has no cursor local in the library model, so the site is
-        // the remaining count after the final `next()`.
-        format!(
-            "have __rust_mir_138_remaining == 0 by solve() using {{ old(bytes.len()) == {bytes}u64; }};"
-        )
+        "step_until(loop(5).statement(0));"
     };
-    let offset = source.find(&site).unwrap();
+    let offset = source.rfind(site).unwrap();
     let line = source[..offset].bytes().filter(|&b| b == b'\n').count() + 1;
     let cursor = format!("{}:{line}:2", p.root.join("borrow.click").display());
     let audit = Command::new(env!("CARGO_BIN_EXE_click"))

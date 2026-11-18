@@ -6,7 +6,9 @@
 > read the real `ChunksExact` fields and use source statement selectors for
 > the arithmetic. The small-batch and general proofs below still refer to
 > the removed iterator model and generated operand locals. The public and
-> client proofs depend on the general computation.
+> client proofs depend on the general computation. Whole-claim expansion
+> of the one- and four-byte computations currently stops at an internal
+> value without a proof spelling.
 
 The sections below describe the original proof structure.
 
