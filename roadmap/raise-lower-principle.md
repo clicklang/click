@@ -1532,12 +1532,14 @@ does not close either boundary.
 
 ### 10q3d Evaluated condition producer handoffs (in progress)
 
-Deliver the independent producer families in two sequential PRs:
+Deliver the producer families sequentially; the machine family starts with an
+independent scaling prerequisite:
 
 | Subslice | Boundary | Status |
 | --- | --- | --- |
-| 10q3d1 | Boolean, Integer and shared float comparison/classification outputs | PR #3281; clean candidate validated for these independent handoffs. |
-| 10q3d2 | Typed machine comparison outputs in `SpecValue::comparison_in` | Required next PR; preserve actual shared operands, exact canonical output, partial-borrow scaling and fold-alias refusal behavior. |
+| 10q3d1 | Boolean, Integer and shared float comparison/classification outputs | PR #3281 passed all CI checks and is queued to merge. |
+| 10q3d2a | Partial-borrow scaling contract | Separate flat selected-call work from bounded footprint publication; local candidate validated before upstream integration. |
+| 10q3d2b | Typed machine comparison outputs in `SpecValue::comparison_in` | Required after the prerequisite; preserve actual shared operands, exact canonical output and fold-alias refusal behavior. |
 
 10q3d1 forwards logical Boolean equality roots directly. Literal comparisons
 retain the logical operand and apply the existing truth polarity and outer
@@ -1558,6 +1560,18 @@ passed all 1,124 fixtures. The equivalent narrowed producer path passed all
 5,623 regular proof fixtures, with 121 fact-stability refusals and zero changed
 terms or paths. Full nightly was excluded. No search budget or proof fixture
 is changed.
+
+10q3d2a measures the selected call after subtracting only its recorded ownership
+footprint publications, using the existing flat-work band. A separate kernel
+scaler bounds preparation visits and builds by the pre-update tree height,
+checks that held facts are not enumerated, and checks split, borrow, return and
+restoration contents. It covers 16, 64, 256 and 1,024 owners at different selected
+positions. This accepts legitimate tree shapes without permitting ambient
+scans. Deliberate cached-subtree traversal and sorted-fact enumeration each
+failed the new contract. On the 10q3d1 candidate baseline, all 1,944 regular
+scaling checks, 68 affected checks and quality passed. Only test counters and
+test code change; production algorithms and machine output remain unchanged.
+Upstream integration and its affected checks precede publication.
 
 10q3d2 remains part of this family. Its first activation passed 1,942 of
 1,943 scaling checks after the other eight regressions were repaired, but
