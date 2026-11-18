@@ -480,6 +480,11 @@ fn collect_applied_theorems(tactics: &[ProofTactic], names: &mut BTreeSet<String
                     }
                 }
             },
+            ProofTactic::All(all) => {
+                for arm in &all.arms {
+                    collect_applied_theorems(&arm.tactics, names);
+                }
+            }
             ProofTactic::Both(both) => {
                 collect_applied_theorems(&both.left_tactics, names);
                 collect_applied_theorems(&both.right_tactics, names);
@@ -7457,6 +7462,11 @@ pub(in crate::surface) fn validate_loop_initialization_tactics(
 ) -> Result<(), ClickError> {
     for tactic in tactics {
         match tactic {
+            ProofTactic::All(all) => {
+                for arm in &all.arms {
+                    validate_loop_initialization_tactics(&arm.tactics)?;
+                }
+            }
             ProofTactic::Both(both) => {
                 validate_loop_initialization_tactics(&both.left_tactics)?;
                 validate_loop_initialization_tactics(&both.right_tactics)?;

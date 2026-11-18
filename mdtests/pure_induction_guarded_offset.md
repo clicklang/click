@@ -19,7 +19,7 @@ theorem guarded_count(base: int32, n: int32) {
     ensures guarded_countdown(n) == 0 and base + n == base + n by {
         let ih = induct(n);
         if n <= 0 {
-            both {
+            all positional {
                 left => { unfold(guarded_countdown(n)); normalize() using { n <= 0; }; }
                 right => { normalize(); }
             }
@@ -34,7 +34,7 @@ theorem guarded_count(base: int32, n: int32) {
             have to_integer(n - 1) < to_integer(n);
             have to_integer(n - 1) <= 1000000;
             apply(ih(n - 1));
-            both {
+            all positional {
                 left => {
                     unfold(guarded_countdown(n));
                     rewrite(guarded_countdown(n - 1), 0);

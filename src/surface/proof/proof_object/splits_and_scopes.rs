@@ -69,7 +69,7 @@ impl<'a> Proof<'a> {
         match surface {
             ClickProposition::Implies(surface_antecedent, _) => {
                 let lowered = self
-                    .lower_surface_proposition(surface_antecedent, "`both` guard antecedent")
+                    .lower_surface_proposition(surface_antecedent, "`all` guard antecedent")
                     .ok()?;
                 if !crate::kernel::proof::propositions_are_alpha_equal(&lowered, antecedent) {
                     return None;
@@ -77,7 +77,7 @@ impl<'a> Proof<'a> {
             }
             _ => {
                 let lowered = self
-                    .lower_surface_proposition(surface, "`both` guarded body")
+                    .lower_surface_proposition(surface, "`all` guarded body")
                     .ok()?;
                 if !crate::kernel::proof::propositions_are_alpha_equal(&lowered, cursor) {
                     return None;
@@ -87,7 +87,7 @@ impl<'a> Proof<'a> {
 
         let candidate = recorded.surface.as_ref()?.clone();
         let lowered = self
-            .lower_surface_proposition(&candidate, "`both` recorded guarded body")
+            .lower_surface_proposition(&candidate, "`all` recorded guarded body")
             .ok()?;
         if !crate::kernel::proof::propositions_are_alpha_equal(&lowered, cursor) {
             return None;
@@ -143,7 +143,7 @@ impl<'a> Proof<'a> {
         };
         let Some(Proposition::And(left, right)) = self.goal() else {
             return Err(
-                self.step_error("`both` presentation correspondence requires a kernel conjunction")
+                self.step_error("`all` presentation correspondence requires a kernel conjunction")
             );
         };
         if matches!(surface, ClickProposition::Defined { .. }) {
@@ -163,7 +163,7 @@ impl<'a> Proof<'a> {
             let mut lowered_children = [None, None];
             for (index, candidate) in [&surface_left, &surface_right].into_iter().enumerate() {
                 let Ok(lowered) =
-                    self.lower_surface_proposition(candidate, "`both` presentation child")
+                    self.lower_surface_proposition(candidate, "`all` presentation child")
                 else {
                     continue;
                 };
@@ -195,7 +195,7 @@ impl<'a> Proof<'a> {
                 )
             {
                 return Err(self.step_error(
-                    "`both` cannot preserve its written conjunction: child order does not match",
+                    "`all` cannot preserve its written conjunction: child order does not match",
                 ));
             }
             if let Some(records) = self
@@ -296,14 +296,14 @@ impl<'a> Proof<'a> {
                 .collect::<Vec<_>>()
                 .join("; ");
             return Err(self.step_error(format!(
-                "`both` cannot split this goal: its source form, `{rendered}`, does not lower back to it; {mismatch}"
+                "`all` cannot split this goal: its source form, `{rendered}`, does not lower back to it; {mismatch}"
             )));
         }
 
         // A non-conjunct written body can be the semantic child of a
         // lowering-inserted guard.  It must match exactly one child: duplicate
         // kernel children are intentionally rejected as ambiguous.
-        let Ok(lowered) = self.lower_surface_proposition(surface, "`both` presentation child")
+        let Ok(lowered) = self.lower_surface_proposition(surface, "`all` presentation child")
         else {
             let parent = Proposition::And(
                 Box::new(kernel_children[0].clone()),
@@ -342,7 +342,7 @@ impl<'a> Proof<'a> {
                 ]);
             }
             return Err(self.step_error(
-                "`both` cannot preserve its written goal: the candidate did not lower",
+                "`all` cannot preserve its written goal: the candidate did not lower",
             ));
         };
         let matches = kernel_children
@@ -401,7 +401,7 @@ impl<'a> Proof<'a> {
                 ]);
             }
             return Err(self.step_error(
-                "`both` cannot preserve its written goal: the kernel child correspondence is ambiguous",
+                "`all` cannot preserve its written goal: the kernel child correspondence is ambiguous",
             ));
         }
         let mut children = [
@@ -424,7 +424,7 @@ impl<'a> Proof<'a> {
         kernel_children: [&Proposition; 2],
     ) -> Result<[Option<ClickProposition>; 2], ClickError> {
         let lowered =
-            match self.lower_surface_proposition(surface, "`both` presentation conjunction") {
+            match self.lower_surface_proposition(surface, "`all` presentation conjunction") {
                 Ok(lowered) => lowered,
                 Err(_) => {
                     let parent = Proposition::And(
@@ -435,7 +435,7 @@ impl<'a> Proof<'a> {
                         return Ok([None, None]);
                     }
                     return Err(self.step_error(format!(
-                        "`both` cannot split this goal: its source form, `{}`, does not lower here",
+                        "`all` cannot split this goal: its source form, `{}`, does not lower here",
                         crate::surface::printing::source_click_proposition(surface)
                     )));
                 }
@@ -450,7 +450,7 @@ impl<'a> Proof<'a> {
             .collect::<Vec<_>>();
         if matches.len() != 1 {
             return Err(self.step_error(
-                "`both` cannot preserve its written conjunction: child order does not match",
+                "`all` cannot preserve its written conjunction: child order does not match",
             ));
         }
         let mut children = [None, None];
@@ -487,10 +487,24 @@ impl<'a> Proof<'a> {
             &successor.node,
             ids,
             &[Vec::new(), Vec::new()],
-            "both",
+            "all",
             ["left", "right"],
         );
         Ok((successor, split, ids))
+    }
+
+    pub(in crate::surface::proof) fn conjunction_checkpoint(
+        &self,
+        ids: [BranchId; 2],
+    ) -> Result<ProofCheckpoint<'a>, ClickError> {
+        let mut marker = self.checkpoint();
+        for (slot, id) in marker.conjuncts.iter_mut().zip(ids) {
+            let focused = self.focus_branch(id)?;
+            *slot = focused
+                .proposition_obligation()
+                .and_then(|goal| goal.presentation.surface.clone());
+        }
+        Ok(marker)
     }
 
     pub(in crate::surface::proof) fn join_focused_both(
@@ -500,6 +514,7 @@ impl<'a> Proof<'a> {
         ids: [BranchId; 2],
     ) -> Result<Self, ClickError> {
         self.join_focused_branch(marker, split, ids, |left, right| ProofStep::Both {
+            conjuncts: marker.conjuncts.clone(),
             left_proof: Box::new(left),
             right_proof: Box::new(right),
         })

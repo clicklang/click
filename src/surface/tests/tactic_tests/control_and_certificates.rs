@@ -49,7 +49,7 @@ fn check_integer_rewrite_of_nested_native_bounds(ty: &str, suffix: &str) {
         requires y <= 20;
         ensures x <= 10{suffix} and x <= 20{suffix} by {{
             rewrite(to_integer(x), y);
-            both {{ left => {{ known(); }} right => {{ known(); }} }}
+            all positional {{ left => {{ known(); }} right => {{ known(); }} }}
         }}
     }}"#
     );
@@ -94,7 +94,7 @@ theorem prefix_bound(n: uint64) {
  ensures 0 <= to_integer(n - n % 4u64) and to_integer(n - n % 4u64) <= 22204 by {
   rewrite(to_integer(n - n % 4u64), to_integer(n) - truncating_remainder(to_integer(n), 4));
   unfold(prefix(to_integer(n)));
-  both {
+  all positional {
       left => {
        solve() using { 0 <= prefix(to_integer(n)); prefix(to_integer(n)) == to_integer(n) - truncating_remainder(to_integer(n), 4); };
       }
@@ -229,10 +229,10 @@ fn both_and_proves_exact_conjuncts_and_rejects_incomplete_arms() {
     let source = r#"
         theorem pair(x: int32) {
             ensures x == x and (x <= x and x >= x) by {
-                both {
+                all positional {
                     left => { normalize(); }
                     right => {
-                        both { left => { normalize(); } right => { normalize(); } }
+                        all positional { left => { normalize(); } right => { normalize(); } }
                     }
                 }
             }
@@ -242,9 +242,9 @@ fn both_and_proves_exact_conjuncts_and_rejects_incomplete_arms() {
     let right_first = r#"
         theorem pair(x: int32) {
             ensures (x == 0 implies x == 0) and ((x == 1 implies x == 1) and x == x) by {
-                both {
+                all positional {
                     right => {
-                        both { right => { normalize(); } left => { intro(); known(); } }
+                        all positional { right => { normalize(); } left => { intro(); known(); } }
                     }
                     left => { intro(); known(); }
                 }
@@ -259,15 +259,15 @@ fn both_and_proves_exact_conjuncts_and_rejects_incomplete_arms() {
         source.replacen("right =>", "left =>", 1),
         right_first.replace("left =>", "right =>"),
         source.replace(
-            "both { left => { normalize(); } right => { normalize(); } }",
-            "both { normalize(); } and { normalize(); }",
+            "all positional { left => { normalize(); } right => { normalize(); } }",
+            "all { normalize(); } and { normalize(); }",
         ),
     ] {
         assert!(verify_c_sources(&bad, &[]).is_err());
     }
     let leaking = r#"theorem leak(x: int32) {
         ensures (x == 0 implies x == 0) and x == 0 by {
-            both { left => { intro(); known(); } right => { known(); } }
+            all positional { left => { intro(); known(); } right => { known(); } }
         }
     }"#;
     assert!(
@@ -282,14 +282,14 @@ fn both_and_outcome_expands_and_rechecks() {
     let c = "int32 identity(int32 x) { return x; }";
     let source = r#"verifying "identity.c";
         int32 identity(int32 x) { ensures result == x and result <= x; } by {
-            step(); both { right => { solve(); } left => { known(); } }
+            step(); all positional { right => { solve(); } left => { known(); } }
         }
     "#;
     let sources = [("identity.c", c)];
     let verified_for_expansion = verify_c_sources(source, &sources).expect("both at an outcome");
     let expanded =
         expand_checked_grouped_claim(source, &verified_for_expansion, "identity").unwrap();
-    assert!(expanded.contains("both {"), "{expanded}");
+    assert!(expanded.contains("all {"), "{expanded}");
     assert!(
         expanded.find("left => {").unwrap() < expanded.find("right => {").unwrap(),
         "{expanded}"
@@ -1487,4 +1487,41 @@ test_batches! {
         parses_execute_until_assignment_and_preserves_same_spelled_labels,
         parses_execute_until_read_and_preserves_read_labels,
     ],
+}
+
+#[test]
+fn named_conjunct_proofs_check_shape_and_order() {
+    let source = r#"
+        theorem conjunction(x: int32) {
+            ensures (x == x and x <= x) and x == x by {
+                all {
+                    x == x => { normalize(); }
+                    x <= x => { normalize(); }
+                    x == x => { normalize(); }
+                }
+            }
+        }
+    "#;
+    verify_click_theorems(source).unwrap();
+    for (changed, reason) in [
+        (
+            source.replace("x <= x => { normalize(); }", ""),
+            "must name its conjunct in goal order",
+        ),
+        (
+            source.replace("x <= x => { normalize(); }", "x >= x => { normalize(); }"),
+            "must name its conjunct in goal order",
+        ),
+        (
+            source.replace(
+                "x <= x => { normalize(); }",
+                "x <= x => { normalize(); } x <= x => { normalize(); }",
+            ),
+            "must name its conjunct in goal order",
+        ),
+        (source.replace("all {", "both {"), "`both` is retired"),
+    ] {
+        let error = verify_click_theorems(&changed).unwrap_err().report();
+        assert!(error.contains(reason), "{error}");
+    }
 }

@@ -761,7 +761,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 normalize();
             }
             have 0 <= run_length and run_length <= count by {
-                both {
+                all positional {
                     left => {
                         normalize();
                     }
@@ -911,7 +911,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     solve() using { (to_integer(lo) + to_integer(run_length)) <= to_integer(i); to_integer(i) <= (to_integer(lo) + to_integer(run_length)); };
                 }
                 have 0 <= run_length and run_length <= count by {
-                    both {
+                    all positional {
                         left => {
                             solve() using { (at(region(13).entry, 0) as int32) <= (at(region(13).entry,
                                     run_length) as int32); (at(region(13).entry, run_length) as int32) <
@@ -1053,7 +1053,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 have run.hi == i implies (to_integer(run.lo) + to_integer(run_length)) == to_integer(i) implies 0 <= run_length and run_length <= count by {
                     intro();
                     intro();
-                    both {
+                    all positional {
                         left => {
                             normalize();
                         }
@@ -3894,7 +3894,7 @@ int32 arena_pipeline(
         requires 0 <= 0 by normalize();
         requires r1.end <= s0.capacity by known();
         requires defined(r1.start + 0) and (to_integer(r1.start) + to_integer(0)) < to_integer(r1.end) by {
-            both {
+            all positional {
                 left => {
                     normalize();
                 }
@@ -4094,7 +4094,7 @@ int32 arena_pipeline(
         requires 0 <= 0 by normalize();
         requires r2.end <= s0.capacity by known();
         requires defined(r2.start + 0) and (to_integer(r2.start) + to_integer(0)) < to_integer(r2.end) by {
-            both {
+            all positional {
                 left => {
                     normalize();
                 }

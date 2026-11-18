@@ -628,7 +628,7 @@ When execution reaches function exit, the path's open goals are the
 contract's claims in the order the contract writes them: every `ensures`, and
 every `owns` and `produces` clause, whose goal is that the path still holds the
 instance. `views` and `consumes` clauses make no claim. A closer (`known`,
-`normalize`, `both`, `solve`, `solve() using`) acts on the first
+`normalize`, `all`, `solve`, `solve() using`) acts on the first
 open goal, and a refusal names that goal; it does not look further down the
 list for a claim it could close
 (`mdtests/a_closer_after_execution_acts_on_the_first_open_claim.md`,
@@ -1096,7 +1096,7 @@ step is still checked.
 
 | Form | Class | Audience | Purpose | Details |
 | --- | --- | --- | --- | --- |
-| `both { left => { ... } right => { ... } }` | control | Expansion output | Prove both sides of a conjunction. | [Reference](#conjunctions) |
+| `all { P => { ... } Q => { ... } }` | control | Expansion output | Prove each conjunct. | [Reference](#conjunctions) |
 | `outcomes { returned => { ... } threw => { ... } }` | control | Specialized | Prove each returned or exceptional outcome. | [Reference](#execution-outcomes) |
 | `solve()` | smart | Core | Close one goal from available facts and bounded rules. | [Reference](#simplification) |
 | `solve() using { P; ... }` | smart | Specialized | Close one goal from written premises only. | [Reference](#simplification-with-selected-premises) |
@@ -1141,12 +1141,10 @@ cannot reuse a live proof binding. Narrow machine binders also supply their
 intrinsic bounds at introduction; these type facts need no extra `intro()`.
 A written range quantifier still has its explicit range-membership guard.
 
-`both { left => { ... } right => { ... } }` opens the exact `A` and `B` child
-goals of `A and B`. Both arms inherit the parent assumptions; neither inherits
-facts proved only in the other arm. This differs from `known()`, which
-closes a conjunction from already-established facts. Empty or unfinished arms fail.
-The `both` source location owns expansion and profiling of its nested proof;
-expansion preserves both bodies with their checked steps.
+`all { A => { ... } B => { ... } }` gives each conjunct a separate
+proof. Each arm inherits the parent assumptions, and facts proved in an arm
+stay in that arm. The `all` location owns expansion and profiling of its
+nested proofs.
 
 `by solve();` is sugar for a script containing the same `solve()` operation at
 the same proof state, followed like every script by the implicit tail. A
@@ -1268,20 +1266,23 @@ complete rewritten surface proof through the ordinary entry point.
 
 ### Conjunctions
 
-**Form:** `both { left => { ... } right => { ... } }`
+**Form:** `all { P => { ... } Q => { ... } }`
 
-**Expansion output.** `click expand` writes it; by hand, a conjunction goal is
-normally split by `solve` or the implicit closer. Write `both` when each side
-needs its own explicit proof. The `left` and `right` labels select the
-respective children of the `and` goal. The arms can appear in either order,
-and each has its own proof scope. Expansion prints `left` before `right`.
+Write one arm per conjunct in goal order. For `P and (Q and R)`, a
+single block may contain three arms. Repeated conjuncts take separate arms.
+An arm can also name a whole conjunct that is itself a conjunction, for
+example when its proof changes the goal before splitting it.
 
-**Failure, checking, and tools:**
+Each proof starts with the parent assumptions. Facts established in one arm
+are local to that arm. An absent, extra, out-of-order, or unfinished arm
+fails. An ordinary conjunction can still be closed by `solve()`.
 
-A non-conjunction or unfinished arm fails. Arms inherit only the parent
-assumptions. The source container owns expansion of its nested proof.
+Expansion writes a flat list when its conjunct proofs carry source goals.
+For a binary split of a lowered goal whose source has no separate conjunct
+labels, expansion can use `all positional { left => { ... } right => { ... } }`.
+The two positional arms select the lowered goal's immediate children.
 
-**Checked examples:** [`proof_both_and.md`](https://github.com/clicklang/click/blob/master/mdtests/proof_both_and.md)
+**Checked examples:** [Conjunction goals](https://github.com/clicklang/click/blob/master/mdtests/proof_both_and.md)
 
 ### Execution outcomes
 
@@ -1745,7 +1746,7 @@ or definedness facts.
 
 **Outside it**, with what to write instead:
 
-- A top-level `and`, `or`, implication, or quantifier: use `both`, prove one
+- A top-level `and`, `or`, implication, or quantifier: use `all`, prove one
   disjunct with `have` and close with `known()`, or `intro`.
 - A goal that needs a fact, including a premise of the theorem: use
   `normalize() using { P; ... }`, `rewrite`, or `known()`.
@@ -1759,7 +1760,7 @@ or definedness facts.
 
 A refusal prints the goal after substitution. Click runs the deterministic
 leaf check; expansion is unchanged, and profiling charges the normalized
-expression. Smart tactics retain the corresponding `both`, disjunct proof and
+expression. Smart tactics retain the corresponding `all`, disjunct proof and
 `known()`, or `intro` proof.
 
 Intrinsic Integer bounds on a machine quotient, right shift, or remainder
@@ -1889,7 +1890,7 @@ cited premise is accepted:
 - An unlisted ambient order condition, or an ambient `Integer` or algebraic
   equality: cite it.
 - A top-level conjunction, disjunction, or implication remaining after
-  reduction: `both`, a disjunct `have`, or `intro`, as for `normalize()`.
+  reduction: `all`, a disjunct `have`, or `intro`, as for `normalize()`.
 - A condition inside a quantified body, a `match`-arm body, or a range-fold
   binder: `intro` or `unfold` it first. Pure calls stay symbolic.
 
@@ -2453,7 +2454,7 @@ introduction:
 - An order comparison not written as `not`, such as `x < y`: `intro` does not
   turn it into a refutation of `x >= y`. Prove it directly, or split with a
   proof `if` or `cases` on the complement.
-- A conjunction: `both`. A disjunction: prove one disjunct with `have` and
+- A conjunction: `all`. A disjunction: prove one disjunct with `have` and
   close with `known()`.
 - An existential, including `(lo..hi).any(...)`: `witness`.
 - A comparison or other leaf: `normalize`, `solve() using`, `known`, or
@@ -2943,7 +2944,7 @@ halves of each range that requirement names at `m`, imply the theorem's goal
 at `m`. Every other parameter keeps its current value. The goal is unchanged.
 Earlier helper proofs may precede `induct`; the hypothesis is unavailable
 before its declaration. The script then uses `ih` through `apply(ih(m))` or
-`apply(ih(m)) using { ... }`, at its top level and inside nested `if`, `both`,
+`apply(ih(m)) using { ... }`, at its top level and inside nested `if`, `all`,
 `cases`, `have`, and `match` blocks.
 
 **Outside it**, with what to write instead:
@@ -3320,7 +3321,7 @@ checked; prove it next.
 **Outside it**, with what to write instead:
 
 - An existential below the top of the goal, such as `A and exists ...`: split
-  it with `both` first.
+  it with `all` first.
 - A value of another type, such as an `int32` variable for a `uint64` or
   `Integer` binder: convert it (`to_integer(n)`) or write the suffixed literal.
 
@@ -3556,8 +3557,8 @@ Every supplied separation must be used and checked. See
 `mdtests/two_read_transport_expansion.md`.
 Conjunction trees of supported scalar comparisons also expand: for example,
 `transport(at(statement(0).entry, *q == 7 and (*r == 8 and *s == 9)), *q == 7 and (*r == 8 and *s == 9))`.
-Expansion emits nested ordinary `both` proofs, preserving the written grouping,
-with a preservation/rewrite proof for each scalar leaf. This form handles
+Expansion emits a flat `all` block in goal order, with a preservation and
+rewrite proof for each scalar leaf. This form handles
 matching conjunction structure; selection and regrouping are described below. The source can wrap the whole tree, a
 subtree, or individual leaves in `at(...)`; nested `at(...)` wrappers are not
 handled by this route. Each leaf checks its earlier fact with `known()`
@@ -3576,7 +3577,7 @@ leaves in a conjunction tree.
 The driver indexes the written source's `at(...)` comparison leaves once and
 selects each target leaf by exact source text. It emits a `have` for each selected
 historical leaf using `known()`, followed by its ordinary preservation/rewrite
-proof, and combines the results with `both` in the target's written shape.
+proof, and combines the results with `all` in the target's conjunct order.
 Discarded conjuncts need not remain true; only the selected reads need footprint
 separations. The supplied separations are indexed once and must all be used and
 checked. Whole-tree and subtree `at(...)` wrappers are supported. The exact

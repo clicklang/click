@@ -3306,6 +3306,11 @@ fn validate_pure_theorem_tactics(
                 validate_pure_theorem_tactics(theorem_name, &proof_if.then_tactics)?;
                 validate_pure_theorem_tactics(theorem_name, &proof_if.else_tactics)?;
             }
+            ProofTactic::All(all) => {
+                for arm in &all.arms {
+                    validate_pure_theorem_tactics(theorem_name, &arm.tactics)?;
+                }
+            }
             ProofTactic::Both(both) => {
                 validate_pure_theorem_tactics(theorem_name, &both.left_tactics)?;
                 validate_pure_theorem_tactics(theorem_name, &both.right_tactics)?;
@@ -3385,7 +3390,7 @@ pub(in crate::surface) fn tactic_name(tactic: &ProofTactic) -> &'static str {
         ProofTactic::Open(_) => "open",
         ProofTactic::If(_) => "if",
         ProofTactic::Cases(_) => "cases",
-        ProofTactic::Both(_) => "both",
+        ProofTactic::Both(_) | ProofTactic::All(_) => "all",
         ProofTactic::Branch(_) => "branch",
         ProofTactic::CallOutcomes(_) => "outcomes",
         ProofTactic::Loop(_) => "loop",

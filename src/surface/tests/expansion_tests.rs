@@ -3365,9 +3365,9 @@ theorem fixed_integer_witness(value: int32) {
         z == 0 and to_integer(value + 1) == to_integer(value + 1)
     } by {
         witness(0);
-        both {
+        all positional {
             left => {
-                both {
+                all positional {
                     left => {
                         known();
                     }
@@ -3377,7 +3377,7 @@ theorem fixed_integer_witness(value: int32) {
                 }
             }
             right => {
-                both {
+                all positional {
                     left => {
                         normalize();
                     }
@@ -3395,7 +3395,7 @@ theorem fixed_integer_witness(value: int32) {
     let fixed_expanded =
         expand_c_claim_source_by_label(fixed_witness, &[], "fixed_integer_witness.witness_fixed")
             .expect("fixed Integer witness should expand");
-    assert!(fixed_expanded.contains("both {"), "{fixed_expanded}");
+    assert!(fixed_expanded.contains("all {"), "{fixed_expanded}");
     verify_c_sources(&fixed_expanded, &[]).expect("expanded fixed Integer witness should recheck");
 
     let missing_definedness = r#"
@@ -6276,7 +6276,7 @@ fn post_execution_solve_builds_recursive_conjunction_on_proof() {
     )
     .expect("the retained conjunction should expand");
     assert!(!expanded.contains("solve();"), "{expanded}");
-    assert!(expanded.contains("both {"), "{expanded}");
+    assert!(expanded.contains("all {"), "{expanded}");
     verify_c_sources(&expanded, &[("first.c", c_source)])
         .expect("the retained conjunction should verify independently");
 }
@@ -6350,7 +6350,7 @@ fn post_execution_smart_have_builds_recursive_conjunction_on_proof() {
     )
     .expect("the retained smart have should expand");
     assert!(!expanded.contains("by solve()"), "{expanded}");
-    assert!(expanded.contains("both {"), "{expanded}");
+    assert!(expanded.contains("all {"), "{expanded}");
     verify_c_sources(&expanded, &[("first.c", c_source)])
         .expect("the retained smart have should verify independently");
 }
@@ -7759,7 +7759,7 @@ fn pure_structural_solve_builds_recursive_conjunction_on_proof() {
             expected_applications,
             "{expanded}"
         );
-        assert!(expanded.contains("both {"), "{expanded}");
+        assert!(expanded.contains("all {"), "{expanded}");
         verify_click_theorems(&expanded)
             .expect("the retained pure conjunction should verify independently");
     }
@@ -8047,7 +8047,7 @@ fn pure_rewrite_retains_a_structural_surface_successor_for_solve() {
     let expanded = expand_c_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("the retained rewrite successor should expand");
     assert_eq!(expanded.matches("rewrite(").count(), 3, "{expanded}");
-    assert!(expanded.contains("both {"), "{expanded}");
+    assert!(expanded.contains("all {"), "{expanded}");
     assert!(!expanded.contains("solve();"), "{expanded}");
     verify_click_theorems(&expanded)
         .expect("the expanded rewrite and structural child proofs should verify independently");
@@ -16569,7 +16569,7 @@ fn outcome_predecessor_bound_solve_expands_to_arithmetic_steps() {
         position.column,
     )
     .expect("the predecessor bound solve should expand to the named rule");
-    assert!(expanded.contains("both {"), "{expanded}");
+    assert!(expanded.contains("all {"), "{expanded}");
     assert!(expanded.contains("click::integer::"), "{expanded}");
     assert!(!expanded.contains("solve()"), "{expanded}");
     verify_c_sources(&expanded, &[("drop_one.c", c_source)]).unwrap_or_else(|error| {
@@ -21150,7 +21150,7 @@ fn arithmetic_in_each_both_arm_is_selected_at_its_location() {
  requires 0 <= a;
  requires 0 <= b;
  ensures 0 <= a and 0 <= b by {
-  both {
+  all positional {
       left => {
        solve() using { 0 <= a; };
       }
@@ -22217,7 +22217,7 @@ fn structural_invariant_bundles_expand_as_ordered_member_haves() {
             requires a == b;
             requires b == 0;
             ensures a == 0 and (a == 0 implies a + 1 == 1) by {
-                both {
+                all positional {
                     left => {
                         have a == 0 by {
                             rewrite(a, b); rewrite(b, 0); normalize();
@@ -22242,7 +22242,7 @@ fn structural_invariant_bundles_expand_as_ordered_member_haves() {
     .unwrap();
     let printed = format_proof_certificate(&closure);
     assert!(!printed.contains("close_invariants"), "{printed}");
-    assert!(!printed.contains("both {"), "{printed}");
+    assert!(!printed.contains("all {"), "{printed}");
     assert!(!printed.contains("intro()"), "{printed}");
     assert_eq!(printed.matches("have a == 0 by").count(), 1, "{printed}");
     assert!(
@@ -22257,7 +22257,7 @@ fn structural_invariant_bundles_expand_as_ordered_member_haves() {
             requires a == b;
             requires b == 0;
             ensures a == 0 and (a == 0 implies a + 1 == 1)
-            {} both {{ left => {{ known(); }} right => {{ intro(); known(); }} }}
+            {} all positional {{ left => {{ known(); }} right => {{ intro(); known(); }} }}
             }}
         }}
     "#,

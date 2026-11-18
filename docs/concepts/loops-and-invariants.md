@@ -256,7 +256,7 @@ loop {
 
 `initialize` is a pure proof of all invariants at the actual loop entry. Its
 script may use exactly `unfold(predicate(args))`, `apply(theorem(args))`, `have`,
-`known()`, `normalize()`, `rewrite(...)`, `solve()`, `both`, `cases`, and
+`known()`, `normalize()`, `rewrite(...)`, `solve()`, `all`, `cases`, and
 proof-level `if`;
 anything else is rejected with `` `initialize` is a pure proof and cannot use
 `<tactic>` ``. `preserve` assumes all invariants and the loop condition,

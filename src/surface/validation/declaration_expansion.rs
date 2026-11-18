@@ -1650,6 +1650,24 @@ fn expand_declared_resource_tactic(
         | ProofTactic::Loop(_)) => {
             expand_declared_resource_tactic_with_nested_proofs(tactic, resource_definitions)
         }
+        ProofTactic::All(all) => Ok(ProofTactic::All(ProofAll {
+            arms: all
+                .arms
+                .into_iter()
+                .map(|arm| {
+                    Ok(ProofAllArm {
+                        proposition: expand_declared_resource_proposition(
+                            arm.proposition,
+                            resource_definitions,
+                        )?,
+                        tactics: expand_declared_resource_script(
+                            arm.tactics,
+                            resource_definitions,
+                        )?,
+                    })
+                })
+                .collect::<Result<_, ClickError>>()?,
+        })),
         tactic @ (ProofTactic::Both(_) | ProofTactic::CloseInvariantsBy(_)) => {
             expand_declared_resource_tactic_with_plain_scripts(tactic, resource_definitions)
         }

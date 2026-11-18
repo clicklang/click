@@ -3,9 +3,9 @@ use super::*;
 use crate::surface::proof::driver::ProofDriver;
 
 impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
-    pub(in crate::surface::proof) fn apply_both_source(
+    pub(in crate::surface::proof) fn apply_all_source(
         &self,
-        both: &ProofBoth,
+        tactic: &ProofTactic,
     ) -> Result<Proof<'a>, ClickError> {
         let driver_proof = self.proof;
         // The `both` sits at this proof's own site, the claim's source tactic
@@ -17,13 +17,13 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         driver_proof
             .driver()
             .try_addressed_linear_script(
-                &[ProofTactic::Both(both.clone())],
+                std::slice::from_ref(tactic),
                 std::slice::from_ref(driver_proof.site()),
                 &mut None,
                 None,
             )?
             .ok_or_else(|| {
-                driver_proof.step_error("`both` requires complete proofs of both conjuncts")
+                driver_proof.step_error("`all` requires complete proofs of its conjuncts")
             })
     }
 

@@ -168,6 +168,7 @@ fn ordinary_arithmetic_work_size(steps: &[ProofStep]) -> Option<usize> {
             ProofStep::Both {
                 left_proof,
                 right_proof,
+                ..
             } => {
                 pending.extend(left_proof.steps());
                 pending.extend(right_proof.steps());
@@ -825,7 +826,7 @@ fn invariant_bundle_closure_descends_surface_free_both_and_intro_and_rechecks() 
     let certificate = checked.certificate();
     assert!(matches!(
         certificate.steps(),
-        [ProofStep::Both { left_proof, right_proof }]
+        [ProofStep::Both { left_proof, right_proof, .. }]
             if left_proof.steps() == [ProofStep::Known]
                 && right_proof.steps() == [
                     ProofStep::Intro,
@@ -1219,6 +1220,7 @@ fn both_preserves_written_body_across_an_inserted_guard_and_reverifies_cold() {
         .expect("the rendered guarded split should close");
     assert_eq!(cold.certificate(), certificate);
     let missing_guard = ProofCertificate::from_steps(vec![ProofStep::Both {
+        conjuncts: [None, None],
         left_proof: Box::new(ProofCertificate::from_steps(Vec::new()).unwrap()),
         right_proof: Box::new(ProofCertificate::from_steps(vec![ProofStep::Normalize]).unwrap()),
     }])
@@ -4071,7 +4073,7 @@ fn surface_rewrite_retains_structural_successor_and_scales() {
             closed.certificate().steps(),
             [
                 ProofStep::Rewrite(root_equality),
-                ProofStep::Both { left_proof: left, right_proof: right },
+                ProofStep::Both { left_proof: left, right_proof: right, .. },
             ] if root_equality == &equality
                 && matches!(left.steps(), [ProofStep::Rewrite(_), ProofStep::Known])
                 && matches!(right.steps(), [ProofStep::Rewrite(_), ProofStep::Known])
@@ -8925,6 +8927,7 @@ fn surface_structural_solve_retains_recursive_child_proofs_and_scales() {
                         [ProofStep::Both {
                             left_proof: left,
                             right_proof: right,
+                            ..
                         }] if ordinary_arithmetic_work_size(left.steps()).is_some()
                             && ordinary_arithmetic_work_size(right.steps()).is_some()
                     ),

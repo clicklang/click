@@ -1060,7 +1060,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             else {
                 return Ok(None);
             };
-            let marker = split_proof.checkpoint();
+            let marker = split_proof.conjunction_checkpoint(ids)?;
             let Some(left) =
                 crate::kernel::search::ProofSearch::try_direct_structural_closure_inner(
                     &(split_proof.focus_branch(ids[0])?),
@@ -6766,7 +6766,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_structural_and_solve_closure");
         let (split_proof, split, ids) = search_input.split_focused_both()?;
-        let marker = split_proof.checkpoint();
+        let marker = split_proof.conjunction_checkpoint(ids)?;
         let Some(left) = crate::kernel::search::ProofSearch::try_solve_closure_with_surfaces(
             &(split_proof.focus_branch(ids[0])?),
             introduced_surfaces,

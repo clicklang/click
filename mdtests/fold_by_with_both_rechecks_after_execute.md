@@ -33,7 +33,7 @@ void bump(struct holder* h) {
     step();
     step();
     fold(holder_of(h)) by {
-        both {
+        all positional {
             left => {
                 known();
             }

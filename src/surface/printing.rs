@@ -932,9 +932,23 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
             write_tactics(output, &proof_if.else_tactics, indent + 1);
             line(output, &prefix, "}");
         }
+        ProofTactic::All(all) => {
+            line(output, &prefix, "all {");
+            let arm_prefix = "    ".repeat(indent + 1);
+            for arm in &all.arms {
+                line(
+                    output,
+                    &arm_prefix,
+                    &format!("{} => {{", source_click_proposition(&arm.proposition)),
+                );
+                write_tactics(output, &arm.tactics, indent + 2);
+                line(output, &arm_prefix, "}");
+            }
+            line(output, &prefix, "}");
+        }
         ProofTactic::Both(both) => {
             let arm_prefix = "    ".repeat(indent + 1);
-            line(output, &prefix, "both {");
+            line(output, &prefix, "all positional {");
             line(output, &arm_prefix, "left => {");
             write_tactics(output, &both.left_tactics, indent + 2);
             line(output, &arm_prefix, "}");

@@ -31,16 +31,16 @@ uint64 read_terminator(uint8 bytes[]) {
                     forall (k: uint64) { to_integer(k) < to_integer(found_len + 1u64) implies defined(bytes[k]) }
             }));
             witness(found_len);
-            both {
+            all positional {
                 left => { solve(); }
                 right => {
-                    both {
+                    all positional {
                         left => {
-                            both {
+                            all positional {
                                 left => {
-                                    both {
+                                    all positional {
                                         left => {
-                                            both {
+                                            all positional {
                                                 left => {
                                                     solve();
                                                 }
