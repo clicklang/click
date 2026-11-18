@@ -9,9 +9,9 @@ use std::sync::Arc;
 
 #[derive(Clone)]
 pub(super) enum Input {
-    PointerValue(PointerValue, PointerValue),
+    Pointer(Pointer, Pointer),
     PointerReadValue(Address, Address),
-    Pointer(Address, Address),
+    Address(Address, Address),
     Offset(AddressOffset, AddressOffset),
     Int32(MachineTerm, MachineTerm),
     Int32Operands(
@@ -177,10 +177,10 @@ impl EqualityGraph {
                 Input::PointerReadValue(left, right) => {
                     self.add_checked_pointer_read_equality(left, right);
                 }
-                Input::PointerValue(left, right) => {
+                Input::Pointer(left, right) => {
                     self.add_pointer_value_equality(left, right);
                 }
-                Input::Pointer(left, right) => {
+                Input::Address(left, right) => {
                     self.add_equality(left, right);
                 }
                 Input::Offset(left, right) => {
@@ -307,7 +307,7 @@ impl EqualityGraph {
             let Some(node) = current else { break };
             let pair = match &node.input {
                 Input::CheckedRead(left, right) => Some((left, right)),
-                Input::Pointer(left, right) if is_read(left) || is_read(right) => {
+                Input::Address(left, right) if is_read(left) || is_read(right) => {
                     Some((left, right))
                 }
                 _ => None,

@@ -1643,7 +1643,7 @@ fn external_descriptor(identity: u64) -> Address {
 /// The pointer a load of `cell` reads in `source`, as execution materializes
 /// it: the value named by that read.
 fn materialized_pointer(source: &SymbolicMemory, cell: &Address) -> ProgramValue {
-    ProgramValue::Pointer(PointerValue::from_read(
+    ProgramValue::Pointer(Pointer::from_read(
         Address::loaded(&MachineTerm::MemoryLoad(
             ProgramPoint::at(&(crate::kernel::intern_memory_ref(source))),
             Box::new(cell.clone()),

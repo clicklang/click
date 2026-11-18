@@ -29,7 +29,7 @@ fn resolved_malloc(pending: &ExecutionState, success: bool) -> ExecutionState {
         panic!("pending allocation has a result pointer");
     };
     let assumptions = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
-        ConditionTerm::pointer_equal(pointer.pointer().clone(), Address::null()),
+        ConditionTerm::pointer_equal(pointer.address().clone(), Address::null()),
         !success,
     ));
     crate::kernel::resolve_pending_heap_allocations(pending, &assumptions)
@@ -61,7 +61,7 @@ fn only_successful_real_malloc_records_creation() {
     };
     assert!(succeeded.population_storage_created_here(created));
     assert!(!entry.population_storage_created_here(created));
-    assert!(!succeeded.population_storage_created_here(&created.pointer().offset_by_bytes(4)));
+    assert!(!succeeded.population_storage_created_here(&created.address().offset_by_bytes(4)));
     assert_eq!(
         succeeded
             .clone()
@@ -76,7 +76,7 @@ fn only_successful_real_malloc_records_creation() {
         .with_population_creation_tracking()
         .with_memory(
             SymbolicMemory::new()
-                .with_heap_allocation_claim(created.pointer().clone(), AllocationSize::int32(16))
+                .with_heap_allocation_claim(created.address().clone(), AllocationSize::int32(16))
                 .expect("assumed allocation claim"),
         );
     assert!(!imported.population_storage_created_here(created));
@@ -90,7 +90,7 @@ fn only_successful_real_malloc_records_creation() {
     let callee = bind_program_function_arguments(
         &succeeded,
         &helper,
-        &[ProgramValue::pointer(created.pointer().clone())],
+        &[ProgramValue::pointer(created.address().clone())],
     )
     .expect("bind actual helper environment");
     let local_native_output_92 = callee.locals().get_native("q");
@@ -184,7 +184,7 @@ fn caller_pending_malloc_resolved_in_helper_keeps_caller_origin() {
     let callee = bind_program_function_arguments(
         &pending,
         &helper,
-        &[ProgramValue::pointer(pending_pointer.pointer().clone())],
+        &[ProgramValue::pointer(pending_pointer.address().clone())],
     )
     .expect("bind actual helper environment");
     let paths = execute_execution_statement_paths(
@@ -214,7 +214,7 @@ fn caller_pending_malloc_resolved_in_helper_keeps_caller_origin() {
             pending.population_effects.creation.as_ref(),
             state.population_effects.creation.as_ref(),
         );
-        if pointer.pointer() == &Address::null() {
+        if pointer.address() == &Address::null() {
             saw_failure = true;
             assert_eq!(*value.native(), ProgramValue::Int32(0.into()));
             assert!(!resumed.population_storage_created_here(pointer));
@@ -2522,12 +2522,12 @@ fn count_uses_its_written_anchor_not_a_proven_alias() {
         base: AddressBase::ExternalArgument,
         offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(9_850_100)), 4),
     };
-    let count_of = |pointer: PointerValue| SpecExpression::CountedResourceCount {
+    let count_of = |pointer: Pointer| SpecExpression::CountedResourceCount {
         name: "reference".into(),
         arguments: vec![Some(SpecExpression::Value(ProgramValue::Pointer(pointer)))],
     };
     let anchor_count = count_of(anchor.clone());
-    let alias_count = count_of(PointerValue::new(alias.clone(), anchor.program_type()));
+    let alias_count = count_of(Pointer::new(alias.clone(), anchor.program_type()));
     let events = CreationEvents::new()
         .import_opaque_contract_population_inner(
             &description,
@@ -2547,7 +2547,7 @@ fn count_uses_its_written_anchor_not_a_proven_alias() {
     Arc::make_mut(&mut state.population_effects).creation = Some(events);
     let equal = PureFactContext::new().assume_condition(
         ConditionTerm::PointerValueEqual(
-            Box::new(PointerValue::new(alias, ProgramType::Int32Pointer)),
+            Box::new(Pointer::new(alias, ProgramType::Int32Pointer)),
             Box::new(anchor.clone()),
         ),
         true,

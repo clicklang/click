@@ -69,10 +69,7 @@ fn call_argument_paths_retain_shared_prefixes_without_exporting() {
 
         // The declared pointer origin selects only argument 1. Determining a
         // null result must not materialize the unrelated exponential DAG.
-        let null = ProgramValue::Pointer(PointerValue::new(
-            Address::null(),
-            ProgramType::Int32Pointer,
-        ));
+        let null = ProgramValue::Pointer(Pointer::new(Address::null(), ProgramType::Int32Pointer));
         let arguments = [
             argument,
             SpecPureFunctionArgument::Value(SpecExpression::Value(null.clone())),
@@ -98,7 +95,7 @@ fn call_argument_paths_retain_shared_prefixes_without_exporting() {
         assert_eq!(results.len(), 1);
         assert!(matches!(
             results[0].value.shared().unwrap().node(),
-            KernelTermNode::PointerValue(_)
+            KernelTermNode::Pointer(_)
         ));
         assert_eq!(results[0].value.clone().into_native(), null);
         assert_eq!(KernelTermExport::machine_export_count(), exports);

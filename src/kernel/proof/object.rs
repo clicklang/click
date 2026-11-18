@@ -3445,7 +3445,7 @@ mod tests {
         let load = SpecExpression::MemoryLoad {
             point: SpecPoint::Current,
             pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(
-                crate::kernel::PointerValue::new(
+                crate::kernel::Pointer::new(
                     Address {
                         base: "unallocated".into(),
                         offset: AddressOffset::Constant(0),

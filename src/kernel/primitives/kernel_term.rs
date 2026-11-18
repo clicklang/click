@@ -169,7 +169,7 @@ pub enum KernelTermNode {
         kind: LoadKind,
     },
     /// Complete formed pointer value with prepared address and metadata children.
-    PointerValue(SharedPointerValue),
+    Pointer(SharedPointerValue),
     /// A pointer argument with the point its array is read at.
     ArrayReference {
         point: ProgramPoint,
@@ -418,7 +418,7 @@ impl NodeKey {
                 .arguments
                 .iter()
                 .any(KernelTerm::has_opaque_observation_boundary),
-            KernelTermNode::PointerValue(_)
+            KernelTermNode::Pointer(_)
             | KernelTermNode::PointerRead { .. }
             | KernelTermNode::PointerArithmetic { .. }
             | KernelTermNode::PointerCall { .. }
@@ -1555,7 +1555,7 @@ mod tests {
 
     #[test]
     fn legacy_pointer_equality_does_not_discard_auxiliary_qualifiers() {
-        let pointer = PointerValue::new(Address::symbolic(Variable(76)), ProgramType::Int32Pointer);
+        let pointer = Pointer::new(Address::symbolic(Variable(76)), ProgramType::Int32Pointer);
         let constant = pointer.clone().with_pointee_constant(true);
         assert_eq!(
             pointer, constant,
@@ -1583,7 +1583,7 @@ mod tests {
     #[test]
     fn legacy_adapter_keeps_complete_pointers_and_scoped_integer_nodes() {
         let base = Address::symbolic(Variable(75));
-        let root = PointerValue::new(base.clone(), ProgramType::Int32Pointer);
+        let root = Pointer::new(base.clone(), ProgramType::Int32Pointer);
         let member = root.clone().with_bounds(Some(SubobjectBounds {
             start: base,
             width: 4u32.into(),
@@ -1736,7 +1736,7 @@ impl KernelTermExport {
             KernelTermNode::PointerRead { value, .. }
             | KernelTermNode::PointerArithmetic { value, .. }
             | KernelTermNode::PointerCall { value, .. }
-            | KernelTermNode::PointerValue(value) => {
+            | KernelTermNode::Pointer(value) => {
                 PureFunctionArgument::Value(ProgramValue::Pointer(value.export()?))
             }
             KernelTermNode::ArrayReference { .. } => {

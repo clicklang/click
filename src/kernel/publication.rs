@@ -157,7 +157,7 @@ pub(super) fn execute_publication_paths(
             ))));
             continue;
         }
-        let flag = flag.pointer().clone();
+        let flag = flag.address().clone();
         let outcome = if function_name == ATOMIC_INIT_NAME {
             initialize(
                 state,

@@ -97,7 +97,7 @@ fn exit_address_argument_tracks_only_the_declared_current_local() {
             unreachable!()
         };
         AlgebraicValue::Program(ProgramValue::UInt64(MachineTerm::pointer_address(
-            pointer.pointer().clone(),
+            pointer.address().clone(),
         )))
     };
     let exits = [

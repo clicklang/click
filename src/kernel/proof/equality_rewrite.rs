@@ -1266,7 +1266,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
         return rewrite_atomic_proposition_by_exact_equality(
             goal,
             &Proposition::ConditionIs(
-                ConditionTerm::pointer_equal(left.pointer().clone(), right.pointer().clone()),
+                ConditionTerm::pointer_equal(left.address().clone(), right.address().clone()),
                 true,
             ),
         );
@@ -4346,10 +4346,10 @@ mod numeric_address_annotation_tests {
                 .proposition(),
             &equality,
         );
-        let left = PointerValue::new(p.clone(), ProgramType::Int32Pointer)
+        let left = Pointer::new(p.clone(), ProgramType::Int32Pointer)
             .with_bounds(Some(SubobjectBounds::constant(p, 4)));
         for width in [4, 8] {
-            let right = PointerValue::new(q.clone(), ProgramType::Int32Pointer)
+            let right = Pointer::new(q.clone(), ProgramType::Int32Pointer)
                 .with_bounds(Some(SubobjectBounds::constant(q.clone(), width)));
             assert!(!facts.assumptions().pointer_provenance_match(&left, &right));
         }

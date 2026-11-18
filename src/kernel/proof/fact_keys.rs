@@ -16,7 +16,7 @@ use crate::kernel::{
 };
 use crate::kernel::{
     AlgebraicTerm, AlgebraicTermNode, AlgebraicValue, IntegerComparisonOperator, IntegerTerm,
-    MachineIntegerType, PointerValue, ProgramType, ProgramValue, PureFunctionArgument,
+    MachineIntegerType, Pointer, ProgramType, ProgramValue, PureFunctionArgument,
     SharedIntegerTerm, SharedMemory, Sort, Term,
 };
 use crate::kernel::{MachineCastSpelling, cast_term};
@@ -138,10 +138,10 @@ impl MemoryErasedPointerValueKey {
     }
 }
 
-fn memory_erased_pointer_value_key(pointer: &PointerValue) -> MemoryErasedPointerValueKey {
+fn memory_erased_pointer_value_key(pointer: &Pointer) -> MemoryErasedPointerValueKey {
     MemoryErasedPointerValueKey {
         program_type: pointer.program_type(),
-        address: memory_erased_pointer_key(pointer.pointer()),
+        address: memory_erased_pointer_key(pointer.address()),
         provenance: memory_erased_pointer_key(pointer.provenance()),
         bounds_owner: if pointer.bounds_are_known() {
             None
@@ -2271,7 +2271,7 @@ fn alpha_program_value_key_with_bindings<const ALLOW_LOADS: bool>(
             pointee_volatile: pointer.pointee_volatile(),
             pointee_constant: pointer.pointee_constant(),
             pointer: alpha_pointer_key_with_bindings::<ALLOW_LOADS>(
-                pointer.pointer(),
+                pointer.address(),
                 bindings,
                 next_binder,
             )?,
@@ -5287,7 +5287,7 @@ mod complete_pointer_condition_tests {
     #[test]
     fn complete_pointer_conditions_keep_state_domain_keys() {
         let _session = crate::kernel::VerificationSession::enter();
-        let a = PointerValue::new(
+        let a = Pointer::new(
             Address::symbolic(Variable(998620)),
             ProgramType::Int32Pointer,
         );

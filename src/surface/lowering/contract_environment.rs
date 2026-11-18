@@ -54,7 +54,7 @@ pub(in crate::surface) fn contract_environment_at_state(
         if let Some(pointer) = value.pointer()
             && let Some(array_ref) = state_array_refs.get_mut(source_name)
         {
-            array_ref.pointer = pointer.pointer().clone();
+            array_ref.pointer = pointer.address().clone();
         }
     }
     for (name, value, element_type) in state.locals().array_object_values() {
@@ -74,7 +74,7 @@ pub(in crate::surface) fn contract_environment_at_state(
             source_name.to_owned(),
             ClickArrayRef {
                 point: point.clone(),
-                pointer: pointer.pointer().clone(),
+                pointer: pointer.address().clone(),
                 element_type,
             },
         );
@@ -102,7 +102,7 @@ pub(in crate::surface) fn contract_environment_for_names(
             if let Some(pointer) = value.pointer()
                 && let Some(array_ref) = array_refs.get_mut(name)
             {
-                array_ref.pointer = pointer.pointer().clone();
+                array_ref.pointer = pointer.address().clone();
             }
             values.insert_retained(name.clone(), value.clone().into_value());
         } else if let Some((value, element_type)) = state.locals().array_object_value(name) {
@@ -116,7 +116,7 @@ pub(in crate::surface) fn contract_environment_for_names(
                 name.clone(),
                 ClickArrayRef {
                     point: point.clone(),
-                    pointer: pointer.pointer().clone(),
+                    pointer: pointer.address().clone(),
                     element_type,
                 },
             );
@@ -347,7 +347,7 @@ mod tests {
         let ProgramValue::Pointer(pointer) = value else {
             unreachable!()
         };
-        assert_eq!(arrays["bytes"].pointer, *pointer.pointer());
+        assert_eq!(arrays["bytes"].pointer, *pointer.address());
         assert_eq!(arrays["bytes"].element_type, element_type);
     }
 

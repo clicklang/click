@@ -5,7 +5,7 @@ use super::prelude::*;
 /// Distinct indices of one typed array describe disjoint complete elements.
 /// Pointer offsets use exact scaled coordinates, not modular byte arithmetic.
 pub(crate) fn prove_separation_elements(
-    base: PointerValue,
+    base: Pointer,
     width: u32,
     format: MachineIntegerType,
     i: MachineTerm,
@@ -21,7 +21,7 @@ pub(crate) fn prove_separation_elements(
     crate::instrumentation::record_deterministic_work(1);
     let element = |index: MachineTerm| {
         let address = base
-            .pointer()
+            .address()
             .offset_by_typed_elements(index, width, unsigned, wide);
         Resource::Memory(MemoryRange::from_pointer_value(
             &base.clone().with_address(address),
@@ -53,7 +53,7 @@ pub(crate) fn prove_separation_elements(
 /// scaled offsets the same way), and the premise is the index disequality in
 /// the index format.
 pub(crate) fn prove_separation_distinct_elements(
-    base: PointerValue,
+    base: Pointer,
     width: u32,
     format: MachineIntegerType,
     i: MachineTerm,
@@ -71,7 +71,7 @@ pub(crate) fn prove_separation_distinct_elements(
     };
     crate::instrumentation::record_deterministic_work(1);
     let address = |index: MachineTerm| {
-        base.pointer()
+        base.address()
             .offset_by_typed_elements(index, width, unsigned, wide)
     };
     Theorem::new(Proposition::Implies(
@@ -122,7 +122,7 @@ pub(crate) fn prove_separation_restrict(
 /// A nested element interval denotes a contained resource. Both ranges are
 /// constructed with one base and width; no facts or memory are inspected.
 pub(crate) fn prove_separation_subrange(
-    base: PointerValue,
+    base: Pointer,
     width: u32,
     format: MachineIntegerType,
     lo: MachineTerm,
@@ -175,7 +175,7 @@ pub(crate) fn prove_separation_subrange(
 /// Adjacent ordered intervals are disjoint. Exact element coordinates avoid
 /// endpoint subtraction and wrapping; the constructor inspects no proof state.
 pub(crate) fn prove_separation_adjacent_ranges(
-    base: PointerValue,
+    base: Pointer,
     width: u32,
     format: MachineIntegerType,
     lo: MachineTerm,
@@ -225,7 +225,7 @@ pub(crate) fn prove_separation_adjacent_ranges(
 /// ordered bounds make the subtraction exact in both admitted formats.
 /// This constructs descriptors; it neither grants ownership nor reads facts.
 pub(crate) fn prove_separation_rebase(
-    base: PointerValue,
+    base: Pointer,
     width: u32,
     format: MachineIntegerType,
     lo: MachineTerm,
@@ -251,10 +251,10 @@ pub(crate) fn prove_separation_rebase(
     let shifted = base
         .clone()
         .with_address(
-            base.pointer()
+            base.address()
                 .offset_by_typed_elements(lo.clone(), width, wide, wide),
         );
-    let range = |pointer: &PointerValue, start, end| {
+    let range = |pointer: &Pointer, start, end| {
         if wide {
             MemoryRange::from_pointer_value_wide(pointer, start, end, width)
         } else {
@@ -290,7 +290,7 @@ pub(crate) fn prove_separation_rebase(
 /// An explicitly bounded index denotes one complete element of its interval.
 /// Offset construction is exact; no wrapping `i + 1` endpoint is introduced.
 pub(crate) fn prove_separation_contains_element(
-    base: PointerValue,
+    base: Pointer,
     width: u32,
     format: MachineIntegerType,
     lo: MachineTerm,
@@ -310,7 +310,7 @@ pub(crate) fn prove_separation_contains_element(
         MemoryRange::from_pointer_value(&base, lo.clone(), hi.clone(), width)
     };
     let address = base
-        .pointer()
+        .address()
         .offset_by_typed_elements(index.clone(), width, wide, wide);
     let child = MemoryRange::from_pointer_value(
         &base.with_address(address),
