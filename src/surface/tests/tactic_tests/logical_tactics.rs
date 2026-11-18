@@ -2610,17 +2610,20 @@ fn disjunctive_premise_solve_expands_to_a_replayable_certificate() {
                 branch ensuring {
                     fact selected == left or selected == right;
                     views selected[0..1];
-                } then {
-                    step();
-                    have selected == left or selected == right by {
-                        have selected == left by { normalize(); }
-                        known();
+                } {
+                    true => {
+                        step();
+                        have selected == left or selected == right by {
+                            have selected == left by { normalize(); }
+                            known();
+                        }
                     }
-                } else {
-                    step();
-                    have selected == left or selected == right by {
-                        have selected == right by { normalize(); }
-                        known();
+                    false => {
+                        step();
+                        have selected == left or selected == right by {
+                            have selected == right by { normalize(); }
+                            known();
+                        }
                     }
                 }
                 step();

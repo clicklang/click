@@ -961,13 +961,17 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
             if let Some(assertions) = &proof_branch.ensuring {
                 line(output, &prefix, "branch ensuring {");
                 write_join_interface(output, assertions, indent + 1);
-                line(output, &prefix, "} then {");
+                line(output, &prefix, "} {");
             } else {
                 line(output, &prefix, "branch {");
             }
-            write_tactics(output, &proof_branch.then_tactics, indent + 1);
-            line(output, &prefix, "} else {");
-            write_tactics(output, &proof_branch.else_tactics, indent + 1);
+            let arm_prefix = "    ".repeat(indent + 1);
+            line(output, &arm_prefix, "true => {");
+            write_tactics(output, &proof_branch.then_tactics, indent + 2);
+            line(output, &arm_prefix, "}");
+            line(output, &arm_prefix, "false => {");
+            write_tactics(output, &proof_branch.else_tactics, indent + 2);
+            line(output, &arm_prefix, "}");
             line(output, &prefix, "}");
         }
         ProofTactic::CallOutcomes(outcomes) => {

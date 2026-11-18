@@ -155,141 +155,177 @@ int f() {
     step();
     step();
     branch {
-        step();
-        solve();
-    } else {}
+        true => {
+            step();
+            solve();
+        }
+        false => {}
+    }
     step();
     step();
     branch {
-        step();
-        step();
-        solve();
-    } else {}
+        true => {
+            step();
+            step();
+            solve();
+        }
+        false => {}
+    }
     step();
     step();
     branch {
-        step();
-        step();
-        step();
-        solve();
-    } else {}
+        true => {
+            step();
+            step();
+            step();
+            solve();
+        }
+        false => {}
+    }
     step();
     step();
     branch {
-        step();
-        step();
-        step();
-        step();
-        solve();
-    } else {}
+        true => {
+            step();
+            step();
+            step();
+            step();
+            solve();
+        }
+        false => {}
+    }
     step();
     step();
     branch {
-        step();
-        step();
-        step();
-        step();
-        step();
-        solve();
-    } else {}
+        true => {
+            step();
+            step();
+            step();
+            step();
+            step();
+            solve();
+        }
+        false => {}
+    }
     step();
     step();
     branch {
-        step();
-        step();
-        step();
-        step();
-        step();
-        step();
-        solve();
-    } else {}
+        true => {
+            step();
+            step();
+            step();
+            step();
+            step();
+            step();
+            solve();
+        }
+        false => {}
+    }
     step();
     step();
     branch {
-        step();
-        step();
-        step();
-        step();
-        step();
-        step();
-        step();
-        solve();
-    } else {}
+        true => {
+            step();
+            step();
+            step();
+            step();
+            step();
+            step();
+            step();
+            solve();
+        }
+        false => {}
+    }
     step();
     step();
     branch {
-        step();
-        step();
-        step();
-        step();
-        step();
-        step();
-        step();
-        step();
-        solve();
-    } else {}
+        true => {
+            step();
+            step();
+            step();
+            step();
+            step();
+            step();
+            step();
+            step();
+            solve();
+        }
+        false => {}
+    }
     step();
     step();
     branch {
-        step();
-        step();
-        step();
-        step();
-        step();
-        step();
-        step();
-        step();
-        step();
-        solve();
-    } else {}
+        true => {
+            step();
+            step();
+            step();
+            step();
+            step();
+            step();
+            step();
+            step();
+            step();
+            solve();
+        }
+        false => {}
+    }
     step();
     step();
     branch {
-        step();
-        step();
-        step();
-        step();
-        step();
-        step();
-        step();
-        step();
-        step();
-        step();
-        solve();
-    } else {}
+        true => {
+            step();
+            step();
+            step();
+            step();
+            step();
+            step();
+            step();
+            step();
+            step();
+            step();
+            solve();
+        }
+        false => {}
+    }
     step();
     step();
     branch {
-        step();
-        step();
-        step();
-        step();
-        step();
-        step();
-        step();
-        step();
-        step();
-        step();
-        step();
-        solve();
-    } else {}
+        true => {
+            step();
+            step();
+            step();
+            step();
+            step();
+            step();
+            step();
+            step();
+            step();
+            step();
+            step();
+            solve();
+        }
+        false => {}
+    }
     step();
     step();
     branch {
-        step();
-        step();
-        step();
-        step();
-        step();
-        step();
-        step();
-        step();
-        step();
-        step();
-        step();
-        step();
-        solve();
-    } else {}
+        true => {
+            step();
+            step();
+            step();
+            step();
+            step();
+            step();
+            step();
+            step();
+            step();
+            step();
+            step();
+            step();
+            solve();
+        }
+        false => {}
+    }
     step();
     step();
     step();

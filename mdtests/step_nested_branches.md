@@ -30,18 +30,24 @@ int32 nested_branch_steps(int32 x) {
         step();
         branch ensuring {
             fact y >= 0;
-        } then {
-            step();
-            branch ensuring {
-                fact y >= 0;
-            } then {
+        } {
+            true => {
                 step();
-                have y >= 0;
-            } else {
+                branch ensuring {
+                    fact y >= 0;
+                } {
+                    true => {
+                        step();
+                        have y >= 0;
+                    }
+                    false => {
+                        step();
+                    }
+                }
+            }
+            false => {
                 step();
             }
-        } else {
-            step();
         }
         step();
         have result >= 0 by {

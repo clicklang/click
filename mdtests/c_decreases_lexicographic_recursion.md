@@ -31,9 +31,12 @@ int32 ack(int32 m, int32 n) {
     ensures result >= 0;
 } by {
     branch {
-        step();
-        solve();
-    } else {}
+        true => {
+            step();
+            solve();
+        }
+        false => {}
+    }
     have m > 0 by {
         solve() using {
             m >= 0;
@@ -43,10 +46,13 @@ int32 ack(int32 m, int32 n) {
     have 0 <= to_integer(m - 1);
     have to_integer(m - 1) < to_integer(m);
     branch {
-        step();
-        step();
-        solve();
-    } else {}
+        true => {
+            step();
+            step();
+            solve();
+        }
+        false => {}
+    }
     have n > 0 by {
         solve() using {
             n >= 0;

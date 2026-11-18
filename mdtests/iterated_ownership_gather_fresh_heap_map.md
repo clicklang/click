@@ -44,9 +44,12 @@ void with_fresh_map(int32* data, int32 capacity) {
     step();
     step();
     branch {
-        step_until(function.exit);
-        solve();
-    } else {}
+        true => {
+            step_until(function.exit);
+            solve();
+        }
+        false => {}
+    }
     step();
     loop {
         decreases capacity - i;

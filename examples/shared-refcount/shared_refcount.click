@@ -94,7 +94,7 @@ int32 run() {
     step();
     step();
     step();
-    branch { step(); solve(); } else {}
+    branch { true => { step(); solve(); } false => {} }
     step();
     fold(authority(reference(obj)));
     fold(authority(permit(obj)));
@@ -106,36 +106,42 @@ int32 run() {
     step(object_retain, { access: lifetime });
     step();
     branch {
-        step(object_release, { access: lifetime });
-        step(object_release, { access: lifetime });
-        step(pthread_mutex_destroy, { lifetime: lifetime });
-        unfold(control);
-        unfold(permit(obj));
-        unfold(permit(obj));
-        unfold(permit(obj));
-        unfold(authority(reference(obj)));
-        unfold(authority(permit(obj)));
-        step();
-        step();
-        solve();
-    } else {}
+        true => {
+            step(object_release, { access: lifetime });
+            step(object_release, { access: lifetime });
+            step(pthread_mutex_destroy, { lifetime: lifetime });
+            unfold(control);
+            unfold(permit(obj));
+            unfold(permit(obj));
+            unfold(permit(obj));
+            unfold(authority(reference(obj)));
+            unfold(authority(permit(obj)));
+            step();
+            step();
+            solve();
+        }
+        false => {}
+    }
     step(object_retain, { access: lifetime });
     step();
     branch {
-        step(object_release, { access: lifetime });
-        step();
-        step(object_release, { access: lifetime });
-        step(pthread_mutex_destroy, { lifetime: lifetime });
-        unfold(control);
-        unfold(permit(obj));
-        unfold(permit(obj));
-        unfold(permit(obj));
-        unfold(authority(reference(obj)));
-        unfold(authority(permit(obj)));
-        step();
-        step();
-        solve();
-    } else {}
+        true => {
+            step(object_release, { access: lifetime });
+            step();
+            step(object_release, { access: lifetime });
+            step(pthread_mutex_destroy, { lifetime: lifetime });
+            unfold(control);
+            unfold(permit(obj));
+            unfold(permit(obj));
+            unfold(permit(obj));
+            unfold(authority(reference(obj)));
+            unfold(authority(permit(obj)));
+            step();
+            step();
+            solve();
+        }
+        false => {}
+    }
     step();
     step();
     step(object_release, { access: lifetime });
@@ -158,7 +164,7 @@ int32 run_reverse_join() {
     step();
     step();
     step();
-    branch { step(); solve(); } else {}
+    branch { true => { step(); solve(); } false => {} }
     step();
     fold(authority(reference(obj)));
     fold(authority(permit(obj)));
@@ -170,36 +176,42 @@ int32 run_reverse_join() {
     step(object_retain, { access: lifetime });
     step();
     branch {
-        step(object_release, { access: lifetime });
-        step(object_release, { access: lifetime });
-        step(pthread_mutex_destroy, { lifetime: lifetime });
-        unfold(control);
-        unfold(permit(obj));
-        unfold(permit(obj));
-        unfold(permit(obj));
-        unfold(authority(reference(obj)));
-        unfold(authority(permit(obj)));
-        step();
-        step();
-        solve();
-    } else {}
+        true => {
+            step(object_release, { access: lifetime });
+            step(object_release, { access: lifetime });
+            step(pthread_mutex_destroy, { lifetime: lifetime });
+            unfold(control);
+            unfold(permit(obj));
+            unfold(permit(obj));
+            unfold(permit(obj));
+            unfold(authority(reference(obj)));
+            unfold(authority(permit(obj)));
+            step();
+            step();
+            solve();
+        }
+        false => {}
+    }
     step(object_retain, { access: lifetime });
     step();
     branch {
-        step(object_release, { access: lifetime });
-        step();
-        step(object_release, { access: lifetime });
-        step(pthread_mutex_destroy, { lifetime: lifetime });
-        unfold(control);
-        unfold(permit(obj));
-        unfold(permit(obj));
-        unfold(permit(obj));
-        unfold(authority(reference(obj)));
-        unfold(authority(permit(obj)));
-        step();
-        step();
-        solve();
-    } else {}
+        true => {
+            step(object_release, { access: lifetime });
+            step();
+            step(object_release, { access: lifetime });
+            step(pthread_mutex_destroy, { lifetime: lifetime });
+            unfold(control);
+            unfold(permit(obj));
+            unfold(permit(obj));
+            unfold(permit(obj));
+            unfold(authority(reference(obj)));
+            unfold(authority(permit(obj)));
+            step();
+            step();
+            solve();
+        }
+        false => {}
+    }
     step();
     step();
     step(object_release, { access: lifetime });

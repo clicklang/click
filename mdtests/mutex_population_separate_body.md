@@ -102,34 +102,43 @@ int32 increment_twice(struct mutex_counter* counter) {
     let state = fold(counter_state(counter), { value: counter->value });
     let { lifetime: lifetime } = step(pthread_mutex_init, { state: state });
     branch {
-        have to_integer(count(contribution(counter))) == 2;
-        unfold(contribution(counter));
-        unfold(contribution(counter));
-        unfold(state);
-        step();
-        solve();
-    } else {}
+        true => {
+            have to_integer(count(contribution(counter))) == 2;
+            unfold(contribution(counter));
+            unfold(contribution(counter));
+            unfold(state);
+            step();
+            solve();
+        }
+        false => {}
+    }
     step();
     branch {
-        have to_integer(count(contribution(counter))) == 2;
-        unfold(contribution(counter));
-        unfold(contribution(counter));
-        step(pthread_mutex_destroy, { lifetime: lifetime });
-        unfold(state);
-        step();
-        solve();
-    } else {}
+        true => {
+            have to_integer(count(contribution(counter))) == 2;
+            unfold(contribution(counter));
+            unfold(contribution(counter));
+            step(pthread_mutex_destroy, { lifetime: lifetime });
+            unfold(state);
+            step();
+            solve();
+        }
+        false => {}
+    }
     step();
     branch {
-        step();
-        unfold(contribution(counter));
-        unfold(contribution(counter));
-        have to_integer(count(contribution(counter))) == 0;
-        step(pthread_mutex_destroy, { lifetime: lifetime });
-        unfold(state);
-        step();
-        solve();
-    } else {}
+        true => {
+            step();
+            unfold(contribution(counter));
+            unfold(contribution(counter));
+            have to_integer(count(contribution(counter))) == 0;
+            step(pthread_mutex_destroy, { lifetime: lifetime });
+            unfold(state);
+            step();
+            solve();
+        }
+        false => {}
+    }
     step();
     unfold(contribution(counter));
     have to_integer(count(contribution(counter))) == 1;

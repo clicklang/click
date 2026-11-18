@@ -26,10 +26,13 @@ int32 compare_by(uint8 bytes[], int32 c) {
     views bytes[0..2];
     ensures 1 == 1 by {
         branch {
-            step() by { solve(); }
-            step();
-            solve();
-        } else {}
+            true => {
+                step() by { solve(); }
+                step();
+                solve();
+            }
+            false => {}
+        }
         step();
         solve();
     }
@@ -39,12 +42,15 @@ int32 compare_requires(uint8 bytes[], int32 c) {
     views bytes[0..2];
     ensures 1 == 1 by {
         branch {
-            step() {
-                requires forall (k: uint64) { k < 2 implies defined(bytes[k]) and defined(bytes[k]) } by solve();
+            true => {
+                step() {
+                    requires forall (k: uint64) { k < 2 implies defined(bytes[k]) and defined(bytes[k]) } by solve();
+                }
+                step();
+                solve();
             }
-            step();
-            solve();
-        } else {}
+            false => {}
+        }
         step();
         solve();
     }

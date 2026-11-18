@@ -26,10 +26,13 @@ int32 branch_common_requirement(int32 x, int32 flag) {
         step();
         branch ensuring {
             fact y >= 0;
-        } then {
-            step();
-        } else {
-            step();
+        } {
+            true => {
+                step();
+            }
+            false => {
+                step();
+            }
         }
         step();
         solve();

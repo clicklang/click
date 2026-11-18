@@ -81,9 +81,9 @@ tactics. Call-style tactics always take parentheses, including `solve()`.
 Write `solve`, `solve() using`, and `step_until`; the parser refuses the
 removed names `assumption`, `auto`, `arithmetic`, `execute`, and
 `execute_until`. Structural forms such as `if`, `match`, and `have` retain their
-own grammar. For binary proof splits
-(`if` and `branch`), write `then` exactly when an `ensuring` interface precedes
-the arms. Call modifiers follow the
+own grammar. Write `then` after a proof `if`'s `ensuring` interface. In a
+`branch`, write `true => { ... }` and `false => { ... }` inside the arm block.
+Call modifiers follow the
 parenthesized head, as in `step() by { ... }`.
 
 End call statements with `;`, including calls with a `using { ... };` list.

@@ -28,10 +28,13 @@ int32 joined_increment(int32* p, int32 x) {
         branch ensuring {
             fact y >= 0;
             fact y < 2147483647;
-        } then {
-            step();
-        } else {
-            step();
+        } {
+            true => {
+                step();
+            }
+            false => {
+                step();
+            }
         }
         step();
         step();

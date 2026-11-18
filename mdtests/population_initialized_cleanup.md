@@ -101,7 +101,7 @@ int32 cleanup(int32 payload) {
 } by {
     step();
     step();
-    branch { step(); solve(); } else {}
+    branch { true => { step(); solve(); } false => {} }
     fold(authority(child_ref(kid)));
     fold(child_storage(kid));
     step();
@@ -109,7 +109,7 @@ int32 cleanup(int32 payload) {
     fold(child_control(kid));
     step();
     step();
-    branch { step(); step(); solve(); } else {}
+    branch { true => { step(); step(); solve(); } false => {} }
     step();
     step();
     step();

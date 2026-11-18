@@ -103,37 +103,43 @@ fn canonical_using_calls_wrap_long_premises_and_keep_their_terminator() {
 }
 
 #[test]
-fn binary_splits_require_then_exactly_when_they_have_an_interface() {
+fn binary_splits_use_their_own_join_interface_syntax() {
     let source = |body: &str| {
         format!("verifying \"split.c\"; int32 split(int32 x) {{ ensures true by {{ {body} }} }}")
     };
-    for head in ["if x == 0", "branch"] {
-        for interface in ["", "ensuring { fact x == x; } then "] {
-            let written = source(&format!(
-                "{head} {interface}{{ known(); }} else {{ known(); }}"
-            ));
+    for (head, arms, interface_separator) in [
+        ("if x == 0", "{ known(); } else { known(); }", "then "),
+        (
+            "branch",
+            "{ true => { known(); } false => { known(); } }",
+            "",
+        ),
+    ] {
+        for interface in [
+            "".to_string(),
+            format!("ensuring {{ fact x == x; }} {interface_separator}"),
+        ] {
+            let written = source(&format!("{head} {interface}{arms}"));
             let parsed = parser::parse(&written).unwrap();
             let proof = parsed.function_blocks()[0].ensures()[0].proof();
             let printed =
                 super::super::printing::format_partial_tactic_sequence(proof.tactics().unwrap());
             assert_eq!(
                 printed.contains("then {"),
-                !interface.is_empty(),
+                !interface.is_empty() && !interface_separator.is_empty(),
                 "{printed}"
             );
             let reparsed = parser::parse(&source(&printed)).unwrap();
             assert_eq!(proof, reparsed.function_blocks()[0].ensures()[0].proof());
         }
+        assert!(parser::parse(&source(&format!("{head} then {arms}"))).is_err());
+        let wrong_separator = if interface_separator.is_empty() {
+            "then "
+        } else {
+            ""
+        };
         let error = parser::parse(&source(&format!(
-            "{head} then {{ known(); }} else {{ known(); }}"
-        )))
-        .unwrap_err();
-        assert!(
-            error.message().contains("requires an `ensuring` interface"),
-            "{error:?}"
-        );
-        let error = parser::parse(&source(&format!(
-            "{head} ensuring {{ fact x == x; }} {{ known(); }} else {{ known(); }}"
+            "{head} ensuring {{ fact x == x; }} {wrong_separator}{arms}"
         )))
         .unwrap_err();
         assert!(error.message().contains("then"), "{error:?}");

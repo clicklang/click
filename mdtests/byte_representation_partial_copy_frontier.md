@@ -36,9 +36,9 @@ int h() {
     ensures result == 7 or result == -1;
 } by {
     step(); step();
-    branch { step(); solve(); } else {}
+    branch { true => { step(); solve(); } false => {} }
     step(); step();
-    branch { step(); step(); solve(); } else {}
+    branch { true => { step(); step(); solve(); } false => {} }
     step(); step();
     fold(Whole(dst));
     unfold(Whole(dst));

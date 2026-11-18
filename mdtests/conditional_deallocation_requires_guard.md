@@ -35,11 +35,14 @@ int32 conditional_deallocation_requires_guard(int32* p, int32 error) {
     step();
     branch ensuring {
         owns permit();
-    } then {
-        step();
-        step();
-    } else {
-        step();
+    } {
+        true => {
+            step();
+            step();
+        }
+        false => {
+            step();
+        }
     }
     step();
     solve();

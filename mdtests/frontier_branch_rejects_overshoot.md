@@ -19,11 +19,14 @@ int32 branch_overshoot(int32 x) {
     ensures result >= 0 by {
         step();
         branch {
-            step();
-            step();
-        } else {
-            step();
-            step();
+            true => {
+                step();
+                step();
+            }
+            false => {
+                step();
+                step();
+            }
         }
     }
 }

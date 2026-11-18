@@ -64,10 +64,13 @@ uint32 run(struct counter* counter) {
     let { lifetime: lifetime } = step(pthread_mutex_init, { state: initial });
     step();
     branch {
-        step(pthread_mutex_destroy, { lifetime: lifetime });
-        step();
-        solve();
-    } else {}
+        true => {
+            step(pthread_mutex_destroy, { lifetime: lifetime });
+            step();
+            solve();
+        }
+        false => {}
+    }
     step();
     step();
     step();

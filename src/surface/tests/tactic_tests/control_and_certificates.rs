@@ -306,7 +306,7 @@ fn both_and_outcome_expands_and_rechecks() {
 fn parses_frontier_branch_tactic() {
     let source = FILL3_CLICK.replace(
         "== 2;",
-        "== 2 by { branch { step(); } else { step_until(function.exit); } }",
+        "== 2 by { branch { true => { step(); } false => { step_until(function.exit); } } }",
     );
     let file = parse(&source).expect("frontier branch tactic should parse");
     let tactics = file.function_blocks()[0].ensures()[0]
@@ -328,7 +328,7 @@ fn parses_frontier_branch_tactic() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_04")]
 fn parses_frontier_branch_ensuring_interface() {
-    let source = FILL3_CLICK.replace("== 2;", "== 2 by { branch ensuring { fact i >= 0; owns p[0..3]; } then { step(); } else { step_until(function.exit); } }",
+    let source = FILL3_CLICK.replace("== 2;", "== 2 by { branch ensuring { fact i >= 0; owns p[0..3]; } { true => { step(); } false => { step_until(function.exit); } } }",
     );
     let file = parse(&source).expect("frontier branch ensuring interface should parse");
     let tactics = file.function_blocks()[0].ensures()[0]
@@ -373,11 +373,14 @@ fn linear_frontier_branch_uses_the_checked_structural_join() {
             ensures returns_one: result == 1;
         } by {
             branch {
-                unfold(selected(x));
-                step();
-            } else {
-                unfold(selected(x));
-                step();
+                true => {
+                    unfold(selected(x));
+                    step();
+                }
+                false => {
+                    unfold(selected(x));
+                    step();
+                }
             }
             step();
             solve();
@@ -432,7 +435,7 @@ fn terminal_frontier_branch_seals_without_a_body_rerun() {
         int32 choose_sign(int32 x) {
             ensures result == 1 or result == 2;
         } by {
-            branch { step(); } else { step(); }
+            branch { true => { step(); } false => { step(); } }
             solve();
         }
     "#;
@@ -471,8 +474,8 @@ fn successive_shared_continuation_branches_seal_without_path_multiplication() {
         int32 two_branches(int32 x, int32 y) {
             ensures result == x;
         } by {
-            branch {} else {}
-            branch {} else {}
+            branch { true => {} false => {} }
+            branch { true => {} false => {} }
             step();
             solve();
         }
@@ -511,7 +514,7 @@ fn decided_frontier_branch_retains_the_only_feasible_checked_arm() {
         int32 constant_negative(int32 x) {
             requires x < 0;
             ensures returns_one: result == 1 by {
-                branch { step(); } else { step(); }
+                branch { true => { step(); } false => { step(); } }
                 step();
                 solve();
             }

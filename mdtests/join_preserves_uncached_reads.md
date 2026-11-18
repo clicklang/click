@@ -31,7 +31,7 @@ void keep(struct pair* p, int32 x) {
     have p->tag == 42 by { known(); }
     have p->count == 17 by { known(); }
     mark before_join;
-    branch ensuring { fact 1 == 1; } then { step(); } else { step(); }
+    branch ensuring { fact 1 == 1; } { true => { step(); } false => { step(); } }
     have p->tag == 42 by { known(); }
     have p->count == 17 by { known(); }
     have p->tag == 42 by {
