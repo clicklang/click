@@ -415,8 +415,8 @@ one-level composite children to consumed input clauses. Unguarded parameter-only
 children keep entry origin; conversions, loads, and unmatched footprints
 retain their boundary checks. Composite scaling grows selected body parts as
 well as retained same-block owners and both alias shapes at 4/16/64.
-Iterated `take`/`scatter` now construct their exposed ownership from the checked
-hole/guard exchange without admission or block normalization; their exposure
+Indexed `unfold` and `scatter` construct their exposed ownership from the checked
+hole/guard exchange without admission or block normalization. Their exposure
 regression grows retained owners and aliases and retains occurrence support.
 Scatter guard preparation now selects an indexed whole-range equality source
 without enumerating universals or replaying its conclusion. Its regression

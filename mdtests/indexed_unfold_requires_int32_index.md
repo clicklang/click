@@ -1,12 +1,9 @@
-# `take` refuses a range that is not one element
+# An indexed resource operation requires a signed 32-bit index
 
-`take` moves exactly one element of an iterated ownership fact: the range it
-names must be the clause's element at one index, here `data[k..k + 1]`. A
-two-cell range `data[index..index + 2]` spans two elements, so it is refused
-even though both indices are in range with true guards; take each element
-with its own `take`.
+The value `0u64` is outside the slot index type even though the numerical
+value would be in bounds.
 
-```c filename=take_refuses_a_range_that_is_not_one_element.c
+```c filename=indexed_unfold_requires_int32_index.c
 void touch(int32* data, int32* occupied, int32 capacity, int32 index) { }
 ```
 
@@ -20,7 +17,7 @@ resource arena_cells(data: int32*, occupied: int32*, capacity: int32) {
     }
 }
 
-verifying "take_refuses_a_range_that_is_not_one_element.c";
+verifying "indexed_unfold_requires_int32_index.c";
 
 void touch(int32* data, int32* occupied, int32 capacity, int32 index) {
     owns arena_cells(data, occupied, capacity);
@@ -30,11 +27,11 @@ void touch(int32* data, int32* occupied, int32 capacity, int32 index) {
     requires occupied[index + 1] == 0;
 } by {
     unfold(arena_cells(data, occupied, capacity));
-    take(data[index..index + 2]);
+    unfold(arena_cells(data, occupied, capacity)[0u64]);
     fold(arena_cells(data, occupied, capacity));
 }
 ```
 
 ```expect
-fail: not established: `index + 2`
+fail: `unfold` slot index must be int32
 ```

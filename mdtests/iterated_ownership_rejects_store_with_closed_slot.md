@@ -2,10 +2,10 @@
 
 The iterated fact holds `data[index]` while its guard is true, but holding it
 there grants no access: a C store needs the element as owned memory, which
-only `take` provides. The accepted form is
+only indexed `unfold` provides. The accepted form is
 [`iterated_ownership_allocate_one.md`](iterated_ownership_allocate_one.md).
 
-```c filename=iterated_ownership_rejects_store_without_take.c
+```c filename=iterated_ownership_rejects_store_with_closed_slot.c
 void poke(int32* data, int32* occupied, int32 capacity, int32 index) {
     if (occupied[index] != 0) {
         return;
@@ -24,7 +24,7 @@ resource arena_cells(data: int32*, occupied: int32*, capacity: int32) {
     }
 }
 
-verifying "iterated_ownership_rejects_store_without_take.c";
+verifying "iterated_ownership_rejects_store_with_closed_slot.c";
 
 void poke(int32* data, int32* occupied, int32 capacity, int32 index) {
     owns arena_cells(data, occupied, capacity);

@@ -11176,6 +11176,9 @@ pub(super) struct ResourceContextIndex {
     /// denotation depends on: the element base and the guard cells. A store,
     /// havoc, or free visits only the facts filed under its own block.
     pub(super) iterated_by_block: PersistentMap<AddressBase, ResourceEntryIds>,
+    /// Owned iterated facts keyed by their instantiated clause without holes.
+    /// Membership changes at individual indices do not change this key.
+    pub(super) owned_iterated_by_clause: PersistentMap<IteratedMemory, ResourceEntryIds>,
     /// SymbolicMemory facts keyed by their exact base spelling. Direct pointer
     /// equalities can then find only the facts whose bases they identify,
     /// without scanning every resource in an aliased block.
