@@ -2110,7 +2110,15 @@ Clang layouts preserve native pointer and unsigned extent values; copying a
 descriptor transfers no backing-storage authority. Self-assignment preserves
 the fields. User-defined assignment bodies and move assignment remain refused.
 
-Copy construction and moves, default or partial aggregate initialization, multiple
+Copy-initializing a local from a live lvalue, as in `auto copy = source;`,
+can use a resolved trivial copy constructor declared in a system header.
+The constructor call takes the destination's address and a reference to the
+source. Its `extern` contract can establish the destination's logical state
+independently of the object's fields. The pinned libc++ test
+`libcxx_span_copy_initialization_uses_an_opaque_contract` checks this with a
+logical pointer and count.
+
+Other copy construction and moves, default or partial aggregate initialization, multiple
 non-destructible aggregate locals, broader nested lifetime combinations,
 general inheritance, bit-fields, nested record construction,
 and same-named record layouts remain explicit errors.
