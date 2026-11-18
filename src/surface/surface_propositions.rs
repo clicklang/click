@@ -78,7 +78,7 @@ struct StoreReadKey {
 
 impl StoreReadKey {
     fn of(equation: &Proposition) -> Option<(Self, &Address)> {
-        use crate::kernel::{AddressBase, AddressOffset, LoadKind};
+        use crate::kernel::{AddressBase, LoadKind};
         let Proposition::ConditionIs(
             ConditionTerm::Compare {
                 relation: CompareRelation::Equal,
@@ -93,15 +93,7 @@ impl StoreReadKey {
         let MachineTerm::MemoryLoad(point, address, LoadKind::UInt32) = left.as_ref() else {
             return None;
         };
-        if address.base != AddressBase::ExternalArgument
-            || !matches!(
-                address.offset,
-                AddressOffset::Constant(_)
-                    | AddressOffset::Variable(_)
-                    | AddressOffset::Int32Scaled { .. }
-                    | AddressOffset::Int64Scaled { .. }
-            )
-        {
+        if address.base != AddressBase::ExternalArgument || !address.offset.is_shallow() {
             return None;
         }
         Some((
@@ -835,14 +827,14 @@ impl SurfacePropositionMap {
         &mut self,
         equation: &Arc<Proposition>,
         surface: &ClickProposition,
-        pointer: &crate::kernel::ExecutionValue,
+        source_address: &Address,
     ) -> bool {
         let Some((key, address)) = StoreReadKey::of(equation) else {
             return false;
         };
         // A store may have chosen another owner's address through an alias.
         // The written pointer must name the exact read in the equation.
-        if !pointer.retains_flat_pointer_address(address) {
+        if source_address != address {
             return false;
         }
         crate::instrumentation::record_deterministic_work(1);
@@ -1410,18 +1402,12 @@ mod store_source_tests {
             right: ContractExpression::Binding("value".into()),
         };
         let mut map = SurfacePropositionMap::default();
-        let pointer = |address| {
-            crate::kernel::ExecutionValue::from(crate::kernel::ProgramValue::typed_pointer(
-                address,
-                crate::kernel::ProgramType::UInt32Pointer,
-            ))
-        };
         let other = Address {
             base: AddressBase::ExternalArgument,
             offset: AddressOffset::Variable(Variable(2)),
         };
-        assert!(!map.record_store_source(&stored, &source, &pointer(other)));
-        assert!(map.record_store_source(&stored, &source, &pointer(address)));
+        assert!(!map.record_store_source(&stored, &source, &other));
+        assert!(map.record_store_source(&stored, &source, &address));
         assert_eq!(map.recorded_surface(&equation(1)), Some(&source));
         assert_eq!(map.recorded_surface(&equation(2)), None);
         assert_eq!(map.surfaces(&stored).collect::<Vec<_>>(), vec![&source]);

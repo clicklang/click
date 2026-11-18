@@ -82,32 +82,6 @@ impl ExecutionValue {
             _ => None,
         }
     }
-    /// Compare with a selected flat address without exporting a shared
-    /// pointer. A scaled offset may carry a shared index or a native variable.
-    pub(crate) fn retains_flat_pointer_address(&self, address: &Address) -> bool {
-        match self {
-            Self::Native(ProgramValue::Pointer(pointer)) => pointer.address() == address,
-            Self::Shared(root) => {
-                let Some(payload) = root.pointer_payload() else {
-                    return false;
-                };
-                match &address.offset {
-                    AddressOffset::Constant(_) | AddressOffset::Variable(_) => {}
-                    AddressOffset::Int32Scaled { value, .. }
-                    | AddressOffset::Int64Scaled { value, .. }
-                        if value.shared_operand().is_some()
-                            || matches!(
-                                value.retained_written_operand(),
-                                Some(MachineTerm::Variable(_))
-                            ) => {}
-                    _ => return false,
-                }
-                payload.node().address == super::primitives::SharedAddress::import(address)
-            }
-            _ => false,
-        }
-    }
-
     pub fn byte_width(&self) -> u32 {
         self.program_type().byte_width()
     }

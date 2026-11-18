@@ -1680,6 +1680,10 @@ field. Exception-enabled normal-only imports permit these local objects when
 destruction is trivial. Throwing construction, header destructor bodies, and
 nested calls in constructor arguments remain outside this slice.
 
+An ordinary `void` function may use a bare `return;` to leave an
+execution path early. The importer records it as a return edge and runs
+the live locals' supported destructors before exiting.
+
 The `terminal-destructor` fixture adds one public, non-virtual, non-deleted,
 explicitly `noexcept` destructor with a nonempty supported body. The artifact
 records its declaration identity on the record and records its implicit call

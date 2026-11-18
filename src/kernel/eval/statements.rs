@@ -463,7 +463,7 @@ pub(in crate::kernel) fn memory_write_permission_outcome(
 /// its explicit proof or ordinary solve; this operation never searches loans.
 fn memory_write_obligation_outcome(
     state: &ExecutionState,
-    range: MemoryRange,
+    range: &MemoryRange,
     storage_pointer: &Address,
     assumptions: &PureFactContext,
     obligations: &mut Vec<ProofObligation>,
@@ -474,7 +474,7 @@ fn memory_write_obligation_outcome(
     {
         return Some(StatementOutcome::RuntimeError(error));
     }
-    require_write_loan_separation(state, &range, obligations);
+    require_write_loan_separation(state, range, obligations);
     memory_write_ownership_outcome(state, storage_range, assumptions)
 }
 
@@ -772,7 +772,7 @@ fn write_program_lvalue_paths_for_initialization(
                     );
                     memory_write_obligation_outcome(
                         state,
-                        range,
+                        &range,
                         pointer,
                         &effective_assumptions,
                         &mut obligations,
@@ -976,7 +976,7 @@ fn write_program_lvalue_paths_for_initialization(
             }
             if let Some(outcome) = memory_write_obligation_outcome(
                 state,
-                write_range,
+                &write_range,
                 &pointer,
                 &effective_assumptions,
                 &mut obligations,
@@ -1202,11 +1202,19 @@ fn write_program_lvalue_paths_for_initialization(
                 written_value.clone(),
                 authorized_range,
             );
-            store_fact
+            let certificate = store_fact
                 .certified_store
                 .as_mut()
-                .expect("fresh store certificate")
-                .source = store_source.clone();
+                .expect("fresh store certificate");
+            certificate.source = store_source.clone();
+            let source_address = write_range.base();
+            if !is_volatile
+                && written_value.program_type() == ProgramType::UInt32
+                && source_address.base == AddressBase::ExternalArgument
+                && source_address.offset.is_shallow()
+            {
+                certificate.source_address = Some(source_address.clone());
+            }
             facts.push(store_fact);
             // The checked store establishes the complete pointer value at
             // this exact state. Retain its read equation so congruence

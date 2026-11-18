@@ -1286,6 +1286,10 @@ pub enum CppStatement {
         cleanups: Vec<CppCleanup>,
         span: CppSpan,
     },
+    ReturnVoid {
+        cleanups: Vec<CppCleanup>,
+        span: CppSpan,
+    },
     ReturnCall {
         callee: CppFunctionReference,
         arguments: Vec<CppCallArgument>,
@@ -3648,6 +3652,7 @@ impl CppFunction {
                 | CppStatement::ReturnAggregateCall { .. }
                 | CppStatement::ReturnRecord { .. }
                 | CppStatement::Return { .. }
+                | CppStatement::ReturnVoid { .. }
                 | CppStatement::ReturnCall { .. },
             ) = self.body.last()
             else {
@@ -3987,6 +3992,13 @@ impl CppStatement {
                 span.validate(logical_source)?;
                 value.validate(places, records, logical_source)?;
                 require_return_value_type(value.value_type(), "return value")?;
+                for cleanup in cleanups {
+                    cleanup.validate(places, records, logical_source)?;
+                }
+                Ok(())
+            }
+            Self::ReturnVoid { cleanups, span } => {
+                span.validate(logical_source)?;
                 for cleanup in cleanups {
                     cleanup.validate(places, records, logical_source)?;
                 }
@@ -5478,6 +5490,7 @@ fn sequence_contains_return(statements: &[CppStatement]) -> bool {
         | CppStatement::ReturnAggregateCall { .. }
         | CppStatement::ReturnRecord { .. }
         | CppStatement::Return { .. }
+        | CppStatement::ReturnVoid { .. }
         | CppStatement::ReturnCall { .. } => true,
         CppStatement::If {
             then_branch,
@@ -5580,6 +5593,7 @@ impl CppStatement {
             | Self::ReturnAggregateCall { .. }
             | Self::ReturnRecord { .. }
             | Self::Return { .. }
+            | Self::ReturnVoid { .. }
             | Self::ReturnCall { .. }
             | Self::Throw { .. }
             | Self::ThrowIosFailure { .. }
@@ -6232,7 +6246,9 @@ fn collect_calls<'a>(statements: &'a [CppStatement], calls: &mut Vec<CollectedCa
                     calls.push(CollectedCall::Destructor { object, callee });
                 }
             }
-            CppStatement::ReturnRecord { cleanups, .. } | CppStatement::Return { cleanups, .. } => {
+            CppStatement::ReturnRecord { cleanups, .. }
+            | CppStatement::Return { cleanups, .. }
+            | CppStatement::ReturnVoid { cleanups, .. } => {
                 for cleanup in cleanups {
                     let CppCleanup::Destructor { object, callee, .. } = cleanup;
                     calls.push(CollectedCall::Destructor { object, callee });
@@ -6910,7 +6926,8 @@ fn validate_statement_constant_references(
             | CppStatement::ThrowIosFailure { .. }
             | CppStatement::TrivialCopy { .. }
             | CppStatement::BaseDestruct { .. }
-            | CppStatement::ReturnRecord { .. } => {}
+            | CppStatement::ReturnRecord { .. }
+            | CppStatement::ReturnVoid { .. } => {}
             CppStatement::Declare { initializer, .. } => {
                 initializer.validate_constant_references(
                     logical_source,
@@ -7442,6 +7459,9 @@ fn validate_return_types(statements: &[CppStatement], return_type: &CppType) -> 
                 if value_type != return_type =>
             {
                 return Err("C++ record return does not match the function return type".into());
+            }
+            CppStatement::ReturnVoid { .. } if *return_type != CppType::Void => {
+                return Err("C++ value-free return requires a void function".into());
             }
             CppStatement::Return { value, .. }
                 if !same_scalar_type(value.value_type(), return_type) =>

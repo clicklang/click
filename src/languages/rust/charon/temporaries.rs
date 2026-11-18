@@ -412,6 +412,23 @@ fn resolve(
             }
             _ => false,
         },
+        // A shared slice of a local array, `&words[..]`: the array's address
+        // and length never change while the slice lives.
+        E::ArrayToSlice {
+            array,
+            mutable: false,
+        } => {
+            matches!(
+                types.get(&name.to_string()),
+                Some(
+                    super::super::schema::Type::ByteSlice { mutable: false }
+                        | super::super::schema::Type::ScalarSlice { mutable: false, .. }
+                )
+            ) && match array.as_ref() {
+                E::Borrow { place, .. } => place_root(place).is_some(),
+                _ => false,
+            }
+        }
         value => unchanging_scalar(value, unchanged),
     };
     let result = unchanging.then_some(value);
@@ -2784,6 +2801,63 @@ mod tests {
             [S::Assign { value: E::SliceLength { slice }, .. }]
                 if matches!(slice.as_ref(), E::Borrow { place, .. }
                     if matches!(place.as_ref(), E::Local { name } if name == "bytes"))
+        ));
+    }
+
+    #[test]
+    fn a_shared_slice_of_a_local_array_is_read_in_place() {
+        // `t1 = &words[..]; x = len(t1)` is `x = len(&words[..])`.
+        let slice = Type::ScalarSlice {
+            element: Box::new(Type::U32),
+            mutable: false,
+        };
+        let mut locals = vec![
+            place("x"),
+            place("words"),
+            Place {
+                value_type: slice.clone(),
+                ..place("t1")
+            },
+        ];
+        let mut blocks = vec![block(
+            vec![
+                assign(
+                    "t1",
+                    E::ArrayToSlice {
+                        array: Box::new(E::Borrow {
+                            place: Box::new(local("words")),
+                            value_type: Type::Reference {
+                                mutable: false,
+                                pointee: Box::new(Type::Array {
+                                    element: Box::new(Type::U32),
+                                    length: 4,
+                                }),
+                            },
+                        }),
+                        mutable: false,
+                    },
+                ),
+                assign(
+                    "x",
+                    E::SliceLength {
+                        slice: Box::new(local("t1")),
+                    },
+                ),
+            ],
+            T::Return,
+        )];
+        super::substitute_literals(
+            &mut locals,
+            &mut blocks,
+            &BTreeSet::from(["t1".into()]),
+            &BTreeMap::new(),
+        );
+        let names: Vec<_> = locals.iter().map(|local| local.name.as_str()).collect();
+        assert_eq!(names, ["x", "words"]);
+        assert!(matches!(
+            blocks[0].statements.as_slice(),
+            [S::Assign { value: E::SliceLength { slice }, .. }]
+                if matches!(slice.as_ref(), E::ArrayToSlice { .. })
         ));
     }
 }
