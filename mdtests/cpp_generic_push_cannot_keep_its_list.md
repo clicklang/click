@@ -88,7 +88,7 @@ template<class T> void Stack<T>::push(T value) {
     ensures to_integer(this->count) == length(after.items);
 } by {
     step_until(function.exit);
-    let after = fold(nodes<T>(this->head), { items: List::Cons(value, old(before.items)) }, { tail: before });
+    let after = fold(nodes<T>(this->head), { items: List::Cons(value, old(before.items)), tail: before });
     unfold(length(List<T>::Cons(value, old(before.items))));
     have to_integer(old(this->count) + 1u64) == to_integer(old(this->count)) + to_integer(1u64);
     have to_integer(old(this->count) + 1u64) == length(List::Cons(value, old(before.items))) by solve() using {

@@ -43,5 +43,5 @@ int32 read_left(int32* p, int32* lp, int32* rp) {
 ```
 
 ```expect
-fail: fold of `tree` must supply its named child `left` in its child map: `{ left: name }`; the in-scope `left` is not owned in folded form here
+fail: fold of `tree` must supply its named child `left` in its input map: `{ left: name }`; the in-scope `left` is not owned in folded form here
 ```

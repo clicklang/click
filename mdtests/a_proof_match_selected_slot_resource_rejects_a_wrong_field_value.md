@@ -55,7 +55,7 @@ void f(int32* q) {
             let { k: kk } = unfold(r);
             have kk.v == 3 by { solve(); }
             step_until(function.exit);
-            let r = fold(root(q), { sel: Sel::A, v: 3, u: 4 }, { k: kk });
+            let r = fold(root(q), { sel: Sel::A, v: 3, u: 4, k: kk });
             solve();
         },
         Sel::B => { contradiction(r.sel == Sel::B); },

@@ -2281,7 +2281,7 @@ let { prefix: p } = unfold(before);
 ```
 
 `p` is a plain proof value for the rest of the function. Later `have`s, loop
-invariants and `decreases` measures, fold field maps such as
+invariants and `decreases` measures, fold input maps such as
 `fold(claimed_prefix(data, occupied, capacity), { prefix: p + 1 })`, and the
 closing contract claims may all name it. One pattern may mix child slots and
 fields, `let { marks: m, prefix: p, free: f, live: n } = unfold(state)`
@@ -2427,7 +2427,7 @@ let { left: l, right: r } = unfold(root);
 unfold(l);
 step_until(function.exit);
 let l = fold(tree(left), { model: Tree::Leaf(2) });
-let root = fold(tree(p), { model: old(root.model) }, { left: l, right: r });
+let root = fold(tree(p), { model: old(root.model), left: l, right: r });
 ```
 
 `let { ... } = unfold(root)` consumes `root`, exposes its immediate memory,
@@ -2450,15 +2450,15 @@ returning an algebraic or mathematical value cannot serve as a C index.
 See `mdtests/resource_child_pure_arguments.md` and
 `mdtests/resource_child_pure_arguments_recursive.md`.
 
-The third fold argument maps child slots to owned resource names. Folding
-consumes those children and the parent's immediate memory, checking each
-child's family, arguments, and fields against the proposed model. Replacements
-and reordered children are allowed when those checks hold. Missing, duplicate,
-unfolded, or mismatched children are rejected. A leaf omits the empty child map.
+The fold input map accepts field initializers and child bindings in either order.
+A field key takes a value expression. A child slot takes the name of a held
+resource. Folding consumes the selected children and the parent's immediate
+memory, checking each child's family, arguments, and fields against the proposed
+model. Missing, duplicate, unfolded, or mismatched children are rejected.
 
 A child whose owned resource has the slot's own name may be left out of the
-map: `{ left: left, right: r }` is written `{ right: r }`, and a map whose
-every child is taken this way is left out. The fold keeps the children of
+map: `{ model: m, left: left, right: r }` can be written
+`{ model: m, right: r }`. Omit the map when it has no entries. The fold keeps the children of
 the arm its model selects, so a leaf folded beside an owned `left` leaves
 `left` alone, and the kernel checks the completed map exactly as a written
 one. A slot is taken by name only from a resource binding of that name in
@@ -2547,8 +2547,8 @@ an input child without promising to return it separately.
 
 Parent-qualified resource handles such as `root.left` are not supported.
 Unfolding a recursive body requires `let { ... } = unfold(...)` to name its
-selected children; refolding requires the child map, less the children taken
-by name. Unfold consumes the parent, so it
+selected children. Refolding supplies child slots in the input map except for
+children taken by name. Unfold consumes the parent, so it
 cannot be projected or unfolded again unless a new owned parent is constructed.
 
 A child names one declared field-bearing resource: the parent's own definition
@@ -2579,7 +2579,7 @@ resource ctx_at(node: struct tree_node*) {
 Here `ctx_at` owns a `tree_at`, and `tree_at` never owns a `ctx_at`; two
 definitions that own each other are still rejected as a composite resource
 cycle. `Context::Top => {}` shows that an arm may own nothing at all, and
-`fold(ctx_at(node), { model: Context::Top }, {})` constructs it.
+`fold(ctx_at(node), { model: Context::Top })` constructs it.
 
 An arm need not own only cells of the resource's own parameters. The frame
 below is keyed by the focused child and owns the cells of the `parent` the
@@ -2641,7 +2641,7 @@ resource arena_prefix_state(arena: struct arena*) {
 ```
 
 `let { marks: m, free: f } = unfold(state)` and
-`fold(arena_prefix_state(arena), { ... }, { marks: m, free: f })` expose and
+`fold(arena_prefix_state(arena), { ..., marks: m, free: f })` expose and
 consume them as for an arm. A body or arm may also own a field-free declared
 resource without a name, `owns cell_value(cell);`; it stays folded while the
 parent is unfolded (`mdtests/resource_match_arm_unnamed_child.md`). A

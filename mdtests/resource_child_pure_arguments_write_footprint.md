@@ -26,7 +26,7 @@ void overwrite(int32* p) {
     unfold(c);
     step_until(function.exit);
     let c = fold(cell(p), { tag: old(root.tag) });
-    let root = fold(holder(p), { model: old(root.model), tag: old(root.tag) }, { child: c });
+    let root = fold(holder(p), { model: old(root.model), tag: old(root.tag), child: c });
     solve();
 }
 void caller(int32* p) {
@@ -40,7 +40,7 @@ void caller(int32* p) {
     mark before_call;
     have p[0] == 0 by solve();
     let c = fold(cell(p), { tag: old(root.tag) });
-    let root = fold(holder(p), { model: old(root.model), tag: old(root.tag) }, { child: c });
+    let root = fold(holder(p), { model: old(root.model), tag: old(root.tag), child: c });
     step();
     let { child: c } = unfold(root);
     unfold(c);

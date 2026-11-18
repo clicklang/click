@@ -100,16 +100,18 @@ struct tree_node* maybe_swap(struct tree_node* root, int flag) {
                         step();
                         step();
                         let t = fold(tree_at(root), {
-                            model: HeapTree::Node(node, value, left_model, right_model)
-                        }, { left: lt, right: rt });
+                            model: HeapTree::Node(node, value, left_model, right_model),
+                            left: lt, right: rt
+                        });
                         step();
                     } else {
                         step();
                         step();
                         step();
                         let t = fold(tree_at(root), {
-                            model: HeapTree::Node(node, value, right_model, left_model)
-                        }, { left: rt, right: lt });
+                            model: HeapTree::Node(node, value, right_model, left_model),
+                            left: rt, right: lt
+                        });
                         step();
                     }
                 },

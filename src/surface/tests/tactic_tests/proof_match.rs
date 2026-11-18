@@ -234,7 +234,7 @@ fn proof_match_closes_impossible_constructor_without_executing_c() {
         ),
         source.replace(
             "            fold(c);",
-            "            let c = fold(cell(p), { model: Maybe::None }, {});",
+            "            let c = fold(cell(p), { model: Maybe::None });",
         ),
         source.replace("have result == value", "have result == value + 1"),
     ] {
@@ -328,7 +328,7 @@ fn proof_match_checks_arbitrary_payload_and_rejects_invalid_arms() {
             "wrong fold model",
             SOURCE.replace(
                 "            fold(c);",
-                "            let c = fold(cell(p), { model: Maybe::None }, {});",
+                "            let c = fold(cell(p), { model: Maybe::None });",
             ),
         ),
         (

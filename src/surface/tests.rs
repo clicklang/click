@@ -198,8 +198,8 @@ fn recursive_child_resources_round_trip_and_expand() {
         "int32 read(int32* p, int32* next, int32 value) { return *p; }",
     )];
     for body in [
-        "let { tail: t } = unfold(root); unfold(t); step_until(function.exit); let t = fold(chain(next), { model: Chain::End }); let root = fold(chain(p), { model: old(root.model) }, { tail: t }); solve();",
-        "let { tail: t } = unfold(root); have t.model == Chain::End by { solve(); } unfold(t); let t = fold(chain(next), { model: Chain::End }); let root = fold(chain(p), { model: old(root.model) }, { tail: t }); let { tail: t } = unfold(root); step_until(function.exit); let root = fold(chain(p), { model: old(root.model) }, { tail: t }); solve();",
+        "let { tail: t } = unfold(root); unfold(t); step_until(function.exit); let t = fold(chain(next), { model: Chain::End }); let root = fold(chain(p), { model: old(root.model), tail: t }); solve();",
+        "let { tail: t } = unfold(root); have t.model == Chain::End by { solve(); } unfold(t); let t = fold(chain(next), { model: Chain::End }); let root = fold(chain(p), { model: old(root.model), tail: t }); let { tail: t } = unfold(root); step_until(function.exit); let root = fold(chain(p), { model: old(root.model), tail: t }); solve();",
     ] {
         let source = RECURSIVE_CHILD_SOURCE.replace("BODY", body);
         let verified = verify_c_sources(&source, &c).unwrap();
@@ -236,7 +236,7 @@ fn recursive_child_resources_independent_layers_own_memory_and_recheck() {
             ensures root.model == old(root.model);
         } by { BODY }
     "#;
-    let body = "let { tail: t } = unfold(root); let { tail: u } = unfold(t); have u.model == Nonempty::Last(9) by { solve(); } unfold(u); step_until(function.exit); let u = fold(chain(r), { model: Nonempty::Last(9) }); let t = fold(chain(q), { model: Nonempty::More(8, r, Nonempty::Last(9)) }, { tail: u }); let root = fold(chain(p), { model: old(root.model) }, { tail: t }); solve();";
+    let body = "let { tail: t } = unfold(root); let { tail: u } = unfold(t); have u.model == Nonempty::Last(9) by { solve(); } unfold(u); step_until(function.exit); let u = fold(chain(r), { model: Nonempty::Last(9) }); let t = fold(chain(q), { model: Nonempty::More(8, r, Nonempty::Last(9)), tail: u }); let root = fold(chain(p), { model: old(root.model), tail: t }); solve();";
     let c = [(
         "middle.c",
         "int32 middle(int32* p, int32* q, int32* r) { return *q; }",
@@ -253,7 +253,7 @@ fn recursive_child_resources_independent_layers_own_memory_and_recheck() {
     .unwrap();
     assert!(
         verify_c_sources(
-            &source.replace(body, "let { tail: t } = unfold(root); step_until(function.exit); let root = fold(chain(p), { model: old(root.model) }, { tail: t }); solve();"),
+            &source.replace(body, "let { tail: t } = unfold(root); step_until(function.exit); let root = fold(chain(p), { model: old(root.model), tail: t }); solve();"),
             &c
         )
         .is_err()
@@ -266,7 +266,7 @@ fn recursive_child_resources_do_not_capture_earlier_function_names() {
     let source = RECURSIVE_CHILD_SOURCE
         .replace(
             "BODY",
-            "let { root: t } = unfold(root); unfold(t); step_until(function.exit); let t = fold(chain(next), { model: Chain::End }); let root = fold(chain(p), { model: old(root.model) }, { root: t }); solve();",
+            "let { root: t } = unfold(root); unfold(t); step_until(function.exit); let t = fold(chain(next), { model: Chain::End }); let root = fold(chain(p), { model: old(root.model), root: t }); solve();",
         )
         .replace("owns tail: chain(next);", "owns root: chain(next);")
         .replace("fact tail.model", "fact root.model");
@@ -306,13 +306,13 @@ fn recursive_child_resources_reject_bad_lifetimes_and_folds() {
         "let { tail: t } = unfold(root); unfold(root.tail); step_until(function.exit); solve();",
         "let { tail: t } = unfold(root); unfold(root); step_until(function.exit); solve();",
         "let { tail: t } = unfold(root); unfold(t); unfold(t); step_until(function.exit); solve();",
-        "let { tail: t } = unfold(root); unfold(t); step_until(function.exit); let root = fold(chain(p), { model: old(root.model) }, { tail: t }); solve();",
-        "let { tail: t } = unfold(root); have root.model == old(root.model) by { solve(); } step_until(function.exit); let root = fold(chain(p), { model: old(root.model) }, { tail: t }); solve();",
+        "let { tail: t } = unfold(root); unfold(t); step_until(function.exit); let root = fold(chain(p), { model: old(root.model), tail: t }); solve();",
+        "let { tail: t } = unfold(root); have root.model == old(root.model) by { solve(); } step_until(function.exit); let root = fold(chain(p), { model: old(root.model), tail: t }); solve();",
     ] {
         let source = RECURSIVE_CHILD_SOURCE.replace("BODY", body);
         assert!(verify_c_sources(&source, &c).is_err(), "accepted {body}");
     }
-    let source = RECURSIVE_CHILD_SOURCE.replace("BODY", "let { tail: t } = unfold(root); step_until(function.exit); let root = fold(chain(p), { model: old(root.model) }, { tail: t }); solve();");
+    let source = RECURSIVE_CHILD_SOURCE.replace("BODY", "let { tail: t } = unfold(root); step_until(function.exit); let root = fold(chain(p), { model: old(root.model), tail: t }); solve();");
     verify_c_sources(&source, &c)
         .expect("the ownership proof must work before testing the changed store");
     let changed = [(

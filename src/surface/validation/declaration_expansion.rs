@@ -2369,7 +2369,7 @@ fn expand_declared_resource_clause(
                     if let Some((_, field_type)) = fields.get(slot) {
                         if construction {
                             return Err(ClickError::new(format!(
-                                "`{slot}` is a field of `{parent}`, not a child slot; supply it in the fold's field map"
+                                "`{slot}` is a field of `{parent}`, not a child slot; supply a field initializer in the fold map"
                             )));
                         }
                         if !matches!(field_type, ClickType::Program(_)) {

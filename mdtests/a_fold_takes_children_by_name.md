@@ -1,8 +1,8 @@
 # A fold takes its children by name
 
-A `fold` whose child map leaves out a slot takes the in-scope resource of the
-slot's own name: `{ left: left, right: r }` is written `{ right: r }`, and a
-map whose every child defaults is left out. Only the children of the arm the
+A `fold` whose input map leaves out a child slot takes the in-scope resource
+of the slot's own name. For example, `{ model: m, left: left, right: r }` can
+be written `{ model: m, right: r }`. Only the children of the arm the
 model selects are taken, so folding a leaf beside an owned `right` leaves
 `right` alone. The kernel checks the completed map as a written one.
 
@@ -52,7 +52,7 @@ void init(int32* p, int32* lp, int32* rp, int32 value) {
     ensures root.model == Tree::Branch(value, lp, old(left.model), rp, old(r.model));
 } by {
     step_until(function.exit);
-    let root = fold(tree(p), { model: Tree::Branch(value, lp, left.model, rp, r.model) }, { right: r });
+    let root = fold(tree(p), { model: Tree::Branch(value, lp, left.model, rp, r.model), right: r });
     solve();
 }
 ```

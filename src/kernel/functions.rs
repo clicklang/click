@@ -15315,7 +15315,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
             )
         } else {
             format!(
-                "fold of `{}` must supply its named child `{}` in its child map: `{{ {}: name }}`",
+                "fold of `{}` must supply its named child `{}` in its input map: `{{ {}: name }}`",
                 definition.name(),
                 child.name,
                 child.name

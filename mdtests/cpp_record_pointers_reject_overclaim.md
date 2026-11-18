@@ -57,7 +57,7 @@ int first_or(Node* node, int fallback) {
         List::Cons(value, rest) => {
             let { tail: tail } = unfold(nodes);
             step_until(function.exit);
-            let after = fold(list_at(node), { items: List::Cons(value, rest) }, { tail: tail });
+            let after = fold(list_at(node), { items: List::Cons(value, rest), tail: tail });
         },
     }
 }

@@ -49,8 +49,9 @@ void __rb_change_child(struct rb_node* old, struct rb_node* new,
             let { sibling: sibling, up: outer } = unfold(before);
             step_until(function.exit);
             let after = fold(ctx_at(new, root), {
-                model: Context::Left(identity, grandparent, color, sibling_model, outer_model)
-            }, { up: outer });
+                model: Context::Left(identity, grandparent, color, sibling_model, outer_model),
+                up: outer
+            });
             solve();
         },
         Context::Right(identity, grandparent, color, sibling_model, outer_model) => {
@@ -81,8 +82,9 @@ void __rb_change_child(struct rb_node* old, struct rb_node* new,
                     step_until(function.exit);
                     let sibling = fold(rb_at(parent->rb_left), { model: RbTree::Empty });
                     let after = fold(ctx_at(new, root), {
-                        model: Context::Right(identity, grandparent, color, sibling_model, outer_model)
-                    }, { up: outer });
+                        model: Context::Right(identity, grandparent, color, sibling_model, outer_model),
+                        up: outer
+                    });
                     solve();
                 },
                 RbTree::Node(sid, sp, sc, sl, sr) => {
@@ -94,8 +96,9 @@ void __rb_change_child(struct rb_node* old, struct rb_node* new,
                     });
                     step_until(function.exit);
                     let after = fold(ctx_at(new, root), {
-                        model: Context::Right(identity, grandparent, color, sibling_model, outer_model)
-                    }, { up: outer });
+                        model: Context::Right(identity, grandparent, color, sibling_model, outer_model),
+                        up: outer
+                    });
                     solve();
                 },
             }
@@ -177,7 +180,7 @@ void __rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
         Context::Left(id, above, pc, sibling, up) => {
             unfold(ctx_identity(Context::Left(id, above, pc, sibling, up)));
             let { sibling: s, up: u } = unfold(c);
-            let d = fold(ctx_at(old, root), { model: Context::Left(id, above, pc, sibling, up) }, { sibling: s, up: u });
+            let d = fold(ctx_at(old, root), { model: Context::Left(id, above, pc, sibling, up), sibling: s, up: u });
             have ctx_parent_word(d.model, old->__rb_parent_color) == 1 by { rewrite(d.model, Context::Left(id, above, pc, sibling, up)); rewrite(Context::Left(id, above, pc, sibling, up), old(c.model)); known(); }
             have (old->__rb_parent_color & ~3) == address(id) by {
                 if old->__rb_parent_color == address(id) {
@@ -221,7 +224,7 @@ void __rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
         Context::Right(id, above, pc, sibling, up) => {
             unfold(ctx_identity(Context::Right(id, above, pc, sibling, up)));
             let { sibling: s, up: u } = unfold(c);
-            let d = fold(ctx_at(old, root), { model: Context::Right(id, above, pc, sibling, up) }, { sibling: s, up: u });
+            let d = fold(ctx_at(old, root), { model: Context::Right(id, above, pc, sibling, up), sibling: s, up: u });
             have ctx_parent_word(d.model, old->__rb_parent_color) == 1 by { rewrite(d.model, Context::Right(id, above, pc, sibling, up)); rewrite(Context::Right(id, above, pc, sibling, up), old(c.model)); known(); }
             have (old->__rb_parent_color & ~3) == address(id) by {
                 if old->__rb_parent_color == address(id) {

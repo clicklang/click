@@ -107,8 +107,9 @@ void tree_node_init(struct tree_node* node, int value,
 } by {
     step_until(function.exit);
     let root = fold(tree_at(node), {
-        model: HeapTree::Node(node, value, l.model, r.model)
-    }, { left: l, right: r });
+        model: HeapTree::Node(node, value, l.model, r.model),
+        left: l, right: r
+    });
     solve();
 }
 
@@ -393,12 +394,14 @@ struct tree_node* tree_rotate_left(struct tree_node* root) {
                     let { left: m, right: right } = unfold(r);
                     step_until(function.exit);
                     let lower = fold(tree_at(root), {
-                        model: HeapTree::Node(node, value, left_model, middle_model)
-                    }, { right: m });
+                        model: HeapTree::Node(node, value, left_model, middle_model),
+                        right: m
+                    });
                     let rotated = fold(tree_at(result), {
                         model: HeapTree::Node(pivot_node, pivot_value,
-                            HeapTree::Node(node, value, left_model, middle_model), far_right_model)
-                    }, { left: lower });
+                            HeapTree::Node(node, value, left_model, middle_model), far_right_model),
+                        left: lower
+                    });
                     apply(heap_rotate_left_preserves_inorder(old(t.model)));
                 },
             }
@@ -426,12 +429,14 @@ struct tree_node* tree_rotate_right(struct tree_node* root) {
                     let { left: left, right: m } = unfold(l);
                     step_until(function.exit);
                     let lower = fold(tree_at(root), {
-                        model: HeapTree::Node(node, value, middle_model, right_model)
-                    }, { left: m });
+                        model: HeapTree::Node(node, value, middle_model, right_model),
+                        left: m
+                    });
                     let rotated = fold(tree_at(result), {
                         model: HeapTree::Node(pivot_node, pivot_value, far_left_model,
-                            HeapTree::Node(node, value, middle_model, right_model))
-                    }, { right: lower });
+                            HeapTree::Node(node, value, middle_model, right_model)),
+                        right: lower
+                    });
                     apply(heap_rotate_right_preserves_inorder(old(t.model)));
                 },
             }
@@ -458,7 +463,7 @@ int tree_contains(struct tree_node* root, struct tree_node* target) {
             branch {
                 true => {
                     step();
-                    let t = fold(tree_at(root), { model: HeapTree::Node(node, value, left_model, right_model) }, { left: l, right: r });
+                    let t = fold(tree_at(root), { model: HeapTree::Node(node, value, left_model, right_model), left: l, right: r });
                     have address(node) == address(target);
                     solve();
                 }
@@ -481,7 +486,7 @@ int tree_contains(struct tree_node* root, struct tree_node* target) {
                         rewrite(left_model, l.model);
                         known();
                     }
-                    let t = fold(tree_at(root), { model: HeapTree::Node(node, value, left_model, right_model) }, { left: l, right: r });
+                    let t = fold(tree_at(root), { model: HeapTree::Node(node, value, left_model, right_model), left: l, right: r });
                     solve();
                 }
                 false => {}
@@ -494,7 +499,7 @@ int tree_contains(struct tree_node* root, struct tree_node* target) {
             }
             let { result: found_right } = step(tree_contains, { t: r });
             step();
-            let t = fold(tree_at(root), { model: HeapTree::Node(node, value, left_model, right_model) }, { left: l, right: r });
+            let t = fold(tree_at(root), { model: HeapTree::Node(node, value, left_model, right_model), left: l, right: r });
             have result == heap_member(old(t.model), target) as int32 by {
                 rewrite(old(t.model), HeapTree::Node(node, value, left_model, right_model));
                 unfold(heap_member(
@@ -545,8 +550,9 @@ struct tree_node* tree_leftmost(struct tree_node* root) {
                         known();
                     }
                     let frame = fold(ctx_at(root->left), {
-                        model: Context::Left(root, value, right_model, ctx.model)
-                    }, { sibling: rt, up: ctx });
+                        model: Context::Left(root, value, right_model, ctx.model),
+                        sibling: rt, up: ctx
+                    });
                 },
             }
         }
@@ -566,8 +572,9 @@ struct tree_node* tree_leftmost(struct tree_node* root) {
                 normalize();
             }
             let sub = fold(tree_at(root), {
-                model: HeapTree::Node(identity, value, left_model, right_model)
-            }, { left: l, right: rt });
+                model: HeapTree::Node(identity, value, left_model, right_model),
+                left: l, right: rt
+            });
             step();
             solve();
         },
@@ -611,8 +618,9 @@ struct tree_node* tree_rightmost(struct tree_node* root) {
                         known();
                     }
                     let frame = fold(ctx_at(root->right), {
-                        model: Context::Right(root, value, left_model, ctx.model)
-                    }, { sibling: l, up: ctx });
+                        model: Context::Right(root, value, left_model, ctx.model),
+                        sibling: l, up: ctx
+                    });
                 },
             }
         }
@@ -632,8 +640,9 @@ struct tree_node* tree_rightmost(struct tree_node* root) {
                 normalize();
             }
             let sub = fold(tree_at(root), {
-                model: HeapTree::Node(identity, value, left_model, right_model)
-            }, { left: l, right: rt });
+                model: HeapTree::Node(identity, value, left_model, right_model),
+                left: l, right: rt
+            });
             step();
             solve();
         },

@@ -612,6 +612,9 @@ pub(super) fn parse_file_items_for_module(
     }
     parser.in_contract_definition = false;
     for definition in imported_resources {
+        parser
+            .declared_resource_fields
+            .insert(definition.name().to_string(), definition.fields().to_vec());
         if let Some(body) = definition.composite_body() {
             parser
                 .declared_resource_child_slots
@@ -9944,27 +9947,6 @@ impl Parser {
         }
     }
 
-    fn parse_resource_child_bindings(
-        &mut self,
-        parent: &ResourceClause,
-        introduce: bool,
-    ) -> Result<Vec<(String, String, Variable)>, ClickError> {
-        self.expect(Token::LBrace)?;
-        let mut bindings = Vec::new();
-        while self.peek() != Some(&Token::RBrace) {
-            let slot = self.expect_ident("child slot")?;
-            self.expect(Token::Colon)?;
-            let name = self.expect_ident("child resource name")?;
-            bindings.push((slot, name));
-            if self.peek() != Some(&Token::Comma) {
-                break;
-            }
-            self.position += 1;
-        }
-        self.expect(Token::RBrace)?;
-        self.bind_resource_child_names(parent, None, bindings, introduce)
-    }
-
     /// Binds the names of an unfold or fold pattern over `parent`, whose
     /// resource is `family` when the instance recorded one other than its
     /// clause's.
@@ -10297,7 +10279,7 @@ impl Parser {
         self.parse_fold_construction(Some(name))
     }
 
-    /// `fold(resource, { field: value }, { slot: child })` after its opening
+    /// `fold(resource, { field: value, slot: child })` after its opening
     /// parenthesis. `let name = fold(...)` binds the instance to `name`. A
     /// resource whose every field is hidden is folded without a name,
     /// `fold(pair(p), { first: c });`, under the binder it is held by.
@@ -10334,56 +10316,58 @@ impl Parser {
             self.next_resource_identity += 1;
             identity
         };
-        // A resource whose every field is retained from children has no
-        // declared field initializer, so its one brace is the child map; a map whose
-        // every child defaults by name may be left out with it.
         let declared = self
             .declared_resource_fields
             .get(resource_name)
             .cloned()
             .unwrap_or_default();
-        let only_hidden =
-            !declared.is_empty() && declared.iter().all(|field| field.name.contains('.'));
-        if !(only_hidden && self.peek() == Some(&Token::RParen)) {
-            self.expect(Token::Comma)?;
-        }
         let mut fields = Vec::new();
-        if !only_hidden {
+        let mut children = Vec::new();
+        if self.peek() == Some(&Token::Comma) {
+            self.position += 1;
             self.expect(Token::LBrace)?;
+            let mut entries = BTreeSet::new();
             while self.peek() != Some(&Token::RBrace) {
-                let field = self.expect_ident("resource field name")?;
+                let key = self.expect_ident("fold field or child slot")?;
+                if !entries.insert(key.clone()) {
+                    return Err(self.error(format!("duplicate fold entry `{key}`")));
+                }
                 self.expect(Token::Colon)?;
-                let value = self.parse_contract_expression()?;
-                // An `Integer` field's value is read where an Integer is
-                // expected.
-                let value = if declared.iter().any(|declared| {
-                    declared.name() == field && declared.click_type() == &ClickType::Integer
-                }) {
-                    self.at_integer_position(value)
+                if self
+                    .declared_resource_child_slots
+                    .get(resource_name)
+                    .is_some_and(|slots| slots.contains_key(&key))
+                {
+                    children.push((key, self.expect_ident("child resource name")?));
                 } else {
-                    value
-                };
-                fields.push((field, value));
+                    let value = self.parse_contract_expression()?;
+                    let value = if declared.iter().any(|field| {
+                        field.name() == key && field.click_type() == &ClickType::Integer
+                    }) {
+                        self.at_integer_position(value)
+                    } else {
+                        value
+                    };
+                    fields.push((key, value));
+                }
                 if self.peek() != Some(&Token::Comma) {
                     break;
                 }
                 self.position += 1;
             }
             self.expect(Token::RBrace)?;
+        } else if self.peek() != Some(&Token::RParen) {
+            return Err(self.error("expected a single fold input map or `)`"));
         }
-        let child_bindings = if only_hidden && self.peek() == Some(&Token::LBrace) {
-            self.parse_resource_child_bindings(&resource, false)?
-        } else if !only_hidden && self.peek() == Some(&Token::Comma) {
-            self.position += 1;
-            self.parse_resource_child_bindings(&resource, false)?
-        } else {
-            Vec::new()
-        };
+        let child_bindings = self.bind_resource_child_names(&resource, None, children, false)?;
         let default_child_bindings =
             self.default_fold_child_bindings(resource_name, &name, &child_bindings);
         let mut hidden_sources = child_bindings.clone();
         hidden_sources.extend(default_child_bindings.iter().cloned());
         self.fill_hidden_fold_fields(&declared, &hidden_sources, &mut fields);
+        if self.peek() == Some(&Token::Comma) {
+            return Err(self.error("fold takes one map containing both fields and child slots"));
+        }
         self.expect(Token::RParen)?;
         let binding = ResourceInstanceBinding {
             name: name.clone(),

@@ -17098,7 +17098,7 @@ int read(int* p) {
         Bi::Zero => {
             unfold(c);
             step_until(function.exit);
-            let c = fold(cell(p), { model: Bi::Zero }, {});
+            let c = fold(cell(p), { model: Bi::Zero });
             have bi_code(old(c.model)) == 0 by {
                 rewrite(old(c.model), Bi::Zero);
                 unfold(bi_code(Bi::Zero));
@@ -17109,7 +17109,7 @@ int read(int* p) {
         Bi::Other(value) => {
             unfold(c);
             step_until(function.exit);
-            let c = fold(cell(p), { model: Bi::Other(value) }, {});
+            let c = fold(cell(p), { model: Bi::Other(value) });
             have bi_code(old(c.model)) == value by {
                 rewrite(old(c.model), Bi::Other(value));
                 unfold(bi_code(Bi::Other(value)));
@@ -19522,6 +19522,73 @@ fn whole_function_expansion_validates_against_imported_pure_declarations() {
     let false_claim = expanded.replace("result == spec(x)", "result == spec(x) + 1");
     verify_c_project(&project.with_entry_source(false_claim), &sources)
         .expect_err("import resolution must not bypass the expanded claim check");
+}
+
+#[test]
+fn fold_map_resolves_imported_fields_and_children_and_replays() {
+    let source = r#"
+        import "resources.click";
+        verifying "pack.c";
+        void pack(int32* p, int32 n) {
+            requires n == 2147483647;
+            consumes held: cell(p);
+            produces wrapped: wrapper(p);
+            ensures wrapped.total == 2147483648;
+        } by {
+            step_until(function.exit);
+            let wrapped = fold(wrapper(p), { child: held, total: n + 1, value: held.value });
+        }
+    "#;
+    let resources = r#"
+        resource cell(p: int32*) {
+            field value: int32;
+            owns *p;
+        }
+        resource wrapper(p: int32*) {
+            field value: int32;
+            field total: Integer;
+            owns child: cell(p);
+            fact child.value == value;
+        }
+    "#;
+    let project = ClickProject::new(
+        "pack.click",
+        [
+            ClickModuleSource::new("pack.click", source, ["resources.click".to_owned()]),
+            ClickModuleSource::new("resources.click", resources, []),
+        ],
+    );
+    let sources = [("pack.c", "void pack(int32* p, int32 n) {}")];
+    let expanded = expand_project_claim_source_by_label(
+        &project,
+        &ProgramInputs::Bundle(sources.to_vec()),
+        "pack.contract",
+    )
+    .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(
+        expanded.contains("value: held.value, child: held }"),
+        "{expanded}"
+    );
+    without_implicit_solve_for_claim("pack.contract", || {
+        verify_c_project(&project.with_entry_source(&expanded), &sources)
+            .map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+
+    for (map, message) in [
+        (
+            "{ total: n + 1, value: held.value }, { child: held }",
+            "fold takes one map containing both fields and child slots",
+        ),
+        (
+            "{ child: held, total: n + 1, value: held.value, child: held }",
+            "duplicate fold entry `child`",
+        ),
+    ] {
+        let invalid = source.replace("{ child: held, total: n + 1, value: held.value }", map);
+        let error = verify_c_project(&project.with_entry_source(invalid), &sources).unwrap_err();
+        assert!(error.report().contains(message), "{}", error.report());
+    }
 }
 
 #[test]

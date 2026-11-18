@@ -104,12 +104,14 @@ struct tree_node* rotate_left(struct tree_node* root) {
                     let { left: m, right: z } = unfold(r);
                     step_until(function.exit);
                     let lower = fold(tree_at(root), {
-                        model: HeapTree::Node(node, value, left_model, middle_model)
-                    }, { left: l, right: m });
+                        model: HeapTree::Node(node, value, left_model, middle_model),
+                        left: l, right: m
+                    });
                     let rotated = fold(tree_at(result), {
                         model: HeapTree::Node(pivot_node, pivot_value,
-                            HeapTree::Node(node, value, left_model, middle_model), far_right_model)
-                    }, { left: lower, right: z });
+                            HeapTree::Node(node, value, left_model, middle_model), far_right_model),
+                        left: lower, right: z
+                    });
                     have rotated.model == heap_rotate_left(old(t.model)) by {
                         rewrite(old(t.model), HeapTree::Node(node, value, left_model, right_model));
                         rewrite(right_model, HeapTree::Node(pivot_node, pivot_value, middle_model, far_right_model));

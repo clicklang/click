@@ -186,12 +186,13 @@ void replace_root_node(struct rb_node* victim, struct rb_node* new_node,
         normalize();
     }
     step_until(function.exit);
-    let l2 = fold(rb_at(new_node->rb_left), { model: RbTree::Empty }, {});
-    let r2 = fold(rb_at(new_node->rb_right), { model: RbTree::Empty }, {});
+    let l2 = fold(rb_at(new_node->rb_left), { model: RbTree::Empty });
+    let r2 = fold(rb_at(new_node->rb_right), { model: RbTree::Empty });
     let u = fold(rb_at(new_node), {
-        model: RbTree::Node(new_node, parent, Color::Black, RbTree::Empty, RbTree::Empty)
-    }, { left: l2, right: r2 });
-    let d = fold(ctx_at(victim, root), { model: old(c.model) }, {});
+        model: RbTree::Node(new_node, parent, Color::Black, RbTree::Empty, RbTree::Empty),
+        left: l2, right: r2
+    });
+    let d = fold(ctx_at(victim, root), { model: old(c.model) });
     have u.model == rb_substitute(old(t.model), new_node) by {
         rewrite(old(t.model), RbTree::Node(victim, parent, Color::Black, RbTree::Empty, RbTree::Empty));
         unfold(rb_substitute(

@@ -1099,7 +1099,7 @@ impl<'a> Proof<'a> {
         })
     }
 
-    /// A fold's explicit child map, completed by name: each child the
+    /// A fold's explicit child bindings, completed by name: each child the
     /// selected arm owns that the map left out is the in-scope resource of
     /// the same name, which must be owned in folded form here. Candidates
     /// for slots the arm does not own are dropped. The kernel receives the
@@ -1137,7 +1137,7 @@ impl<'a> Proof<'a> {
                 .owned_resource_instance(*identity)
                 .ok_or_else(|| {
                     self.step_error(format!(
-                        "fold of `{}` must supply its named child `{slot}` in its child map: `{{ {slot}: name }}`; the in-scope `{name}` is not owned in folded form here",
+                        "fold of `{}` must supply its named child `{slot}` in its input map: `{{ {slot}: name }}`; the in-scope `{name}` is not owned in folded form here",
                         instance.name()
                     ))
                 })?

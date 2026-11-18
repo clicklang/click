@@ -47,5 +47,5 @@ void join(int32* p, int32* lp, int32* rp, int32* q, int32 value) {
 ```
 
 ```expect
-fail: fold of `tree` must supply its named child `left` in its child map: `{ left: name }`
+fail: fold of `tree` must supply its named child `left` in its input map: `{ left: name }`
 ```

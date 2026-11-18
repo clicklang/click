@@ -35,7 +35,7 @@ void f(int32* q) {
     } else {
         let { k: kk } = unfold(b);
     }
-    let b = fold(box(q), { v: 3 }, { k: kk });
+    let b = fold(box(q), { v: 3, k: kk });
 }
 ```
 
