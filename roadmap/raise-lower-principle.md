@@ -1068,8 +1068,8 @@ not a change to proof rules or snapshot architecture.
 | 10p2 | Composite/token/instance `ResourceArguments`, `ResourceDescription` arguments and remaining Integer/algebraic resource fields. Preserve argument order, native identity classes and nominal resource identities. | Split: 10p2a landed in [PR #3220](https://github.com/clicklang/click/pull/3220); all seven pushed commits verified upstream; it implements Integer/algebraic fields (413 focused checks, all 1,915 regular scaling cases, resource-field proofs, fact stability and quality passed); 10p2b landed in [PR #3233](https://github.com/clicklang/click/pull/3233), with all six pushed commits verified upstream; it implements argument stores (427 focused checks, all 1,917 regular scaling cases and quality passed; full regular proofs/fact stability passed). |
 | 10p3 | `MemoryRange` bounds and `AllocationSize` byte counts. Preserve signed/wide reading, bound provenance and existing identity/hash contracts. | Landed in [PR #3246](https://github.com/clicklang/click/pull/3246); all eight pushed commits verified upstream; 525 focused checks, all 1,919 regular scaling cases, 14 selected proofs, fact stability and quality passed; isolated upstream baseline limitation below. |
 | 10p4 | `IteratedMemory` endpoints, guard comparison value and selected holes. Preserve checked ownership transitions and opaque owner/address identities. | Landed in [PR #3261](https://github.com/clicklang/click/pull/3261); all ten pushed commits verified upstream; 590 focused checks, all 1,926 regular scaling cases, indexed/resource-field proofs, fact stability and quality passed; one isolated upstream baseline failure. |
-| 10p5 | `PublicationRight::observed`, `ConditionalMutexGuard::held`, and the matching `MutexEntry::ConditionalLoop` condition. Preserve channel/acquisition identities and protocol rules. | Common carriers and producer handoffs implemented locally; two producer regressions confirmed red; 690 focused checks, all 1,927 regular scaling cases and publication proofs passed; mutex proofs passed 215/216 with one identical parent failure. |
-| 10p6 | `ResourceFact::Own` quantity. Preserve counting semantics and existing resource identity readers. | Implemented locally; focused validation pending. |
+| 10p5 | `PublicationRight::observed`, `ConditionalMutexGuard::held`, and the matching `MutexEntry::ConditionalLoop` condition. Preserve channel/acquisition identities and protocol rules. | Published as [PR #3266](https://github.com/clicklang/click/pull/3266), with auto-merge requested; two producer regressions confirmed red; 690 focused checks, all 1,927 regular scaling cases and publication proofs passed; mutex proofs passed 215/216 with one identical parent failure. |
+| 10p6 | `ResourceFact::Own` and deferred worker-exchange quantities. Preserve counting semantics and existing resource identity readers. | Implemented locally; focused validation pending. |
 
 `MemorySegment` source expressions and declared `ResourceQuantity` expressions
 are source input ASTs, not evaluated term storage to erase. Addresses, allocation
@@ -1287,8 +1287,8 @@ fails identically on the unchanged protocol-storage parent at the same
 `checkout.contract` conjunction and missing defined-read premise. The fixture is explicitly nightly-only in `tests/mdtests.rs`; per the user
 instruction, it does not block this work. No proof or checker change is made
 for that baseline limitation. Fact stability recorded
-89 refusals and no changed terms/paths. Quality passed. Final focused validation
-of the exact input-refusal guard is running.
+89 refusals and no changed terms/paths. Quality passed. The exact input-refusal guard passed the same 245 focused
+checks and 38 quantity fixtures.
 
 `DeferredMemberExchange::quantity` retains the same owned quantity through
 worker completion; join-time ledger checks are explicit native readers.
