@@ -4075,10 +4075,15 @@ pub(super) fn propositions_match_after_canonical_loads(
             (Proposition::Not(body), Proposition::Not(other_body)) => {
                 work.push((body, other_body));
             }
-            // A constant condition and a closed literal comparison, which
-            // lowering retains as written, match by the truth they state.
+            // A constant condition and a comparison decided without facts,
+            // which lowering retains as written (`1 == 0`, `p == p`), match
+            // by the truth they state. Two comparisons that are not
+            // constants still match only structurally, below: equal truth
+            // does not make two obligations the same.
             (Proposition::ConditionIs(left, expected), Proposition::ConditionIs(right, other))
-                if closed_condition_value(left).is_some()
+                if (matches!(left, ConditionTerm::Constant(_))
+                    || matches!(right, ConditionTerm::Constant(_)))
+                    && closed_condition_value(left).is_some()
                     && closed_condition_value(right).is_some() =>
             {
                 if (closed_condition_value(left) == Some(*expected))
