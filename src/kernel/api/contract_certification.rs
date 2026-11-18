@@ -1765,6 +1765,7 @@ fn program_function_contract_entry_facts(
         };
     let required_resources = crate::kernel::admit_declared_entry_resources(
         required_resources,
+        &required_entry_clauses,
         &entry_state,
         function.composite_resource_definitions(),
         &assumptions,

@@ -8,6 +8,7 @@ use super::*;
 /// The admitted entry retains its original folded storage and occurrence IDs.
 pub(crate) fn admit_declared_entry_resources(
     descriptions: ResourceContext,
+    written: &[CheckedResourceFact],
     state: &ExecutionState,
     definitions: &[CompositeResourceDefinition],
     assumptions: &PureFactContext,
@@ -27,32 +28,92 @@ pub(crate) fn admit_declared_entry_resources(
         .assume_entry_clause_spans()
         .assume_held_resource_domains();
     enum Work {
-        Clause(ResourceFact),
+        Clause(ResourceFact, bool),
         EndBody(String),
     }
-    let mut pending = descriptions
-        .facts()
+    // Keep the original heads: normalization may already have joined two
+    // identical written clauses into one stored head with quantity two.
+    let mut pending = written
         .iter()
         .rev()
-        .cloned()
-        .map(Work::Clause)
+        .map(|clause| &clause.fact)
+        .filter(|fact| {
+            fact.is_own()
+                && matches!(
+                    fact.resource(),
+                    Resource::Composite { .. } | Resource::Instance(_)
+                )
+        })
+        .map(|fact| Work::Clause(fact.clone(), false))
         .collect::<Vec<_>>();
+    // Retain the section producer's flat partition. Only newly elaborated
+    // body descriptions need admission beside it; never readmit that prefix.
+    let heads = descriptions
+        .owned_non_memory_input_facts()
+        .keys()
+        .filter(|fact| {
+            matches!(
+                fact.resource(),
+                Resource::Composite { .. } | Resource::Instance(_)
+            )
+        })
+        .flat_map(|fact| descriptions.occurrences_for_fact(fact))
+        .collect::<Vec<_>>();
+    let mut frontier = descriptions.clone();
+    for occurrence in heads {
+        frontier = frontier
+            .without_exact_representation_for_occurrence(occurrence)
+            .expect("the producer selected an actual declared head");
+    }
     let mut active = BTreeSet::new();
     let mut memory = Vec::new();
     while let Some(work) = pending.pop() {
-        let fact = match work {
+        let (fact, inherited_multiple) = match work {
             Work::EndBody(name) => {
                 active.remove(&name);
                 continue;
             }
-            Work::Clause(fact) => fact,
+            Work::Clause(fact, multiple) => (fact, multiple),
         };
         crate::instrumentation::record_deterministic_work(1);
         if !fact.is_own() || !fact.has_proven_positive_quantity(assumptions) {
             continue;
         }
+        let multiple = inherited_multiple
+            || fact.owned_quantity_term().is_some_and(|quantity| {
+                quantity_condition_holds(
+                    assumptions,
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::GreaterThan,
+                        left: Box::new(quantity.clone()),
+                        right: Box::new(MachineTerm::constant(1)),
+                    },
+                )
+            });
         let name = match fact.resource() {
-            Resource::Memory(_) => {
+            Resource::Memory(range) => {
+                let (format, start, end) = match range.wide_bounds() {
+                    Some((start, end)) => (MachineIntegerType::UInt64, start, end),
+                    None => (MachineIntegerType::Int32, range.start(), range.end()),
+                };
+                if multiple
+                    && range.element_width() > 0
+                    && quantity_condition_holds(
+                        assumptions,
+                        ConditionTerm::Compare {
+                            format,
+                            relation: CompareRelation::LessThan,
+                            left: Box::new(start.clone()),
+                            right: Box::new(end.clone()),
+                        },
+                    )
+                {
+                    return Err(RuntimeError::OverlappingOwnedMemoryResources {
+                        left: Box::new(range.clone()),
+                        right: Box::new(range.clone()),
+                    });
+                }
                 memory.push(fact);
                 continue;
             }
@@ -168,10 +229,10 @@ pub(crate) fn admit_declared_entry_resources(
             children
                 .into_iter()
                 .rev()
-                .map(|child| Work::Clause(child.fact)),
+                .map(|child| Work::Clause(child.fact, multiple)),
         );
     }
-    ResourceContext::new_with_equalities(assumptions)
+    frontier
         .install_established_partition(memory, assumptions)
         .map_err(resource_context_runtime_error)?;
     Ok(descriptions)

@@ -2891,6 +2891,7 @@ fn evaluate_entry_resource_context(
         };
     let evaluated = crate::kernel::admit_declared_entry_resources(
         evaluated,
+        &entry_clauses,
         &evaluation_state,
         &definitions,
         &assumptions,

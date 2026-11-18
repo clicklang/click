@@ -2038,9 +2038,12 @@ still needs an operation audit and deterministic scaling checks.
 Raw entry descriptions enter through `admit_declared_entry_resources`, before
 the entry is published. It elaborates the declared section's known owned memory
 frontier, including folded instance bodies and nested fieldless composites.
-Each written clause reaches indexed admission once: held-body expansion and
-normalization cannot merge duplicate demands before they are checked. The
-returned context retains the original folded storage and occurrence IDs.
+Admission reads the retained written-clause metadata, so normalization cannot
+merge away repeated entry heads. It reuses the section producer's admitted flat
+partition and admits only the newly elaborated body footprint beside it.
+Nonunit ownership propagates through nested bodies and refuses a proven
+nonempty exclusive footprint; empty ranges and readonly bodies remain allowed.
+The returned context retains the original folded storage and occurrence IDs.
 Undecided guards, unselected constructors, existential bodies and recursive
 tails retain their conditional or opaque entry assertions; admission does not
 guess a model or union mutually exclusive arms. It never inspects an unrelated
