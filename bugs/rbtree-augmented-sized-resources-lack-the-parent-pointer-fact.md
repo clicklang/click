@@ -439,3 +439,13 @@ contracts. The other sidecars and the full-directory audit remain open.
 
 All 12 expansion, retained and cold replay, and fixed-point audit sites pass
 at default limits on master `ecd9cba40` plus this repair.
+
+## Context rotation with nonempty black middle and uncle subtrees
+
+All three proofs in `rbtree_size_insert_context_uncle_rotation.click` verify
+at default limits on master `58b0c2c9e` plus the proof repair. The proof carries
+the parent and child observations through initialization and the black-uncle
+test. It executes the local declaration and both rotation stores, retains
+the new child links through the middle subtree's reparenting and the parent
+update, and carries the original uncle subtree into the rotated tree. The
+original contracts keep the subtrees and their valid cached sizes arbitrary.
