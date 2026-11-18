@@ -24129,3 +24129,56 @@ fn indexed_iterated_ownership_expands_and_rechecks() {
         error.report()
     );
 }
+
+#[test]
+fn expanded_call_names_the_folded_supplier() {
+    let c = "void update(int *p) { *p = 7; } void caller(int *p) { update(p); }";
+    let inputs = [("folded.c", c)];
+    for count in [0, 4, 16] {
+        let decoys = (0..count)
+            .map(|i| format!("owns decoy({i});"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let source = format!(
+            r#"
+            resource cell(p: int32*) {{ owns p[0..1]; }}
+            resource wrapper(p: int32*) {{ owns cell(p); }}
+            abstract resource marker(k: int32);
+            resource decoy(k: int32) {{ owns marker(k); }}
+            verifying "folded.c";
+            void update(int32* p) {{ owns cell(p); }} by {{
+                unfold(cell(p));
+                step();
+                fold(cell(p));
+            }}
+            void caller(int32* p) {{
+                {decoys}
+                owns wrapper(p);
+            }} by {{
+                step();
+                fold(wrapper(p));
+            }}
+            "#,
+        );
+        let label = "caller.contract";
+        let missing_supplier = crate::kernel::call_supplier_selection::without_search(|| {
+            verify_c_sources(&source, &inputs)
+        })
+        .expect_err("the original call needs to find a supplier");
+        assert!(
+            missing_supplier.message().contains("missing resource fact"),
+            "{}",
+            missing_supplier.report()
+        );
+        let expanded = expand_c_claim_source_by_label(&source, &inputs, label)
+            .unwrap_or_else(|error| panic!("{}", error.report()));
+        let caller = expanded.split_once("void caller").expect("caller proof").1;
+        assert!(caller.contains("unfold(wrapper(p));"), "{caller}");
+        crate::kernel::call_supplier_selection::without_search(|| {
+            without_implicit_solve_for_claim(label, || {
+                verify_c_sources(&expanded, &inputs).map_err(|error| error.report())
+            })
+        })
+        .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+    }
+}

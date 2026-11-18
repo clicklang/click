@@ -111,7 +111,8 @@ src/surface/proof/driver/joins.rs	driver	ProofDriver::apply_execution_branch_wit
 src/surface/proof/driver/joins.rs	driver	ProofDriver::apply_execution_if_within	driver	2
 src/surface/proof/driver/joins.rs	driver	ProofDriver::apply_execution_steps_within	driver	2
 src/surface/proof/driver/joins.rs	driver	ProofDriver::apply_focused_expanded_execution_arm	driver	1
-src/surface/proof/driver/obligations.rs	driver	ProofDriver::apply_bare_statement_step	driver	1
+src/surface/proof/driver/obligations.rs	driver	ProofDriver::apply_bare_statement_step	driver	2
+src/surface/proof/driver/obligations.rs	driver	ProofDriver::apply_bare_statement_step	selected_call_supplier_unfold	1
 src/surface/proof/driver/obligations.rs	driver	ProofDriver::apply_close_invariants_body	driver	2
 src/surface/proof/driver/obligations.rs	driver	ProofDriver::apply_execution_statement_step	driver	1
 src/surface/proof/driver/obligations.rs	driver	ProofDriver::apply_step_with_obligation_proofs	driver	1

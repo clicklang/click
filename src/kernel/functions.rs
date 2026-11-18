@@ -10693,6 +10693,8 @@ fn prepare_function_resource_transfer(
     )
 }
 
+pub(crate) mod call_supplier_selection;
+
 /// Unfolds exactly the folded composite owners a call's own requirements
 /// need, and nothing else.
 ///
@@ -10721,6 +10723,9 @@ fn candidate_planning_resources(
                     .is_empty())
     };
     let mut resources = caller_resources.clone();
+    if !call_supplier_selection::search_enabled() || !resources.has_folded_composites() {
+        return resources;
+    }
     for requirement in requirements {
         // A viewed composite requirement is lent folded, through the checked
         // composite backing, so opening it here would destroy the head that
@@ -10760,8 +10765,10 @@ fn candidate_planning_resources(
                     assumptions,
                 )
                 .filter(|expanded| supported(expanded, requirement))
+                .map(|expanded| (expanded, composite))
             });
-        if let Some(opened) = opened {
+        if let Some((opened, selected)) = opened {
+            call_supplier_selection::record(selected);
             resources = opened;
         }
     }

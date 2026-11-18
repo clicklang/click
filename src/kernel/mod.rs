@@ -38,6 +38,7 @@ pub(crate) mod fact_collections;
 pub(crate) mod fact_stability;
 mod fold_read_summary;
 mod functions;
+pub(crate) use functions::call_supplier_selection;
 mod owned_footprint_reach;
 mod pointer_provenance;
 mod population_access;
