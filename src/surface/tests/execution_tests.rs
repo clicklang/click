@@ -1231,7 +1231,7 @@ fn linear_execute_checks_the_branch_arm_refusal_program() {
     let mdtest = crate::cli::parse_mdtest(std::path::Path::new("branch-arm.md"), markdown).unwrap();
     let source = mdtest.click_source.as_deref().unwrap();
     let linear = source.replace(
-        "    branch { true => {\n        step();\n        step();\n    } false => {} }\n",
+        "    branch {\n        true => {\n            step();\n            step();\n        }\n        false => {}\n    }\n",
         "",
     );
     assert_ne!(
