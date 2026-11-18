@@ -1615,9 +1615,10 @@ equality and predicate `Term` payloads remain assigned to 10q4.
 | Subslice | Boundary | Acceptance |
 | --- | --- | --- |
 | 10q4a | Structural native payload readers | PR #3305 merged as `a421b34a8`; all three pushed commits were verified upstream. Native views and consuming pointer extraction preserve matching and ownership. |
-| 10q4b1 | Exact carrier contracts (preparation) | Define exact native/root Integer and algebraic carriers; reuse logical, machine and program storage; prove identity, unmaterialized cloning and owned moves. The Term schema remains unchanged. |
+| 10q4b1 | Exact carrier contracts (preparation) | PR #3322 merged as `5376cb9a7`; all three pushed commits were verified upstream. Exact carrier contracts landed; the Term schema remains required. |
 | 10q4b2 | Term schema and retained visitors | Retain roots in the five expression-bearing Term fields; extend selected-root dispatch and source/binder reservation, preserving exact native identity, scope, refusals and substitution. |
-| 10q4b2a | Raw retained Integer arithmetic (preparation) | Validate selected-root literal/variable/six-operator substitution before the Term dispatch switch; exact-source mode and the other node families remain required. |
+| 10q4b2a | Raw retained Integer arithmetic (preparation) | Landed with 10q4b1 in PR #3322. Literal/variable/six-operator substitution is prepared; exact-source mode, other node families and the Term dispatch switch remain required. |
+| 10q4b2b | Retained machine observations (preparation) | Reuse the shared numeric child walker and existing observation/retain/rekey policy, preserving literal readings, width, read scope and nonliteral no-op roots. |
 | 10q4c | Equality and predicate producers | Forward actual evaluated roots into the carriers, close the producer inventory, and verify proof/refusal, fact stability and scaling parity. |
 
 Sequence and pointer-offset descriptors retain the operands migrated in their
@@ -1661,6 +1662,28 @@ checks and quality passed; nightly was excluded. This is preparation, not a
 Term schema or production dispatch switch. Exact-source/read-through matching,
 conditionals, calls, observation inputs, folds, matches and other payload
 families remain part of the required integration.
+
+10q4b2b admits MachineObservation in that staged Integer dispatcher. Numeric
+children use the existing shared machine walker; observation reading, retain
+fallback and changed-only numeric rekeying follow the native Integer walker.
+A nonliteral no-op keeps its original observation root. The native oracle
+covers 8–128-bit widths, maximum and unreadable literal cases, reads and changed
+substitutions. Growing ordinary numeric DAGs remain shared without export;
+existing selected conversion/Fold/Match adapters are unchanged and remain
+assigned to 10r–10t. All six focused checks, 281 affected checks, all 1,953
+regular scaling checks and quality passed. Nightly was excluded. This remains
+an inactive preparation entry point. Integer conditionals need a same-scope
+retained logical guard walker; exporting a whole common guard is not the
+substitute. Exact-source
+matching, remaining families, the actual Term schema and 10q4c producer
+handoffs remain required.
+
+After integrating upstream `989ad800d`, all 326 affected checks, all 1,953
+regular scaling checks, three selected regular proof fixtures with fact auditing,
+and quality passed. The fixtures cover hosted-stream opacity, null-pointer
+fold requirements and signed literal divisor conditionals. No term or path
+changes were recorded. The local C exporter was rebuilt to match upstream;
+full nightly was excluded.
 
 The required 10q4b2 integration checklist is:
 
