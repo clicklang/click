@@ -424,3 +424,18 @@ The focused node's child subtrees and valid cached sizes remain arbitrary.
 The C, three original function contracts, inorder theorem, writable callback,
 existing tree resources, and verifier are unchanged. Other sidecars and the
 full-directory audit still leave this report open.
+
+## Mirrored context rotation with arbitrary focused child subtrees
+
+All four selected proofs in
+`rbtree_size_insert_mirrored_context_focus_rotation.click` verify at default
+limits. The proof retains the node observations through the read-only steps,
+executes the local declaration and the first rotation store, and carries the
+child links through the parent update. The callback count equation uses the
+existing `to_integer(gv) == 2 + to_integer(nv)` premise.
+
+The focused subtrees and cached sizes remain arbitrary under the original
+contracts. The other sidecars and the full-directory audit remain open.
+
+All 12 expansion, retained and cold replay, and fixed-point audit sites pass
+at default limits on master `ecd9cba40` plus this repair.
