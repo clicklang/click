@@ -3043,47 +3043,6 @@ fn synthesize_surface_atomic_proposition(
             ClickProposition::Not(Box::new(comparison))
         });
     }
-    // A native comparison over a compound operand: its machine spelling
-    // would lower to the Integer comparison of the operands' observations,
-    // so it is written as that comparison, `to_integer(r) ==
-    // to_integer(w * h)`, which lowers to this native comparison.
-    if let ConditionTerm::Compare {
-        format:
-            format @ (MachineIntegerType::Int32
-            | MachineIntegerType::UInt32
-            | MachineIntegerType::Int64
-            | MachineIntegerType::UInt64),
-        relation,
-        left,
-        right,
-    } = condition.native_compat()
-        && machine_spelling_lowers_to_integer(
-            *format,
-            *relation,
-            [left.as_ref(), right.as_ref()]
-                .map(|term| crate::kernel::KernelTermImport::default().machine(*format, term)),
-        )
-    {
-        let observe = |term: &MachineTerm| -> Option<crate::kernel::SharedIntegerTerm> {
-            crate::kernel::IntegerTerm::from_machine(*format, term.clone()).map(Into::into)
-        };
-        let operator = match relation {
-            CompareRelation::Equal => ComparisonOperator::Equal,
-            CompareRelation::LessThan => ComparisonOperator::LessThan,
-            CompareRelation::LessEqual => ComparisonOperator::LessEqual,
-            CompareRelation::GreaterThan => ComparisonOperator::GreaterThan,
-            CompareRelation::GreaterEqual => ComparisonOperator::GreaterEqual,
-        };
-        return integer_observation_comparison(
-            &observe(left)?,
-            operator,
-            &observe(right)?,
-            *value,
-            parameter_binding,
-            state,
-            bound_variables,
-        );
-    }
     let (left, operator, right) = match condition.native_compat() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
