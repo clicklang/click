@@ -28,7 +28,7 @@ fn nested(bytes: &[u8]) -> usize {
                 mark taken;
                 step_until(loop(1));
                 have chunk == bytes + (8u64 - at(taken, iter.v.len()));
-                have chunk_len == 4u64;
+                have chunk.len() == 4u64;
                 have 4u64 <= at(taken, iter.v.len());
                 have to_integer(loop(0).iter.v.len()) == to_integer(at(taken, iter.v.len())) - 4;
                 have 8u64 - at(taken, iter.v.len()) == 4u64 - loop(0).iter.v.len();
@@ -39,7 +39,7 @@ fn nested(bytes: &[u8]) -> usize {
                     decreases iter.v.len();
                     views bytes[0u64..8u64];
                     invariant bytes.len() == 8u64;
-                    invariant chunk_len == 4u64;
+                    invariant chunk.len() == 4u64;
                     invariant loop(0).iter.v.len() <= 4u64;
                     invariant chunk == bytes + (4u64 - loop(0).iter.v.len());
                     invariant iter.chunk_size == 2u64;

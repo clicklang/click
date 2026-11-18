@@ -28,7 +28,7 @@ fn walk(bytes: &[u8]) -> u32 {
                 mark taken;
                 step_until(assignment(_byte, 0));
                 have chunk == bytes + (16u64 - at(taken, iter.v.len()));
-                have chunk_len == 4u64;
+                have chunk.len() == 4u64;
                 step_until(loop(0).back_edge());
                 have 4u64 <= at(taken, iter.v.len());
                 have to_integer(iter.v.len()) == to_integer(at(taken, iter.v.len())) - 4;

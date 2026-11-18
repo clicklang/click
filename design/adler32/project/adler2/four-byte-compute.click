@@ -22,11 +22,10 @@ impl adler2::Adler32 {
      have old(bytes.len()) == 4u64 by { known(); }
      step_until(assignment(b, 0)); step();
      have a == 1u32 by { known(); }
-     step_until(assignment(remainder_chunk_len, 0)); step();
-     // Four bytes fit in the remainder and form exactly one lane vector.
-     have remainder_chunk_len == 4u64;
-     have remainder_chunk == old(bytes);
      step_until(loop(0));
+     // Four bytes fit in the remainder and form exactly one lane vector.
+     have remainder_chunk.len() == 4u64;
+     have remainder_chunk == old(bytes);
      have loop(0).iter.chunk_size == 22208u64;
      have loop(0).iter.v.len() == 0u64;
      step_until(loop(2));
@@ -288,7 +287,7 @@ impl adler2::Adler32 {
      have b == at(sum_b_3, b) + at(sum_b_3, bv);
      have b == ((((4u32 + (old((bytes[0] as u32)) * 4u32)) + ((old((bytes[1] as u32)) * 4u32) + (65521u32 - old((bytes[1] as u32))))) + ((old((bytes[2] as u32)) * 4u32) + ((65521u32 - old((bytes[2] as u32))) * 2u32))) + ((old((bytes[3] as u32)) * 4u32) + ((65521u32 - old((bytes[3] as u32))) * 3u32)));
      step_until(loop(5));
-     have remainder_len == 0u64;
+     have remainder.len() == 0u64;
      step_until(assignment(__rust_mir_149, 0));
      mark output_a;
      step();

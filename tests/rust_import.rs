@@ -1214,7 +1214,7 @@ fn charon_chunks_check_boundaries_authority_and_false_claims() {
         let offset = length - length % 4;
         let tail = length % 4;
         let claim = format!(
-            "{LIBRARY_CHUNKS} verifying \"chunks.rs\"; fn tail_byte(bytes: &[u8]) -> u8 {{ requires bytes.len() == {length}u64; views bytes[0..{length}]; ensures result == old(bytes[{offset}]); }} by {{ have bytes.len() % 4u64 == {tail}u64; have bytes.len() - bytes.len() % 4u64 == {offset}u64; step_until(assignment(tail_len, 0)); step(); have tail_len == {tail}u64; have tail == bytes + {offset}u64; step_until(function.exit); solve(); }}"
+            "{LIBRARY_CHUNKS} verifying \"chunks.rs\"; fn tail_byte(bytes: &[u8]) -> u8 {{ requires bytes.len() == {length}u64; views bytes[0..{length}]; ensures result == old(bytes[{offset}]); }} by {{ have bytes.len() % 4u64 == {tail}u64; have bytes.len() - bytes.len() % 4u64 == {offset}u64; step_until(statement(2)); have tail.len() == {tail}u64; have tail == bytes + {offset}u64; step_until(function.exit); solve(); }}"
         );
         ProgramVerificationSession::new_program_prepared(&claim, &prepared).unwrap();
     }
@@ -5821,9 +5821,8 @@ fn rust_chunks_exact_remainder_metadata_and_bytes() {
     } by {
         have bytes.len() % 2u64 == 1u64;
         have bytes.len() - bytes.len() % 2u64 == 4u64;
-        step_until(assignment(tail_len, 0));
-        step();
-        have tail_len == 1u64;
+        step_until(statement(2));
+        have tail.len() == 1u64;
         have tail == bytes + 4u64;
         step_until(function.exit);
         solve();
@@ -6061,8 +6060,8 @@ fn rust_chunks_exact_evaluates_size_once_and_keeps_shadowed_iterators_distinct()
         solve();
     }}
     fn shadow(bytes: &[u8]) -> usize {{ requires bytes.len() == 5u64; ensures result == 0u64; }} by {{
-        step_until(assignment(tail_len, 0));
-        step();
+        step_until(statement(2));
+        have tail.len() == 1u64;
         step_until(function.exit);
         solve();
     }}");
