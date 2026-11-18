@@ -1738,8 +1738,12 @@ and growing predicate DAG tests passed all 24 focused checks. All 378 affected
 checks, all 1,961 regular scaling checks and quality passed; nightly was
 excluded. Existing selected conversion/Fold/Match/opaque compatibility adapters
 remain assigned to 10r–10t. Contextual scalar/whole-guard lookup, read,
-application, float and pointer leaves, remaining Integer families, the five
-actual Term fields and q4c producer handoffs remain required.
+application, float, pointer and algebraic-equality leaves, remaining Integer
+families, the five actual Term fields and q4c producer handoffs remain required.
+After integrating upstream `813835029`, all 662 bounded scalar, composite
+borrowing, diagnostic and synthesis checks and quality passed. The delta had no
+shared walker, Boolean/Integer or exporter changes; the complete regular scaler
+verdict above applies to the unchanged migration code. Nightly was excluded.
 
 The required 10q4b2 integration checklist is:
 
