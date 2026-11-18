@@ -3409,8 +3409,8 @@ mathematical product.
 | `fold(...) by { ... }` | control | Expansion output | Supply a proof for one fold obligation. | [Reference](#folding-with-one-obligation) |
 | `fold(...) { requires P by ...; }` | control | Expansion output | Supply proofs for selected fold obligations. | [Reference](#folding-with-several-obligations) |
 | `construct(resource)` | simple | Specialized | Create an abstract token authorized by a `constructs` clause. | [Reference](#constructing-resources) |
-| `take(base[a..b])` | simple | Specialized | Take one element out of iterated ownership. | [Reference](#taking-a-range) |
-| `give(base[a..b])` | simple | Specialized | Return a taken element to iterated ownership. | [Reference](#giving-a-range) |
+| `unfold(resource(args)[i])` | simple | Specialized | Expose one guarded ownership slot. | [Reference](#indexed-resource-unfolding-and-folding) |
+| `fold(resource(args)[i])` | simple | Specialized | Restore one guarded ownership slot. | [Reference](#indexed-resource-unfolding-and-folding) |
 | `gather(resource(args))` | simple | Specialized | Form iterated ownership from its covering range. | [Reference](#gathering-resources) |
 | `scatter(resource(args))` | simple | Specialized | Dissolve iterated ownership into its covering range. | [Reference](#scattering-resources) |
 | `name(args, { binder: instance })` | simple | Specialized | Apply a verified tactic with resource bindings. | [Reference](#user-defined-tactic-calls) |
@@ -3877,114 +3877,26 @@ expansion preserves the checked step, and profiling charges one simple leaf.
 
 **Forms:** `unfold(resource(args)[i]);` and `fold(resource(args)[i]);`
 
-The resource must declare guarded iterated ownership. Open the whole
-resource first. The written arguments must determine the clause's bounds,
-layout, and guard. They select its held instance, and the clause supplies
-the element range at the current `int32` index `i`.
-Indexed `unfold` moves the element to ordinary owned memory, leaving an
-open slot. Indexed `fold` consumes that memory and restores the slot.
-The same checks apply as for [taking](#taking-a-range) and
-[giving](#giving-a-range).
+Open the declaring resource first. Its arguments must determine the guarded
+iterated clause's bounds, layout, and guard. Those coordinates select one held
+clause, which supplies the memory range at the current `int32` index `i`.
+
+- Indexed `unfold` requires `i` to be in range, its guard known true, and
+  `i` known distinct from every open slot. It exposes the element as owned
+  memory and records an open slot.
+- Indexed `fold` requires an open slot at `i`, its guard known true, and
+  direct ownership of the element's memory. A slot may have been opened by
+  indexed `unfold` or by a C store that made its guard true. Folding consumes
+  the direct ownership and restores the slot to the clause.
 
 Write `at(point, resource(args))[i]` to select the clause using arguments
-at a recorded program point. The index, guard, and ownership transfer
-use the current state. An absent or ambiguous held clause is refused.
-Expansion retains the indexed form.
+at a recorded program point. The index, guard, and ownership transfer use
+the current state. The operation runs at an execution frontier before
+function exit. Expansion retains the indexed form.
 
-**Checked example:** `mdtests/indexed_iterated_ownership.md`
-
-### Taking a range
-
-**Form:** `take(base[a..b])`
-
-**Specialized.** Write it to use one element of an iterated ownership fact as
-ordinary owned memory. Move one element out of the unfolded iterated ownership
-fact whose elements live at `base`, as ordinary owned memory. The element's
-index must be known in range, its guard known true, and the index not already
-out; the fact then claims nothing at that index.
-
-**Accepts**, at a C function's execution frontier before exit, a range that is
-one element of the one held iterated ownership fact whose elements live at
-`base` (the declaring resource already unfolded), when:
-
-- The range is the clause's element at some index `i`: for
-  `owns data[k..k + 1]` write `data[i..i + 1]`; for an offset clause
-  `data[k + 1..k + 2]` write `data[i + 1..i + 2]`; for a stride `s > 1`
-  write `data[s * i + a..s * i + b]`, with the offset in any arrangement of
-  the same affine form (`i * s`, `s * i`, or `i + i` for `s = 2`). `i` may be any
-  `int32` term, constants included.
-- `lo <= i` and `i < hi` are settled by the kernel's condition decision from
-  current facts: stated bounds, equalities (`j == index`), and chains of
-  bounds (`0 <= j`, `j <= index`).
-- The guard at `i` is settled true the same way, from a fact about the guard
-  cell (`occupied[i] == 0`, or `occupied[i] <= 0` with `occupied[i] >= 0`)
-  or from a C branch on it. Both `g[k] == v` and `g[k] != v` guards work.
-- `i` is settled different from every index already taken out.
-
-It adds the element as owned memory and records `i` as taken out. Several
-elements may be out at once.
-
-**Outside it**, with what to write instead:
-
-- A range wider or narrower than one element, such as `data[i..i + 2]` for
-  a one-cell clause: one `take` per element.
-- An iterated fact still folded inside its resource: `unfold` the resource
-  first.
-- An index whose range, guard, or distinctness is not settled: state it with
-  `have` or a `requires` first; a guard known false holds no element.
-- After the function exit: take before execution reaches the exit.
-
-**Failure, checking, and tools:**
-
-An unknown or false guard, an index that may already be out, an index not
-known in range, a range that is not one element, or two held iterated facts at
-the same base fails, each with its own message. The kernel re-derives the step
-from its input state when the trace is checked; expansion prints it unchanged,
-and profiling charges one guard cell and the fact's taken-out indices.
-
-**Checked examples:** [`iterated_ownership_allocate_one.md`](https://github.com/clicklang/click/blob/master/mdtests/iterated_ownership_allocate_one.md), [`iterated_ownership_rejects_take_false_guard.md`](https://github.com/clicklang/click/blob/master/mdtests/iterated_ownership_rejects_take_false_guard.md), [`iterated_ownership_rejects_take_unknown_guard.md`](https://github.com/clicklang/click/blob/master/mdtests/iterated_ownership_rejects_take_unknown_guard.md), [`take_refuses_an_element_already_taken_out.md`](https://github.com/clicklang/click/blob/master/mdtests/take_refuses_an_element_already_taken_out.md), [`take_refuses_a_range_that_is_not_one_element.md`](https://github.com/clicklang/click/blob/master/mdtests/take_refuses_a_range_that_is_not_one_element.md)
-
-### Giving a range
-
-**Form:** `give(base[a..b])`
-
-**Specialized.** Write it to return an element taken with `take`. Move a
-taken-out element back into its iterated ownership fact. Its guard must be known
-true.
-
-**Accepts**, at a C function's execution frontier before exit, a range that is
-one element of the one held iterated ownership fact at `base`, written as for
-`take`, when:
-
-- Its index is settled equal to an index taken out of the fact, by `take` or
-  by a C store that made the guard true.
-- The guard at that index is settled true by the kernel's condition decision.
-- The element's cells are owned.
-
-It consumes the element and clears the index from the taken-out set.
-
-Both `give` and `take` accept an explicitly saved pointer base:
-`give(at(opened, arena->data)[i..i + 1])` or `take(old(data)[i..i + 1])`.
-Only the base expression selects an earlier state. Bounds outside that selector
-refer to the current state, and guard checking and ownership transfer occur in
-the current state. This selects the recorded base directly when a fresh read
-of a descriptor field does not find its iterated ownership fact; it does not
-search for equivalent pointer forms.
-
-**Outside it**, with what to write instead:
-
-- An element never taken out: there is nothing to return; the fact already
-  holds it.
-- A guard known false or not settled: store the guard value in C, or state
-  the guard cell's value as a fact first.
-- After the function exit: give before execution reaches the exit.
-
-**Failure, checking, and tools:**
-
-A guard that is false or unknown, or an element that is not out, fails. Checked
-and expanded like `take`.
-
-**Checked examples:** [`iterated_saved_base_release.md`](https://github.com/clicklang/click/blob/master/mdtests/iterated_saved_base_release.md), [`iterated_saved_base_current_bounds.md`](https://github.com/clicklang/click/blob/master/mdtests/iterated_saved_base_current_bounds.md), [`iterated_ownership_release_one.md`](https://github.com/clicklang/click/blob/master/mdtests/iterated_ownership_release_one.md), [`iterated_ownership_rejects_give_false_guard.md`](https://github.com/clicklang/click/blob/master/mdtests/iterated_ownership_rejects_give_false_guard.md)
+**Checked examples:** [Strided slot and saved arguments](https://github.com/clicklang/click/blob/master/mdtests/indexed_iterated_ownership.md),
+[Allocation](https://github.com/clicklang/click/blob/master/mdtests/iterated_ownership_allocate_one.md),
+[Release](https://github.com/clicklang/click/blob/master/mdtests/iterated_ownership_release_one.md).
 
 ### Gathering resources
 
@@ -4056,7 +3968,7 @@ elements must tile one range, which it adds as owned memory.
 
 **Outside it**, with what to write instead:
 
-- A fact with an element taken out: `give` it back first.
+- A fact with an open slot: restore it with indexed `fold` first.
 - A fact still folded inside its resource: `unfold` the resource first.
 - Guards not settled one way: as for `gather`.
 

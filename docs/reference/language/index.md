@@ -2991,15 +2991,8 @@ the old arguments, as in
 The index and guard are still read in the current state.
 See `mdtests/indexed_iterated_ownership.md`.
 
-Four simple steps move ownership in and out of an unfolded iterated fact.
-Each reads the one fact it names, one guard cell or one quantified guard fact,
-and the indices currently taken out:
+Two operations convert the whole iterated fact:
 
-- `take(data[j..j + 1]);` moves element `j` out as ordinary owned memory. The
-  index must be known to lie in the range, its guard must be known true, and
-  it must not already be out. The fact then makes no claim about `j`.
-- `give(data[j..j + 1]);` moves it back. The guard at `j` must be known true
-  and `j` must be out.
 - `gather(arena_cells(data, occupied, capacity));` forms the fact the
   resource's clause denotes from the range its elements cover, when a
   quantified fact says every guard is true, or from nothing when every guard
@@ -3010,11 +3003,11 @@ The guard is read against the current cells, so a C store to a guard cell
 changes which elements the fact claims. Such a store is allowed only at an
 index where the fact claims nothing: an index out of range, an index taken
 out, an index whose guard is known false, or an index whose element this
-context owns outright. After the store the index stays out until `give`
-returns its element, unless the stored value makes the guard false. So the
-allocation protocol is `take` then mark
+context owns outright. After the store the slot stays open until indexed `fold`
+restores its element, unless the stored value makes the guard false. So the
+allocation protocol is indexed `unfold` then mark
 (`mdtests/iterated_ownership_allocate_one.md`), the free protocol is clear
-then `give` (`mdtests/iterated_ownership_release_one.md`), and marking a
+then indexed `fold` (`mdtests/iterated_ownership_release_one.md`), and marking a
 cell the fact still holds is refused
 (`mdtests/iterated_ownership_rejects_guard_store_while_held.md`). A fold of
 the declaring resource requires the fact with nothing taken out, so it
@@ -3024,7 +3017,7 @@ to guard cells that does not pass through a C store, such as a call's
 effect, drops the fact instead.
 
 The fact itself grants no access: a store to `data[j]` needs the element
-taken out first (`mdtests/iterated_ownership_rejects_store_without_take.md`).
+taken out first (`mdtests/iterated_ownership_rejects_store_with_closed_slot.md`).
 A loop takes one element per iteration from a fact inside its own resource
 (`mdtests/iterated_ownership_claim_loop.md`,
 `mdtests/iterated_ownership_release_loop.md`), and freed cells are reused by

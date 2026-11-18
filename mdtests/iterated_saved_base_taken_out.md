@@ -1,6 +1,6 @@
 # A saved pointer does not permit taking the same element twice
 
-```c filename=take_refuses_an_element_already_taken_out.c
+```c filename=indexed_unfold_refuses_a_slot_that_may_be_open.c
 void touch(int32* data, int32* occupied, int32 capacity, int32 index, int32 j) { }
 ```
 
@@ -14,7 +14,7 @@ resource arena_cells(data: int32*, occupied: int32*, capacity: int32) {
     }
 }
 
-verifying "take_refuses_an_element_already_taken_out.c";
+verifying "indexed_unfold_refuses_a_slot_that_may_be_open.c";
 
 void touch(int32* data, int32* occupied, int32 capacity, int32 index, int32 j) {
     owns arena_cells(data, occupied, capacity);
@@ -26,10 +26,10 @@ void touch(int32* data, int32* occupied, int32 capacity, int32 index, int32 j) {
     requires occupied[j] == 0;
 } by {
     unfold(arena_cells(data, occupied, capacity));
-    take(old(data)[index..index + 1]);
-    take(old(data)[j..j + 1]);
-    give(data[index..index + 1]);
-    give(data[j..j + 1]);
+    unfold(at(function.entry, arena_cells(data, occupied, capacity))[index]);
+    unfold(at(function.entry, arena_cells(data, occupied, capacity))[j]);
+    fold(arena_cells(data, occupied, capacity)[index]);
+    fold(arena_cells(data, occupied, capacity)[j]);
     fold(arena_cells(data, occupied, capacity));
 }
 ```

@@ -654,7 +654,7 @@ impl ResourceContextIndex {
                 result.iterated_by_block =
                     insert_resource_index_entry(&result.iterated_by_block, second.clone(), entry);
             }
-            if fact.is_own() {
+            if matches!(fact, ResourceFact::Own(_, quantity) if quantity.as_const() == Some(1)) {
                 result.owned_iterated_by_clause = insert_resource_index_entry(
                     &result.owned_iterated_by_clause,
                     iterated.without_holes(),
@@ -1057,7 +1057,7 @@ impl ResourceContextIndex {
                 result.iterated_by_block =
                     remove_resource_index_entry(&result.iterated_by_block, second, entry);
             }
-            if fact.is_own() {
+            if matches!(fact, ResourceFact::Own(_, quantity) if quantity.as_const() == Some(1)) {
                 result.owned_iterated_by_clause = remove_resource_index_entry(
                     &result.owned_iterated_by_clause,
                     &iterated.without_holes(),

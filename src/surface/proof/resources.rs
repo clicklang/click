@@ -2116,7 +2116,7 @@ fn record_observed_composite_surface_facts<F: ResourcePureFacts>(
     for contained in composite_body.contains() {
         if matches!(contained, ResourceClause::Iterated(_)) {
             // An iterated clause has no `contains(...)` or `separate(...)`
-            // spelling; its element facts come only from `take`.
+            // spelling; its element facts come from indexed `unfold`.
             continue;
         }
         let contained =

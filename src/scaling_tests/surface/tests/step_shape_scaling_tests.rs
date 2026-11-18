@@ -1151,7 +1151,7 @@ fn saved_iterated_base_ignores_aliases_states_and_unrelated_resources() {
     let (source, sources) =
         super::expansion_tests::mdtest_sources("mdtests/iterated_saved_base_release.md");
     // Exact work equality detects a scan even at these small sizes. Larger
-    // parameter sets mostly measure full-function setup before `give`.
+    // parameter sets mostly measure full-function setup before indexed `fold`.
     let work = [1, 2, 4].map(|size| {
         let parameters = (0..size)
             .map(|i| format!(", int32* alias{i}, int32* spare{i}"))

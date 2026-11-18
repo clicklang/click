@@ -2182,11 +2182,6 @@ pub enum ResourceClause {
 /// A proof step on iterated guarded ownership.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum IteratedTactic {
-    /// `take(base[a..b]);` moves one element out of the iterated fact whose
-    /// elements live at `base`.
-    Take(IteratedElement),
-    /// `give(base[a..b]);` moves one element back.
-    Give(IteratedElement),
     /// `unfold(resource(args)[i]);` opens one slot of an exposed clause.
     UnfoldSlot(Box<IteratedSlot>),
     /// `fold(resource(args)[i]);` restores that slot.
@@ -2206,22 +2201,9 @@ pub struct IteratedSlot {
     index: ContractExpression,
 }
 
-/// A current range or a range through an explicitly selected saved pointer.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum IteratedElement {
-    Current(ContractSegment),
-    SavedBase {
-        base: ContractExpression,
-        start: ContractExpression,
-        end: ContractExpression,
-    },
-}
-
 impl IteratedTactic {
     pub fn name(&self) -> &'static str {
         match self {
-            Self::Take(_) => "take",
-            Self::Give(_) => "give",
             Self::UnfoldSlot(_) => "unfold",
             Self::FoldSlot(_) => "fold",
             Self::Gather(_) => "gather",
@@ -5971,7 +5953,7 @@ pub enum ProofTactic {
         start: ContractExpression,
         end: ContractExpression,
     },
-    /// `take`, `give`, `gather`, or `scatter` on iterated guarded ownership.
+    /// Checked operation on iterated guarded ownership.
     Iterated(IteratedTactic),
     ConstructResource(ResourceClause),
     Witness(ProofWitness),
@@ -6275,13 +6257,13 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
         class: "simple",
     },
     PublicTacticForm {
-        id: "take-element",
-        syntax: "take(base[a..b])",
+        id: "unfold-slot",
+        syntax: "unfold(resource(args)[i])",
         class: "simple",
     },
     PublicTacticForm {
-        id: "give-element",
-        syntax: "give(base[a..b])",
+        id: "fold-slot",
+        syntax: "fold(resource(args)[i])",
         class: "simple",
     },
     PublicTacticForm {

@@ -17640,7 +17640,7 @@ fn a_decided_branch_in_a_loop_body_expands_and_reverifies() {
 }
 
 /// Expands every smart site of one claim in an iterated-ownership fixture and
-/// reverifies the result, checking that the explicit `take`/`give` steps
+/// reverifies the result, checking that the indexed `unfold` and `fold` steps
 /// survive expansion as written.
 fn expand_iterated_ownership_claim(fixture: &str, claim: &str, kept: &[&str]) {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(fixture);
@@ -17676,12 +17676,12 @@ fn expand_iterated_ownership_claim(fixture: &str, claim: &str, kept: &[&str]) {
 #[test]
 #[ignore = "nightly: 0.9s in the parallel gate"]
 fn the_iterated_ownership_allocation_protocol_expands_and_reverifies() {
-    // `take` is a simple step: the expansion prints it unchanged, and the
+    // Indexed `unfold` is a simple step: the expansion prints it unchanged, and the
     // closers around it become explicit steps that verify on their own.
     expand_iterated_ownership_claim(
         "mdtests/iterated_ownership_allocate_one.md",
         "claim.contract",
-        &["take(data[index..(index + 1)]);"],
+        &["unfold(arena_cells(data, occupied, capacity)[index]);"],
     );
 }
 
@@ -17693,7 +17693,7 @@ fn the_iterated_ownership_claim_loop_expands_and_reverifies() {
     expand_iterated_ownership_claim(
         "mdtests/iterated_ownership_claim_loop.md",
         "claim_run.contract",
-        &["take(data[i..(i + 1)]);"],
+        &["unfold(arena_window(data, occupied, capacity, start, end)[i]);"],
     );
 }
 
@@ -17703,7 +17703,7 @@ fn the_iterated_ownership_release_loop_expands_and_reverifies() {
     expand_iterated_ownership_claim(
         "mdtests/iterated_ownership_release_loop.md",
         "release_run.contract",
-        &["give(data[i..(i + 1)]);"],
+        &["fold(arena_window(data, occupied, capacity, start, end)[i]);"],
     );
 }
 
@@ -21246,7 +21246,10 @@ fn saved_iterated_pointer_base_expands_and_rechecks() {
         .map(|(name, text)| (name.as_str(), text.as_str()))
         .collect::<Vec<_>>();
     let expanded = expand_c_claim_source_by_label(&source, &sources, "release.contract").unwrap();
-    assert!(expanded.contains("give(at(before, data)"), "{expanded}");
+    assert!(
+        expanded.contains("fold(at(before, arena_cells(data, occupied, capacity))[index]);"),
+        "{expanded}"
+    );
     without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
 }
 
@@ -22058,7 +22061,7 @@ fn compact_store_proof_repairs_expand_and_replay() {
             "arena_write",
         ),
         (
-            "iterated_give_preserves_descriptor_loop_ownership",
+            "indexed_fold_preserves_descriptor_loop_ownership",
             "release_run",
         ),
         ("modeled_pthread_local_job_external_output", "worker"),

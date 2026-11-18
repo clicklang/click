@@ -1,14 +1,14 @@
-# `take` refuses an element that may already be taken out
+# Indexed `unfold` refuses an element that may already be taken out
 
-`take` moves one element out of an unfolded iterated ownership fact, and the
-fact then claims nothing at that index. A second `take` must show its index
+indexed `unfold` moves one element out of an unfolded iterated ownership fact, and the
+fact then claims nothing at that index. A second indexed `unfold` must show its index
 differs from every index already out. Here `j` is in range and its guard is
-known true, but nothing says `j != index`, so `take(data[j..j + 1])` is
-refused: it may name the element the first `take` already moved. With
+known true, but nothing says `j != index`, so `unfold(arena_cells(data, occupied, capacity)[j])` is
+refused: it may name the element the first indexed `unfold` already moved. With
 `requires j != index;` both elements come out
 (the condition decision then separates the two indices).
 
-```c filename=take_refuses_an_element_already_taken_out.c
+```c filename=indexed_unfold_refuses_a_slot_that_may_be_open.c
 void touch(int32* data, int32* occupied, int32 capacity, int32 index, int32 j) { }
 ```
 
@@ -22,7 +22,7 @@ resource arena_cells(data: int32*, occupied: int32*, capacity: int32) {
     }
 }
 
-verifying "take_refuses_an_element_already_taken_out.c";
+verifying "indexed_unfold_refuses_a_slot_that_may_be_open.c";
 
 void touch(int32* data, int32* occupied, int32 capacity, int32 index, int32 j) {
     owns arena_cells(data, occupied, capacity);
@@ -34,10 +34,10 @@ void touch(int32* data, int32* occupied, int32 capacity, int32 index, int32 j) {
     requires occupied[j] == 0;
 } by {
     unfold(arena_cells(data, occupied, capacity));
-    take(data[index..index + 1]);
-    take(data[j..j + 1]);
-    give(data[index..index + 1]);
-    give(data[j..j + 1]);
+    unfold(arena_cells(data, occupied, capacity)[index]);
+    unfold(arena_cells(data, occupied, capacity)[j]);
+    fold(arena_cells(data, occupied, capacity)[index]);
+    fold(arena_cells(data, occupied, capacity)[j]);
     fold(arena_cells(data, occupied, capacity));
 }
 ```

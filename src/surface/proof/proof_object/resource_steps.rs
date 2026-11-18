@@ -2209,7 +2209,6 @@ impl<'a> Proof<'a> {
             )));
         }
         let state = &*execution.core.state;
-        let parameters = context.parsed_function.parameters();
         let evaluate = |expression: &ContractExpression| {
             let expression = self.substitute_fixed_state_locals_in_expression(expression)?;
             let names = contract_expression_referenced_names(&expression);
@@ -2231,60 +2230,12 @@ impl<'a> Proof<'a> {
             )
             .map_err(|message| self.step_error(format!("`{name}` operand: {message}")))
         };
-        let element =
-            |element: &IteratedElement| -> Result<crate::kernel::MemoryRange, ClickError> {
-                let captured;
-                let segment = match element {
-                    IteratedElement::Current(segment) => segment,
-                    IteratedElement::SavedBase { base, start, end } => {
-                        let base = ProgramExpression::Value(evaluate(base)?);
-                        let start = ProgramExpression::Value(evaluate(start)?);
-                        let end = ProgramExpression::Value(evaluate(end)?);
-                        captured = ContractSegment {
-                            state: ContractSegmentState::Current,
-                            surface: ContractSegmentSurface::Range {
-                                base: ContractExpression::ProgramExpression(base.clone()),
-                                start: ContractExpression::ProgramExpression(start.clone()),
-                                end: ContractExpression::ProgramExpression(end.clone()),
-                            },
-                            base,
-                            start,
-                            end,
-                            uninitialized: false,
-                        };
-                        &captured
-                    }
-                };
-                let resource = ResourceClause::OwnMemory(segment.clone());
-                let lowered = match element {
-                    IteratedElement::Current(_) => {
-                        lower_resource_clause_at_current_locals_with_assumptions(
-                            &resource,
-                            context.parameter_binding(),
-                            state,
-                            None,
-                            self.facts().assumptions(),
-                        )
-                    }
-                    // All three operands are captured values: there are no
-                    // C locals or parameters left to populate or resolve.
-                    IteratedElement::SavedBase { .. } => lower_resource_clause_at_state(
-                        &resource,
-                        ParameterBinding::new(&[], &[]),
-                        state,
-                    ),
-                }?;
-                lowered
-                    .memory_own_range()
-                    .cloned()
-                    .ok_or_else(|| self.step_error(format!("`{name}` expects a memory range")))
-            };
         let template = |resource: &ResourceClause| {
             iterated_template_for_resource(
                 context.resource_environment,
                 resource,
                 name,
-                ParameterBinding::new(parameters, context.arguments),
+                context.parameter_binding(),
                 state,
                 context.claim_label,
                 context.tactic_index,
@@ -2292,12 +2243,6 @@ impl<'a> Proof<'a> {
             )
         };
         let step = match tactic {
-            IteratedTactic::Take(segment) => crate::kernel::IteratedStep::Take {
-                element: element(segment)?,
-            },
-            IteratedTactic::Give(segment) => crate::kernel::IteratedStep::Give {
-                element: element(segment)?,
-            },
             IteratedTactic::UnfoldSlot(slot) | IteratedTactic::FoldSlot(slot) => {
                 let selected = match &slot.point {
                     Some(point) => selected_program_state(

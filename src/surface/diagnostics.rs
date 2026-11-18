@@ -1050,7 +1050,7 @@ pub(super) fn describe_missing_resource_fact(
             })
     {
         note = format!(
-            "\n  note: the held iterated ownership of `{}` has index {} taken out, and at a fold it must hold exactly the elements whose guard is true; `give` each element back, or store a guard value that makes its guard false, before folding",
+            "\n  note: the held iterated ownership of `{}` has index {} taken out, and at a fold it must hold exactly the elements whose guard is true; fold each open slot, or store a guard value that makes its guard false, before folding",
             held.owner(),
             held.holes()
                 .iter()

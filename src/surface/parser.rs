@@ -11204,28 +11204,6 @@ impl Parser {
                     });
                 }
             }
-            "take" | "give" => {
-                self.expect(Token::LParen)?;
-                let segment = if matches!(self.peek_ident(), Some("at" | "old"))
-                    && self.peek_next() == Some(&Token::LParen)
-                {
-                    let base = self.parse_contract_primary()?;
-                    self.expect(Token::LBracket)?;
-                    let start = self.parse_contract_expression()?;
-                    self.expect(Token::DotDot)?;
-                    let end = self.parse_contract_expression()?;
-                    self.expect(Token::RBracket)?;
-                    IteratedElement::SavedBase { base, start, end }
-                } else {
-                    IteratedElement::Current(self.parse_current_contract_segment()?)
-                };
-                self.expect(Token::RParen)?;
-                ProofTactic::Iterated(if name == "take" {
-                    IteratedTactic::Take(segment)
-                } else {
-                    IteratedTactic::Give(segment)
-                })
-            }
             "gather" | "scatter" => {
                 self.expect(Token::LParen)?;
                 let resource =
@@ -18233,8 +18211,8 @@ mod tactic_classification_tests {
         ("unfold-function", "unfold(f(x));"),
         ("unfold-resource", "unfold(reference(p));"),
         ("fold-resource", "fold(reference(p));"),
-        ("take-element", "take(base[0..n]);"),
-        ("give-element", "give(base[0..n]);"),
+        ("unfold-slot", "unfold(reference(p)[0]);"),
+        ("fold-slot", "fold(reference(p)[0]);"),
         ("gather-resource", "gather(reference(p));"),
         ("scatter-resource", "scatter(reference(p));"),
         ("construct-resource", "construct(reference(p));"),

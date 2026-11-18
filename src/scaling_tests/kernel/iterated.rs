@@ -167,8 +167,9 @@ fn iterated_exposure_preserves_the_frame_without_admission_or_normalization() {
                         template: template.clone(),
                     }
                 } else {
-                    IteratedStep::Take {
-                        element: range.clone(),
+                    IteratedStep::UnfoldSlot {
+                        template: template.clone(),
+                        index: 1u32.into(),
                     }
                 };
                 let prepared = if scatter {

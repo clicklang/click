@@ -18,10 +18,6 @@ use crate::kernel::{CompareRelation, MachineIntegerType};
 /// The element-level proof steps and the whole-range conversions.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum IteratedStep {
-    /// `take(base[a..b])`: move one element out of the fact.
-    Take { element: MemoryRange },
-    /// `give(base[a..b])`: move one element back into the fact.
-    Give { element: MemoryRange },
     /// The named clause supplies the range at the written index.
     UnfoldSlot {
         template: IteratedMemory,
@@ -72,12 +68,6 @@ fn terms_distinct(assumptions: &PureFactContext, left: &MachineTerm, right: &Mac
                 right: Box::new(right.clone()),
             },
         ) == Some(false)
-}
-
-fn pointers_equal(assumptions: &PureFactContext, left: &Address, right: &Address) -> bool {
-    // Resource selection asks whether these reads name the same address;
-    // use the shared checked state/read comparison, not just pure facts.
-    crate::kernel::prelude::pointers_proven_equal_for_memory_resolution(left, right, assumptions)
 }
 
 /// Whether `index` lies in the fact's range, by the fact context.
@@ -267,92 +257,6 @@ pub(crate) fn iterated_separate_from_range(
     )
 }
 
-fn owned_iterated_candidates(
-    resources: &ResourceContext,
-    block: AddressBase,
-) -> impl Iterator<Item = (&ResourceFact, &IteratedMemory)> {
-    resources
-        .iterated_facts_in_block(&block)
-        .filter_map(move |fact| match fact {
-            ResourceFact::Own(Resource::Iterated(iterated), quantity)
-                if quantity.as_const() == Some(1) && iterated.element_base().base == block =>
-            {
-                Some((fact, iterated.as_ref()))
-            }
-            _ => None,
-        })
-}
-
-/// The one owned iterated fact whose elements live at `element`'s base.
-fn iterated_fact_for_element<'a>(
-    resources: &'a ResourceContext,
-    element: &MemoryRange,
-    assumptions: &PureFactContext,
-) -> Result<(&'a ResourceFact, &'a IteratedMemory), String> {
-    let mut found = None;
-    for (fact, iterated) in owned_iterated_candidates(resources, element.base().base.clone()) {
-        if iterated.element_width() != element.element_width()
-            || !pointers_equal(assumptions, iterated.element_base(), element.base())
-        {
-            continue;
-        }
-        if found.replace((fact, iterated)).is_some() {
-            return Err("two iterated ownership facts share this element base".to_string());
-        }
-    }
-    found.ok_or_else(|| {
-        "no iterated ownership fact holds elements at this base; `unfold` the resource that declares it first"
-            .to_string()
-    })
-}
-
-/// The index whose element `element` claims to be: its start with the
-/// clause's constant offset removed and, for a stride above one, the stride
-/// factored out of the term as written. [`check_element_at`] then decides
-/// that the whole range is that element.
-fn element_index(iterated: &IteratedMemory, element: &MemoryRange) -> Result<MachineTerm, String> {
-    let Some((start, _)) = element.int32_bounds() else {
-        return Err("iterated ownership requires a signed 32-bit element range".into());
-    };
-    let scaled = MachineTerm::subtract(
-        start.clone(),
-        MachineTerm::constant(iterated.start_offset as u32),
-    );
-    if iterated.stride == 1 {
-        return Ok(scaled);
-    }
-    // The element's start is `stride * index + offset` in any spelling
-    // (`index * 2`, `2 * index`, `index + index`): its affine form has one
-    // atom, the index, with the stride as coefficient.
-    match crate::kernel::assumptions::affine_bitvector_single_atom(&scaled) {
-        Some((index, coefficient, 0)) if coefficient == i64::from(iterated.stride) => Ok(index),
-        _ => Err(format!(
-            "write the element as `base[index * {} + {}..]`, the clause's element at `index`",
-            iterated.stride, iterated.start_offset
-        )),
-    }
-}
-
-/// Checks that `element` is exactly the fact's element at `index`.
-fn check_element_at(
-    iterated: &IteratedMemory,
-    element: &MemoryRange,
-    index: &MachineTerm,
-    assumptions: &PureFactContext,
-) -> Result<(), String> {
-    if element.int32_bounds().is_none() {
-        return Err("iterated ownership requires a signed 32-bit element range".into());
-    }
-    let expected = iterated.element_range(index);
-    if terms_equal(assumptions, element.start(), expected.start())
-        && terms_equal(assumptions, element.end(), expected.end())
-    {
-        Ok(())
-    } else {
-        Err("the range is not one element of the iterated ownership fact".to_string())
-    }
-}
-
 fn replace_iterated(
     resources: ResourceContext,
     current: &ResourceFact,
@@ -369,7 +273,6 @@ fn unfold_slot(
     current: &ResourceFact,
     iterated: &IteratedMemory,
     index: &MachineTerm,
-    element: MemoryRange,
     assumptions: &PureFactContext,
 ) -> Result<ExecutionState, String> {
     if !index_in_range(assumptions, iterated, index) {
@@ -410,7 +313,8 @@ fn unfold_slot(
     // Guard stores preserve that partition; exposing the element is
     // construction in this same frame, not new ownership admission.
     // Keep unrelated occurrences and support metadata untouched.
-    let resources = resources.unchecked_with_fact(ResourceFact::own_memory(element));
+    let resources =
+        resources.unchecked_with_fact(ResourceFact::own_memory(iterated.element_range(index)));
     Ok(state.clone().with_resource_context(resources))
 }
 
@@ -469,23 +373,6 @@ pub(crate) fn apply_iterated_step(
     assumptions: &PureFactContext,
 ) -> Result<ExecutionState, String> {
     match step {
-        IteratedStep::Take { element } | IteratedStep::Give { element } => {
-            let (current, iterated) =
-                iterated_fact_for_element(state.resources(), element, assumptions)?;
-            let index = &element_index(iterated, element)?;
-            check_element_at(iterated, element, index, assumptions)?;
-            match step {
-                IteratedStep::Take { .. } => unfold_slot(
-                    state,
-                    current,
-                    iterated,
-                    index,
-                    element.clone(),
-                    assumptions,
-                ),
-                _ => fold_slot(state, current, iterated, index, assumptions),
-            }
-        }
         IteratedStep::UnfoldSlot { template, index }
         | IteratedStep::FoldSlot { template, index } => {
             let current = state.resources().owned_iterated_clause(template)?;
@@ -493,14 +380,9 @@ pub(crate) fn apply_iterated_step(
                 unreachable!("the iterated clause index holds only iterated facts");
             };
             match step {
-                IteratedStep::UnfoldSlot { .. } => unfold_slot(
-                    state,
-                    current,
-                    iterated,
-                    index,
-                    iterated.element_range(index),
-                    assumptions,
-                ),
+                IteratedStep::UnfoldSlot { .. } => {
+                    unfold_slot(state, current, iterated, index, assumptions)
+                }
                 _ => fold_slot(state, current, iterated, index, assumptions),
             }
         }
@@ -757,7 +639,7 @@ impl IteratedStorePlan {
 /// writes, so the store cannot change what it holds. After the store `j`
 /// stays a hole unless it is out of range or the stored value makes the guard
 /// known false; a store that makes the guard true therefore leaves `j` a hole
-/// until `give` returns the element. A store at an index whose element the
+/// until indexed `fold` restores the element. A store at an index whose element the
 /// fact may still hold is refused: it would silently change the fact.
 pub(crate) fn plan_iterated_guard_store(
     state: &ExecutionState,
@@ -794,7 +676,7 @@ pub(crate) fn plan_iterated_guard_store(
         }
         let refusal = |reason: &str| {
             format!(
-                "this store may change a guard cell of the iterated ownership of `{}`, which would change the elements it holds: {reason}; `take` the element at this index first, or establish that its guard is false",
+                "this store may change a guard cell of the iterated ownership of `{}`, which would change the elements it holds: {reason}; unfold the iterated slot at this index first, or establish that its guard is false",
                 iterated.owner()
             )
         };
@@ -856,48 +738,4 @@ pub(crate) fn plan_iterated_guard_store(
         replacements.push((fact.clone(), during, after));
     }
     Ok(IteratedStorePlan { replacements })
-}
-
-#[cfg(test)]
-mod wide_range_reader_tests {
-    use super::*;
-    // Native requested elements are refused by both signed iterated rules.
-    #[test]
-    fn wide_elements_do_not_enter_iterated_index_arithmetic() {
-        let base = Address::symbolic(Variable(984_900));
-        let iterated = IteratedMemory::new(
-            "items",
-            base.clone(),
-            4,
-            1,
-            0,
-            1,
-            0u32.into(),
-            4u32.into(),
-            IteratedGuard {
-                base: base.clone(),
-                cell_type: ProgramType::Int32,
-                cell_width: 4,
-                holds_when_equal: true,
-                value: 1u32.into(),
-            },
-        )
-        .unwrap();
-        let wide = MemoryRange::new_wide(
-            base,
-            MachineTerm::uint64_constant(0),
-            MachineTerm::uint64_constant(1 << 33),
-            4,
-        );
-        assert!(
-            element_index(&iterated, &wide)
-                .unwrap_err()
-                .contains("signed 32-bit")
-        );
-        assert!(
-            check_element_at(&iterated, &wide, &0u32.into(), &PureFactContext::new())
-                .unwrap_err()
-                .contains("signed 32-bit")
-        );
-    }
 }

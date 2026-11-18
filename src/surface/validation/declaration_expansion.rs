@@ -1992,8 +1992,7 @@ fn expand_declared_resource_tactic_with_resources(
         ProofTactic::Iterated(IteratedTactic::FoldSlot(slot)) => Ok(ProofTactic::Iterated(
             IteratedTactic::FoldSlot(expand_slot(slot)?),
         )),
-        tactic @ (ProofTactic::Iterated(IteratedTactic::Take(_) | IteratedTactic::Give(_))
-        | ProofTactic::ObserveSavedMemory { .. }) => Ok(tactic),
+        tactic @ ProofTactic::ObserveSavedMemory { .. } => Ok(tactic),
         _ => unreachable!("tactic dispatched to the wrong declaration-expansion helper"),
     }
 }

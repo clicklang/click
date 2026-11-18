@@ -121,7 +121,7 @@ Distinguish these producer boundaries:
 | Return-clause evaluation | Executed-body returns consume each output from one persistent body context. Verified function rules, scoped source-contract hypotheses and established named-contract premises construct their joint outputs beside the reserved-input frame. Description-only summaries retain finite consumed-footprint recipes and checked entry borrows; unjustified descriptions still require checked ownership admission. |
 | Return composition | `FramedReturnPartition` retains the output group and caller frame constructed by body custody or a function frame rule; `finish` installs it directly. Description-only paths restore selected entry borrows, consumed-cell transfers and fresh allocations, then admit remaining descriptions explicitly. `ValidateDescriptions` does not turn a role marker into transfer evidence. |
 | Produced composite boundary | Function frame rules cover the joint output partition, including post-memory footprints. Description-only summaries bind immutable leaves and fixed byte fragments to consumed inputs; supported entry borrows retain provenance. Unmatched children and post-memory footprints still pass through `produced_composite_frontier_conflict`. |
-| Iterated `take` and `scatter` | The checked hole/guard transition or hole-free whole-range consumption constructs the exposed memory directly in the same frame. Neither operation readmits it or normalizes the surrounding block. Source selection, guard reasoning, and the explicit hole list have separate costs. |
+| Indexed `unfold` and `scatter` | The checked hole/guard transition or hole-free whole-range consumption constructs the exposed memory directly in the same frame. Neither operation readmits it or normalizes the surrounding block. Source selection, guard reasoning, and the explicit hole list have separate costs. |
 | Call and suspended-loan recovery | `recover_returned_views` constructs recovery directly in the actual return residual, retaining output occurrences and supported cores. Each escrow is admitted once against that destination; publication receives its constructed context and explicit recovered hold occurrence IDs. There is no discarded entry-frame reconstruction or second insertion. Suspended recovery likewise uses today's parent frame. A constructed framed partition retains its escrow boundary token. An unmatched description's relationship to withheld escrow remains a boundary obligation, with explicit separation required for unsupported geometry. |
 | Worker completion and loop-frame exchange | `compose_checked_outputs` checks only the checked worker group's boundary with today's parent frame, and retains output occurrences, projection support, loan dependencies and cached expansions in the resulting construction. It does not recheck output/output memory pairs. `restore_frame_after_exchange` admits the changed loop partition directly with the exit's selected occurrence IDs and retains that successor; it no longer checks a temporary context and reinserts the same facts. Newly described output must still establish its boundary with the current or withheld frame. Unsupported geometry requires explicit separation. |
 | Instance and authority bookkeeping | Some callers add only an instance identity or an exclusive authority. Those facts do not have a raw memory footprint for alias discovery; do not classify every use of the generic API as a memory scan. |
@@ -284,12 +284,12 @@ complete-return work; the last permits work proportional to the expanded body.
 
 #### Iterated exposure and the remaining callers
 
-`apply_iterated_step` constructs `take` by adding one checked hole and exposing
+`apply_iterated_step` constructs indexed `unfold` by adding one checked hole and exposing
 that element. `scatter` consumes a hole-free owner and exposes its covering
 range after checking the all-true guard. `plan_iterated_guard_store` preserves
 this partition: changing a live guard requires the element to be outside the
 range, already out, or not held, and a newly true guard stays a hole until
-`give`. A declaring loop that may write guards drops the framed iterated fact.
+indexed `fold`. A declaring loop that may write guards drops the framed iterated fact.
 The exposed bytes therefore come from the selected owner, in the same retained
 frame; comparing them against that frame again is revalidation.
 
