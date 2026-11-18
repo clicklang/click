@@ -83,7 +83,7 @@ change.
 - **Triage before blaming the tool.** A failed proof does not mean the program
   is wrong or Click is broken. Check the claim, then the supported semantics,
   then replace smart search with explicit steps. Follow the
-  [tracing procedure](concepts/tracing.md) and
+  [proof repair procedure](concepts/tracing.md) and
   [proof-failure triage](concepts/proof-failure-triage.md).
 
 Click is experimental, and each supported language is an incomplete subset.

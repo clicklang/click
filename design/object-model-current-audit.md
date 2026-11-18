@@ -107,7 +107,7 @@ C operation: __click_cpp_nested_value_0 = __cpp_q_I4_View_I3_get((view as (int32
 The reported context includes the caller's `views data[0]`, the constructed
 `owns view[0..8]`, and the pointer-field equality to `data`. The refusal is at
 the getter call, before local destruction. There is no `goal:` line for a
-specific unproved proposition. Under the tracing procedure this is an
+specific unproved proposition. Under the proof repair procedure this is an
 `unclear-trace` outcome; the internal cause was not yet established. No new bug file or GitHub issue was filed.
 The unchanged witness remains in the test suite. The follow-up below resolves
 this frontier without changing the C++ or contracts.
@@ -167,7 +167,7 @@ goal: at(<state A>, root->rb_node) == <pointer A>
 
 `<state A>` is the memory after the store to `root->rb_node`; the report does
 not define `<pointer A>` in its legend. This prevents stating the generated
-link from the report (`unclear-trace` under the tracing procedure). The
+link from the report (`unclear-trace` under the proof repair procedure). The
 baseline reproduction established a tooling/composition failure, not a false
 acceptance or a root cause in pointer provenance. No new bug file or issue
 was filed. Keep this exact fixture as the small acceptance witness rather
