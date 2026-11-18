@@ -12,3 +12,4 @@ try_compose_with_facts_delaying_normalization_with_occurrences
 try_compose_with_fact_with_occurrence
 validity_error
 observable_facts
+admit_declared_entry_resources
