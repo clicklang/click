@@ -449,3 +449,10 @@ test. It executes the local declaration and both rotation stores, retains
 the new child links through the middle subtree's reparenting and the parent
 update, and carries the original uncle subtree into the rotated tree. The
 original contracts keep the subtrees and their valid cached sizes arbitrary.
+
+## Replacing a child link
+
+The augmented `__rb_change_child` proof retains the ancestor's packed tag and
+its typed parent cast, the sibling and root links, and the replaced child's
+cached size and parent cast across the store. The produced link uses the
+entry size, which the contract separately proves equals the exit size.
