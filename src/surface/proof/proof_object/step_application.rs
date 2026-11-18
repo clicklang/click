@@ -452,11 +452,16 @@ impl<'a> Proof<'a> {
                 match lowered {
                     Err(_) => (RoundTrip::Unlowered, raised, String::new()),
                     Ok(lowered) => match audit::classify(original, &lowered) {
-                        RoundTrip::Differs => (
-                            RoundTrip::Differs,
-                            raised,
-                            next.render_diagnostic_proposition(&lowered),
-                        ),
+                        RoundTrip::Differs => {
+                            if std::env::var_os("DBG_RL").is_some() {
+                                eprintln!("DBGRL original={original:?}\nDBGRL lowered={lowered:?}");
+                            }
+                            (
+                                RoundTrip::Differs,
+                                raised,
+                                next.render_diagnostic_proposition(&lowered),
+                            )
+                        }
                         outcome => (outcome, raised, String::new()),
                     },
                 }

@@ -3431,13 +3431,12 @@ fn allocation_result_names_survive_reassignment_and_follow_state_scope() {
         relower_written_proposition_with_states(&surface, &current, &current, &retained_states)
             .unwrap();
     // The allocation compared with itself keeps its comparison.
-    assert_eq!(
-        lowered,
-        Proposition::ConditionIs(
-            ConditionTerm::PointerEqual(Box::new(first.clone()), Box::new(first.clone())),
-            true
-        )
-    );
+    let Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, right), true) = &lowered
+    else {
+        panic!("{lowered:?}")
+    };
+    assert_eq!(left, right);
+    assert_eq!(left.pointer(), &first);
     retained_states.insert(point.clone(), state(&second));
     assert!(retained_states.allocation_result(&first).is_none());
     assert_eq!(

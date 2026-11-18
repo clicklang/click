@@ -3854,24 +3854,14 @@ impl ConditionTerm {
         }
     }
 
-    /// `value == value`, retained as the comparison `pointer_value_equal`
-    /// builds for two values of one pointer domain rather than folded to
-    /// `true`. Logical lowering uses it; checking decides it by
-    /// [`Self::reflexive_value`].
+    /// `value == value`, retained as the pointer value equality the kernel
+    /// states for it rather than folded to `true`. Logical lowering uses it;
+    /// checking decides it by [`Self::reflexive_value`]. Like
+    /// [`Self::pointer_value_equal`], it does not depend on the `const` of
+    /// the expression that named the value.
     pub(crate) fn reflexive_pointer_value_equal(value: &PointerValue) -> Self {
-        if value.pointer().integer_address_bits().is_some() {
-            let address = MachineTerm::pointer_address(value.pointer().clone());
-            return Self::Compare {
-                format: MachineIntegerType::Int64,
-                relation: CompareRelation::Equal,
-                left: Box::new(address.clone()),
-                right: Box::new(address),
-            };
-        }
-        Self::PointerEqual(
-            Box::new(value.pointer().clone()),
-            Box::new(value.pointer().clone()),
-        )
+        let value = value.clone().with_pointee_constant(false);
+        Self::PointerValueEqual(Box::new(value.clone()), Box::new(value))
     }
 
     /// Pointer value equality as logical lowering builds it: a value
