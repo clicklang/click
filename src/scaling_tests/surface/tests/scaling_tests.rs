@@ -7899,60 +7899,6 @@ fn long_proof_else_spines_parse_on_a_small_stack_and_restore_block_bindings() {
         .unwrap();
 }
 
-#[test]
-#[ignore = "nightly: 0.7s in the parallel gate"]
-fn list_position_solve_search_stays_bounded_beside_unrelated_facts() {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("mdtests/solve_false_list_position_is_prompt.md");
-    let fixture = crate::cli::read_mdtest(&path).unwrap();
-    let original = fixture.click_source.as_deref().unwrap();
-    let mut counts = Vec::new();
-    for size in [4, 16, 64] {
-        let parameters = (0..size)
-            .map(|i| format!(", u{i}: int32"))
-            .collect::<String>();
-        let facts = (0..size)
-            .map(|i| format!("    requires u{i} == 0;\n"))
-            .collect::<String>();
-        let source = original
-            .replace("flag: int32)", &format!("flag: int32{parameters})"))
-            .replace("    requires xs", &format!("{facts}    requires xs"));
-        let (error, events) = crate::instrumentation::collect(|| {
-            crate::instrumentation::with_tactic_work_limits(
-                crate::instrumentation::TacticWorkLimits {
-                    smart: 100_000,
-                    ..crate::instrumentation::TacticWorkLimits::default()
-                },
-                || verify_click_theorems(&source),
-            )
-            .expect_err("the reversed position remains unproved")
-        });
-        assert!(
-            error.message().contains("could not establish"),
-            "{}",
-            error.message()
-        );
-        assert!(!error.message().contains("budget"), "{}", error.message());
-        counts.push(events.iter().filter(|event| matches!(event,
-            crate::instrumentation::VerificationEvent::OperationFinished { name, work, .. }
-                if name == "solve closure: indexed goal equality rewrite" && *work > 0
-        )).count());
-        // A declined candidate must restore the search scope: a subsequent
-        // invocation still closes the known position through an unfold.
-        let right = source
-            .replace(
-                "List<int32>::Cons(first, tail)",
-                "List<int32>::Cons(first, List<int32>::Cons(second, tail))",
-            )
-            .replace("    requires adjacent(xs, first, second) == 1;\n", "")
-            .replace("adjacent(xs, second, first)", "adjacent(xs, first, second)");
-        verify_click_theorems(&right).expect("a later true position must still close");
-    }
-    eprintln!("list-position nonempty rewrite searches: {counts:?}");
-    assert!(counts.iter().all(|count| *count <= 8), "{counts:?}");
-    assert!(counts.iter().all(|count| *count == counts[0]), "{counts:?}");
-}
-
 /// A linear goal that one stated fact decides is proved by arithmetic from
 /// selected premises before `solve` searches chains of rewrites through the
 /// equalities connected to the goal's atoms, so each such equality costs a

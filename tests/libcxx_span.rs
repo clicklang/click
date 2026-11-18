@@ -163,7 +163,7 @@ fn libcxx_span_binds_the_model_accessors_and_catalog() {
                 sidecar.replace("    requires 2u64 <= std_span_size(s);\n", ""),
                 "::operator[]",
             ),
-            // A sidecar does not restate a library model.
+            // A sidecar does not restate a library interface.
             (
                 format!("extern int& {SPAN}::operator[](unsigned long i) const {{\n}}\n{sidecar}"),
                 "has the Click library's contract",

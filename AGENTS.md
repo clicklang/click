@@ -88,6 +88,18 @@ or undefined behavior, or a documented semantics-preserving translation into
 supported C. Retain the original source pattern in regressions;
 a simplified example is not evidence that the original pattern is supported.
 
+## Define library interfaces in Click
+
+A library the verified code calls, in any language, is seen only through the
+interface Click defines for it: its types, what their values own, and its
+functions' contracts. Never import, verify or re-implement a library's code,
+and never special-case a library function or type in a front end beyond a
+name-table entry. When a contract cannot express a library function, the fix
+is a general contract feature, proposed to the user first. Use the
+`library-interface` skill before adding or changing support for any library
+function or type; the rules are in
+[library interfaces](docs/concepts/library-interfaces.md).
+
 ## Use proof friction to improve the tool
 
 When a proof fails, follow the [tracing procedure](docs/concepts/tracing.md)
