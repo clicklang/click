@@ -1,6 +1,47 @@
 use super::*;
 
 #[test]
+#[ignore = "nightly: ranked search proof, expansion, and cold replay"]
+fn ranked_search_preserves_its_reads_without_transport() {
+    let (source, c_sources) = mdtest_sources("mdtests/search_terminates_by_unmarked_count.md");
+    assert!(!source.contains("transport("));
+    // The in-memory verifier needs the fixture's file import in the same unit.
+    let source = source.replace(
+        r#"import "unmarked_count_lemmas.click";"#,
+        include_str!("../../../mdtests/unmarked_count_lemmas.click"),
+    );
+    let sources = c_sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    with_proof_trace("search", || {
+        verify_c_sources(&source, &sources).unwrap_or_else(|error| {
+            panic!(
+                "{}\n{}",
+                error.report(),
+                error.trace_context_report().unwrap_or_default()
+            )
+        });
+    });
+
+    let label = "search.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, label)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim(label, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+
+    // Writing zero leaves the counted cell unmarked and cannot prove descent.
+    let unmarked = sources[0]
+        .1
+        .replace("visited[cur] = 1;", "visited[cur] = 0;");
+    assert_ne!(unmarked, sources[0].1);
+    assert!(verify_c_sources(&source, &[(sources[0].0, unmarked.as_str())]).is_err());
+}
+
+#[test]
 #[ignore = "nightly: iterated owner stable-view refusal and cold replay"]
 fn iterated_owner_borrow_still_refuses_without_transport() {
     let (source, sources) =
