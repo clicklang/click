@@ -15,10 +15,7 @@ pub(super) fn execute(
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<StatementExecutionPath>> {
     let mut paths = Vec::new();
-    if !matches!(
-        element_type,
-        ProgramType::Int32 | ProgramType::UInt8 | ProgramType::UInt32
-    ) {
+    if !element_type.supports_scalar_array_write(copy) {
         return Ok(vec![path(
             StatementOutcome::RuntimeError(RuntimeError::TypeMismatch),
             vec![].into(),

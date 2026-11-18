@@ -82,6 +82,10 @@ initializer-order and qualified-type limits. Automatic/local const aggregates,
 whole-union initialization, and broader aggregate initializer forms remain
 outside the documented subset.
 
+Block-scope [arithmetic array compound literals](c.md#block-scope-array-compound-literals)
+also live until the enclosing block ends. Their reference describes
+initializer-order and supported element types.
+
 A callback field keeps its declared signature. A load from a provably identified
 static callback table yields the concrete function address; an abstract loaded
 callback needs an applicable named contract. Writes to a const table remain

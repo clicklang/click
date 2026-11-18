@@ -3847,6 +3847,7 @@ fn c_statement_calls_recording(
                 collect_function_pointer_names(statement, names)
             }
             syntax::CStatement::EndAggregateLifetimes { .. }
+            | syntax::CStatement::FillArrayTail { .. }
             | syntax::CStatement::Skip
             | syntax::CStatement::Break
             | syntax::CStatement::Continue
@@ -4010,7 +4011,9 @@ fn c_statement_calls_recording(
             | syntax::CStatement::Skip
             | syntax::CStatement::Break
             | syntax::CStatement::Continue => {}
-            syntax::CStatement::Goto { .. } => calls.push(BTreeSet::new()),
+            syntax::CStatement::Goto { .. } | syntax::CStatement::FillArrayTail { .. } => {
+                calls.push(BTreeSet::new());
+            }
             syntax::CStatement::Label { statement, .. } => {
                 visit(statement, calls, function_pointer_names, allocator)
             }

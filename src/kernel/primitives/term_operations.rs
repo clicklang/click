@@ -4440,6 +4440,13 @@ impl ProgramType {
         }
     }
 
+    pub(crate) fn supports_scalar_array_write(self, copy: bool) -> bool {
+        matches!(self, Self::Int32 | Self::UInt8 | Self::UInt32)
+            || (!copy
+                && (MachineIntegerType::from_program_type(self).is_some()
+                    || matches!(self, Self::Float32 | Self::Float64)))
+    }
+
     pub(crate) fn array_element_type(self) -> Option<Self> {
         Some(match self {
             Self::Int8Array(_) => Self::Int8,

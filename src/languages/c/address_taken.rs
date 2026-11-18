@@ -373,6 +373,7 @@ pub(crate) fn child_statements<'a>(
 ) {
     match statement {
         CStatement::EndAggregateLifetimes { .. }
+        | CStatement::FillArrayTail { .. }
         | CStatement::Skip
         | CStatement::Break
         | CStatement::Continue
