@@ -346,7 +346,7 @@ fn comparison_leaf_operand(operand: crate::kernel::MachineOperandView<'_>) -> Op
         .or_else(|| operand.variable().copied().map(MachineTerm::Variable))
 }
 
-/// Read a bounded bitwise, shift, wrapping arithmetic, or word cast operand.
+/// Read a bounded bitwise, shift, unsigned arithmetic, or word cast operand.
 /// Inspect only immediate leaves. Use the established word encoding for
 /// unsigned 32-bit arithmetic.
 fn bounded_comparison_operand(
@@ -402,6 +402,14 @@ fn bounded_comparison_operand(
             if in_conditional
                 && (!format.format().is_signed() || word32_arithmetic)
                 && (arguments[0].variable().is_some() != arguments[1].variable().is_some()) => {}
+        O::Divide | O::Remainder
+            if in_conditional
+                && !format.format().is_signed()
+                && arguments[0].variable().is_some()
+                && arguments[1]
+                    .literal()
+                    .and_then(|literal| format.constant_from_term(&literal))
+                    .is_some_and(|constant| constant.bits() != 0) => {}
         O::ShiftRight | O::ShiftLeft
             if operator == O::ShiftRight || !format.format().is_signed() =>
         {
