@@ -864,9 +864,10 @@ pub(super) fn resources_equal_ignoring_memories(left: &Resource, right: &Resourc
                     .iter()
                     .zip(right_arguments.iter())
                     .all(|(left, right)| match (left, right) {
-                        (AlgebraicValue::Program(left), AlgebraicValue::Program(right)) => {
-                            values_match(left, right)
-                        }
+                        (
+                            crate::kernel::ResourceFieldValue::Program(left),
+                            crate::kernel::ResourceFieldValue::Program(right),
+                        ) => values_match(left, right),
                         _ => left == right,
                     })
         }
@@ -9998,22 +9999,6 @@ pub(in crate::kernel) fn affine_bitvector_difference_constant(
     collect_affine_bitvector_terms(right, -1, &mut terms, &mut constant)?;
     terms.retain(|_, coefficient| *coefficient != 0);
     terms.is_empty().then_some(constant)
-}
-
-/// `term` as `coefficient * atom + constant` over one atom, by its affine
-/// form, when it has exactly one atom with a nonzero coefficient.
-pub(in crate::kernel) fn affine_bitvector_single_atom(
-    term: &MachineTerm,
-) -> Option<(MachineTerm, i64, i64)> {
-    let mut terms = BTreeMap::new();
-    let mut constant = 0i64;
-    collect_affine_bitvector_terms(term, 1, &mut terms, &mut constant)?;
-    terms.retain(|_, coefficient| *coefficient != 0);
-    if terms.len() != 1 {
-        return None;
-    }
-    let (atom, coefficient) = terms.into_iter().next()?;
-    Some((atom, coefficient, constant))
 }
 
 fn collect_affine_bitvector_terms(

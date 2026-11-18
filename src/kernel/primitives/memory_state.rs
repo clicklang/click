@@ -9068,7 +9068,8 @@ impl ExecutionState {
     ) -> Result<Vec<MachineTerm>, String> {
         let mut counts = Vec::with_capacity(descriptions.len());
         for description in descriptions {
-            let [AlgebraicValue::Program(ProgramValue::Pointer(pointer))] = description.arguments()
+            let Some([crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(pointer))]) =
+                (description.arguments()).fixed_values::<1>()
             else {
                 return Err("control authority needs one pointer anchor".into());
             };
@@ -9237,8 +9238,9 @@ impl ExecutionState {
             self.authority_wrapper_candidates(selected, definition, assumptions, true)?;
         let mut components = Vec::with_capacity(descriptions.len());
         for description in &descriptions {
-            let [AlgebraicValue::Program(ProgramValue::Pointer(anchor_value))] =
-                description.arguments()
+            let Some(
+                [crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(anchor_value))],
+            ) = (description.arguments()).fixed_values::<1>()
             else {
                 return Err("control authority needs one pointer anchor".into());
             };
@@ -9517,7 +9519,8 @@ impl ExecutionState {
         if quantity.as_const() != Some(1) {
             return Err("Requires one authority(R(p))".into());
         }
-        let [AlgebraicValue::Program(ProgramValue::Pointer(pointer))] = description.arguments()
+        let Some([crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(pointer))]) =
+            (description.arguments()).fixed_values::<1>()
         else {
             return Err("authority requires one pointer anchor".into());
         };
@@ -9638,7 +9641,7 @@ impl ExecutionState {
             arguments.clone(),
             super::super::ResourceFieldSchema::new(vec![]).expect("empty resource schema is valid"),
         );
-        let Some(AlgebraicValue::Program(ProgramValue::Pointer(pointer))) =
+        let Some(crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(pointer))) =
             description.arguments().first()
         else {
             return Err("Requires an exact pointer-anchored authorized resource R(p)".into());
@@ -9882,7 +9885,7 @@ impl ExecutionState {
                     .map_err(|refusal| format!("named member change refused: {refusal}"))?
             }
         } else if produce {
-            let Some(AlgebraicValue::Program(ProgramValue::Pointer(pointer))) =
+            let Some(crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(pointer))) =
                 description.arguments().first()
             else {
                 return Ok(());

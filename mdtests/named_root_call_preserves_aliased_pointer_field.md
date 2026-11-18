@@ -1,4 +1,8 @@
-# Preserve a child pointer after a rotation store
+# Preserve a child pointer across a named-root call and rotation stores
+
+Keep the nested child resources folded through `helper` and unfold them when
+the caller reads their fields. The final stores use footprint separation and
+`preserve` to keep the other pointer fields at their saved values.
 
 ```c filename=probe.c
 struct node { unsigned long tag; struct node *right; struct node *left; };
@@ -55,37 +59,64 @@ void probe(struct node *p, struct root *root) {
  match bm { Branch::At(nid, lm) => {
  match lm { Leaf::At(rid) => {
   let {child: near_tree} = unfold(b);
-  let {child: far_tree} = unfold(near_tree);
-  unfold(far_tree);
-  have p->right == sid;
-  have sid->left == nid;
-  have nid->left == rid;
-  have rid == p->right->left->left by { normalize() using { p->right == sid; sid->left == nid; nid->left == rid; }; }
-  have nid == p->right->left by { normalize() using { p->right == sid; sid->left == nid; }; }
-  have separate(memory(p->right->left->left->left), memory(p->right->left->left)) by known();
-  have separate(memory(rid->left), memory(nid->left)) by { transport(separate(memory(p->right->left->left->left), memory(p->right->left->left)), separate(memory(rid->left), memory(nid->left))) using { separate(memory(p->right->left->left->left), memory(p->right->left->left)); rid == p->right->left->left; nid == p->right->left; }; }
-  have separate(memory(p->right->left->right), memory(p->right->left->left->right)) by known();
-  have separate(memory(nid->right), memory(rid->right)) by { transport(separate(memory(p->right->left->right), memory(p->right->left->left->right)), separate(memory(nid->right), memory(rid->right))) using { separate(memory(p->right->left->right), memory(p->right->left->left->right)); nid == p->right->left; rid == p->right->left->left; }; }
+  have p->right == sid by { known(); }
   step(); step(); step(); step(); step(); step();
   let { after: c } = step(helper, { before: c });
   step();
-  have cursor == nid;
-  have cursor->left == rid;
+  let {child: far_tree} = unfold(near_tree);
+  have cursor == nid by { known(); }
   step();
-  have near == rid;
-  have rid->left == 0;
+  unfold(far_tree);
+  have near == rid by { known(); }
+  have rid->left == 0 by { known(); }
+  have separate(memory(rid->left), memory(nid->left)) by { known(); }
+  have separate(memory(nid->right), memory(rid->right)) by { known(); }
+  have cursor->left == rid by { rewrite(cursor, nid); known(); }
+  have nid->right == 0 by { known(); }
+  have separate(memory(cursor->left), memory(rid->left)) by {
+   rewrite(cursor, nid); known();
+  }
+  have separate(memory(cursor->left), memory(nid->right)) by { known(); }
   mark before_detach;
   step();
-  have rid->left == 0 by { transport(at(before_detach, rid->left) == 0, rid->left == 0) using { at(before_detach, rid->left) == 0; separate(memory(rid->left), memory(nid->left)); cursor == nid; near == rid; }; }
-  have separate(memory(rid->left), memory(near->right)) by { transport(separate(memory(rid->left), memory(rid->right)), separate(memory(rid->left), memory(near->right))) using { separate(memory(rid->left), memory(rid->right)); near == rid; }; }
-  have nid->right == 0;
-  have separate(memory(nid->right), memory(near->right)) by { transport(separate(memory(nid->right), memory(rid->right)), separate(memory(nid->right), memory(near->right))) using { separate(memory(nid->right), memory(rid->right)); near == rid; }; }
+  have separate(statement(7).footprint, memory(rid->left)) by {
+   normalize() using { separate(memory(cursor->left), memory(rid->left)); };
+  }
+  have rid->left == at(before_detach, rid->left) by {
+   preserve(memory(rid->left), statement(7));
+  }
+  have rid->left == 0 by { rewrite(rid->left, at(before_detach, rid->left)); known(); }
+  have separate(statement(7).footprint, memory(nid->right)) by {
+   normalize() using { separate(memory(cursor->left), memory(nid->right)); };
+  }
+  have nid->right == at(before_detach, nid->right) by {
+   preserve(memory(nid->right), statement(7));
+  }
+  have nid->right == 0 by { rewrite(nid->right, at(before_detach, nid->right)); known(); }
+  have separate(memory(rid->left), memory(near->right)) by {
+   rewrite(near, rid); normalize();
+  }
+  have separate(memory(nid->right), memory(near->right)) by {
+   rewrite(near, rid); known();
+  }
   mark before_attach;
   step();
-  have near->right == cursor;
-  have rid->right == cursor by { transport(near->right == cursor, rid->right == cursor) using { near->right == cursor; near == rid; }; }
-  have rid->left == 0 by { transport(at(before_attach, rid->left) == 0, rid->left == 0) using { at(before_attach, rid->left) == 0; separate(memory(rid->left), memory(near->right)); near == rid; }; }
-  have nid->right == 0 by { transport(at(before_attach, nid->right) == 0, nid->right == 0) using { at(before_attach, nid->right) == 0; separate(memory(nid->right), memory(near->right)); near == rid; cursor == nid; }; }
+  have near->right == cursor by { known(); }
+  have rid->right == cursor by { rewrite(rid, near); known(); }
+  have separate(statement(8).footprint, memory(rid->left)) by {
+   normalize() using { separate(memory(rid->left), memory(near->right)); };
+  }
+  have rid->left == at(before_attach, rid->left) by {
+   preserve(memory(rid->left), statement(8));
+  }
+  have rid->left == 0 by { rewrite(rid->left, at(before_attach, rid->left)); known(); }
+  have separate(statement(8).footprint, memory(nid->right)) by {
+   normalize() using { separate(memory(nid->right), memory(near->right)); };
+  }
+  have nid->right == at(before_attach, nid->right) by {
+   preserve(memory(nid->right), statement(8));
+  }
+  have nid->right == 0 by { rewrite(nid->right, at(before_attach, nid->right)); known(); }
   step_until(function.exit); solve();
  } }
  } }

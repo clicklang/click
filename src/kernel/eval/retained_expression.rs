@@ -526,7 +526,7 @@ fn retain_pointer_arithmetic_path(
             operation,
             byte_width,
             operands.clone(),
-            SharedPointerValue::import_produced(&pointer),
+            SharedPointer::import_produced(&pointer),
         )
         .into(),
         value => ExecutionValue::retain_native(value),
@@ -837,7 +837,7 @@ mod tests {
                         panic!("arithmetic root");
                     };
                     assert_eq!(*byte_width, if position == 4 { 1 } else { 4 });
-                    assert!(value.same_source_payload(&SharedPointerValue::import(pointer)));
+                    assert!(value.same_source_payload(&SharedPointer::import(pointer)));
                     if position < 2 {
                         assert_eq!(&operands[1 - position], index_root);
                     }
@@ -927,7 +927,7 @@ mod tests {
                         .and_then(KernelTerm::pointer_payload)
                         .expect("formed common root");
                     assert!(
-                        retained.same_source_payload(&SharedPointerValue::import(expected_pointer)),
+                        retained.same_source_payload(&SharedPointer::import(expected_pointer)),
                         "{expression:?}"
                     );
                 }
@@ -1988,7 +1988,7 @@ mod tests {
                 "nested".into(),
                 vec![read_root.clone()],
             ),
-            SharedPointerValue::import(&Pointer::new(
+            SharedPointer::import(&Pointer::new(
                 SymbolicMemory::local_pointer("pointer_step_pointee"),
                 ProgramType::Int32Pointer,
             )),

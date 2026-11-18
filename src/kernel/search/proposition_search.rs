@@ -154,6 +154,33 @@ fn connected_trial(
 
 /// Logical proposition discovery over the supplied kernel fact context.
 impl super::ProofSearch<PureFactContext> {
+    pub(crate) fn signed_order_chain_premises(
+        context: &PureFactContext,
+        goal: &Proposition,
+    ) -> Option<Vec<Proposition>> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("signed_order_chain_premises");
+        let Proposition::ConditionIs(condition, truth) = goal else {
+            return None;
+        };
+        let view = crate::kernel::assumptions::order_view_at_format(
+            condition,
+            *truth,
+            MachineIntegerType::Int32,
+        )?;
+        context
+            .exact_signed_order_source_path(
+                view.operands[0].operand_view(),
+                view.operands[1].operand_view(),
+                view.relation == crate::kernel::machine_integer::Relation::Less,
+            )
+            .map(|path| {
+                path.into_iter()
+                    .map(|step| step.premise().clone())
+                    .collect()
+            })
+    }
+
     pub(crate) fn proves(context: &PureFactContext, proposition: &Proposition) -> bool {
         #[cfg(test)]
         crate::kernel::search::record_discovery("proves");

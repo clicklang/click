@@ -3263,9 +3263,9 @@ fn loop_exit_local_arguments(
                 crate::instrumentation::record_deterministic_work(1);
                 let held = project(&exit.locals().get(name)?.native())?;
                 let argument = instance.arguments().get(position)?;
-                if !crate::kernel::resource_arguments_proven_equal(
-                    argument,
-                    &AlgebraicValue::Program(held.clone()),
+                if !crate::kernel::resource_field_values_proven_equal(
+                    (argument).into(),
+                    (&AlgebraicValue::Program(held.clone())).into(),
                     context,
                 ) {
                     return None;
@@ -3337,7 +3337,7 @@ fn joined_resource_values<'a>(
             let Some(value) = exit.get(position) else {
                 return Err("the exits hold resource instances of different widths".to_string());
             };
-            held.push(value.clone());
+            held.push(value.into_native());
         }
         let local = local_arguments.get(position).and_then(Option::as_ref);
         if held.iter().all(|other| other == value) && local.is_none_or(|local| local == value) {
@@ -7061,7 +7061,11 @@ fn rebind_one_loop_binder_instance(
                 .iter()
                 .zip(arguments.iter())
                 .all(|(held, declared)| {
-                    crate::kernel::resource_arguments_proven_equal(held, declared, assumptions)
+                    crate::kernel::resource_field_values_proven_equal(
+                        (held).into(),
+                        (declared).into(),
+                        assumptions,
+                    )
                 })
     };
     let selected = if let Some(instance) = state

@@ -1,4 +1,9 @@
 use super::*;
+
+#[cfg(test)]
+mod scaling_tests {
+    include!("../../scaling_tests/surface/proof/resources/observation_partition_tests.rs");
+}
 use crate::kernel::ExecutionFactSource;
 use crate::kernel::ResourceInstance;
 use crate::kernel::proof::fact_reasoning::holds_by_lookup_or_decision;
@@ -649,7 +654,7 @@ fn materialize_folded_composite_resource_memory(
         }
         let substitutions = resource_value_substitutions_with_witnesses(
             definition,
-            resource_arguments,
+            &(resource_arguments).native_values(),
             state.memory(),
             state.resources(),
             assumptions,
@@ -1200,7 +1205,7 @@ pub(super) fn project_initial_composite_resource_cores(
         }
         let substitutions = resource_value_substitutions_with_witnesses(
             definition,
-            &resource_arguments,
+            &(&resource_arguments).native_values(),
             state.memory(),
             state.resources(),
             &assumptions,
@@ -1322,7 +1327,7 @@ fn project_selected_instance_arm_cells(
     };
     let Ok(substitutions) = resource_value_substitutions_for_parameters(
         arm.name(),
-        instance.arguments(),
+        &(instance.arguments()).native_values(),
         &selected.bindings,
         arm.parameters(),
     ) else {
@@ -1447,12 +1452,7 @@ pub(super) fn project_initial_resource_facts(
 ) -> Result<PureFactList, ClickError> {
     let result = ProgramValue::Int32(MachineTerm::constant(0));
     let mut facts = ProofResourcePureFacts::new(available_pure_facts.fact_store());
-    append_state_resource_context_observable_facts_with_store(
-        parameter_binding,
-        state,
-        &mut facts,
-        &format!("`{claim_label}` setup"),
-    )?;
+    append_state_resource_context_observable_facts_with_store(state, &mut facts);
     project_folded_resource_observable_facts_with_store(
         resource_environment,
         parameter_binding,
@@ -1483,12 +1483,7 @@ pub(super) fn project_outcome_resource_facts(
         return Ok(available_pure_facts);
     };
     let mut facts = ProofResourcePureFacts::new(available_pure_facts);
-    append_state_resource_context_observable_facts_with_store(
-        parameter_binding,
-        state,
-        &mut facts,
-        &format!("`{claim_label}` path {path_index}"),
-    )?;
+    append_state_resource_context_observable_facts_with_store(state, &mut facts);
     project_folded_resource_observable_facts_with_store(
         resource_environment,
         parameter_binding,
@@ -1507,24 +1502,17 @@ pub(super) fn project_outcome_resource_facts(
 }
 
 fn append_state_resource_context_observable_facts_with_store<F: ResourcePureFacts>(
-    parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     available_pure_facts: &mut F,
-    context: &str,
-) -> Result<(), ClickError> {
-    let facts = state
+) {
+    // Entry admission and subsequent proof operations construct the partition.
+    // Observe its retained composition, without admitting the held owners again.
+    for fact in state
         .resources()
-        .observable_facts(available_pure_facts.assumptions())
-        .map_err(|error| {
-            ClickError::new(format!(
-                "{context}: {}",
-                describe_resource_context_validity_error(error, parameter_binding)
-            ))
-        })?;
-    for fact in facts {
+        .observable_facts_assuming_valid(available_pure_facts.assumptions())
+    {
         available_pure_facts.insert(fact);
     }
-    Ok(())
 }
 
 fn project_folded_resource_observable_facts_with_store(
@@ -1883,7 +1871,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
     let (memory, contained_resources, body_projected) = apply_composite_observation_law_with_facts(
         resource_environment,
         definition,
-        resource_arguments,
+        &(resource_arguments).native_values(),
         parameter_binding,
         &state,
         &state,
@@ -2128,7 +2116,7 @@ fn record_observed_composite_surface_facts<F: ResourcePureFacts>(
     for contained in composite_body.contains() {
         if matches!(contained, ResourceClause::Iterated(_)) {
             // An iterated clause has no `contains(...)` or `separate(...)`
-            // spelling; its element facts come only from `take`.
+            // spelling; its element facts come from indexed `unfold`.
             continue;
         }
         let contained =
@@ -2372,7 +2360,7 @@ fn project_held_resource_observable_facts(
     apply_composite_observation_law_with_facts(
         resource_environment,
         definition,
-        resource_arguments,
+        &(resource_arguments).native_values(),
         parameter_binding,
         pre_state,
         state,
@@ -4010,15 +3998,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
         available_pure_facts,
     );
 
-    append_state_resource_context_observable_facts_with_store(
-        parameter_binding,
-        &state,
-        available_pure_facts,
-        &format!(
-            "`{claim_label}` tactic {tactic_index}: `unfold({})`",
-            describe_resource_clause(resource)
-        ),
-    )?;
+    append_state_resource_context_observable_facts_with_store(&state, available_pure_facts);
 
     // `unfold` changes the proof representation of the final visible unit;
     // it does not itself perform the function contract's logical consumption.
@@ -5213,11 +5193,7 @@ fn fold_composite_resource_for_proof_with_closure(
     })
 }
 
-/// Resolves the source declaration that supplies fold, unfold, and observation
-/// laws for a composite resource fact.
-/// The hole-free iterated ownership fact the one iterated clause of
-/// `resource`'s definition denotes at the tactic's own arguments, read at
-/// `state`. `gather` forms it and `scatter` dissolves it.
+/// Lower the iterated clause of the named resource with the tactic's arguments.
 pub(super) fn iterated_template_for_resource(
     resource_environment: &ResourceEnvironment,
     resource: &ResourceClause,
@@ -5249,27 +5225,14 @@ pub(super) fn iterated_template_for_resource(
     };
     let substitutions =
         resource_argument_substitutions(definition, resource, claim_label, tactic_index)?;
-    let clause = instantiate_resource_clause(&ResourceClause::Iterated(clause.clone()), &substitutions)
+    let clause = substitute_iterated_clause(clause, &ContractSubstitutions::new(&substitutions))
         .map_err(|message| {
             ClickError::new(format!(
                 "`{claim_label}` tactic {tactic_index}: could not instantiate the iterated clause of `{}`: {message}",
                 definition.name()
             ))
         })?;
-    let lowered = lower_resource_clause_at_current_locals_with_assumptions(
-        &clause,
-        parameter_binding,
-        state,
-        None,
-        assumptions,
-    )?;
-    match lowered {
-        ResourceFact::Own(Resource::Iterated(iterated), _) => Ok(iterated.as_ref().clone()),
-        _ => Err(ClickError::new(format!(
-            "`{claim_label}` tactic {tactic_index}: the iterated clause of `{}` did not lower to iterated ownership",
-            definition.name()
-        ))),
-    }
+    lower_iterated_clause_at_current_locals(&clause, parameter_binding, state, assumptions)
 }
 
 fn composite_resource_law_definition<'a>(

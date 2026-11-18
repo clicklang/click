@@ -93,7 +93,7 @@ pub enum ProofStep {
         start: ContractExpression,
         end: ContractExpression,
     },
-    /// `take`, `give`, `gather`, or `scatter` on iterated guarded ownership.
+    /// Checked operation on iterated guarded ownership.
     Iterated(IteratedTactic),
     ConstructResource(ResourceClause),
     Witness(ProofWitness),

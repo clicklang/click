@@ -202,7 +202,7 @@ fn pointer_field_qualifier_changes_keep_growing_indices_shared() {
             ProgramType::Int32Pointer,
         )
         .with_pointee_constant(true);
-        let root = KernelTerm::shared_pointer_value(SharedPointerValue::import(&pointer));
+        let root = KernelTerm::shared_pointer_value(SharedPointer::import(&pointer));
         let original = root.pointer_payload().unwrap().node().address.clone();
         let exports = KernelTermExport::machine_export_count();
         let (field, work) = crate::instrumentation::measure_deterministic_work(|| {

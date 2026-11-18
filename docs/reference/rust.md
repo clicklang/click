@@ -1276,10 +1276,8 @@ A `return` from a loop body, from any depth, runs straight to the function's
 exit as a C `return` does, so the loop's invariants are not owed on that path
 and the contract is checked there. A labeled `break 'outer` or `continue
 'outer` from an inner loop leaves each loop it crosses: the inner loop exits
-with the escape recorded in a typed temporary that the enclosing loop tests
-to `break` or `continue` itself. Its identity uses the function and MIR loop
-header. Proofs can name it with the function's `.temporary(ID)` selector. In
-a written `preserve`, a body branch that returns is a proof-level `if` whose
+and the enclosing loop takes the corresponding `break` or `continue` path.
+Click keeps the routing state private. In a written `preserve`, a body branch that returns is a proof-level `if` whose
 returning arm steps to
 `function.exit`
 ([`design/charon-trial/early-exits`](https://github.com/clicklang/click/blob/master/design/charon-trial/early-exits/exits.click)).

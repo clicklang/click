@@ -1,6 +1,6 @@
 # A saved pointer does not bypass a false current guard
 
-```c filename=iterated_ownership_rejects_give_false_guard.c
+```c filename=iterated_ownership_rejects_fold_false_guard.c
 void release(int32* data, int32* occupied, int32 capacity, int32 index) {
     occupied[index] = 1;
 }
@@ -16,7 +16,7 @@ resource arena_cells(data: int32*, occupied: int32*, capacity: int32) {
     }
 }
 
-verifying "iterated_ownership_rejects_give_false_guard.c";
+verifying "iterated_ownership_rejects_fold_false_guard.c";
 
 void release(int32* data, int32* occupied, int32 capacity, int32 index) {
     owns arena_cells(data, occupied, capacity);
@@ -25,9 +25,9 @@ void release(int32* data, int32* occupied, int32 capacity, int32 index) {
     requires occupied[index] == 0;
 } by {
     unfold(arena_cells(data, occupied, capacity));
-    take(old(data)[index..index + 1]);
+    unfold(at(function.entry, arena_cells(data, occupied, capacity))[index]);
     step();
-    give(old(data)[index..index + 1]);
+    fold(at(function.entry, arena_cells(data, occupied, capacity))[index]);
     fold(arena_cells(data, occupied, capacity));
 }
 ```

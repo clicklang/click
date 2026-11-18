@@ -89,7 +89,7 @@ pub(crate) use kernel_term::{
 };
 // Prepared rewrite interface for the following scoped consumers.
 pub(crate) use kernel_term::{
-    KernelAddressOffset, KernelMatchArm, SharedAddress, SharedAddressOffset, SharedPointerValue,
+    KernelAddressOffset, KernelMatchArm, SharedAddress, SharedAddressOffset, SharedPointer,
 };
 pub use kernel_term::{
     KernelFloatType, KernelIntegerOperator, KernelLegacyTerm, KernelMachineLiteral, KernelTerm,
@@ -156,6 +156,8 @@ pub use iterated::{IteratedGuard, IteratedMemory};
 pub(in crate::kernel) mod canonical_fact_set;
 mod composition_member_index;
 mod memory_equality_index;
+mod sequence_values;
+pub use sequence_values::{SequenceValues, SequenceValuesIter};
 mod resource_fields;
 pub(crate) use resource_fields::StoredResourceField;
 pub use resource_fields::{ResourceFieldValue, ResourceFieldValues};
@@ -5529,7 +5531,7 @@ pub struct SequenceTerm {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum SequenceTermNode {
-    Literal(std::sync::Arc<[ProgramValue]>),
+    Literal(SequenceValues),
     Concat(SequenceTerm, SequenceTerm),
 }
 
@@ -11174,6 +11176,9 @@ pub(super) struct ResourceContextIndex {
     /// denotation depends on: the element base and the guard cells. A store,
     /// havoc, or free visits only the facts filed under its own block.
     pub(super) iterated_by_block: PersistentMap<AddressBase, ResourceEntryIds>,
+    /// Owned iterated facts keyed by their instantiated clause without holes.
+    /// Membership changes at individual indices do not change this key.
+    pub(super) owned_iterated_by_clause: PersistentMap<IteratedMemory, ResourceEntryIds>,
     /// SymbolicMemory facts keyed by their exact base spelling. Direct pointer
     /// equalities can then find only the facts whose bases they identify,
     /// without scanning every resource in an aliased block.
@@ -11553,7 +11558,10 @@ pub enum ResourceFact {
 
 /// Immutable logical indices shared by resource states and population keys.
 /// Cloning a resource must not clone a recursive model stored in its indices.
-pub type ResourceArguments = std::sync::Arc<[AlgebraicValue]>;
+/// Explicit native argument input/output DTO.
+pub type NativeResourceArguments = std::sync::Arc<[AlgebraicValue]>;
+/// Immutable resource arguments retain the same typed carriers as fields.
+pub type ResourceArguments = ResourceFieldValues;
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum Resource {
@@ -11815,7 +11823,7 @@ impl ResourceInstance {
     pub fn name(&self) -> &str {
         &self.name
     }
-    pub fn arguments(&self) -> &[AlgebraicValue] {
+    pub fn arguments(&self) -> &ResourceArguments {
         &self.arguments
     }
     pub fn fields(&self) -> &ResourceFieldValues {
@@ -13096,7 +13104,7 @@ mod population_authority_spec_tests {
     fn authority_cannot_be_composed_twice_or_split() {
         let description = super::super::ResourceDescription::new(
             "node".into(),
-            Arc::from([]),
+            Vec::<AlgebraicValue>::new().into(),
             ResourceFieldSchema::new(vec![]).unwrap(),
         );
         let fact = ResourceFact::own(Resource::PopulationAuthority(description.clone()));

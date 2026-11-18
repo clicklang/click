@@ -69,6 +69,8 @@ fn charon_labeled_loop_escape_expands_and_replays() {
     let expanded =
         click::surface::expand_program_prepared_claim_source_by_label(SIDECAR, &prepared, claim)
             .unwrap();
+    assert!(!expanded.contains(".temporary("), "{expanded}");
+    assert!(!expanded.contains("<loop escape>"), "{expanded}");
     assert!(!expanded.contains("__rust_loop_escape_"), "{expanded}");
     click::surface::without_implicit_solve_for_claim(claim, || {
         ProgramVerificationSession::new_program_prepared(&expanded, &prepared)

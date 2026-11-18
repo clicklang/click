@@ -117,8 +117,7 @@ pub(crate) enum CheckedExecutionEvent {
     ReturnProposition(Box<CheckedReturnProposition>),
     PopulationAuthorityRewrite(Box<CheckedPopulationAuthorityRewrite>),
     PopulationMemberRewrite(Box<CheckedPopulationMemberRewrite>),
-    /// One iterated guarded-ownership step (`take`, `give`, `gather`,
-    /// `scatter`). Like a lifetime end, it changes only the resource context
+    /// One checked operation on iterated guarded ownership. Like a lifetime end, it changes only the resource context
     /// and is re-derived from its input state when the trace is checked.
     IteratedStep(CheckedIteratedStep),
     /// One application of a user-defined tactic: the verified rule of a
@@ -835,8 +834,8 @@ fn checks_population_authority_exchange(
     if quantity.as_const() != Some(1) {
         return Err("population authority rewrite requires unit ownership".into());
     }
-    let [crate::kernel::AlgebraicValue::Program(ProgramValue::Pointer(pointer))] =
-        description.arguments()
+    let Some([crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(pointer))]) =
+        (description.arguments()).fixed_values::<1>()
     else {
         return Err("population authority rewrite requires one pointer anchor".into());
     };
@@ -1050,7 +1049,7 @@ fn checks_population_member_exchange(
         arguments.clone(),
         crate::kernel::ResourceFieldSchema::new(vec![]).expect("empty resource schema"),
     );
-    let Some(crate::kernel::AlgebraicValue::Program(ProgramValue::Pointer(pointer))) =
+    let Some(crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(pointer))) =
         description.arguments().first()
     else {
         return Err("population member rewrite requires one pointer anchor".into());

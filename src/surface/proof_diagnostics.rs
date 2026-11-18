@@ -374,7 +374,7 @@ pub(crate) fn render_failed_requirement(
         if let Some(instance) = state.proposed_hidden_record()
             && let Some(record) = render::render_hidden_record_instance_labeled(
                 instance.name(),
-                instance.arguments(),
+                &(instance.arguments()).native_values(),
                 instance.schema().fields(),
                 &instance.fields().native_values(),
                 labels,

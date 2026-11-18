@@ -1,6 +1,25 @@
 use super::*;
 
 #[test]
+#[ignore = "nightly: named-root alias proof, expansion, and cold replay"]
+fn named_root_preserves_aliased_pointer_fields_without_transport() {
+    let (source, c_sources) =
+        mdtest_sources("mdtests/named_root_call_preserves_aliased_pointer_field.md");
+    let sources = crate::cli::source_refs(&c_sources);
+    assert!(!source.contains("transport("));
+    verify_c_sources(&source, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
+
+    let label = "probe.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, label)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim(label, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
 #[ignore = "nightly: ranked search proof, expansion, and cold replay"]
 fn ranked_search_preserves_its_reads_without_transport() {
     let (source, c_sources) = mdtest_sources("mdtests/search_terminates_by_unmarked_count.md");
@@ -4415,9 +4434,9 @@ fn bare_step_call_result_bindings_expand_and_replay() {
     let error = verify_c_sources(&source, &sources)
         .expect_err("discarding a C call result leaves no value to bind");
     assert!(
-        error
-            .message()
-            .contains("requires a scalar assignment or a used call result"),
+        error.message().contains(
+            "requires a scalar assignment, a used call result, or a retained scalar value"
+        ),
         "{error}"
     );
 }
@@ -17640,7 +17659,7 @@ fn a_decided_branch_in_a_loop_body_expands_and_reverifies() {
 }
 
 /// Expands every smart site of one claim in an iterated-ownership fixture and
-/// reverifies the result, checking that the explicit `take`/`give` steps
+/// reverifies the result, checking that the indexed `unfold` and `fold` steps
 /// survive expansion as written.
 fn expand_iterated_ownership_claim(fixture: &str, claim: &str, kept: &[&str]) {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(fixture);
@@ -17676,12 +17695,12 @@ fn expand_iterated_ownership_claim(fixture: &str, claim: &str, kept: &[&str]) {
 #[test]
 #[ignore = "nightly: 0.9s in the parallel gate"]
 fn the_iterated_ownership_allocation_protocol_expands_and_reverifies() {
-    // `take` is a simple step: the expansion prints it unchanged, and the
+    // Indexed `unfold` is a simple step: the expansion prints it unchanged, and the
     // closers around it become explicit steps that verify on their own.
     expand_iterated_ownership_claim(
         "mdtests/iterated_ownership_allocate_one.md",
         "claim.contract",
-        &["take(data[index..(index + 1)]);"],
+        &["unfold(arena_cells(data, occupied, capacity)[index]);"],
     );
 }
 
@@ -17693,7 +17712,7 @@ fn the_iterated_ownership_claim_loop_expands_and_reverifies() {
     expand_iterated_ownership_claim(
         "mdtests/iterated_ownership_claim_loop.md",
         "claim_run.contract",
-        &["take(data[i..(i + 1)]);"],
+        &["unfold(arena_window(data, occupied, capacity, start, end)[i]);"],
     );
 }
 
@@ -17703,7 +17722,7 @@ fn the_iterated_ownership_release_loop_expands_and_reverifies() {
     expand_iterated_ownership_claim(
         "mdtests/iterated_ownership_release_loop.md",
         "release_run.contract",
-        &["give(data[i..(i + 1)]);"],
+        &["fold(arena_window(data, occupied, capacity, start, end)[i]);"],
     );
 }
 
@@ -21246,7 +21265,10 @@ fn saved_iterated_pointer_base_expands_and_rechecks() {
         .map(|(name, text)| (name.as_str(), text.as_str()))
         .collect::<Vec<_>>();
     let expanded = expand_c_claim_source_by_label(&source, &sources, "release.contract").unwrap();
-    assert!(expanded.contains("give(at(before, data)"), "{expanded}");
+    assert!(
+        expanded.contains("fold(at(before, arena_cells(data, occupied, capacity))[index]);"),
+        "{expanded}"
+    );
     without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
 }
 
@@ -22058,7 +22080,7 @@ fn compact_store_proof_repairs_expand_and_replay() {
             "arena_write",
         ),
         (
-            "iterated_give_preserves_descriptor_loop_ownership",
+            "indexed_fold_preserves_descriptor_loop_ownership",
             "release_run",
         ),
         ("modeled_pthread_local_job_external_output", "worker"),
@@ -23162,6 +23184,24 @@ fn unsigned_division_domain_expands_to_an_explicit_step_proof() {
 }
 
 #[test]
+fn indexed_store_bounds_expand_to_an_explicit_step_proof() {
+    let (source, sources) = mdtest_sources("mdtests/indexed_store_exposes_its_bounds.md");
+    let implicit = source.replace("step() by { known(); }", "step();");
+    assert_ne!(implicit, source);
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_function_proof_source(&implicit, &sources, "set").unwrap();
+    assert!(expanded.contains("step() by"), "{expanded}");
+    crate::surface::without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
+
+    let one_past = implicit.replace("requires 0 <= i and i < len;", "requires i == len;");
+    assert_ne!(one_past, implicit);
+    assert!(verify_c_sources(&one_past, &sources).is_err());
+}
+
+#[test]
 fn symbolic_view_restriction_expands_to_library_steps() {
     let source = r#"
         theorem restrict_view(data: int32[], lo: int32, hi: int32, end: int32) {
@@ -23791,4 +23831,38 @@ fn integer_fold_zero_contribution_expansion_replays_without_search() {
     let start = source.find("} by {").unwrap() + 2;
     let replay = format!("{}{}", &source[..start], expanded);
     without_implicit_solve(|| verify_c_sources(&replay, &refs)).unwrap();
+}
+
+#[test]
+fn indexed_iterated_ownership_expands_and_rechecks() {
+    let (source, sources) = mdtest_sources("mdtests/indexed_iterated_ownership.md");
+    let sources = sources
+        .iter()
+        .map(|(name, body)| (name.as_str(), body.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c_claim_source_by_label(&source, &sources, "update_slot.contract")
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(
+        expanded.contains("unfold(arena_slots(data, free_slots, capacity)[i]);")
+            && expanded.contains("fold(at(opened, arena_slots(data, free_slots, capacity))[i]);"),
+        "{expanded}"
+    );
+    without_implicit_solve_for_claim("update_slot.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+
+    let wrong = source.replace(
+        "fold(at(opened, arena_slots(data, free_slots, capacity))[i]);",
+        "fold(arena_slots(data, free_slots, capacity)[i]);",
+    );
+    assert_ne!(wrong, source);
+    let error = verify_c_sources(&wrong, &sources).unwrap_err();
+    assert!(
+        error
+            .report()
+            .contains("selected iterated ownership fact is not held"),
+        "{}",
+        error.report()
+    );
 }

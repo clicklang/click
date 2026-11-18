@@ -153,7 +153,7 @@ fn aggregate_and_union_copies_keep_retained_pointer_producers() {
             "copied".into(),
             vec![],
         ),
-        crate::kernel::SharedPointerValue::import(&pointer),
+        crate::kernel::SharedPointer::import(&pointer),
     );
     let memory = SymbolicMemory::new()
         .with_block(source.base.clone(), 8)

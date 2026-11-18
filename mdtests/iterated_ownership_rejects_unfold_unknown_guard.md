@@ -1,13 +1,13 @@
 # Iterated ownership refuses to take an element whose guard is unknown
 
-`take` moves one element out of the iterated fact, which requires the fact
+indexed `unfold` moves one element out of the iterated fact, which requires the fact
 to hold it: the index must be in range and its guard must be known true.
 Here nothing says whether `occupied[index]` is zero, so the fact may or may
 not hold `data[index]`, and the step is refused. The accepted form decides
 the guard first, as in
 [`iterated_ownership_allocate_one.md`](iterated_ownership_allocate_one.md).
 
-```c filename=iterated_ownership_rejects_take_unknown_guard.c
+```c filename=iterated_ownership_rejects_unfold_unknown_guard.c
 void poke(int32* data, int32* occupied, int32 capacity, int32 index) {
     data[index] = 7;
 }
@@ -23,7 +23,7 @@ resource arena_cells(data: int32*, occupied: int32*, capacity: int32) {
     }
 }
 
-verifying "iterated_ownership_rejects_take_unknown_guard.c";
+verifying "iterated_ownership_rejects_unfold_unknown_guard.c";
 
 void poke(int32* data, int32* occupied, int32 capacity, int32 index) {
     owns arena_cells(data, occupied, capacity);
@@ -31,9 +31,9 @@ void poke(int32* data, int32* occupied, int32 capacity, int32 index) {
     requires index < capacity;
 } by {
     unfold(arena_cells(data, occupied, capacity));
-    take(data[index..index + 1]);
+    unfold(arena_cells(data, occupied, capacity)[index]);
     step_until(function.exit);
-    give(data[index..index + 1]);
+    fold(arena_cells(data, occupied, capacity)[index]);
     fold(arena_cells(data, occupied, capacity));
     solve();
 }

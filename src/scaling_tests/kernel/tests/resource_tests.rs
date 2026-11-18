@@ -579,7 +579,13 @@ fn instance_fold_preserves_memory_pieces_without_scanning_unrelated_resources() 
             })
         })
         .collect();
-    let ProgramValue::Pointer(value) = instance.arguments()[0].as_program_value().unwrap() else {
+    let ProgramValue::Pointer(value) = instance
+        .arguments()
+        .get(0)
+        .expect("argument index")
+        .as_program_value()
+        .unwrap()
+    else {
         unreachable!()
     };
     let pointer = value.address().clone();
@@ -879,7 +885,7 @@ fn symbolic_resource_indices_share_states_and_scale_with_indexed_context() {
                 else {
                     unreachable!()
                 };
-                assert!(std::sync::Arc::ptr_eq(a, b));
+                assert!(a.shares_storage_with(b));
                 context = context.unchecked_with_fact(fact);
             }
             context
@@ -3918,7 +3924,12 @@ fn explicit_constant_fold_stops_at_a_gap_and_joins_mixed_width_pieces() {
                 uninitialized: false,
                 value_runs: Default::default(),
             })];
-            let ProgramValue::Pointer(value) = instance.arguments()[0].as_program_value().unwrap()
+            let ProgramValue::Pointer(value) = instance
+                .arguments()
+                .get(0)
+                .expect("argument index")
+                .as_program_value()
+                .unwrap()
             else {
                 unreachable!()
             };
@@ -4021,7 +4032,12 @@ fn native_fold_rejection_ignores_fragments_beyond_a_gap() {
                 uninitialized: false,
                 value_runs: Default::default(),
             })];
-            let ProgramValue::Pointer(value) = instance.arguments()[0].as_program_value().unwrap()
+            let ProgramValue::Pointer(value) = instance
+                .arguments()
+                .get(0)
+                .expect("argument index")
+                .as_program_value()
+                .unwrap()
             else {
                 unreachable!()
             };
@@ -4335,7 +4351,12 @@ fn symbolic_fold_consumption_ignores_unselected_fragments() {
                 uninitialized: false,
                 value_runs: Default::default(),
             })];
-            let ProgramValue::Pointer(value) = instance.arguments()[0].as_program_value().unwrap()
+            let ProgramValue::Pointer(value) = instance
+                .arguments()
+                .get(0)
+                .expect("argument index")
+                .as_program_value()
+                .unwrap()
             else {
                 unreachable!()
             };
@@ -4435,7 +4456,12 @@ fn symbolic_offset_fold_stops_at_first_gap() {
                 uninitialized: false,
                 value_runs: Default::default(),
             })];
-            let ProgramValue::Pointer(value) = instance.arguments()[0].as_program_value().unwrap()
+            let ProgramValue::Pointer(value) = instance
+                .arguments()
+                .get(0)
+                .expect("argument index")
+                .as_program_value()
+                .unwrap()
             else {
                 unreachable!()
             };
@@ -4534,7 +4560,12 @@ fn symbolic_fold_does_not_scan_incident_order_bounds() {
                 uninitialized: false,
                 value_runs: Default::default(),
             })];
-            let ProgramValue::Pointer(value) = instance.arguments()[0].as_program_value().unwrap()
+            let ProgramValue::Pointer(value) = instance
+                .arguments()
+                .get(0)
+                .expect("argument index")
+                .as_program_value()
+                .unwrap()
             else {
                 unreachable!()
             };

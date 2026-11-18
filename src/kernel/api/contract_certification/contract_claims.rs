@@ -3725,7 +3725,7 @@ mod retained_contract_input_tests {
     use super::*;
     use crate::kernel::{
         AlgebraicType, ExecutionValue, KernelTermExport, KernelTermImport, KernelType,
-        LocalBinding, SharedPointerValue, StoredExecutionValue,
+        LocalBinding, SharedPointer, StoredExecutionValue,
     };
 
     fn prepared_input(value: StoredExecutionValue) -> StoredExecutionValue {
@@ -3778,8 +3778,8 @@ mod retained_contract_input_tests {
                 KernelType::Algebraic(AlgebraicType::parameter("T".into())),
                 Variable(996805),
             ),
-            KernelTerm::shared_pointer_value(SharedPointerValue::import(&pointer)),
-            KernelTerm::shared_pointer_value(SharedPointerValue::import(
+            KernelTerm::shared_pointer_value(SharedPointer::import(&pointer)),
+            KernelTerm::shared_pointer_value(SharedPointer::import(
                 &pointer.with_pointee_constant(true),
             )),
         ];
@@ -3807,7 +3807,7 @@ mod retained_contract_input_tests {
                         .unwrap()
                         .pointer_payload()
                         .unwrap()
-                        .same_source_payload(&SharedPointerValue::import(pointer))
+                        .same_source_payload(&SharedPointer::import(pointer))
                 );
             } else {
                 assert_eq!(actual.shared(), Some(&root));

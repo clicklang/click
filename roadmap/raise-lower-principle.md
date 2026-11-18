@@ -610,7 +610,7 @@ sequence below. These rows record planned scope, not completed implementation.
 | 10l | Migrate deferred Integer bindings and fold endpoints. | Deferred bindings and endpoints retain shared operands through substitution and evaluation with unchanged fold behavior. | Landed in [PR #3160](https://github.com/clicklang/click/pull/3160); all five pushed commits verified on upstream. |
 | 10m | Migrate algebraic field and match-result storage. | Fields and match results retain shared values with existing constructor/arm identity and producer metadata. | Landed in [PR #3169](https://github.com/clicklang/click/pull/3169); all four pushed commits verified on upstream. |
 | 10n | Migrate theorem argument and recorded-state value storage. | Stored arguments and recorded values retain shared operands with unchanged substitution and state selection. | Landed in [PR #3181](https://github.com/clicklang/click/pull/3181); all six pushed commits verified on upstream. Validation and program-point integration evidence below. |
-| 10o | Migrate program-valued resource-field storage. | Program-valued fields retain shared operands while preserving resource identity and substitution. | Published as [PR #3213](https://github.com/clicklang/click/pull/3213), with auto-merge requested. Local validation and final 648-check upstream integration passed; merge pending. |
+| 10o | Migrate program-valued resource-field storage. | Program-valued fields retain shared operands while preserving resource identity and substitution. | Landed in [PR #3213](https://github.com/clicklang/click/pull/3213); all pushed commits verified on upstream. Local validation and final 648-check upstream integration passed. |
 | 10p | Migrate remaining expression payloads in sequence/resource descriptors. | Inventory and subdivide independent families before implementation; preserve legitimate opaque descriptor identities. | Planned; family split may be needed. |
 | 10q | Migrate remaining native expression payloads in proposition outputs. | Proposition outputs retain shared operands with unchanged fact identity, raising/lowering and proof admission. | Planned. |
 | 10r | Remove obsolete machine compatibility caches and reverse bridges. | Remove only after their live readers migrate; account for any retained reader and reason. | Planned; after affected consumers. |
@@ -1064,8 +1064,8 @@ not a change to proof rules or snapshot architecture.
 
 | Subslice | Owning stores | Status |
 | --- | --- | --- |
-| 10p1 | `SequenceTermNode::Literal` evaluated elements and their evaluator/substitution handoffs. | Inventoried; pending. |
-| 10p2 | Composite/token/instance `ResourceArguments`, `ResourceDescription` arguments and remaining Integer/algebraic resource fields. Preserve argument order, native identity classes and nominal resource identities. | Inventoried; pending. |
+| 10p1 | `SequenceTermNode::Literal` evaluated elements and their evaluator/substitution handoffs. | Landed in [PR #3217](https://github.com/clicklang/click/pull/3217); all pushed commits verified upstream; 437 focused checks, all 1,909 regular scaling cases, selected proofs, fact stability and quality passed. |
+| 10p2 | Composite/token/instance `ResourceArguments`, `ResourceDescription` arguments and remaining Integer/algebraic resource fields. Preserve argument order, native identity classes and nominal resource identities. | Split: 10p2a landed in [PR #3220](https://github.com/clicklang/click/pull/3220); all seven pushed commits verified upstream; it implements Integer/algebraic fields (413 focused checks, all 1,915 regular scaling cases, resource-field proofs, fact stability and quality passed); 10p2b is published as [PR #3233](https://github.com/clicklang/click/pull/3233), with auto-merge requested; it implements argument stores (427 focused checks, all 1,917 regular scaling cases and quality passed; full regular proofs/fact stability passed). |
 | 10p3 | `MemoryRange` bounds and `AllocationSize` byte counts. Preserve signed/wide reading, bound provenance and existing identity/hash contracts. | Inventoried; pending. |
 | 10p4 | `IteratedMemory` endpoints, guard comparison value and selected holes. Preserve checked ownership transitions and opaque owner/address identities. | Inventoried; pending. |
 | 10p5 | `PublicationRight::observed` and `ConditionalMutexGuard::held`. Preserve channel/acquisition identities and protocol rules. | Inventoried; pending. |
@@ -1078,6 +1078,78 @@ strides and layout widths remain descriptor identities/metadata. Explicit native
 input/output schemas and live compatibility readers must be recorded rather
 than silently counted as eliminated. No new numeric observation equality may
 replace native structural identity in these stores.
+
+### 10p1 Evaluated sequence elements
+
+Evaluated literal elements now retain `ExecutionValue` producers in immutable
+`SequenceValues`; concatenation keeps its existing shared rope nodes. Explicit
+native input arrays retain their input contract. Selected compatibility reads,
+native identity/ordering/hash and debug output remain exact, without a second
+cached native list. Shared machine substitution and variable collection operate
+on the selected common producers. Other existing native consumers (elementwise
+proposition production, carrier/memory queries and Surface output) remain
+explicit selected compatibility readers; this slice does not remove those APIs.
+
+The actual evaluator regression failed with three machine exports before the
+change and passes with zero exports after it. Tests cover exact native input
+carriers and constant work for evaluation and repeated handoffs of growing
+shared DAGs. A native-versus-retained substitution test reproduced the typed
+literal carrier mismatch fixed in 10o; both paths now agree.
+
+All 437 focused checks passed, including the 10o field fix; all 1,909 regular
+scaling cases passed (two isolated and 1,907 remaining), as did the sequence
+proof selection and quality. The selected fact-stability recording reported
+zero changed terms/paths (no refusals). Validation script exit is zero. Full
+nightly was not run. After integrating upstream `306a1fec0`, all 437 affected
+checks passed again. [PR #3217](https://github.com/clicklang/click/pull/3217)
+has auto-merge requested.
+
+### 10p2a Integer and algebraic resource fields
+
+Minted Integer/algebraic fields now retain common roots alongside program-valued
+fields. Parent/child handoffs clone the retained roots, and evaluator projections
+return those roots directly with the existing algebraic result-mode tags. The
+existing typed producer and schema own admission; explicit native input arrays
+keep their previous well-formedness checks. A negative native constructor test
+pins that input boundary. No resource identity or ownership rule changes.
+
+Selected native field views use the existing root compatibility slot; no new
+native field list or cache field is added. Native substitution and other existing
+view-based consumers remain selected compatibility boundaries. This slice does
+not claim those consumers have migrated to common operations.
+
+A native-child lifetime regression failed before the change and passed after
+it. All 413 focused checks passed, including exact identity/hash/debug, malformed
+native input refusal, direct Integer/algebraic projection, result-mode parity,
+and constant-work handoffs of growing Integer DAGs and algebraic children.
+All 1,915 regular scaling cases passed (two isolated and 1,913 remaining).
+The resource-field proof selection, fact stability (zero changed terms/paths)
+and quality checks passed; validation script exit is zero. PR delivery follows
+10p1. After integrating upstream `3557c0453`, all 413 affected checks and
+quality passed again. [PR #3220](https://github.com/clicklang/click/pull/3220)
+has auto-merge requested. Full nightly was not run.
+
+### 10p2b Evaluated resource arguments
+
+Composite/token, instance and resource-description argument arrays now use the
+same immutable typed carrier as fields. Evaluating Composite/Token arguments
+stores existing `ExecutionValue` producers directly; instance, description and
+reference copies share that storage. Borrowed argument walkers, exact-arity
+pointer patterns and equality consumers use selected views. Native source DTOs
+remain `NativeResourceArguments`; native slice readers use an explicit borrowed
+or temporary `native_values` boundary rather than an enclosing cached array.
+Source resource ASTs and captured-entry expression rewrites remain source inputs.
+
+The actual evaluator regression was red with three machine exports and now
+passes with the original root and zero exports. Growing-DAG tests cover the
+evaluator and repeated instance/description/reference handoffs; exact native
+Eq/Ord/Hash/debug, pointer provenance and existing nominal identities remain
+unchanged. All 427 focused checks, all 1,917 regular scaling checks (two isolated
+and 1,915 remaining), and quality passed. All 5,599 regular proof fixtures passed (815.69 seconds), with zero changed
+terms or selected paths in the fact-stability report (121 legitimate refusals).
+After integrating upstream `f94b8b852`, all 427 focused checks, 24 selected
+entry/resource-field proof fixtures, fact stability and quality passed again.
+Full nightly was not run.
 
 ## Chunk 3: machine-valued pure-function results
 

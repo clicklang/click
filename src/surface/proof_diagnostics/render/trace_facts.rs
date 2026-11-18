@@ -158,9 +158,10 @@ mod tests {
         ));
         let composite = Resource::Composite {
             name: "rb_child_links".into(),
-            arguments: std::sync::Arc::from([AlgebraicValue::Program(ProgramValue::Int32(
+            arguments: Vec::from([AlgebraicValue::Program(ProgramValue::Int32(
                 MachineTerm::constant(7),
-            ))]),
+            ))])
+            .into(),
         };
         let model = AlgebraicTerm {
             algebraic_type: AlgebraicType::parameter("Tree".into()),
@@ -301,7 +302,7 @@ mod tests {
             let context = ResourceContext::new().unchecked_with_facts((0..count).map(|id| {
                 ResourceFact::View(Resource::Token {
                     name: format!("token_{id}"),
-                    arguments: std::sync::Arc::from([]),
+                    arguments: Vec::<AlgebraicValue>::new().into(),
                 })
             }));
             let text = render(&Proposition::ResourceComposition(context));

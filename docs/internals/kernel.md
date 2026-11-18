@@ -1747,16 +1747,19 @@ Evaluation introduces no execution local or lexical binder. The Surface form
 remains the original address expression, including `old(...)`/`at(...)` state
 selectors; no generated operand name or replacement syntax is required.
 
-C++ evaluation and cleanup temporaries use a separate `LocalBindingId`
-namespace, owned by the source unit and function with a deterministic temporary
-ordinal. They have type/layout metadata and no lexical C spelling. Surface
-references use `f.temporary(N)` (source-qualified when necessary), independently
-of `f.local(N)` and `f.parameter(N)`. Exact storage uses the existing
-`.storage(implicit)`, `.storage(lifetime, N)`, or `.storage(frame, N)` selectors;
-aggregate temporaries materialize distinct objects with ordinary automatic
-lifetimes. The parser indexes their declarations in the prelowered body once.
-Return capture, intermediate call values, and `catch (int)` payloads all use
-these identities, and `TryCatchInt32` carries a `BindingName` through
+C++ scalar captures use typed execution steps. Calls retain their declared
+result type, and staged reads and return expressions publish their evaluated
+value before a later call or cleanup can change its operands. A short-circuit
+expression publishes the selected arm's value at the join. Proofs cite the
+producer's `.result` or bind the checked value with `let { result: name } = step()`.
+
+C++ materialized objects and hidden catch payloads use a separate
+`LocalBindingId` namespace owned by the source unit and function. Their
+ordinals have no lexical C spelling. A materialization step publishes the
+object's address as its `.result` after construction or copy. This names the
+same object through its original automatic lifetime, including for a
+constructor that returns `void`. The parser indexes legacy temporary
+declarations in the prelowered body once. `TryCatchInt32` carries a `BindingName` through
 execution and evidence checking. Unwinding through a destructible local binds
 no payload: see the C++ cleanup model in
 [Architecture](architecture.md#selected-control-flow-and-c-cleanup-model). No generated variable spelling or collision

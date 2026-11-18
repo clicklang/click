@@ -7,7 +7,7 @@ enumerating the range, and folding consumes it back.
 
 Without a guard the clause owns every element, so `plain_cells` is exactly
 the range `owns data[0..capacity]` and lowers to it: `touch` writes a cell
-of the unfolded body with no `take`.
+of the unfolded body with no indexed `unfold`.
 
 ```c filename=iterated_ownership_declaration.c
 void keep(int32* data, int32* occupied, int32 capacity) {}

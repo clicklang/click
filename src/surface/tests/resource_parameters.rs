@@ -18,6 +18,10 @@ theorem restrict_again(A: Resource, B: Resource, a: Resource, b: Resource) {
 "#;
 
 #[test]
+#[cfg_attr(
+    feature = "fast-gate",
+    ignore = "covered by resource_parameters_batch_00"
+)]
 fn resource_parameters_apply_explicit_axiom_and_expand() {
     without_implicit_solve(|| verify_click_theorems(ABSTRACT_PROOF)).unwrap();
     let expanded =
@@ -27,6 +31,10 @@ fn resource_parameters_apply_explicit_axiom_and_expand() {
 }
 
 #[test]
+#[cfg_attr(
+    feature = "fast-gate",
+    ignore = "covered by resource_parameters_batch_00"
+)]
 fn resource_parameters_require_every_listed_premise() {
     for premise in ["separate(A, B);", "contains(A, a);", "contains(B, b);"] {
         let missing = ABSTRACT_PROOF.replace(&format!("            {premise}"), "");
@@ -40,12 +48,20 @@ fn resource_parameters_require_every_listed_premise() {
 }
 
 #[test]
+#[cfg_attr(
+    feature = "fast-gate",
+    ignore = "covered by resource_parameters_batch_00"
+)]
 fn resource_parameters_refuse_numeric_arguments() {
     let wrong = ABSTRACT_PROOF.replace("restrict(A, B, a, b)", "restrict(0, B, a, b)");
     assert!(verify_click_theorems(&wrong).is_err());
 }
 
 #[test]
+#[cfg_attr(
+    feature = "fast-gate",
+    ignore = "covered by resource_parameters_batch_00"
+)]
 fn resource_parameters_prove_field_separation_without_search() {
     let (source, sources) = mdtest_sources("mdtests/resource_theorem_parameters.md");
     let sources = sources
@@ -56,6 +72,10 @@ fn resource_parameters_prove_field_separation_without_search() {
 }
 
 #[test]
+#[cfg_attr(
+    feature = "fast-gate",
+    ignore = "covered by resource_parameters_batch_01"
+)]
 fn resource_parameters_capture_simultaneously() {
     let client = r#"
     theorem swapped(B: Resource, A: Resource, b: Resource, a: Resource) {
@@ -73,6 +93,10 @@ fn resource_parameters_capture_simultaneously() {
 }
 
 #[test]
+#[cfg_attr(
+    feature = "fast-gate",
+    ignore = "covered by resource_parameters_batch_01"
+)]
 fn resource_parameters_accept_declared_descriptors() {
     let source = r#"
     abstract resource ticket(id: int32);
@@ -96,6 +120,10 @@ fn resource_parameters_accept_declared_descriptors() {
 }
 
 #[test]
+#[cfg_attr(
+    feature = "fast-gate",
+    ignore = "covered by resource_parameters_batch_01"
+)]
 fn resource_parameters_do_not_grant_ownership_or_numeric_values() {
     for source in [
         "theorem invalid(A: Resource) { owns A; ensures true; }",
@@ -110,6 +138,10 @@ fn resource_parameters_do_not_grant_ownership_or_numeric_values() {
 }
 
 #[test]
+#[cfg_attr(
+    feature = "fast-gate",
+    ignore = "covered by resource_parameters_batch_01"
+)]
 fn generic_pointer_parameters_subrange_and_expansion() {
     let (source, sources) = mdtest_sources("mdtests/generic_pointer_theorem_parameters.md");
     assert!(sources.is_empty());
@@ -135,6 +167,10 @@ fn generic_pointer_parameters_subrange_and_expansion() {
 }
 
 #[test]
+#[cfg_attr(
+    feature = "fast-gate",
+    ignore = "covered by resource_parameters_batch_02"
+)]
 fn generic_pointer_parameters_require_consistent_element_types() {
     let source = r#"
         theorem same<T>(p: T*, q: T*) {
@@ -155,6 +191,10 @@ fn generic_pointer_parameters_require_consistent_element_types() {
 }
 
 #[test]
+#[cfg_attr(
+    feature = "fast-gate",
+    ignore = "covered by resource_parameters_batch_02"
+)]
 fn generic_pointer_struct_parameters_apply_and_expand() {
     let (source, sources) = mdtest_sources("mdtests/generic_pointer_struct_parameters.md");
     let sources = sources
@@ -248,6 +288,10 @@ fn elements_separation_applies_and_expands_without_implicit_search() {
 }
 
 #[test]
+#[cfg_attr(
+    feature = "fast-gate",
+    ignore = "covered by resource_parameters_batch_02"
+)]
 fn elements_separation_requires_distinct_indices() {
     for ty in ["int32", "int64", "uint64"] {
         for (requirement, arguments) in [("", "i, j"), ("requires i != j;", "i, i")] {
@@ -288,6 +332,10 @@ fn equal_array_base_separation_restricts_and_replays_without_search() {
 }
 
 #[test]
+#[cfg_attr(
+    feature = "fast-gate",
+    ignore = "covered by resource_parameters_batch_02"
+)]
 fn elements_separation_does_not_widen_byte_cells() {
     let source = r#"
         import click::separation;
@@ -302,6 +350,10 @@ fn elements_separation_does_not_widen_byte_cells() {
 }
 
 #[test]
+#[cfg_attr(
+    feature = "fast-gate",
+    ignore = "covered by resource_parameters_batch_03"
+)]
 fn separating_conjunction_laws_expand_without_implicit_search() {
     let (source, inputs) = mdtest_sources("mdtests/separation_conjunction.md");
     let inputs = inputs
@@ -369,6 +421,10 @@ fn recursive_call_resource_bound_is_explicit_and_replays() {
 }
 
 #[test]
+#[cfg_attr(
+    feature = "fast-gate",
+    ignore = "covered by resource_parameters_batch_03"
+)]
 fn wide_subrange_applies_and_expands_without_implicit_solve() {
     let (source, sources) = mdtest_sources("mdtests/separation_subrange_supports_wide_bounds.md");
     assert!(sources.is_empty());
@@ -385,6 +441,10 @@ fn wide_subrange_applies_and_expands_without_implicit_solve() {
 }
 
 #[test]
+#[cfg_attr(
+    feature = "fast-gate",
+    ignore = "covered by resource_parameters_batch_03"
+)]
 fn element_containment_expands_without_implicit_solve() {
     let (source, _) = mdtest_sources("mdtests/separation_element_contains_the_selected_cell.md");
     without_implicit_solve(|| verify_click_theorems(&source)).unwrap();
@@ -402,6 +462,10 @@ fn element_containment_expands_without_implicit_solve() {
 }
 
 #[test]
+#[cfg_attr(
+    feature = "fast-gate",
+    ignore = "covered by resource_parameters_batch_03"
+)]
 fn rebased_intervals_apply_and_replay_without_search() {
     let (source, _) = mdtest_sources("mdtests/separation_rebase.md");
     without_implicit_solve(|| verify_click_theorems(&source)).unwrap();
@@ -418,6 +482,10 @@ fn rebased_intervals_apply_and_replay_without_search() {
 }
 
 #[test]
+#[cfg_attr(
+    feature = "fast-gate",
+    ignore = "covered by resource_parameters_batch_03"
+)]
 fn adjacent_ranges_apply_and_replay_without_search() {
     let (source, _) = mdtest_sources("mdtests/separation_adjacent_ranges.md");
     without_implicit_solve(|| verify_click_theorems(&source)).unwrap();
@@ -437,4 +505,35 @@ fn adjacent_ranges_apply_and_replay_without_search() {
     }
     let overlap = source.replace("memory(p[mid..hi])", "memory(p[lo..hi])");
     assert!(without_implicit_solve(|| verify_click_theorems(&overlap)).is_err());
+}
+
+#[cfg(feature = "fast-gate")]
+test_batches! {
+    file: "resource_parameters.rs",
+    marker: "resource_parameters_batch_",
+    resource_parameters_batch_00: [
+        resource_parameters_apply_explicit_axiom_and_expand,
+        resource_parameters_require_every_listed_premise,
+        resource_parameters_refuse_numeric_arguments,
+        resource_parameters_prove_field_separation_without_search,
+    ],
+    resource_parameters_batch_01: [
+        resource_parameters_capture_simultaneously,
+        resource_parameters_accept_declared_descriptors,
+        resource_parameters_do_not_grant_ownership_or_numeric_values,
+        generic_pointer_parameters_subrange_and_expansion,
+    ],
+    resource_parameters_batch_02: [
+        generic_pointer_parameters_require_consistent_element_types,
+        generic_pointer_struct_parameters_apply_and_expand,
+        elements_separation_requires_distinct_indices,
+        elements_separation_does_not_widen_byte_cells,
+    ],
+    resource_parameters_batch_03: [
+        separating_conjunction_laws_expand_without_implicit_search,
+        wide_subrange_applies_and_expands_without_implicit_solve,
+        element_containment_expands_without_implicit_solve,
+        rebased_intervals_apply_and_replay_without_search,
+        adjacent_ranges_apply_and_replay_without_search,
+    ],
 }
