@@ -4682,6 +4682,8 @@ fn execute_program_loop_exit_paths(
     }
     budget.check_path_width(paths.len())?;
     for path in &mut paths {
+        path.obligations
+            .extend(head.loan_requirements.iter().cloned());
         path.loop_invariant_correspondence.iterations = Some(head.iterations.clone());
     }
     Ok(paths)
@@ -5748,6 +5750,8 @@ pub(super) struct LoopHead {
     /// Why a declared loop resource could not be taken from the enclosing
     /// resource context. A non-empty list is a verification failure.
     pub(super) resource_failures: Vec<LoopResourceFailure>,
+    /// Premises of applying the head abstraction to the original loop entry.
+    loan_requirements: Vec<ProofObligation>,
     /// The loop's effect checks with every declared-resource frame installed
     /// from the checked evaluation of the loop's own resource specs at entry.
     /// Every later check of this loop reads these, never the originals.
@@ -6017,20 +6021,20 @@ pub(super) fn prepare_loop_top_state(
     // also derives its havoc footprint from that bad declaration, so running
     // the barrier first would report the overlap it caused instead of the
     // ownership violation that is the real error.
-    let havoc_loan_failure = entry_state
+    let loan_check = if let Some(ledger) = entry_state
         .loan_ledger()
-        .filter(|_| statement_may_write_memory(entry_state, body))
-        .and_then(|ledger| {
-            // An unevaluable declared write set is not yet unknown: a loop
-            // body can only write memory the enclosing function owns, so the
-            // checked owned entry footprint is a sound upper bound on what
-            // the head abstraction erases. Only when that footprint cannot be
-            // named either does the write set stay unknown and fail closed.
-            let validated = loop_havoc_ranges
-                .clone()
-                .or_else(|| checked_owned_entry_footprint(entry_state.resources()));
-            validate_loop_havoc_stable_loans(ledger, validated.as_deref(), assumptions).err()
-        });
+        .filter(|ledger| include_mutable_summaries && ledger.has_active_memory_loans())
+    {
+        // When the loop has no checked summary, use the enclosing checked
+        // owned footprint as the existing upper bound on its writes.
+        let fallback = loop_havoc_ranges
+            .is_none()
+            .then(|| checked_owned_entry_footprint(entry_state.resources()))
+            .flatten();
+        loop_head_loan_requirements(ledger, loop_havoc_ranges.as_deref().or(fallback.as_deref()))
+    } else {
+        Ok(Vec::new())
+    };
     let mut resource_failures = capture_failures;
     let withheld = if resource_specs.is_empty() || effect_ranges.is_empty() {
         None
@@ -6377,7 +6381,10 @@ pub(super) fn prepare_loop_top_state(
     };
     resource_failures.extend(rebound_failures.drain(..).map(LoopResourceFailure::Message));
     resource_failures.extend(body_failures);
-    resource_failures.extend(havoc_loan_failure.map(LoopResourceFailure::Message));
+    let loan_requirements = loan_check.unwrap_or_else(|message| {
+        resource_failures.push(LoopResourceFailure::Message(message.to_string()));
+        Vec::new()
+    });
     // D7 at a loop head: the invariants play the part of a contract's
     // requirements, so a folded matched instance publishes the cells of the
     // arm they select. That is what lets a guard such as `root->left != 0`
@@ -6440,6 +6447,7 @@ pub(super) fn prepare_loop_top_state(
         iterations,
         summaries,
         resource_failures,
+        loan_requirements,
         effect_checks,
     })
 }
@@ -8791,32 +8799,27 @@ fn checked_owned_entry_footprint(resources: &ResourceContext) -> Option<Vec<Memo
         .collect()
 }
 
-/// Check the write set that the loop-head abstraction is about to erase
-/// against the active stable-view footprint.  An unknown write set is a
-/// barrier: silently turning it into a fresh state would discard the only
-/// evidence that a loan protects its bytes.
-fn validate_loop_havoc_stable_loans(
+/// Retain separation from the entry ledger for each checked write range.
+fn loop_head_loan_requirements(
     ledger: &super::loans::LoanLedger,
-    mutable_ranges: Option<&[MemoryRange]>,
-    assumptions: &PureFactContext,
-) -> Result<(), String> {
-    let Some(ranges) = mutable_ranges else {
-        if ledger.has_active_memory_loans() {
-            return Err(
-                "loop memory havoc has no checked write set while a stable-view loan is active"
-                    .to_string(),
-            );
-        }
-        return Ok(());
+    ranges: Option<&[MemoryRange]>,
+) -> Result<Vec<ProofObligation>, &'static str> {
+    let Some(ranges) =
+        ranges.filter(|ranges| ranges.iter().all(|range| !range.is_unnamed_footprint()))
+    else {
+        return Err(
+            "loop memory havoc has no checked write set while a stable-view loan is active",
+        );
     };
-    for range in ranges {
-        if let Err(error) = ledger.permits_memory_access_with_assumptions(range, assumptions) {
-            return Err(format!(
-                "loop memory havoc overlaps an active stable-view loan: {error}"
-            ));
-        }
-    }
-    Ok(())
+    Ok(ranges
+        .iter()
+        .filter_map(|range| ledger.memory_access_requirement(range))
+        .map(|requirement| {
+            ProofObligation::verification_condition(requirement)
+                .with_statement_entry_required(true)
+                .with_context("loop head write separation")
+        })
+        .collect())
 }
 
 pub(super) fn statement_may_write_memory(

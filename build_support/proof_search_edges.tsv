@@ -10,7 +10,6 @@ src/kernel/loans.rs	legacy-caller	LoanLedger::permits_memory_access	permits_memo
 src/kernel/loans.rs	legacy-caller	StableViewTransferPlan::lend_local_views_with_worker_shares	permits_memory_access_with_assumptions	2
 src/kernel/loans/legacy_search.rs	search	ProofSearch::loan_access	memory_range_aliases	1
 src/kernel/loops.rs	legacy-caller	::abstract_loop_exit_memory	permits_memory_access_with_assumptions	1
-src/kernel/loops.rs	legacy-caller	::validate_loop_havoc_stable_loans	permits_memory_access_with_assumptions	1
 src/kernel/mutexes.rs	legacy-caller	MutexLedger::havoc_protected_for_call	call_kept_ownership	1
 src/kernel/mutexes/assumed_protocol.rs	legacy-caller	::forget_released_protected_memory	call_kept_ownership	1
 src/kernel/primitives/memory_state.rs	legacy-caller	ExecutionState::checked_population_member_exchange	permits_memory_access_with_assumptions	1

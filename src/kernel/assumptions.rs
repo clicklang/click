@@ -10146,6 +10146,7 @@ impl ProofObligation {
             assumable: true,
             evaluation_domain: false,
             assertion_failure: false,
+            statement_entry_required: false,
             call_requirement_site: None,
             introductions: None,
         }
@@ -10161,6 +10162,7 @@ impl ProofObligation {
             assumable: false,
             evaluation_domain: false,
             assertion_failure: false,
+            statement_entry_required: false,
             call_requirement_site: None,
             introductions: None,
         }
@@ -10179,6 +10181,15 @@ impl ProofObligation {
 
     pub(crate) fn is_assertion_failure(&self) -> bool {
         self.assertion_failure
+    }
+
+    pub(in crate::kernel) fn with_statement_entry_required(mut self, required: bool) -> Self {
+        self.statement_entry_required = required;
+        self
+    }
+
+    pub(crate) fn requires_statement_entry(&self) -> bool {
+        self.statement_entry_required || self.call_requirement_site.is_some()
     }
 
     pub fn with_context(mut self, context: impl Into<String>) -> Self {
@@ -10266,6 +10277,7 @@ impl ProofObligation {
             assumable: self.assumable,
             evaluation_domain: self.evaluation_domain,
             assertion_failure: self.assertion_failure,
+            statement_entry_required: self.statement_entry_required,
             call_requirement_site: None,
             // The chain describes the head nodes of the proposition it was
             // recorded for. A rewrite adds or removes head nodes, so the

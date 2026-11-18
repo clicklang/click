@@ -218,6 +218,12 @@ ledger by automatic object identity. A live loan pins its backing object until t
 including when its protected bytes have symbolic bounds. Retained proof
 events repeat the same check.
 
+A loop head with a checked write set requires separation from the
+active loan footprint. An explicit proof can state this fact with `have`
+before `loop`. Its invariant and exit facts
+are consequences of the transition. An unnamed write set still
+requires a conservative check.
+
 Direct scalar assignments to address-taken locals and stores through their
 addresses require separation from the ledger's live memory footprint,
 including same-value writes. A nested reader reborrows the local loan through
