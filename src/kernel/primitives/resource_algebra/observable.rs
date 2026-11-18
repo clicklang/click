@@ -17,6 +17,7 @@ impl ResourceContext {
             memory_equalities: std::sync::Mutex::new(pairings),
             observable_projection: Default::default(),
             storage,
+            framed_origins: self.framed_origins.clone(),
             loan_dependencies: self.loan_dependencies.clone(),
             structural_witnesses: self.structural_witnesses.clone(),
         }

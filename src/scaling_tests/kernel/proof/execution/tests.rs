@@ -907,7 +907,7 @@ fn interface_aliased_wide_read_preserves_scope_history_and_scales() {
     let alias = Address::symbolic(Variable(951_001));
     let value = MachineTerm::uint64_constant(0x1234_5678_9abc_def0);
     let load = SpecExpression::MemoryLoad {
-        memory: SpecPoint::Current,
+        point: SpecPoint::Current,
         pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(
             PointerValue::new(alias.clone(), ProgramType::UInt64Pointer),
         ))),

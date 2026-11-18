@@ -1259,12 +1259,7 @@ pub(super) fn evaluate_native_expression_paths(
             let mut facts = ExecutionFacts::new();
             add_narrow_integer_range_execution_pure_facts(&mut facts, assumptions, value);
             vec![ExpressionPath {
-                outcome: ExpressionOutcome::Value(match value {
-                    ProgramValue::Pointer(pointer) if !SpecificationReadScope::is_active() => {
-                        ProgramValue::Pointer(assumptions.pointer_value_at_entry(pointer))
-                    }
-                    _ => value.clone(),
-                }),
+                outcome: ExpressionOutcome::Value(value.clone()),
                 facts,
                 obligations: Vec::new(),
             }]
@@ -2167,9 +2162,9 @@ fn evaluate_program_cast_paths(
                     {
                         return Ok(ProgramValue::typed_pointer(Address::null(), target_type));
                     }
-                    // Only full-value premises supply the selected bounds.
-                    // Numeric tag equations may then choose address coordinates.
-                    let pointer = effective_assumptions.pointer_value_at_entry(pointer);
+                    // Conversion retains the pointer's structural domain. Checks
+                    // resolve complete-value bounds without rewriting the value.
+                    let pointer = pointer.clone();
                     let address = super::pointer_tags::cast_tagged_address_to_pointer(
                         bits,
                         &effective_assumptions,
@@ -3241,14 +3236,16 @@ fn read_retained_lvalue_paths_without_ranges(
     Ok(match outcome {
         LValueOutcome::LValue(lvalue) => match &lvalue.storage {
             LValueStorage::Local { name } => {
+                let local_assumptions =
+                    assumptions_with_path_context(assumptions, &facts, &obligations);
                 if let Some(pointer) = state.locals.slot(name)
                     && let Some(refusal) = subobject_access_refusal(
                         pointer,
-                        lvalue.bounds(),
+                        &lvalue,
                         lvalue.value_type.byte_width(),
                         &facts,
                         &obligations,
-                        assumptions,
+                        &local_assumptions,
                     )
                 {
                     return Ok(vec![ExecutionValuePath {
@@ -3257,8 +3254,6 @@ fn read_retained_lvalue_paths_without_ranges(
                         obligations,
                     }]);
                 }
-                let local_assumptions =
-                    assumptions_with_path_context(assumptions, &facts, &obligations);
                 if let Some(pointer) = state.locals.slot(name)
                     && lvalue.provenance.as_deref().is_some_and(|origin| {
                         !local_assumptions.provenance_equal(origin, &pointer.object_identity())
@@ -3326,17 +3321,8 @@ fn read_retained_lvalue_paths_without_ranges(
                                 value.clone().into_value()
                             } else {
                                 let native = value.native();
-                                let native = match native.as_ref() {
-                                    ProgramValue::Pointer(pointer)
-                                        if !SpecificationReadScope::is_active() =>
-                                    {
-                                        ProgramValue::Pointer(
-                                            local_assumptions.pointer_value_at_entry(pointer),
-                                        )
-                                    }
-                                    value => value.clone(),
-                                };
                                 let native = native
+                                    .into_owned()
                                     .with_pointer_pointee_volatile(lvalue.pointee_is_volatile())
                                     .with_pointer_pointee_constant(lvalue.pointee_is_constant());
                                 if native.program_type().is_pointer() {
@@ -3416,13 +3402,15 @@ fn read_retained_lvalue_paths_without_ranges(
                         obligations,
                     }]);
                 }
+                let effective_assumptions =
+                    assumptions_with_path_context(assumptions, &facts, &obligations);
                 if let Some(refusal) = subobject_access_refusal(
                     pointer,
-                    lvalue.bounds(),
+                    &lvalue,
                     lvalue.value_type.byte_width(),
                     &facts,
                     &obligations,
-                    assumptions,
+                    &effective_assumptions,
                 )
                 .or_else(|| {
                     (!SpecificationAccessScope::is_active())
@@ -3435,8 +3423,6 @@ fn read_retained_lvalue_paths_without_ranges(
                         obligations,
                     }]);
                 }
-                let effective_assumptions =
-                    assumptions_with_path_context(assumptions, &facts, &obligations);
                 let is_external = is_external_memory_pointer(pointer)
                     || state.memory.requires_explicit_scalar_ownership(pointer)
                     || lvalue.provenance.as_deref().is_some_and(|origin| {
@@ -3482,6 +3468,50 @@ fn read_retained_lvalue_paths_without_ranges(
                         obligations,
                     }]);
                 }
+                let bit_field_mask = match lvalue.access_class() {
+                    Some(CAccessClass::BitFieldByte(mask)) => Some(mask.get()),
+                    _ => None,
+                };
+                if let Some(mask) = bit_field_mask {
+                    let resolved =
+                        resolve_local_pointer_alias(state, pointer, &effective_assumptions);
+                    if !resolved.base.is_local_block()
+                        || !state.memory.access_in_bounds(&resolved, 1)
+                    {
+                        return Ok(vec![ExecutionValuePath {
+                            outcome: ExpressionOutcome::UndefinedBehavior(
+                                UndefinedBehavior::InvalidMemory,
+                            ),
+                            facts,
+                            obligations,
+                        }]);
+                    }
+                    if let Some(byte) = state.memory.heap.initialized.partial_byte(&resolved) {
+                        let outcome = if byte.mask & mask != mask {
+                            ExpressionOutcome::UndefinedBehavior(
+                                UndefinedBehavior::UninitializedRead,
+                            )
+                        } else if let Some(ProgramValue::UInt8(value)) = &byte.value {
+                            ExpressionOutcome::Value(
+                                ProgramValue::UInt8(super::byte_view::mask_byte(
+                                    value.clone(),
+                                    mask,
+                                ))
+                                .into(),
+                            )
+                        } else {
+                            ExpressionOutcome::RuntimeError(RuntimeError::FunctionContract(
+                                "bit-field read requires a retained value for the selected bits"
+                                    .into(),
+                            ))
+                        };
+                        return Ok(vec![ExecutionValuePath {
+                            outcome,
+                            facts,
+                            obligations,
+                        }]);
+                    }
+                }
                 let mut paths = evaluate_retained_memory_load_paths(
                     &state.memory,
                     pointer.clone(),
@@ -3495,6 +3525,19 @@ fn read_retained_lvalue_paths_without_ranges(
                     source,
                     budget.program_byte_order(),
                 );
+                if let Some(mask) = bit_field_mask {
+                    for path in &mut paths {
+                        if let ExpressionOutcome::Value(value) = &mut path.outcome
+                            && let ProgramValue::UInt8(bits) = value.native().as_ref()
+                        {
+                            *value = ProgramValue::UInt8(super::byte_view::mask_byte(
+                                bits.clone(),
+                                mask,
+                            ))
+                            .into();
+                        }
+                    }
+                }
                 // A pointer read from memory designates an object of the
                 // class its lvalue's type points to, unless it carries the
                 // class of the declaration that formed it.
@@ -3515,10 +3558,12 @@ fn read_retained_lvalue_paths_without_ranges(
                 if let Some(source) = source.and_then(|source| source.reference_access.as_ref())
                     && source.kind == crate::kernel::ReferenceAccessKind::Read
                 {
+                    let at = state.observation_point_id();
                     for path in &mut paths {
                         if matches!(path.outcome, ExpressionOutcome::Value(_)) {
                             let mut fact =
                                 ExecutionPureFact::certified(Proposition::MemoryReadDefined {
+                                    at,
                                     memory: state.memory.clone(),
                                     pointer: pointer.clone(),
                                     value_type: lvalue.value_type,
@@ -3532,6 +3577,7 @@ fn read_retained_lvalue_paths_without_ranges(
                                     source.clone(),
                                     pointer.clone(),
                                     &state.memory,
+                                    at,
                                     lvalue.value_type,
                                 );
                             path.facts.push(fact);

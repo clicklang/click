@@ -727,7 +727,9 @@ four (five where one case would be left alone), so a batch parses the library
 once. The batched files are `diagnostic_tests.rs`, `expansion_tests.rs`,
 `surface_syntax.rs`, `contract_tests.rs`, `execution_tests.rs`,
 `loop_tests.rs`, `project_tests.rs`, `preservation.rs` and the
-files under `tactic_tests/`: 1,000 cases in 253 batches.
+files under `tactic_tests/`. The initial rollout covered 1,000 cases in
+253 batches. The expansion API tests in `src/surface/expansion/tests.rs`
+reuse the same runner and inventory macro: 69 short cases in 17 batches.
 
 Each case starts on a fresh 8 MiB-stack thread, retaining thread-local
 isolation while sharing the immutable library-syntax cache across cases.
@@ -738,7 +740,7 @@ is ignored only in `fast-gate`; ordinary and nightly builds run it normally.
 To run one individually in a fast-gate build, select its exact name and add
 `--ignored`. Batch output names each case, its elapsed time, and any failure.
 
-A file's batches are declared at its end with `test_batches!`
+A file declares its batches with `test_batches!`
 (`src/surface/tests.rs`), which also defines
 `batch_inventory_covers_each_ignored_case_once`: the registry must cover
 every annotated test of the file exactly once. A new test without the
@@ -798,6 +800,115 @@ changes.
 proofs and 4.979s to formatting proofs across 206 theorem completions. Inspect
 those individual proof scripts before changing the library check's gate
 coverage; the remaining modules together took about half a second.
+
+The complete signed/unsigned order-chain scaling audit (8/16/24/32 edges)
+and proof-if context audit (1/2/4/8 earlier facts, with and without a split)
+also run nightly. Compact order-chain positive and negative fixtures and
+proof-if expansion regressions remain in the gate. The split fixture proves
+its shared nonnegative bound once and uses explicit transitivity for each
+original earlier fact, preserving the symbolic loop variable, C program,
+contract, size range, and context-growth assertion.
+
+The narrow-cast word-interning regression retains its per-cast work bounds
+for independent casts, nested cast chains, and cross-signedness widening at
+sizes 8/16 in the gate. Original 64/256/512 cases run separately nightly;
+the helper and its original cost bounds are unchanged. The complete ordinary
+fold/unfold selected-guard audit (4/16/64/256 unrelated requirements) also runs
+nightly. Small ordinary-fold positive, invalid-value, missing-guard, and strict
+certificate-replay checks remain in the gate.
+
+Four loop expansion tests reuse the certificates returned by their existing
+whole-source verification through `expand_checked_grouped_claim`. They retain
+fresh verification of the generated source, negative checks, the zero-planning
+assertion, and the nested-loop expansion-idempotence check. This avoids another
+search for an input proof that the same test just checked. Three are gate cases;
+the duplicate-invariant audit was already nightly and stays there.
+
+Each of the four symbolic-upper-bound expansion variants contains one theorem
+and one ensure. Selected-claim expansion verifies that input, so those cases
+omit a preceding duplicate verification. Every generated proof still rechecks
+with zero planning, and each forged tighter bound must fail.
+Two interleaved serial runs using retained before/after binaries took
+6.790/6.788s before and 5.931/5.472s after removing that duplicate pass.
+
+On the same four-CPU host and cached unoptimized fast-gate binary setup,
+the cast and selected-guard selection at `cff495519` took 5.787s wall and
+18.666 summed test-seconds before this gate/nightly split; afterward, the two
+retained gate sizes took 0.328s wall and 0.451 summed test-seconds. These are
+selected test observations, not whole-gate timings. Loop certificate reuse is also
+measured before the next upstream refresh: one serial before/after pair for
+the four cases took 16.968s/14.096s, including the nightly duplicate-invariant
+audit. Retain the explicit proof checks rather than treating those variable
+wall times as a scaling assertion.
+
+With the cast/fold/loop changes above on upstream `a1b9ea190`, before the
+symbolic-upper-bound cleanup, a cached
+four-worker unit/API run passed 8,116 tests in 444.876s (1,773.878 summed
+test-seconds). It excludes compilation and every `gate_tests::` integration
+or corpus harness. This is a current snapshot with a different test inventory
+from the earlier 8,574-test baseline, not a controlled overall speedup ratio.
+The library theorem proof took 15.206s and stays in the gate. Remaining leads
+include the sibling-C-if preservation expansion (9.430s) and the 384-case
+bitwise-conditional round-trip matrix (7.685s); inspect proof/setup reuse or
+retain a compact gate selection with the complete matrix nightly.
+
+### Sharing setup in expansion API tests
+
+The batch runner and inventory macro are visible within the test-only Surface
+module so API test modules can reuse them. Each case still runs on a fresh
+8 MiB thread; only immutable library syntax is shared between cases. The
+inventory checks every annotated case appears exactly once. Tests without
+`fast-gate` still run the original individual cases, and the existing nightly
+cases keep their nightly status.
+
+The signed and unsigned 64-bit expansion tests also avoid proving their sole
+input claim twice. Claim expansion verifies that input itself. Both tests
+still independently verify the generated proof, inspect its bridge steps,
+and reject the proof with its listed overflow bound removed.
+
+Measured on Linux x86-64, Intel Xeon Platinum 8573C, four-CPU quota / 16 GiB,
+with the ordinary unoptimized fast-gate profile, cached binaries and warm tool
+caches. The verifier and expansion API fixtures match `4f614f04e`; the baseline
+binary is the tested #3154 tree (`c7f0572c817bb00db29ebc82f1e3c747a1136329`).
+The following are single observations with four test workers, not full-gate
+or CI timings:
+
+| Expansion API gate selection | nextest entries | Underlying cases | Summed test seconds | Wall time |
+| --- | ---: | ---: | ---: | ---: |
+| Before | 124 | 124 | 99.464 | 26.044s |
+| 69 cases batched, other cases retained | 73 | 124 plus batch inventory | 69.303 | 18.540s |
+| Batching and duplicate input-proof removal | 73 | 124 plus batch inventory | 63.729 | 16.959s |
+
+The first run immediately after linking took 27.933s; use unchanged reruns for
+this execution-floor comparison. The expansion API cleanup preserved gate/nightly coverage; compiler flags,
+work budgets, and timeouts stayed unchanged.
+
+For the two wide-integer cases, retained before/after binaries were run in
+interleaved order, three runs of each with one test worker. Median per-case
+times were 3.102s to 2.326s for `int64` and 2.623s to 2.186s for `uint64`.
+The fixtures each contain one theorem and one ensure, so the expansion's
+selected-claim verification covers the same input as the removed direct call.
+Do not remove a whole-file verification when it checks other declarations or
+claims the selected expansion does not cover.
+
+The expansion API module also loads its five Markdown proof fixtures at
+runtime. They previously appeared in Rust's dependency file through
+`include_str!`; all five disappear from that dependency file after this change.
+In a controlled fixture-only edit (one trailing newline, then restored),
+`scripts/fast-gate-build.sh` took 0.647s, emitted no Rust compilation, and kept
+the executable's modification time unchanged. The fixture's API test still
+passed. This measures the fixture-edit build step, not a complete gate run.
+
+### Distinguish runner waits from test execution
+
+Read job `created_at` and `started_at` separately from the test step's start
+and end when measuring CI. In #3154's merge-queue run `44175737083`, unit
+shard 4/6 waited 374s for a runner, then spent 88s in its test step; markdown
+shard 1/5 waited 353s, then spent 102s in its test step. These observations
+explain why reducing verifier work may have a modest effect on an individual
+workflow's elapsed time under queue pressure. Evaluate shard count and job
+scheduling against those waits as well as test execution, while retaining the
+complete gate coverage.
 
 ### Profiling markdown fixture phases
 

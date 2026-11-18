@@ -87,7 +87,7 @@ impl adler2::Adler32 {
      have b_vec.0[2] <= 255u32;
      have a_vec.0[3] <= 255u32;
      have b_vec.0[3] <= 255u32;
-     have 0 <= (((loop(2).iter.len() * 4u64) as uint32) as int32) and (((loop(2).iter.len() * 4u64) as uint32) as int32) <= 4 by { both { solve() using { (((loop(2).iter.len() * 4u64) as uint32) as int32) == 4; }; } and { solve() using { (((loop(2).iter.len() * 4u64) as uint32) as int32) == 4; }; } }
+     have 0 <= (((loop(2).iter.len() * 4u64) as uint32) as int32) and (((loop(2).iter.len() * 4u64) as uint32) as int32) <= 4 by { both { left => { solve() using { (((loop(2).iter.len() * 4u64) as uint32) as int32) == 4; }; } right => { solve() using { (((loop(2).iter.len() * 4u64) as uint32) as int32) == 4; }; } } }
      have (((loop(2).iter.len() * 4u64) as uint32) as int32) % 4 == 0 by { rewrite((((loop(2).iter.len() * 4u64) as uint32) as int32), 4); normalize(); }
      have bytes == old(bytes);
      have a == 1u32;
@@ -662,7 +662,7 @@ impl adler2::Adler32 {
         have viewable(bytes[0..4]) by solve() using { viewable(bytes[0..4]); };
         have bytes == old(bytes) by known();
         have remainder_chunk == old(bytes);
-        have 0 <= (((iter.len() * 4u64) as uint32) as int32) and (((iter.len() * 4u64) as uint32) as int32) <= 4 by { both { solve() using { (((iter.len() * 4u64) as uint32) as int32) == 0; }; } and { solve() using { (((iter.len() * 4u64) as uint32) as int32) == 0; }; } }
+        have 0 <= (((iter.len() * 4u64) as uint32) as int32) and (((iter.len() * 4u64) as uint32) as int32) <= 4 by { both { left => { solve() using { (((iter.len() * 4u64) as uint32) as int32) == 0; }; } right => { solve() using { (((iter.len() * 4u64) as uint32) as int32) == 0; }; } } }
         have (((iter.len() * 4u64) as uint32) as int32) % 4 == 0 by { rewrite((((iter.len() * 4u64) as uint32) as int32), 0); normalize(); }
         have (((iter.len() * 4u64) as uint32) as int32) == 4 implies a_vec.0[0] == 0u32 by { intro(); have not ((((iter.len() * 4u64) as uint32) as int32) == 4) by solve() using { (((iter.len() * 4u64) as uint32) as int32) == 0; }; contradiction((((iter.len() * 4u64) as uint32) as int32) == 4); }
         have (((iter.len() * 4u64) as uint32) as int32) == 0 implies a_vec.0[0] == old((bytes[0] as u32)) by { intro(); known(); }

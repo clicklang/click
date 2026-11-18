@@ -813,7 +813,7 @@ pub(super) fn aggregate_argument_read_refusal(
         };
         if let Some(refusal) = crate::kernel::eval::subobject_access_refusal(
             source.pointer(),
-            source.bounds(),
+            source,
             layout.size_bytes(),
             &ExecutionFacts::new(),
             &[],
@@ -1035,6 +1035,9 @@ pub(in crate::kernel) fn copy_aggregate_fields_checked(
     destination: &Address,
     layout: &AggregateLayout,
 ) -> Result<SymbolicMemory, UndefinedBehavior> {
+    if let Some(bits) = layout.bit_field_bits {
+        return memory.copy_local_bit_field_record(source, destination, layout.size_bytes(), bits);
+    }
     if aggregate_copy_reads_uninitialized(&memory, source, layout) {
         return Err(UndefinedBehavior::UninitializedRead);
     }

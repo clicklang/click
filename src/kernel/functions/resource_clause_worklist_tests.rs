@@ -1,6 +1,29 @@
 use super::*;
 
 #[test]
+fn section_read_supply_preserves_zero_and_unknown_owned_quantities() {
+    let base = Address {
+        base: AddressBase::Heap(8_991_700),
+        offset: AddressOffset::Constant(0),
+    };
+    let range = MemoryRange::new(base.clone(), 0u32.into(), 1u32.into());
+    let facts = PureFactContext::new();
+    for (quantity, readable) in [
+        (MachineTerm::constant(0), false),
+        (MachineTerm::Variable(Variable(8_991_701)), false),
+        (MachineTerm::constant(1), true),
+    ] {
+        let supplied = ResourceFact::own_quantity(Resource::Memory(range.clone()), quantity);
+        let supply =
+            resource_clause_section_supply(&ExecutionState::new(), &[supplied], &[], &facts);
+        assert_eq!(supply.permits_memory_read(&base, 4, &facts), readable);
+        if readable {
+            assert!(supply.flat_owned_memory_ranges().is_empty());
+        }
+    }
+}
+
+#[test]
 fn memory_waiter_requires_a_whole_range_supplier() {
     let base = Address {
         base: AddressBase::Concrete("resource-clause-adjacent".to_string()),

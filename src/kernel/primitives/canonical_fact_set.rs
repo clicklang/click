@@ -48,6 +48,7 @@ struct Node {
     pure: bool,
     /// [`CanonicalFactSet::syntax_ceiling`] of this subtree, once asked.
     ceiling: std::sync::OnceLock<SyntaxCeiling>,
+    footprint: std::sync::OnceLock<super::Resource>,
 }
 
 /// The greatest execution-range variable a fact's written syntax names, and
@@ -124,6 +125,7 @@ fn make(
         }
         let pure = subtree_pure(&left, domain) && subtree_pure(&right, domain);
         let node = Arc::new(Node {
+            footprint: std::sync::OnceLock::new(),
             fact: fact.clone(),
             count,
             priority,
@@ -211,6 +213,70 @@ fn merge(left: Option<Arc<Node>>, right: Option<Arc<Node>>) -> Option<Arc<Node>>
 }
 
 impl CanonicalFactSet {
+    /// Canonical root identity retained by explicit boundary certificates.
+    /// The certificate holds a clone of this set, so its address cannot be reused.
+    pub(in crate::kernel) fn identity(&self) -> usize {
+        address(&self.root)
+    }
+
+    /// Prepare only new producer nodes. Existing subtrees retain their
+    /// cached footprint; queries never force this construction.
+    pub(in crate::kernel) fn prepare_footprint(&self) {
+        fn prepare(node: &Arc<Node>) -> super::Resource {
+            node.footprint
+                .get_or_init(|| {
+                    let combine = |a, b| match (a, b) {
+                        (super::Resource::Emp, b) => b,
+                        (a, super::Resource::Emp) => a,
+                        (a, b) => super::Resource::star(a, b),
+                    };
+                    let left = node.left.as_ref().map_or(super::Resource::Emp, prepare);
+                    let right = node.right.as_ref().map_or(super::Resource::Emp, prepare);
+                    combine(combine(left, node.fact.resource().clone()), right)
+                })
+                .clone()
+        }
+        crate::instrumentation::measure_operation(
+            "ownership",
+            "publication",
+            "prepare ownership footprint",
+            || {
+                if let Some(node) = &self.root {
+                    prepare(node);
+                }
+            },
+        );
+    }
+
+    pub(in crate::kernel) fn footprint(&self) -> super::Resource {
+        self.root.as_ref().map_or(super::Resource::Emp, |node| {
+            node.footprint
+                .get()
+                .expect("producer-prepared memory footprint")
+                .clone()
+        })
+    }
+
+    pub(in crate::kernel) fn with_memory_range(&self, range: &super::MemoryRange) -> Self {
+        let fact = ResourceFact::own_memory(range.clone());
+        let next = self.with_inserted(
+            &fact,
+            super::resource_algebra::resource_fact_content_hash(&fact),
+        );
+        next.prepare_footprint();
+        next
+    }
+
+    pub(in crate::kernel) fn without_memory_range(&self, range: &super::MemoryRange) -> Self {
+        let fact = ResourceFact::own_memory(range.clone());
+        let next = self.without_one(
+            &fact,
+            super::resource_algebra::resource_fact_content_hash(&fact),
+        );
+        next.prepare_footprint();
+        next
+    }
+
     /// One more occurrence of `fact`, whose content hash is `hash`.
     pub(in crate::kernel) fn with_inserted(&self, fact: &ResourceFact, hash: u64) -> Self {
         let (less, equal, greater) = split(&self.root, fact);

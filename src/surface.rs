@@ -3444,7 +3444,7 @@ pub(crate) use binary_contract_expression;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ClickArrayRef {
-    memory: SymbolicMemory,
+    point: crate::kernel::ProgramPoint,
     pointer: Address,
     element_type: ProgramType,
 }
@@ -3572,10 +3572,16 @@ type ReadEventNames<T> =
 #[derive(Clone, Default)]
 struct RecordedHistoryMark(Option<std::sync::Arc<RecordedStateChange>>);
 
+type RecordedCallResults = crate::persistent::PersistentMap<usize, RetainedProgramValue>;
+
 /// Points one path recorded at a range of regions, with their call results.
 #[derive(Clone, Default)]
 struct RecordedRegionPoints {
-    retained_states: Vec<(ProgramPointSelector, ExecutionState)>,
+    retained_states: Vec<(
+        ProgramPointSelector,
+        ExecutionState,
+        Option<RecordedCallResults>,
+    )>,
     call_results: Vec<(usize, RetainedProgramValue)>,
 }
 
@@ -3642,7 +3648,10 @@ struct RecordedStates {
     /// of later pointer reads or assignments to the result local.
     allocation_results: crate::persistent::PersistentMap<crate::kernel::Address, CodeRegionRef>,
     /// Values produced at call exits, independent of destination locals.
-    call_results: crate::persistent::PersistentMap<usize, RetainedProgramValue>,
+    call_results: RecordedCallResults,
+    /// Capture-producing functions retain the call table at each citable
+    /// state. An `at` expression selects a table by its program point.
+    call_result_snapshots: imbl::OrdMap<ProgramPointSelector, RecordedCallResults>,
     /// The points inside a loop that left at several places, by the loop
     /// and its number of leaving paths: each path recorded the point at its
     /// own state, so after the loop the name has no one state.
@@ -3723,7 +3732,8 @@ impl Default for RecordedStates {
             value_points: crate::persistent::PersistentMap::default(),
             pointer_points: crate::persistent::PersistentMap::default(),
             allocation_results: crate::persistent::PersistentMap::default(),
-            call_results: crate::persistent::PersistentMap::default(),
+            call_results: RecordedCallResults::default(),
+            call_result_snapshots: imbl::OrdMap::new(),
             ambiguous_exit_points: crate::persistent::PersistentMap::default(),
             call_result_points: crate::persistent::PersistentMap::default(),
             read_event_results: Default::default(),
@@ -4145,6 +4155,26 @@ impl RecordedStates {
     }
 
     fn region_result_value(&self, region: &CodeRegionRef) -> Result<ProgramValue, String> {
+        self.region_result_value_at(region, None)
+    }
+
+    fn call_results_at(&self, selector: &ProgramPointSelector) -> Option<&RecordedCallResults> {
+        crate::instrumentation::record_deterministic_work(1);
+        self.call_result_snapshots
+            .get(&self.recorded_spelling(selector.clone()))
+    }
+
+    fn records_call_snapshots(&self) -> bool {
+        self.source_layout
+            .as_ref()
+            .is_some_and(lowering::SourceExecutionLayout::has_call_captures)
+    }
+
+    fn region_result_value_at(
+        &self,
+        region: &CodeRegionRef,
+        selector: Option<&ProgramPointSelector>,
+    ) -> Result<ProgramValue, String> {
         if let CodeRegionRef::Path(steps) = region
             && let Some((SourcePathStep::ReadEvent(event), parent)) = steps.split_last()
         {
@@ -4163,6 +4193,26 @@ impl RecordedStates {
                 });
         }
         let index = self.result_region_index(region)?;
+        if let Some(selector) = selector
+            && self.records_call_snapshots()
+            && self
+                .source_layout
+                .as_ref()
+                .is_some_and(|layout| layout.call_number(index).is_some())
+        {
+            return self
+                .call_results_at(selector)
+                .and_then(|results| results.get(&index))
+                .map(RetainedProgramValue::native_compat)
+                .cloned()
+                .ok_or_else(|| {
+                    format!(
+                        "`{}.result` has no recorded non-void result at `{}`",
+                        diagnostics::describe_code_region_ref(region),
+                        diagnostics::describe_program_point_selector(selector)
+                    )
+                });
+        }
         if let Some(result) = self.call_result_native(&index) {
             return Ok(result.clone());
         }
@@ -4216,9 +4266,11 @@ impl RecordedStates {
                 && seen.insert(entry.selector.clone())
                 && let Some(state) = self.get(&entry.selector)
             {
-                points
-                    .retained_states
-                    .push((entry.selector.clone(), state.clone()));
+                points.retained_states.push((
+                    entry.selector.clone(),
+                    state.clone(),
+                    self.call_result_snapshots.get(&entry.selector).cloned(),
+                ));
                 if *kind == ProgramPointKind::Exit
                     && let Some(value) = self.call_results.get(index)
                 {
@@ -4236,7 +4288,7 @@ impl RecordedStates {
     /// read of one is refused naming the paths.
     fn record_ambiguous_exit_points(&mut self, loop_index: usize, paths: &[RecordedRegionPoints]) {
         for points in paths {
-            for (selector, _) in &points.retained_states {
+            for (selector, _, _) in &points.retained_states {
                 crate::instrumentation::record_deterministic_work(1);
                 self.ambiguous_exit_points
                     .insert(selector.clone(), (loop_index, paths.len()));
@@ -4260,12 +4312,40 @@ impl RecordedStates {
     /// Records points another path recorded, as `recorded_since` returned
     /// them.
     fn record_region_points(&mut self, points: &RecordedRegionPoints) {
-        for (selector, state) in &points.retained_states {
+        for (selector, state, results) in &points.retained_states {
             self.insert(selector.clone(), state.clone());
+            self.set_call_result_snapshot(selector, results.clone());
         }
         for (index, value) in &points.call_results {
             self.record_retained_call_result(*index, Some(value.clone()));
         }
+    }
+
+    fn set_call_result_snapshot(
+        &mut self,
+        selector: &ProgramPointSelector,
+        results: Option<RecordedCallResults>,
+    ) {
+        if let Some(results) = results {
+            self.call_result_snapshots.insert(selector.clone(), results);
+        } else {
+            self.call_result_snapshots.remove(selector);
+        }
+    }
+
+    /// Some transition certificates expose the return value separately
+    /// from the state recorded at the call's exit.
+    fn record_call_transition_result(&mut self, index: usize, value: RetainedProgramValue) {
+        if self.records_call_snapshots() {
+            let exit = ProgramPointSelector::from(ProgramPointRef {
+                region: CodeRegionRef::Region(index),
+                kind: ProgramPointKind::Exit,
+            });
+            if let Some(results) = self.call_result_snapshots.get_mut(&exit) {
+                results.insert(index, value.clone());
+            }
+        }
+        self.record_retained_call_result(index, Some(value));
     }
 
     fn record_call_result(&mut self, index: usize, value: Option<ProgramValue>) {
@@ -4388,6 +4468,40 @@ impl RecordedStates {
                     .as_ref()
                     .clone(),
             )
+        })
+    }
+
+    /// A capture in a recorded state names the call result in that
+    /// snapshot. An unqualified capture names the path's current result.
+    fn call_capture_expression(
+        &self,
+        binding: &crate::kernel::BindingName,
+        value: &crate::kernel::StoredExecutionValue,
+        selector: Option<&ProgramPointSelector>,
+    ) -> Option<ContractExpression> {
+        if !binding
+            .local_id()
+            .is_some_and(crate::kernel::LocalBindingId::is_temporary)
+        {
+            return None;
+        }
+        let layout = self.source_layout.as_ref()?;
+        let (index, source) = layout.call_capture_source(binding)?;
+        let results = match selector {
+            Some(point) => self.call_results_at(point)?,
+            None => &self.call_results,
+        };
+        let recorded = results.get(&index)?.native_compat();
+        if recorded.program_type() != value.program_type() || recorded != value.native().as_ref() {
+            return None;
+        }
+        let expression = ContractExpression::RegionResult(source);
+        Some(match selector {
+            Some(selector) => ContractExpression::At {
+                selector: selector.clone(),
+                expression: Box::new(expression),
+            },
+            None => expression,
         })
     }
 
@@ -4863,7 +4977,7 @@ impl RecordedStates {
             .insert(selector.clone(), self.effect_log.len());
         let prior = self.get(&selector).cloned();
         self.update_allocation_result(&selector, prior.as_ref(), Some(&state));
-        if let Some(id) = state.program_point_id() {
+        if let Some(id) = state.observation_point_id() {
             self.point_names.insert(id, selector.clone());
         }
         if let Some(memory) = crate::kernel::interned_storage_of(state.memory()) {
@@ -4890,6 +5004,10 @@ impl RecordedStates {
                             .map(|value| RetainedProgramValue::from(value.clone().into_value())),
                     });
             self.record_retained_call_result(*index, result);
+        }
+        if self.records_call_snapshots() {
+            self.call_result_snapshots
+                .insert(selector.clone(), self.call_results.clone());
         }
         self.record_value_points(&selector, &state);
         self.version = std::sync::Arc::new(RecordedStateVersion {
@@ -4937,6 +5055,7 @@ impl RecordedStates {
     fn remove<K: RecordedStateKey + ?Sized>(&mut self, key: &K) -> Option<ExecutionState> {
         let selector = self.recorded_spelling(key.to_selector());
         let prior = self.get(key).cloned();
+        self.call_result_snapshots.remove(&selector);
         self.update_allocation_result(&selector, prior.as_ref(), None);
         if let ProgramPointSelector::ProgramPoint(ProgramPointRef {
             region: CodeRegionRef::Region(index),
@@ -5030,6 +5149,22 @@ impl RecordedStates {
             match (self.get(&selector), other.get(&selector)) {
                 (Some(left), Some(right)) if left == right => {
                     common.insert(selector.clone(), left.clone());
+                    if let (Some(left), Some(right)) = (
+                        self.call_result_snapshots.get(&selector),
+                        other.call_result_snapshots.get(&selector),
+                    ) {
+                        let mut results = left.clone();
+                        for (index, left, _) in left.diff(right) {
+                            if left.is_some() {
+                                results.remove(index);
+                            }
+                        }
+                        common
+                            .call_result_snapshots
+                            .insert(selector.clone(), results);
+                    } else {
+                        common.call_result_snapshots.remove(&selector);
+                    }
                     if let ProgramPointSelector::ProgramPoint(ProgramPointRef {
                         region: CodeRegionRef::Region(index),
                         kind: ProgramPointKind::Exit,
@@ -5114,6 +5249,10 @@ impl RecordedStates {
             let mut state = state.clone();
             if keep(selector, &mut state) {
                 retained.insert(selector.clone(), state);
+                retained.set_call_result_snapshot(
+                    selector,
+                    self.call_result_snapshots.get(selector).cloned(),
+                );
                 if let ProgramPointSelector::ProgramPoint(ProgramPointRef {
                     region: CodeRegionRef::Region(index),
                     kind: ProgramPointKind::Exit,
@@ -5358,7 +5497,7 @@ fn recorded_state_entries<'a>(
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct SpecArrayRef {
-    memory: SpecPoint,
+    point: SpecPoint,
     pointer: SpecExpression,
     element_type: ProgramType,
 }
@@ -5369,15 +5508,15 @@ struct SpecElaborationContext {
     integer_values: PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
     algebraic_values: PersistentBinderMap<SpecAlgebraicExpression>,
     array_refs: PersistentBinderMap<SpecArrayRef>,
-    /// The memory a bound array name reads in, when its binding names a state
+    /// The point a bound array name reads at, when its binding names a state
     /// of its own. A theorem argument that names another state (`old(a)`,
     /// `at(mark, a)`) binds the parameter to that state's array reference, and
-    /// an array reference is a memory as well as a pointer; without this the
-    /// clause's indexing would read the application's current memory. Only a
+    /// an array reference is a point as well as a pointer; without this the
+    /// clause's indexing would read at the application's current point. Only a
     /// binding that names another state appears here, so an ordinary array
-    /// name keeps reading through `current_memory` and carries no state.
-    array_memories: PersistentBinderMap<SpecPoint>,
-    current_memory: SpecPoint,
+    /// name keeps reading at `current_point` and carries no state.
+    array_points: PersistentBinderMap<SpecPoint>,
+    current_point: SpecPoint,
     current_loop_entry: Option<usize>,
     function_contract: bool,
     /// The context is the function entry (`old(...)`), so a resource count
@@ -5387,6 +5526,7 @@ struct SpecElaborationContext {
     /// a resource count there is that state's population, which the spec
     /// form cannot name and the elaboration evaluates.
     reference_state: Option<ExecutionState>,
+    call_result_point: Option<ProgramPointSelector>,
     /// Bare `result` names the internal contract-return binding here;
     /// explicit C bindings keep their source identifier and value.
     contract_result_in_scope: bool,
@@ -5403,12 +5543,13 @@ impl Default for SpecElaborationContext {
             integer_values: PersistentBinderMap::default(),
             algebraic_values: PersistentBinderMap::default(),
             array_refs: PersistentBinderMap::default(),
-            array_memories: PersistentBinderMap::default(),
-            current_memory: SpecPoint::Current,
+            array_points: PersistentBinderMap::default(),
+            current_point: SpecPoint::Current,
             current_loop_entry: None,
             at_function_entry: false,
             function_contract: false,
             reference_state: None,
+            call_result_point: None,
             contract_result_in_scope: false,
             contract_result: None,
             checking_definedness: false,
@@ -5417,9 +5558,9 @@ impl Default for SpecElaborationContext {
 }
 
 impl SpecElaborationContext {
-    fn with_current_memory(current_memory: SpecPoint) -> Self {
+    fn with_current_point(current_point: SpecPoint) -> Self {
         Self {
-            current_memory,
+            current_point,
             ..Self::default()
         }
     }
@@ -5458,12 +5599,13 @@ impl SpecElaborationContext {
                 integer_values: self.integer_values.clone(),
                 algebraic_values: self.algebraic_values.clone(),
                 array_refs: PersistentBinderMap::default(),
-                array_memories: PersistentBinderMap::default(),
-                current_memory: SpecPoint::FunctionEntry,
+                array_points: PersistentBinderMap::default(),
+                current_point: SpecPoint::FunctionEntry,
                 current_loop_entry: None,
                 function_contract: true,
                 at_function_entry: true,
                 reference_state: None,
+                call_result_point: None,
                 contract_result_in_scope: false,
                 contract_result: None,
                 checking_definedness: self.checking_definedness,
@@ -5493,12 +5635,13 @@ impl SpecElaborationContext {
             integer_values: self.integer_values.clone(),
             algebraic_values: self.algebraic_values.clone(),
             array_refs: PersistentBinderMap::default(),
-            array_memories: PersistentBinderMap::default(),
-            current_memory: SpecPoint::At(entry.clone()),
+            array_points: PersistentBinderMap::default(),
+            current_point: SpecPoint::At(entry.clone()),
             current_loop_entry: None,
             function_contract: false,
             at_function_entry: true,
             reference_state: None,
+            call_result_point: None,
             // The return value is a logical proof binding, like `let`.
             // Historical C reads still use their own entry bindings.
             contract_result_in_scope: self.contract_result_in_scope,
@@ -6831,6 +6974,8 @@ pub struct ProofBranch {
 /// Explicit proof arms for the checked edge of one potentially throwing call.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProofCallOutcomes {
+    /// Optional proof names for the returned and thrown payloads, in that order.
+    pub payload_bindings: [Option<String>; 2],
     pub returned_tactics: Vec<ProofTactic>,
     pub threw_tactics: Vec<ProofTactic>,
 }

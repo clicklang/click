@@ -140,6 +140,7 @@ pub(super) fn checked_access_mode_refinement_adapter(
         return_resources: returned,
         ensured_views: returned_views,
         produced_borrowing_pieces,
+        returned_entry_partition,
     } = match evaluate_contract_return_resources(
         &transfer.caller_resources_after_requirements,
         escrowed_owners(&transfer),
@@ -158,6 +159,7 @@ pub(super) fn checked_access_mode_refinement_adapter(
         Ok(result) => result,
         Err(_) => return Ok(Some(false)),
     };
+    transfer.returned_entry_partition = returned_entry_partition;
     transfer.candidate_output_views = returned_views;
     transfer.produced_borrowing_pieces = produced_borrowing_pieces;
     if recover_candidate_stable_view_resources(

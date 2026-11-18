@@ -365,7 +365,8 @@ pub(crate) enum Change {
 impl Change {
     fn of_derivation(derivation: &MemoryDerivation) -> Self {
         match derivation {
-            MemoryDerivation::Store { pointer, .. } => Self::Store {
+            MemoryDerivation::Store { pointer, .. }
+            | MemoryDerivation::RepresentationWrite { pointer, .. } => Self::Store {
                 pointer: pointer.clone(),
             },
             // The first element names the recorded range, without attributing

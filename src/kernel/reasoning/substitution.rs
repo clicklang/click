@@ -1335,10 +1335,12 @@ fn walk_proposition<S: VariableSubstitution + ?Sized>(
             outcome: walk_program_expression_outcome(outcome, s),
         },
         Proposition::MemoryReadDefined {
+            at,
             memory,
             pointer,
             value_type,
         } => Proposition::MemoryReadDefined {
+            at: *at,
             memory: s.memory(memory),
             pointer: s.pointer(pointer),
             value_type: *value_type,
@@ -3117,6 +3119,12 @@ fn collect_memory_bound_variables(memory: &SymbolicMemory, variables: &mut BTree
     {
         collect_pointer_bound_variables(pointer, variables);
     }
+    for (pointer, byte) in memory.heap.initialized.partial_map().iter() {
+        collect_pointer_bound_variables(pointer, variables);
+        if let Some(value) = &byte.value {
+            collect_program_value_bound_variables(value, variables);
+        }
+    }
     for contents in memory.blocks.values() {
         collect_bitvector_bound_variables(contents.size(), variables);
     }
@@ -3162,6 +3170,17 @@ fn collect_memory_bound_variables_entering(
             let pointer = change.key();
             if after.contains_key(pointer) {
                 collect_pointer_bound_variables(pointer, variables);
+            }
+        }
+    }
+    let before = base.heap.initialized.partial_map();
+    let after = memory.heap.initialized.partial_map();
+    for change in before.diff(after) {
+        let pointer = change.key();
+        if let Some(byte) = after.get(pointer) {
+            collect_pointer_bound_variables(pointer, variables);
+            if let Some(value) = &byte.value {
+                collect_program_value_bound_variables(value, variables);
             }
         }
     }
@@ -4481,6 +4500,7 @@ fn rewrite_integer_memory_loadable_with_walker(
     walker: &mut crate::kernel::proof::term_rewrite::TermRewrite<'_>,
 ) -> Result<Proposition, IntegerPureSubstitutionError> {
     if let Proposition::MemoryReadDefined {
+        at,
         memory,
         pointer,
         value_type,
@@ -4494,6 +4514,7 @@ fn rewrite_integer_memory_loadable_with_walker(
         };
         integer_substitution_refusal(walker.refusal())?;
         return Ok(Proposition::MemoryReadDefined {
+            at: *at,
             memory: memory.clone(),
             pointer: pointer.pointer().clone(),
             value_type: *value_type,
@@ -6510,9 +6531,10 @@ fn substitute_bitvector_variable_in_memory_contents(
                 .iter()
                 .map(|base| substitute_bitvector_variable_in_pointer(base, from, to))
                 .collect(),
-            initialized: memory.heap.initialized.map_pointers(|pointer| {
-                substitute_bitvector_variable_in_pointer(pointer, from, to)
-            }),
+            initialized: memory.heap.initialized.map_pointers(
+                |pointer| substitute_bitvector_variable_in_pointer(pointer, from, to),
+                |value| substitute_bitvector_variable_in_program_value(value, from, to),
+            ),
             zeroed_allocations: memory
                 .heap
                 .zeroed_allocations
@@ -6556,6 +6578,15 @@ fn substitute_bitvector_variable_in_memory_contents(
                                 .zeroed_prefix
                                 .as_ref()
                                 .map(|prefix| substitute_bitvector_variable(prefix, from, to)),
+                            retirement_separation: pending.retirement_separation.as_ref().map(
+                                |goal| {
+                                    std::sync::Arc::new(
+                                        substitute_bitvector_variable_in_proposition(
+                                            goal, from, to,
+                                        ),
+                                    )
+                                },
+                            ),
                             initialized_prefix: pending.initialized_prefix.clone(),
                             copied_cells: pending
                                 .copied_cells
@@ -7201,10 +7232,10 @@ pub(crate) fn substitute_pointer_variable_in_memory(
                 .iter()
                 .map(|base| substitute_pointer_variable_in_pointer(base, from, to))
                 .collect(),
-            initialized: memory
-                .heap
-                .initialized
-                .map_pointers(|pointer| substitute_pointer_variable_in_pointer(pointer, from, to)),
+            initialized: memory.heap.initialized.map_pointers(
+                |pointer| substitute_pointer_variable_in_pointer(pointer, from, to),
+                |value| substitute_pointer_variable_in_program_value(value, from, to),
+            ),
             zeroed_allocations: memory
                 .heap
                 .zeroed_allocations
@@ -7243,6 +7274,13 @@ pub(crate) fn substitute_pointer_variable_in_memory(
                             ),
                             old_bytes: pending.old_bytes.clone(),
                             zeroed_prefix: pending.zeroed_prefix.clone(),
+                            retirement_separation: pending.retirement_separation.as_ref().map(
+                                |goal| {
+                                    std::sync::Arc::new(substitute_pointer_variable_in_proposition(
+                                        goal, from, to,
+                                    ))
+                                },
+                            ),
                             initialized_prefix: pending.initialized_prefix.clone(),
                             copied_cells: pending
                                 .copied_cells
@@ -7304,12 +7342,12 @@ fn substitute_pointer_variable_in_block(
     }
 }
 
-fn substitute_pointer_variable_in_spec_memory(
-    memory: &SpecPoint,
+fn substitute_pointer_variable_in_spec_point(
+    spec_point: &SpecPoint,
     from: Variable,
     to: &Address,
 ) -> SpecPoint {
-    match memory {
+    match spec_point {
         SpecPoint::Current => SpecPoint::Current,
         SpecPoint::FunctionEntry => SpecPoint::FunctionEntry,
         SpecPoint::LoopEntry => SpecPoint::LoopEntry,
@@ -7629,11 +7667,11 @@ fn substitute_pointer_variable_in_spec_expression(
             value_type: *value_type,
         },
         SpecExpression::MemoryLoad {
-            memory,
+            point: memory,
             pointer,
             value_type,
         } => SpecExpression::MemoryLoad {
-            memory: substitute_pointer_variable_in_spec_memory(memory, from, to),
+            point: substitute_pointer_variable_in_spec_point(memory, from, to),
             pointer: Box::new(substitute_pointer_variable_in_spec_expression(
                 pointer, from, to,
             )),
@@ -7667,11 +7705,11 @@ fn substitute_pointer_variable_in_spec_function_argument(
             substitute_pointer_variable_in_spec_algebraic_expression(expression, from, to),
         ),
         SpecPureFunctionArgument::ArrayRef {
-            memory,
+            point: memory,
             pointer,
             element_type,
         } => SpecPureFunctionArgument::ArrayRef {
-            memory: substitute_pointer_variable_in_spec_memory(memory, from, to),
+            point: substitute_pointer_variable_in_spec_point(memory, from, to),
             pointer: substitute_pointer_variable_in_spec_expression(pointer, from, to),
             element_type: *element_type,
         },
@@ -8037,14 +8075,13 @@ fn substitute_pointer_variable_in_spec_proposition(
                     SpecPredicateArgument::Value(expression) => SpecPredicateArgument::Value(
                         substitute_pointer_variable_in_spec_expression(expression, from, to),
                     ),
-                    SpecPredicateArgument::ArrayRef { memory, pointer } => {
-                        SpecPredicateArgument::ArrayRef {
-                            memory: substitute_pointer_variable_in_spec_memory(memory, from, to),
-                            pointer: substitute_pointer_variable_in_spec_expression(
-                                pointer, from, to,
-                            ),
-                        }
-                    }
+                    SpecPredicateArgument::ArrayRef {
+                        point: memory,
+                        pointer,
+                    } => SpecPredicateArgument::ArrayRef {
+                        point: substitute_pointer_variable_in_spec_point(memory, from, to),
+                        pointer: substitute_pointer_variable_in_spec_expression(pointer, from, to),
+                    },
                 })
                 .collect(),
         },
@@ -8052,24 +8089,25 @@ fn substitute_pointer_variable_in_spec_proposition(
             left: substitute_pointer_variable_in_spec_resource(left, from, to),
             right: substitute_pointer_variable_in_spec_resource(right, from, to),
         },
-        SpecProposition::ResourceViewable { memory, resource } => {
-            SpecProposition::ResourceViewable {
-                memory: substitute_pointer_variable_in_spec_memory(memory, from, to),
-                resource: substitute_pointer_variable_in_spec_resource(resource, from, to),
-            }
-        }
+        SpecProposition::ResourceViewable {
+            point: memory,
+            resource,
+        } => SpecProposition::ResourceViewable {
+            point: substitute_pointer_variable_in_spec_point(memory, from, to),
+            resource: substitute_pointer_variable_in_spec_resource(resource, from, to),
+        },
         SpecProposition::ResourceContains { parent, child } => SpecProposition::ResourceContains {
             parent: substitute_pointer_variable_in_spec_resource(parent, from, to),
             child: substitute_pointer_variable_in_spec_resource(child, from, to),
         },
         SpecProposition::MemoryLoadable {
-            memory,
+            point: memory,
             base,
             start,
             end,
             element_width,
         } => SpecProposition::MemoryLoadable {
-            memory: substitute_pointer_variable_in_spec_memory(memory, from, to),
+            point: substitute_pointer_variable_in_spec_point(memory, from, to),
             base: substitute_pointer_variable_in_spec_expression(base, from, to),
             start: substitute_pointer_variable_in_spec_expression(start, from, to),
             end: substitute_pointer_variable_in_spec_expression(end, from, to),

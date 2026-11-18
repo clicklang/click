@@ -110,7 +110,7 @@ fn proposition_closers_name_the_pending_closing_goal() {
     for closer in [
         "normalize();",
         "solve() using {};",
-        "both { known(); } and { known(); }",
+        "both { left => { known(); } right => { known(); } }",
     ] {
         let source = proof(&format!("normalize(); {closer}"));
         let error = verify_c_sources(&source, C).unwrap_err();

@@ -476,7 +476,7 @@ impl<'a> Proof<'a> {
             let array_refs = array_refs_for_parameters(
                 context.parsed_function.parameters(),
                 &values,
-                before.memory(),
+                &before.program_point(),
             );
             let (values, array_refs) = contract_environment_at_state(&values, &array_refs, before);
             let mut proposed = Vec::new();
@@ -1282,7 +1282,7 @@ impl<'a> Proof<'a> {
                 let array_refs = array_refs_for_parameters(
                     context.parameter_binding.parameters,
                     &values,
-                    context.fixed_state.state.memory(),
+                    &context.fixed_state.state.program_point(),
                 );
                 let (values, array_refs) =
                     contract_environment_at_state(&values, &array_refs, context.fixed_state.state);
@@ -1307,7 +1307,7 @@ impl<'a> Proof<'a> {
                 let array_refs = array_refs_for_parameters(
                     view.parameter_binding.parameters,
                     &values,
-                    view.fixed_state.state.memory(),
+                    &view.fixed_state.state.program_point(),
                 );
                 let (values, array_refs) =
                     contract_environment_at_state(&values, &array_refs, view.fixed_state.state);
@@ -1332,7 +1332,7 @@ impl<'a> Proof<'a> {
                 let array_refs = array_refs_for_parameters(
                     context.parsed_function.parameters(),
                     &values,
-                    execution.core.state.memory(),
+                    &execution.core.state.program_point(),
                 );
                 let (values, array_refs) =
                     contract_environment_at_state(&values, &array_refs, &execution.core.state);

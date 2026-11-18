@@ -2253,7 +2253,7 @@ fn fixed_state_elaboration<'a>(
         // A bound array name reads in the memory its binding names. Without
         // this an argument that names another state (`old(a)`, `at(mark, a)`)
         // would index the application's current memory instead.
-        array_memories: bound_array_memories.into_iter().collect(),
+        array_points: bound_array_memories.into_iter().collect(),
         ..SpecElaborationContext::default()
     };
     context.contract_result = result
@@ -5340,8 +5340,8 @@ impl AnnotationLowerer<'_> {
                     .iter()
                     .any(|parameter| matches!(parameter.click_type(), ClickType::Algebraic(_)))
                 {
-                    let mut predicate_environment = SpecElaborationContext::with_current_memory(
-                        environment.current_memory.clone(),
+                    let mut predicate_environment = SpecElaborationContext::with_current_point(
+                        environment.current_point.clone(),
                     );
                     for (parameter, argument) in definition.parameters().iter().zip(arguments) {
                         match parameter.click_type() {
@@ -5444,7 +5444,7 @@ impl AnnotationLowerer<'_> {
                             )
                         };
                         lowered_arguments.push(SpecPredicateArgument::ArrayRef {
-                            memory: array_ref.memory,
+                            point: array_ref.point,
                             pointer,
                         });
                     } else {
@@ -5601,7 +5601,7 @@ impl AnnotationLowerer<'_> {
             }),
             ClickProposition::ResourceViewable { resource } => {
                 Ok(SpecProposition::ResourceViewable {
-                    memory: environment.current_memory.clone(),
+                    point: environment.current_point.clone(),
                     resource: self.lower_resource_subject_to_spec(resource, environment)?,
                 })
             }
@@ -5612,7 +5612,7 @@ impl AnnotationLowerer<'_> {
             ClickProposition::Loadable { segment } => {
                 let segment_environment = self.spec_segment_environment(segment, environment)?;
                 Ok(SpecProposition::MemoryLoadable {
-                    memory: segment_environment.current_memory.clone(),
+                    point: segment_environment.current_point.clone(),
                     base: self
                         .lower_contract_segment_base_to_spec(&segment.base, &segment_environment)?,
                     start: self
@@ -6659,12 +6659,12 @@ impl AnnotationLowerer<'_> {
                 ..
             } => Ok(pointer),
             ProgramExpression::TypedLoad { value_type, .. } => Ok(SpecExpression::MemoryLoad {
-                memory: environment.current_memory.clone(),
+                point: environment.current_point.clone(),
                 pointer: Box::new(pointer),
                 value_type: *value_type,
             }),
             ProgramExpression::Load(pointer_expression) => Ok(SpecExpression::MemoryLoad {
-                memory: environment.current_memory.clone(),
+                point: environment.current_point.clone(),
                 pointer: Box::new(pointer),
                 value_type: self
                     .program_expression_array_element_type(pointer_expression, environment)
@@ -6809,15 +6809,19 @@ impl AnnotationLowerer<'_> {
                             byte_width: 1,
                         })
                     }
+                    ProgramExpression::Subobject { width, .. } => Ok(SpecExpression::Subobject {
+                        pointer: Box::new(value),
+                        width: *width,
+                    }),
                     ProgramExpression::TypedLoad { value_type, .. } => {
                         Ok(SpecExpression::MemoryLoad {
-                            memory: environment.current_memory.clone(),
+                            point: environment.current_point.clone(),
                             pointer: Box::new(value),
                             value_type: *value_type,
                         })
                     }
                     ProgramExpression::Load(_) => Ok(SpecExpression::MemoryLoad {
-                        memory: environment.current_memory.clone(),
+                        point: environment.current_point.clone(),
                         pointer: Box::new(value),
                         value_type: self.contract_array_element_type(operand, environment),
                     }),
@@ -7107,7 +7111,7 @@ impl AnnotationLowerer<'_> {
                             .program_expression_array_element_type(lowered_base, environment)
                             .unwrap_or(ProgramType::Int32);
                         Ok(SpecExpression::MemoryLoad {
-                            memory: environment.current_memory.clone(),
+                            point: environment.current_point.clone(),
                             pointer: Box::new(SpecExpression::PointerOffset {
                                 pointer: Box::new(pointer),
                                 elements: Box::new(offset),
@@ -7251,7 +7255,8 @@ impl AnnotationLowerer<'_> {
                     .retained_states
                     .ok_or("`.result` names a region of a function body being executed")?;
                 Ok(SpecExpression::Value(
-                    retained_states.region_result_value(region)?,
+                    retained_states
+                        .region_result_value_at(region, environment.call_result_point.as_ref())?,
                 ))
             }
             ContractExpression::RegionParameter { region, name } => Err(format!(
@@ -7410,7 +7415,7 @@ impl AnnotationLowerer<'_> {
                     _ => None,
                 }
                 .filter(|parameter| {
-                    matches!(environment.current_memory, SpecPoint::Current)
+                    matches!(environment.current_point, SpecPoint::Current)
                         && environment.current_loop_entry.is_none()
                         && (parameter
                             .named()
@@ -7447,7 +7452,7 @@ impl AnnotationLowerer<'_> {
                     })
                 } else {
                     Ok(SpecExpression::MemoryLoad {
-                        memory: array_ref.memory,
+                        point: array_ref.point,
                         pointer,
                         value_type: array_ref.element_type,
                     })
@@ -7703,7 +7708,11 @@ impl AnnotationLowerer<'_> {
             ContractExpression::Old(inner) => self.enum_program_value_type(inner, environment),
             // The enum value a call returned.
             ContractExpression::RegionResult(region) => {
-                match self.retained_states?.region_result_value(region).ok()? {
+                match self
+                    .retained_states?
+                    .region_result_value_at(region, environment.call_result_point.as_ref())
+                    .ok()?
+                {
                     ProgramValue::Parameter(term) => {
                         let enum_type = crate::kernel::TypeParameterName::of(&term.algebraic_type);
                         crate::surface::holds_spec_value(enum_type).then_some(enum_type)
@@ -8143,7 +8152,8 @@ impl AnnotationLowerer<'_> {
                 let retained_states = self
                     .retained_states
                     .ok_or("`.result` names a region of a function body being executed")?;
-                retained_states.region_result_value(region)?;
+                retained_states
+                    .region_result_value_at(region, environment.call_result_point.as_ref())?;
                 Err(format!(
                     "`{}.result` is not an algebraic value",
                     diagnostics::describe_code_region_ref(region)
@@ -8301,14 +8311,14 @@ impl AnnotationLowerer<'_> {
                         Ok(match click_array_element_type(*interface_type) {
                             Some(element_type) => {
                                 crate::kernel::SpecPureFunctionArgument::ArrayRef {
-                                    memory: if memory_independent {
+                                    point: if memory_independent {
                                         crate::kernel::SpecPoint::At(
                                             crate::kernel::ProgramPoint::of_memory(
                                                 &crate::kernel::value_independent_click_memory(),
                                             ),
                                         )
                                     } else {
-                                        environment.current_memory.clone()
+                                        environment.current_point.clone()
                                     },
                                     pointer,
                                     element_type,
@@ -8329,14 +8339,14 @@ impl AnnotationLowerer<'_> {
                             // different term on either side of a C write, and a
                             // `fold` cannot discharge a body fact that applies a
                             // pure predicate to a pointer (gap 42).
-                            memory: if memory_independent {
+                            point: if memory_independent {
                                 crate::kernel::SpecPoint::At(
                                     crate::kernel::ProgramPoint::of_memory(
                                         &crate::kernel::value_independent_click_memory(),
                                     ),
                                 )
                             } else {
-                                array_ref.memory
+                                array_ref.point
                             },
                             pointer: array_ref.pointer,
                             element_type: array_ref.element_type,
@@ -8939,7 +8949,7 @@ impl AnnotationLowerer<'_> {
                 (
                     name.clone(),
                     SpecArrayRef {
-                        memory: SpecPoint::At(state.program_point()),
+                        point: SpecPoint::At(state.program_point()),
                         pointer: array_ref.pointer.clone(),
                         element_type: array_ref.element_type,
                     },
@@ -8953,7 +8963,7 @@ impl AnnotationLowerer<'_> {
                     array_refs.insert(
                         name.clone().into(),
                         SpecArrayRef {
-                            memory: SpecPoint::At(state.program_point()),
+                            point: SpecPoint::At(state.program_point()),
                             pointer: SpecExpression::Value(value),
                             element_type,
                         },
@@ -8966,7 +8976,7 @@ impl AnnotationLowerer<'_> {
                     Some((
                         SurfaceBinder::from(state.locals().active_source_name(name)?),
                         SpecArrayRef {
-                            memory: SpecPoint::At(state.program_point()),
+                            point: SpecPoint::At(state.program_point()),
                             pointer: SpecExpression::Value(value),
                             element_type,
                         },
@@ -8981,12 +8991,13 @@ impl AnnotationLowerer<'_> {
             array_refs: array_refs.into_iter().collect(),
             // The state's own memory is the memory here; an outer
             // binding's state does not reach into it.
-            array_memories: PersistentBinderMap::default(),
-            current_memory: SpecPoint::At(state.program_point()),
+            array_points: PersistentBinderMap::default(),
+            current_point: SpecPoint::At(state.program_point()),
             current_loop_entry: None,
             function_contract: false,
             at_function_entry: false,
             reference_state: Some(state.clone()),
+            call_result_point: Some(selector.clone()),
             contract_result_in_scope: environment.contract_result_in_scope,
             contract_result: environment.contract_result.clone(),
             checking_definedness: environment.checking_definedness,
@@ -9388,7 +9399,7 @@ impl AnnotationLowerer<'_> {
             // cells whose C pointer-to-type has no kernel carrier.
             let pointer_type = ProgramType::UInt8Pointer;
             return Ok(SpecExpression::MemoryLoad {
-                memory: environment.current_memory.clone(),
+                point: environment.current_point.clone(),
                 pointer: Box::new(SpecExpression::Value(
                     ProgramValue::typed_pointer_with_pointee_constant(
                         pointer,
@@ -9480,7 +9491,7 @@ impl AnnotationLowerer<'_> {
                     .and_then(crate::kernel::AggregateLayout::value_type)
                 {
                     return Ok(SpecExpression::MemoryLoad {
-                        memory: environment.current_memory.clone(),
+                        point: environment.current_point.clone(),
                         pointer: Box::new(SpecExpression::Value(ProgramValue::typed_pointer(
                             pointer.clone(),
                             ProgramType::ParameterPointer(parameter),
@@ -9497,7 +9508,7 @@ impl AnnotationLowerer<'_> {
             // including a by-value parameter's private copy. Later automatic
             // locals have no entry binding. Static storage also keeps its
             // place in other fixed-memory contexts.
-            None if matches!(environment.current_memory, SpecPoint::At(_))
+            None if matches!(environment.current_point, SpecPoint::At(_))
                 && self
                     .entry_state
                     .locals()
@@ -9518,7 +9529,7 @@ impl AnnotationLowerer<'_> {
             }
             None if self.entry_state.global_object_type(&name).is_some() => {
                 Ok(SpecExpression::MemoryLoad {
-                    memory: environment.current_memory.clone(),
+                    point: environment.current_point.clone(),
                     pointer: Box::new(SpecExpression::ProgramExpression(
                         ProgramExpression::AddressOf(Box::new(ProgramExpression::Variable(
                             name.clone(),
@@ -9530,7 +9541,7 @@ impl AnnotationLowerer<'_> {
                         .expect("checked global object type"),
                 })
             }
-            None if matches!(environment.current_memory, SpecPoint::At(_)) => {
+            None if matches!(environment.current_point, SpecPoint::At(_)) => {
                 if name == crate::kernel::CONTRACT_RESULT {
                     Err("`result` is not available inside `old(...)`".to_string())
                 } else {
@@ -9807,7 +9818,7 @@ impl AnnotationLowerer<'_> {
                 target_type,
                 ProgramType::Int32 | ProgramType::UInt32 | ProgramType::Int64
             ) || *target_type == ProgramType::UInt64
-                && (!matches!(environment.current_memory, SpecPoint::Current)
+                && (!matches!(environment.current_point, SpecPoint::Current)
                         || environment.current_loop_entry.is_some()
                         // A cast introduced by parameter substitution still
                         // reads a quantified value from its lexical environment.
@@ -9838,7 +9849,7 @@ impl AnnotationLowerer<'_> {
                     byte_width: element_type.byte_width(),
                 };
                 Ok(SpecExpression::MemoryLoad {
-                    memory: environment.current_memory.clone(),
+                    point: environment.current_point.clone(),
                     pointer: Box::new(pointer),
                     value_type: element_type,
                 })
@@ -9860,7 +9871,7 @@ impl AnnotationLowerer<'_> {
                 value_type,
                 ..
             } => {
-                if matches!(environment.current_memory, SpecPoint::Current)
+                if matches!(environment.current_point, SpecPoint::Current)
                     && environment.current_loop_entry.is_none()
                     && let Some(parameter) = aggregate_projection_root(pointer)
                     && (parameter
@@ -9893,13 +9904,13 @@ impl AnnotationLowerer<'_> {
                     });
                 }
                 Ok(SpecExpression::MemoryLoad {
-                    memory: environment.current_memory.clone(),
+                    point: environment.current_point.clone(),
                     pointer: Box::new(self.lower_program_expression_to_spec(pointer, environment)?),
                     value_type: *value_type,
                 })
             }
             ProgramExpression::Load(pointer) => Ok(SpecExpression::MemoryLoad {
-                memory: environment.current_memory.clone(),
+                point: environment.current_point.clone(),
                 pointer: Box::new(self.lower_program_expression_to_spec(pointer, environment)?),
                 value_type: self
                     .program_expression_array_element_type(pointer, environment)
@@ -9999,11 +10010,11 @@ impl AnnotationLowerer<'_> {
                     // A binding that names a state of its own reads there.
                     // The pointer is still the name's own, so a physical
                     // pointee width the context carries is preserved.
-                    memory: environment
-                        .array_memories
+                    point: environment
+                        .array_points
                         .get(name)
                         .cloned()
-                        .unwrap_or_else(|| environment.current_memory.clone()),
+                        .unwrap_or_else(|| environment.current_point.clone()),
                     pointer: self.lower_program_expression_to_spec(
                         &ProgramExpression::Variable((name.clone()).into()),
                         environment,
@@ -10017,7 +10028,7 @@ impl AnnotationLowerer<'_> {
                     let offset = self.lower_contract_expression_to_spec(right, environment)?;
                     let element_type = array_ref.element_type;
                     return Ok(SpecArrayRef {
-                        memory: array_ref.memory,
+                        point: array_ref.point,
                         pointer: SpecExpression::PointerOffset {
                             pointer: Box::new(array_ref.pointer),
                             elements: Box::new(offset),
@@ -10030,7 +10041,7 @@ impl AnnotationLowerer<'_> {
                     let offset = self.lower_contract_expression_to_spec(left, environment)?;
                     let element_type = array_ref.element_type;
                     return Ok(SpecArrayRef {
-                        memory: array_ref.memory,
+                        point: array_ref.point,
                         pointer: SpecExpression::PointerOffset {
                             pointer: Box::new(array_ref.pointer),
                             elements: Box::new(offset),
@@ -10040,7 +10051,7 @@ impl AnnotationLowerer<'_> {
                     });
                 }
                 Ok(SpecArrayRef {
-                    memory: environment.current_memory.clone(),
+                    point: environment.current_point.clone(),
                     pointer: self.lower_contract_expression_to_spec(expression, environment)?,
                     element_type: self.contract_array_element_type(expression, environment),
                 })
@@ -10056,7 +10067,7 @@ impl AnnotationLowerer<'_> {
                     );
                     let element_type = array_ref.element_type;
                     return Ok(SpecArrayRef {
-                        memory: array_ref.memory,
+                        point: array_ref.point,
                         pointer: SpecExpression::PointerOffset {
                             pointer: Box::new(array_ref.pointer),
                             elements: Box::new(negative_offset),
@@ -10066,7 +10077,7 @@ impl AnnotationLowerer<'_> {
                     });
                 }
                 Ok(SpecArrayRef {
-                    memory: environment.current_memory.clone(),
+                    point: environment.current_point.clone(),
                     pointer: self.lower_contract_expression_to_spec(expression, environment)?,
                     element_type: self.contract_array_element_type(expression, environment),
                 })
@@ -10085,13 +10096,13 @@ impl AnnotationLowerer<'_> {
                 };
                 let pointer = self.lower_contract_expression_to_spec(expression, environment)?;
                 Ok(SpecArrayRef {
-                    memory: environment.current_memory.clone(),
+                    point: environment.current_point.clone(),
                     pointer,
                     element_type,
                 })
             }
             _ => Ok(SpecArrayRef {
-                memory: environment.current_memory.clone(),
+                point: environment.current_point.clone(),
                 pointer: self.lower_contract_expression_to_spec(expression, environment)?,
                 element_type: self.contract_array_element_type(expression, environment),
             }),
@@ -10121,7 +10132,7 @@ impl AnnotationLowerer<'_> {
                     ));
                 }
                 let SpecArrayRef {
-                    memory,
+                    point: memory,
                     pointer,
                     element_type,
                 } = self.lower_array_ref_to_spec(expression, environment)?;
@@ -10130,7 +10141,7 @@ impl AnnotationLowerer<'_> {
                     memory => memory,
                 };
                 Ok(SpecArrayRef {
-                    memory,
+                    point: memory,
                     pointer: SpecExpression::LoopEntryState(Box::new(pointer)),
                     element_type,
                 })
@@ -10300,8 +10311,10 @@ impl AnnotationLowerer<'_> {
     ) -> Option<u32> {
         match expression {
             ContractExpression::RegionResult(region) => {
-                let ProgramValue::Pointer(pointer) =
-                    self.retained_states?.region_result_value(region).ok()?
+                let ProgramValue::Pointer(pointer) = self
+                    .retained_states?
+                    .region_result_value_at(region, environment.call_result_point.as_ref())
+                    .ok()?
                 else {
                     return None;
                 };
@@ -10318,10 +10331,17 @@ impl AnnotationLowerer<'_> {
             | ContractExpression::Field { lowered, .. } => {
                 self.program_expression_array_element_width(lowered, environment)
             }
-            ContractExpression::Old(inner)
-            | ContractExpression::At {
-                expression: inner, ..
-            } => self.contract_pointer_element_width(inner, environment),
+            ContractExpression::Old(inner) => {
+                self.contract_pointer_element_width(inner, environment)
+            }
+            ContractExpression::At {
+                selector,
+                expression,
+            } => {
+                let mut context = environment.clone();
+                context.call_result_point = Some(selector.clone());
+                self.contract_pointer_element_width(expression, &context)
+            }
             ContractExpression::Add(left, right) => self
                 .contract_pointer_element_width(left, environment)
                 .or_else(|| self.contract_pointer_element_width(right, environment)),
@@ -10900,14 +10920,14 @@ mod integer_source_quantifier_tests {
         let captured_array = SpecIntegerExpression::PureFunctionApplication {
             name: "captured_array_value".to_string(),
             arguments: vec![SpecPureFunctionArgument::ArrayRef {
-                memory: SpecPoint::At(crate::kernel::ProgramPoint::of_memory(&memory)),
+                point: SpecPoint::At(crate::kernel::ProgramPoint::of_memory(&memory)),
                 pointer: SpecExpression::Value(ProgramValue::pointer(Address::null())),
                 element_type: ProgramType::Int32,
             }],
         };
         let captured_from_machine_load =
             SpecIntegerExpression::FromMachine(Box::new(SpecExpression::MemoryLoad {
-                memory: SpecPoint::At(crate::kernel::ProgramPoint::of_memory(&memory)),
+                point: SpecPoint::At(crate::kernel::ProgramPoint::of_memory(&memory)),
                 pointer: Box::new(SpecExpression::Value(
                     ProgramValue::pointer(Address::null()),
                 )),

@@ -44,6 +44,13 @@ Use these terms in code, comments, diagnostics, and documentation. A model
 field's version is its symbolic value; comparing it uses a borrowed
 `StatePoint`, rather than inventing a memory version point for the field.
 
+A typed `defined(*p)` fact retains the evaluation point along with the
+address and type. Its memory view supplies the initialization and lifetime
+information. The point lets raising name the original observation, including
+when two recorded states have equal memory. A region footprint retains its
+before and after points, so `preserve` constructs the two definedness facts
+at the recorded endpoints of the region.
+
 ## Blocks and pointers
 
 Kernel memory is a map of named byte-sized blocks plus known cells. A

@@ -21,9 +21,12 @@ theorem adler_count_bounds(r: uint64) {
   have 0 <= to_integer(r as uint32 as int32) by { rewrite(to_integer(r as uint32 as int32), to_integer(r)); known(); }
   have to_integer(r as uint32 as int32) <= 22208 by { rewrite(to_integer(r as uint32 as int32), to_integer(r)); known(); }
   both {
-   known();
-  } and {
-   known();
+   left => {
+    known();
+   }
+   right => {
+    known();
+   }
   }
  }
 }

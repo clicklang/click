@@ -469,7 +469,7 @@ fn parser_bounds_non_parenthesized_surface_nesting_before_ast_construction() {
 
     let mut proof_body = String::from("normalize();");
     for _ in 0..=parser::STRUCTURAL_NESTING_LIMIT {
-        proof_body = format!("both {{ {proof_body} }} and {{ normalize(); }}");
+        proof_body = format!("both {{ left => {{ {proof_body} }} right => {{ normalize(); }} }}");
     }
     let proof_error = parser::parse_file_items(&format!(
         "theorem too_deep_proof() {{ ensures 0 == 0 by {{ {proof_body} }} }}"
@@ -660,7 +660,7 @@ fn surface_depths_survive_consumption(
     let mut proof_body = String::from("normalize();");
     for _ in 0..structural_depth - 2 {
         proof_goal.push_str(" and 0 == 0");
-        proof_body = format!("both {{ {proof_body} }} and {{ normalize(); }}");
+        proof_body = format!("both {{ left => {{ {proof_body} }} right => {{ normalize(); }} }}");
     }
     let proof_source =
         format!("theorem at_limit_proof() {{ ensures {proof_goal} by {{ {proof_body} }} }}");
@@ -2232,7 +2232,7 @@ theorem reflexive_pair() {
     let explicit = r#"
 theorem reflexive_pair() {
     ensures 1 == 1 and 2 == 2 by {
-        both { normalize(); } and { normalize(); }
+        both { left => { normalize(); } right => { normalize(); } }
     }
 }
 "#;
