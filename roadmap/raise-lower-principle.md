@@ -1030,6 +1030,30 @@ as did quality checks. Integrated scaling/corpus validation and PR delivery
 are pending. Live native views, whole-list outputs and identity readers remain
 compatibility consumers for 10r–10t, not proof or search changes.
 
+### 10p Inventory and sequential descriptor families
+
+The owning native expression stores divide into the following independent PRs.
+Complete them in order after 10o; update this table with actual consumer and
+validation evidence. This is a subdivision of the authorized descriptor slice,
+not a change to proof rules or snapshot architecture.
+
+| Subslice | Owning stores | Status |
+| --- | --- | --- |
+| 10p1 | `SequenceTermNode::Literal` evaluated elements and their evaluator/substitution handoffs. | Inventoried; pending. |
+| 10p2 | Composite/token/instance `ResourceArguments` and `ResourceDescription` arguments. Preserve argument order, native identity classes and nominal resource identities. | Inventoried; pending. |
+| 10p3 | `MemoryRange` bounds and `AllocationSize` byte counts. Preserve signed/wide reading, bound provenance and existing identity/hash contracts. | Inventoried; pending. |
+| 10p4 | `IteratedMemory` endpoints, guard comparison value and selected holes. Preserve checked ownership transitions and opaque owner/address identities. | Inventoried; pending. |
+| 10p5 | `PublicationRight::observed` and `ConditionalMutexGuard::held`. Preserve channel/acquisition identities and protocol rules. | Inventoried; pending. |
+| 10p6 | `ResourceFact::Own` quantity. Preserve counting semantics and existing resource identity readers. | Inventoried; pending. |
+
+`MemorySegment` source expressions and declared `ResourceQuantity` expressions
+are source input ASTs, not evaluated term storage to erase. Addresses, allocation
+and program-point identities, resource names, binder names, acquisition epochs,
+strides and layout widths remain descriptor identities/metadata. Explicit native
+input/output schemas and live compatibility readers must be recorded rather
+than silently counted as eliminated. No new numeric observation equality may
+replace native structural identity in these stores.
+
 ## Chunk 3: machine-valued pure-function results
 
 Finish the remaining machine-valued call-result boundaries in six sequential
