@@ -8344,7 +8344,7 @@ impl Parser {
         named
     }
 
-    /// An application (or an `at` around one) followed by an index.
+    /// An application (or an `at` around one) followed by an iterated selector.
     fn indexed_resource_target_follows(&self) -> bool {
         self.peek_ident().is_some()
             && self.peek_next() == Some(&Token::LParen)
@@ -8352,7 +8352,7 @@ impl Parser {
                 .is_some_and(|close| self.tokens.get(close + 1) == Some(&Token::LBracket))
     }
 
-    fn parse_iterated_slot(&mut self) -> Result<Box<IteratedSlot>, ClickError> {
+    fn parse_iterated_target(&mut self) -> Result<Box<IteratedTarget>, ClickError> {
         let point = if self.peek_ident() == Some("at") {
             self.position += 1;
             self.expect(Token::LParen)?;
@@ -8367,10 +8367,15 @@ impl Parser {
             self.expect(Token::RParen)?;
         }
         self.expect(Token::LBracket)?;
-        let index = self.parse_contract_expression()?;
+        let index = if self.peek() == Some(&Token::DotDot) {
+            self.position += 1;
+            None
+        } else {
+            Some(self.parse_contract_expression()?)
+        };
         self.expect(Token::RBracket)?;
         self.expect(Token::RParen)?;
-        Ok(Box::new(IteratedSlot {
+        Ok(Box::new(IteratedTarget {
             resource,
             point,
             index,
@@ -11134,9 +11139,9 @@ impl Parser {
             "unfold" => {
                 self.expect(Token::LParen)?;
                 if self.indexed_resource_target_follows() {
-                    let slot = self.parse_iterated_slot()?;
+                    let target = self.parse_iterated_target()?;
                     self.expect(Token::Semicolon)?;
-                    return Ok(ProofTactic::Iterated(IteratedTactic::UnfoldSlot(slot)));
+                    return Ok(ProofTactic::Iterated(IteratedTactic::Unfold(target)));
                 }
                 // Look ahead without parsing: parsing an expression may split
                 // generic `>>` tokens, so rewinding only the cursor is unsafe.
@@ -11251,17 +11256,6 @@ impl Parser {
                         premises,
                     });
                 }
-            }
-            "gather" | "scatter" => {
-                self.expect(Token::LParen)?;
-                let resource =
-                    self.parse_declared_resource_call_with_access(ResourceAccessMode::Own)?;
-                self.expect(Token::RParen)?;
-                ProofTactic::Iterated(if name == "gather" {
-                    IteratedTactic::Gather(resource)
-                } else {
-                    IteratedTactic::Scatter(resource)
-                })
             }
             "observe" => {
                 self.expect(Token::LParen)?;
@@ -11449,9 +11443,9 @@ impl Parser {
             "fold" => {
                 self.expect(Token::LParen)?;
                 if self.indexed_resource_target_follows() {
-                    let slot = self.parse_iterated_slot()?;
+                    let target = self.parse_iterated_target()?;
                     self.expect(Token::Semicolon)?;
-                    return Ok(ProofTactic::Iterated(IteratedTactic::FoldSlot(slot)));
+                    return Ok(ProofTactic::Iterated(IteratedTactic::Fold(target)));
                 }
                 if self
                     .peek_ident()
@@ -18254,8 +18248,8 @@ mod tactic_classification_tests {
         ("fold-resource", "fold(reference(p));"),
         ("unfold-slot", "unfold(reference(p)[0]);"),
         ("fold-slot", "fold(reference(p)[0]);"),
-        ("gather-resource", "gather(reference(p));"),
-        ("scatter-resource", "scatter(reference(p));"),
+        ("fold-iterated-clause", "fold(reference(p)[..]);"),
+        ("unfold-iterated-clause", "unfold(reference(p)[..]);"),
         ("construct-resource", "construct(reference(p));"),
         ("induct", "let ih = induct(n);"),
         (

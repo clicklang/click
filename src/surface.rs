@@ -256,7 +256,6 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "forall",
     "fn",
     "function",
-    "gather",
     "have",
     "if",
     "import",
@@ -302,7 +301,6 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "rewrite",
     "same_object",
     "little_endian",
-    "scatter",
     "separate",
     "float32_from_bits",
     "float64_from_bits",
@@ -2180,32 +2178,24 @@ pub enum ResourceClause {
 /// A proof step on iterated guarded ownership.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum IteratedTactic {
-    /// `unfold(resource(args)[i]);` opens one slot of an exposed clause.
-    UnfoldSlot(Box<IteratedSlot>),
-    /// `fold(resource(args)[i]);` restores that slot.
-    FoldSlot(Box<IteratedSlot>),
-    /// `gather(resource(...));` forms the named resource's iterated fact.
-    Gather(ResourceClause),
-    /// `scatter(resource(...));` dissolves it.
-    Scatter(ResourceClause),
+    Unfold(Box<IteratedTarget>),
+    Fold(Box<IteratedTarget>),
 }
 
-/// One index in a resource's exposed iterated clause. A saved point selects
-/// the resource arguments only; the index and guard use the current state.
+/// An index or the whole (`[..]`) iterated clause of a resource. A saved
+/// point selects the resource arguments only; guards use the current state.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct IteratedSlot {
+pub struct IteratedTarget {
     resource: ResourceClause,
     point: Option<ProgramPointSelector>,
-    index: ContractExpression,
+    index: Option<ContractExpression>,
 }
 
 impl IteratedTactic {
     pub fn name(&self) -> &'static str {
         match self {
-            Self::UnfoldSlot(_) => "unfold",
-            Self::FoldSlot(_) => "fold",
-            Self::Gather(_) => "gather",
-            Self::Scatter(_) => "scatter",
+            Self::Unfold(_) => "unfold",
+            Self::Fold(_) => "fold",
         }
     }
 }
@@ -6343,13 +6333,13 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
         class: "simple",
     },
     PublicTacticForm {
-        id: "gather-resource",
-        syntax: "gather(resource(args))",
+        id: "fold-iterated-clause",
+        syntax: "fold(resource(args)[..])",
         class: "simple",
     },
     PublicTacticForm {
-        id: "scatter-resource",
-        syntax: "scatter(resource(args))",
+        id: "unfold-iterated-clause",
+        syntax: "unfold(resource(args)[..])",
         class: "simple",
     },
     PublicTacticForm {
