@@ -720,14 +720,6 @@ be cited by the next written step. The census only observes; it does not
 change any proof. A unit test can record the same lines in memory with
 `raise_lower_census::capture` and assert that a step's facts are raised.
 
-Audit-budget limitation (2026-10-31): enabling both census and fact-stability
-instrumentation together pushes `solve_false_list_position_is_prompt` over
-its 100,000-unit smart-work budget, changing the expected rejection diagnostic.
-The ordinary gate and isolated runs with either flag pass that fixture. Run
-the corpus audits separately for validation; do not increase the proof budget.
-This is an instrumentation-accounting issue to investigate, not a recorded
-fact-dependent lowering.
-
 The census sorts a miss into one of three gaps, each with its own fix:
 
 - **Writable but not found.** The fact has Click syntax and its operands
