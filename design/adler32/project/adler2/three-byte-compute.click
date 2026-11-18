@@ -23,16 +23,12 @@ impl adler2::Adler32 {
      // from its checked transition before following lane recombination.
      step_until(assignment(b, 0)); step();
      have b == 0u32;
-     // Neither chunk iterator yields a chunk: the library contract gives each
-     // length from the length of the slice it was built over.
+     // Neither chunk iterator has any bytes available to yield.
      step_until(loop(0));
-     apply(chunks_exact::len_chunks_exact(Slice<u8>::Slice(bytes, bytes.len() - bytes.len() % 4u64), 22208u64));
-     have loop(0).iter.len() == 0u64;
-     apply(chunks_exact::remainder_chunks_exact(Slice<u8>::Slice(bytes, bytes.len() - bytes.len() % 4u64), 22208u64));
+     have loop(0).iter.v.len() == 0u64;
      have remainder_chunk_len == 0u64;
      step_until(loop(2));
-     apply(chunks_exact::len_chunks_exact(Slice<u8>::Slice(remainder_chunk, remainder_chunk_len), 4u64));
-     have loop(2).iter.len() == 0u64;
+     have loop(2).iter.v.len() == 0u64;
      step_until(assignment(b, 3));
      have b == 0u32;
      have __rust_mir_78 == 0u64;
@@ -58,165 +54,20 @@ impl adler2::Adler32 {
      have b_vec.0[1] == 0u32;
      have b_vec.0[2] == 0u32;
      have b_vec.0[3] == 0u32;
-     step_until(assignment(__rust_checked_76, 0)); step();
      have b_vec.0[0] <= 1073741823u32 by solve() using { b_vec.0[0] == 0u32; };
      have b_vec.0[1] <= 1073741823u32 by solve() using { b_vec.0[1] == 0u32; };
      have b_vec.0[2] <= 1073741823u32 by solve() using { b_vec.0[2] == 0u32; };
      have b_vec.0[3] <= 1073741823u32 by solve() using { b_vec.0[3] == 0u32; };
-     step_until(assignment(__rust_mir_89, 0));
+     // The three corrections add MOD, twice MOD, and three times MOD.
+     step_until(statement(16));
      have b_vec.0[0] == 0u32;
      have b_vec.0[1] == 0u32;
      have b_vec.0[2] == 0u32;
      have b_vec.0[3] == 0u32;
-     // Marks bind the operands before each original lane update. __rust_checked
-     // locals are the adapter's actual captured call/arithmetic operands, not
-     // proof counters. These names are checked against the frozen import.
-     step_until(assignment(__rust_mir_94, 0));
-     mark add_lane_1;
-     have at(add_lane_1, b_vec.0[1]) == 0u32;
-     have at(add_lane_1, __rust_mir_89) == 65521u32;
-     step();
-     mark stored_lane_1;
-     have to_integer(at(add_lane_1, b_vec.0[1])) + to_integer(at(add_lane_1, __rust_mir_89)) <= 4294967295 by {
-      rewrite(at(add_lane_1, b_vec.0[1]), 0u32);
-      rewrite(at(add_lane_1, __rust_mir_89), 65521u32);
-      solve();
-     }
-     apply(integer::uint32_add_to_integer(at(add_lane_1, b_vec.0[1]), at(add_lane_1, __rust_mir_89)));
-     have __rust_mir_94 == at(add_lane_1, b_vec.0[1]) + at(add_lane_1, __rust_mir_89);
-     have at(stored_lane_1, __rust_mir_94) == 65521u32 by {
-      rewrite(__rust_mir_94, at(add_lane_1, b_vec.0[1]) + at(add_lane_1, __rust_mir_89));
-      rewrite(at(add_lane_1, b_vec.0[1]), 0u32);
-      rewrite(at(add_lane_1, __rust_mir_89), 65521u32);
-      solve();
-     }
-     step_until(assignment(__rust_mir_98, 0));
-     have b_vec.0[1] == at(stored_lane_1, __rust_mir_94);
-     have b_vec.0[1] == 65521u32 by {
-      rewrite(b_vec.0[1], at(stored_lane_1, __rust_mir_94));
-      rewrite(at(stored_lane_1, __rust_mir_94), 65521u32);
-      solve();
-     }
-     step_until(assignment(__rust_mir_99, 0));
-     mark subtract_double;
-     have at(subtract_double, __rust_checked_53) == 65521u32;
-     have at(subtract_double, __rust_checked_54) == 0u32;
-     step();
-     have at(subtract_double, __rust_checked_54) <= at(subtract_double, __rust_checked_53) by {
-      rewrite(at(subtract_double, __rust_checked_53), 65521u32);
-      rewrite(at(subtract_double, __rust_checked_54), 0u32);
-      solve();
-     }
-     apply(integer::uint32_subtract_to_integer(at(subtract_double, __rust_checked_53), at(subtract_double, __rust_checked_54)));
-     have __rust_mir_99 == at(subtract_double, __rust_checked_53) - at(subtract_double, __rust_checked_54);
-     have __rust_mir_99 == 65521u32 by {
-      rewrite(__rust_mir_99, at(subtract_double, __rust_checked_53) - at(subtract_double, __rust_checked_54));
-      rewrite(at(subtract_double, __rust_checked_53), 65521u32);
-      rewrite(at(subtract_double, __rust_checked_54), 0u32);
-      solve();
-     }
-     step_until(assignment(__rust_mir_100, 0));
-     mark double_lane;
-     have at(double_lane, __rust_mir_96) == 65521u32;
-     step();
-     have to_integer(at(double_lane, __rust_mir_96)) * to_integer(2u32) <= 4294967295 by {
-      rewrite(at(double_lane, __rust_mir_96), 65521u32);
-      solve();
-     }
-     apply(integer::uint32_multiply_guard_by_integer_bound(at(double_lane, __rust_mir_96), 2u32));
-     apply(integer::uint32_multiply_to_integer(at(double_lane, __rust_mir_96), 2u32));
-     have __rust_mir_100 == at(double_lane, __rust_mir_96) * 2u32;
-     have __rust_mir_100 == 131042u32 by {
-      rewrite(__rust_mir_100, at(double_lane, __rust_mir_96) * 2u32);
-      rewrite(at(double_lane, __rust_mir_96), 65521u32);
-      solve();
-     }
-     step_until(assignment(__rust_mir_102, 0));
-     mark add_lane_2;
-     have at(add_lane_2, b_vec.0[2]) == 0u32;
-     have at(add_lane_2, __rust_mir_95) == 131042u32;
-     step();
-     mark stored_lane_2;
-     have to_integer(at(add_lane_2, b_vec.0[2])) + to_integer(at(add_lane_2, __rust_mir_95)) <= 4294967295 by {
-      rewrite(at(add_lane_2, b_vec.0[2]), 0u32);
-      rewrite(at(add_lane_2, __rust_mir_95), 131042u32);
-      solve();
-     }
-     apply(integer::uint32_add_to_integer(at(add_lane_2, b_vec.0[2]), at(add_lane_2, __rust_mir_95)));
-     have __rust_mir_102 == at(add_lane_2, b_vec.0[2]) + at(add_lane_2, __rust_mir_95);
-     have at(stored_lane_2, __rust_mir_102) == 131042u32 by {
-      rewrite(__rust_mir_102, at(add_lane_2, b_vec.0[2]) + at(add_lane_2, __rust_mir_95));
-      rewrite(at(add_lane_2, b_vec.0[2]), 0u32);
-      rewrite(at(add_lane_2, __rust_mir_95), 131042u32);
-      solve();
-     }
-     step_until(assignment(__rust_mir_106, 0));
-     have b_vec.0[2] == at(stored_lane_2, __rust_mir_102);
-     have b_vec.0[2] == 131042u32 by {
-      rewrite(b_vec.0[2], at(stored_lane_2, __rust_mir_102));
-      rewrite(at(stored_lane_2, __rust_mir_102), 131042u32);
-      solve();
-     }
-     step_until(assignment(__rust_mir_107, 0));
-     mark subtract_triple;
-     have at(subtract_triple, __rust_checked_64) == 65521u32;
-     have at(subtract_triple, __rust_checked_65) == 0u32;
-     step();
-     have at(subtract_triple, __rust_checked_65) <= at(subtract_triple, __rust_checked_64) by {
-      rewrite(at(subtract_triple, __rust_checked_64), 65521u32);
-      rewrite(at(subtract_triple, __rust_checked_65), 0u32);
-      solve();
-     }
-     apply(integer::uint32_subtract_to_integer(at(subtract_triple, __rust_checked_64), at(subtract_triple, __rust_checked_65)));
-     have __rust_mir_107 == at(subtract_triple, __rust_checked_64) - at(subtract_triple, __rust_checked_65);
-     have __rust_mir_107 == 65521u32 by {
-      rewrite(__rust_mir_107, at(subtract_triple, __rust_checked_64) - at(subtract_triple, __rust_checked_65));
-      rewrite(at(subtract_triple, __rust_checked_64), 65521u32);
-      rewrite(at(subtract_triple, __rust_checked_65), 0u32);
-      solve();
-     }
-     step_until(assignment(__rust_mir_108, 0));
-     mark triple_lane;
-     have at(triple_lane, __rust_mir_104) == 65521u32;
-     step();
-     have to_integer(at(triple_lane, __rust_mir_104)) * to_integer(3u32) <= 4294967295 by {
-      rewrite(at(triple_lane, __rust_mir_104), 65521u32);
-      solve();
-     }
-     apply(integer::uint32_multiply_guard_by_integer_bound(at(triple_lane, __rust_mir_104), 3u32));
-     apply(integer::uint32_multiply_to_integer(at(triple_lane, __rust_mir_104), 3u32));
-     have __rust_mir_108 == at(triple_lane, __rust_mir_104) * 3u32;
-     have __rust_mir_108 == 196563u32 by {
-      rewrite(__rust_mir_108, at(triple_lane, __rust_mir_104) * 3u32);
-      rewrite(at(triple_lane, __rust_mir_104), 65521u32);
-      solve();
-     }
-     step_until(assignment(__rust_mir_110, 0));
-     mark add_lane_3;
-     have at(add_lane_3, b_vec.0[3]) == 0u32;
-     have at(add_lane_3, __rust_mir_103) == 196563u32;
-     step();
-     mark stored_lane_3;
-     have to_integer(at(add_lane_3, b_vec.0[3])) + to_integer(at(add_lane_3, __rust_mir_103)) <= 4294967295 by {
-      rewrite(at(add_lane_3, b_vec.0[3]), 0u32);
-      rewrite(at(add_lane_3, __rust_mir_103), 196563u32);
-      solve();
-     }
-     apply(integer::uint32_add_to_integer(at(add_lane_3, b_vec.0[3]), at(add_lane_3, __rust_mir_103)));
-     have __rust_mir_110 == at(add_lane_3, b_vec.0[3]) + at(add_lane_3, __rust_mir_103);
-     have at(stored_lane_3, __rust_mir_110) == 196563u32 by {
-      rewrite(__rust_mir_110, at(add_lane_3, b_vec.0[3]) + at(add_lane_3, __rust_mir_103));
-      rewrite(at(add_lane_3, b_vec.0[3]), 0u32);
-      rewrite(at(add_lane_3, __rust_mir_103), 196563u32);
-      solve();
-     }
-     step_until(assignment(__rust_mir_113, 0));
-     have b_vec.0[3] == at(stored_lane_3, __rust_mir_110);
-     have b_vec.0[3] == 196563u32 by {
-      rewrite(b_vec.0[3], at(stored_lane_3, __rust_mir_110));
-      rewrite(at(stored_lane_3, __rust_mir_110), 196563u32);
-      solve();
-     }
+     step_until(statement(17));
+     have b_vec.0[1] == 65521u32;
+     step_until(statement(18));
+     have b_vec.0[2] == 131042u32;
      step_until(loop(3));
      have a == 1u32;
      have b == 0u32;
@@ -270,179 +121,108 @@ impl adler2::Adler32 {
      rewrite(at(before_sum_b, b_vec.0[3]), 196563u32);
      solve();
      }
-     // Tail byte 0: the stored cursor/remaining pair advances once.
-     step_until(assignment(__rust_mir_144, 0));
-     have remainder == old(bytes);
-     have __rust_mir_138_remaining == 2 by solve() using { old(bytes.len()) == 3u64; };
-     have byte == old(bytes[0]) by solve() using { remainder == old(bytes); };
-     step();
-     have __rust_mir_144 <= 255u32;
-     have to_integer(__rust_mir_144) <= to_integer(255u32);
-     have to_integer(a) == 1 by solve() using { a == 1u32; };
-     have to_integer(a) <= 1 by solve() using { to_integer(a) == 1; };
-     have to_integer(b) == 393126 by solve() using { b == 393126u32; };
-     have to_integer(b) <= 393126 by solve() using { to_integer(b) == 393126; };
-     have to_integer(a) + to_integer(__rust_mir_144) <= 4294967295 by solve() using { to_integer(a) <= 1; to_integer(__rust_mir_144) <= 255; };
-     have a <= 4294967295u32 - __rust_mir_144 by solve() using { to_integer(a) + to_integer(__rust_mir_144) <= 4294967295; };
-     step_until(assignment(__rust_mir_146, 0));
-     mark tail_a_1;
-     have at(tail_a_1, a) == 1u32;
-     have at(tail_a_1, __rust_mir_144) == old((bytes[0] as u32)) by solve() using { byte == old(bytes[0]); };
-     have to_integer(at(tail_a_1, a)) <= 1 by solve() using { to_integer(a) <= 1; };
-     have to_integer(at(tail_a_1, __rust_mir_144)) <= 255 by solve() using { to_integer(__rust_mir_144) <= 255; };
-     have to_integer(at(tail_a_1, a)) + to_integer(at(tail_a_1, __rust_mir_144)) <= 4294967295 by solve() using { to_integer(at(tail_a_1, a)) <= 1; to_integer(at(tail_a_1, __rust_mir_144)) <= 255; };
-     step();
-     apply(integer::uint32_add_to_integer(at(tail_a_1, a), at(tail_a_1, __rust_mir_144)));
-     have __rust_mir_146 == at(tail_a_1, a) + at(tail_a_1, __rust_mir_144);
-     have __rust_mir_146 == (1u32 + old((bytes[0] as u32))) by {
-     rewrite(__rust_mir_146, at(tail_a_1, a) + at(tail_a_1, __rust_mir_144));
-     rewrite(at(tail_a_1, a), 1u32);
-     rewrite(at(tail_a_1, __rust_mir_144), old((bytes[0] as u32))); solve() using {};
+     // Follow each serial iteration at its two accumulator updates.
+     have loop(5).iter.len() == 3u64;
+     have loop(5).iter.as_slice() == old(bytes) + 0u64;
+     step_until(loop(5).statement(0));
+     have byte == old(bytes[0]) by { known(); }
+     have a == 1u32;
+     have to_integer(a) <= 1;
+     have to_integer(byte as u32) <= 255;
+     have to_integer(a) + to_integer(byte as u32) <= 4294967295 by {
+      solve() using { to_integer(a) <= 1; to_integer(byte as u32) <= 255; };
      }
-     step_until(assignment(__rust_mir_147, 0));
-     have a == at(tail_a_1, a) + at(tail_a_1, __rust_mir_144) by solve() using { __rust_mir_146 == at(tail_a_1, a) + at(tail_a_1, __rust_mir_144); };
-     have to_integer(at(tail_a_1, a) + at(tail_a_1, __rust_mir_144)) == to_integer(at(tail_a_1, a)) + to_integer(at(tail_a_1, __rust_mir_144));
-     have to_integer(a) == to_integer(at(tail_a_1, a) + at(tail_a_1, __rust_mir_144)) by solve() using { a == at(tail_a_1, a) + at(tail_a_1, __rust_mir_144); };
-     have to_integer(a) <= 256 by { solve() using { to_integer(a) == to_integer(at(tail_a_1, a) + at(tail_a_1, __rust_mir_144)); to_integer(at(tail_a_1, a) + at(tail_a_1, __rust_mir_144)) == to_integer(at(tail_a_1, a)) + to_integer(at(tail_a_1, __rust_mir_144)); to_integer(at(tail_a_1, a)) <= 1; to_integer(at(tail_a_1, __rust_mir_144)) <= 255; }; }
-     have to_integer(b) + to_integer(a) <= 4294967295 by solve() using { to_integer(b) <= 393126; to_integer(a) <= 256; };
-     have b <= 4294967295u32 - a by solve() using { to_integer(b) + to_integer(a) <= 4294967295; };
-     step_until(assignment(__rust_mir_148, 0));
-     mark tail_b_1;
-     have at(tail_b_1, b) == 393126u32;
-     have at(tail_b_1, a) == (1u32 + old((bytes[0] as u32)));
-     have to_integer(at(tail_b_1, b)) <= 393126 by solve() using { to_integer(b) <= 393126; };
-     have to_integer(at(tail_b_1, a)) <= 256 by solve() using { to_integer(a) <= 256; };
-     have to_integer(at(tail_b_1, b)) + to_integer(at(tail_b_1, a)) <= 4294967295 by solve() using { to_integer(at(tail_b_1, b)) <= 393126; to_integer(at(tail_b_1, a)) <= 256; };
-     step();
-     apply(integer::uint32_add_to_integer(at(tail_b_1, b), at(tail_b_1, a)));
-     have __rust_mir_148 == at(tail_b_1, b) + at(tail_b_1, a);
-     have __rust_mir_148 == (393126u32 + (1u32 + old((bytes[0] as u32)))) by {
-     rewrite(__rust_mir_148, at(tail_b_1, b) + at(tail_b_1, a));
-     rewrite(at(tail_b_1, b), 393126u32);
-     rewrite(at(tail_b_1, a), (1u32 + old((bytes[0] as u32)))); solve() using {};
+     have a <= 4294967295u32 - (byte as u32);
+     mark tail_0_a;
+     apply(integer::uint32_add_to_integer(at(tail_0_a, a), at(tail_0_a, byte as u32)));
+     step_until(loop(5).statement(1));
+     have a == at(tail_0_a, a) + at(tail_0_a, byte as u32);
+     have a == (1u32 + old((bytes[0] as u32)));
+     have to_integer(a) <= 256;
+     have b == 393126u32;
+     have to_integer(b) <= 393126;
+     have to_integer(b) + to_integer(a) <= 4294967295 by {
+      solve() using { to_integer(b) <= 393126; to_integer(a) <= 256; };
      }
-     have to_integer(at(tail_b_1, b) + at(tail_b_1, a)) == to_integer(at(tail_b_1, b)) + to_integer(at(tail_b_1, a));
-     have to_integer(__rust_mir_148) == to_integer(at(tail_b_1, b) + at(tail_b_1, a)) by solve() using { __rust_mir_148 == at(tail_b_1, b) + at(tail_b_1, a); };
-     have to_integer(__rust_mir_148) <= 393382 by { solve() using { to_integer(__rust_mir_148) == to_integer(at(tail_b_1, b) + at(tail_b_1, a)); to_integer(at(tail_b_1, b) + at(tail_b_1, a)) == to_integer(at(tail_b_1, b)) + to_integer(at(tail_b_1, a)); to_integer(at(tail_b_1, b)) <= 393126; to_integer(at(tail_b_1, a)) <= 256; }; }
-     // Finish the original store and storage-end nodes, then reach the next loop head.
-     step(); step(); step(); step(); step(); step(); step(); step(); step(); step();
-     // Tail byte 1: the stored cursor/remaining pair advances once.
-     step_until(assignment(__rust_mir_144, 0));
-     have remainder == old(bytes);
-     have __rust_mir_138_remaining == 1 by solve() using { old(bytes.len()) == 3u64; };
-     have byte == old(bytes[1]) by solve() using { remainder == old(bytes); };
-     step();
-     have __rust_mir_144 <= 255u32;
-     have to_integer(__rust_mir_144) <= to_integer(255u32);
-     have to_integer(b) <= 393382 by solve() using { to_integer(__rust_mir_148) <= 393382; };
-     have to_integer(a) + to_integer(__rust_mir_144) <= 4294967295 by solve() using { to_integer(a) <= 256; to_integer(__rust_mir_144) <= 255; };
-     have a <= 4294967295u32 - __rust_mir_144 by solve() using { to_integer(a) + to_integer(__rust_mir_144) <= 4294967295; };
-     step_until(assignment(__rust_mir_146, 0));
-     mark tail_a_2;
-     have at(tail_a_2, a) == (1u32 + old((bytes[0] as u32)));
-     have at(tail_a_2, __rust_mir_144) == old((bytes[1] as u32)) by solve() using { byte == old(bytes[1]); };
-     have to_integer(at(tail_a_2, a)) <= 256 by solve() using { to_integer(a) <= 256; };
-     have to_integer(at(tail_a_2, __rust_mir_144)) <= 255 by solve() using { to_integer(__rust_mir_144) <= 255; };
-     have to_integer(at(tail_a_2, a)) + to_integer(at(tail_a_2, __rust_mir_144)) <= 4294967295 by solve() using { to_integer(at(tail_a_2, a)) <= 256; to_integer(at(tail_a_2, __rust_mir_144)) <= 255; };
-     step();
-     apply(integer::uint32_add_to_integer(at(tail_a_2, a), at(tail_a_2, __rust_mir_144)));
-     have __rust_mir_146 == at(tail_a_2, a) + at(tail_a_2, __rust_mir_144);
-     have __rust_mir_146 == ((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32))) by {
-     rewrite(__rust_mir_146, at(tail_a_2, a) + at(tail_a_2, __rust_mir_144));
-     rewrite(at(tail_a_2, a), (1u32 + old((bytes[0] as u32))));
-     rewrite(at(tail_a_2, __rust_mir_144), old((bytes[1] as u32))); solve() using {};
+     have b <= 4294967295u32 - a;
+     mark tail_0_b;
+     apply(integer::uint32_add_to_integer(at(tail_0_b, b), at(tail_0_b, a)));
+     step_until(assignment(b, 6)); step();
+     have b == at(tail_0_b, b) + at(tail_0_b, a);
+     have b == (393126u32 + (1u32 + old((bytes[0] as u32))));
+     have to_integer(b) <= 393382;
+     step(); step();
+     have loop(5).iter.len() == 2u64;
+     have loop(5).iter.as_slice() == old(bytes) + 1u64;
+     step_until(loop(5).statement(0));
+     have byte == old(bytes[1]) by { known(); }
+     have a == (1u32 + old((bytes[0] as u32)));
+     have to_integer(a) <= 256;
+     have to_integer(byte as u32) <= 255;
+     have to_integer(a) + to_integer(byte as u32) <= 4294967295 by {
+      solve() using { to_integer(a) <= 256; to_integer(byte as u32) <= 255; };
      }
-     step_until(assignment(__rust_mir_147, 0));
-     have a == at(tail_a_2, a) + at(tail_a_2, __rust_mir_144) by solve() using { __rust_mir_146 == at(tail_a_2, a) + at(tail_a_2, __rust_mir_144); };
-     have to_integer(at(tail_a_2, a) + at(tail_a_2, __rust_mir_144)) == to_integer(at(tail_a_2, a)) + to_integer(at(tail_a_2, __rust_mir_144));
-     have to_integer(a) == to_integer(at(tail_a_2, a) + at(tail_a_2, __rust_mir_144)) by solve() using { a == at(tail_a_2, a) + at(tail_a_2, __rust_mir_144); };
-     have to_integer(a) <= 511 by { solve() using { to_integer(a) == to_integer(at(tail_a_2, a) + at(tail_a_2, __rust_mir_144)); to_integer(at(tail_a_2, a) + at(tail_a_2, __rust_mir_144)) == to_integer(at(tail_a_2, a)) + to_integer(at(tail_a_2, __rust_mir_144)); to_integer(at(tail_a_2, a)) <= 256; to_integer(at(tail_a_2, __rust_mir_144)) <= 255; }; }
-     have to_integer(b) + to_integer(a) <= 4294967295 by solve() using { to_integer(b) <= 393382; to_integer(a) <= 511; };
-     have b <= 4294967295u32 - a by solve() using { to_integer(b) + to_integer(a) <= 4294967295; };
-     step_until(assignment(__rust_mir_148, 0));
-     mark tail_b_2;
-     have at(tail_b_2, b) == (393126u32 + (1u32 + old((bytes[0] as u32))));
-     have at(tail_b_2, a) == ((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32)));
-     have to_integer(at(tail_b_2, b)) <= 393382 by solve() using { to_integer(b) <= 393382; };
-     have to_integer(at(tail_b_2, a)) <= 511 by solve() using { to_integer(a) <= 511; };
-     have to_integer(at(tail_b_2, b)) + to_integer(at(tail_b_2, a)) <= 4294967295 by solve() using { to_integer(at(tail_b_2, b)) <= 393382; to_integer(at(tail_b_2, a)) <= 511; };
-     step();
-     apply(integer::uint32_add_to_integer(at(tail_b_2, b), at(tail_b_2, a)));
-     have __rust_mir_148 == at(tail_b_2, b) + at(tail_b_2, a);
-     have __rust_mir_148 == ((393126u32 + (1u32 + old((bytes[0] as u32)))) + ((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32)))) by {
-     rewrite(__rust_mir_148, at(tail_b_2, b) + at(tail_b_2, a));
-     rewrite(at(tail_b_2, b), (393126u32 + (1u32 + old((bytes[0] as u32)))));
-     rewrite(at(tail_b_2, a), ((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32)))); solve() using {};
+     have a <= 4294967295u32 - (byte as u32);
+     mark tail_1_a;
+     apply(integer::uint32_add_to_integer(at(tail_1_a, a), at(tail_1_a, byte as u32)));
+     step_until(loop(5).statement(1));
+     have a == at(tail_1_a, a) + at(tail_1_a, byte as u32);
+     have a == ((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32)));
+     have to_integer(a) <= 511;
+     have b == (393126u32 + (1u32 + old((bytes[0] as u32))));
+     have to_integer(b) <= 393382;
+     have to_integer(b) + to_integer(a) <= 4294967295 by {
+      solve() using { to_integer(b) <= 393382; to_integer(a) <= 511; };
      }
-     have to_integer(at(tail_b_2, b) + at(tail_b_2, a)) == to_integer(at(tail_b_2, b)) + to_integer(at(tail_b_2, a));
-     have to_integer(__rust_mir_148) == to_integer(at(tail_b_2, b) + at(tail_b_2, a)) by solve() using { __rust_mir_148 == at(tail_b_2, b) + at(tail_b_2, a); };
-     have to_integer(__rust_mir_148) <= 393893 by { solve() using { to_integer(__rust_mir_148) == to_integer(at(tail_b_2, b) + at(tail_b_2, a)); to_integer(at(tail_b_2, b) + at(tail_b_2, a)) == to_integer(at(tail_b_2, b)) + to_integer(at(tail_b_2, a)); to_integer(at(tail_b_2, b)) <= 393382; to_integer(at(tail_b_2, a)) <= 511; }; }
-     // Finish the original store and storage-end nodes, then reach the next loop head.
-     step(); step(); step(); step(); step(); step(); step(); step(); step(); step();
-     // Tail byte 2: the stored cursor/remaining pair advances once.
-     step_until(assignment(__rust_mir_144, 0));
-     have remainder == old(bytes);
-     have __rust_mir_138_remaining == 0 by solve() using { old(bytes.len()) == 3u64; };
-     have byte == old(bytes[2]) by solve() using { remainder == old(bytes); };
-     step();
-     have __rust_mir_144 <= 255u32;
-     have to_integer(__rust_mir_144) <= to_integer(255u32);
-     have to_integer(b) <= 393893 by solve() using { to_integer(__rust_mir_148) <= 393893; };
-     have to_integer(a) + to_integer(__rust_mir_144) <= 4294967295 by solve() using { to_integer(a) <= 511; to_integer(__rust_mir_144) <= 255; };
-     have a <= 4294967295u32 - __rust_mir_144 by solve() using { to_integer(a) + to_integer(__rust_mir_144) <= 4294967295; };
-     step_until(assignment(__rust_mir_146, 0));
-     mark tail_a_3;
-     have at(tail_a_3, a) == ((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32)));
-     have at(tail_a_3, __rust_mir_144) == old((bytes[2] as u32)) by solve() using { byte == old(bytes[2]); };
-     have to_integer(at(tail_a_3, a)) <= 511 by solve() using { to_integer(a) <= 511; };
-     have to_integer(at(tail_a_3, __rust_mir_144)) <= 255 by solve() using { to_integer(__rust_mir_144) <= 255; };
-     have to_integer(at(tail_a_3, a)) + to_integer(at(tail_a_3, __rust_mir_144)) <= 4294967295 by solve() using { to_integer(at(tail_a_3, a)) <= 511; to_integer(at(tail_a_3, __rust_mir_144)) <= 255; };
-     step();
-     apply(integer::uint32_add_to_integer(at(tail_a_3, a), at(tail_a_3, __rust_mir_144)));
-     have __rust_mir_146 == at(tail_a_3, a) + at(tail_a_3, __rust_mir_144);
-     have __rust_mir_146 == (((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32))) + old((bytes[2] as u32))) by {
-     rewrite(__rust_mir_146, at(tail_a_3, a) + at(tail_a_3, __rust_mir_144));
-     rewrite(at(tail_a_3, a), ((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32))));
-     rewrite(at(tail_a_3, __rust_mir_144), old((bytes[2] as u32))); solve() using {};
+     have b <= 4294967295u32 - a;
+     mark tail_1_b;
+     apply(integer::uint32_add_to_integer(at(tail_1_b, b), at(tail_1_b, a)));
+     step_until(assignment(b, 6)); step();
+     have b == at(tail_1_b, b) + at(tail_1_b, a);
+     have b == ((393126u32 + (1u32 + old((bytes[0] as u32)))) + ((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32))));
+     have to_integer(b) <= 393893;
+     step(); step();
+     have loop(5).iter.len() == 1u64;
+     have loop(5).iter.as_slice() == old(bytes) + 2u64;
+     step_until(loop(5).statement(0));
+     have byte == old(bytes[2]) by { known(); }
+     have a == ((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32)));
+     have to_integer(a) <= 511;
+     have to_integer(byte as u32) <= 255;
+     have to_integer(a) + to_integer(byte as u32) <= 4294967295 by {
+      solve() using { to_integer(a) <= 511; to_integer(byte as u32) <= 255; };
      }
-     step_until(assignment(__rust_mir_147, 0));
-     have a == at(tail_a_3, a) + at(tail_a_3, __rust_mir_144) by solve() using { __rust_mir_146 == at(tail_a_3, a) + at(tail_a_3, __rust_mir_144); };
-     have to_integer(at(tail_a_3, a) + at(tail_a_3, __rust_mir_144)) == to_integer(at(tail_a_3, a)) + to_integer(at(tail_a_3, __rust_mir_144));
-     have to_integer(a) == to_integer(at(tail_a_3, a) + at(tail_a_3, __rust_mir_144)) by solve() using { a == at(tail_a_3, a) + at(tail_a_3, __rust_mir_144); };
-     have to_integer(a) <= 766 by { solve() using { to_integer(a) == to_integer(at(tail_a_3, a) + at(tail_a_3, __rust_mir_144)); to_integer(at(tail_a_3, a) + at(tail_a_3, __rust_mir_144)) == to_integer(at(tail_a_3, a)) + to_integer(at(tail_a_3, __rust_mir_144)); to_integer(at(tail_a_3, a)) <= 511; to_integer(at(tail_a_3, __rust_mir_144)) <= 255; }; }
-     have to_integer(b) + to_integer(a) <= 4294967295 by solve() using { to_integer(b) <= 393893; to_integer(a) <= 766; };
-     have b <= 4294967295u32 - a by solve() using { to_integer(b) + to_integer(a) <= 4294967295; };
-     step_until(assignment(__rust_mir_148, 0));
-     mark tail_b_3;
-     have at(tail_b_3, b) == ((393126u32 + (1u32 + old((bytes[0] as u32)))) + ((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32))));
-     have at(tail_b_3, a) == (((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32))) + old((bytes[2] as u32)));
-     have to_integer(at(tail_b_3, b)) <= 393893 by solve() using { to_integer(b) <= 393893; };
-     have to_integer(at(tail_b_3, a)) <= 766 by solve() using { to_integer(a) <= 766; };
-     have to_integer(at(tail_b_3, b)) + to_integer(at(tail_b_3, a)) <= 4294967295 by solve() using { to_integer(at(tail_b_3, b)) <= 393893; to_integer(at(tail_b_3, a)) <= 766; };
-     step();
-     apply(integer::uint32_add_to_integer(at(tail_b_3, b), at(tail_b_3, a)));
-     have __rust_mir_148 == at(tail_b_3, b) + at(tail_b_3, a);
-     have __rust_mir_148 == (((393126u32 + (1u32 + old((bytes[0] as u32)))) + ((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32)))) + (((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32))) + old((bytes[2] as u32)))) by {
-     rewrite(__rust_mir_148, at(tail_b_3, b) + at(tail_b_3, a));
-     rewrite(at(tail_b_3, b), ((393126u32 + (1u32 + old((bytes[0] as u32)))) + ((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32)))));
-     rewrite(at(tail_b_3, a), (((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32))) + old((bytes[2] as u32)))); solve() using {};
+     have a <= 4294967295u32 - (byte as u32);
+     mark tail_2_a;
+     apply(integer::uint32_add_to_integer(at(tail_2_a, a), at(tail_2_a, byte as u32)));
+     step_until(loop(5).statement(1));
+     have a == at(tail_2_a, a) + at(tail_2_a, byte as u32);
+     have a == (((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32))) + old((bytes[2] as u32)));
+     have to_integer(a) <= 766;
+     have b == ((393126u32 + (1u32 + old((bytes[0] as u32)))) + ((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32))));
+     have to_integer(b) <= 393893;
+     have to_integer(b) + to_integer(a) <= 4294967295 by {
+      solve() using { to_integer(b) <= 393893; to_integer(a) <= 766; };
      }
-     have to_integer(at(tail_b_3, b) + at(tail_b_3, a)) == to_integer(at(tail_b_3, b)) + to_integer(at(tail_b_3, a));
-     have to_integer(__rust_mir_148) == to_integer(at(tail_b_3, b) + at(tail_b_3, a)) by solve() using { __rust_mir_148 == at(tail_b_3, b) + at(tail_b_3, a); };
-     have to_integer(__rust_mir_148) <= 394659 by { solve() using { to_integer(__rust_mir_148) == to_integer(at(tail_b_3, b) + at(tail_b_3, a)); to_integer(at(tail_b_3, b) + at(tail_b_3, a)) == to_integer(at(tail_b_3, b)) + to_integer(at(tail_b_3, a)); to_integer(at(tail_b_3, b)) <= 393893; to_integer(at(tail_b_3, a)) <= 766; }; }
+     have b <= 4294967295u32 - a;
+     mark tail_2_b;
+     apply(integer::uint32_add_to_integer(at(tail_2_b, b), at(tail_2_b, a)));
+     step_until(assignment(b, 6)); step();
+     have b == at(tail_2_b, b) + at(tail_2_b, a);
+     have b == (((393126u32 + (1u32 + old((bytes[0] as u32)))) + ((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32)))) + (((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32))) + old((bytes[2] as u32))));
      step_until(assignment(__rust_mir_149, 0));
      mark output_a;
      step();
-     have at(output_a, __rust_checked_32) == (((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32))) + old((bytes[2] as u32)));
-     have at(output_a, __rust_checked_34) == 65521u32;
-     have __rust_mir_149 == at(output_a, __rust_checked_32) % at(output_a, __rust_checked_34);
+     have at(output_a, a) == (((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32))) + old((bytes[2] as u32)));
+     have statement(22).call(0).result == 65521u32;
+     have __rust_mir_149 == at(output_a, a) % statement(22).call(0).result;
      have __rust_mir_149 == ((((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32))) + old((bytes[2] as u32)))) % 65521u32 by {
-     rewrite(__rust_mir_149, at(output_a, __rust_checked_32) % at(output_a, __rust_checked_34));
-     rewrite(at(output_a, __rust_checked_32), (((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32))) + old((bytes[2] as u32))));
-     rewrite(at(output_a, __rust_checked_34), 65521u32); solve();
+     rewrite(__rust_mir_149, at(output_a, a) % statement(22).call(0).result);
+     rewrite(at(output_a, a), (((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32))) + old((bytes[2] as u32))));
+     rewrite(statement(22).call(0).result, 65521u32); solve();
      }
-     have (at(output_a, __rust_checked_32)) % 65521u32 < 65521u32;
-     have __rust_mir_149 < 65521u32 by solve() using { __rust_mir_149 == at(output_a, __rust_checked_32) % at(output_a, __rust_checked_34); at(output_a, __rust_checked_34) == 65521u32; at(output_a, __rust_checked_32) % 65521u32 < 65521u32; };
+     have (at(output_a, a)) % 65521u32 < 65521u32;
+     have __rust_mir_149 < 65521u32 by solve() using { __rust_mir_149 == at(output_a, a) % statement(22).call(0).result; statement(22).call(0).result == 65521u32; at(output_a, a) % 65521u32 < 65521u32; };
      have 0 <= to_integer(__rust_mir_149);
      have to_integer(__rust_mir_149) <= 4294967295;
      have to_integer(__rust_mir_149) < to_integer(65521u32);
@@ -451,16 +231,16 @@ impl adler2::Adler32 {
      step_until(assignment(__rust_mir_151, 0));
      mark output_b;
      step();
-     have at(output_b, __rust_checked_35) == (((393126u32 + (1u32 + old((bytes[0] as u32)))) + ((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32)))) + (((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32))) + old((bytes[2] as u32))));
-     have at(output_b, __rust_checked_37) == 65521u32;
-     have __rust_mir_151 == at(output_b, __rust_checked_35) % at(output_b, __rust_checked_37);
+     have at(output_b, b) == (((393126u32 + (1u32 + old((bytes[0] as u32)))) + ((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32)))) + (((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32))) + old((bytes[2] as u32))));
+     have statement(23).call(0).result == 65521u32;
+     have __rust_mir_151 == at(output_b, b) % statement(23).call(0).result;
      have __rust_mir_151 == ((((393126u32 + (1u32 + old((bytes[0] as u32)))) + ((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32)))) + (((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32))) + old((bytes[2] as u32))))) % 65521u32 by {
-     rewrite(__rust_mir_151, at(output_b, __rust_checked_35) % at(output_b, __rust_checked_37));
-     rewrite(at(output_b, __rust_checked_35), (((393126u32 + (1u32 + old((bytes[0] as u32)))) + ((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32)))) + (((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32))) + old((bytes[2] as u32)))));
-     rewrite(at(output_b, __rust_checked_37), 65521u32); solve();
+     rewrite(__rust_mir_151, at(output_b, b) % statement(23).call(0).result);
+     rewrite(at(output_b, b), (((393126u32 + (1u32 + old((bytes[0] as u32)))) + ((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32)))) + (((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32))) + old((bytes[2] as u32)))));
+     rewrite(statement(23).call(0).result, 65521u32); solve();
      }
-     have (at(output_b, __rust_checked_35)) % 65521u32 < 65521u32;
-     have __rust_mir_151 < 65521u32 by solve() using { __rust_mir_151 == at(output_b, __rust_checked_35) % at(output_b, __rust_checked_37); at(output_b, __rust_checked_37) == 65521u32; at(output_b, __rust_checked_35) % 65521u32 < 65521u32; };
+     have (at(output_b, b)) % 65521u32 < 65521u32;
+     have __rust_mir_151 < 65521u32 by solve() using { __rust_mir_151 == at(output_b, b) % statement(23).call(0).result; statement(23).call(0).result == 65521u32; at(output_b, b) % 65521u32 < 65521u32; };
      have 0 <= to_integer(__rust_mir_151);
      have to_integer(__rust_mir_151) <= 4294967295;
      have to_integer(__rust_mir_151) < to_integer(65521u32);
@@ -488,6 +268,11 @@ impl adler2::Adler32 {
      have to_integer(self.b) == old(adler_spec_b(bytes, 3, 1, 0)) by {
       rewrite(to_integer(self.b), to_integer(((((393126u32 + (1u32 + old((bytes[0] as u32)))) + ((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32)))) + (((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32))) + old((bytes[2] as u32))))) % 65521u32)); known();
      }
-     solve() using { to_integer(self.a) == old(adler_spec_a(bytes, 3, 1)); to_integer(self.b) == old(adler_spec_b(bytes, 3, 1, 0)); bytes[0] == old(bytes[0]); bytes[1] == old(bytes[1]); bytes[2] == old(bytes[2]); to_integer(self.a) == to_integer(at(reduced_a, __rust_mir_149)); at(reduced_a, __rust_mir_149) == ((((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32))) + old((bytes[2] as u32)))) % 65521u32; to_integer(self.b) == to_integer(at(reduced_b, __rust_mir_151)); at(reduced_b, __rust_mir_151) == ((((393126u32 + (1u32 + old((bytes[0] as u32)))) + ((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32)))) + (((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32))) + old((bytes[2] as u32))))) % 65521u32; };
+     // Each promised equality was established above.
+     known();
+     known(); known(); known();
+     known();
+     known();
+     known();
     }
 }

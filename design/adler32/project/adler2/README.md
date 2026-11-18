@@ -1,10 +1,14 @@
 # Unchanged adler2 crate adapter trial
 
-> **Status.** The three Rust units import `chunks_exact` through the library
-> contracts ([`design/rust-iterators.md`](../../../rust-iterators.md)), and
-> every `compute` proof is ported to them. Sections below that describe
-> iterator cursors and stored remaining counts describe the removed
-> hidden-state model.
+> **Status.** The lane helpers and the empty, one-, two-, and three-byte
+> `compute` proofs check against the locked crate on the current verifier.
+> The serial boundary proofs read the real `ChunksExact` fields and use
+> source statement selectors for the arithmetic. The four-byte, small-batch,
+> and general proofs below still refer to the removed iterator model and
+> generated operand locals. The public and client proofs depend on the
+> general computation.
+
+The sections below describe the original proof structure.
 
 Click imports the complete selection rooted at `adler2::adler32_slice` and
 proves the four-lane helper bodies and the unchanged general computation.

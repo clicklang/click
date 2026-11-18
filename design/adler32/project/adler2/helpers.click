@@ -1,4 +1,5 @@
 import click::integer;
+import click::separation;
 import click::rust::slice;
 
 verifying "../../vendor/adler2-2.0.1/src/lib.rs";
@@ -40,6 +41,35 @@ impl adler2::algo::U32X4 {
         apply(adler_helper_byte_observation(bytes[1]));
         apply(adler_helper_byte_observation(bytes[2]));
         apply(adler_helper_byte_observation(bytes[3]));
+        step_until(assignment(__rust_mir_12, 0));
+        step();
+        // The array literal uses fresh backing. Restrict the backing's
+        // separation from the input to each checked lane store.
+        have separate(memory((__rust_mir_2 as (uint8 *))[0..16]), memory(bytes[0..4])) by { known(); }
+        have separate(memory(((__rust_mir_2 as (uint32 *)) + 0u64)[0..1]), memory(bytes[0..4])) by {
+            apply(separation::separate_restrict(
+                memory((__rust_mir_2 as (uint8 *))[0..16]), memory(bytes[0..4]),
+                memory(((__rust_mir_2 as (uint32 *)) + 0u64)[0..1]), memory(bytes[0..4])
+            ));
+        }
+        have separate(memory(((__rust_mir_2 as (uint32 *)) + 1u64)[0..1]), memory(bytes[0..4])) by {
+            apply(separation::separate_restrict(
+                memory((__rust_mir_2 as (uint8 *))[0..16]), memory(bytes[0..4]),
+                memory(((__rust_mir_2 as (uint32 *)) + 1u64)[0..1]), memory(bytes[0..4])
+            ));
+        }
+        have separate(memory(((__rust_mir_2 as (uint32 *)) + 2u64)[0..1]), memory(bytes[0..4])) by {
+            apply(separation::separate_restrict(
+                memory((__rust_mir_2 as (uint8 *))[0..16]), memory(bytes[0..4]),
+                memory(((__rust_mir_2 as (uint32 *)) + 2u64)[0..1]), memory(bytes[0..4])
+            ));
+        }
+        have separate(memory(((__rust_mir_2 as (uint32 *)) + 3u64)[0..1]), memory(bytes[0..4])) by {
+            apply(separation::separate_restrict(
+                memory((__rust_mir_2 as (uint8 *))[0..16]), memory(bytes[0..4]),
+                memory(((__rust_mir_2 as (uint32 *)) + 3u64)[0..1]), memory(bytes[0..4])
+            ));
+        }
         step_until(function.exit);
         have result.0[0] == old((bytes[0] as u32));
         have to_integer(result.0[0]) == old(to_integer((bytes[0] as i32))) by { rewrite(result.0[0], old((bytes[0] as u32))); known(); }
@@ -255,16 +285,12 @@ impl adler2::Adler32 {
      // from its checked transition before following lane recombination.
      step_until(assignment(b, 0)); step();
      have b == 0u32;
-     // Neither chunk iterator yields a chunk: the library contract gives each
-     // length from the length of the slice it was built over.
+     // Neither chunk iterator has any bytes available to yield.
      step_until(loop(0));
-     apply(chunks_exact::len_chunks_exact(Slice<u8>::Slice(bytes, bytes.len() - bytes.len() % 4u64), 22208u64));
-     have loop(0).iter.len() == 0u64;
-     apply(chunks_exact::remainder_chunks_exact(Slice<u8>::Slice(bytes, bytes.len() - bytes.len() % 4u64), 22208u64));
+     have loop(0).iter.v.len() == 0u64;
      have remainder_chunk_len == 0u64;
      step_until(loop(2));
-     apply(chunks_exact::len_chunks_exact(Slice<u8>::Slice(remainder_chunk, remainder_chunk_len), 4u64));
-     have loop(2).iter.len() == 0u64;
+     have loop(2).iter.v.len() == 0u64;
      step_until(assignment(b, 3));
      have b == 0u32;
      have __rust_mir_78 == 0u64;
@@ -290,165 +316,20 @@ impl adler2::Adler32 {
      have b_vec.0[1] == 0u32;
      have b_vec.0[2] == 0u32;
      have b_vec.0[3] == 0u32;
-     step_until(assignment(__rust_checked_76, 0)); step();
      have b_vec.0[0] <= 1073741823u32 by solve() using { b_vec.0[0] == 0u32; };
      have b_vec.0[1] <= 1073741823u32 by solve() using { b_vec.0[1] == 0u32; };
      have b_vec.0[2] <= 1073741823u32 by solve() using { b_vec.0[2] == 0u32; };
      have b_vec.0[3] <= 1073741823u32 by solve() using { b_vec.0[3] == 0u32; };
-     step_until(assignment(__rust_mir_89, 0));
+     // The three corrections add MOD, twice MOD, and three times MOD.
+     step_until(statement(16));
      have b_vec.0[0] == 0u32;
      have b_vec.0[1] == 0u32;
      have b_vec.0[2] == 0u32;
      have b_vec.0[3] == 0u32;
-     // Marks bind the operands before each original lane update. __rust_checked
-     // locals are the adapter's actual captured call/arithmetic operands, not
-     // proof counters. These names are checked against the frozen import.
-     step_until(assignment(__rust_mir_94, 0));
-     mark add_lane_1;
-     have at(add_lane_1, b_vec.0[1]) == 0u32;
-     have at(add_lane_1, __rust_mir_89) == 65521u32;
-     step();
-     mark stored_lane_1;
-     have to_integer(at(add_lane_1, b_vec.0[1])) + to_integer(at(add_lane_1, __rust_mir_89)) <= 4294967295 by {
-      rewrite(at(add_lane_1, b_vec.0[1]), 0u32);
-      rewrite(at(add_lane_1, __rust_mir_89), 65521u32);
-      solve();
-     }
-     apply(integer::uint32_add_to_integer(at(add_lane_1, b_vec.0[1]), at(add_lane_1, __rust_mir_89)));
-     have __rust_mir_94 == at(add_lane_1, b_vec.0[1]) + at(add_lane_1, __rust_mir_89);
-     have at(stored_lane_1, __rust_mir_94) == 65521u32 by {
-      rewrite(__rust_mir_94, at(add_lane_1, b_vec.0[1]) + at(add_lane_1, __rust_mir_89));
-      rewrite(at(add_lane_1, b_vec.0[1]), 0u32);
-      rewrite(at(add_lane_1, __rust_mir_89), 65521u32);
-      solve();
-     }
-     step_until(assignment(__rust_mir_98, 0));
-     have b_vec.0[1] == at(stored_lane_1, __rust_mir_94);
-     have b_vec.0[1] == 65521u32 by {
-      rewrite(b_vec.0[1], at(stored_lane_1, __rust_mir_94));
-      rewrite(at(stored_lane_1, __rust_mir_94), 65521u32);
-      solve();
-     }
-     step_until(assignment(__rust_mir_99, 0));
-     mark subtract_double;
-     have at(subtract_double, __rust_checked_53) == 65521u32;
-     have at(subtract_double, __rust_checked_54) == 0u32;
-     step();
-     have at(subtract_double, __rust_checked_54) <= at(subtract_double, __rust_checked_53) by {
-      rewrite(at(subtract_double, __rust_checked_53), 65521u32);
-      rewrite(at(subtract_double, __rust_checked_54), 0u32);
-      solve();
-     }
-     apply(integer::uint32_subtract_to_integer(at(subtract_double, __rust_checked_53), at(subtract_double, __rust_checked_54)));
-     have __rust_mir_99 == at(subtract_double, __rust_checked_53) - at(subtract_double, __rust_checked_54);
-     have __rust_mir_99 == 65521u32 by {
-      rewrite(__rust_mir_99, at(subtract_double, __rust_checked_53) - at(subtract_double, __rust_checked_54));
-      rewrite(at(subtract_double, __rust_checked_53), 65521u32);
-      rewrite(at(subtract_double, __rust_checked_54), 0u32);
-      solve();
-     }
-     step_until(assignment(__rust_mir_100, 0));
-     mark double_lane;
-     have at(double_lane, __rust_mir_96) == 65521u32;
-     step();
-     have to_integer(at(double_lane, __rust_mir_96)) * to_integer(2u32) <= 4294967295 by {
-      rewrite(at(double_lane, __rust_mir_96), 65521u32);
-      solve();
-     }
-     apply(integer::uint32_multiply_guard_by_integer_bound(at(double_lane, __rust_mir_96), 2u32));
-     apply(integer::uint32_multiply_to_integer(at(double_lane, __rust_mir_96), 2u32));
-     have __rust_mir_100 == at(double_lane, __rust_mir_96) * 2u32;
-     have __rust_mir_100 == 131042u32 by {
-      rewrite(__rust_mir_100, at(double_lane, __rust_mir_96) * 2u32);
-      rewrite(at(double_lane, __rust_mir_96), 65521u32);
-      solve();
-     }
-     step_until(assignment(__rust_mir_102, 0));
-     mark add_lane_2;
-     have at(add_lane_2, b_vec.0[2]) == 0u32;
-     have at(add_lane_2, __rust_mir_95) == 131042u32;
-     step();
-     mark stored_lane_2;
-     have to_integer(at(add_lane_2, b_vec.0[2])) + to_integer(at(add_lane_2, __rust_mir_95)) <= 4294967295 by {
-      rewrite(at(add_lane_2, b_vec.0[2]), 0u32);
-      rewrite(at(add_lane_2, __rust_mir_95), 131042u32);
-      solve();
-     }
-     apply(integer::uint32_add_to_integer(at(add_lane_2, b_vec.0[2]), at(add_lane_2, __rust_mir_95)));
-     have __rust_mir_102 == at(add_lane_2, b_vec.0[2]) + at(add_lane_2, __rust_mir_95);
-     have at(stored_lane_2, __rust_mir_102) == 131042u32 by {
-      rewrite(__rust_mir_102, at(add_lane_2, b_vec.0[2]) + at(add_lane_2, __rust_mir_95));
-      rewrite(at(add_lane_2, b_vec.0[2]), 0u32);
-      rewrite(at(add_lane_2, __rust_mir_95), 131042u32);
-      solve();
-     }
-     step_until(assignment(__rust_mir_106, 0));
-     have b_vec.0[2] == at(stored_lane_2, __rust_mir_102);
-     have b_vec.0[2] == 131042u32 by {
-      rewrite(b_vec.0[2], at(stored_lane_2, __rust_mir_102));
-      rewrite(at(stored_lane_2, __rust_mir_102), 131042u32);
-      solve();
-     }
-     step_until(assignment(__rust_mir_107, 0));
-     mark subtract_triple;
-     have at(subtract_triple, __rust_checked_64) == 65521u32;
-     have at(subtract_triple, __rust_checked_65) == 0u32;
-     step();
-     have at(subtract_triple, __rust_checked_65) <= at(subtract_triple, __rust_checked_64) by {
-      rewrite(at(subtract_triple, __rust_checked_64), 65521u32);
-      rewrite(at(subtract_triple, __rust_checked_65), 0u32);
-      solve();
-     }
-     apply(integer::uint32_subtract_to_integer(at(subtract_triple, __rust_checked_64), at(subtract_triple, __rust_checked_65)));
-     have __rust_mir_107 == at(subtract_triple, __rust_checked_64) - at(subtract_triple, __rust_checked_65);
-     have __rust_mir_107 == 65521u32 by {
-      rewrite(__rust_mir_107, at(subtract_triple, __rust_checked_64) - at(subtract_triple, __rust_checked_65));
-      rewrite(at(subtract_triple, __rust_checked_64), 65521u32);
-      rewrite(at(subtract_triple, __rust_checked_65), 0u32);
-      solve();
-     }
-     step_until(assignment(__rust_mir_108, 0));
-     mark triple_lane;
-     have at(triple_lane, __rust_mir_104) == 65521u32;
-     step();
-     have to_integer(at(triple_lane, __rust_mir_104)) * to_integer(3u32) <= 4294967295 by {
-      rewrite(at(triple_lane, __rust_mir_104), 65521u32);
-      solve();
-     }
-     apply(integer::uint32_multiply_guard_by_integer_bound(at(triple_lane, __rust_mir_104), 3u32));
-     apply(integer::uint32_multiply_to_integer(at(triple_lane, __rust_mir_104), 3u32));
-     have __rust_mir_108 == at(triple_lane, __rust_mir_104) * 3u32;
-     have __rust_mir_108 == 196563u32 by {
-      rewrite(__rust_mir_108, at(triple_lane, __rust_mir_104) * 3u32);
-      rewrite(at(triple_lane, __rust_mir_104), 65521u32);
-      solve();
-     }
-     step_until(assignment(__rust_mir_110, 0));
-     mark add_lane_3;
-     have at(add_lane_3, b_vec.0[3]) == 0u32;
-     have at(add_lane_3, __rust_mir_103) == 196563u32;
-     step();
-     mark stored_lane_3;
-     have to_integer(at(add_lane_3, b_vec.0[3])) + to_integer(at(add_lane_3, __rust_mir_103)) <= 4294967295 by {
-      rewrite(at(add_lane_3, b_vec.0[3]), 0u32);
-      rewrite(at(add_lane_3, __rust_mir_103), 196563u32);
-      solve();
-     }
-     apply(integer::uint32_add_to_integer(at(add_lane_3, b_vec.0[3]), at(add_lane_3, __rust_mir_103)));
-     have __rust_mir_110 == at(add_lane_3, b_vec.0[3]) + at(add_lane_3, __rust_mir_103);
-     have at(stored_lane_3, __rust_mir_110) == 196563u32 by {
-      rewrite(__rust_mir_110, at(add_lane_3, b_vec.0[3]) + at(add_lane_3, __rust_mir_103));
-      rewrite(at(add_lane_3, b_vec.0[3]), 0u32);
-      rewrite(at(add_lane_3, __rust_mir_103), 196563u32);
-      solve();
-     }
-     step_until(assignment(__rust_mir_113, 0));
-     have b_vec.0[3] == at(stored_lane_3, __rust_mir_110);
-     have b_vec.0[3] == 196563u32 by {
-      rewrite(b_vec.0[3], at(stored_lane_3, __rust_mir_110));
-      rewrite(at(stored_lane_3, __rust_mir_110), 196563u32);
-      solve();
-     }
+     step_until(statement(17));
+     have b_vec.0[1] == 65521u32;
+     step_until(statement(18));
+     have b_vec.0[2] == 131042u32;
      step_until(loop(3));
      have a == 1u32;
      have b == 0u32;
@@ -502,41 +383,16 @@ impl adler2::Adler32 {
      rewrite(at(before_sum_b, b_vec.0[3]), 196563u32);
      solve();
      }
-     // Reduce before narrowing to u16; retain only these checked values in
-     // the final store closers.
-     step_until(assignment(__rust_mir_149, 0));
+     // The serial tail is empty. Reduce the two sums before narrowing.
+     step_until(statement(22));
      mark output_a;
-     have at(output_a, __rust_mir_150) == 1u32;
-     step();
-     have at(output_a, __rust_checked_32) == 1u32;
-     have at(output_a, __rust_checked_34) == 65521u32;
-     have __rust_mir_149 == at(output_a, __rust_checked_32) % at(output_a, __rust_checked_34);
-     have __rust_mir_149 == 1u32 by {
-     rewrite(__rust_mir_149, at(output_a, __rust_checked_32) % at(output_a, __rust_checked_34));
-     rewrite(at(output_a, __rust_checked_32), 1u32);
-     rewrite(at(output_a, __rust_checked_34), 65521u32);
-     solve();
-     }
-     mark reduced_a;
-     have at(reduced_a, __rust_mir_149) == 1u32;
-     step_until(assignment(__rust_mir_151, 0));
+     have at(output_a, a) == 1u32;
+     step_until(statement(23));
+     have self.a == 1;
      mark output_b;
-     have at(output_b, __rust_mir_152) == 393126u32;
-     step();
-     have at(output_b, __rust_checked_35) == 393126u32;
-     have at(output_b, __rust_checked_37) == 65521u32;
-     have __rust_mir_151 == at(output_b, __rust_checked_35) % at(output_b, __rust_checked_37);
-     have __rust_mir_151 == 0u32 by {
-     rewrite(__rust_mir_151, at(output_b, __rust_checked_35) % at(output_b, __rust_checked_37));
-     rewrite(at(output_b, __rust_checked_35), 393126u32);
-     rewrite(at(output_b, __rust_checked_37), 65521u32);
-     solve();
-     }
-     mark reduced_b;
-     have at(reduced_b, __rust_mir_151) == 0u32;
+     have at(output_b, b) == 393126u32;
      step_until(function.exit);
-     have self.a == 1 by solve() using { at(reduced_a, __rust_mir_149) == 1u32; };
-     have self.b == 0 by solve() using { at(reduced_b, __rust_mir_151) == 0u32; };
+     have self.b == 0;
      solve() using { self.a == 1; self.b == 0; };
     }
 }
