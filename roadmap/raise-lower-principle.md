@@ -612,7 +612,7 @@ sequence below. These rows record planned scope, not completed implementation.
 | 10n | Migrate theorem argument and recorded-state value storage. | Stored arguments and recorded values retain shared operands with unchanged substitution and state selection. | Landed in [PR #3181](https://github.com/clicklang/click/pull/3181); all six pushed commits verified on upstream. Validation and program-point integration evidence below. |
 | 10o | Migrate program-valued resource-field storage. | Program-valued fields retain shared operands while preserving resource identity and substitution. | Landed in [PR #3213](https://github.com/clicklang/click/pull/3213); all pushed commits verified on upstream. Local validation and final 648-check upstream integration passed. |
 | 10p | Migrate remaining expression payloads in sequence/resource descriptors. | Inventory and subdivide independent families before implementation; preserve legitimate opaque descriptor identities. | Complete: 10p1–10p6 landed, with every pushed commit verified upstream. |
-| 10q | Migrate remaining native expression payloads in proposition outputs. | Proposition outputs retain shared operands with unchanged fact identity, raising/lowering and proof admission. | In progress: 10q1–10q3 landed; 10q4a landed in PR #3305. The 10q4b1 carrier prerequisite is locally validated; the 10q4b2 Term schema/retained visitors and 10q4c producer handoffs remain required. |
+| 10q | Migrate remaining native expression payloads in proposition outputs. | Proposition outputs retain shared operands with unchanged fact identity, raising/lowering and proof admission. | In progress: 10q1–10q3 landed; 10q4a landed in PR #3305. The 10q4b1 carrier and 10q4b2a Integer arithmetic preparations landed in PR #3322; the 10q4b2 Term schema/retained visitors and 10q4c producer handoffs remain required. |
 | 10r | Remove obsolete machine compatibility caches and reverse bridges. | Remove only after their live readers migrate; account for any retained reader and reason. | Planned; after affected consumers. |
 | 10s | Remove obsolete Boolean, float and algebraic compatibility caches. | Remove only after their live readers migrate; preserve explicit native input/output boundaries. | Planned; after affected consumers. |
 | 10t | Closure audit: account for every remaining native adapter and remove dead APIs. | Inventory every remaining adapter/cache/native expression field with a live consumer and reason, remove dead APIs, and report any unresolved migration gaps. | Planned; final audit. |
@@ -1685,9 +1685,10 @@ Existing constructors preserve guard selection, equal-arm folding and raw
 connectives in Integer-exact mode. Native/root substitution and changed-flag
 parity, lexical shadowing, checked source-collection refusal, and growing
 changed/no-op DAG retention passed all five focused checks. Compatibility
-reads follow the retention assertions. Broader affected checks, all regular
-scalers and quality remain pending on the integrated checkpoint; nightly was
-excluded. Native UInt8 Boolean constants are admitted, while ordinary Int32
+reads follow the retention assertions. After integration with upstream
+`989ad800d`, all five focused checks, 366 affected checks, all 1,954 regular
+scaling checks and quality passed; nightly was excluded. Native UInt8 Boolean
+constants are admitted, while ordinary Int32
 zero/one truth-word replacements remain explicit non-admission cases alongside
 symbolic scalar replacements. Scalar predicate/application/read leaves,
 compound exact/cited/collected guard lookup, Integer conditionals, the full
