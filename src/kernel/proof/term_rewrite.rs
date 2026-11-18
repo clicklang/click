@@ -27,6 +27,7 @@ mod integer_conditional_tests;
 mod pointer_application_tests;
 #[allow(dead_code)]
 mod retained_folds;
+mod retained_integer;
 #[allow(dead_code)]
 mod retained_matches;
 mod shared_comparison;

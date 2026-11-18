@@ -1617,6 +1617,7 @@ equality and predicate `Term` payloads remain assigned to 10q4.
 | 10q4a | Structural native payload readers | PR #3305 merged as `a421b34a8`; all three pushed commits were verified upstream. Native views and consuming pointer extraction preserve matching and ownership. |
 | 10q4b1 | Exact carrier contracts (preparation) | Define exact native/root Integer and algebraic carriers; reuse logical, machine and program storage; prove identity, unmaterialized cloning and owned moves. The Term schema remains unchanged. |
 | 10q4b2 | Term schema and retained visitors | Retain roots in the five expression-bearing Term fields; extend selected-root dispatch and source/binder reservation, preserving exact native identity, scope, refusals and substitution. |
+| 10q4b2a | Raw retained Integer arithmetic (preparation) | Validate selected-root literal/variable/six-operator substitution before the Term dispatch switch; exact-source mode and the other node families remain required. |
 | 10q4c | Equality and predicate producers | Forward actual evaluated roots into the carriers, close the producer inventory, and verify proof/refusal, fact stability and scaling parity. |
 
 Sequence and pointer-offset descriptors retain the operands migrated in their
@@ -1646,6 +1647,20 @@ other sorts. Native inputs retain their exact spelling, including formats
 outside that admission. All 43 focused contracts, all 1,951 regular scaling
 checks and quality passed. Nightly was excluded. No Term field, producer,
 visitor or rewrite dispatch is switched in this prerequisite.
+
+10q4b2a adds an inactive retained Integer dispatcher for literals, variables
+and the six raw arithmetic operators. It reuses native variable substitution,
+literal-bit charges and the existing scope-keyed memo; cached nodes and traversal
+finish phases do not acquire an extra visit charge. Source reservation visits
+only the selected DAG. Native/root substitution, registered-load and structural
+observation replacement DTOs/scopes, growing no-export/no-op traversal, and
+explicit non-admission of exact-source mode and other nodes all passed. Existing
+default replacement import matched the native observation oracle and was not
+changed. Four focused checks, 222 affected checks, all 1,952 regular scaling
+checks and quality passed; nightly was excluded. This is preparation, not a
+Term schema or production dispatch switch. Exact-source/read-through matching,
+conditionals, calls, observation inputs, folds, matches and other payload
+families remain part of the required integration.
 
 The required 10q4b2 integration checklist is:
 
