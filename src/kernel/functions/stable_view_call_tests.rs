@@ -2041,6 +2041,96 @@ fn candidate_rejects_mutable_effect_overlapping_view() {
     ));
 }
 
+#[test]
+fn verified_call_checks_its_writes_against_preexisting_loans() {
+    let target = pointer();
+    let parameter = crate::kernel::program_expression::variable("p");
+    let segment = MemorySegment::new(
+        parameter.clone(),
+        crate::kernel::program_expression::int32_literal(0),
+        crate::kernel::program_expression::int32_literal(1),
+    );
+    let function = program_function(
+        ProgramType::Void,
+        "summary_write",
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
+        program_store(
+            parameter,
+            crate::kernel::program_expression::int32_literal(9),
+        ),
+    )
+    .with_resource_summary(
+        vec![ResourceSpec::owned_memory(segment.clone())],
+        Vec::new(),
+    )
+    .with_contract(Vec::new(), Vec::new(), vec![segment], Vec::new(), true);
+    let environment = environment(&function);
+    for overlap in [false, true] {
+        let protected = if overlap {
+            target.clone()
+        } else {
+            SymbolicMemory::local_pointer("other")
+        };
+        let range = MemoryRange::new(protected, 0u32.into(), 1u32.into());
+        let opening_ledger = LoanLedger::new();
+        let lender = opening_ledger.fresh_participant().unwrap();
+        let reader = opening_ledger.fresh_participant().unwrap();
+        let ledger = lend_summary_test_range(&opening_ledger, lender, reader, range);
+        let state = caller(&target)
+            .with_loan_ledger(Some(ledger.clone()))
+            .with_loan_participant(Some(lender));
+        let paths = execute_program_function_call_paths(
+            &state,
+            &function,
+            &[crate::kernel::program_expression::pointer_value(
+                target.clone(),
+            )],
+            &PureFactContext::new(),
+            ExecutionContext::apply_verified_rules(&environment),
+            &mut ExecutionBudget::new(),
+        )
+        .unwrap();
+        let [
+            FunctionPath {
+                outcome: FunctionOutcome::Return { state, .. },
+                obligations,
+                ..
+            },
+        ] = paths.as_slice()
+        else {
+            panic!("expected a conditional summary return");
+        };
+        assert_eq!(state.loan_ledger(), Some(&ledger));
+        let [obligation] = obligations.as_slice() else {
+            panic!("expected one write separation requirement");
+        };
+        assert!(obligation.call_requirement_site().is_some());
+        let Proposition::ResourceSeparate { left, right } = obligation.proposition() else {
+            panic!("expected write separation");
+        };
+        assert_eq!(
+            PureFactContext::new().proves_resource_separate(left, right),
+            !overlap
+        );
+    }
+}
+
+fn lend_summary_test_range(
+    ledger: &LoanLedger,
+    lender: super::super::loans::LoanParticipantId,
+    reader: super::super::loans::LoanParticipantId,
+    range: MemoryRange,
+) -> LoanLedger {
+    let owner = ResourceFact::own_memory(range);
+    let support = ResourceContext::new()
+        .unchecked_with_fact(owner.clone())
+        .unique_owned_occurrence_for_fact(&owner)
+        .unwrap()
+        .0;
+    let opening = ledger.lend(lender, reader, support, owner).unwrap();
+    ledger.apply(&opening.transition).unwrap()
+}
+
 /// A mutable effect on the same symbolic base as the lent view, at the
 /// same constant offsets, is a proven overlap even though the base
 /// offset is unknown: the symbolic view is retained outside the
