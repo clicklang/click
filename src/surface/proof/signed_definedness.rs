@@ -62,7 +62,7 @@ fn spell_signed_bound(
         return None;
     };
     use crate::kernel::machine_integer::comparison::structural_comparison_view;
-    let view = structural_comparison_view(condition)?;
+    let view = structural_comparison_view(condition.native_compat())?;
     let format = match width {
         SignedDefinedWidth::Int32 => MachineIntegerType::Int32,
         SignedDefinedWidth::Int64 => MachineIntegerType::Int64,
@@ -133,7 +133,7 @@ fn exact_constant_of(
     fact: &Proposition,
     term: &MachineTerm,
 ) -> Option<i64> {
-    let Proposition::ConditionIs(
+    let Some((
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
@@ -147,7 +147,7 @@ fn exact_constant_of(
             right,
         },
         true,
-    ) = fact
+    )) = fact.condition_native()
     else {
         return None;
     };

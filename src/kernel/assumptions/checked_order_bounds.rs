@@ -301,7 +301,7 @@ impl CheckedOrderBounds {
             return [None, None];
         };
         let source =
-            |(_, condition, value): &Bound| Proposition::ConditionIs(condition.clone(), *value);
+            |(_, condition, value): &Bound| Proposition::condition_is(condition.clone(), *value);
         [
             bounds.lower.iter().next_back().map(source),
             bounds.upper.iter().next().map(source),
@@ -353,13 +353,13 @@ impl CheckedOrderBounds {
             return [None, None, None, None];
         };
         let proposition =
-            |(_, condition, value): &Bound| Proposition::ConditionIs(condition.clone(), *value);
+            |(_, condition, value): &Bound| Proposition::condition_is(condition.clone(), *value);
         let singleton = |sources: &PersistentSet<(ConditionTerm, bool)>| {
             if sources.len() != 1 {
                 return None;
             }
             let (condition, value) = sources.iter().next()?;
-            Some(Proposition::ConditionIs(condition.clone(), *value))
+            Some(Proposition::condition_is(condition.clone(), *value))
         };
         [
             bounds.lower.iter().next_back().map(proposition),
@@ -400,7 +400,7 @@ impl CheckedOrderBounds {
             .get(&Self::word_key(term))?
             .iter()
             .next()?;
-        Some(Proposition::ConditionIs(condition.clone(), *value))
+        Some(Proposition::condition_is(condition.clone(), *value))
     }
 
     pub(super) fn upper_below_max_view(&self, term: MachineOperandView<'_>) -> Option<Proposition> {
@@ -412,7 +412,8 @@ impl CheckedOrderBounds {
             .upper
             .iter()
             .next()?;
-        (*number < i64::from(i32::MAX)).then(|| Proposition::ConditionIs(condition.clone(), *value))
+        (*number < i64::from(i32::MAX))
+            .then(|| Proposition::condition_is(condition.clone(), *value))
     }
 }
 

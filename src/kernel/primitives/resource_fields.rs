@@ -21,7 +21,13 @@ impl<'a> From<&'a AlgebraicValue> for ResourceFieldValue<'a> {
         }
     }
 }
-impl ResourceFieldValue<'_> {
+impl<'a> ResourceFieldValue<'a> {
+    pub fn as_program_value(self) -> Option<&'a ProgramValue> {
+        match self {
+            Self::Program(value) => Some(value),
+            _ => None,
+        }
+    }
     pub(crate) fn into_native(self) -> AlgebraicValue {
         match self {
             Self::Program(value) => AlgebraicValue::Program(value.clone()),
@@ -82,8 +88,18 @@ impl StoredResourceField {
 #[derive(Clone)]
 pub struct ResourceFieldValues(Arc<FieldStorage>);
 enum FieldStorage {
-    Input(ResourceArguments),
+    Input(NativeResourceArguments),
     Retained(Box<[StoredResourceField]>),
+}
+impl AsRef<ResourceFieldValues> for ResourceFieldValues {
+    fn as_ref(&self) -> &ResourceFieldValues {
+        self
+    }
+}
+impl Default for ResourceFieldValues {
+    fn default() -> Self {
+        Self::from(Vec::<AlgebraicValue>::new())
+    }
 }
 impl ResourceFieldValues {
     pub fn len(&self) -> usize {
@@ -100,6 +116,15 @@ impl ResourceFieldValues {
             FieldStorage::Input(values) => values.get(index).map(ResourceFieldValue::from),
             FieldStorage::Retained(values) => values.get(index).map(StoredResourceField::native),
         }
+    }
+    pub fn first(&self) -> Option<ResourceFieldValue<'_>> {
+        self.get(0)
+    }
+    pub fn last(&self) -> Option<ResourceFieldValue<'_>> {
+        self.len().checked_sub(1).and_then(|index| self.get(index))
+    }
+    pub(crate) fn fixed_values<const N: usize>(&self) -> Option<[ResourceFieldValue<'_>; N]> {
+        (self.len() == N).then(|| std::array::from_fn(|index| self.get(index).unwrap()))
     }
     pub fn iter(&self) -> ResourceFieldIter<'_> {
         ResourceFieldIter {
@@ -136,7 +161,7 @@ impl ResourceFieldValues {
         )))
     }
     /// Values minted by the existing typed field producers. Native public
-    /// inputs use `From<ResourceArguments>` and retain their admission checks.
+    /// inputs use `From<NativeResourceArguments>` and retain their admission checks.
     pub(crate) fn from_minted(values: Vec<AlgebraicValue>) -> Self {
         Self::from_stored(values.into_iter().map(StoredResourceField::from_minted))
     }
@@ -205,14 +230,19 @@ impl ResourceFieldValues {
         Arc::ptr_eq(&self.0, &other.0)
     }
 }
-impl From<ResourceArguments> for ResourceFieldValues {
-    fn from(values: ResourceArguments) -> Self {
+impl From<NativeResourceArguments> for ResourceFieldValues {
+    fn from(values: NativeResourceArguments) -> Self {
         Self(Arc::new(FieldStorage::Input(values)))
+    }
+}
+impl From<&[AlgebraicValue]> for ResourceFieldValues {
+    fn from(values: &[AlgebraicValue]) -> Self {
+        values.to_vec().into()
     }
 }
 impl From<Vec<AlgebraicValue>> for ResourceFieldValues {
     fn from(values: Vec<AlgebraicValue>) -> Self {
-        ResourceArguments::from(values).into()
+        NativeResourceArguments::from(values).into()
     }
 }
 impl<const N: usize> From<[AlgebraicValue; N]> for ResourceFieldValues {
@@ -222,7 +252,10 @@ impl<const N: usize> From<[AlgebraicValue; N]> for ResourceFieldValues {
 }
 impl FromIterator<AlgebraicValue> for ResourceFieldValues {
     fn from_iter<T: IntoIterator<Item = AlgebraicValue>>(values: T) -> Self {
-        values.into_iter().collect::<ResourceArguments>().into()
+        values
+            .into_iter()
+            .collect::<NativeResourceArguments>()
+            .into()
     }
 }
 impl std::fmt::Debug for ResourceFieldValues {
@@ -270,8 +303,8 @@ impl PartialEq<Vec<AlgebraicValue>> for ResourceFieldValues {
         self == other.as_slice()
     }
 }
-impl PartialEq<ResourceArguments> for ResourceFieldValues {
-    fn eq(&self, other: &ResourceArguments) -> bool {
+impl PartialEq<NativeResourceArguments> for ResourceFieldValues {
+    fn eq(&self, other: &NativeResourceArguments) -> bool {
         self == other.as_ref()
     }
 }
@@ -379,13 +412,13 @@ mod tests {
             ),
         ];
         for a in &values {
-            let native: ResourceArguments = vec![a.clone()].into();
+            let native: NativeResourceArguments = vec![a.clone()].into();
             let fields = ResourceFieldValues::from(native.clone());
             assert_eq!(hash(&fields), hash(&native));
             assert_eq!(format!("{fields:?}"), format!("{native:?}"));
             assert_eq!(fields.get(0).unwrap().into_native(), *a);
             for b in &values {
-                let other: ResourceArguments = vec![b.clone()].into();
+                let other: NativeResourceArguments = vec![b.clone()].into();
                 let stored = ResourceFieldValues::from(other.clone());
                 assert_eq!(fields == stored, native == other);
                 assert_eq!(fields.cmp(&stored), native.cmp(&other));
@@ -394,7 +427,7 @@ mod tests {
         let fields = ResourceFieldValues::from_minted(vec![AlgebraicValue::Program(
             ProgramValue::UInt32(MachineTerm::Variable(Variable(10993305))),
         )]);
-        let native: ResourceArguments = fields.to_vec().into();
+        let native: NativeResourceArguments = fields.to_vec().into();
         assert_eq!(hash(&fields), hash(&native));
         assert_eq!(fields, ResourceFieldValues::from(native));
     }
@@ -554,7 +587,7 @@ mod tests {
                 node: AlgebraicTermNode::Variable(Variable(10993503)),
             }),
         ];
-        let native: ResourceArguments = values.clone().into();
+        let native: NativeResourceArguments = values.clone().into();
         let retained = ResourceFieldValues::from_minted(values);
         assert_eq!(retained, ResourceFieldValues::from(native.clone()));
         assert_eq!(hash(&retained), hash(&native));

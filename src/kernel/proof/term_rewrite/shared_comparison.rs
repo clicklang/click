@@ -276,7 +276,7 @@ impl TermRewrite<'_> {
                 KernelTermNode::MachineLiteral(_) => term.clone(),
                 KernelTermNode::Legacy(_)
                 | KernelTermNode::Call { .. }
-                | KernelTermNode::PointerAddress { .. } => {
+                | KernelTermNode::IntegerAddress { .. } => {
                     let original = term
                         .machine_conversion_leaf()
                         .expect("retained native operand");
@@ -1466,7 +1466,7 @@ mod tests {
                 [root.clone(), root.clone()],
             );
         }
-        let proposition = Proposition::ConditionIs(
+        let proposition = Proposition::condition_is(
             ConditionTerm::integer_less_than(
                 IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(ty, root).unwrap()),
                 IntegerTerm::constant_i64(0),
@@ -1498,7 +1498,7 @@ mod tests {
         ] {
             assert_eq!(
                 {
-                    let written = Proposition::ConditionIs(
+                    let written = Proposition::condition_is(
                         ConditionTerm::equal(left.clone(), right.clone()),
                         true,
                     );
@@ -1507,7 +1507,7 @@ mod tests {
                     let Proposition::ConditionIs(condition, true) = normalized else {
                         unreachable!()
                     };
-                    facts.decide(&condition)
+                    facts.decide((&condition).native_compat())
                 },
                 expected,
                 "{left:?} == {right:?}"
@@ -1521,7 +1521,7 @@ mod tests {
         let (read, _) = comparison_read_fixture(7u32.into());
         let bound = MachineTerm::Variable(Variable(992203));
         let claim = |value| {
-            Proposition::ConditionIs(ConditionTerm::signed_less_than(value, bound.clone()), true)
+            Proposition::condition_is(ConditionTerm::signed_less_than(value, bound.clone()), true)
         };
         assert!(
             crate::kernel::proof::fact_reasoning::condition_polarity_equivalent(

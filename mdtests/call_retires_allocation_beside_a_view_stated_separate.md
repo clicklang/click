@@ -1,11 +1,9 @@
 # A call retires a lent allocation beside a view stated separate
 
 `box_release` lends `boxed(box)` to `box_destroy`, which frees `box->data`,
-and keeps a view of `q[0..1]`. This fixture states the separation explicitly:
-`separate(memory(q[0..1]), memory(box->data[0..n]))` with `n == 1`. The
-retired allocation is named through the entry value of `box->data`, the same
-value the precondition names, so the stated fact reaches the retirement check
-(whose allocation is four bytes from that base) once `n` is known.
+and keeps a view of `q[0..1]`. The precondition states that the first `4 * n` bytes
+of the entry value of `box->data` are separate from the view. The call proof
+uses `n == 1` to establish separation from the four bytes being retired.
 
 `call_frees_owned_allocation_beside_borrowed_view.md` checks the same result
 using the checked borrow partition without the explicit premise.
@@ -46,7 +44,9 @@ void box_release(struct box* box, struct box* other, int32* q, int32 n) {
     owns *other;
     views q[0..1];
     requires n == 1;
-    requires separate(memory(q[0..1]), memory(box->data[0..n]));
+    requires separate(memory(((box->data as (void *)) as (uint8 *))[0..4 * n]), memory(q[0..1]));
+} by {
+    step() by { solve(); }
 }
 ```
 

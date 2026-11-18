@@ -2,6 +2,41 @@
 use super::*;
 
 #[test]
+fn verified_call_loan_requirement_building_does_not_visit_live_loans() {
+    let effects = [MemoryRange::new(pointer(), 0u32.into(), 1u32.into())];
+    let samples = [4, 16, 64].map(|count| {
+        let mut ledger = LoanLedger::new();
+        let lender = ledger.fresh_participant().unwrap();
+        let reader = ledger.fresh_participant().unwrap();
+        for i in 0..count {
+            ledger = lend_summary_test_range(
+                &ledger,
+                lender,
+                reader,
+                MemoryRange::new(
+                    Address::symbolic(Variable(93_000 + i)),
+                    0u32.into(),
+                    1u32.into(),
+                ),
+            );
+        }
+        let memory = SymbolicMemory::new();
+        let (requirements, work) = crate::instrumentation::measure_deterministic_work(|| {
+            verified_call_loan_requirements(
+                Some(&ledger),
+                &effects,
+                || CallRequirementSite::for_requirement("write", "write", 0, &[], &memory),
+                0,
+                "verified call allocation retirement separation",
+            )
+        });
+        assert_eq!(requirements.len(), 1);
+        work
+    });
+    assert_eq!(samples, [samples[0]; 3]);
+}
+
+#[test]
 fn local_storage_classification_stops_at_a_fixed_ownership_gap() {
     let mut curves = Vec::new();
     for case in ["implicit", "gap", "owner", "joined"] {
@@ -264,7 +299,7 @@ fn call_borrow_restoration_ignores_ambient_aliases_and_frame() {
                 PureFactContext::new(),
                 |facts, index| {
                     facts.assume_condition(
-                        ConditionTerm::pointer_equal(selected.clone(), symbolic(882_000 + index)),
+                        ConditionTerm::address_equal(selected.clone(), symbolic(882_000 + index)),
                         true,
                     )
                 },
@@ -330,13 +365,13 @@ fn check_produced_call_return_lowering(axis: &str, overlap: bool) {
         let selected = symbolic(8_910_000);
         let neighbor = symbolic(8_920_000);
         let mut facts = PureFactContext::new().assume_condition(
-            ConditionTerm::pointer_equal(selected.clone(), neighbor.clone()),
+            ConditionTerm::address_equal(selected.clone(), neighbor.clone()),
             true,
         );
         for index in 1..count {
             if axis != "owners" {
                 facts = facts.assume_condition(
-                    ConditionTerm::pointer_equal(
+                    ConditionTerm::address_equal(
                         if axis == "aliases" {
                             selected.clone()
                         } else {

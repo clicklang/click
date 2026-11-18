@@ -660,7 +660,7 @@ pub(in crate::surface) fn initial_call_state(
             }
             let scope = crate::kernel::ResourceDescription::new(
                 name.clone(),
-                vec![arguments[0].clone()].into(),
+                vec![arguments.get(0).expect("argument index").into_native()].into(),
                 ResourceFieldSchema::new(vec![]).expect("empty resource schema"),
             )
             .with_population_arity(arguments.len());
@@ -1192,7 +1192,7 @@ fn check_segment_base_loadability(
     let obligation = Proposition::MemoryLoadable {
         memory: state.memory().clone(),
         base: cell.into_pointer(),
-        bytes: MachineTerm::constant(value_type.byte_width()),
+        bytes: (MachineTerm::constant(value_type.byte_width())).into(),
         wide: false,
     };
     if crate::kernel::execution_state_justifies_loadability_obligation(
@@ -3149,7 +3149,7 @@ fn loadable_requirement_props(
     let mut propositions = vec![Proposition::MemoryLoadable {
         memory: memory.clone(),
         base,
-        bytes,
+        bytes: (bytes).into(),
         wide: false,
     }];
     propositions.extend(guards);
@@ -3230,8 +3230,15 @@ fn reject_impossible_range_guards(
     assumptions: &PureFactContext,
 ) -> Result<(), ClickError> {
     if guards.iter().any(|guard| match guard {
-        Proposition::ConditionIs(ConditionTerm::Constant(false), true) => true,
-        Proposition::ConditionIs(condition, true) => assumptions.decide(condition) == Some(false),
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::Constant(false), _)) =
+                condition_source_0.condition_native() =>
+        {
+            true
+        }
+        Proposition::ConditionIs(condition, true) => {
+            assumptions.decide(condition.native_compat()) == Some(false)
+        }
         _ => false,
     }) {
         return Err(ClickError::new(
@@ -3296,7 +3303,7 @@ pub(in crate::surface) fn memory_range_loadable_atom_prop(
     Proposition::MemoryLoadable {
         memory: memory.clone(),
         base,
-        bytes,
+        bytes: (bytes).into(),
         wide: false,
     }
 }

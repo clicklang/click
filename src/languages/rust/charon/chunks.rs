@@ -235,7 +235,9 @@ impl BodyAdapter<'_, '_> {
                     }
                     Ok(Some(S::ChunkNext {
                         iterator: self.iterator_root(operand_place(argument)?)?,
-                        option: destination,
+                        option: Some(destination),
+                        payload: None,
+                        taken: None,
                     }))
                 }
             }

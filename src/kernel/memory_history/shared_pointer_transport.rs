@@ -351,7 +351,7 @@ mod tests {
             .clone()
             .store(other, ProgramValue::Int32(MachineTerm::constant(3)));
         let loaded = Arc::new(Address::loaded_value(&before, &field));
-        let base = Address::integer_address(MachineTerm::MemoryLoad(
+        let base = Address::from_integer_address(MachineTerm::MemoryLoad(
             ProgramPoint::at(&before),
             Box::new(field),
             LoadKind::Bits64,
@@ -392,7 +392,7 @@ mod tests {
             .store(other, ProgramValue::Int32(MachineTerm::constant(3)));
         let loaded = Arc::new(Address::loaded_value(&before, &field));
         let source = Pointer::new(
-            Address::integer_address(MachineTerm::MemoryLoad(
+            Address::from_integer_address(MachineTerm::MemoryLoad(
                 ProgramPoint::at(&before),
                 Box::new(field.clone()),
                 LoadKind::Bits64,

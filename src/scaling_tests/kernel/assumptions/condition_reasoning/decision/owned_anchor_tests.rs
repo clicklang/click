@@ -7,12 +7,12 @@ fn pointer_decision_miss_does_not_walk_owned_anchor_aliases() {
         let mut facts =
             PureFactContext::new().assume_proposition(owner_of(&[left.clone(), pointer(3)]));
         for index in 0..size {
-            facts = facts.assume_proposition(Proposition::ConditionIs(
-                ConditionTerm::pointer_equal(left.clone(), pointer(100 + index)),
+            facts = facts.assume_proposition(Proposition::condition_is(
+                ConditionTerm::address_equal(left.clone(), pointer(100 + index)),
                 true,
             ));
         }
-        let condition = ConditionTerm::pointer_equal(left, right);
+        let condition = ConditionTerm::address_equal(left, right);
         let (decision, work) =
             crate::instrumentation::measure_deterministic_work(|| facts.decide(&condition));
         assert_eq!(decision, None);
@@ -34,12 +34,12 @@ fn explicit_separation_decides_pointers_without_composition_discovery() {
         let mut facts =
             PureFactContext::new().assume_proposition(owner_of(&[left.clone(), right.clone()]));
         for index in 0..size {
-            facts = facts.assume_proposition(Proposition::ConditionIs(
-                ConditionTerm::pointer_equal(left.clone(), pointer(100 + index)),
+            facts = facts.assume_proposition(Proposition::condition_is(
+                ConditionTerm::address_equal(left.clone(), pointer(100 + index)),
                 true,
             ));
         }
-        let condition = ConditionTerm::pointer_equal(left.clone(), right.clone());
+        let condition = ConditionTerm::address_equal(left.clone(), right.clone());
         let _fast = crate::kernel::search::FastOperationScope::enter("explicit pointer separation");
         assert_eq!(facts.decide(&condition), None);
         let cell = |pointer| {
@@ -58,7 +58,7 @@ fn explicit_separation_decides_pointers_without_composition_discovery() {
             crate::instrumentation::measure_deterministic_work(|| facts.decide(&condition));
         assert_eq!(decision, Some(false));
         assert_eq!(
-            facts.decide(&ConditionTerm::pointer_equal(left.clone(), left)),
+            facts.decide(&ConditionTerm::address_equal(left.clone(), left)),
             Some(true)
         );
         samples.push((size, work));

@@ -218,9 +218,9 @@ fn spell_condition(
     }
     let ordinary_query =
         crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard(condition)
-            .map(|query| Proposition::ConditionIs(query, false));
+            .map(|query| Proposition::condition_is(query, false));
     if let Proposition::ConditionIs(condition, false) = ordinary_query.as_ref().unwrap_or(condition)
-        && let Some(operation) = overflowing_operation(condition)
+        && let Some(operation) = overflowing_operation(condition.native_compat())
         && let Some(operation) = site.spell_term(&operation)
     {
         return SpelledCondition {
@@ -232,7 +232,7 @@ fn spell_condition(
         };
     }
     if let Proposition::ConditionIs(condition, true) = condition
-        && let Some((side, value, bound)) = conversion_bound(condition, labels)
+        && let Some((side, value, bound)) = conversion_bound(condition.native_compat(), labels)
     {
         // The bound remains actionable even when this lowering supplied no
         // exact source names for the converted Integer value.
@@ -256,7 +256,7 @@ fn spell_condition(
             site.spell_proposition(&Proposition::MemoryLoadable {
                 memory: site.state.memory().clone(),
                 base: pointer.clone(),
-                bytes: MachineTerm::constant(4),
+                bytes: (MachineTerm::constant(4)).into(),
                 wide: false,
             })
             .as_ref(),
@@ -432,7 +432,7 @@ fn overflowing_operation(condition: &ConditionTerm) -> Option<MachineTerm> {
 /// The cell read by the equation naming one memory read, when this condition
 /// is such an equation.
 fn load_definition_cell(condition: &Proposition) -> Option<&Address> {
-    let Proposition::ConditionIs(
+    let Some((
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
@@ -440,7 +440,7 @@ fn load_definition_cell(condition: &Proposition) -> Option<&Address> {
             right,
         },
         true,
-    ) = condition
+    )) = condition.condition_native()
     else {
         return None;
     };

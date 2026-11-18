@@ -6920,7 +6920,7 @@ fn c_syntax_targets_kernel_max_body() {
     assert_eq!(
         theorem.proposition(),
         &crate::kernel::Proposition::Implies(
-            Box::new(crate::kernel::Proposition::ConditionIs(condition, true)),
+            Box::new(crate::kernel::Proposition::condition_is(condition, true)),
             Box::new(crate::kernel::Proposition::ProgramStatementVerifies {
                 state: Box::new(state.clone()),
                 statement: Box::new(statement),

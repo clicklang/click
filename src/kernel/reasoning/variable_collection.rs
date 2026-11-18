@@ -585,14 +585,18 @@ fn collect_proposition_bitvector_variables_one(
     match proposition {
         Proposition::VolatileAccess(event) => {
             collect_pointer_bitvector_variables(&event.pointer, variables);
-            collect_program_value_bitvector_variables(&event.value, variables);
+            collect_expression_value_bitvector_variables(event.value.value(), variables);
         }
         Proposition::Equal(left, right) => {
             collect_term_bitvector_variables(left, variables);
             collect_term_bitvector_variables(right, variables);
         }
         Proposition::ConditionIs(condition, _) => {
-            collect_condition_bitvector_variables(condition, variables);
+            retained_folds::collect_boolean_variables(
+                condition.operand_view(),
+                retained_folds::FoldVariableRead::ExpressionFree,
+                variables,
+            );
         }
         Proposition::Predicate { arguments, .. } => {
             for argument in arguments {
@@ -669,7 +673,7 @@ fn collect_proposition_bitvector_variables_one(
         } => {
             collect_memory_bitvector_variables(memory, variables);
             collect_pointer_bitvector_variables(base, variables);
-            collect_bitvector_variables(bytes, variables);
+            collect_expression_value_bitvector_variables(bytes.value(), variables);
         }
         Proposition::ResourceSeparate { left, right } => {
             collect_resource_bitvector_variables(left, variables);
@@ -1551,11 +1555,11 @@ pub(in crate::kernel) fn collect_loop_effect_bitvector_variables(
 }
 
 pub(in crate::kernel) fn collect_program_expression_outcome_bitvector_variables(
-    outcome: &ExpressionOutcome,
+    outcome: &ExpressionOutcome<crate::kernel::StoredProgramValue>,
     variables: &mut BTreeSet<Variable>,
 ) {
     if let ExpressionOutcome::Value(value) = outcome {
-        collect_program_value_bitvector_variables(value, variables);
+        collect_expression_value_bitvector_variables(value.value(), variables);
     }
 }
 
@@ -1670,7 +1674,7 @@ pub(in crate::kernel) fn collect_resource_bitvector_variables(
             }
         }
         Resource::ConditionalMutexGuard(carrier) => {
-            collect_condition_bitvector_variables(&carrier.held, variables)
+            collect_condition_bitvector_variables(carrier.condition(), variables)
         }
         Resource::MutexGuard(identity) | Resource::MutexLive(identity) => {
             if identity.epoch.is_none() {
@@ -1684,7 +1688,7 @@ pub(in crate::kernel) fn collect_resource_bitvector_variables(
                 .visit_values(|v| collect_algebraic_value_bitvector_variables(v, variables));
             collect_pointer_bitvector_variables(&right.flag, variables);
             if let Some(value) = &right.observed {
-                collect_program_value_bitvector_variables(value, variables);
+                collect_expression_value_bitvector_variables(value.value(), variables);
             }
         }
         Resource::Instance(instance) => {
@@ -2175,7 +2179,7 @@ pub(crate) fn collect_condition_bitvector_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     match condition {
-        ConditionTerm::PointerValueEqual(left, right) => {
+        ConditionTerm::PointerEqual(left, right) => {
             for pointer in left.pointers().chain(right.pointers()) {
                 collect_pointer_bitvector_variables(pointer, variables);
             }
@@ -2199,11 +2203,11 @@ pub(crate) fn collect_condition_bitvector_variables(
             float_condition
                 .for_each_bitvector_term(|term| collect_bitvector_variables(term, variables));
         }
-        ConditionTerm::PointerOffsetEqual(left, right) => {
+        ConditionTerm::AddressOffsetEqual(left, right) => {
             collect_pointer_offset_bitvector_variables(left, variables);
             collect_pointer_offset_bitvector_variables(right, variables);
         }
-        ConditionTerm::PointerEqual(left, right) => {
+        ConditionTerm::AddressEqual(left, right) => {
             collect_pointer_bitvector_variables(left, variables);
             collect_pointer_bitvector_variables(right, variables);
         }
@@ -2423,7 +2427,7 @@ fn collect_bitvector_integer_variables_seen(
     match term {
         MachineTerm::ThreadHandle(_) => {}
         MachineTerm::Constant { .. } | MachineTerm::Variable(_) => {}
-        MachineTerm::MemoryLoad(_, pointer, _) | MachineTerm::PointerAddress(pointer, _) => {
+        MachineTerm::MemoryLoad(_, pointer, _) | MachineTerm::IntegerAddress(pointer, _) => {
             collect_pointer_integer_variables(pointer, variables, seen)
         }
         MachineTerm::IntegerToMachine { value, .. } => {
@@ -3365,7 +3369,7 @@ pub(crate) fn collect_bitvector_variables(term: &MachineTerm, variables: &mut BT
                 collect_shared_memory_bitvector_variables(&origin, variables);
             }
         }
-        MachineTerm::PointerAddress(pointer, _) => {
+        MachineTerm::IntegerAddress(pointer, _) => {
             collect_pointer_bitvector_variables(pointer, variables);
         }
         MachineTerm::IntegerToMachine { value, .. } => {
@@ -3495,7 +3499,7 @@ fn collect_bitvector_capture_variables_seen(
                 }
             }
         }
-        MachineTerm::MemoryLoad(_, pointer, _) | MachineTerm::PointerAddress(pointer, _) => {
+        MachineTerm::MemoryLoad(_, pointer, _) | MachineTerm::IntegerAddress(pointer, _) => {
             collect_pointer_capture_variables(pointer, variables, integer_seen)
         }
         MachineTerm::IntegerToMachine { value, .. } => {
@@ -3514,11 +3518,28 @@ pub(in crate::kernel) fn collect_proposition_capture_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     let mut integer_seen = SeenTerms::default();
+    let mut condition_summaries = Default::default();
     let mut pending = vec![proposition];
     while let Some(proposition) = pending.pop() {
         match proposition {
             Proposition::ConditionIs(condition, _) => {
-                collect_condition_capture_variables(condition, variables, &mut integer_seen);
+                if let Some(root) = condition.root() {
+                    variables.extend(
+                        retained_folds::common_variables(
+                            root,
+                            retained_folds::FoldVariableRead::MachineCapture,
+                            &mut condition_summaries,
+                        )
+                        .iter()
+                        .copied(),
+                    );
+                } else {
+                    collect_condition_capture_variables(
+                        condition.native_compat(),
+                        variables,
+                        &mut integer_seen,
+                    );
+                }
             }
             Proposition::And(left, right)
             | Proposition::Or(left, right)
@@ -3541,7 +3562,7 @@ fn collect_condition_capture_variables(
         return;
     }
     match condition {
-        ConditionTerm::PointerValueEqual(left, right) => {
+        ConditionTerm::PointerEqual(left, right) => {
             for pointer in left.pointers().chain(right.pointers()) {
                 collect_pointer_capture_variables(pointer, variables, integer_seen);
             }
@@ -3572,14 +3593,14 @@ fn collect_condition_capture_variables(
                 }
             });
         }
-        ConditionTerm::PointerOffsetEqual(left, right) => {
+        ConditionTerm::AddressOffsetEqual(left, right) => {
             collect_pointer_offset_capture_variables(left, variables, integer_seen);
             if crate::instrumentation::checked_collection_exhausted() {
                 return;
             }
             collect_pointer_offset_capture_variables(right, variables, integer_seen);
         }
-        ConditionTerm::PointerEqual(left, right) => {
+        ConditionTerm::AddressEqual(left, right) => {
             collect_pointer_capture_variables(left, variables, integer_seen);
             if crate::instrumentation::checked_collection_exhausted() {
                 return;
@@ -4465,7 +4486,7 @@ fn collect_bitvector_scope_summary(
             }
             summary
         }
-        MachineTerm::MemoryLoad(_, pointer, _) | MachineTerm::PointerAddress(pointer, _) => {
+        MachineTerm::MemoryLoad(_, pointer, _) | MachineTerm::IntegerAddress(pointer, _) => {
             collect_pointer_scope_summary(pointer, summaries)
         }
         MachineTerm::IntegerToMachine { value, .. } => {
@@ -4527,7 +4548,7 @@ fn collect_condition_scope_summary(
         return IntegerScopeSummary::default();
     }
     match condition {
-        ConditionTerm::PointerValueEqual(left, right) => {
+        ConditionTerm::PointerEqual(left, right) => {
             let mut summary = IntegerScopeSummary::default();
             for pointer in left.pointers().chain(right.pointers()) {
                 summary.merge(collect_pointer_scope_summary(pointer, summaries));
@@ -4562,7 +4583,7 @@ fn collect_condition_scope_summary(
             });
             summary
         }
-        ConditionTerm::PointerOffsetEqual(left, right) => {
+        ConditionTerm::AddressOffsetEqual(left, right) => {
             let mut summary = collect_pointer_offset_scope_summary(left, summaries);
             if crate::instrumentation::checked_collection_exhausted() {
                 return IntegerScopeSummary::default();
@@ -4570,7 +4591,7 @@ fn collect_condition_scope_summary(
             summary.merge(collect_pointer_offset_scope_summary(right, summaries));
             summary
         }
-        ConditionTerm::PointerEqual(left, right) => {
+        ConditionTerm::AddressEqual(left, right) => {
             let mut summary = collect_pointer_scope_summary(left, summaries);
             if crate::instrumentation::checked_collection_exhausted() {
                 return IntegerScopeSummary::default();
@@ -4996,7 +5017,7 @@ fn collect_bitvector_binder_variables_seen(
         MachineTerm::Constant { .. }
         | MachineTerm::Variable(_)
         | MachineTerm::MemoryLoad(_, _, _)
-        | MachineTerm::PointerAddress(_, _) => {}
+        | MachineTerm::IntegerAddress(_, _) => {}
         MachineTerm::IntegerToMachine { value, .. } => {
             collect_integer_binder_variables_shared(
                 value,
@@ -5187,7 +5208,7 @@ fn collect_condition_binder_variables(
         return;
     }
     match condition {
-        ConditionTerm::PointerValueEqual(left, right) => {
+        ConditionTerm::PointerEqual(left, right) => {
             for pointer in left.pointers().chain(right.pointers()) {
                 collect_pointer_binder_variables(
                     pointer,
@@ -5244,7 +5265,7 @@ fn collect_condition_binder_variables(
                 }
             });
         }
-        ConditionTerm::PointerOffsetEqual(left, right) => {
+        ConditionTerm::AddressOffsetEqual(left, right) => {
             collect_pointer_offset_binder_variables(
                 left,
                 integer_variables,
@@ -5261,7 +5282,7 @@ fn collect_condition_binder_variables(
                 integer_seen,
             );
         }
-        ConditionTerm::PointerEqual(left, right) => {
+        ConditionTerm::AddressEqual(left, right) => {
             collect_pointer_binder_variables(
                 left,
                 integer_variables,

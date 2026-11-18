@@ -410,8 +410,8 @@ impl Application {
                 let (mut left, mut right) = (classes.root(left), classes.root(right));
                 if matches!(
                     kind,
-                    congruence::ConditionKind::PointerEq
-                        | congruence::ConditionKind::PointerValueEq
+                    congruence::ConditionKind::AddressEq
+                        | congruence::ConditionKind::PointerEq
                         | congruence::ConditionKind::OffsetEq
                 ) && left > right
                 {
@@ -2682,7 +2682,7 @@ impl TermClasses {
         {
             use congruence::ConditionKind::*;
             let truth = match kind {
-                Int32Eq | UInt64Eq | PointerEq | OffsetEq | AlgebraicEq | IntegerEq | BoolEq => {
+                Int32Eq | UInt64Eq | AddressEq | OffsetEq | AlgebraicEq | IntegerEq | BoolEq => {
                     Some(1)
                 }
                 IntegerNe => Some(2),
@@ -3214,7 +3214,7 @@ mod tests {
         AddressOffset::Variable(Variable(id))
     }
     fn equality(left: &AddressOffset, right: &AddressOffset) -> ConditionTerm {
-        ConditionTerm::pointer_offset_equal(left.clone(), right.clone())
+        ConditionTerm::address_offset_equal(left.clone(), right.clone())
     }
 
     fn add(left: AddressOffset, right: AddressOffset) -> AddressOffset {
@@ -3524,7 +3524,7 @@ mod tests {
         let bc = equality(&b, &c);
         let p = Address::symbolic(Variable(23));
         let q = Address::symbolic(Variable(24));
-        let pq = ConditionTerm::pointer_equal(p.clone(), q.clone());
+        let pq = ConditionTerm::address_equal(p.clone(), q.clone());
         let context = PureFactContext::new()
             .assume_condition(ab.clone(), true)
             .assume_condition(bc.clone(), true)

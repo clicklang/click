@@ -721,7 +721,7 @@ fn symbolic_address_bases_do_not_imply_non_aliasing() {
     };
 
     assert_eq!(
-        PureFactContext::new().decide(&ConditionTerm::pointer_equal(symbolic, concrete)),
+        PureFactContext::new().decide(&ConditionTerm::address_equal(symbolic, concrete)),
         None
     );
 }
@@ -822,7 +822,7 @@ fn symbolic_max_function_call_reports_branch_facts() {
     assert_eq!(
         execution.paths()[0].theorem().proposition(),
         &Proposition::Implies(
-            Box::new(Proposition::ConditionIs(condition.clone(), true)),
+            Box::new(Proposition::condition_is(condition.clone(), true)),
             Box::new(Proposition::ProgramFunctionVerifies {
                 state: Box::new(state.clone()),
                 function: Box::new(function.clone()),
@@ -846,7 +846,7 @@ fn symbolic_max_function_call_reports_branch_facts() {
     assert_eq!(
         execution.paths()[1].theorem().proposition(),
         &Proposition::Implies(
-            Box::new(Proposition::ConditionIs(condition, false)),
+            Box::new(Proposition::condition_is(condition, false)),
             Box::new(Proposition::ProgramFunctionVerifies {
                 state: Box::new(state.clone()),
                 function: Box::new(function),
@@ -2080,7 +2080,7 @@ fn while_invariant_is_proof_obligation() {
     let invariant = Proposition::MemoryLoadable {
         memory: SymbolicMemory::new(),
         base: pointer,
-        bytes: MachineTerm::constant(4),
+        bytes: (MachineTerm::constant(4)).into(),
         wide: false,
     };
     let state = ExecutionState::new().with_local("x", int32(0));
@@ -2421,10 +2421,9 @@ fn loop_entry_goals_retain_satisfied_duplicate_declarations() {
         goals.declarations()[0][0].proposition(),
         goals.declarations()[1][0].proposition()
     );
-    assert!(matches!(
-        goals.declarations()[0][0].proposition(),
-        Proposition::ConditionIs(ConditionTerm::Compare { .. }, true)
-    ));
+    assert!(
+        matches!(&goals.declarations()[0][0].proposition(), condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare { .. }, _))))
+    );
     assert!(
         loop_invariant_obligations_at_entry(&state, &checks, &assumptions)
             .unwrap()
@@ -2473,7 +2472,7 @@ fn loop_entry_goals_preserve_guarded_judgments() {
 
 /// `a != 0` as the kernel spells a short-circuit guard operand's fact.
 fn guard_operand_fact(variable: u64, nonzero: bool) -> Proposition {
-    Proposition::ConditionIs(
+    Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -3420,7 +3419,7 @@ fn loop_join_accepts_null_without_restoring_an_object_class() {
     let null = Pointer::new(Address::null(), ProgramType::Int32Pointer);
     let empty = PureFactContext::new();
     let known_null = empty.clone().assume_condition(
-        ConditionTerm::pointer_equal(unknown.address().clone(), Address::null()),
+        ConditionTerm::address_equal(unknown.address().clone(), Address::null()),
         true,
     );
     for (pointer, facts) in [(null, &empty), (unknown.clone(), &known_null)] {
@@ -3433,7 +3432,7 @@ fn loop_join_accepts_null_without_restoring_an_object_class() {
     let back = ExecutionState::new().with_local("parent", ProgramValue::Pointer(unknown.clone()));
     assert!(loop_state_components_match_at_back_edge(&head, &back, &empty, &[]).is_err());
     let nonnull = empty.assume_condition(
-        ConditionTerm::pointer_equal(unknown.address().clone(), Address::null()),
+        ConditionTerm::address_equal(unknown.address().clone(), Address::null()),
         false,
     );
     assert!(loop_state_components_match_at_back_edge(&head, &back, &nonnull, &[]).is_err());

@@ -716,18 +716,20 @@ fn collect_argument_carriers(
     }
 }
 
-fn collect_algebraic_value_carriers(
-    value: &AlgebraicValue,
+fn collect_algebraic_value_carriers<'a>(
+    value: impl Into<ResourceFieldValue<'a>>,
     variables: &mut CarrierVariables,
     seen: &mut BTreeSet<u64>,
 ) {
     if !variables.visit() {
         return;
     }
-    match value {
-        AlgebraicValue::Program(value) => collect_program_value_carriers(value, variables),
-        AlgebraicValue::Integer(value) => collect_integer_carriers(value, variables, seen),
-        AlgebraicValue::Algebraic(value) => collect_algebraic_carriers_seen(value, variables, seen),
+    match value.into() {
+        ResourceFieldValue::Program(value) => collect_program_value_carriers(value, variables),
+        ResourceFieldValue::Integer(value) => collect_integer_carriers(value, variables, seen),
+        ResourceFieldValue::Algebraic(value) => {
+            collect_algebraic_carriers_seen(value, variables, seen)
+        }
     }
 }
 
@@ -893,7 +895,7 @@ fn collect_condition_carriers(condition: &ConditionTerm, variables: &mut Carrier
         return;
     }
     match condition {
-        ConditionTerm::PointerValueEqual(left, right) => {
+        ConditionTerm::PointerEqual(left, right) => {
             collect_program_value_carriers(&ProgramValue::Pointer((**left).clone()), variables);
             collect_program_value_carriers(&ProgramValue::Pointer((**right).clone()), variables);
         }
@@ -929,14 +931,14 @@ fn collect_condition_carriers(condition: &ConditionTerm, variables: &mut Carrier
                 }
             });
         }
-        ConditionTerm::PointerOffsetEqual(left, right) => {
+        ConditionTerm::AddressOffsetEqual(left, right) => {
             collect_pointer_offset_carriers(left, variables);
             if variables.exhausted() {
                 return;
             }
             collect_pointer_offset_carriers(right, variables);
         }
-        ConditionTerm::PointerEqual(left, right) => {
+        ConditionTerm::AddressEqual(left, right) => {
             collect_pointer_carriers(left, variables);
             if variables.exhausted() {
                 return;
@@ -1088,7 +1090,7 @@ fn collect_bitvector_carriers(term: &MachineTerm, variables: &mut CarrierVariabl
             }
             collect_pointer_carriers(pointer, variables);
         }
-        MachineTerm::PointerAddress(pointer, _) => {
+        MachineTerm::IntegerAddress(pointer, _) => {
             collect_pointer_carriers(pointer, variables);
         }
         MachineTerm::IntegerToMachine { value, .. } => {
@@ -1387,7 +1389,7 @@ fn collect_integer_substitution_variables_with_carriers(
         match proposition {
             Proposition::VolatileAccess(event) => {
                 collect_pointer_carriers(&event.pointer, carriers);
-                collect_program_value_carriers(&event.value, carriers);
+                collect_program_value_carriers(event.value.native_compat(), carriers);
             }
             Proposition::Predicate { arguments, .. } => {
                 for argument in arguments {
@@ -1405,7 +1407,7 @@ fn collect_integer_substitution_variables_with_carriers(
                 collect_integer_substitution_term_variables(right, carriers);
             }
             Proposition::ConditionIs(condition, _) => {
-                collect_condition_carriers(condition, carriers);
+                collect_condition_carriers(condition.native_compat(), carriers);
             }
             // Loadability obligations produced while lowering a symbolic array
             // read carry the selected pointer and byte-count terms directly.  The
@@ -1419,7 +1421,7 @@ fn collect_integer_substitution_variables_with_carriers(
                 if carriers.exhausted() {
                     return;
                 }
-                collect_bitvector_carriers(bytes, carriers);
+                collect_bitvector_carriers(bytes.native_compat(), carriers);
             }
             Proposition::ResourceViewable { resource, .. } => {
                 collect_resource_carriers(resource, carriers)
@@ -1480,13 +1482,13 @@ fn collect_resource_carriers(resource: &Resource, carriers: &mut CarrierVariable
             Resource::Composite { arguments, .. } | Resource::Token { arguments, .. } => {
                 for argument in arguments.iter() {
                     match argument {
-                        AlgebraicValue::Program(value) => {
+                        crate::kernel::ResourceFieldValue::Program(value) => {
                             collect_program_value_carriers(value, carriers)
                         }
-                        AlgebraicValue::Integer(value) => {
+                        crate::kernel::ResourceFieldValue::Integer(value) => {
                             collect_integer_carriers(value, carriers, &mut BTreeSet::new());
                         }
-                        AlgebraicValue::Algebraic(value) => {
+                        crate::kernel::ResourceFieldValue::Algebraic(value) => {
                             collect_algebraic_carriers(value, carriers)
                         }
                     }
@@ -1640,7 +1642,7 @@ fn exhausted_term(term: &Term) -> Term {
 }
 
 fn exhausted_proposition() -> Proposition {
-    Proposition::ConditionIs(ConditionTerm::Constant(false), true)
+    Proposition::condition_is(ConditionTerm::Constant(false), true)
 }
 
 struct IntegerVariableRewrite<'a> {
@@ -3464,12 +3466,12 @@ impl<'a> TermRewrite<'a> {
                 if !self.source_variables_reserved {
                     let mut variables = self.new_carrier_variables();
                     collect_pointer_carriers(&event.pointer, &mut variables);
-                    collect_program_value_carriers(&event.value, &mut variables);
+                    collect_program_value_carriers(event.value.native_compat(), &mut variables);
                     self.reserve_source_variables(variables);
                 }
                 Proposition::VolatileAccess(std::sync::Arc::new(VolatileAccess {
                     pointer: self.pointer(&event.pointer),
-                    value: self.value(&event.value),
+                    value: self.value(event.value.native_compat()).into(),
                     id: event.id,
                     kind: event.kind,
                     value_type: event.value_type,
@@ -3491,11 +3493,11 @@ impl<'a> TermRewrite<'a> {
                 Proposition::Equal(left, right)
             }
             Proposition::ConditionIs(condition, value) => {
-                self.reserve_condition_variables_once(condition);
+                self.reserve_condition_variables_once(condition.native_compat());
                 if self.checked_work_exhausted() {
                     return exhausted_proposition();
                 }
-                let condition = self.condition(condition);
+                let condition = self.condition(condition.native_compat());
                 if self.checked_work_exhausted() {
                     return exhausted_proposition();
                 }
@@ -3512,18 +3514,25 @@ impl<'a> TermRewrite<'a> {
                 if !self.source_variables_reserved {
                     let mut variables = self.new_carrier_variables();
                     collect_pointer_carriers(base, &mut variables);
-                    collect_bitvector_carriers(bytes, &mut variables);
+                    collect_bitvector_carriers(bytes.native_compat(), &mut variables);
                     self.reserve_source_variables(variables);
                 }
                 let base = self.pointer(base);
-                let bytes = self.bits(bytes);
+                let bytes = self.bits(bytes.native_compat());
                 if self.checked_work_exhausted() {
                     return exhausted_proposition();
                 }
                 Proposition::MemoryLoadable {
                     memory: memory.clone(),
                     base,
-                    bytes,
+                    bytes: crate::kernel::StoredMachineTerm::new(
+                        if *wide {
+                            crate::kernel::MachineIntegerType::UInt64
+                        } else {
+                            crate::kernel::MachineIntegerType::Int32
+                        },
+                        bytes,
+                    ),
                     wide: *wide,
                 }
             }
@@ -3893,22 +3902,25 @@ impl<'a> TermRewrite<'a> {
     fn rewrite_algebraic_replacement(&mut self, replacement: &AlgebraicTerm) -> AlgebraicTerm {
         replacement.clone()
     }
-    fn field(&mut self, v: &AlgebraicValue) -> AlgebraicValue {
+    fn field<'field>(&mut self, v: impl Into<ResourceFieldValue<'field>>) -> AlgebraicValue {
+        let v = v.into();
         if self.checked_work_exhausted() {
             return match v {
-                AlgebraicValue::Program(value) => {
+                ResourceFieldValue::Program(value) => {
                     AlgebraicValue::Program(exhausted_program_value(value))
                 }
-                AlgebraicValue::Integer(value) => AlgebraicValue::Integer(exhausted_integer(value)),
-                AlgebraicValue::Algebraic(value) => {
+                ResourceFieldValue::Integer(value) => {
+                    AlgebraicValue::Integer(exhausted_integer(value))
+                }
+                ResourceFieldValue::Algebraic(value) => {
                     AlgebraicValue::Algebraic(exhausted_algebraic(value))
                 }
             };
         }
         match v {
-            AlgebraicValue::Program(v) => AlgebraicValue::Program(self.value(v)),
-            AlgebraicValue::Integer(v) => AlgebraicValue::Integer(self.integer(v)),
-            AlgebraicValue::Algebraic(v) => AlgebraicValue::Algebraic(self.algebraic(v)),
+            ResourceFieldValue::Program(v) => AlgebraicValue::Program(self.value(v)),
+            ResourceFieldValue::Integer(v) => AlgebraicValue::Integer(self.integer(v)),
+            ResourceFieldValue::Algebraic(v) => AlgebraicValue::Algebraic(self.algebraic(v)),
         }
     }
     fn argument(&mut self, a: &PureFunctionArgument) -> PureFunctionArgument {
@@ -5324,7 +5336,7 @@ impl<'a> TermRewrite<'a> {
                         // Use the same null representation as the original
                         // cast, keeping the displacement outside this block.
                         let result = if let Some(bits) = rewritten.integer_address_bits() {
-                            Address::integer_address(bits.clone()).base
+                            Address::from_integer_address(bits.clone()).base
                         } else {
                             AddressBase::PureFunctionApplication(rewritten)
                         };
@@ -5619,8 +5631,8 @@ impl<'a> TermRewrite<'a> {
                 let right = self.bits(b);
                 if matches!(
                     (&left, &right),
-                    (MachineTerm::PointerAddress(_, _), zero)
-                        | (zero, MachineTerm::PointerAddress(_, _))
+                    (MachineTerm::IntegerAddress(_, _), zero)
+                        | (zero, MachineTerm::IntegerAddress(_, _))
                         if zero.uint64_as_const() == Some(0)
                 ) {
                     // Rewriting can expose a null address after the original
@@ -5640,7 +5652,7 @@ impl<'a> TermRewrite<'a> {
                     }
                 }
             }
-            ConditionTerm::PointerValueEqual(a, b) => {
+            ConditionTerm::PointerEqual(a, b) => {
                 let ProgramValue::Pointer(a) = self.value(&ProgramValue::Pointer((**a).clone()))
                 else {
                     unreachable!()
@@ -5655,12 +5667,12 @@ impl<'a> TermRewrite<'a> {
                         offset: crate::kernel::eval::canonical_offset_term(&p.offset),
                     })
                 };
-                ConditionTerm::pointer_value_equal(canonical(a), canonical(b))
+                ConditionTerm::pointer_equal(canonical(a), canonical(b))
             }
-            ConditionTerm::PointerEqual(a, b) => {
-                ConditionTerm::PointerEqual(Box::new(self.pointer(a)), Box::new(self.pointer(b)))
+            ConditionTerm::AddressEqual(a, b) => {
+                ConditionTerm::AddressEqual(Box::new(self.pointer(a)), Box::new(self.pointer(b)))
             }
-            ConditionTerm::PointerOffsetEqual(a, b) => ConditionTerm::PointerOffsetEqual(
+            ConditionTerm::AddressOffsetEqual(a, b) => ConditionTerm::AddressOffsetEqual(
                 Box::new(self.offset(a)),
                 Box::new(self.offset(b)),
             ),
@@ -5942,7 +5954,7 @@ impl<'a> TermRewrite<'a> {
         if self.checked_work_exhausted() {
             ConditionTerm::Constant(false)
         } else if self.equality_graph.is_some_and(|graph| match &result {
-            ConditionTerm::PointerValueEqual(left, right) => {
+            ConditionTerm::PointerEqual(left, right) => {
                 let matches = self.pointer_context.map_or_else(
                     || {
                         left.provenance() == right.provenance()
@@ -5953,8 +5965,8 @@ impl<'a> TermRewrite<'a> {
                 );
                 matches && graph.are_equal(left.address(), right.address())
             }
-            ConditionTerm::PointerEqual(left, right) => graph.are_equal(left, right),
-            ConditionTerm::PointerOffsetEqual(left, right) => graph.are_offsets_equal(left, right),
+            ConditionTerm::AddressEqual(left, right) => graph.are_equal(left, right),
+            ConditionTerm::AddressOffsetEqual(left, right) => graph.are_offsets_equal(left, right),
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
@@ -6261,7 +6273,7 @@ impl<'a> TermRewrite<'a> {
                 | KernelTermNode::BoolCast { .. }
                 | KernelTermNode::Legacy(_)
                 | KernelTermNode::Call { .. }
-                | KernelTermNode::PointerAddress { .. } => {
+                | KernelTermNode::IntegerAddress { .. } => {
                     if !shared
                         .machine_conversion_leaf()
                         .is_some_and(|leaf| same_payload(self, leaf, native))
@@ -6627,7 +6639,7 @@ impl<'a> TermRewrite<'a> {
                 };
                 crate::kernel::eval::scalar_read_for_exact_cell(&memory, &rewritten, *kind, bytes)
             }
-            MachineTerm::PointerAddress(pointer, class) => {
+            MachineTerm::IntegerAddress(pointer, class) => {
                 MachineTerm::object_pointer_address(self.pointer(pointer), class.class())
             }
             MachineTerm::IntegerToMachine { value, destination } => MachineTerm::IntegerToMachine {
@@ -8777,7 +8789,7 @@ mod tests {
                 base: AddressBase::ExternalArgument,
                 offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(source), 4),
             },
-            bytes: MachineTerm::constant(4),
+            bytes: (MachineTerm::constant(4)).into(),
             wide: false,
         };
         let mut proposition = atom.clone();
@@ -8999,7 +9011,7 @@ mod comparison_read_batch_tests {
                 (CompareRelation::LessThan, 4, true),
                 (CompareRelation::LessThan, 3, false),
             ] {
-                let input = Proposition::ConditionIs(
+                let input = Proposition::condition_is(
                     ConditionTerm::Compare {
                         format,
                         relation,
@@ -9010,7 +9022,7 @@ mod comparison_read_batch_tests {
                 );
                 assert_eq!(
                     TermRewrite::comparison_read_batch(&input, [(read.clone(), three.clone())]),
-                    Some(Proposition::ConditionIs(
+                    Some(Proposition::condition_is(
                         ConditionTerm::Constant(expected),
                         true
                     )),
@@ -9019,10 +9031,9 @@ mod comparison_read_batch_tests {
                 let mut structural = TermRewrite::for_bits(&read, &three);
                 let result = structural.proposition(&input);
                 assert!(structural.refusal().is_none());
-                assert!(matches!(
-                    result,
-                    Proposition::ConditionIs(ConditionTerm::Compare { .. }, true)
-                ));
+                assert!(
+                    matches!(&result, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare { .. }, _))))
+                );
             }
         }
     }
@@ -9331,7 +9342,7 @@ mod pointer_association_boundary_tests {
             value: SharedMachineIntegerTerm::from_shared(ty, root).unwrap(),
             byte_width: 4,
         };
-        let condition = ConditionTerm::PointerOffsetEqual(
+        let condition = ConditionTerm::AddressOffsetEqual(
             Box::new(AddressOffset::Add(
                 Box::new(scaled(left)),
                 Box::new(scaled(right)),

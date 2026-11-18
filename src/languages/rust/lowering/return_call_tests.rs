@@ -141,3 +141,58 @@ fn caller(value: i32) -> i32 { ensures result == value; } by {
     assert_ne!(invalid, source);
     assert!(ProgramVerificationSession::new_program_prepared(&invalid, &prepared).is_err());
 }
+
+#[test]
+fn short_circuit_arms_publish_one_result_and_replay() {
+    use crate::surface::{
+        ProgramVerificationSession, expand_program_prepared_claim_source_by_label,
+        without_implicit_solve_for_claim,
+    };
+
+    for (operator, expected) in [("and", "false"), ("or", "true")] {
+        let mut export = fixture("value");
+        for function in &mut export.functions {
+            function.parameters[0].value_type = Type::Bool;
+            function.return_type = Type::Bool;
+        }
+        export.functions[1].body = vec![S::Return {
+            value: Some(E::Binary {
+                operator: operator.into(),
+                left_type: Type::Bool,
+                right_type: Type::Bool,
+                left: Box::new(E::Local {
+                    name: "value".into(),
+                }),
+                right: Box::new(E::Call {
+                    function: "identity".into(),
+                    arguments: vec![E::Not {
+                        value: Box::new(E::Local {
+                            name: "value".into(),
+                        }),
+                    }],
+                }),
+            }),
+        }];
+        let (functions, _) = super::lower(&export).unwrap();
+        let caller = functions.iter().find(|f| f.name() == "caller").unwrap();
+        let body = format!("{:?}", caller.prelowered_kernel_function().unwrap().body());
+        assert!(!body.contains("__rust_checked_"), "{body}");
+        let prepared = super::super::import::prepared_for_test(export).unwrap();
+        let source = format!(
+            r#"verifying "returns.rs";
+fn identity(value: bool) -> bool {{ ensures result == value; }}
+fn caller(value: bool) -> bool {{ ensures result == {expected}; }}
+"#
+        );
+        let claim = "caller.ensures_0";
+        let expanded = expand_program_prepared_claim_source_by_label(&source, &prepared, claim)
+            .unwrap_or_else(|error| panic!("{}", error.report()));
+        assert!(!expanded.contains("__rust_checked_"), "{expanded}");
+        without_implicit_solve_for_claim(claim, || {
+            ProgramVerificationSession::new_program_prepared(&expanded, &prepared)
+                .map(|_| ())
+                .map_err(|error| error.report())
+        })
+        .unwrap();
+    }
+}

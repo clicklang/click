@@ -117,7 +117,7 @@ fn literal(proposition: &Proposition, mut positive: bool) -> Literal {
     }
     let proposition = match body {
         Proposition::ConditionIs(condition, truth) => {
-            Proposition::ConditionIs(condition.clone(), *truth == positive)
+            Proposition::condition_is(condition.clone(), *truth == positive)
         }
         _ if positive => body.clone(),
         _ => Proposition::Not(Box::new(body.clone())),
@@ -125,8 +125,8 @@ fn literal(proposition: &Proposition, mut positive: bool) -> Literal {
     let identity = match &proposition {
         Proposition::ConditionIs(condition, truth) => {
             use crate::kernel::machine_integer::{Relation, comparison};
-            let reading = observation_reading(condition);
-            let condition = reading.as_ref().unwrap_or(condition);
+            let reading = observation_reading(condition.native_compat());
+            let condition = reading.as_ref().unwrap_or(condition.native_compat());
             let view = if matches!(condition, ConditionTerm::Compare { .. }) {
                 comparison::comparison_view(condition, true)
             } else {
@@ -143,7 +143,7 @@ fn literal(proposition: &Proposition, mut positive: bool) -> Literal {
             } else {
                 LiteralKey::Exact(
                     reading
-                        .map(|condition| Proposition::ConditionIs(condition, *truth))
+                        .map(|condition| Proposition::condition_is(condition, *truth))
                         .unwrap_or_else(|| proposition.clone()),
                 )
             }
@@ -159,7 +159,7 @@ fn literal(proposition: &Proposition, mut positive: bool) -> Literal {
 fn constant(proposition: &Proposition) -> Option<bool> {
     match proposition {
         Proposition::ConditionIs(condition, truth) => {
-            crate::kernel::proof::fact_reasoning::trivial_condition_value(condition)
+            crate::kernel::proof::fact_reasoning::trivial_condition_value(condition.native_compat())
                 .map(|value| value == *truth)
         }
         _ => None,
@@ -167,7 +167,7 @@ fn constant(proposition: &Proposition) -> Option<bool> {
 }
 
 fn falsehood() -> Proposition {
-    Proposition::ConditionIs(ConditionTerm::Constant(false), true)
+    Proposition::condition_is(ConditionTerm::Constant(false), true)
 }
 
 impl Index {

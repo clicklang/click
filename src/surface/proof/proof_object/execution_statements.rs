@@ -2047,7 +2047,7 @@ fn distinct_requirements(recorded: Vec<UnresolvedRequirement>) -> Vec<Unresolved
 #[test]
 fn requirement_deduplication_uses_replay_truth_and_polarity() {
     let requirement = |left: u32, right: u32| UnresolvedRequirement {
-        proposition: Proposition::ConditionIs(
+        proposition: Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,

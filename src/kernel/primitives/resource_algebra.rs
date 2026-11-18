@@ -654,7 +654,8 @@ impl ResourceContextIndex {
                 result.iterated_by_block =
                     insert_resource_index_entry(&result.iterated_by_block, second.clone(), entry);
             }
-            if matches!(fact, ResourceFact::Own(_, quantity) if quantity.as_const() == Some(1)) {
+            if matches!(fact, ResourceFact::Own(_, quantity) if quantity.native_compat().as_const() == Some(1))
+            {
                 result.owned_iterated_by_clause = insert_resource_index_entry(
                     &result.owned_iterated_by_clause,
                     iterated.without_holes(),
@@ -1057,7 +1058,8 @@ impl ResourceContextIndex {
                 result.iterated_by_block =
                     remove_resource_index_entry(&result.iterated_by_block, second, entry);
             }
-            if matches!(fact, ResourceFact::Own(_, quantity) if quantity.as_const() == Some(1)) {
+            if matches!(fact, ResourceFact::Own(_, quantity) if quantity.native_compat().as_const() == Some(1))
+            {
                 result.owned_iterated_by_clause = remove_resource_index_entry(
                     &result.owned_iterated_by_clause,
                     &iterated.without_holes(),
@@ -1615,7 +1617,7 @@ fn collect_memory_load_work<'a>(
                         ));
                         work.push(MemoryLoadFootprintWork::Offset(&pointer.offset, depth + 1));
                     }
-                    MachineTerm::PointerAddress(pointer, _) => {
+                    MachineTerm::IntegerAddress(pointer, _) => {
                         work.push(MemoryLoadFootprintWork::Offset(&pointer.offset, depth + 1));
                     }
                     crate::kernel::binary_machine_term!(left, right)
@@ -1748,7 +1750,7 @@ impl ResourceContext {
             .iter()
             .filter_map(|entry| match self.fact(*entry) {
                 ResourceFact::Own(Resource::Instance(instance), quantity)
-                    if quantity.as_const() == Some(1) =>
+                    if quantity.native_compat().as_const() == Some(1) =>
                 {
                     Some(instance)
                 }
@@ -1791,7 +1793,7 @@ impl ResourceContext {
         else {
             return None;
         };
-        (quantity.as_const() == Some(1)).then_some(instance)
+        (quantity.native_compat().as_const() == Some(1)).then_some(instance)
     }
 
     /// A structural/unpublished context. Use `new_with_equalities` for a
@@ -1842,6 +1844,26 @@ impl ResourceContext {
     /// context that was untouched in every arm without enumerating it.
     pub(crate) fn shares_storage_with(&self, other: &Self) -> bool {
         std::sync::Arc::ptr_eq(&self.storage, &other.storage)
+    }
+
+    /// A retained projection preserves custody and witnesses with the
+    /// visible resource facts. Compare only their persistent roots.
+    pub(in crate::kernel) fn shares_projection_inputs_with(&self, other: &Self) -> bool {
+        fn same_root<T>(
+            left: &Option<std::sync::Arc<T>>,
+            right: &Option<std::sync::Arc<T>>,
+        ) -> bool {
+            match (left, right) {
+                (Some(left), Some(right)) => std::sync::Arc::ptr_eq(left, right),
+                (None, None) => true,
+                _ => false,
+            }
+        }
+        self.shares_storage_with(other)
+            && std::sync::Arc::ptr_eq(&self.loan_dependencies, &other.loan_dependencies)
+            && self.framed_origins.shares_root_with(&other.framed_origins)
+            && same_root(&self.instance_consumptions, &other.instance_consumptions)
+            && same_root(&self.structural_witnesses, &other.structural_witnesses)
     }
 
     /// Direct occurrences of only the selected resource. Cached projections
@@ -3602,24 +3624,6 @@ impl ResourceContext {
         entries.into_iter().map(|entry| self.fact(entry)).collect()
     }
 
-    /// The owned memory facts the address index selects for `range`: those
-    /// at its footprint, covering its start, or starting inside it. Distinct
-    /// pointer parameters are distinct address classes here, so this never
-    /// visits every range in a shared block. Callers still check coverage.
-    pub(in crate::kernel) fn owned_memory_candidates_for(
-        &self,
-        range: &MemoryRange,
-        assumptions: &PureFactContext,
-    ) -> Vec<ResourceFact> {
-        let candidates = self.memory_fact_candidates(range, true, assumptions);
-        candidates
-            .entries
-            .iter()
-            .map(|entry| self.fact(entry).clone())
-            .filter(ResourceFact::is_own)
-            .collect()
-    }
-
     /// Select a deterministic owned candidate from the pointer index. Multiple
     /// returned sibling shares are legitimate. This lookup grants no authority:
     /// callers must still check the selected loan, initialization, and type.
@@ -4016,6 +4020,96 @@ impl ResourceContext {
         let entry = self.storage.entry_by_occurrence.get(&occurrence)?;
         let fact = self.storage.facts.get(entry)?;
         fact.is_view().then_some(fact)
+    }
+
+    /// An already exposed child may be represented by one live occurrence
+    /// or by exact adjacent fragments. Read that partition in place. A
+    /// covering owner that extends outside the child is not an exact match.
+    pub(in crate::kernel) fn covers_exact_owned_piece(
+        &self,
+        required: &ResourceFact,
+        assumptions: &PureFactContext,
+    ) -> bool {
+        if !required.is_own() {
+            return false;
+        }
+        if let Some(range) = required.memory_own_range()
+            && (memory_range_is_proven_empty(range, assumptions)
+                || required.owned_quantity_term().is_some_and(|quantity| {
+                    resource_quantity_resolves_to_zero(quantity, assumptions)
+                }))
+        {
+            return true;
+        }
+        if let Some((_, available)) = self.directly_supporting_owned_entry(required, assumptions) {
+            return match (required.memory_own_range(), available.memory_own_range()) {
+                (Some(required), Some(available)) => {
+                    memory_range_covers(required, available, assumptions)
+                }
+                (None, None) => resource_fact_entails(required, available, assumptions),
+                _ => false,
+            };
+        }
+        required
+            .owned_quantity_term()
+            .and_then(MachineTerm::as_const)
+            == Some(1)
+            && (self
+                .exact_owned_fragment_cover(required, assumptions)
+                .is_some()
+                || required.memory_own_range().is_some_and(|range| {
+                    (range.has_symbolic_bounds() || range.wide_bounds().is_some())
+                        && self
+                            .walk_symbolic_owned_partition(required, assumptions, |_, _| Some(()))
+                            .is_some()
+                }))
+    }
+
+    fn exact_owned_fragment_cover(
+        &self,
+        required: &ResourceFact,
+        assumptions: &PureFactContext,
+    ) -> Option<()> {
+        if required.owned_quantity_term()?.as_const()? != 1 {
+            return None;
+        }
+        let range = required.memory_own_range()?;
+        let (start, end) = constant_relative_byte_endpoints(range);
+        let length = i64::try_from(end?.checked_sub(start?)?).ok()?;
+        if length <= 0 {
+            return None;
+        }
+        let start = range.start_pointer();
+        let mut cursor = 0i64;
+        while cursor < length {
+            crate::instrumentation::record_deterministic_work(1);
+            let point = Address {
+                base: start.base.clone(),
+                offset: AddressOffset::add(start.offset.clone(), AddressOffset::Constant(cursor)),
+            };
+            let selected = self.write_access(&point, 1, assumptions)?;
+            let owner = self.fact(selected.entry());
+            let piece = owner.memory_own_range()?;
+            let address = selected.address()?;
+            if !owner.has_proven_positive_quantity(assumptions)
+                || !assumptions.pointers_known_equal(&address, &piece.start_pointer())
+                || (range.typed_carrier
+                    && !assumptions.access_provenance_matches_range(
+                        range.access_provenance(),
+                        range,
+                        piece,
+                    ))
+            {
+                return None;
+            }
+            let (lo, hi) = constant_relative_byte_endpoints(piece);
+            let bytes = i64::try_from(hi?.checked_sub(lo?)?).ok()?;
+            if bytes <= 0 {
+                return None;
+            }
+            cursor = cursor.checked_add(bytes)?;
+        }
+        (cursor == length).then_some(())
     }
 
     /// Reserve a constant-length owned footprint from its live byte fragments. Each
@@ -4562,7 +4656,7 @@ impl ResourceContext {
                                         )
                                         .is_some_and(|index| {
                                             iterated.holes().iter().any(|hole| {
-                                                MachineOperandView::Legacy(hole)
+                                                hole.operand_view()
                                                     .retain(MachineIntegerType::Int32)
                                                     == index
                                             })
@@ -7757,6 +7851,27 @@ impl ResourceContext {
         assumptions: &PureFactContext,
         mut origins: Option<&mut MemorySplitOrigins>,
     ) -> Option<Self> {
+        let source = self.clone();
+        source.walk_symbolic_owned_partition(required, assumptions, |entry, available| {
+            self.consume_fact_from_candidates_with_origins(
+                available,
+                assumptions,
+                [entry],
+                origins.as_deref_mut(),
+            )
+            .then_some(())
+        })?;
+        Some(self)
+    }
+
+    /// Follow the indexed endpoint chain on the original partition. The
+    /// consumer can remove each selected occurrence or just retain coverage.
+    fn walk_symbolic_owned_partition(
+        &self,
+        required: &ResourceFact,
+        assumptions: &PureFactContext,
+        mut visit: impl FnMut(ResourceEntryId, &ResourceFact) -> Option<()>,
+    ) -> Option<()> {
         let range = required.memory_own_range().expect("unit ownership query");
         let candidates = self.memory_fact_candidates(range, true, assumptions);
         let first = candidates.entries.single_supplier()?;
@@ -7767,7 +7882,7 @@ impl ResourceContext {
             if !visited.insert(next) {
                 return None;
             }
-            let available = self.fact(next).clone();
+            let available = self.fact(next);
             if available.owned_quantity_term().and_then(|q| q.as_const()) != Some(1) {
                 return None;
             }
@@ -7809,19 +7924,9 @@ impl ResourceContext {
             if !memory_range_covers(range, combined_range, assumptions) {
                 return None;
             }
-            // Apply each exact selected consumption to this persistent branch.
-            // Combined coverage is restricted to the request, so success leaves
-            // no residual from these pieces and preserves all unrelated entries.
-            if !self.consume_fact_from_candidates_with_origins(
-                &available,
-                assumptions,
-                [next],
-                origins.as_deref_mut(),
-            ) {
-                return None;
-            }
+            visit(next, available)?;
             if resource_fact_entails(&combined, required, assumptions) {
-                return Some(self);
+                return Some(());
             }
             let successor = candidates.sole_owned_start(&combined_range.end_pointer())?;
             joined = Some(combined);
@@ -9420,9 +9525,9 @@ fn instance_pointer_arguments(instance: &ResourceInstance) -> impl Iterator<Item
 }
 
 /// The C pointer arguments among `arguments`, in order.
-fn algebraic_pointer_arguments(arguments: &[AlgebraicValue]) -> impl Iterator<Item = &Address> {
+fn algebraic_pointer_arguments(arguments: &ResourceArguments) -> impl Iterator<Item = &Address> {
     arguments.iter().filter_map(|argument| match argument {
-        AlgebraicValue::Program(ProgramValue::Pointer(pointer)) => Some(pointer.address()),
+        ResourceFieldValue::Program(ProgramValue::Pointer(pointer)) => Some(pointer.address()),
         _ => None,
     })
 }
@@ -9501,9 +9606,9 @@ pub(crate) fn coalesce_written_resource_descriptions(
 /// with no assumption able to override it, so two facts anchored in
 /// different blocks can never have their first arguments proven equal and
 /// never normalize together.
-fn normalization_anchor(arguments: &[AlgebraicValue]) -> Option<&AddressBase> {
+fn normalization_anchor(arguments: &ResourceArguments) -> Option<&AddressBase> {
     match arguments.first() {
-        Some(AlgebraicValue::Program(ProgramValue::Pointer(pointer)))
+        Some(ResourceFieldValue::Program(ProgramValue::Pointer(pointer)))
             if matches!(
                 pointer.address().base,
                 AddressBase::Heap(_) | AddressBase::Temporary(_)
@@ -9519,7 +9624,7 @@ fn normalization_anchor(arguments: &[AlgebraicValue]) -> Option<&AddressBase> {
 fn shape_root_key(
     family: ResourceFamily,
     name: &str,
-    arguments: &[AlgebraicValue],
+    arguments: &ResourceArguments,
 ) -> super::ShapeRootKey {
     (
         family,
@@ -9626,9 +9731,11 @@ impl OwnedMemberKey {
 }
 
 /// The first argument of a token or composite when it is a pointer.
-fn normalization_root_pointer(arguments: &[AlgebraicValue]) -> Option<&Address> {
+fn normalization_root_pointer(arguments: &ResourceArguments) -> Option<&Address> {
     match arguments.first() {
-        Some(AlgebraicValue::Program(ProgramValue::Pointer(pointer))) => Some(pointer.address()),
+        Some(ResourceFieldValue::Program(ProgramValue::Pointer(pointer))) => {
+            Some(pointer.address())
+        }
         _ => None,
     }
 }
@@ -9845,7 +9952,13 @@ fn exact_resources_proven_equal(
                     .arguments()
                     .iter()
                     .zip(right.payload.arguments())
-                    .all(|(a, b)| crate::kernel::resource_arguments_proven_equal(a, b, assumptions))
+                    .all(|(a, b)| {
+                        crate::kernel::resource_field_values_proven_equal(
+                            (a).into(),
+                            (b).into(),
+                            assumptions,
+                        )
+                    })
         }
         (Resource::Instance(left), Resource::Instance(right)) => {
             left.identity == right.identity
@@ -9858,7 +9971,13 @@ fn exact_resources_proven_equal(
                     .arguments
                     .iter()
                     .zip(right.arguments.iter())
-                    .all(|(a, b)| crate::kernel::instance_arguments_proven_equal(a, b, assumptions))
+                    .all(|(a, b)| {
+                        crate::kernel::instance_field_values_proven_equal(
+                            (a).into(),
+                            (b).into(),
+                            assumptions,
+                        )
+                    })
                 && left.fields.iter().zip(right.fields.iter()).all(|(a, b)| {
                     crate::kernel::resource_field_values_proven_equal(a, b, assumptions)
                 })
@@ -9878,7 +9997,13 @@ fn exact_resources_proven_equal(
                 && left_arguments
                     .iter()
                     .zip(right_arguments.iter())
-                    .all(|(a, b)| crate::kernel::instance_arguments_proven_equal(a, b, assumptions))
+                    .all(|(a, b)| {
+                        crate::kernel::instance_field_values_proven_equal(
+                            (a).into(),
+                            (b).into(),
+                            assumptions,
+                        )
+                    })
         }
         (
             Resource::Token {
@@ -9896,7 +10021,11 @@ fn exact_resources_proven_equal(
                     .iter()
                     .zip(right_arguments.iter())
                     .all(|(left, right)| {
-                        crate::kernel::resource_arguments_proven_equal(left, right, assumptions)
+                        crate::kernel::resource_field_values_proven_equal(
+                            (left).into(),
+                            (right).into(),
+                            assumptions,
+                        )
                     })
         }
         _ => false,
@@ -9913,11 +10042,14 @@ fn exact_resource_fact_entails(
             ResourceFact::Own(available, available_quantity),
             ResourceFact::Own(required, required_quantity),
         ) => {
-            resource_quantity_at_least(available_quantity, required_quantity, assumptions)
-                && exact_resources_proven_equal(available, required, assumptions)
+            resource_quantity_at_least(
+                available_quantity.native_compat(),
+                required_quantity.native_compat(),
+                assumptions,
+            ) && exact_resources_proven_equal(available, required, assumptions)
         }
         (ResourceFact::Own(available, available_quantity), ResourceFact::View(required)) => {
-            resource_quantity_is_positive(available_quantity, assumptions)
+            resource_quantity_is_positive(available_quantity.native_compat(), assumptions)
                 && exact_resources_proven_equal(available, required, assumptions)
         }
         (ResourceFact::View(available), ResourceFact::View(required)) => {
@@ -9956,7 +10088,7 @@ pub(in crate::kernel) fn quantity_condition_holds(
     assumptions: &PureFactContext,
     condition: ConditionTerm,
 ) -> bool {
-    assumptions.proves_exact(&Proposition::ConditionIs(condition.clone(), true))
+    assumptions.proves_exact(&Proposition::condition_is(condition.clone(), true))
         || assumptions.decide(&condition) == Some(true)
 }
 
@@ -10061,7 +10193,7 @@ pub(in crate::kernel) fn population_quantity_sum(
         left: Box::new(left.clone()),
         right: Box::new(right.clone()),
     };
-    (assumptions.proves_exact(&Proposition::ConditionIs(no_overflow.clone(), false))
+    (assumptions.proves_exact(&Proposition::condition_is(no_overflow.clone(), false))
         || assumptions.decide(&no_overflow) == Some(false))
     .then(|| MachineTerm::add(left.clone(), right.clone()))
 }
@@ -10085,7 +10217,7 @@ fn numeric_population_owned_units(fact: &ResourceFact) -> Option<u32> {
 
 fn resource_quantity_is_zero(quantity: &MachineTerm, assumptions: &PureFactContext) -> bool {
     quantity.as_const() == Some(0)
-        || assumptions.proves_exact(&Proposition::ConditionIs(
+        || assumptions.proves_exact(&Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -10238,8 +10370,8 @@ fn consume_exact_resource_fact(
             unreachable!("checked above")
         };
         let residual = MachineTerm::subtract(
-            available_quantity.as_ref().clone(),
-            required_quantity.as_ref().clone(),
+            available_quantity.native_compat().clone(),
+            required_quantity.native_compat().clone(),
         );
         let residual_is_zero = residual.as_const() == Some(0)
             || quantity_condition_holds(
@@ -10324,7 +10456,9 @@ fn combine_exact_resource_facts(
 /// context.
 fn owner_observation_core(resource: &ResourceFact) -> Option<ResourceFact> {
     match resource {
-        ResourceFact::Own(resource, quantity) if constant_quantity_is_positive(quantity) => {
+        ResourceFact::Own(resource, quantity)
+            if constant_quantity_is_positive(quantity.native_compat()) =>
+        {
             Some(ResourceFact::View(resource.clone()))
         }
         ResourceFact::Own(_, _) => None,
@@ -10532,11 +10666,14 @@ macro_rules! impl_exact_resource_algebra {
                         // quantity is a count that is not the population's.
                         Some(ResourceFact::Own(
                             left.clone(),
-                            Box::new(population_quantity_sum(
-                                left_quantity,
-                                right_quantity,
-                                assumptions,
-                            )?),
+                            Box::new(
+                                population_quantity_sum(
+                                    left_quantity.native_compat(),
+                                    right_quantity.native_compat(),
+                                    assumptions,
+                                )?
+                                .into(),
+                            ),
                         ))
                     }
                     _ => combine_exact_resource_facts(left, right, assumptions),
@@ -10872,7 +11009,7 @@ impl ResourceFamilyAlgebra for IteratedResourceAlgebra {
         required: &ResourceFact,
         assumptions: &PureFactContext,
     ) -> bool {
-        let unit = |quantity: &MachineTerm| quantity.as_const() == Some(1);
+        let unit = |quantity: &StoredMachineTerm| quantity.as_const() == Some(1);
         let shape = match (available, required) {
             (ResourceFact::Own(_, available), ResourceFact::Own(_, required)) => {
                 unit(available) && unit(required)
@@ -10932,7 +11069,7 @@ pub(in crate::kernel) fn iterated_memories_proven_equal(
                 right: Box::new(b.clone()),
             }) == Some(true)
     };
-    let pointer_equal = |a: &Address, b: &Address| {
+    let address_equal = |a: &Address, b: &Address| {
         crate::kernel::prelude::pointers_proven_equal_for_memory_resolution(a, b, assumptions)
     };
     left.element_width == right.element_width
@@ -10943,16 +11080,19 @@ pub(in crate::kernel) fn iterated_memories_proven_equal(
         && left.guard.cell_width == right.guard.cell_width
         && left.guard.holds_when_equal == right.guard.holds_when_equal
         && left.holes.len() == right.holes.len()
-        && pointer_equal(&left.element_base, &right.element_base)
-        && pointer_equal(&left.guard.base, &right.guard.base)
-        && term_equal(&left.lower, &right.lower)
-        && term_equal(&left.upper, &right.upper)
-        && term_equal(&left.guard.value, &right.guard.value)
+        && address_equal(&left.element_base, &right.element_base)
+        && address_equal(&left.guard.base, &right.guard.base)
+        && term_equal(left.lower.native_compat(), right.lower.native_compat())
+        && term_equal(left.upper.native_compat(), right.upper.native_compat())
+        && term_equal(
+            left.guard.value.native_compat(),
+            right.guard.value.native_compat(),
+        )
         && left
             .holes
             .iter()
             .zip(right.holes.iter())
-            .all(|(a, b)| term_equal(a, b))
+            .all(|(a, b)| term_equal(a.native_compat(), b.native_compat()))
 }
 
 pub(super) fn resource_fact_read_core_range(resource: &ResourceFact) -> Option<MemoryRange> {
@@ -11010,11 +11150,11 @@ fn memory_resource_fact_permits_write(
             _,
         ) => false,
         ResourceFact::Own(Resource::Memory(range), quantity) if range.wide_bounds().is_some() => {
-            resource_quantity_is_positive(quantity, assumptions)
+            resource_quantity_is_positive(quantity.native_compat(), assumptions)
                 && assumptions.pointer_access_in_wide_range(pointer, byte_width, range)
         }
         ResourceFact::Own(Resource::Memory(range), quantity) => {
-            resource_quantity_is_positive(quantity, assumptions)
+            resource_quantity_is_positive(quantity.native_compat(), assumptions)
                 && assumptions.pointer_access_in_range(
                     pointer,
                     byte_width,
@@ -11055,12 +11195,12 @@ fn owned_cell_access_uses_transitive_graph_address_equality() {
         MemoryRange::new_with_element_width(a.clone(), 0u32.into(), 1u32.into(), 4),
     ));
     let facts = PureFactContext::new()
-        .assume_condition(ConditionTerm::pointer_equal(a.clone(), b.clone()), true)
-        .assume_condition(ConditionTerm::pointer_equal(c.clone(), d.clone()), true);
+        .assume_condition(ConditionTerm::address_equal(a.clone(), b.clone()), true)
+        .assume_condition(ConditionTerm::address_equal(c.clone(), d.clone()), true);
     assert!(!owner.permits_memory_read(&d, 4, &facts));
     let connected = facts
         .clone()
-        .assume_condition(ConditionTerm::pointer_equal(b, c), true);
+        .assume_condition(ConditionTerm::address_equal(b, c), true);
     assert!(connected.pointers_known_equal(&a, &d));
     assert!(owner.permits_memory_read(&d, 4, &connected));
     assert!(owner.memory_write_range(&d, 4, &connected).is_some());
@@ -12908,7 +13048,7 @@ impl ResourceFact {
                 | Resource::MutexLive(_)
                 | Resource::MutexUse(_)
                 | Resource::Publication(_)
-        ) || matches!(self, Self::Own(_, quantity) if quantity.as_const() == Some(1))
+        ) || matches!(self, Self::Own(_, quantity) if quantity.native_compat().as_const() == Some(1))
     }
 
     pub const ALLOCATION_RESOURCE_NAME: &'static str = "allocation";
@@ -12937,10 +13077,14 @@ impl ResourceFact {
     }
 
     pub fn own(resource: Resource) -> Self {
-        Self::Own(resource, Box::new(MachineTerm::constant(1)))
+        Self::Own(resource, Box::new(MachineTerm::constant(1).into()))
     }
 
     pub fn own_quantity(resource: Resource, quantity: MachineTerm) -> Self {
+        Self::own_quantity_stored(resource, quantity.into())
+    }
+
+    pub(crate) fn own_quantity_stored(resource: Resource, quantity: StoredMachineTerm) -> Self {
         Self::Own(resource, Box::new(quantity))
     }
 
@@ -12972,13 +13116,20 @@ impl ResourceFact {
         base: Pointer,
         size: &AllocationSize,
     ) -> Self {
-        Self::own_token(
-            Self::ALLOCATION_RESOURCE_NAME.to_string(),
-            vec![
-                ProgramValue::Pointer(base.with_type(ProgramType::Int32Pointer)),
-                size.token_value(),
-            ],
-        )
+        Self::own(Resource::Token {
+            name: Self::ALLOCATION_RESOURCE_NAME.to_string(),
+            arguments: ResourceArguments::from_stored([
+                StoredResourceField::Input(AlgebraicValue::Program(ProgramValue::Pointer(
+                    base.with_type(ProgramType::Int32Pointer),
+                ))),
+                match size.bytes.value() {
+                    crate::kernel::ExecutionValue::Native(value) => {
+                        StoredResourceField::Input(AlgebraicValue::Program(value.clone()))
+                    }
+                    value => StoredResourceField::from_program(value.clone()),
+                },
+            ]),
+        })
     }
 
     /// Allocation identity supplies bounds, independently of read authority.
@@ -13023,8 +13174,19 @@ impl ResourceFact {
 
     /// The base and tagged size of an owned `allocation` token.
     pub(in crate::kernel) fn allocation_size(&self) -> Option<(&Pointer, AllocationSize)> {
-        let (base, bytes) = self.allocation_arguments()?;
-        Some((base, AllocationSize::from_token_value(bytes)?))
+        let Self::Own(Resource::Token { name, arguments }, _) = self else {
+            return None;
+        };
+        if name != Self::ALLOCATION_RESOURCE_NAME || arguments.len() != 2 {
+            return None;
+        }
+        let ResourceFieldValue::Program(ProgramValue::Pointer(base)) = arguments.get(0)? else {
+            return None;
+        };
+        Some((
+            base,
+            AllocationSize::from_value(arguments.program_value(1)?)?,
+        ))
     }
 
     fn allocation_arguments(&self) -> Option<(&Pointer, &ProgramValue)> {
@@ -13034,10 +13196,12 @@ impl ResourceFact {
         if name != Self::ALLOCATION_RESOURCE_NAME {
             return None;
         }
-        let [
-            AlgebraicValue::Program(ProgramValue::Pointer(base)),
-            AlgebraicValue::Program(bytes),
-        ] = arguments.as_ref()
+        let Some(
+            [
+                ResourceFieldValue::Program(ProgramValue::Pointer(base)),
+                ResourceFieldValue::Program(bytes),
+            ],
+        ) = arguments.fixed_values::<2>()
         else {
             return None;
         };
@@ -13049,7 +13213,7 @@ impl ResourceFact {
         Resource::Footprint(_) | Resource::Parameter(_) | Resource::Emp | Resource::Star(_) => true,
             Resource::Memory(range) => &range.base().base == block,
             Resource::Composite { arguments, .. } => arguments.iter().any(
-                |argument| matches!(argument, AlgebraicValue::Program(ProgramValue::Pointer(pointer)) if &pointer.base == block),
+                |argument| matches!(argument, crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(pointer)) if &pointer.base == block),
             ),
             Resource::Iterated(iterated) => iterated.blocks().contains(&block),
             Resource::Token { .. } | Resource::PopulationAuthority(_)
@@ -13138,7 +13302,7 @@ impl ResourceFact {
         }
         match self {
             Self::Own(resource, quantity)
-                if resource_quantity_is_positive(quantity.as_ref(), assumptions) =>
+                if resource_quantity_is_positive(quantity.native_compat(), assumptions) =>
             {
                 Some(Self::View(resource.clone()))
             }
@@ -13242,14 +13406,14 @@ impl ResourceFact {
 
     pub fn owned_quantity(&self) -> Option<u32> {
         match self {
-            Self::Own(_, quantity) => quantity.as_const(),
+            Self::Own(_, quantity) => quantity.native_compat().as_const(),
             Self::View(_) => None,
         }
     }
 
     pub fn owned_quantity_term(&self) -> Option<&MachineTerm> {
         match self {
-            Self::Own(_, quantity) => Some(quantity.as_ref()),
+            Self::Own(_, quantity) => Some(quantity.native_compat()),
             Self::View(_) => None,
         }
     }
@@ -13997,7 +14161,7 @@ mod related_pointer_root_tests {
         let base = external(0);
         let assumptions = (1..=count).fold(PureFactContext::new(), |assumptions, index| {
             assumptions.assume_condition(
-                ConditionTerm::pointer_equal(external(index), base.clone()),
+                ConditionTerm::address_equal(external(index), base.clone()),
                 true,
             )
         });
@@ -14181,7 +14345,7 @@ mod constructed_normalization_tests {
         let pointer = Address::symbolic(Variable(8_853_001));
         let alias = Address::symbolic(Variable(8_853_002));
         let facts = PureFactContext::new().assume_condition(
-            ConditionTerm::pointer_equal(pointer.clone(), alias.clone()),
+            ConditionTerm::address_equal(pointer.clone(), alias.clone()),
             true,
         );
         let pieces = [

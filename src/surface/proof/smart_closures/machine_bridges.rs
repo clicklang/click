@@ -42,16 +42,24 @@ fn integer_parts(
     &crate::kernel::SharedIntegerTerm,
 )> {
     match proposition {
-        Proposition::ConditionIs(
-            ConditionTerm::IntegerLessEqual(a, b)
-            | ConditionTerm::IntegerLessThan(a, b)
-            | ConditionTerm::IntegerEqual(a, b),
-            true,
-        ) => Some((a, b)),
-        Proposition::ConditionIs(
-            ConditionTerm::IntegerGreaterEqual(a, b) | ConditionTerm::IntegerGreaterThan(a, b),
-            true,
-        ) => Some((b, a)),
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((
+                ConditionTerm::IntegerLessEqual(a, b)
+                | ConditionTerm::IntegerLessThan(a, b)
+                | ConditionTerm::IntegerEqual(a, b),
+                _,
+            )) = condition_source_0.condition_native() =>
+        {
+            Some((a, b))
+        }
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((
+                ConditionTerm::IntegerGreaterEqual(a, b) | ConditionTerm::IntegerGreaterThan(a, b),
+                _,
+            )) = condition_source_0.condition_native() =>
+        {
+            Some((b, a))
+        }
         _ => None,
     }
 }
@@ -182,7 +190,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(None);
         };
         if crate::kernel::PureFactContext::new()
-            .widened_unsigned_sum_bound_premises(condition)
+            .widened_unsigned_sum_bound_premises(condition.native_compat())
             .is_none()
             || signed_intervals::has_retained_read_source(surface)
             || premises
@@ -210,9 +218,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let _recorded = super::super::surface_synthesis::SynthesisRecordedPointsScope::enter(
                 view.fixed_state.recorded_states,
             );
-            let query =
-                crate::kernel::machine_integer::comparison::comparison_view(condition, true)
-                    .expect("recognized widened sum comparison");
+            let query = crate::kernel::machine_integer::comparison::comparison_view(
+                condition.native_compat(),
+                true,
+            )
+            .expect("recognized widened sum comparison");
             let (_, _, operands) = query.operands[0]
                 .operand_view()
                 .binary()
@@ -696,15 +706,12 @@ pub(super) fn non_numeric_conditional_goal(goal: &Proposition) -> bool {
         Proposition::Not(body) => body.as_ref(),
         _ => goal,
     };
-    matches!(
-        goal,
-        Proposition::ConditionIs(
-            ConditionTerm::BoolEqual(..)
-                | ConditionTerm::BoolIf { .. }
-                | ConditionTerm::AlgebraicEqual(..),
-            _
-        ) | Proposition::Equal(Term::Algebraic(_), Term::Algebraic(_))
-    )
+    matches!(&goal, condition_source @ Proposition::ConditionIs(_, _)
+        if matches!(condition_source.condition_native(), Some((ConditionTerm::BoolEqual(..) | ConditionTerm::BoolIf { .. } | ConditionTerm::AlgebraicEqual(..), _))))
+        || matches!(
+            goal,
+            Proposition::Equal(Term::Algebraic(_), Term::Algebraic(_))
+        )
 }
 
 // Branch selection emits local equations and rewrites. Arithmetic after

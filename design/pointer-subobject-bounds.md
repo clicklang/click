@@ -16,8 +16,8 @@ claim verifies):
 | pointer local | `int32* q = &p->first; q = q + 1; return *q;` | reject the read |
 | formation | `return &p->first + 2;` | reject the formation |
 | modular helper | `arr(&p->first)` where `arr` has `views p[0..2]` and reads `p[1]` | reject the call |
-| address equality, subobject | callee `if (q == p) return *q;` with only `views p[0..1]`; caller passes `&s->first + 1, &s->second` | reject the callee |
-| address equality, whole objects | the same callee; caller passes `a + 4, b` with `views a[0..4]; views b[0..1]` | reject the callee |
+| integer address equality, subobject | callee `if (q == p) return *q;` with only `views p[0..1]`; caller passes `&s->first + 1, &s->second` | reject the callee |
+| integer address equality, whole objects | the same callee; caller passes `a + 4, b` with `views a[0..4]; views b[0..1]` | reject the callee |
 
 The last row is not a subobject case: a one-past pointer of a separate array
 reaches another object through a C-level address comparison inside a callee.
@@ -32,11 +32,11 @@ So the bug is two defects:
    Dereference (`read_c_lvalue_paths_without_ranges`, `write_c_lvalue_paths_*`)
    is checked only for address coverage by an owned or viewed range
    (`ResourceContext::permits_memory_read` / `memory_write_range`).
-2. **Modular (provenance across address equality).** In a callee, a pointer
+2. **Modular (provenance across integer address equality).** In a callee, a pointer
    parameter is an opaque address. Authority lookup
    (`read_access_entries` through equality-graph pointer classes) accepts any
    pointer whose address is proven equal to a carrier that holds authority.
-   That includes equality learned from a C `==`. In C, address equality
+   That includes equality learned from a C `==`. In C, integer address equality
    does not make a one-past pointer dereferenceable.
 
 ## Principles
@@ -172,14 +172,14 @@ first. A pointer without bounds is unaffected.
 A contract `==` between two pointers that both carry bounds also requires
 the bounds to be equal (D2), so a call cannot satisfy `requires q == p` with
 `&pair->first + 1` and `&pair->second`. When either value has none, the
-comparison stays an address equality: that value's provenance may be
+comparison stays an integer address equality: that value's provenance may be
 unknown, and assuming the equality must not refute a reachable path. A
 contract's scalar member address `&p->f` is narrowed to the member as the C
 frontend narrows it, so `ensures result == &p->second` does not hold for
 `&p->first + 1`. Member loads and other contract spellings of member places
 are not narrowed.
 
-## Phase B: C `==` states address equality (modular defect)
+## Phase B: C `==` states integer address equality (modular defect)
 
 Approved 2026-10-15. It replaces the earlier "provenance is part of the
 pointer value" plan, which is parked (see *Abandoned approach* below).
@@ -196,7 +196,7 @@ tell the verifier exactly that, and no more:
 - Contract `==` between pointers keeps its meaning: the two are the same
   pointer value. `address(p) == address(q)` stays the spelling for an
   address-only claim.
-- An address equality never becomes a pointer equality. Read and write
+- An integer address equality never becomes a pointer equality. Read and write
   permission follows pointer equalities, so `if (q == p) return *q;` cannot
   borrow `p`'s permission for `q`.
 
@@ -214,13 +214,13 @@ null.
 
 ### Steps
 
-1. Lower C pointer `==`/`!=` (except against null) to address equality, and
-   stop deriving pointer equality from address equality.
+1. Lower C pointer `==`/`!=` (except against null) to integer address equality, and
+   stop deriving pointer equality from integer address equality.
 2. Update the proofs that used a C comparison to conclude pointer equality.
    Each either states the address claim with `address(...)`, or relies on a
    value-level source. Add the two address-equality rows of the hole table as
    regressions.
-3. Load congruence over address equality. Reads of one memory at equal
+3. Load congruence over integer address equality. Reads of one memory at equal
    addresses read one cell, so they are equal values; that grants no
    permission. Done: the equality graph keys every read by its state and
    numeric address (see `docs/internals/equality-closure.md`), and
@@ -273,7 +273,7 @@ loaded-pointer and modular-result fixtures reject that formation even with
 
 A typed memory clause establishes bounds for the pointer value that names it.
 The held-range index supplies candidate ranges; complete domain identity admits
-evidence. Numeric address equality selects addresses but never joins opaque
+evidence. Integer address equality selects addresses but never joins opaque
 domains. Complete pointer equality can transfer bounds. A selected member keeps
 its exact member bounds, so a larger containing range cannot widen it.
 

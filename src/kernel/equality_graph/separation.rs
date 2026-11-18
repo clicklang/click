@@ -53,8 +53,8 @@ impl EqualityGraph {
         // retain exact source payloads. No independent alias graph is needed.
         for (a, b) in [(&anchors[0], &anchors[1]), (&anchors[1], &anchors[0])] {
             let condition = ConditionTerm::uint64_equal(
-                MachineTerm::pointer_address(a.clone()),
-                MachineTerm::pointer_address(b.clone()),
+                MachineTerm::integer_address(a.clone()),
+                MachineTerm::integer_address(b.clone()),
             );
             // Equal anchors and literal addresses can simplify to a constant.
             // They need no indexed application (and grant no new conclusion).
@@ -79,7 +79,7 @@ impl EqualityGraph {
         condition: &ConditionTerm,
     ) -> Option<Proposition> {
         let (a, b) = match condition {
-            ConditionTerm::PointerEqual(a, b) => (a.as_ref(), b.as_ref()),
+            ConditionTerm::AddressEqual(a, b) => (a.as_ref(), b.as_ref()),
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
@@ -89,8 +89,8 @@ impl EqualityGraph {
             _ => return None,
         };
         let numeric = ConditionTerm::uint64_equal(
-            MachineTerm::pointer_address(a.clone()),
-            MachineTerm::pointer_address(b.clone()),
+            MachineTerm::integer_address(a.clone()),
+            MachineTerm::integer_address(b.clone()),
         );
         let mut state = self.state.lock().expect("equality graph");
         if state.separation_sources.is_empty() {

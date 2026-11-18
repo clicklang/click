@@ -31,7 +31,7 @@ pub(crate) fn prove_separation_elements(
         ))
     };
     Theorem::new(Proposition::Implies(
-        Box::new(Proposition::ConditionIs(
+        Box::new(Proposition::condition_is(
             if wide {
                 ConditionTerm::int64_equal(i.clone(), j.clone())
             } else {
@@ -75,7 +75,7 @@ pub(crate) fn prove_separation_distinct_elements(
             .offset_by_typed_elements(index, width, unsigned, wide)
     };
     Theorem::new(Proposition::Implies(
-        Box::new(Proposition::ConditionIs(
+        Box::new(Proposition::condition_is(
             if wide {
                 ConditionTerm::int64_equal(i.clone(), j.clone())
             } else {
@@ -83,8 +83,8 @@ pub(crate) fn prove_separation_distinct_elements(
             },
             false,
         )),
-        Box::new(Proposition::ConditionIs(
-            ConditionTerm::pointer_equal(address(i), address(j)),
+        Box::new(Proposition::condition_is(
+            ConditionTerm::address_equal(address(i), address(j)),
             false,
         )),
     ))
@@ -157,7 +157,7 @@ pub(crate) fn prove_separation_subrange(
             .rev()
             .fold(conclusion, |body, (left, right)| {
                 Proposition::Implies(
-                    Box::new(Proposition::ConditionIs(
+                    Box::new(Proposition::condition_is(
                         ConditionTerm::machine_compare(
                             format,
                             CompareRelation::LessEqual,
@@ -206,7 +206,7 @@ pub(crate) fn prove_separation_adjacent_ranges(
             .rev()
             .fold(conclusion, |body, (left, right)| {
                 Proposition::Implies(
-                    Box::new(Proposition::ConditionIs(
+                    Box::new(Proposition::condition_is(
                         ConditionTerm::machine_compare(
                             format,
                             CompareRelation::LessEqual,
@@ -280,7 +280,7 @@ pub(crate) fn prove_separation_rebase(
             .rev()
             .fold(conclusion, |body, condition| {
                 Proposition::Implies(
-                    Box::new(Proposition::ConditionIs(condition, true)),
+                    Box::new(Proposition::condition_is(condition, true)),
                     Box::new(body),
                 )
             }),
@@ -331,7 +331,7 @@ pub(crate) fn prove_separation_contains_element(
         .rev()
         .fold(conclusion, |body, (relation, left, right)| {
             Proposition::Implies(
-                Box::new(Proposition::ConditionIs(
+                Box::new(Proposition::condition_is(
                     ConditionTerm::machine_compare(format, relation, left, right),
                     true,
                 )),

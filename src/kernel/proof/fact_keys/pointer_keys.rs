@@ -192,14 +192,14 @@ pub(super) fn alpha_offset<const ALLOW_LOADS: bool>(
     root: &SharedAddressOffset,
     bindings: &mut AlphaBindings,
     next: &mut usize,
-) -> Option<AlphaPointerOffsetKey> {
+) -> Option<AlphaAddressOffsetKey> {
     enum Frame {
         Visit(SharedAddressOffset),
         Add(SharedAddressOffset, usize),
     }
     // Registry definitions can contain local binders. Like the native load
     // memo, retain both the entry ordinal and the resulting ordinal.
-    let mut memo: HashMap<(SharedAddressOffset, usize), (AlphaPointerOffsetKey, usize)> =
+    let mut memo: HashMap<(SharedAddressOffset, usize), (AlphaAddressOffsetKey, usize)> =
         HashMap::new();
     let mut numeric: HashMap<(u64, usize), Canonical<AlphaMachineKey>> = HashMap::new();
     let mut pending = vec![Frame::Visit(root.clone())];
@@ -312,10 +312,10 @@ pub(super) fn alpha_address<const ALLOW_LOADS: bool>(
     pointer: &SharedAddress,
     bindings: &mut AlphaBindings,
     next: &mut usize,
-) -> Option<AlphaPointerKey> {
+) -> Option<AlphaAddressKey> {
     alpha_work_checkpoint(bindings, 1)?;
-    Some(AlphaPointerKey {
-        block: alpha_address_base_key::<ALLOW_LOADS>(
+    Some(AlphaAddressKey {
+        base: alpha_address_base_key::<ALLOW_LOADS>(
             pointer.node().base.native_atom(),
             bindings,
             next,

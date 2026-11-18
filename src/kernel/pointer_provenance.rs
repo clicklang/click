@@ -155,8 +155,8 @@ mod tests {
         Pointer::new(Address::symbolic(Variable(id)), ProgramType::Int32Pointer)
     }
     fn equality(a: &Pointer, b: &Pointer) -> Proposition {
-        Proposition::ConditionIs(
-            ConditionTerm::PointerValueEqual(Box::new(a.clone()), Box::new(b.clone())),
+        Proposition::condition_is(
+            ConditionTerm::PointerEqual(Box::new(a.clone()), Box::new(b.clone())),
             true,
         )
     }
@@ -173,10 +173,8 @@ mod tests {
                 ProgramType::Int32Pointer,
             )
         };
-        let equality = ConditionTerm::PointerValueEqual(
-            Box::new(pointer(a.clone())),
-            Box::new(pointer(b.clone())),
-        );
+        let equality =
+            ConditionTerm::PointerEqual(Box::new(pointer(a.clone())), Box::new(pointer(b.clone())));
         let context = PureFactContext::new().assume_condition(equality.clone(), true);
         assert!(context.int32_values_known_equal(&a, &b));
         let unequal = PureFactContext::new().assume_condition(equality, false);
@@ -190,7 +188,7 @@ mod tests {
         let empty = PureFactContext::new();
         assert!(!empty.pointer_provenance_match(&pointer, &null));
         let context = empty.assume_condition(
-            ConditionTerm::pointer_equal(pointer.address().clone(), Address::null()),
+            ConditionTerm::address_equal(pointer.address().clone(), Address::null()),
             true,
         );
         assert!(context.pointer_provenance_match(&pointer, &null));
@@ -206,7 +204,7 @@ mod tests {
         let a = value(810_001);
         let b = value(810_002);
         let context = PureFactContext::new().assume_condition(
-            ConditionTerm::pointer_equal(a.address().clone(), b.address().clone()),
+            ConditionTerm::address_equal(a.address().clone(), b.address().clone()),
             true,
         );
         let resources = ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(
@@ -364,7 +362,7 @@ mod tests {
             b.address(),
         );
         let context = PureFactContext::new().assume_condition(
-            ConditionTerm::pointer_equal(a.address().clone(), b.address().clone()),
+            ConditionTerm::address_equal(a.address().clone(), b.address().clone()),
             true,
         );
         assert!(!context.provenance_equal(a.provenance(), b.provenance()));
@@ -378,7 +376,7 @@ mod tests {
         let offset = MachineTerm::Variable(Variable(830_003));
         let facts = [
             equality(&a, &b),
-            Proposition::ConditionIs(ConditionTerm::equal(offset.clone(), 0u32.into()), true),
+            Proposition::condition_is(ConditionTerm::equal(offset.clone(), 0u32.into()), true),
         ];
         let context = facts.iter().fold(PureFactContext::new(), |c, f| {
             c.assume_proposition(f.clone())

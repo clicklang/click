@@ -163,7 +163,7 @@ mod tests {
                     let target = Address::null();
                     let expected =
                         crate::kernel::reasoning::substitute_pointer_variable_in_proposition(
-                            &Proposition::ConditionIs(source.clone(), true),
+                            &Proposition::condition_is(source.clone(), true),
                             Variable(999201),
                             &target,
                         );
@@ -250,7 +250,7 @@ mod tests {
         let source = ConditionTerm::Overflows {
             format: MachineIntegerType::Int64,
             op: OverflowOperation::Add,
-            left: Box::new(MachineTerm::PointerAddress(
+            left: Box::new(MachineTerm::IntegerAddress(
                 Box::new(Address::symbolic(Variable(999210))),
                 AddressObjectClass::NONE,
             )),
@@ -262,7 +262,7 @@ mod tests {
         ] {
             let root = KernelTermImport::default().condition(&source);
             let expected = crate::kernel::reasoning::substitute_pointer_variable_in_proposition(
-                &Proposition::ConditionIs(source.clone(), true),
+                &Proposition::condition_is(source.clone(), true),
                 Variable(999210),
                 &Address::null(),
             );

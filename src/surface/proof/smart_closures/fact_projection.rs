@@ -33,7 +33,7 @@ fn disjunction_proof(
     }
     let opposite = match source {
         Proposition::ConditionIs(condition, value) => {
-            Proposition::ConditionIs(condition.clone(), !value)
+            Proposition::condition_is(condition.clone(), !value)
         }
         Proposition::Not(inner) => inner.as_ref().clone(),
         other => Proposition::Not(Box::new(other.clone())),

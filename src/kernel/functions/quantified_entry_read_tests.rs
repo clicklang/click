@@ -109,7 +109,7 @@ fn sample(unrelated: usize, quantities: usize) -> usize {
         .expect("a folded control supplies the field read");
     assert_eq!(guards.len(), quantities);
     assert!(guards.iter().all(|guard| guard
-        == &Proposition::ConditionIs(
+        == &Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterEqual,
@@ -143,7 +143,7 @@ fn composite_read_projection_requires_positive_ownership() {
                 name: "zz_control".into(),
                 arguments: vec![ProgramValue::pointer(pointer.clone()).into()].into(),
             },
-            Box::new(MachineTerm::constant(quantity)),
+            Box::new(MachineTerm::constant(quantity).into()),
         );
         let supply = resource_clause_section_supply(
             &state,

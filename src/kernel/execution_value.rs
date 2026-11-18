@@ -594,7 +594,7 @@ impl StoredKey {
     }
 }
 impl StoredExecutionValue {
-    fn same_retained_root(&self, other: &Self) -> bool {
+    pub(crate) fn same_retained_root(&self, other: &Self) -> bool {
         std::sync::Arc::ptr_eq(&self.0, &other.0)
             || matches!((self.shared(), other.shared()), (Some(a), Some(b)) if a == b)
     }

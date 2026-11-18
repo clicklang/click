@@ -10,7 +10,8 @@ pub(super) fn composite_names_pointer_base(composite: &ResourceFact, pointer: &A
         return false;
     };
     arguments.iter().any(|argument| {
-        let AlgebraicValue::Program(ProgramValue::Pointer(argument)) = argument else {
+        let crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(argument)) = argument
+        else {
             return false;
         };
         argument.address() == pointer
@@ -103,7 +104,6 @@ pub(in crate::kernel) fn expand_all_composite_resource_facts_and_propositions_at
     assumptions: &PureFactContext,
 ) -> Option<(ResourceContext, Vec<Proposition>)> {
     let at = state.program_point();
-    let memory = at.memory();
     let (prepared, mut controls) =
         expand_checked_authority_controls(context, definitions, state, assumptions)?;
     let (expanded, composites) =
@@ -121,7 +121,7 @@ pub(in crate::kernel) fn expand_all_composite_resource_facts_and_propositions_at
         let loadable = evaluate_composite_resource_loadable_propositions(
             &composite,
             definitions,
-            memory,
+            &at,
             assumptions,
         )?;
         propositions.extend(loadable);
@@ -239,7 +239,12 @@ pub(in crate::kernel) fn evaluate_resource_population_fact_propositions(
                     parameter.program_type(),
                 );
             }
-            bind_composite_witnesses(definition, &arguments, &mut population_state, assumptions)?;
+            bind_composite_witnesses(
+                definition,
+                &(&arguments).native_values(),
+                &mut population_state,
+                assumptions,
+            )?;
             let mut budget = ExecutionBudget::beside_live_state();
             let evaluation_assumptions = assumptions
                 .clone()
@@ -270,7 +275,12 @@ pub(in crate::kernel) fn evaluate_resource_population_fact_propositions(
                 parameter.program_type(),
             );
         }
-        bind_composite_witnesses(definition, &arguments, &mut population_state, assumptions)?;
+        bind_composite_witnesses(
+            definition,
+            &(&arguments).native_values(),
+            &mut population_state,
+            assumptions,
+        )?;
         let mut budget = ExecutionBudget::beside_live_state();
         let evaluation_assumptions = assumptions
             .clone()
@@ -442,7 +452,12 @@ pub(in crate::kernel) fn evaluate_composite_resource_relation_propositions(
             parameter.program_type(),
         );
     }
-    bind_composite_witnesses(definition, arguments, &mut state, assumptions)?;
+    bind_composite_witnesses(
+        definition,
+        &(arguments).native_values(),
+        &mut state,
+        assumptions,
+    )?;
     let mut budget = ExecutionBudget::beside_live_state();
     let evaluation_assumptions = assumptions
         .clone()
@@ -535,7 +550,12 @@ pub(in crate::kernel) fn evaluate_composite_resource_memory_ranges(
             parameter.program_type(),
         );
     }
-    bind_composite_witnesses(definition, arguments, &mut state, assumptions)?;
+    bind_composite_witnesses(
+        definition,
+        &(arguments).native_values(),
+        &mut state,
+        assumptions,
+    )?;
     let mut budget = ExecutionBudget::beside_live_state();
     let evaluation_assumptions = assumptions
         .clone()
@@ -584,19 +604,15 @@ pub(in crate::kernel) fn evaluate_composite_resource_memory_ranges(
 pub(in crate::kernel) fn evaluate_composite_resource_loadable_propositions(
     composite: &ResourceFact,
     definitions: &[CompositeResourceDefinition],
-    memory: &SymbolicMemory,
+    at: &ProgramPoint,
     assumptions: &PureFactContext,
 ) -> Option<Vec<Proposition>> {
-    let ranges = evaluate_composite_resource_memory_ranges(
-        composite,
-        definitions,
-        &crate::kernel::ProgramPoint::of_memory(memory),
-        assumptions,
-    )?;
+    let ranges =
+        evaluate_composite_resource_memory_ranges(composite, definitions, at, assumptions)?;
     let mut propositions = Vec::new();
     for range in ranges {
         propositions.extend(crate::kernel::admitted_memory_range_span_facts(&range));
-        propositions.push(range.loadable_fact(memory));
+        propositions.push(range.loadable_fact(at.memory()));
     }
     Some(propositions)
 }
@@ -712,7 +728,12 @@ fn instantiate_composite_resource_facts_in_state(
             parameter.program_type(),
         );
     }
-    bind_composite_witnesses(definition, arguments, &mut state, assumptions)?;
+    bind_composite_witnesses(
+        definition,
+        &(arguments).native_values(),
+        &mut state,
+        assumptions,
+    )?;
     let mut result = Vec::new();
     let mut declared = Vec::new();
     let mut budget = ExecutionBudget::beside_live_state();

@@ -110,7 +110,7 @@ upstream implementation accepts this undefined dereference. The ordinary
 mdtest expects rejection and now passes. Keep the original C and both
 field permissions in the regression.
 
-The existing `PointerAddress(Box<Address>)` records only a physical address.
+The existing `IntegerAddress(Box<Address>)` records only a physical address.
 `cast_tagged_address_to_pointer` can also recover that address from a numeric
 word equality. Reconstructing `CPointerValue::new` then loses the selected
 bounds. Merely putting the full pointer in that term is insufficient: numeric
@@ -125,7 +125,7 @@ Use existing full pointer equality, without adding a predicate:
 requires (word as (int32 *)) == p;
 ```
 
-Under Phase B this states provenance equality as well as address equality.
+Under Phase B this states provenance equality as well as integer address equality.
 A tagged word can use the corresponding masked cast. Evaluation must be able
 to name an opaque reconstructed pointer before its origin is established;
 otherwise this spelling would circularly require the relation it is declaring.

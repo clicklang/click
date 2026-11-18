@@ -4890,6 +4890,70 @@ fn terminal_return_captures_value_before_checked_destructor_cleanup() {
 }
 
 #[test]
+#[ignore = "nightly: C++ early void return proof and replay"]
+fn cpp_void_early_return_skips_following_statements() {
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/cpp-verification/void-early-return");
+    let cpp = fs::read_to_string(fixture.join("advance.cpp")).unwrap();
+    let project = Project::with_fixture("advance.cpp", "advance", &cpp);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let [CppStatement::If { then_branch, .. }, _] = import.export().functions[0].body.as_slice()
+    else {
+        panic!("expected the early exit and the following cursor write");
+    };
+    assert!(matches!(
+        then_branch.as_slice(),
+        [CppStatement::ReturnVoid { cleanups, .. }] if cleanups.is_empty()
+    ));
+    let source = fs::read_to_string(fixture.join("advance.click")).unwrap();
+    check_selected_claim_certificate(&project, &import, &source);
+}
+
+#[test]
+#[ignore = "nightly: C++ void return with checked cleanup on both paths"]
+fn cpp_void_early_return_runs_destructors() {
+    let cpp = EARLY_RETURN_DESTRUCTOR_SOURCE
+        .replace("int with_restore(", "void with_restore(")
+        .replace("return value;", "return;");
+    let project = Project::with_fixture("with_restore.cpp", "with_restore", &cpp);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let [
+        CppStatement::Declare { local, .. },
+        CppStatement::If { then_branch, .. },
+        _,
+        CppStatement::ReturnVoid {
+            cleanups: final_cleanups,
+            ..
+        },
+    ] = import.export().functions[0].body.as_slice()
+    else {
+        panic!("expected destruction on both return edges");
+    };
+    let [
+        CppStatement::ReturnVoid {
+            cleanups: early_cleanups,
+            ..
+        },
+    ] = then_branch.as_slice()
+    else {
+        panic!("expected a value-free early return");
+    };
+    for cleanups in [early_cleanups, final_cleanups] {
+        assert!(matches!(
+            cleanups.as_slice(),
+            [CppCleanup::Destructor { object, .. }] if object.declaration_id == local.declaration_id
+        ));
+    }
+    let source = EARLY_RETURN_DESTRUCTOR_SIDECAR
+        .replace("int32 with_restore(", "void with_restore(")
+        .replace("    ensures early implies result == 7;\n", "")
+        .replace("    ensures not early implies result == 9;\n", "");
+    check_selected_claim_certificate(&project, &import, &source);
+}
+
+#[test]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn every_return_after_construction_runs_the_checked_destructor() {
     let project = Project::early_return_destructor();

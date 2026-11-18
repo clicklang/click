@@ -366,12 +366,12 @@ impl PureFactContext {
 
     fn decide_from_order_rules(&self, condition: &ConditionTerm) -> Option<bool> {
         match condition {
-            ConditionTerm::PointerEqual(left, right) if left == right => Some(true),
-            ConditionTerm::PointerEqual(left, right) => {
+            ConditionTerm::AddressEqual(left, right) if left == right => Some(true),
+            ConditionTerm::AddressEqual(left, right) => {
                 if self.pointers_known_equal(left, right) {
                     Some(true)
                 } else if left.base == right.base {
-                    self.decide_from_order_rules(&ConditionTerm::pointer_offset_equal(
+                    self.decide_from_order_rules(&ConditionTerm::address_offset_equal(
                         left.offset.clone(),
                         right.offset.clone(),
                     ))
@@ -398,8 +398,8 @@ impl PureFactContext {
                 }
                 self.decide_uint64_equality_extras(left, right)
             }
-            ConditionTerm::PointerOffsetEqual(left, right) if left == right => Some(true),
-            ConditionTerm::PointerOffsetEqual(left, right) => {
+            ConditionTerm::AddressOffsetEqual(left, right) if left == right => Some(true),
+            ConditionTerm::AddressOffsetEqual(left, right) => {
                 if pointer_offsets_proven_equal_for_memory_resolution(left, right, self) {
                     return Some(true);
                 }
@@ -507,14 +507,14 @@ impl PureFactContext {
                         true,
                     )
                     || self.has_condition_fact(
-                        ConditionTerm::pointer_offset_equal(
+                        ConditionTerm::address_offset_equal(
                             AddressOffset::scale_int32(left.clone(), 4),
                             AddressOffset::scale_int32(right.clone(), 4),
                         ),
                         true,
                     )
                     || self.has_condition_fact(
-                        ConditionTerm::pointer_offset_equal(
+                        ConditionTerm::address_offset_equal(
                             AddressOffset::scale_int32(right.clone(), 4),
                             AddressOffset::scale_int32(left.clone(), 4),
                         ),
@@ -556,14 +556,14 @@ impl PureFactContext {
                         right.clone(),
                     )) == Some(true)
                     || self.has_condition_fact(
-                        ConditionTerm::pointer_offset_equal(
+                        ConditionTerm::address_offset_equal(
                             AddressOffset::scale_int32(left.clone(), 4),
                             AddressOffset::scale_int32(right.clone(), 4),
                         ),
                         false,
                     )
                     || self.has_condition_fact(
-                        ConditionTerm::pointer_offset_equal(
+                        ConditionTerm::address_offset_equal(
                             AddressOffset::scale_int32(right.clone(), 4),
                             AddressOffset::scale_int32(left.clone(), 4),
                         ),
@@ -981,12 +981,12 @@ impl PureFactContext {
     fn stated_unsigned_order_view(&self, order: &ConditionTerm) -> bool {
         if matches!(order, ConditionTerm::Compare { .. }) {
             return crate::kernel::proof::fact_reasoning::order_claim_forms(
-                &Proposition::ConditionIs(order.clone(), true),
+                &Proposition::condition_is(order.clone(), true),
             )
             .iter()
             .any(|form| {
                 matches!(form, Proposition::ConditionIs(condition, value)
-                if self.condition_facts.get(condition) == Some(value))
+                if self.condition_facts.get(condition.native_compat()) == Some(value))
             });
         }
         if let Some(source) = self.observation_comparisons.source(order, true) {
@@ -1119,7 +1119,8 @@ impl PureFactContext {
             let Proposition::ConditionIs(condition, value) = &step.premise else {
                 return None;
             };
-            let (lower, upper, strict) = condition_as_order_fact(condition, *value)?;
+            let (lower, upper, strict) =
+                condition_as_order_fact(condition.native_compat(), *value)?;
             Some(SignedOrderDerivationStep::from_views(
                 MachineOperandView::Legacy(&lower),
                 MachineOperandView::Legacy(&upper),
@@ -1179,7 +1180,7 @@ impl PureFactContext {
                         key(view.operands[1].operand_view()),
                         view.relation == Relation::Less,
                         OrderDerivationStep {
-                            premise: Proposition::ConditionIs(condition.clone(), value),
+                            premise: Proposition::condition_is(condition.clone(), value),
                         },
                     ))
                 })
@@ -1250,7 +1251,7 @@ impl PureFactContext {
             let Proposition::ConditionIs(condition, truth) = claim else {
                 return None;
             };
-            let view = order_view_at_format(condition, *truth, format)?;
+            let view = order_view_at_format(condition.native_compat(), *truth, format)?;
             Some((
                 Key::for_format(format, view.operands[0].operand_view()),
                 Key::for_format(format, view.operands[1].operand_view()),
@@ -1315,7 +1316,7 @@ impl PureFactContext {
                         canonical(view.operands[1].operand_view()),
                         view.relation == Relation::Less,
                         OrderDerivationStep {
-                            premise: Proposition::ConditionIs(condition.clone(), value),
+                            premise: Proposition::condition_is(condition.clone(), value),
                         },
                     ))
                 })
@@ -1703,9 +1704,9 @@ impl PureFactContext {
             return None;
         }
         // The null pointer's address is zero, which every alignment divides.
-        let null_fact = ConditionTerm::pointer_equal(pointer.clone(), Address::null());
+        let null_fact = ConditionTerm::address_equal(pointer.clone(), Address::null());
         if self.decide(&null_fact) == Some(true) {
-            return Some((true, Some(Proposition::ConditionIs(null_fact, true))));
+            return Some((true, Some(Proposition::condition_is(null_fact, true))));
         }
         let (base, displacement) = split_constant_displacement(&pointer.offset);
         let intrinsic_block_alignment = match &pointer.base {
@@ -1750,7 +1751,7 @@ impl PureFactContext {
                             })
                     };
                     if let Some(fact) = premise_at(&base_pointer, probe) {
-                        found = Some(Proposition::ConditionIs(fact, true));
+                        found = Some(Proposition::condition_is(fact, true));
                         break 'candidates;
                     }
                     let witness = allow_class_witness
@@ -1759,7 +1760,7 @@ impl PureFactContext {
                         .filter(|(known, _)| probe <= *known)
                         .and_then(|(known, source)| premise_at(&source, known));
                     if let Some(fact) = witness {
-                        found = Some(Proposition::ConditionIs(fact, true));
+                        found = Some(Proposition::condition_is(fact, true));
                         break 'candidates;
                     }
                     probe *= 2;
@@ -1874,7 +1875,7 @@ impl PureFactContext {
             (Some(left), Some(right)) => {
                 if crate::kernel::eval::pointer_tags::same_tag_syntax(&left.tag, &right.tag) {
                     return self.decide_citing(
-                        &ConditionTerm::pointer_equal(left.pointer, right.pointer),
+                        &ConditionTerm::address_equal(left.pointer, right.pointer),
                         used,
                     );
                 }
@@ -1900,7 +1901,7 @@ impl PureFactContext {
                 ) == Some(false);
                 let distinct = tags_differ
                     || self.decide_citing(
-                        &ConditionTerm::pointer_equal(left.pointer.clone(), right.pointer.clone()),
+                        &ConditionTerm::address_equal(left.pointer.clone(), right.pointer.clone()),
                         used,
                     ) == Some(false);
                 let both_aligned = self.decide_citing(
@@ -1924,7 +1925,7 @@ impl PureFactContext {
                 let tag = tag_bound(form.tag.operand_view())?;
                 let alignment = tag.checked_add(1)?.checked_next_power_of_two()?;
                 let nonnull = self.decide_citing(
-                    &ConditionTerm::pointer_equal(form.pointer.clone(), Address::null()),
+                    &ConditionTerm::address_equal(form.pointer.clone(), Address::null()),
                     used,
                 ) == Some(false);
                 let aligned = self.decide_citing(
@@ -3559,12 +3560,12 @@ mod annotated_alignment_premise_tests {
         let context = PureFactContext::new().assume_condition(source.clone(), true);
         assert_eq!(
             context.pointer_alignment_certificate_decision(&pointer, 4),
-            Some((true, Some(Proposition::ConditionIs(source.clone(), true))))
+            Some((true, Some(Proposition::condition_is(source.clone(), true))))
         );
         let weaker = PureFactContext::new().assume_condition(bare.clone(), true);
         assert_eq!(
             weaker.pointer_alignment_certificate_decision(&pointer, 4),
-            Some((true, Some(Proposition::ConditionIs(bare, true))))
+            Some((true, Some(Proposition::condition_is(bare, true))))
         );
     }
 }
@@ -3720,7 +3721,7 @@ mod exact_order_path_tests {
                         MachineOperandView::Legacy(&lower),
                         MachineOperandView::Legacy(&upper),
                         strict,
-                        Proposition::ConditionIs(condition.clone(), *value),
+                        Proposition::condition_is(condition.clone(), *value),
                     )
                 })
             })
@@ -4276,7 +4277,7 @@ mod shared_read_order_bridge_tests {
                         .exact_signed_order_source_path(left, right, true)
                         .expect("selected frame bridge");
                     assert!(path.iter().any(
-                        |step| step.premise == Proposition::ConditionIs(premise.clone(), true)
+                        |step| step.premise == Proposition::condition_is(premise.clone(), true)
                     ));
                     assert!(!separated.has_exact_order_path_views(left, right, true));
                     let no_frame = PureFactContext::new().assume_condition(premise.clone(), true);
@@ -4370,7 +4371,7 @@ mod unsigned_signed_range_tests {
                 MachineTerm::constant(0),
                 signed_uint32_term(unsigned),
             );
-            assert!(admitted.contains_assumed_exact(&Proposition::ConditionIs(expected, true)));
+            assert!(admitted.contains_assumed_exact(&Proposition::condition_is(expected, true)));
         }
     }
 

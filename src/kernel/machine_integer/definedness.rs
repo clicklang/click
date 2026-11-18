@@ -30,7 +30,9 @@ pub(crate) fn integer_bounds_of_definedness(proposition: &Proposition) -> Vec<Pr
     let Proposition::ConditionIs(condition, false) = proposition else {
         return Vec::new();
     };
-    let Some((ty, operation, left, right)) = representation::overflow_operation(condition) else {
+    let Some((ty, operation, left, right)) =
+        representation::overflow_operation(condition.native_compat())
+    else {
         return Vec::new();
     };
     let (Some(left), Some(right)) = (
@@ -45,11 +47,11 @@ pub(crate) fn integer_bounds_of_definedness(proposition: &Proposition) -> Vec<Pr
 pub(crate) fn ordinary_bounds(format: MachineIntegerType, exact: IntegerTerm) -> [Proposition; 2] {
     let (minimum, maximum) = range::range(format);
     [
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::integer_less_equal(exact.clone(), IntegerTerm::constant(maximum)),
             true,
         ),
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::integer_greater_equal(exact, IntegerTerm::constant(minimum)),
             true,
         ),
@@ -73,7 +75,7 @@ pub(crate) fn overflow_fact_of_integer_bound(
     formats: impl Iterator<Item = MachineIntegerType>,
 ) -> Option<Proposition> {
     let query = overflow_query_of_integer_bound(bound, formats)?;
-    Some(Proposition::ConditionIs(query.boxed_condition()?, false))
+    Some(Proposition::condition_is(query.boxed_condition()?, false))
 }
 
 /// Private query over the original operand handles. Ordinary bounds remain
@@ -136,11 +138,11 @@ pub(crate) fn overflow_query_of_integer_bound(
     bound: &Proposition,
     formats: impl Iterator<Item = MachineIntegerType>,
 ) -> Option<OverflowQueryView> {
-    let Proposition::ConditionIs(
+    let Some((
         ConditionTerm::IntegerLessEqual(first, second)
         | ConditionTerm::IntegerGreaterEqual(first, second),
         true,
-    ) = bound
+    )) = bound.condition_native()
     else {
         return None;
     };
@@ -195,12 +197,12 @@ pub(crate) fn overflow_query_of_integer_bound(
 /// This is comparison matching, never a change to either stored term.
 fn same_integer_bound(left: &Proposition, right: &Proposition) -> bool {
     left == right
-        || matches!((left, right),
-        (Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(a, b), true),
-         Proposition::ConditionIs(ConditionTerm::IntegerGreaterEqual(c, d), true)) |
-        (Proposition::ConditionIs(ConditionTerm::IntegerGreaterEqual(a, b), true),
-         Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(c, d), true))
-        if a == d && b == c)
+        || matches!(&(left, right),
+        (left_source @ Proposition::ConditionIs(_, true), right_source @ Proposition::ConditionIs(_, true))
+        if matches!(left_source.condition_native(), Some((ConditionTerm::IntegerLessEqual(a, b), _)) if matches!(right_source.condition_native(), Some((ConditionTerm::IntegerGreaterEqual(c, d), _)) if (a == d) && (b == c))))
+        || matches!(&(left, right),
+            (left_source @ Proposition::ConditionIs(_, true), right_source @ Proposition::ConditionIs(_, true))
+            if matches!(left_source.condition_native(), Some((ConditionTerm::IntegerGreaterEqual(a, b), _)) if matches!(right_source.condition_native(), Some((ConditionTerm::IntegerLessEqual(c, d), _)) if (a == d) && (b == c))))
 }
 
 /// Read one explicitly supplied ordinary range conjunction as an arithmetic
@@ -232,7 +234,8 @@ pub(crate) fn range_domain_query(proposition: &Proposition) -> Option<OverflowQu
     let Proposition::ConditionIs(condition, false) = proposition else {
         return None;
     };
-    let (format, operation, left, right) = representation::overflow_operation(condition)?;
+    let (format, operation, left, right) =
+        representation::overflow_operation(condition.native_compat())?;
     OverflowQueryView::from_operands(
         format,
         operation,
@@ -248,7 +251,7 @@ pub(crate) fn range_domain_query(proposition: &Proposition) -> Option<OverflowQu
 /// adapter reads only the explicit proposition, never the ambient context.
 pub(crate) fn interval_query_form(proposition: &Proposition) -> Option<Proposition> {
     if let Some(condition) = ordinary_arithmetic_guard(proposition) {
-        return Some(Proposition::ConditionIs(condition, false));
+        return Some(Proposition::condition_is(condition, false));
     }
     if let Proposition::And(left, right) = proposition {
         let a = interval_query_form(left);
@@ -270,11 +273,11 @@ mod shared_query_tests {
         bound: &Proposition,
         formats: impl Iterator<Item = MachineIntegerType>,
     ) -> Option<Proposition> {
-        let Proposition::ConditionIs(
+        let Some((
             ConditionTerm::IntegerLessEqual(first, second)
             | ConditionTerm::IntegerGreaterEqual(first, second),
             true,
-        ) = bound
+        )) = bound.condition_native()
         else {
             return None;
         };
@@ -327,7 +330,7 @@ mod shared_query_tests {
             .flatten()
             .flatten()
             .find_map(|condition| {
-                let fact = Proposition::ConditionIs(condition, false);
+                let fact = Proposition::condition_is(condition, false);
                 integer_bounds_of_definedness(&fact)
                     .iter()
                     .any(|expected| same_integer_bound(expected, bound))
@@ -365,14 +368,14 @@ mod shared_query_tests {
                     for bounds_format in FORMATS {
                         let (min, max) = range::range(bounds_format);
                         for bound in [
-                            Proposition::ConditionIs(
+                            Proposition::condition_is(
                                 ConditionTerm::integer_less_equal(
                                     exact.clone(),
                                     IntegerTerm::constant(max),
                                 ),
                                 true,
                             ),
-                            Proposition::ConditionIs(
+                            Proposition::condition_is(
                                 ConditionTerm::integer_greater_equal(
                                     exact.clone(),
                                     IntegerTerm::constant(min),

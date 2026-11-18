@@ -272,7 +272,7 @@ impl<'a> Proof<'a> {
                     context,
                 )
                 .and_then(|(kernel_condition, surface)| {
-                    let expected = Proposition::ConditionIs(kernel_condition, true);
+                    let expected = Proposition::condition_is(kernel_condition, true);
                     self.lower_surface_proposition(&surface, "execution path selector")
                         .ok()
                         .filter(|actual| actual == &expected)
@@ -4014,7 +4014,7 @@ fn migrate_arm_metadata(
 mod progress_tests {
     use super::*;
     fn indexed_fact(index: u32) -> Proposition {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
@@ -4073,7 +4073,7 @@ mod progress_tests {
             }),
             ProofAssertion::Fact(written),
         ];
-        let comparison = Proposition::ConditionIs(
+        let comparison = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,

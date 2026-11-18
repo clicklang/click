@@ -2171,14 +2171,15 @@ private:
       return Json(std::move(result));
     }
     if (const auto *returned = llvm::dyn_cast<clang::ReturnStmt>(statement)) {
-      if (returned->getRetValue() == nullptr) {
-        fail(returned->getReturnLoc(),
-             "the first C++ slice requires an int return value");
-        return std::nullopt;
-      }
       llvm::json::Object result;
-      const auto *reference_return = function->getReturnType()->getAs<clang::LValueReferenceType>();
-      if (function->getReturnType()->isRecordType() &&
+      if (returned->getRetValue() == nullptr) {
+        if (!function->getReturnType()->isVoidType() ||
+            llvm::isa<clang::CXXConstructorDecl, clang::CXXDestructorDecl>(function)) {
+          fail(returned->getReturnLoc(), "C++ value-free returns require an ordinary void function");
+          return std::nullopt;
+        }
+        result["kind"] = "return_void";
+      } else if (function->getReturnType()->isRecordType() &&
           archetype_name(function->getReturnType()) == nullptr) {
         const auto *operand = returned->getRetValue()->IgnoreParenImpCasts();
         if (const auto *cast = llvm::dyn_cast<clang::CXXFunctionalCastExpr>(operand);
@@ -2263,6 +2264,7 @@ private:
         }
         result["value_type"] = std::move(*value_type);
       } else {
+        const auto *reference_return = function->getReturnType()->getAs<clang::LValueReferenceType>();
         auto scalar_call = lower_scalar_call_source(returned->getRetValue());
         if (!scalar_call) return std::nullopt;
         const auto *call = scalar_call->call;

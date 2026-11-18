@@ -9,7 +9,7 @@ fn constructed_normalization_bounds_neighbours_and_ignores_alias_classes() {
             if axis == "aliases" {
                 for index in 0..count {
                     facts = facts.assume_condition(
-                        ConditionTerm::pointer_equal(
+                        ConditionTerm::address_equal(
                             pointer.clone(),
                             Address::symbolic(Variable(8_853_100 + u64::from(index))),
                         ),
@@ -56,7 +56,7 @@ fn singleton_normalization_retains_occurrences_without_alias_discovery() {
         let p = Address::symbolic(Variable(8_963_000));
         let facts = (0..count).fold(PureFactContext::new(), |facts, i| {
             facts.assume_condition(
-                ConditionTerm::pointer_equal(p.clone(), Address::symbolic(Variable(8_963_100 + i))),
+                ConditionTerm::address_equal(p.clone(), Address::symbolic(Variable(8_963_100 + i))),
                 true,
             )
         });

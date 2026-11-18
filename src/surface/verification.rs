@@ -8419,7 +8419,7 @@ int32 f(struct s* p, int32 n) {
     /// carries this call's own loans, because lending has removed the owner
     /// from the preserved residual (docs/internals/stable-views.md).
     #[test]
-    fn undecided_continuity_retire_refuses_a_lent_allocation() {
+    fn call_retirement_requires_separation_from_its_own_loan() {
         let click = r#"
 verifying "reader.c";
 
@@ -8446,13 +8446,18 @@ int32 f(int32 n) {
 }
 "#;
         let source = "uint8* external_alloc(int32 bytes);\nvoid realloc_like(uint8* p, int32 n);\nvoid drop_alloc(uint8* p, int32 n);\nint32 f(int32 n) { uint8* data; int32 value; data = external_alloc(4); data[0] = 7; realloc_like(data, n); value = data[0]; drop_alloc(data, n); return value; }";
-        let error = verify_sources(click, source)
-            .expect_err("a call that may deallocate a lent allocation must be refused");
-        assert!(
-            error.message().contains("active loan"),
-            "{}",
-            error.message()
-        );
+        let definite_free = click.replace("    produces allocation(p, n);\n", "");
+        for contract in [click, &definite_free] {
+            let error = verify_sources(contract, source)
+                .expect_err("a call that may deallocate a lent allocation must be refused");
+            assert!(
+                error
+                    .message()
+                    .contains("verified call allocation retirement separation"),
+                "{}",
+                error.message()
+            );
+        }
     }
 
     #[test]

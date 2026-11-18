@@ -127,7 +127,7 @@ pub(super) fn written(term: &MachineTerm) -> MemoryErasedBitvectorKey {
         return operand(crate::kernel::MachineOperandView::Shared(&root));
     }
     let node = match term {
-        MachineTerm::PointerAddress(pointer, _) => {
+        MachineTerm::IntegerAddress(pointer, _) => {
             Node::Address(Box::new(memory_erased_address_key(pointer)))
         }
         MachineTerm::MemoryLoad(_, pointer, kind) => {
@@ -432,12 +432,12 @@ mod tests {
             CompareRelation::LessThan,
             CompareRelation::LessEqual,
         ] {
-            let native = Proposition::ConditionIs(
+            let native = Proposition::condition_is(
                 ConditionTerm::machine_compare(format, relation, native.clone(), limit.clone()),
                 true,
             );
             let exports = KernelTermExport::machine_export_count();
-            let shared = Proposition::ConditionIs(
+            let shared = Proposition::condition_is(
                 condition_for_operand_views(
                     format,
                     relation,

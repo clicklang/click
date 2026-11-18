@@ -25,7 +25,7 @@ fn loop_view_partition_uses_alias_graph_without_scanning_ambient_ranges() {
         offset: AddressOffset::Constant(2),
     };
     let assumptions = PureFactContext::new()
-        .assume_condition(ConditionTerm::pointer_equal(alias.clone(), target), true);
+        .assume_condition(ConditionTerm::address_equal(alias.clone(), target), true);
     let spec = ResourceSpec::new(
         ResourceTerm::Memory(
             MemorySegment::new(

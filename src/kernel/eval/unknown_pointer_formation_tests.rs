@@ -58,12 +58,12 @@ fn formation_requires_the_original_domain_and_includes_one_past() {
     assert!(permits(&p, 0, &root, &ResourceContext::new()));
     assert!(!permits(&p, 4, &root, &ResourceContext::new()));
     let numeric = root.clone().assume_condition(
-        ConditionTerm::pointer_equal(p.address().clone(), q.address().clone()),
+        ConditionTerm::address_equal(p.address().clone(), q.address().clone()),
         true,
     );
     assert!(!permits(&p, 4, &numeric, &resources));
-    let equality = Proposition::ConditionIs(
-        ConditionTerm::PointerValueEqual(Box::new(p.clone()), Box::new(q.clone())),
+    let equality = Proposition::condition_is(
+        ConditionTerm::PointerEqual(Box::new(p.clone()), Box::new(q.clone())),
         true,
     );
     let full = numeric.clone().assume_proposition(equality.clone());
@@ -106,14 +106,14 @@ fn member_coverage_does_not_follow_numeric_aliases() {
         ))
         .unwrap();
     let aliased = PureFactContext::new().assume_condition(
-        ConditionTerm::pointer_equal(p.address().clone(), q.address().clone()),
+        ConditionTerm::address_equal(p.address().clone(), q.address().clone()),
         true,
     );
     let numeric = aliased.clone().assume_proposition(coverage);
     let empty = ResourceContext::new();
     assert!(!permits(&p, 8, &numeric, &empty));
-    let equality = Proposition::ConditionIs(
-        ConditionTerm::PointerValueEqual(Box::new(p.clone()), Box::new(q.clone())),
+    let equality = Proposition::condition_is(
+        ConditionTerm::PointerEqual(Box::new(p.clone()), Box::new(q.clone())),
         true,
     );
     let full = numeric.clone().assume_proposition(equality.clone());
@@ -372,7 +372,7 @@ fn null_pointer_zero_offsets_use_scalar_evidence_and_preserve_refusals() {
             (false, _) => MachineTerm::constant(n as u32),
         };
         let equal = |a, b| {
-            Proposition::ConditionIs(
+            Proposition::condition_is(
                 if wide {
                     ConditionTerm::int64_equal(a, b)
                 } else {

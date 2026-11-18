@@ -738,7 +738,7 @@ load. Two things were `Symbolic` before, and only one of them still is:
 
 Framing a load of the second kind therefore needs evidence, and one route
 spends it: `pointers_proven_distinct_for_memory_resolution` takes **one hop**
-through the index of assumed `PointerEqual` facts to a non-symbolic form and
+through the index of assumed `AddressEqual` facts to a non-symbolic form and
 asks the same question there
 (`pointers_distinct_through_one_exact_alias`). `ensures result == &g[0]` and
 `ensures result == p` are what that reads, and
@@ -1970,6 +1970,15 @@ occurrences. Selected return construction preserves raw clause order and
 multiplicity. Optional normalization visits only the explicit body. Arbitrary
 return descriptions still establish their cross-head and caller boundaries;
 they do not acquire the held parent's frame rule merely from a role marker.
+Cached expansion and live authority control expansion check reuse against the
+retained ownership partition. Exact representations use the exact fact index.
+For a split memory child, the indexed write supplier at each successive
+address must start there, have positive quantity and compatible provenance,
+and end at or before the child's end. Symbolic bounds follow the same
+indexed endpoint chain used in owned-resource consumption. The walk stops
+at an exact cover and
+retains the existing occurrences and their lineage. No scratch context or
+ownership validation is needed to establish coverage.
 Generic expansion also serves contract entry/certification, folding and
 observations, whose remaining caller-specific work stays source pinned. Footprint projection
 coalesces the explicit ranges derived from its selected head without admitting
@@ -2016,6 +2025,28 @@ The `exit_partition_tests` regressions preserve split occurrences across normal,
 exceptional and fallthrough completion, reject overlapping raw observations,
 and grow owners, related ranges, tokens, aliases and private slots at 4/16/64.
 Existing observable-projection tests cover private filtering and invalidation.
+
+For an explicit folded composite observation on a state with no loan bindings,
+the kernel takes the selected resource and the memory naming input. It
+constructs the successor from the reached state, inserts the checked body's
+views with the selected occurrence as support, and publishes the structural
+witnesses of that body. There is no proposed resource context to compare
+against the whole retained partition. Loan-bound observations still use the
+ledger projection route. The introduced pure facts still need their ordinary
+checked definition and derivation evidence.
+
+Exact contract certification shares its original closing entry with the
+single unconditional finite entry case. Guarded and recursive cases retain
+their case-specific entry construction. Closing still needs the definition
+and footprint evidence for each requested claim.
+
+Normal `ensures` goal preparation and closing share one successful exit
+resource projection per retained entry case. Reuse requires the same exit
+checkpoint, adjusted memory and resource custody, composite definitions, and
+proof facts including logical read definitions. A changed checkpoint prepares
+a fresh projection. Each consumer builds its own claim state from the
+projection, and closing still checks allocation escape and computes the
+observation facts for its claims.
 
 The source tests in `tests/search_boundary.rs` pin the perimeter, including
 new/hidden references and duplicate caller edges. Runtime probes exercise

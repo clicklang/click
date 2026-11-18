@@ -334,6 +334,10 @@ impl PartialOrd for LoanViewBindings {
 pub(crate) struct ReturnedViewAuthority(LoanViewBinding);
 
 impl LoanViewBindings {
+    pub(crate) fn is_empty(&self) -> bool {
+        self.state.map.is_empty()
+    }
+
     pub(crate) fn from_state(state: Arc<LoanViewBindingsState>) -> Self {
         Self { state }
     }
@@ -3057,7 +3061,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
             {
                 StableViewPlanError::MissingResource(ResourceFact::Own(
                     fact.resource().clone(),
-                    Box::new(MachineTerm::constant(demanded)),
+                    Box::new(MachineTerm::constant(demanded).into()),
                 ))
             }
             _ => StableViewPlanError::MissingResource(fact.clone()),

@@ -1462,9 +1462,7 @@ impl<'a> Proof<'a> {
 
         // A decided range exposes its empty or append equation over the
         // named function, with ordinary obligations for its guards.
-        let fold_equation = if matches!(&equality,
-            Proposition::ConditionIs(ConditionTerm::IntegerEqual(_, folded), true)
-                if matches!(folded.as_ref(), IntegerTerm::RangeFold { .. }))
+        let fold_equation = if matches!(&equality, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::IntegerEqual(_, folded), _)) if (matches!(folded.as_ref(), IntegerTerm::RangeFold { .. }))))
             && !self.goal().is_some_and(|goal| {
                 crate::kernel::proof::propositions_are_alpha_equal(goal, &equality)
             }) {
@@ -1492,10 +1490,8 @@ impl<'a> Proof<'a> {
             facts = facts.with_kernel_checked_fact(derived.clone());
             let branch = match self.focused_obligation() {
                 Some(Obligation::Proposition(goal)) => {
-                    let Proposition::ConditionIs(
-                        ConditionTerm::IntegerEqual(unfolded, replacement),
-                        true,
-                    ) = &derived
+                    let Some((ConditionTerm::IntegerEqual(unfolded, replacement), true)) =
+                        (&derived).condition_native()
                     else {
                         return Err(self.step_error(
                             "the restated fold law did not produce an Integer equation",
@@ -1771,7 +1767,7 @@ impl<'a> Proof<'a> {
         equality: &Proposition,
     ) -> Result<Option<(Proposition, Option<Proposition>)>, ClickError> {
         let name = &application.name;
-        let Proposition::ConditionIs(ConditionTerm::IntegerEqual(whole, folded), true) = equality
+        let Some((ConditionTerm::IntegerEqual(whole, folded), true)) = equality.condition_native()
         else {
             return Err(self.step_error(format!(
                 "`unfold({name}(...))` applies to an `Integer`-valued pure function whose body is a range fold"
@@ -1813,14 +1809,14 @@ impl<'a> Proof<'a> {
             else {
                 return Err(self.step_error("the empty fold law must have a range guard"));
             };
-            match self.facts().assumptions().decide(condition) {
+            match self.facts().assumptions().decide(condition.native_compat()) {
                 Some(value) => value == *expected,
                 None => {
                     // A written predecessor guard also selects the append
                     // case. Inspect only that guard, without instantiating
                     // a body whose range case is still unknown.
                     let guard = crate::kernel::integer_range_fold_predecessor_guard(index)
-                        .map(|condition| Proposition::ConditionIs(condition, true));
+                        .map(|condition| Proposition::condition_is(condition, true));
                     if !guard.as_ref().is_some_and(|guard| {
                         self.facts().listed_premise_available(guard, &[], false)
                     }) {
@@ -1903,8 +1899,8 @@ impl<'a> Proof<'a> {
             if premise == equality {
                 continue;
             }
-            if let Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true) =
-                premise
+            if let Some((ConditionTerm::IntegerEqual(left, right), true)) =
+                (premise).condition_native()
                 && left.as_ref() == &prior
                 && matches!(right.as_ref(), IntegerTerm::RangeFold { .. })
             {
@@ -2137,7 +2133,7 @@ impl<'a> Proof<'a> {
             // premise-free checked Integer certificate proves the same truth;
             // this changes presentation, never the kernel obligation.
             if lowered
-                == Some(Proposition::ConditionIs(
+                == Some(Proposition::condition_is(
                     ConditionTerm::Constant(true),
                     true,
                 ))
@@ -2475,20 +2471,20 @@ impl<'a> Proof<'a> {
             context.claim_label,
             context.tactic_index,
         )?;
-        execution
+        let state = execution
             .core
             .record_resource_observation(
                 context.function,
                 context.arguments,
                 &before_facts,
                 &checked.observed_resource,
-                &checked.state,
+                checked.successor.input(),
                 &checked.facts,
             )
             .map_err(|message| {
                 self.step_error(format!("kernel rejected checked `observe`: {message}"))
             })?;
-        execution.core.state = checked.state.into();
+        execution.core.state = state.into();
         let branch = self
             .focused_branch()
             .expect("resource observation requires an open goal")

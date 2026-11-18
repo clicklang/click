@@ -270,7 +270,7 @@ pub(crate) fn term_width(term: &MachineTerm) -> WidthResult {
             16 => CarrierWidth::Bits16,
             bits => CarrierWidth::of_bits(bits),
         })),
-        T::Variable(_) | T::PointerAddress(_, _) => Ok(None),
+        T::Variable(_) | T::IntegerAddress(_, _) => Ok(None),
         crate::kernel::binary_bitvector32_term!(l, r) => {
             operands("32-bit operator", Bits32, &[l, r])
         }
@@ -413,7 +413,7 @@ pub(crate) fn root_width(term: &MachineTerm) -> Option<CarrierWidth> {
         int64_constant!(_) | uint64_constant!(_) => Bits64,
         native_constant!(format, _) => CarrierWidth::of_bits(format.format().bits()),
         T::Variable(_)
-        | T::PointerAddress(_, _)
+        | T::IntegerAddress(_, _)
         | T::If { .. }
         | T::RangeFold { .. }
         | T::PureFunctionApplication { .. }

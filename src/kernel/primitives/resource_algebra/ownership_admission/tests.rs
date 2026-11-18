@@ -135,7 +135,7 @@ fn returned_boundary_names_exclusive_conflicts_without_installing_children() {
 #[test]
 fn cold_return_boundary_keeps_the_aliased_held_fact_and_parent_partition() {
     let facts =
-        PureFactContext::new().assume_condition(ConditionTerm::pointer_equal(at(0), at(1)), true);
+        PureFactContext::new().assume_condition(ConditionTerm::address_equal(at(0), at(1)), true);
     let piece = owner(at(0), 0, 4);
     let parent = ResourceContext::new().unchecked_with_fact(owner(at(1), 4, 8));
     assert!(matches!(
@@ -207,7 +207,7 @@ fn certified_symbolic_quantities_use_empty_frame_and_block_boundaries() {
             4u32.into(),
             1,
         )),
-        Box::new(quantity),
+        Box::new(quantity.into()),
     );
     for retained in [
         ResourceFact::own_composite("frame".into(), Vec::new()),
@@ -225,7 +225,7 @@ fn certified_symbolic_quantities_use_empty_frame_and_block_boundaries() {
             .unwrap();
         assert!(next.contains_exact_representation(&output));
     }
-    let aliases = facts.assume_condition(ConditionTerm::pointer_equal(at(0), at(1)), true);
+    let aliases = facts.assume_condition(ConditionTerm::address_equal(at(0), at(1)), true);
     let frame =
         ResourceContext::new_with_equalities(&aliases).unchecked_with_fact(owner(at(1), 0, 4));
     assert!(
@@ -322,7 +322,7 @@ fn private_frame_coverage_is_scoped_to_its_registry_and_defers_to_local_aliases(
     ));
     let aliased = facts
         .clone()
-        .assume_condition(ConditionTerm::pointer_equal(at(90), local), true);
+        .assume_condition(ConditionTerm::address_equal(at(90), local), true);
     frame.synchronize_memory_equalities(&aliased);
     assert!(matches!(
         frame.admit_without_discovery([output], &aliased),
@@ -365,7 +365,7 @@ fn automatic_storage_and_entry_arguments_keep_their_structural_partition() {
 #[test]
 fn cold_singleton_and_prepared_aliases_keep_the_selected_held_fact() {
     let facts =
-        PureFactContext::new().assume_condition(ConditionTerm::pointer_equal(at(0), at(1)), true);
+        PureFactContext::new().assume_condition(ConditionTerm::address_equal(at(0), at(1)), true);
     let piece = owner(at(0), 0, 4);
     let parent = ResourceContext::new().unchecked_with_fact(owner(at(1), 4, 8));
     let _fast = crate::kernel::search::FastOperationScope::enter("bounded aliased return boundary");

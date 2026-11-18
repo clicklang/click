@@ -456,7 +456,7 @@ impl Printer<'_> {
             // value has the public source-region spelling read_event(i).result.
             Proposition::VolatileAccess(_) => None,
             Proposition::ConditionIs(condition, polarity) => {
-                self.condition(condition, *polarity, depth)
+                self.condition(condition.native_compat(), *polarity, depth)
             }
             Proposition::And(left, right) => {
                 let left = self.proposition(left, depth)?;
@@ -597,7 +597,7 @@ impl Printer<'_> {
             } => {
                 let fact = atom(format!(
                     "viewable({})",
-                    self.byte_range(base, bytes, *wide, depth)
+                    self.byte_range(base, bytes.native_compat(), *wide, depth)
                 ));
                 self.qualify_fact(memory, fact)
             }
@@ -794,7 +794,7 @@ impl Printer<'_> {
                 };
                 return Some(negate(name, polarity));
             }
-            ConditionTerm::PointerValueEqual(left, right) => {
+            ConditionTerm::PointerEqual(left, right) => {
                 let left = self.cvalue(
                     &crate::kernel::ProgramValue::Pointer((**left).clone()),
                     depth,
@@ -810,7 +810,7 @@ impl Printer<'_> {
                     operand(right, SHIFT)
                 )));
             }
-            ConditionTerm::PointerEqual(left, right) => {
+            ConditionTerm::AddressEqual(left, right) => {
                 if !self.source_mode() {
                     if self.mode == Mode::ExactIdentity
                         && [left, right]
@@ -857,7 +857,7 @@ impl Printer<'_> {
                     }
                 )));
             }
-            ConditionTerm::PointerOffsetEqual(left, right) => {
+            ConditionTerm::AddressOffsetEqual(left, right) => {
                 if !self.source_mode() {
                     return None;
                 }
@@ -1727,7 +1727,7 @@ impl Printer<'_> {
                     spelled_arms.join(", ")
                 )))
             }
-            B::PointerAddress(pointer, _) => {
+            B::IntegerAddress(pointer, _) => {
                 let pointer = self.pointer(pointer, depth)?;
                 Some(cast("uint64", pointer))
             }
@@ -2280,7 +2280,7 @@ impl Printer<'_> {
             }
             ResourceFact::Own(_, quantity) => {
                 let quantity = self
-                    .bitvector(quantity, None, 0)
+                    .bitvector(quantity.native_compat(), None, 0)
                     .map_or_else(|| "…".into(), |v| v.text);
                 format!("owns {text} (quantity {quantity})")
             }
@@ -2375,7 +2375,8 @@ impl Printer<'_> {
                 )
             }
             Resource::Instance(instance) => {
-                let application = self.resource_arguments(instance.name(), instance.arguments());
+                let application = self
+                    .resource_arguments(instance.name(), &(instance.arguments()).native_values());
                 match self.hidden_record(
                     instance.schema().fields(),
                     &instance.fields().native_values(),
@@ -2385,7 +2386,7 @@ impl Printer<'_> {
                 }
             }
             Resource::Composite { name, arguments } | Resource::Token { name, arguments } => {
-                self.resource_arguments(name, arguments)
+                self.resource_arguments(name, &(arguments).native_values())
             }
             Resource::ConditionalMutexGuard(carrier) => {
                 let condition = self
@@ -2409,7 +2410,8 @@ impl Printer<'_> {
                     crate::surface::diagnostics::describe_mutex_pointer(identity.mutex(), binding);
                 match identity.protected_type() {
                     Some(ty) => {
-                        let protected = self.resource_arguments(ty.family(), ty.arguments());
+                        let protected =
+                            self.resource_arguments(ty.family(), &(ty.arguments()).native_values());
                         format!("mutex_use({mutex}, {protected})")
                     }
                     None => format!("mutex_use({mutex})"),
@@ -2418,8 +2420,10 @@ impl Printer<'_> {
             Resource::Publication(right) => {
                 let flag =
                     crate::surface::diagnostics::describe_mutex_pointer(right.flag(), binding);
-                let payload =
-                    self.resource_arguments(right.payload().family(), right.payload().arguments());
+                let payload = self.resource_arguments(
+                    right.payload().family(),
+                    &(right.payload().arguments()).native_values(),
+                );
                 let mut text = format!("{}({flag}, {payload})", right.side().keyword());
                 if right.observed().is_some() {
                     text.push_str(
@@ -2429,8 +2433,10 @@ impl Printer<'_> {
                 text
             }
             Resource::PopulationAuthority(description) => {
-                let mut text =
-                    self.resource_arguments(description.family(), description.arguments());
+                let mut text = self.resource_arguments(
+                    description.family(),
+                    &(description.arguments()).native_values(),
+                );
                 if let Some(arity) = description.population_arity() {
                     text.pop();
                     for _ in 1..arity {
@@ -2981,7 +2987,7 @@ mod tests {
     use crate::kernel::{AddressBase, LoadKind, Pointer, ProgramType, ProgramValue, SharedMemory};
 
     fn equality(value: MachineTerm) -> Proposition {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -3028,7 +3034,7 @@ mod tests {
             (0.0, "d >= float64_from_bits(0x0000000000000000u64)"),
             (1.5, "d >= float64_from_bits(0x3ff8000000000000u64)"),
         ] {
-            let fact = Proposition::ConditionIs(
+            let fact = Proposition::condition_is(
                 ConditionTerm::Float64(crate::kernel::FloatCondition::Comparison {
                     operator: crate::kernel::ComparisonOperator::GreaterEqual,
                     left: Box::new(MachineTerm::Variable(Variable(7))),
@@ -3038,7 +3044,7 @@ mod tests {
             );
             assert_eq!(source(&fact, &mut labels), expected);
         }
-        let fact = Proposition::ConditionIs(
+        let fact = Proposition::condition_is(
             ConditionTerm::Float32(crate::kernel::FloatCondition::Comparison {
                 operator: crate::kernel::ComparisonOperator::LessThan,
                 left: Box::new(MachineTerm::Float32Binary {
@@ -3054,7 +3060,7 @@ mod tests {
             source(&fact, &mut labels),
             "f + float32_from_bits(0x3fc00000) < float32_from_bits(0x40000000)"
         );
-        let integer = Proposition::ConditionIs(
+        let integer = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
@@ -3131,7 +3137,7 @@ mod tests {
             MachineCastSpelling::UInt32From64,
             Box::new(MachineTerm::Variable(Variable(94))),
         );
-        let fact = Proposition::ConditionIs(
+        let fact = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
@@ -3153,7 +3159,7 @@ mod tests {
         labels.source_name(Variable(7), "a".into());
         labels.source_name(Variable(8), "u".into());
         labels.source_types.insert(Variable(8), ProgramType::UInt32);
-        let signed = Proposition::ConditionIs(
+        let signed = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -3163,7 +3169,7 @@ mod tests {
             true,
         );
         assert_eq!(source(&signed, &mut labels), "a == -56");
-        let unsigned = Proposition::ConditionIs(
+        let unsigned = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -3174,7 +3180,7 @@ mod tests {
         );
         assert_eq!(source(&unsigned, &mut labels), "u != 4294967240u32");
         // An unsigned order over an `int32` value converts it.
-        let order = Proposition::ConditionIs(
+        let order = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::UInt32,
                 relation: CompareRelation::LessEqual,
@@ -3214,7 +3220,7 @@ mod tests {
                     left: Box::new(MachineTerm::Variable(Variable(7))),
                     right: Box::new(MachineTerm::Variable(Variable(8))),
                 };
-                let fact = Proposition::ConditionIs(
+                let fact = Proposition::condition_is(
                     ConditionTerm::Compare {
                         format,
                         relation: CompareRelation::LessThan,
@@ -3245,7 +3251,7 @@ mod tests {
             Box::new(binary_node!(Int32, Add, a(), b())),
             Box::new(binary_node!(Int32, Subtract, a(), b())),
         );
-        let less = Proposition::ConditionIs(
+        let less = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
@@ -3254,7 +3260,7 @@ mod tests {
             },
             false,
         );
-        let masked = Proposition::ConditionIs(
+        let masked = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,

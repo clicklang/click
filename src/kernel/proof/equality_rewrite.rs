@@ -146,45 +146,63 @@ impl PureFactStore {
                 // this atomic goal. Corresponding operators stay exact; the
                 // shared transport checker validates any changed read leaves.
                 let (from, to, wide) = match equality {
-                    Proposition::ConditionIs(
-                        ConditionTerm::Compare {
-                            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                            relation: CompareRelation::Equal,
-                            left: a,
-                            right: b,
-                        },
-                        true,
-                    ) => (a, b, false),
-                    Proposition::ConditionIs(
-                        ConditionTerm::Compare {
-                            format: MachineIntegerType::Int64,
-                            relation: CompareRelation::Equal,
-                            left: a,
-                            right: b,
-                        },
-                        true,
-                    ) => (a, b, true),
+                    condition_source_0 @ Proposition::ConditionIs(_, true)
+                        if let Some((
+                            ConditionTerm::Compare {
+                                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+                                relation: CompareRelation::Equal,
+                                left: a,
+                                right: b,
+                            },
+                            _,
+                        )) = condition_source_0.condition_native() =>
+                    {
+                        (a, b, false)
+                    }
+                    condition_source_0 @ Proposition::ConditionIs(_, true)
+                        if let Some((
+                            ConditionTerm::Compare {
+                                format: MachineIntegerType::Int64,
+                                relation: CompareRelation::Equal,
+                                left: a,
+                                right: b,
+                            },
+                            _,
+                        )) = condition_source_0.condition_native() =>
+                    {
+                        (a, b, true)
+                    }
                     _ => return Err(original_error),
                 };
                 let (left, right) = match goal {
-                    Proposition::ConditionIs(
-                        ConditionTerm::Compare {
-                            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                            relation: CompareRelation::Equal,
-                            left: a,
-                            right: b,
-                        },
-                        _,
-                    ) if !wide => (a, b),
-                    Proposition::ConditionIs(
-                        ConditionTerm::Compare {
-                            format: MachineIntegerType::Int64,
-                            relation: CompareRelation::Equal,
-                            left: a,
-                            right: b,
-                        },
-                        _,
-                    ) if wide => (a, b),
+                    condition_source_0 @ Proposition::ConditionIs(_, _)
+                        if let Some((
+                            ConditionTerm::Compare {
+                                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+                                relation: CompareRelation::Equal,
+                                left: a,
+                                right: b,
+                            },
+                            _,
+                        )) = condition_source_0.condition_native()
+                            && (!wide) =>
+                    {
+                        (a, b)
+                    }
+                    condition_source_0 @ Proposition::ConditionIs(_, _)
+                        if let Some((
+                            ConditionTerm::Compare {
+                                format: MachineIntegerType::Int64,
+                                relation: CompareRelation::Equal,
+                                left: a,
+                                right: b,
+                            },
+                            _,
+                        )) = condition_source_0.condition_native()
+                            && (wide) =>
+                    {
+                        (a, b)
+                    }
                     _ => return Err(original_error),
                 };
                 for selected in [left, right] {
@@ -201,7 +219,7 @@ impl PureFactStore {
                     } else {
                         ConditionTerm::equal(selected.as_ref().clone(), to.as_ref().clone())
                     };
-                    let adapted = Proposition::ConditionIs(condition, true);
+                    let adapted = Proposition::condition_is(condition, true);
                     let Some(facts) = self.with_checked_rewritten_loads(equality, &adapted) else {
                         continue;
                     };
@@ -216,8 +234,8 @@ impl PureFactStore {
 }
 
 pub(crate) fn reverse_equality(equality: &Proposition) -> Option<Proposition> {
-    if let Proposition::ConditionIs(ConditionTerm::BoolEqual(a, b), true) = equality {
-        return Some(Proposition::ConditionIs(
+    if let Some((ConditionTerm::BoolEqual(a, b), true)) = (equality).condition_native() {
+        return Some(Proposition::condition_is(
             ConditionTerm::BoolEqual(b.clone(), a.clone()),
             true,
         ));
@@ -229,68 +247,92 @@ pub(crate) fn reverse_equality(equality: &Proposition) -> Option<Proposition> {
                 Term::Algebraic(a.clone()),
             ));
         }
-        Proposition::ConditionIs(
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((
+                ConditionTerm::Compare {
+                    format: format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
+                    relation: CompareRelation::Equal,
+                    left: a,
+                    right: b,
+                },
+                _,
+            )) = condition_source_0.condition_native() =>
+        {
             ConditionTerm::Compare {
-                format: format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
+                format: *format,
                 relation: CompareRelation::Equal,
-                left: a,
-                right: b,
-            },
-            true,
-        ) => ConditionTerm::Compare {
-            format: *format,
-            relation: CompareRelation::Equal,
-            left: b.clone(),
-            right: a.clone(),
-        },
+                left: b.clone(),
+                right: a.clone(),
+            }
+        }
         // A native 8- or 16-bit equality reverses at its own format.
-        Proposition::ConditionIs(
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((
+                ConditionTerm::Compare {
+                    format:
+                        format @ (MachineIntegerType::Int8
+                        | MachineIntegerType::UInt8
+                        | MachineIntegerType::Int16
+                        | MachineIntegerType::UInt16),
+                    relation: CompareRelation::Equal,
+                    left: a,
+                    right: b,
+                },
+                _,
+            )) = condition_source_0.condition_native() =>
+        {
             ConditionTerm::Compare {
-                format:
-                    format @ (MachineIntegerType::Int8
-                    | MachineIntegerType::UInt8
-                    | MachineIntegerType::Int16
-                    | MachineIntegerType::UInt16),
+                format: *format,
                 relation: CompareRelation::Equal,
-                left: a,
-                right: b,
-            },
-            true,
-        ) => ConditionTerm::Compare {
-            format: *format,
-            relation: CompareRelation::Equal,
-            left: b.clone(),
-            right: a.clone(),
-        },
-        Proposition::ConditionIs(
+                left: b.clone(),
+                right: a.clone(),
+            }
+        }
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int64,
+                    relation: CompareRelation::Equal,
+                    left: a,
+                    right: b,
+                },
+                _,
+            )) = condition_source_0.condition_native() =>
+        {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
-                left: a,
-                right: b,
-            },
-            true,
-        ) => ConditionTerm::Compare {
-            format: MachineIntegerType::Int64,
-            relation: CompareRelation::Equal,
-            left: b.clone(),
-            right: a.clone(),
-        },
-        Proposition::ConditionIs(ConditionTerm::IntegerEqual(a, b), true) => {
+                left: b.clone(),
+                right: a.clone(),
+            }
+        }
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::IntegerEqual(a, b), _)) =
+                condition_source_0.condition_native() =>
+        {
             ConditionTerm::IntegerEqual(b.clone(), a.clone())
         }
-        Proposition::ConditionIs(ConditionTerm::PointerOffsetEqual(a, b), true) => {
-            ConditionTerm::PointerOffsetEqual(b.clone(), a.clone())
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::AddressOffsetEqual(a, b), _)) =
+                condition_source_0.condition_native() =>
+        {
+            ConditionTerm::AddressOffsetEqual(b.clone(), a.clone())
         }
-        Proposition::ConditionIs(ConditionTerm::PointerValueEqual(a, b), true) => {
-            ConditionTerm::PointerValueEqual(b.clone(), a.clone())
-        }
-        Proposition::ConditionIs(ConditionTerm::PointerEqual(a, b), true) => {
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::PointerEqual(a, b), _)) =
+                condition_source_0.condition_native() =>
+        {
             ConditionTerm::PointerEqual(b.clone(), a.clone())
+        }
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::AddressEqual(a, b), _)) =
+                condition_source_0.condition_native() =>
+        {
+            ConditionTerm::AddressEqual(b.clone(), a.clone())
         }
         _ => return None,
     };
-    Some(Proposition::ConditionIs(reversed, true))
+    Some(Proposition::condition_is(reversed, true))
 }
 
 // Equality substitution cares about lexical variables, not the contents of
@@ -362,10 +404,12 @@ fn rewrite_with_admitted_equality(
     if let Proposition::ConditionIs(condition, truth) = equality {
         for width in [MachineIntegerType::UInt32, MachineIntegerType::UInt64] {
             if let Some(wrapped) = crate::kernel::machine_integer::modular::wrapped_equality_at(
-                width, condition, *truth,
+                width,
+                condition.native_compat(),
+                *truth,
             ) && let Ok(rewritten) = rewrite_with_admitted_equality_reading(
                 goal,
-                &Proposition::ConditionIs(wrapped, true),
+                &Proposition::condition_is(wrapped, true),
                 true,
             ) {
                 return Ok(rewritten);
@@ -420,11 +464,13 @@ fn rewrite_with_admitted_equality_reading(
     }
 
     let integer_source = match equality {
-        Proposition::ConditionIs(ConditionTerm::IntegerEqual(from, _), true)
-            if matches!(
-                from.as_ref(),
-                IntegerTerm::Machine(_) | IntegerTerm::Constant(_)
-            ) =>
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::IntegerEqual(from, _), _)) =
+                condition_source_0.condition_native()
+                && (matches!(
+                    from.as_ref(),
+                    IntegerTerm::Machine(_) | IntegerTerm::Constant(_)
+                )) =>
         {
             Some(from)
         }
@@ -516,13 +562,10 @@ fn rewrite_with_admitted_equality_reading(
                         )
                         .into_iter()
                         .find(|reading| {
-                            matches!(
-                                reading,
-                                Proposition::ConditionIs(
-                                    crate::kernel::integer_comparison_condition!(left, right),
+                            matches!(&reading, condition_source_0 @ Proposition::ConditionIs(
                                     _,
-                                ) if left == source || right == source
-                            )
+                                    _,
+                                ) if matches!(condition_source_0.condition_native(), Some((crate::kernel::integer_comparison_condition!(left, right), _)) if left == source || right == source))
                         })
                     });
                     let selected = reading.as_ref().unwrap_or(atomic);
@@ -536,8 +579,10 @@ fn rewrite_with_admitted_equality_reading(
                         // constructor, so it has the canonical form lowering
                         // gives the same source: `0 == 0` is `true`.
                         Ok(Proposition::ConditionIs(condition, value)) => results.push((
-                            Proposition::ConditionIs(
-                                super::term_rewrite::folded_machine_condition(condition),
+                            Proposition::condition_is(
+                                super::term_rewrite::folded_machine_condition(
+                                    condition.native_compat().clone(),
+                                ),
                                 value,
                             ),
                             true,
@@ -622,7 +667,7 @@ fn rewrite_with_admitted_equality_reading(
 /// constant, is also kept as written. The check is the equality's own two
 /// operands; nothing else is consulted.
 fn signed_byte_equality_as_byte_equality(equality: &Proposition) -> Option<Proposition> {
-    let Proposition::ConditionIs(
+    let Some((
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
@@ -630,7 +675,7 @@ fn signed_byte_equality_as_byte_equality(equality: &Proposition) -> Option<Propo
             right: to,
         },
         true,
-    ) = equality
+    )) = equality.condition_native()
     else {
         return None;
     };
@@ -642,7 +687,7 @@ fn signed_byte_equality_as_byte_equality(equality: &Proposition) -> Option<Propo
         return None;
     }
     let signed = i8::try_from(to.as_const()? as i32).ok()?;
-    Some(Proposition::ConditionIs(
+    Some(Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -661,34 +706,43 @@ fn signed_byte_equality_as_byte_equality(equality: &Proposition) -> Option<Propo
 /// distinguishes. The step is then vacuous rather than wrong, so it must not
 /// be reported as a missing occurrence or an unsupported equality shape.
 fn equality_is_vacuous(equality: &Proposition) -> bool {
-    if matches!(
-        equality,
-        Proposition::ConditionIs(ConditionTerm::Constant(true), true)
-    ) {
+    if matches!(&equality, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Constant(true), _))))
+    {
         return true;
     }
     match equality {
         Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) => left == right,
         // σ(x) == x is x == x under rule K6: the same bits.
-        Proposition::ConditionIs(
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                relation: CompareRelation::Equal,
-                left,
-                right,
-            },
-            true,
-        ) => left == right || left.is_sign_cast32_of(right),
-        Proposition::ConditionIs(
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int64,
-                relation: CompareRelation::Equal,
-                left,
-                right,
-            },
-            true,
-        ) => left == right,
-        Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true) => {
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+                    relation: CompareRelation::Equal,
+                    left,
+                    right,
+                },
+                _,
+            )) = condition_source_0.condition_native() =>
+        {
+            left == right || left.is_sign_cast32_of(right)
+        }
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int64,
+                    relation: CompareRelation::Equal,
+                    left,
+                    right,
+                },
+                _,
+            )) = condition_source_0.condition_native() =>
+        {
+            left == right
+        }
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::IntegerEqual(left, right), _)) =
+                condition_source_0.condition_native() =>
+        {
             if left == right {
                 return true;
             }
@@ -714,10 +768,18 @@ fn equality_is_vacuous(equality: &Proposition) -> bool {
             };
             sign_cast_of(left, right) || sign_cast_of(right, left)
         }
-        Proposition::ConditionIs(ConditionTerm::PointerOffsetEqual(left, right), true) => {
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::AddressOffsetEqual(left, right), _)) =
+                condition_source_0.condition_native() =>
+        {
             left == right
         }
-        Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) => left == right,
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::AddressEqual(left, right), _)) =
+                condition_source_0.condition_native() =>
+        {
+            left == right
+        }
         _ => false,
     }
 }
@@ -1117,7 +1179,7 @@ fn rewrite_term(term: &MachineTerm, from: &MachineTerm, to: &MachineTerm) -> Mac
                 offset: rewrite_offset(&pointer.offset, from, to),
             },
         ),
-        MachineTerm::PointerAddress(pointer, class) => MachineTerm::object_pointer_address(
+        MachineTerm::IntegerAddress(pointer, class) => MachineTerm::object_pointer_address(
             Address {
                 base: pointer.base.clone(),
                 offset: rewrite_offset(&pointer.offset, from, to),
@@ -1196,8 +1258,10 @@ fn rewrite_atomic_by_word_equality(
     let Proposition::ConditionIs(condition, true) = equality else {
         unreachable!("projected equality");
     };
-    let view = crate::kernel::machine_integer::comparison::structural_comparison_view(condition)
-        .expect("projected word comparison");
+    let view = crate::kernel::machine_integer::comparison::structural_comparison_view(
+        condition.native_compat(),
+    )
+    .expect("projected word comparison");
     let mut rewrite = super::term_rewrite::TermRewrite::for_machine_operands_checked(
         view.operands[0].operand_view(),
         view.operands[1].operand_view(),
@@ -1227,11 +1291,14 @@ fn rewrite_atomic_proposition_by_exact_equality(
     // replaces `b` by that literal.
     let literal = |value: bool| ConditionTerm::Constant(value);
     let bool_equation = match equality {
-        Proposition::ConditionIs(ConditionTerm::BoolEqual(left, right), true) => {
+        condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::BoolEqual(left, right), _)) =
+                condition_source_0.condition_native() =>
+        {
             Some((left.as_ref().clone(), right.as_ref().clone()))
         }
-        Proposition::ConditionIs(value, truth) if value.is_bool_value_form() => {
-            Some((value.clone(), literal(*truth)))
+        Proposition::ConditionIs(value, truth) if value.native_compat().is_bool_value_form() => {
+            Some((value.native_compat().clone(), literal(*truth)))
         }
         _ => None,
     };
@@ -1251,8 +1318,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
             ))
         };
     }
-    if let Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, right), true) = equality
-    {
+    if let Some((ConditionTerm::PointerEqual(left, right), true)) = (equality).condition_native() {
         let mut rewrite = super::term_rewrite::TermRewrite::for_pointer_value_exact(left, right);
         let rewritten = rewrite.proposition(goal);
         if rewrite.refusal().is_some() {
@@ -1265,33 +1331,31 @@ fn rewrite_atomic_proposition_by_exact_equality(
         }
         return rewrite_atomic_proposition_by_exact_equality(
             goal,
-            &Proposition::ConditionIs(
-                ConditionTerm::pointer_equal(left.address().clone(), right.address().clone()),
+            &Proposition::condition_is(
+                ConditionTerm::address_equal(left.address().clone(), right.address().clone()),
                 true,
             ),
         );
     }
-    if matches!(
-        goal,
-        Proposition::ConditionIs(
-            ConditionTerm::PointerValueEqual(..) | ConditionTerm::PointerEqual(..),
+    if matches!(&goal, condition_source_0 @ Proposition::ConditionIs(
+            _,
             _
-        )
-    ) && let Proposition::ConditionIs(
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-            relation: CompareRelation::Equal,
-            left,
-            right,
-        }
-        | ConditionTerm::Compare {
-            format: MachineIntegerType::Int64,
-            relation: CompareRelation::Equal,
-            left,
-            right,
-        },
-        true,
-    ) = equality
+        ) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::PointerEqual(..) | ConditionTerm::AddressEqual(..), _))))
+        && let Some((
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+                relation: CompareRelation::Equal,
+                left,
+                right,
+            }
+            | ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::Equal,
+                left,
+                right,
+            },
+            true,
+        )) = (equality).condition_native()
     {
         let mut rewrite = super::term_rewrite::TermRewrite::for_bits(left, right);
         let rewritten = rewrite.proposition(goal);
@@ -1493,7 +1557,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
         }
     }
 
-    if let Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true) = equality {
+    if let Some((ConditionTerm::IntegerEqual(left, right), true)) = (equality).condition_native() {
         let mut rewrite = super::term_rewrite::TermRewrite::for_integer_exact(left, right);
         let rewritten = rewrite.proposition(goal);
         match rewrite.refusal() {
@@ -1520,7 +1584,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
         let rewritten = match goal {
             Proposition::Equal(a, b) => Proposition::Equal(rewrite.term(a), rewrite.term(b)),
             Proposition::ConditionIs(c, expected) => {
-                Proposition::ConditionIs(rewrite.condition(c), *expected)
+                Proposition::condition_is(rewrite.condition(c.native_compat()), *expected)
             }
             _ => {
                 return Err(AtomicRewriteRefusal::Absent(
@@ -1545,7 +1609,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
     }
 
     if let Proposition::ConditionIs(condition, true) = equality
-        && let Some((left, right)) = condition.pointer_offset_sides()
+        && let Some((left, right)) = condition.native_compat().pointer_offset_sides()
     {
         fn rewrite_offset(
             offset: &AddressOffset,
@@ -1634,7 +1698,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 MachineTerm::MemoryLoad(_, pointer, _) => {
                     rewrite_read_address(term, rewrite_pointer(pointer))
                 }
-                MachineTerm::PointerAddress(pointer, class) => {
+                MachineTerm::IntegerAddress(pointer, class) => {
                     MachineTerm::object_pointer_address(rewrite_pointer(pointer), class.class())
                 }
                 MachineTerm::Variable(_) => rewrite_through_load_variable(term, &rewrite_pointer)
@@ -1704,7 +1768,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 wide,
             } => Proposition::MemoryLoadable {
                 // Same-block pointer equalities use offsets rather than the
-                // PointerEqual carrier. Substitute the selected address while
+                // AddressEqual carrier. Substitute the selected address while
                 // retaining the exact state and readable byte span.
                 memory: memory.clone(),
                 base: Address {
@@ -1714,26 +1778,28 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 bytes: bytes.clone(),
                 wide: *wide,
             },
-            Proposition::ConditionIs(
-                ConditionTerm::PointerOffsetEqual(goal_left, goal_right),
-                expected,
-            ) => Proposition::ConditionIs(
-                ConditionTerm::PointerOffsetEqual(
-                    Box::new(rewrite_offset(goal_left, left, right)),
-                    Box::new(rewrite_offset(goal_right, left, right)),
-                ),
-                *expected,
-            ),
-            Proposition::ConditionIs(
-                ConditionTerm::PointerEqual(goal_left, goal_right),
-                expected,
-            ) => {
+            condition_source_0 @ Proposition::ConditionIs(_, expected)
+                if let Some((ConditionTerm::AddressOffsetEqual(goal_left, goal_right), _)) =
+                    condition_source_0.condition_native() =>
+            {
+                Proposition::condition_is(
+                    ConditionTerm::AddressOffsetEqual(
+                        Box::new(rewrite_offset(goal_left, left, right)),
+                        Box::new(rewrite_offset(goal_right, left, right)),
+                    ),
+                    *expected,
+                )
+            }
+            condition_source_0 @ Proposition::ConditionIs(_, expected)
+                if let Some((ConditionTerm::AddressEqual(goal_left, goal_right), _)) =
+                    condition_source_0.condition_native() =>
+            {
                 let rewrite_pointer = |pointer: &Address| Address {
                     base: pointer.base.clone(),
                     offset: rewrite_offset(&pointer.offset, left, right),
                 };
-                Proposition::ConditionIs(
-                    ConditionTerm::pointer_equal(
+                Proposition::condition_is(
+                    ConditionTerm::address_equal(
                         rewrite_pointer(goal_left),
                         rewrite_pointer(goal_right),
                     ),
@@ -1742,7 +1808,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
             }
             Proposition::ConditionIs(condition, expected) => {
                 let rewrite_term = |term: &MachineTerm| rewrite_term_offset(term, left, right);
-                let rewritten = match condition {
+                let rewritten = match condition.native_compat() {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessThan,
@@ -1820,7 +1886,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                         );
                     }
                 };
-                Proposition::ConditionIs(rewritten, *expected)
+                Proposition::condition_is(rewritten, *expected)
             }
             Proposition::ResourceSeparate {
                 left: goal_left,
@@ -1883,7 +1949,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
         }
         return Ok(rewritten);
     }
-    if let Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) = equality {
+    if let Some((ConditionTerm::AddressEqual(left, right), true)) = (equality).condition_native() {
         // A field or array access keeps its base pointer's block and adds a
         // displacement. An equality of the bases therefore also rewrites the
         // address of that access, with the same displacement on the right.
@@ -2058,36 +2124,40 @@ fn rewrite_atomic_proposition_by_exact_equality(
                     wide: *wide,
                 }
             }
-            Proposition::ConditionIs(
-                ConditionTerm::PointerEqual(goal_left, goal_right),
-                expected,
-            ) => Proposition::ConditionIs(
-                // Replacing one side can land both pointers in the same
-                // block, and a same-block pointer equality is carried
-                // everywhere else as the equality of its offsets. Rebuild
-                // through the canonicalizing constructor so the rewritten
-                // goal is the term an ordinary lowering would produce and a
-                // later `known` or `normalize() using` can see it.
-                ConditionTerm::pointer_equal(
-                    rewrite_pointer(goal_left),
-                    rewrite_pointer(goal_right),
-                ),
-                *expected,
-            ),
-            Proposition::ConditionIs(
-                ConditionTerm::PointerValueEqual(goal_left, goal_right),
-                expected,
-            ) => Proposition::ConditionIs(
-                ConditionTerm::PointerValueEqual(
-                    Box::new(goal_left.map_addresses(&rewrite_pointer)),
-                    Box::new(goal_right.map_addresses(&rewrite_pointer)),
-                ),
-                *expected,
-            ),
+            condition_source_0 @ Proposition::ConditionIs(_, expected)
+                if let Some((ConditionTerm::AddressEqual(goal_left, goal_right), _)) =
+                    condition_source_0.condition_native() =>
+            {
+                Proposition::condition_is(
+                    // Replacing one side can land both pointers in the same
+                    // block, and a same-block pointer equality is carried
+                    // everywhere else as the equality of its offsets. Rebuild
+                    // through the canonicalizing constructor so the rewritten
+                    // goal is the term an ordinary lowering would produce and a
+                    // later `known` or `normalize() using` can see it.
+                    ConditionTerm::address_equal(
+                        rewrite_pointer(goal_left),
+                        rewrite_pointer(goal_right),
+                    ),
+                    *expected,
+                )
+            }
+            condition_source_0 @ Proposition::ConditionIs(_, expected)
+                if let Some((ConditionTerm::PointerEqual(goal_left, goal_right), _)) =
+                    condition_source_0.condition_native() =>
+            {
+                Proposition::condition_is(
+                    ConditionTerm::PointerEqual(
+                        Box::new(goal_left.map_addresses(&rewrite_pointer)),
+                        Box::new(goal_right.map_addresses(&rewrite_pointer)),
+                    ),
+                    *expected,
+                )
+            }
             Proposition::ConditionIs(condition, expected) => {
                 let rewrite_term =
                     |term: &MachineTerm| rewrite_load_pointers(term, &rewrite_pointer);
-                let rewritten = match condition {
+                let rewritten = match condition.native_compat() {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessThan,
@@ -2164,7 +2234,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                         });
                     }
                 };
-                Proposition::ConditionIs(rewritten, *expected)
+                Proposition::condition_is(rewritten, *expected)
             }
             Proposition::Equal(Term::Algebraic(goal_left), Term::Algebraic(goal_right)) => {
                 let rewrite_term =
@@ -2207,15 +2277,14 @@ fn rewrite_atomic_proposition_by_exact_equality(
         return Ok(rewritten);
     }
     let (left, right) = match equality {
-        Proposition::ConditionIs(ConditionTerm::Compare { format: MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, left, right }, true) => {
+        condition_source_0 @ Proposition::ConditionIs(_, true) if let Some((ConditionTerm::Compare { format: MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, left, right }, _)) = condition_source_0.condition_native() => {
             (left, right)
         }
-        Proposition::ConditionIs(ConditionTerm::Compare { format: MachineIntegerType::Int64, relation: CompareRelation::Equal, left, right }, true) => {
+        condition_source_0 @ Proposition::ConditionIs(_, true) if let Some((ConditionTerm::Compare { format: MachineIntegerType::Int64, relation: CompareRelation::Equal, left, right }, _)) = condition_source_0.condition_native() => {
             (left, right)
         }
         // A native 8- or 16-bit equality equates two values of its width.
-        Proposition::ConditionIs(ConditionTerm::Compare { format, relation: CompareRelation::Equal, left, right }, true)
-            if format.format().bits() < 32 =>
+        condition_source_0 @ Proposition::ConditionIs(_, true) if let Some((ConditionTerm::Compare { format, relation: CompareRelation::Equal, left, right }, _)) = condition_source_0.condition_native() && (format.format().bits() < 32) =>
         {
             (left, right)
         }
@@ -2392,18 +2461,15 @@ fn rewrite_atomic_proposition_by_exact_equality(
         }
     }
 
-    let full_width_equality = matches!(
-        equality,
-        Proposition::ConditionIs(
-            ConditionTerm::Compare {
+    let full_width_equality = matches!(&equality, condition_source_0 @ Proposition::ConditionIs(
+            _,
+            true
+        ) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
                 left: _,
                 right: _
-            },
-            true
-        )
-    );
+            }, _))));
     let rewrite_range_bound = |range: &MemoryRange, bound: &MachineTerm| {
         // A narrow equality cannot replace the complete value of a native
         // bound, even when both are represented by the same term variant.
@@ -2449,7 +2515,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
     let rewritten = match goal {
         Proposition::ConditionIs(condition, expected) => {
             let rewritten_condition = if let Some((operator, goal_left, goal_right)) =
-                condition.as_bitvector_comparison()
+                condition.native_compat().as_bitvector_comparison()
             {
                 rebuild_machine_comparison(
                     operator,
@@ -2457,10 +2523,10 @@ fn rewrite_atomic_proposition_by_exact_equality(
                     rewrite_term(goal_right, left, right),
                 )
             } else {
-                match condition {
+                match condition.native_compat() {
                     // A literal guard contains no machine occurrence. Keep it
                     // while the compound rewriter visits the other leaves.
-                    ConditionTerm::Constant(_) => condition.clone(),
+                    ConditionTerm::Constant(_) => condition.native_compat().clone(),
                     // `to_integer(machine)` is represented as an Integer machine
                     // observation.  Rewrite its selected machine payload through
                     // the already checked C equality, then let the normal
@@ -2504,18 +2570,18 @@ fn rewrite_atomic_proposition_by_exact_equality(
                     // Pointer goals contain the same int32 terms inside their
                     // offsets; substituting the proven equality there is the same
                     // exact term congruence, with work bounded by the goal.
-                    ConditionTerm::PointerOffsetEqual(goal_left, goal_right) => {
-                        ConditionTerm::PointerOffsetEqual(
+                    ConditionTerm::AddressOffsetEqual(goal_left, goal_right) => {
+                        ConditionTerm::AddressOffsetEqual(
                             Box::new(rewrite_offset_term(goal_left, left, right)),
                             Box::new(rewrite_offset_term(goal_right, left, right)),
                         )
                     }
-                    ConditionTerm::PointerEqual(goal_left, goal_right) => {
+                    ConditionTerm::AddressEqual(goal_left, goal_right) => {
                         let rewrite_pointer = |pointer: &Address| Address {
                             base: pointer.base.clone(),
                             offset: rewrite_offset_term(&pointer.offset, left, right),
                         };
-                        ConditionTerm::pointer_equal(
+                        ConditionTerm::address_equal(
                             rewrite_pointer(goal_left),
                             rewrite_pointer(goal_right),
                         )
@@ -2540,7 +2606,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
             } else {
                 rewritten_condition
             };
-            Proposition::ConditionIs(rewritten_condition, *expected)
+            Proposition::condition_is(rewritten_condition, *expected)
         }
         Proposition::ResourceSeparate {
             left: goal_left,
@@ -2581,7 +2647,14 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 base: base.base.clone(),
                 offset: rewrite_offset_term(&base.offset, left, right),
             },
-            bytes: rewrite_term(bytes, left, right),
+            bytes: crate::kernel::StoredMachineTerm::new(
+                if *wide {
+                    crate::kernel::MachineIntegerType::UInt64
+                } else {
+                    crate::kernel::MachineIntegerType::Int32
+                },
+                rewrite_term(bytes.native_compat(), left, right),
+            ),
             wide: *wide,
         },
         Proposition::Equal(Term::Algebraic(goal_left), Term::Algebraic(goal_right)) => {
@@ -2654,11 +2727,11 @@ mod tests {
                     }
                 },
             };
-            let goal = Proposition::ConditionIs(
-                ConditionTerm::pointer_equal(pointer.clone(), Address::symbolic(Variable(1081003))),
+            let goal = Proposition::condition_is(
+                ConditionTerm::address_equal(pointer.clone(), Address::symbolic(Variable(1081003))),
                 true,
             );
-            let equality = Proposition::ConditionIs(
+            let equality = Proposition::condition_is(
                 ConditionTerm::machine_compare(ty, CompareRelation::Equal, x.clone(), y.clone()),
                 true,
             );
@@ -2695,15 +2768,18 @@ mod tests {
             let address = base.offset_by_int32_elements(index.clone());
             crate::kernel::eval::record_load_access_width(memory.memory(), &address, bytes);
             let read = canonical_form_of_load(memory.clone(), address, LoadKind::Int32);
-            let goal =
-                Proposition::ConditionIs(ConditionTerm::signed_less_equal(read, 7u32.into()), true);
-            let equality = Proposition::ConditionIs(ConditionTerm::equal(index, 0u32.into()), true);
+            let goal = Proposition::condition_is(
+                ConditionTerm::signed_less_equal(read, 7u32.into()),
+                true,
+            );
+            let equality =
+                Proposition::condition_is(ConditionTerm::equal(index, 0u32.into()), true);
             let rewritten = rewrite_with_admitted_equality(&goal, &equality).unwrap();
-            let Proposition::ConditionIs(ConditionTerm::Compare { left, .. }, true) = rewritten
+            let Some((ConditionTerm::Compare { left, .. }, true)) = rewritten.condition_native()
             else {
                 panic!("rewritten scalar comparison");
             };
-            assert!(matches!(*left, MachineTerm::MemoryLoad(..)));
+            assert!(matches!(left.as_ref(), MachineTerm::MemoryLoad(..)));
             let observed = crate::kernel::eval::scalar_read_observation(
                 crate::kernel::MachineOperandView::Legacy(&left),
             )
@@ -2722,7 +2798,7 @@ mod tests {
         let other = from.clone();
         let rewritten_other = to.clone();
         let cited =
-            Proposition::ConditionIs(ConditionTerm::pointer_equal(from.clone(), to.clone()), true);
+            Proposition::condition_is(ConditionTerm::address_equal(from.clone(), to.clone()), true);
         let facts = PureFactStore::default().with_fact(cited.clone());
         let read = |address: &Address| {
             Address::symbolic(crate::kernel::eval::load_variable_for_exact_cell(
@@ -2737,13 +2813,13 @@ mod tests {
         for depth in 1..=32 {
             input = read(&input);
             expected = read(&expected);
-            let goal = Proposition::ConditionIs(
-                ConditionTerm::pointer_equal(input.clone(), other.clone()),
+            let goal = Proposition::condition_is(
+                ConditionTerm::address_equal(input.clone(), other.clone()),
                 true,
             );
             let result = facts.check_equality_rewrite(&goal, &cited).unwrap();
-            let wanted = Proposition::ConditionIs(
-                ConditionTerm::pointer_equal(expected.clone(), rewritten_other.clone()),
+            let wanted = Proposition::condition_is(
+                ConditionTerm::address_equal(expected.clone(), rewritten_other.clone()),
                 true,
             );
             assert_eq!(result.proposition(), &wanted, "read depth {depth}");
@@ -2759,19 +2835,19 @@ mod tests {
         let memory = SymbolicMemory::new().store(to.clone(), stored);
         let memory = crate::kernel::intern_memory(memory);
         let cited =
-            Proposition::ConditionIs(ConditionTerm::pointer_equal(from.clone(), to.clone()), true);
+            Proposition::condition_is(ConditionTerm::address_equal(from.clone(), to.clone()), true);
         let facts = PureFactStore::default().with_fact(cited.clone());
         let mut input = from.clone();
         let mut expected = to.clone();
         for depth in 1..=32 {
             input = Address::version_read(&memory, &input);
             expected = Address::version_read(&memory, &expected);
-            let goal = Proposition::ConditionIs(
-                ConditionTerm::pointer_equal(input.clone(), from.clone()),
+            let goal = Proposition::condition_is(
+                ConditionTerm::address_equal(input.clone(), from.clone()),
                 true,
             );
-            let wanted = Proposition::ConditionIs(
-                ConditionTerm::pointer_equal(expected.clone(), to.clone()),
+            let wanted = Proposition::condition_is(
+                ConditionTerm::address_equal(expected.clone(), to.clone()),
                 true,
             );
             assert_eq!(
@@ -2788,12 +2864,12 @@ mod tests {
             ProgramValue::pointer(Address::symbolic(Variable(998_943))),
         );
         let _ = later.symbolic_pointer_version_load(&to, ProgramType::Int32Pointer);
-        let goal = Proposition::ConditionIs(
-            ConditionTerm::pointer_equal(input.offset_by_bytes(8), from.clone()),
+        let goal = Proposition::condition_is(
+            ConditionTerm::address_equal(input.offset_by_bytes(8), from.clone()),
             true,
         );
-        let wanted = Proposition::ConditionIs(
-            ConditionTerm::pointer_equal(expected.offset_by_bytes(8), to.clone()),
+        let wanted = Proposition::condition_is(
+            ConditionTerm::address_equal(expected.offset_by_bytes(8), to.clone()),
             true,
         );
         assert_eq!(
@@ -2827,10 +2903,10 @@ mod tests {
         let input = read(&from);
         let expected = read(&to);
         let cited =
-            Proposition::ConditionIs(ConditionTerm::pointer_equal(from.clone(), to.clone()), true);
+            Proposition::condition_is(ConditionTerm::address_equal(from.clone(), to.clone()), true);
         let facts = PureFactStore::default().with_fact(cited.clone());
-        let goal = Proposition::ConditionIs(ConditionTerm::pointer_equal(input, from), true);
-        let wanted = Proposition::ConditionIs(ConditionTerm::pointer_equal(expected, to), true);
+        let goal = Proposition::condition_is(ConditionTerm::address_equal(input, from), true);
+        let wanted = Proposition::condition_is(ConditionTerm::address_equal(expected, to), true);
         assert_eq!(
             facts
                 .check_equality_rewrite(&goal, &cited)
@@ -2919,15 +2995,15 @@ mod tests {
         for ty in [Int32, UInt32, Int64, UInt64] {
             let source: SharedIntegerTerm =
                 IntegerTerm::from_machine(ty, word.clone()).unwrap().into();
-            let cited = Proposition::ConditionIs(
+            let cited = Proposition::condition_is(
                 ConditionTerm::IntegerEqual(source.clone(), target.clone()),
                 true,
             );
-            let integer_leaf = Proposition::ConditionIs(
+            let integer_leaf = Proposition::condition_is(
                 ConditionTerm::IntegerEqual(source.clone(), bound.clone()),
                 true,
             );
-            let expected_integer_leaf = Proposition::ConditionIs(
+            let expected_integer_leaf = Proposition::condition_is(
                 ConditionTerm::IntegerEqual(target.clone(), bound.clone()),
                 true,
             );
@@ -2949,7 +3025,7 @@ mod tests {
                         )
                     };
                     for truth in [false, true] {
-                        let native = Proposition::ConditionIs(
+                        let native = Proposition::condition_is(
                             observed_native_condition(ty, operation, left.clone(), right.clone()),
                             truth,
                         );
@@ -2995,7 +3071,7 @@ mod tests {
                             Proposition::And(Box::new(integer_leaf.clone()), Box::new(native));
                         let expected = Proposition::And(
                             Box::new(expected_integer_leaf.clone()),
-                            Box::new(Proposition::ConditionIs(condition, expected_truth)),
+                            Box::new(Proposition::condition_is(condition, expected_truth)),
                         );
                         assert_eq!(
                             rewrite_with_admitted_equality(&goal, &cited).unwrap(),
@@ -3018,7 +3094,7 @@ mod tests {
             let source: SharedIntegerTerm = IntegerTerm::from_machine(source_ty, word.clone())
                 .unwrap()
                 .into();
-            let cited = Proposition::ConditionIs(
+            let cited = Proposition::condition_is(
                 ConditionTerm::IntegerEqual(source.clone(), target.clone()),
                 true,
             );
@@ -3026,7 +3102,7 @@ mod tests {
                 if source_ty == goal_ty {
                     continue;
                 }
-                let native = Proposition::ConditionIs(
+                let native = Proposition::condition_is(
                     observed_native_condition(
                         goal_ty,
                         1,
@@ -3036,14 +3112,14 @@ mod tests {
                     true,
                 );
                 let goal = Proposition::And(
-                    Box::new(Proposition::ConditionIs(
+                    Box::new(Proposition::condition_is(
                         ConditionTerm::IntegerEqual(source.clone(), bound.clone()),
                         true,
                     )),
                     Box::new(native.clone()),
                 );
                 let expected = Proposition::And(
-                    Box::new(Proposition::ConditionIs(
+                    Box::new(Proposition::condition_is(
                         ConditionTerm::IntegerEqual(target.clone(), bound.clone()),
                         true,
                     )),
@@ -3054,7 +3130,7 @@ mod tests {
                     expected
                 );
             }
-            let native = Proposition::ConditionIs(
+            let native = Proposition::condition_is(
                 observed_native_condition(
                     source_ty,
                     1,
@@ -3077,7 +3153,7 @@ mod tests {
             name: Default::default(),
             var: variable,
             sort: Sort::ProgramInt32,
-            body: Box::new(Proposition::ConditionIs(
+            body: Box::new(Proposition::condition_is(
                 observed_native_condition(
                     MachineIntegerType::Int32,
                     1,
@@ -3128,7 +3204,7 @@ mod tests {
             )
         };
         let cited = integer_equality(observed(ty), IntegerTerm::constant_i64(-1));
-        let goal = Proposition::ConditionIs(
+        let goal = Proposition::condition_is(
             ConditionTerm::integer_equal(
                 observed(MachineIntegerType::UInt32),
                 IntegerTerm::constant_i64(4294967295),
@@ -3143,7 +3219,7 @@ mod tests {
     }
 
     fn equality(left: MachineTerm, right: MachineTerm) -> Proposition {
-        Proposition::ConditionIs(
+        Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -3155,7 +3231,7 @@ mod tests {
     }
 
     fn integer_equality(a: IntegerTerm, b: IntegerTerm) -> Proposition {
-        Proposition::ConditionIs(ConditionTerm::IntegerEqual(a.into(), b.into()), true)
+        Proposition::condition_is(ConditionTerm::IntegerEqual(a.into(), b.into()), true)
     }
 
     /// `σ(x) == x` compares `x`'s bits with themselves (rule K6), at either
@@ -3171,7 +3247,7 @@ mod tests {
             MachineIntegerType::UInt32,
             x.clone(),
         );
-        let goal = Proposition::ConditionIs(
+        let goal = Proposition::condition_is(
             ConditionTerm::unsigned_less_equal(
                 MachineTerm::add_at(MachineIntegerType::UInt32, tag, sigma_x.clone()),
                 MachineTerm::uint32_constant(2000),
@@ -3182,11 +3258,11 @@ mod tests {
             IntegerTerm::from_machine(ty, term.clone()).expect("a symbolic observation")
         };
         for equality in [
-            Proposition::ConditionIs(
+            Proposition::condition_is(
                 ConditionTerm::uint32_equal(sigma_x.clone(), x.clone()),
                 true,
             ),
-            Proposition::ConditionIs(
+            Proposition::condition_is(
                 ConditionTerm::uint32_equal(x.clone(), sigma_x.clone()),
                 true,
             ),
@@ -3223,7 +3299,7 @@ mod tests {
             IntegerTerm::constant_i64(1),
             IntegerTerm::multiply(IntegerTerm::constant_i64(255), observed),
         );
-        let goal = Proposition::ConditionIs(
+        let goal = Proposition::condition_is(
             ConditionTerm::IntegerLessEqual(value.clone().into(), rhs.into()),
             true,
         );
@@ -3231,7 +3307,7 @@ mod tests {
         let facts = PureFactStore::default().with_fact(cited.clone());
         let mut rewrite = facts.check_equality_rewrite(&goal, &cited).unwrap();
         let raw = rewrite.proposition().clone();
-        let folded = Proposition::ConditionIs(
+        let folded = Proposition::condition_is(
             ConditionTerm::IntegerLessEqual(
                 value.clone().into(),
                 IntegerTerm::constant_i64(4081).into(),
@@ -3242,18 +3318,18 @@ mod tests {
             raw, folded,
             "substitution retains constant-expression structure"
         );
-        let wrong_bound = Proposition::ConditionIs(
+        let wrong_bound = Proposition::condition_is(
             ConditionTerm::IntegerLessEqual(
                 value.clone().into(),
                 IntegerTerm::constant_i64(4082).into(),
             ),
             true,
         );
-        let wrong_atom = Proposition::ConditionIs(
+        let wrong_atom = Proposition::condition_is(
             ConditionTerm::IntegerLessEqual(other.into(), IntegerTerm::constant_i64(4081).into()),
             true,
         );
-        let wrong_relation = Proposition::ConditionIs(
+        let wrong_relation = Proposition::condition_is(
             ConditionTerm::IntegerEqual(value.into(), IntegerTerm::constant_i64(4081).into()),
             true,
         );
@@ -3291,7 +3367,7 @@ mod tests {
             ),
         ] {
             let condition = |bound| {
-                Proposition::ConditionIs(
+                Proposition::condition_is(
                     ConditionTerm::Compare {
                         format: MachineIntegerType::UInt64,
                         relation: CompareRelation::LessThan,
@@ -3316,7 +3392,7 @@ mod tests {
             MachineTerm::int64_constant(0x1_ffff_ffff),
             MachineTerm::int64_constant(-0x1_0000_0001),
         ] {
-            let goal = Proposition::ConditionIs(
+            let goal = Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::UInt64,
                     relation: CompareRelation::LessThan,
@@ -3346,9 +3422,9 @@ mod tests {
                     if matches!(condition, ConditionTerm::Constant(_)) {
                         continue; // A fully folded bound contains no operand to rewrite.
                     }
-                    let goal = Proposition::ConditionIs(condition, truth);
+                    let goal = Proposition::condition_is(condition, truth);
                     let expected =
-                        Proposition::ConditionIs(make(value.clone(), divisor.clone()), truth);
+                        Proposition::condition_is(make(value.clone(), divisor.clone()), truth);
                     assert_eq!(
                         facts
                             .check_equality_rewrite(&goal, &cited)
@@ -3385,11 +3461,11 @@ mod tests {
         for truth in [false, true] {
             let goal = |value| {
                 Proposition::Implies(
-                    Box::new(Proposition::ConditionIs(
+                    Box::new(Proposition::condition_is(
                         ConditionTerm::Constant(truth),
                         true,
                     )),
-                    Box::new(Proposition::ConditionIs(
+                    Box::new(Proposition::condition_is(
                         ConditionTerm::IntegerEqual(
                             IntegerTerm::from_machine(MachineIntegerType::Int32, value)
                                 .unwrap()
@@ -3411,7 +3487,7 @@ mod tests {
         assert!(
             facts
                 .check_equality_rewrite(
-                    &Proposition::ConditionIs(ConditionTerm::Constant(true), true),
+                    &Proposition::condition_is(ConditionTerm::Constant(true), true),
                     &cited,
                 )
                 .is_err()
@@ -3436,14 +3512,14 @@ mod tests {
             let term =
                 |value| IntegerTerm::add(observe(value), IntegerTerm::constant_i64(4294967295i64));
             for truth in [false, true] {
-                let goal = Proposition::ConditionIs(
+                let goal = Proposition::condition_is(
                     make(
                         term(x.clone()).into(),
                         IntegerTerm::constant_i64(8589934590i64).into(),
                     ),
                     truth,
                 );
-                let expected = Proposition::ConditionIs(
+                let expected = Proposition::condition_is(
                     make(
                         term(y.clone()).into(),
                         IntegerTerm::constant_i64(8589934590i64).into(),
@@ -3908,7 +3984,7 @@ mod tests {
                 }
             };
             let eq = |a, b| {
-                Proposition::ConditionIs(
+                Proposition::condition_is(
                     if wide {
                         ConditionTerm::Compare {
                             format: MachineIntegerType::Int64,
@@ -3930,7 +4006,7 @@ mod tests {
                 .expect("unchanged selected cell");
             assert_eq!(
                 checked.proposition(),
-                &Proposition::ConditionIs(
+                &Proposition::condition_is(
                     if wide {
                         ConditionTerm::Compare {
                             format: MachineIntegerType::Int64,
@@ -4020,7 +4096,7 @@ mod tests {
             term
         };
         let eq = |a, b| {
-            Proposition::ConditionIs(
+            Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int64,
                     relation: CompareRelation::Equal,
@@ -4119,7 +4195,7 @@ mod tests {
         let bound = Variable(2_000_000);
         let free = Variable(71);
         let atom = |left, right| {
-            Proposition::ConditionIs(
+            Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
@@ -4189,7 +4265,7 @@ mod tests {
         assert_eq!(
             checked_rewrite(&capturing_goal, &safe, std::slice::from_ref(&safe),)
                 .expect("an unrelated equality may still rewrite under the binder"),
-            quantified(Proposition::ConditionIs(
+            quantified(Proposition::condition_is(
                 ConditionTerm::Constant(true),
                 true
             )),
@@ -4225,8 +4301,8 @@ mod wide_range_reader_tests {
             parent: Box::new(Resource::Memory(wide.clone())),
             child: Box::new(Resource::Memory(wide.clone())),
         };
-        let equality = Proposition::ConditionIs(
-            ConditionTerm::PointerOffsetEqual(
+        let equality = Proposition::condition_is(
+            ConditionTerm::AddressOffsetEqual(
                 Box::new(offset),
                 Box::new(AddressOffset::Constant(0)),
             ),
@@ -4236,7 +4312,7 @@ mod wide_range_reader_tests {
         let (_, range) = rewritten.memory_containment().unwrap();
         assert_eq!(range.kind(), crate::kernel::RangeIndexKind::UInt64);
         assert_eq!(range.bound_terms(), wide.bound_terms());
-        let scalar_eq = Proposition::ConditionIs(
+        let scalar_eq = Proposition::condition_is(
             ConditionTerm::equal(MachineTerm::Variable(Variable(984_700)), 0u32.into()),
             true,
         );
@@ -4267,7 +4343,7 @@ mod wide_bound_equality_reader_tests {
             child: Box::new(Resource::Memory(wide.clone())),
         };
         // Equality of a low word cannot turn a full native endpoint into zero.
-        let narrow = Proposition::ConditionIs(
+        let narrow = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -4278,7 +4354,7 @@ mod wide_bound_equality_reader_tests {
         );
         assert!(rewrite_atomic_proposition_by_exact_equality(&goal, &narrow).is_err());
         let high = MachineTerm::uint64_constant(1 << 33);
-        let full = Proposition::ConditionIs(ConditionTerm::uint64_equal(end, high.clone()), true);
+        let full = Proposition::condition_is(ConditionTerm::uint64_equal(end, high.clone()), true);
         let rewritten = rewrite_atomic_proposition_by_exact_equality(&goal, &full).unwrap();
         let (_, range) = rewritten.memory_containment().unwrap();
         assert_eq!(range.kind(), wide.kind());
@@ -4297,12 +4373,12 @@ mod numeric_address_annotation_tests {
         let observed = |pointer: &Address| {
             MachineTerm::object_pointer_address(pointer.clone(), Some(class.clone()))
         };
-        let equality = Proposition::ConditionIs(
+        let equality = Proposition::condition_is(
             ConditionTerm::uint64_equal(observed(&p), observed(&q)),
             true,
         );
         let mask = |pointer: &Address| {
-            Proposition::ConditionIs(
+            Proposition::condition_is(
                 ConditionTerm::uint64_equal(
                     MachineTerm::uint64_bitwise_and(
                         observed(pointer),
@@ -4327,7 +4403,7 @@ mod numeric_address_annotation_tests {
             .unwrap(),
             expected
         );
-        let nested = Proposition::ConditionIs(
+        let nested = Proposition::condition_is(
             ConditionTerm::uint64_equal(
                 observed(&p),
                 MachineTerm::uint64_add(
@@ -4362,8 +4438,8 @@ mod numeric_address_annotation_tests {
             Address::symbolic(Variable(998_822)),
         );
         check(
-            Address::integer_address(MachineTerm::Variable(Variable(998_823))),
-            Address::integer_address(MachineTerm::Variable(Variable(998_824))),
+            Address::from_integer_address(MachineTerm::Variable(Variable(998_823))),
+            Address::from_integer_address(MachineTerm::Variable(Variable(998_824))),
         );
     }
 }

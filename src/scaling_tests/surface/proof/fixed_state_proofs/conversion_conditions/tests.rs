@@ -6,13 +6,13 @@ fn loadability_explanation_ignores_unrelated_objects() {
     let missing = Proposition::MemoryLoadable {
         memory: state.memory().clone(),
         base: pointer_base(&values),
-        bytes: MachineTerm::constant(4),
+        bytes: (MachineTerm::constant(4)).into(),
         wide: false,
     };
     let covering = Proposition::MemoryLoadable {
         memory: state.memory().clone(),
         base: pointer_base(&values),
-        bytes: MachineTerm::constant(8),
+        bytes: (MachineTerm::constant(8)).into(),
         wide: false,
     };
     let mut samples = Vec::new();
@@ -28,7 +28,7 @@ fn loadability_explanation_ignores_unrelated_objects() {
                     base: AddressBase::Heap(index),
                     offset: AddressOffset::Constant(0),
                 },
-                bytes: MachineTerm::constant(8),
+                bytes: (MachineTerm::constant(8)).into(),
                 wide: false,
             });
         }
@@ -75,7 +75,7 @@ fn scoped_obligation_probing_scales_with_requirements_not_ambient_facts() {
         }
         if related {
             for i in 0..ambient {
-                let condition = Proposition::ConditionIs(
+                let condition = Proposition::condition_is(
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessThan,
@@ -110,7 +110,7 @@ fn scoped_obligation_probing_scales_with_requirements_not_ambient_facts() {
                     var: Variable(790_000 + i),
                     sort: crate::kernel::Sort::ProgramInt32,
                     name: crate::kernel::BinderName::written("k"),
-                    body: Box::new(Proposition::ConditionIs(
+                    body: Box::new(Proposition::condition_is(
                         ConditionTerm::Compare {
                             format: MachineIntegerType::Int32,
                             relation: CompareRelation::LessThan,
