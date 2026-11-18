@@ -1323,7 +1323,23 @@ opaque state/event/resource identities and existing proof rules are not payloads
 to erase. Selected native checking/rewriting/raising adapters stay explicit and
 are accounted for in 10r–10t; they are not evidence that a store is migrated.
 
-### 10q1 Evaluated proposition outcomes (in progress)
+The condition-output inventory includes hundreds of existing structural
+patterns. Keep 10q3 sequential and reviewable rather than switching its schema
+before those consumers are ready:
+
+| Subslice | Boundary | Acceptance |
+| --- | --- | --- |
+| 10q3a | Native condition destructuring in `let` readers | Selected payload inspection is explicit; each existing match/refusal and exact native spelling is preserved. |
+| 10q3b | Native condition patterns in match/conditional readers | Preserve arm ordering, guards and owned/borrowed payload contracts through explicit selected views. |
+| 10q3c | `ConditionIs` storage, constructors and ordinary readers | Use the existing exact condition carrier; root-aware visitors retain logical operands and native DTO reads stay explicit. |
+| 10q3d | Evaluated logical/comparison producer handoffs | Forward the actual produced roots without export/reimport; preserve canonical comparison and fact identity rules. |
+
+These prepare and complete the existing 10q3 family; they do not add language
+behavior, proof rules, search indexes or search budgets. The first inventory
+found 135 direct nested `let` readers in 51 Rust files, plus match/conditional
+and macro consumers; the latter are audited in 10q3b before the storage switch.
+
+### 10q1 Evaluated proposition outcomes (landed)
 
 The expression-evaluation and memory-load proposition schemas use
 `ExpressionOutcome<StoredProgramValue>`, preserving exact native value identity
@@ -1356,7 +1372,7 @@ holds. Logical conditions and remaining term payloads retain their own slices.
 10q2 is split before implementation into independent volatile-value and
 loadability-count PRs; its original scope and proof rules are unchanged.
 
-### 10q2a Volatile-event values (in progress)
+### 10q2a Volatile-event values (landed)
 
 `VolatileAccess::value` uses the exact program-value carrier. Native inputs
 retain their syntax; variable collection and substitution use retained values.
@@ -1400,7 +1416,26 @@ This PR prepares storage and consumers. Range count producers keep their
 existing native arithmetic until 10q2b2, which owns canonical subtraction,
 common-base cancellation, multiplication and wide product spelling. Native
 format/hash and growing-root clone regressions cover the carrier boundary.
-Validation is pending.
+All 409 affected checks, all 1,938 regular scaling cases and all 5,623 regular
+proof fixtures passed. Fact stability recorded 121 refusals and zero changed
+terms/paths; quality passed. Full nightly was not run. This is
+[PR #3275](https://github.com/clicklang/click/pull/3275), with auto-merge enabled.
+
+### 10q2b2 Retained loadability-count production (in progress)
+
+Range-to-loadability production retains machine bounds directly when either
+endpoint already has a common root. Native-only ranges retain the original
+constructor path. The retained path mirrors the exact existing narrow
+subtraction, common-base cancellation and byte scaling rules; wide subtraction
+keeps its atomic/cancel-constant reductions and the unfused right-width product
+shape. The existing syntax correspondence helper checks shared operands; no
+new search index, budget or arithmetic rule is added.
+
+A native-constructor oracle checks both widths, four element widths, all
+native/shared input combinations, literal-format distinctions and additive
+base cancellation. The actual loadability producer is measured against growing
+shared endpoint DAGs without native export. All 45 focused checks and quality
+passed; the regular scaling and proof/fact-stability suites are running.
 
 ## Chunk 3: machine-valued pure-function results
 
