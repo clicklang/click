@@ -9302,6 +9302,7 @@ impl ExecutionState {
                     point: SpecPoint::Current,
                     pointer,
                     value_type: ProgramType::Int32,
+                    exact: false,
                 } = expression
                 else {
                     return false;

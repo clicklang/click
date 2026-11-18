@@ -36,6 +36,7 @@ this page covers each form's full rules and edge cases.
 | `views p[0..n];`, `owns p[0..n];` | Read and write resources a call needs and keeps | [Read and write resources](#read-and-write-resources) |
 | `decreases e;` | Termination measure of a recursive function or a loop | [C termination](#c-termination) |
 | `old(e)`, `at(region(N).entry, e)` | A value in the entry state or another recorded state | [`old(...)`](#old), [`at(...)`](#at) |
+| `exact(p[i])` | A read named by the state in scope itself, not its cell's version point | [`exact(...)`](#exact) |
 | `P and Q`, `P or Q`, `P implies Q`, `not P` | Proposition connectives (C's `&&` and `\|\|` are not Click syntax) | [Propositions](#propositions) |
 | `forall (k: int32) { P }`, `(lo..hi).all(\|k\| { P })` | Quantified propositions; the range form guards memory reads | [Propositions](#propositions) |
 | `Integer`, `to_integer(x)` | Unbounded mathematical integers | [Mathematical integers](#mathematical-integers) |
@@ -4156,6 +4157,49 @@ unique exit point.
 follow earlier `step` or joined `branch` steps. The
 target must be forward and reachable on that selected path; it cannot be used
 to rewind execution or enter an unselected branch.
+
+## `exact(...)`
+
+`exact(place)` is the read of `place` named by the state in scope itself,
+with no version walk (`design/exact-reads.md`). An ordinary read `p[i]` names
+the cell's version point, the state the assumption-free version walk selects
+for the cell: after a store to another object it is still the read named by
+the earlier state ([a read names its version
+point](../../internals/raise-lower-principle.md#a-read-names-its-version-point)).
+`exact(p[i])` is the read of the same cell named by the current state. Both
+denote the same value; they are different kernel terms for it, and the
+assumption-free load equality relates them.
+
+| Surface | Read |
+|---|---|
+| `p[i]` | at `p[i]`'s version point, seen from the current state |
+| `exact(p[i])` | named by the current state |
+| `at(point, exact(p[i]))` | named by `point`'s state |
+| `old(exact(p[i]))` | named by the function's entry state |
+
+`place` is any place expression whose ordinary read is legal there, such as
+`p[i]`, `h->next` or `*q`
+(`mdtests/an_exact_read_takes_a_field_or_a_dereference.md`). The read's type
+comes from the place.
+It reads an integer, `bool` or pointer cell; a pointer read's provenance and
+bounds owner are the same exact read. `exact` applies to the outermost read
+only: `exact(p[i]->next)` reads `->next` exactly through the ordinary read of
+`p[i]`, and `exact(exact(p[i])->next)` reads both exactly.
+
+<!-- verified-example: mdtests/an_exact_read_of_an_unchanged_cell_equals_its_ordinary_read.md -->
+```click
+have exact(p[0]) == p[0] by normalize();
+have old(exact(p[0])) == old(p[0]) by normalize();
+```
+
+`exact` grants no access permission and adds no facts. A C read after it
+still needs its own resource
+(`mdtests/an_exact_read_grants_no_access.md`). An operand that is not a
+memory read, such as a parameter's value, is refused: "`exact` takes a memory
+read, such as `p[i]` or `h->next`"
+(`mdtests/exact_refuses_an_operand_that_is_not_a_memory_read.md`). A declared
+resource argument and a resource fact cannot contain `exact`. `exact` is a
+built-in form, so no predicate or function can be named `exact`.
 
 ## Pure Click functions
 

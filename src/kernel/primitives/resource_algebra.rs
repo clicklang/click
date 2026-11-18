@@ -507,6 +507,17 @@ impl ResourceContextIndex {
 
     fn with_inserted(&self, entry: ResourceEntryId, fact: &ResourceFact) -> Self {
         let mut result = self.clone();
+        if fact.allocation().is_some() {
+            result.owned_allocation_tokens = result.owned_allocation_tokens.with_value(entry);
+        }
+        if let Some(key) = heap_anchored_composite_key(fact) {
+            let count = result
+                .heap_anchored_composite_counts
+                .get(&key)
+                .copied()
+                .unwrap_or(0);
+            result.heap_anchored_composite_counts.insert(key, count + 1);
+        }
         result.written_normalization.insert(entry, fact);
         if fact.is_own()
             && !fact
@@ -877,6 +888,20 @@ impl ResourceContextIndex {
 
     fn without_entry(&self, entry: ResourceEntryId, fact: &ResourceFact) -> Self {
         let mut result = self.clone();
+        if fact.allocation().is_some() {
+            result.owned_allocation_tokens = result.owned_allocation_tokens.without_value(&entry);
+        }
+        if let Some(key) = heap_anchored_composite_key(fact) {
+            let count = *result
+                .heap_anchored_composite_counts
+                .get(&key)
+                .expect("heap-anchored composite count exists");
+            if count == 1 {
+                result.heap_anchored_composite_counts.remove(&key);
+            } else {
+                result.heap_anchored_composite_counts.insert(key, count - 1);
+            }
+        }
         result.written_normalization.remove(entry, fact);
         if fact.is_own()
             && !fact
@@ -3320,6 +3345,59 @@ impl ResourceContext {
                 crate::instrumentation::record_deterministic_work(1);
                 self.fact(*entry)
             })
+    }
+
+    /// Identify a uniform folded frame eligible for projecting retirement by
+    /// nominal heap block. The caller must also check the family's body.
+    pub(in crate::kernel) fn heap_anchored_retirement_family(&self) -> Option<(&str, ProgramType)> {
+        crate::instrumentation::record_deterministic_work(1);
+        if self.has_owned_allocation_tokens()
+            || !self.storage.expansions_by_support_occurrence.is_empty()
+        {
+            return None;
+        }
+        let index = &self.storage.index;
+        let mut shapes = index.exact_shapes.iter();
+        let ((family, name, arity), entries) = shapes.next()?;
+        if *family != ResourceFamily::Composite
+            || *arity != 1
+            || shapes
+                .next()
+                .is_some_and(|((family, _, _), _)| *family == ResourceFamily::Composite)
+        {
+            return None;
+        }
+        let ((eligible_name, argument_type), count) =
+            index.heap_anchored_composite_counts.iter().next()?;
+        (eligible_name == name && *count == entries.len())
+            .then_some((name.as_str(), *argument_type))
+    }
+
+    /// Select at most one held body per consumed block. A block with flat
+    /// or iterated custody, or several folded bodies, needs the existing
+    /// frame check, even when its other blocks are all heap-anchored.
+    pub(in crate::kernel) fn heap_retirement_frontier(
+        &self,
+        blocks: BTreeSet<&AddressBase>,
+    ) -> Option<Self> {
+        let index = &self.storage.index;
+        let mut frontier = Self::new();
+        for block in blocks {
+            crate::instrumentation::record_deterministic_work(1);
+            if index.memory_by_block.contains_key(block)
+                || index.iterated_by_block.contains_key(block)
+            {
+                return None;
+            }
+            if let Some(entries) = index.owned_composites_by_argument_block.get(block) {
+                if entries.len() != 1 {
+                    return None;
+                }
+                let entry = *entries.iter().next().expect("one folded occurrence");
+                frontier = frontier.unchecked_with_fact(self.fact(entry).clone());
+            }
+        }
+        Some(frontier)
     }
 
     /// The owned folded composites with their multiplicity, as one
@@ -6351,6 +6429,19 @@ impl ResourceContext {
             .map(|(context, _)| context)
     }
 
+    pub(in crate::kernel) fn receive_published_payload(
+        receipt: crate::kernel::publication::PublishedPayloadReceipt,
+        assumptions: &PureFactContext,
+    ) -> Self {
+        let (mut residual, payload) = receipt.into_parts();
+        if residual.is_empty() {
+            residual.synchronize_memory_equalities(assumptions);
+        }
+        residual.insert_fact(payload);
+        residual.advance_prepared_memory_equalities(assumptions);
+        residual
+    }
+
     pub(in crate::kernel) fn restore_call_borrows(
         transfer: crate::kernel::functions::ReturnedCallBorrows,
         assumptions: &PureFactContext,
@@ -6881,10 +6972,68 @@ impl ResourceContext {
         self.storage.index.canonical.syntax_ceiling(fact_ceiling)
     }
 
+    #[cfg(test)]
+    pub(in crate::kernel) fn facts_are_materialized(&self) -> bool {
+        self.storage.materialized.get().is_some()
+    }
+
+    pub(in crate::kernel) fn fact_count(&self) -> usize {
+        self.storage.facts.len()
+    }
+
+    /// The call preparation producer checked intrinsic storage or an empty
+    /// body for this nonexclusive observation. Preserve written-neighbor
+    /// normalization of views without running owned admission.
+    pub(in crate::kernel) fn insert_prepared_call_view(
+        mut self,
+        fact: ResourceFact,
+        assumptions: &PureFactContext,
+    ) -> Self {
+        assert!(matches!(
+            fact,
+            ResourceFact::View(Resource::Memory(_) | Resource::Composite { .. })
+        ));
+        if self.is_empty() {
+            self.synchronize_memory_equalities(assumptions);
+        }
+        let entry = self.storage.next_entry_id;
+        self.insert_fact(fact.clone());
+        self.advance_prepared_memory_equalities(assumptions);
+        let occurrence = self.occurrence(entry);
+        self.normalized_delta(vec![(fact, occurrence)], assumptions)
+    }
+
     pub fn facts(&self) -> &[ResourceFact] {
         self.storage
             .materialized
             .get_or_init(|| self.iter().cloned().collect())
+    }
+
+    pub(in crate::kernel) fn has_owned_allocation_tokens(&self) -> bool {
+        !self.storage.index.owned_allocation_tokens.is_empty()
+    }
+
+    pub(in crate::kernel) fn owned_allocation_tokens(&self) -> impl Iterator<Item = &ResourceFact> {
+        self.storage
+            .index
+            .owned_allocation_tokens
+            .iter()
+            .map(|entry| self.fact(*entry))
+            .inspect(|_| crate::instrumentation::record_deterministic_work(1))
+    }
+
+    pub(in crate::kernel) fn has_owned_composites(&self) -> bool {
+        self.storage.index.owned_composite_count != 0
+    }
+
+    pub(in crate::kernel) fn has_folded_composites(&self) -> bool {
+        // This index contains only composites and tokens, with composites first.
+        self.storage
+            .index
+            .exact_shapes
+            .keys()
+            .next()
+            .is_some_and(|(family, _, _)| *family == ResourceFamily::Composite)
     }
 
     /// Select folded composites without materializing unrelated memory facts.
@@ -9618,6 +9767,19 @@ fn normalization_anchor(arguments: &ResourceArguments) -> Option<&AddressBase> {
         }
         _ => None,
     }
+}
+
+fn heap_anchored_composite_key(fact: &ResourceFact) -> Option<(String, ProgramType)> {
+    let Resource::Composite { name, arguments } = fact.resource() else {
+        return None;
+    };
+    let [ResourceFieldValue::Program(ProgramValue::Pointer(pointer))] =
+        arguments.fixed_values::<1>()?
+    else {
+        return None;
+    };
+    (fact.owned_quantity() == Some(1) && matches!(pointer.address().base, AddressBase::Heap(_)))
+        .then(|| (name.clone(), pointer.program_type()))
 }
 
 /// The `exact_shapes_by_root` key of a token or composite.

@@ -1355,7 +1355,8 @@ fn qualified_object_access(side: &ContractExpression) -> Option<&ContractExpress
     while let ContractExpression::At {
         expression: inner, ..
     }
-    | ContractExpression::Old(inner) = expression
+    | ContractExpression::Old(inner)
+    | ContractExpression::Exact(inner) = expression
     {
         expression = inner;
     }

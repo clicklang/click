@@ -539,7 +539,11 @@ impl BodyChecker<'_> {
                 point: memory,
                 pointer,
                 value_type,
+                exact,
             } => {
+                if *exact {
+                    return Err(Self::unsupported("an exact read"));
+                }
                 if scope != Scope::Body {
                     return Err(FoldReadDecline::ReadOutsideFoldIndex);
                 }

@@ -938,6 +938,7 @@ impl Parser {
 
         match operand {
             ContractExpression::Old(inner)
+            | ContractExpression::Exact(inner)
             | ContractExpression::At {
                 expression: inner, ..
             } => self.machine_operand_type(inner),

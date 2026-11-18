@@ -8926,6 +8926,7 @@ impl Parser {
 
         if matches!(self.peek(), Some(Token::Ident(_)))
             && self.peek_ident() != Some("old")
+            && self.peek_ident() != Some("exact")
             && self.peek_ident() != Some("at")
             && !(self.peek_ident() == Some("program")
                 && self.peek_next() == Some(&Token::ColonColon))
@@ -11225,7 +11226,10 @@ impl Parser {
                 let start = self.position;
                 let application = if self.peek_ident().is_some()
                     && self.peek_next() == Some(&Token::LParen)
-                    && !matches!(self.peek_ident(), Some("at" | "old" | "forall" | "exists"))
+                    && !matches!(
+                        self.peek_ident(),
+                        Some("at" | "old" | "exact" | "forall" | "exists")
+                    )
                 {
                     let application = self.parse_theorem_application()?;
                     if self.peek() == Some(&Token::RParen) {
@@ -13754,6 +13758,7 @@ impl Parser {
                     .map(str::to_string)
             }
             ContractExpression::Old(inner)
+            | ContractExpression::Exact(inner)
             | ContractExpression::At {
                 expression: inner, ..
             } => self.contract_expression_struct_name(inner),
@@ -14508,6 +14513,7 @@ impl Parser {
                 .or_else(|| self.names.aggregate_objects.get(name))
                 .cloned(),
             ContractExpression::Old(inner)
+            | ContractExpression::Exact(inner)
             | ContractExpression::At {
                 expression: inner, ..
             } => self.contract_expression_struct_name(inner),
@@ -14950,6 +14956,7 @@ impl Parser {
                     let surface_base = expression.clone();
                     let base = match &expression {
                         ContractExpression::Old(inner)
+                        | ContractExpression::Exact(inner)
                         | ContractExpression::At {
                             expression: inner, ..
                         } => contract_expression_as_program_expression(inner),
@@ -15840,6 +15847,13 @@ impl Parser {
             self.expect(Token::RParen)?;
             self.refuse_result_in_program_point_expression(None, &expression)?;
             return Ok(ContractExpression::Old(Box::new(expression)));
+        }
+
+        if self.peek_ident() == Some("exact") && self.peek_next() == Some(&Token::LParen) {
+            self.position += 2;
+            let place = self.parse_contract_expression()?;
+            self.expect(Token::RParen)?;
+            return Ok(ContractExpression::Exact(Box::new(place)));
         }
 
         if self.peek_ident() == Some("at") && self.peek_next() == Some(&Token::LParen) {
@@ -18872,5 +18886,50 @@ impl ProgramLayouts {
         for object in unit.global_aggregate_arrays.values() {
             self.register_static_binding(object.kernel_name());
         }
+    }
+}
+
+#[cfg(test)]
+mod exact_syntax_tests {
+    use super::*;
+
+    /// `exact(place)` is a built-in form wherever an expression is read, and
+    /// its printed spelling parses back to the same term.
+    #[test]
+    fn an_exact_read_parses_and_prints_back() {
+        for source in [
+            "exact(p[0])",
+            "exact(exact(p[i])[j])",
+            "at(saved, exact(p[0]))",
+        ] {
+            let parsed = Parser::new(source)
+                .unwrap()
+                .parse_contract_expression()
+                .unwrap();
+            let printed = crate::surface::diagnostics::describe_contract_expression(&parsed);
+            assert_eq!(printed, source);
+            let reparsed = Parser::new(&printed)
+                .unwrap()
+                .parse_contract_expression()
+                .unwrap();
+            assert_eq!(reparsed, parsed, "{source}");
+        }
+        let ContractExpression::Exact(place) = Parser::new("exact(p[0])")
+            .unwrap()
+            .parse_contract_expression()
+            .unwrap()
+        else {
+            panic!("`exact(...)` is its own form")
+        };
+        assert!(!matches!(place.as_ref(), ContractExpression::Exact(_)));
+        // A proposition that starts with `exact(` is a comparison, not a
+        // predicate call.
+        assert!(matches!(
+            Parser::new("exact(p[0]) == p[0]")
+                .unwrap()
+                .parse_proposition()
+                .unwrap(),
+            ClickProposition::Comparison { .. }
+        ));
     }
 }

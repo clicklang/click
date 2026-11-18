@@ -2082,6 +2082,7 @@ fn supplementary_callback_postcondition_uses_the_return_point() {
             point: SpecPoint::Current,
             pointer: Box::new(SpecExpression::ProgramExpression(variable("p"))),
             value_type: ProgramType::Int32,
+            exact: false,
         })],
     );
     let callback = Address::symbolic_function(Variable(8_960_012));

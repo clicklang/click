@@ -2,7 +2,7 @@
 
 A bug is a reproduced defect in behavior Click already claims to support.
 This directory holds internally discovered bugs that are not found through the
-tracing skill workflow and are not being fixed now. Defects found through that
+proof-repair skill and are not being fixed now. Defects found through that
 workflow go to GitHub issues after user approval, including during internal
 development or nightly investigations. Other defects reported by people or
 agents using Click are GitHub issues too. Agents file a bug here only after the

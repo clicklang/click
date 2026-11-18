@@ -93,7 +93,7 @@ fn composite_entry_and_return_publish_definedness_at_their_selected_points() {
     let memory = SymbolicMemory::new()
         .with_block(pointer.base.clone(), 4)
         .store(pointer.clone(), int32(7));
-    let resources = ResourceContext::new().unchecked_with_fact(held);
+    let resources = ResourceContext::new().unchecked_with_fact(held.clone());
     let caller = ExecutionState::new()
         .with_population_creation_tracking()
         .with_memory(memory)
@@ -129,6 +129,7 @@ fn composite_entry_and_return_publish_definedness_at_their_selected_points() {
             point: SpecPoint::Current,
             pointer: Box::new(SpecExpression::ProgramExpression(variable("p"))),
             value_type: ProgramType::Int32,
+            exact: false,
         })],
     )]);
     let defined_at = |state: &ExecutionState| Proposition::MemoryReadDefined {
@@ -138,7 +139,7 @@ fn composite_entry_and_return_publish_definedness_at_their_selected_points() {
         value_type: ProgramType::Int32,
     };
     let assumptions = PureFactContext::new();
-    let (_, entry_facts) = expand_all_composite_resource_facts_and_propositions_at_state(
+    let (body, entry_facts) = expand_all_composite_resource_facts_and_propositions_at_state(
         &resources,
         function.composite_resource_definitions(),
         &caller,
@@ -146,6 +147,21 @@ fn composite_entry_and_return_publish_definedness_at_their_selected_points() {
     )
     .unwrap();
     assert!(entry_facts.contains(&defined_at(&caller)));
+
+    let memory_only_facts = evaluate_composite_resource_fact_propositions(
+        &held,
+        function.composite_resource_definitions(),
+        caller.memory(),
+        &body,
+        &assumptions,
+    )
+    .unwrap();
+    assert!(memory_only_facts.contains(&Proposition::MemoryReadDefined {
+        at: None,
+        memory: caller.memory().clone(),
+        pointer: pointer.clone(),
+        value_type: ProgramType::Int32,
+    }));
 
     let environment =
         ExecutionEnvironment::new().with_external_function_rule(ExternalFunctionRule {

@@ -7471,17 +7471,16 @@ fn call_value_arguments(
             )?;
         }
         // The step that gives the value names the function as the sidecar
-        // writes it: a formatted-output function as `snprintf`, a
-        // translation-unit-local helper without its suffix.
-        let written =
-            if crate::languages::c::formatted_output::describe_function(function).is_some() {
-                "snprintf"
-            } else {
+        // writes it: the C name of a formatted-output function or the
+        // unqualified spelling of a translation-unit-local helper.
+        let written = crate::languages::c::formatted_output::function_format(function)
+            .map(|(output, _)| output.source_name())
+            .unwrap_or_else(|| {
                 ["#inline:", "#file-static:"]
                     .iter()
                     .find_map(|suffix| function.split_once(suffix).map(|(source, _)| source))
                     .unwrap_or(function)
-            };
+            });
         match found.as_slice() {
             [value] => values.push(value.clone()),
             [] => {
@@ -9928,6 +9927,33 @@ fn lent_owned_memory_covers_allocation(
         .is_some()
 }
 
+/// Project only the preserved facts that can affect retirement of these
+/// nominal heap blocks. A fully held direct body supplies its own partition,
+/// and its typed pointer determines the block of every exposed ingredient.
+/// The mixed, indirect and cached cases still need the stateful projection.
+fn preserved_heap_retirement_frontier<'a>(
+    preserved: &ResourceContext,
+    interface: &FunctionContractInterface,
+    consumed: impl Iterator<Item = &'a AddressBase>,
+) -> Option<ResourceContext> {
+    let (name, argument_type) = preserved.heap_anchored_retirement_family()?;
+    if !interface
+        .composite_resource_definition(name)?
+        .confines_retirement_to_argument_block(argument_type)
+    {
+        return None;
+    }
+    let blocks = consumed.collect::<BTreeSet<_>>();
+    if !blocks
+        .iter()
+        .all(|block| matches!(block, AddressBase::Heap(_)))
+    {
+        return None;
+    }
+
+    preserved.heap_retirement_frontier(blocks)
+}
+
 fn apply_verified_heap_allocation_delta(
     mut memory: SymbolicMemory,
     entry_memory: &SymbolicMemory,
@@ -9949,6 +9975,9 @@ fn apply_verified_heap_allocation_delta(
     // is not the allocation the caller handed over.
     let expand_allocations =
         |resources: &ResourceContext, state: &ExecutionState, memory: &SymbolicMemory| {
+            if !resources.has_folded_composites() {
+                return Some(resources.clone());
+            }
             let projection_state = state
                 .clone()
                 .with_memory(memory.clone())
@@ -9978,28 +10007,31 @@ fn apply_verified_heap_allocation_delta(
             assumptions.assume_proposition(fact)
         });
     let input_allocations = input
-        .facts()
-        .iter()
+        .owned_allocation_tokens()
         .filter_map(|fact| {
             fact.allocation_size()
                 .map(|(pointer, bytes)| (fact, pointer, bytes))
         })
         .collect::<Vec<_>>();
-    // The caller's untouched resources are expanded only when the callee
-    // consumed an allocation: they are what may still expose it, continue
-    // it, or be left stale by its retirement. A call that consumes none
-    // (an allocator, or a call on unrelated memory) never asks them, so it
-    // costs nothing in the live objects the caller keeps; expanding them
-    // anyway made every call linear in them.
-    //
-    // Returned projections describe the successor allocation. They decide
-    // whether an input allocation continues, but they are not resources that
-    // survived from the caller and therefore cannot be stale after the old
-    // allocation is freed.
+    // A call may retire a consumed allocation, so inspect the frame for
+    // resources it would leave stale or tokens that continue it. Returned
+    // projections affect continuity, but cannot be stale caller resources.
     let preserved = if input_allocations.is_empty() {
         ResourceContext::new()
     } else {
-        expand_allocations(preserved_caller_resources, mutex_state, &memory).ok_or_else(|| {
+        let frontier = preserved_heap_retirement_frontier(
+            preserved_caller_resources,
+            interface,
+            input_allocations
+                .iter()
+                .map(|(_, pointer, _)| &pointer.address().base),
+        );
+        expand_allocations(
+            frontier.as_ref().unwrap_or(preserved_caller_resources),
+            mutex_state,
+            &memory,
+        )
+        .ok_or_else(|| {
             VerifiedAllocationDeltaError::Runtime(RuntimeError::FunctionContract(
                 "could not inspect preserved caller allocation effects at call".to_string(),
             ))
@@ -10011,21 +10043,17 @@ fn apply_verified_heap_allocation_delta(
     // missed candidate would assert a free the contract never promised.
     // The call's own returned tokens, as the contract states them; a token
     // inside a returned composite is not one the caller holds directly.
-    let returned_tokens = output_resources
-        .facts()
-        .iter()
-        .filter(|fact| fact.allocation().is_some())
-        .collect::<Vec<_>>();
     let output_allocations = output
-        .facts()
-        .iter()
-        .chain(preserved.facts())
+        .owned_allocation_tokens()
+        .chain(preserved.owned_allocation_tokens())
         .filter_map(|fact| {
             fact.allocation_size().map(|(base, bytes)| {
                 (
                     base.address().clone(),
                     bytes,
-                    returned_tokens.contains(&fact).then_some(fact),
+                    output_resources
+                        .contains_exact_representation(fact)
+                        .then_some(fact),
                 )
             })
         })
@@ -10198,7 +10226,7 @@ fn apply_verified_heap_allocation_delta(
     // Only what the call returns can be a new allocation. An allocation one
     // of the caller's untouched resources exposes was the caller's before
     // the call, so this call has nothing to claim for it.
-    for fact in output.facts() {
+    for fact in output.owned_allocation_tokens() {
         if let Some(coverage) = fact.allocation_bounds_fact(&allocation_assumptions) {
             effects.push(ExecutionPureFact::new(coverage));
         }
@@ -12216,9 +12244,8 @@ fn prepare_contract_resource_transfer_unexplained(
     // planner's exclusive reservation asks for one owned entry that directly
     // entails the whole requirement, which no representative can supply for a
     // symbolic or non-unit constant quantity, so such a requirement takes the
-    // definitional route. A token population protects no memory, so the
-    // ledger has nothing to say about it; a population whose body owns memory
-    // is still checked against the active loans after planning.
+    // definitional route. Any body this route supplies still needs admission
+    // to the callee's partition, since these pieces were outside the reservation.
     let population_quantity_requirements = if purpose.lends() {
         checked_required_resources
             .iter()
@@ -12238,20 +12265,26 @@ fn prepare_contract_resource_transfer_unexplained(
     // the composite folded, so the expansion is not empty and the requirement
     // keeps its entry. The caller residual is still consumed definitionally
     // below.
+    let mut checked_owned_bodies = BTreeSet::new();
     let definitionally_empty_owned = if purpose.lends() {
         checked_required_resources
             .iter()
             .filter(|requirement| {
                 requirement.fact.is_own()
                     && matches!(requirement.fact.resource(), Resource::Composite { .. })
-                    && expand_all_composite_resource_facts(
-                        &ResourceContext::new_with_equalities(assumptions)
-                            .unchecked_with_fact(requirement.fact.clone()),
-                        interface.composite_resource_definitions(),
-                        &callee_state.program_point(),
-                        assumptions,
-                    )
-                    .is_some_and(|expanded| expanded.facts().is_empty())
+                    && {
+                        let body = expand_all_composite_resource_facts(
+                            &ResourceContext::new_with_equalities(assumptions)
+                                .unchecked_with_fact(requirement.fact.clone()),
+                            interface.composite_resource_definitions(),
+                            &callee_state.program_point(),
+                            assumptions,
+                        );
+                        if body.is_some() {
+                            checked_owned_bodies.insert(requirement.fact.clone());
+                        }
+                        body.is_some_and(|expanded| expanded.is_empty())
+                    }
             })
             .cloned()
             .collect::<Vec<_>>()
@@ -12598,113 +12631,70 @@ fn prepare_contract_resource_transfer_unexplained(
     } else {
         None
     };
-    // Excluding a counted-population requirement from the exclusive
-    // reservation costs nothing for a token population, whose units protect
-    // no bytes. A population whose body owns memory is a different matter:
-    // its units carry write authority over that storage into the callee, so
-    // it is checked against the loans this plan and the caller hold, exactly
-    // as a direct owned transfer of those bytes would be.
-    if let Some(plan) = &stable_view_plan {
-        for requirement in &population_quantity_requirements {
-            let singleton = ResourceContext::new_with_equalities(assumptions)
-                .unchecked_with_fact(requirement.fact.clone());
-            let body = match evaluate_resource_population_body_resources(
-                &singleton,
-                callee_state,
-                interface.composite_resource_definitions(),
-                assumptions,
-                budget,
-                false,
-            )? {
-                Ok(resources) => resources,
-                Err(error) => return Ok(Err(error)),
-            };
-            let body = expand_all_composite_resource_facts(
-                &body,
-                interface.composite_resource_definitions(),
-                &callee_state.program_point(),
-                assumptions,
-            )
-            .unwrap_or(body);
-            for fact in body.facts().iter().filter(|fact| fact.is_own()) {
-                let Some(range) = fact.memory_range() else {
-                    continue;
+    // Only a function's own certification can request the representation
+    // reached by a proof-only entry prefix. Compare its size before reading
+    // any heads, so a larger caller frame is never materialized for this.
+    let has_explicit_representation = preserve_explicit_representation
+        && (caller_state.resources().fact_count() != required_resources.fact_count()
+            || caller_state
+                .resources()
+                .composite_facts()
+                .filter_map(resource_fact_composite_head)
+                .ne(required_resources
+                    .composite_facts()
+                    .filter_map(resource_fact_composite_head)));
+
+    // An exact reservation of direct bodies already supplies the callee's
+    // partition. Keep canonical validation for requirements the plan did
+    // not reserve and for bodies that can depend on state or ledger evidence.
+    let reservation_supplies_partition = stable_view_plan.as_ref().is_some_and(|plan| {
+        plan.callee_resources
+            .contains_exact_facts_of(&required_resources)
+            && required_resources.composite_facts().all(|fact| {
+                let Resource::Composite { name, .. } = fact.resource() else {
+                    unreachable!("composite index")
                 };
-                if let Some(diagnostic) = plan.ledger.memory_access_refusal(
-                    range,
-                    assumptions,
-                    LoanRefusalOperation::Plan,
-                ) {
-                    return Ok(Err(RuntimeError::LoanRefusal(Box::new(diagnostic))));
-                }
-            }
-        }
-    }
-    let canonical_resources = {
+                checked_owned_bodies.contains(fact)
+                    && interface
+                        .composite_resource_definition(name)
+                        .is_some_and(CompositeResourceDefinition::has_argument_direct_body)
+            })
+    });
+    let canonical_resources = if reservation_supplies_partition {
+        None
+    } else {
         let canonical_state = caller_state
             .clone()
             .with_resource_context(required_resources.clone());
-        expand_all_composite_resource_facts_at_state(
+        let Some(canonical) = expand_all_composite_resource_facts_at_state(
             &required_resources,
             interface.composite_resource_definitions(),
             &canonical_state,
             assumptions,
-        )
+        ) else {
+            return Ok(Err(RuntimeError::FunctionContract(format!(
+                "could not expand required composite resources before call ({})",
+                bounded_contract_resource_frontier(&required_resources)
+            ))));
+        };
+        Some(canonical)
     };
-    let Some(canonical_resources) = canonical_resources else {
-        return Ok(Err(RuntimeError::FunctionContract(format!(
-            "could not expand required composite resources before call ({})",
-            bounded_contract_resource_frontier(&required_resources)
-        ))));
-    };
-    let population_body_resources = match evaluate_resource_population_body_resources(
-        &required_resources,
-        callee_state,
-        interface.composite_resource_definitions(),
-        assumptions,
-        budget,
-        false,
-    )? {
-        Ok(resources) => resources,
-        Err(error) => return Ok(Err(error)),
-    };
-    let required_composite_heads = required_resources
-        .facts()
-        .iter()
-        .filter_map(resource_fact_composite_head)
-        .collect::<Vec<_>>();
-    let caller_composite_heads = caller_state
-        .resources()
-        .facts()
-        .iter()
-        .filter_map(resource_fact_composite_head)
-        .collect::<Vec<_>>();
-    let has_explicit_representation = caller_state.resources().facts().len()
-        != required_resources.facts().len()
-        || caller_composite_heads != required_composite_heads;
     let mut callee_resources = if let Some(plan) = &stable_view_plan {
         plan.callee_resources.clone()
-    } else if preserve_explicit_representation && has_explicit_representation {
-        // Proof execution may have opened exactly the recursive branches needed
-        // by the body with `observe` or `unfold`. Independent certification
-        // must execute from that same definitionally equivalent form.
-        // The transfer checks below still consume every declared requirement,
-        // so this cannot weaken the function contract or affect ordinary
-        // calls, which always use the canonical boundary.
+    } else if has_explicit_representation {
+        // Independent certification executes with the same definitionally
+        // equivalent representation the proof reached. The transfer below
+        // still consumes every declared requirement.
         caller_state.resources().clone()
     } else {
-        canonical_resources
+        canonical_resources.expect("unreserved requirements were projected")
     };
     for empty_view in &empty_composite_views {
         // The head names a resource the callee may state; its checked body is
         // empty, so composing it adds a description and no authority.
         if !callee_resources.satisfies_fact(&empty_view.fact, assumptions) {
-            callee_resources = match callee_resources
-                .try_compose_with_fact(empty_view.fact.clone(), assumptions)
-            {
-                Ok(resources) => resources,
-                Err(error) => return Ok(Err(resource_context_runtime_error(error))),
-            };
+            callee_resources =
+                callee_resources.insert_prepared_call_view(empty_view.fact.clone(), assumptions);
         }
     }
     for requirement in &population_quantity_requirements {
@@ -12756,34 +12746,15 @@ fn prepare_contract_resource_transfer_unexplained(
             }));
         }
         if !callee_resources.satisfies_fact(&intrinsic_view.fact, assumptions) {
-            callee_resources = match callee_resources
-                .try_compose_with_fact(intrinsic_view.fact.clone(), assumptions)
-            {
-                Ok(resources) => resources,
-                Err(error) => return Ok(Err(resource_context_runtime_error(error))),
-            };
+            callee_resources = callee_resources
+                .insert_prepared_call_view(intrinsic_view.fact.clone(), assumptions);
         }
     }
-    for body_resource in population_body_resources.facts() {
-        // The population owns its body even while that body is absent from
-        // the caller's explicit proof context. Contract execution opens the
-        // body internally after the required population unit has established
-        // authority; surface proofs still need scoped `open` to use it.
-        if !callee_resources.satisfies_fact(body_resource, assumptions) {
-            callee_resources = match callee_resources
-                .try_compose_with_facts_delaying_normalization([body_resource.clone()], assumptions)
-            {
-                Ok(resources) => resources,
-                Err(error) => return Ok(Err(resource_context_runtime_error(error))),
-            };
-        }
-    }
-    if preserve_explicit_representation && has_explicit_representation {
+    if has_explicit_representation {
         let viewed_composites = caller_state
             .resources()
-            .facts()
-            .iter()
-            .filter(|fact| matches!(fact, ResourceFact::View(Resource::Composite { .. })))
+            .composite_facts()
+            .filter(|fact| fact.is_view())
             .cloned()
             .collect::<Vec<_>>();
         for composite in viewed_composites {
@@ -20513,16 +20484,67 @@ fn unreturned_allocation_obligation(
     function: &ProgramFunction,
     assumptions: &PureFactContext,
 ) -> Result<Option<(ResourceFact, Option<ResourceFact>)>, RuntimeError> {
-    let Some(actual) = expand_all_composite_resource_facts_at_state(
-        actual_state.resources(),
-        function.composite_resource_definitions(),
-        actual_state,
-        assumptions,
-    ) else {
-        return Err(RuntimeError::FunctionContract(
-            "could not inspect allocation obligations at function return".to_string(),
-        ));
+    let Some(actual) = project_exit_allocations(actual_state, function, assumptions)? else {
+        return Ok(None);
     };
+    unreturned_allocation_from_projection(
+        actual_state,
+        &actual,
+        returned_resources,
+        function,
+        assumptions,
+    )
+}
+
+fn could_hold_packaged_allocation(state: &ExecutionState, function: &ProgramFunction) -> bool {
+    state.resources().has_owned_composites()
+        && function
+            .composite_resource_definitions()
+            .iter()
+            .any(|definition| {
+                definition.contains().iter().any(|resource| {
+                    resource.family() == ResourceFamily::Token
+                        && resource.declared_name() == Some(ResourceFact::ALLOCATION_RESOURCE_NAME)
+                })
+            })
+}
+
+/// Skip allocation projection when neither a token nor a folded owner can
+/// supply one. A caller that needs to inspect its declared outputs retains
+/// the resulting partition for the escape check.
+fn project_exit_allocations(
+    state: &ExecutionState,
+    function: &ProgramFunction,
+    assumptions: &PureFactContext,
+) -> Result<Option<ResourceContext>, RuntimeError> {
+    if !state.resources().has_owned_composites() && !state.resources().has_owned_allocation_tokens()
+    {
+        return Ok(None);
+    }
+    if !state.resources().has_folded_composites() {
+        return Ok(Some(state.resources().clone()));
+    }
+    let actual = expand_all_composite_resource_facts_at_state(
+        state.resources(),
+        function.composite_resource_definitions(),
+        state,
+        assumptions,
+    )
+    .ok_or_else(|| {
+        RuntimeError::FunctionContract(
+            "could not inspect allocation obligations at function return".to_string(),
+        )
+    })?;
+    Ok(actual.has_owned_allocation_tokens().then_some(actual))
+}
+
+fn unreturned_allocation_from_projection(
+    actual_state: &ExecutionState,
+    actual: &ResourceContext,
+    returned_resources: &ResourceContext,
+    function: &ProgramFunction,
+    assumptions: &PureFactContext,
+) -> Result<Option<(ResourceFact, Option<ResourceFact>)>, RuntimeError> {
     let mut checked_return_frontier = returned_resources.clone();
     {
         for fact in returned_resources.facts() {
@@ -20649,9 +20671,7 @@ fn unreturned_allocation_obligation(
         .clone()
         .unchecked_with_facts(population_bodies.facts().iter().cloned());
     let allocation = actual
-        .facts()
-        .iter()
-        .filter(|fact| fact.allocation().is_some())
+        .owned_allocation_tokens()
         .find(|allocation| {
             returned_resources
                 .cached_support_exposing_fact(allocation, assumptions)
@@ -20974,42 +20994,18 @@ pub(crate) fn unreturned_allocation_with_checked_returned_resources(
     if function.return_type() != ProgramType::Void {
         set_function_result(&mut output_state, function, value.clone());
     }
-    let function_can_package_allocation =
-        function
-            .composite_resource_definitions()
-            .iter()
-            .any(|definition| {
-                definition.contains().iter().any(|resource| {
-                    resource.family() == ResourceFamily::Token
-                        && resource.declared_name() == Some(ResourceFact::ALLOCATION_RESOURCE_NAME)
-                })
-            });
-    if !function_can_package_allocation
-        && !output_state
-            .resources()
-            .facts()
-            .iter()
-            .any(|fact| fact.allocation().is_some())
+    if output_state
+        .resources()
+        .owned_allocation_tokens()
+        .next()
+        .is_none()
+        && !could_hold_packaged_allocation(&output_state, function)
     {
         return Ok(None);
     }
-    let Some(actual_resources) = expand_all_composite_resource_facts_at_state(
-        output_state.resources(),
-        function.composite_resource_definitions(),
-        &output_state,
-        assumptions,
-    ) else {
-        return Err(RuntimeError::FunctionContract(
-            "could not inspect allocation obligations at function return".to_string(),
-        ));
+    let Some(actual) = project_exit_allocations(&output_state, function, assumptions)? else {
+        return Ok(None);
     };
-    if !actual_resources
-        .facts()
-        .iter()
-        .any(|fact| fact.allocation().is_some())
-    {
-        return Ok(None);
-    }
     // The checked resource result lists `produces` clauses. Owned borrowed
     // inputs are returned separately by the contract, and may contain the
     // allocation (for example inside an authority-backed control).
@@ -21039,8 +21035,13 @@ pub(crate) fn unreturned_allocation_with_checked_returned_resources(
                 .filter(|fact| !returned_resources.satisfies_fact(fact, assumptions)),
         )
     };
-    let Some((allocation, holder)) =
-        unreturned_allocation_obligation(&output_state, &returned, function, assumptions)?
+    let Some((allocation, holder)) = unreturned_allocation_from_projection(
+        &output_state,
+        &actual,
+        &returned,
+        function,
+        assumptions,
+    )?
     else {
         return Ok(None);
     };
@@ -21058,42 +21059,16 @@ pub(crate) fn unreturned_allocation_at_function_exit(
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<Option<crate::kernel::proof::LiveAllocationObligation>, RuntimeError>> {
-    let function_can_package_allocation =
-        function
-            .composite_resource_definitions()
-            .iter()
-            .any(|definition| {
-                definition.contains().iter().any(|resource| {
-                    resource.family() == ResourceFamily::Token
-                        && resource.declared_name() == Some(ResourceFact::ALLOCATION_RESOURCE_NAME)
-                })
-            });
-    if !function_can_package_allocation
-        && !state
-            .resources()
-            .facts()
-            .iter()
-            .any(|fact| fact.allocation().is_some())
+    if !state.resources().has_owned_allocation_tokens()
+        && !could_hold_packaged_allocation(state, function)
     {
         return Ok(Ok(None));
     }
-    let Some(actual_resources) = expand_all_composite_resource_facts_at_state(
-        state.resources(),
-        function.composite_resource_definitions(),
-        state,
-        assumptions,
-    ) else {
-        return Ok(Err(RuntimeError::FunctionContract(
-            "could not inspect allocation obligations at function exit".to_string(),
-        )));
+    let actual = match project_exit_allocations(state, function, assumptions) {
+        Ok(Some(actual)) => actual,
+        Ok(None) => return Ok(Ok(None)),
+        Err(error) => return Ok(Err(error)),
     };
-    if !actual_resources
-        .facts()
-        .iter()
-        .any(|fact| fact.allocation().is_some())
-    {
-        return Ok(Ok(None));
-    }
     let Some(argument_values) = arguments
         .iter()
         .map(|argument| match argument {
@@ -21136,8 +21111,9 @@ pub(crate) fn unreturned_allocation_at_function_exit(
         Ok(resources) => resources,
         Err(error) => return Ok(Err(error)),
     };
-    match unreturned_allocation_obligation(
+    match unreturned_allocation_from_projection(
         &output_state,
+        &actual,
         &returned_resources,
         function,
         assumptions,
