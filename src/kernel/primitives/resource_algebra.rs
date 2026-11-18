@@ -1846,6 +1846,26 @@ impl ResourceContext {
         std::sync::Arc::ptr_eq(&self.storage, &other.storage)
     }
 
+    /// A retained projection preserves custody and witnesses with the
+    /// visible resource facts. Compare only their persistent roots.
+    pub(in crate::kernel) fn shares_projection_inputs_with(&self, other: &Self) -> bool {
+        fn same_root<T>(
+            left: &Option<std::sync::Arc<T>>,
+            right: &Option<std::sync::Arc<T>>,
+        ) -> bool {
+            match (left, right) {
+                (Some(left), Some(right)) => std::sync::Arc::ptr_eq(left, right),
+                (None, None) => true,
+                _ => false,
+            }
+        }
+        self.shares_storage_with(other)
+            && std::sync::Arc::ptr_eq(&self.loan_dependencies, &other.loan_dependencies)
+            && self.framed_origins.shares_root_with(&other.framed_origins)
+            && same_root(&self.instance_consumptions, &other.instance_consumptions)
+            && same_root(&self.structural_witnesses, &other.structural_witnesses)
+    }
+
     /// Direct occurrences of only the selected resource. Cached projections
     /// are not independent units and must not be counted or moved as such.
     pub(in crate::kernel) fn exact_resource_facts(&self, resource: &Resource) -> Vec<ResourceFact> {

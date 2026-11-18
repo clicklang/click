@@ -1,6 +1,8 @@
 //! Entry inputs produced once and retained by ordinary contract closing.
 
 use super::*;
+use crate::kernel::primitives::program_point::{PathLink, ProgramPointId};
+use crate::kernel::primitives::{FunctionContractInterface, PopulationEffects};
 
 /// The contract's own entry view, evaluated clauses and derived resource
 /// facts. Execution and its proof forks share this input; closing never binds
@@ -14,6 +16,7 @@ pub(crate) struct RetainedClosingEntry {
     pub(super) assumptions: PureFactContext,
     pub(super) facts: Arc<[Proposition]>,
     pub(super) projection: Option<Arc<Result<FunctionMemoryEffectProjection, String>>>,
+    pub(super) exit: std::sync::Mutex<Option<Box<RetainedExitProjection>>>,
 }
 
 impl std::fmt::Debug for RetainedClosingEntry {
@@ -70,7 +73,51 @@ impl RetainedClosingEntry {
             assumptions,
             facts: facts.into(),
             projection,
+            exit: Default::default(),
         }
+    }
+
+    /// Retain one successful projection for this closing entry. The proof
+    /// may move to another exit or strengthen its facts between consumers.
+    /// Both are cache misses, with no search through earlier exits.
+    pub(super) fn prepare_exit_projection(
+        &self,
+        function: &ProgramFunction,
+        raw: &ExecutionState,
+        at_exit: &mut ExecutionState,
+        assumptions: &PureFactContext,
+    ) -> Option<ResourceContext> {
+        crate::instrumentation::record_deterministic_work(1);
+        let logical_reads = assumptions.equality_graph.logical_read_generation();
+        if let Some(found) = self
+            .exit
+            .lock()
+            .expect("closing exit projection")
+            .as_ref()
+            .filter(|retained| retained.matches(function, raw, at_exit, assumptions, logical_reads))
+        {
+            at_exit.point = found.point.clone();
+            return Some(found.resources.clone());
+        }
+        let resources = expand_certification_exit(function, at_exit, assumptions)?;
+        // Registration can discover a logical read definition during the
+        // projection. Only publish a result for a stable input checkpoint.
+        if assumptions.equality_graph.logical_read_generation() == logical_reads {
+            *self.exit.lock().expect("closing exit projection") =
+                Some(Box::new(RetainedExitProjection {
+                    interface: Arc::clone(&function.contract_interface),
+                    raw_memory: raw.memory().clone(),
+                    raw_point: raw.point.id(),
+                    point: at_exit.point.clone(),
+                    population_effects: Arc::clone(&at_exit.population_effects),
+                    memory: at_exit.memory().clone(),
+                    input_resources: at_exit.resources().clone(),
+                    assumptions: assumptions.clone(),
+                    logical_reads,
+                    resources: resources.clone(),
+                }));
+        }
+        Some(resources)
     }
 
     pub(in crate::kernel) fn for_case(
@@ -89,6 +136,90 @@ impl RetainedClosingEntry {
             assumptions,
             self.facts.to_vec(),
         )
+    }
+}
+
+/// The common projection before closing adds claim-specific instance views
+/// and observation facts. The consuming state retains its own locals and
+/// ledgers even when the projected resource partition can be shared.
+pub(super) fn expand_certification_exit(
+    function: &ProgramFunction,
+    state: &ExecutionState,
+    assumptions: &PureFactContext,
+) -> Option<ResourceContext> {
+    crate::kernel::functions::expand_all_composite_resource_facts_at_state(
+        state.resources(),
+        function.composite_resource_definitions(),
+        state,
+        assumptions,
+    )
+}
+
+pub(super) struct RetainedExitProjection {
+    interface: Arc<FunctionContractInterface>,
+    raw_memory: SymbolicMemory,
+    raw_point: Option<ProgramPointId>,
+    point: PathLink,
+    population_effects: Arc<PopulationEffects>,
+    assumptions: PureFactContext,
+    logical_reads: u64,
+    memory: SymbolicMemory,
+    input_resources: ResourceContext,
+    resources: ResourceContext,
+}
+
+impl RetainedExitProjection {
+    fn matches(
+        &self,
+        function: &ProgramFunction,
+        raw: &ExecutionState,
+        at_exit: &ExecutionState,
+        assumptions: &PureFactContext,
+        logical_reads: u64,
+    ) -> bool {
+        // Expansion reads the raw exit's resource partition, its memory and
+        // path, and the creation ledger for authority controls. No local
+        // variable environment is read by body expansion: every body binds
+        // its own explicit resource arguments.
+        Arc::ptr_eq(&self.interface, &function.contract_interface)
+            && self.raw_memory.same_storage_roots(raw.memory())
+            && self.raw_point == raw.point.id()
+            && same_optional_root(&self.raw_memory.pending_steps, &raw.memory().pending_steps)
+            && self.memory.same_storage_roots(at_exit.memory())
+            && self
+                .input_resources
+                .shares_projection_inputs_with(at_exit.resources())
+            && Arc::ptr_eq(&self.population_effects, &at_exit.population_effects)
+            && self.logical_reads == logical_reads
+            && self.assumptions.shares_persistent_storage_with(assumptions)
+            && self.assumptions.content_fingerprint == assumptions.content_fingerprint
+            && self
+                .assumptions
+                .equality_graph
+                .admitted
+                .typed_pointer_read_definitions
+                .shares_root_with(
+                    &assumptions
+                        .equality_graph
+                        .admitted
+                        .typed_pointer_read_definitions,
+                )
+            && self.assumptions.reasoning_policy == assumptions.reasoning_policy
+            && self.assumptions.decided_algebraic_ifs == assumptions.decided_algebraic_ifs
+            && same_optional_root(&self.assumptions.store_owners, &assumptions.store_owners)
+            && self.assumptions.equality_graph.input_key() == assumptions.equality_graph.input_key()
+            && self
+                .assumptions
+                .equality_graph
+                .shares_read_configuration_with(&assumptions.equality_graph)
+    }
+}
+
+fn same_optional_root<T>(left: &Option<Arc<T>>, right: &Option<Arc<T>>) -> bool {
+    match (left, right) {
+        (Some(left), Some(right)) => Arc::ptr_eq(left, right),
+        (None, None) => true,
+        _ => false,
     }
 }
 
@@ -292,6 +423,64 @@ mod tests {
             });
         assert!(independent.is_ok());
         assert!(attempts >= 2);
+    }
+
+    #[test]
+    fn goal_preparation_and_closing_share_the_same_exit_partition() {
+        let (function, entry, mut path, mut outcome) = fixture(0, 0);
+        let function =
+            function.with_composite_resource_definitions(vec![CompositeResourceDefinition::new(
+                "boxed",
+                vec![],
+                None,
+                false,
+                vec![ResourceSpec::token(
+                    ResourceAccessMode::Own,
+                    "child".to_string(),
+                    vec![],
+                    vec![],
+                )],
+                vec![],
+            )]);
+        let FunctionOutcome::Return { state, .. } = &mut outcome else {
+            unreachable!()
+        };
+        **state = (**state).clone().with_resource_context(
+            state
+                .resources()
+                .clone()
+                .unchecked_with_fact(ResourceFact::own_composite("boxed".into(), vec![])),
+        );
+        let retained = &entry.closing_entry;
+        let assumptions = retained.assumptions.clone();
+        path.post_assumptions = Some(assumptions.clone());
+        let prepared = FunctionEnsureGoalContext::from_retained_entry(
+            &function,
+            retained,
+            &outcome,
+            &assumptions,
+        )
+        .unwrap();
+        let closed = prepare_closing_path(
+            &function,
+            &path,
+            retained,
+            &outcome,
+            vec![],
+            false,
+            false,
+            None,
+            ResourceContext::new(),
+            false,
+            None,
+        )
+        .unwrap();
+        assert!(
+            prepared
+                .post_state
+                .resources()
+                .shares_storage_with(closed.post_resources.as_ref().unwrap())
+        );
     }
 
     #[test]

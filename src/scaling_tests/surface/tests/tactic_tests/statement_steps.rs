@@ -944,23 +944,45 @@ fn store_index_separation_search_scales(c_index: &str, click_index: &str, suffix
 
 #[test]
 fn direct_store_source_publication_ignores_rhs_depth() {
+    check_word_store_source_publication("*p", "p[0]", "", "owns *p;");
+}
+
+#[test]
+fn indexed_store_source_publication_ignores_rhs_depth() {
+    check_word_store_source_publication("p[0]", "p[0]", "", "owns *p;");
+    check_word_store_source_publication("p[1]", "p[1]", "", "owns p[0..4];");
+    check_word_store_source_publication(
+        "p[i]",
+        "p[i]",
+        "int32 i, ",
+        "owns p[0..4]; requires 0 <= i; requires i < 4;",
+    );
+}
+
+fn check_word_store_source_publication(
+    lvalue: &str,
+    reads: &str,
+    index_parameter: &str,
+    contract: &str,
+) {
     use crate::instrumentation::VerificationEvent;
 
     let mut publication_work = Vec::new();
     for depth in [4, 16, 40] {
         let updates = "    x = x * 3u + 1u;\n".repeat(depth);
-        let source =
-            format!("void set(uint32* p, uint32 x) {{\n{updates}    *p = x;\n    x = x + 1u;\n}}");
+        let source = format!(
+            "void set(uint32* p, {index_parameter}uint32 x) {{\n{updates}    {lvalue} = x;\n    x = x + 1u;\n}}"
+        );
         let steps = "    step();\n".repeat(depth + 2);
         let equation =
-            format!("at(statement({depth}).exit, p[0]) == at(statement({depth}).entry, x)");
+            format!("at(statement({depth}).exit, {reads}) == at(statement({depth}).entry, x)");
         let click = format!(
-            "verifying \"store.c\";\nvoid set(uint32* p, uint32 x) {{ owns *p; }} by {{\n{steps}    have {equation} by {{ known(); }}\n}}"
+            "verifying \"store.c\";\nvoid set(uint32* p, {index_parameter}uint32 x) {{ {contract} }} by {{\n{steps}    have {equation} by {{ known(); }}\n}}"
         );
         let sources = [("store.c", source.as_str())];
         let (result, events) =
             crate::instrumentation::collect(|| verify_c_sources(&click, &sources));
-        result.unwrap_or_else(|error| panic!("depth {depth}: {}", error.report()));
+        result.unwrap_or_else(|error| panic!("{lvalue}, depth {depth}: {}", error.report()));
         let preparation = events
             .iter()
             .find_map(|event| match event {
@@ -988,7 +1010,7 @@ fn direct_store_source_publication_ignores_rhs_depth() {
         if depth == 40 {
             let wrong = click.replace(
                 &equation,
-                &format!("at(statement({depth}).exit, p[0]) == x"),
+                &format!("at(statement({depth}).exit, {reads}) == x"),
             );
             assert!(verify_c_sources(&wrong, &sources).is_err());
         }
@@ -997,6 +1019,6 @@ fn direct_store_source_publication_ignores_rhs_depth() {
         publication_work
             .iter()
             .all(|work| *work <= publication_work[0] + 36),
-        "store publication grew with RHS depth: {publication_work:?}"
+        "{lvalue} publication grew with RHS depth: {publication_work:?}"
     );
 }

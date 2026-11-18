@@ -2056,6 +2056,93 @@ fn established_named_contract_frames_opaque_outputs_but_a_declaration_does_not()
     assert_eq!(state.resources().flat_owned_memory_ranges().len(), 2);
 }
 
+#[test]
+fn supplementary_callback_postcondition_uses_the_return_point() {
+    use crate::kernel::program_expression::{pointer_value, variable};
+
+    let _session = crate::kernel::VerificationSession::enter();
+    let contract = |name, parameter, ensures| {
+        FunctionContract::new(
+            name,
+            program_function(
+                ProgramType::Void,
+                name,
+                vec![program_parameter(parameter, ProgramType::Int32Pointer)],
+                ProgramStatement::Skip,
+            )
+            .with_contract(vec![], ensures, vec![], vec![], true),
+        )
+        .unwrap()
+    };
+    let primary = contract("Primary", "input", vec![]);
+    let supplementary = contract(
+        "Supplementary",
+        "p",
+        vec![SpecProposition::Defined(SpecExpression::MemoryLoad {
+            point: SpecPoint::Current,
+            pointer: Box::new(SpecExpression::ProgramExpression(variable("p"))),
+            value_type: ProgramType::Int32,
+        })],
+    );
+    let callback = Address::symbolic_function(Variable(8_960_012));
+    let assumptions = PureFactContext::new()
+        .assume_proposition(named_contract_fact(&primary, callback.clone()))
+        .assume_proposition(named_contract_fact(&supplementary, callback.clone()));
+    let environment = ExecutionEnvironment::new()
+        .with_selected_call_contract("Primary")
+        .with_function_contract(primary.clone())
+        .with_function_contract(supplementary);
+    let contracts = contracts_for_pointer(
+        &callback,
+        &assumptions,
+        &environment,
+        &primary.function_pointer_type(),
+    );
+    assert_eq!(contracts.len(), 2);
+
+    let pointer = Address::symbolic(Variable(8_960_013));
+    let memory = SymbolicMemory::new()
+        .with_block(pointer.base.clone(), 4)
+        .store(pointer.clone(), int32(7));
+    let caller = ExecutionState::new()
+        .with_population_creation_tracking()
+        .with_memory(memory);
+    let paths = execute_program_function_contracts_paths(
+        &caller,
+        &contracts.iter().collect::<Vec<_>>(),
+        &[pointer_value(pointer.clone())],
+        &assumptions,
+        &environment,
+        &mut ExecutionBudget::new(),
+    )
+    .unwrap();
+    let [
+        FunctionPath {
+            outcome: FunctionOutcome::Return {
+                state: returned, ..
+            },
+            facts,
+            ..
+        },
+    ] = paths.as_slice()
+    else {
+        panic!("expected one checked return, got {paths:?}");
+    };
+    assert_eq!(returned.memory(), caller.memory());
+    let expected = Proposition::MemoryReadDefined {
+        at: Some(returned.observation_point_id().unwrap()),
+        memory: returned.memory().clone(),
+        pointer,
+        value_type: ProgramType::Int32,
+    };
+    assert!(
+        facts
+            .iter()
+            .any(|fact| fact.is_certified() && fact.proposition() == &expected),
+        "missing return-point fact {expected:?} in {facts:?}"
+    );
+}
+
 #[cfg(test)]
 mod scaling_tests {
     include!("../../scaling_tests/kernel/functions/callback_contract_tests.rs");

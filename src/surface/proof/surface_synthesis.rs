@@ -3791,24 +3791,39 @@ fn raise_integer_operation(
 
 // A printed comparison operand or conditional arm can reparse arithmetic as
 // Integer. Keep the machine context of the bounded unsigned operation there.
-fn spell_wrapping_uint64_operand(
+fn spell_bounded_uint64_operand(
     term: &crate::kernel::KernelTerm,
     expression: SurfaceTerm,
 ) -> Option<SurfaceTerm> {
     use crate::kernel::KernelTermNode as Node;
     if let Node::MachineBinary {
         format: MachineIntegerType::UInt64,
-        operator: MachineBinaryOp::Add | MachineBinaryOp::Subtract | MachineBinaryOp::Multiply,
+        operator,
         arguments,
     } = term.node()
-        && matches!(
-            arguments.each_ref().map(|child| child.node()),
-            [Node::Variable(_), Node::MachineLiteral(_)]
-                | [Node::MachineLiteral(_), Node::Variable(_)]
-        )
+        && match operator {
+            MachineBinaryOp::Add | MachineBinaryOp::Subtract | MachineBinaryOp::Multiply => {
+                matches!(
+                    arguments.each_ref().map(|child| child.node()),
+                    [Node::Variable(_), Node::MachineLiteral(_)]
+                        | [Node::MachineLiteral(_), Node::Variable(_)]
+                )
+            }
+            MachineBinaryOp::Divide | MachineBinaryOp::Remainder => {
+                matches!(arguments[0].node(), Node::Variable(_))
+                    && crate::kernel::MachineOperandView::Shared(&arguments[1])
+                        .uint64_constant()
+                        .is_some_and(|divisor| divisor != 0)
+            }
+            _ => false,
+        }
         && matches!(
             expression,
-            SurfaceTerm::Add(..) | SurfaceTerm::Subtract(..) | SurfaceTerm::Multiply(..)
+            SurfaceTerm::Add(..)
+                | SurfaceTerm::Subtract(..)
+                | SurfaceTerm::Multiply(..)
+                | SurfaceTerm::Divide(..)
+                | SurfaceTerm::Remainder(..)
         )
     {
         synthesize_observation_operand(expression, ProgramType::UInt64)
@@ -3916,7 +3931,7 @@ fn raise_kernel_term_dispatch(
         }
         Node::BoolLiteral(value) => bool_literal(*value),
         Node::BoolIf { arguments } | Node::MachineIf { arguments } => {
-            let arm = |term| spell_wrapping_uint64_operand(term, recurse(term)?);
+            let arm = |term| spell_bounded_uint64_operand(term, recurse(term)?);
             SurfaceTerm::If {
                 condition: Box::new(bool_truth(recurse(&arguments[0])?)),
                 then_branch: Box::new(arm(&arguments[1])?),
@@ -3981,7 +3996,7 @@ fn raise_kernel_term_dispatch(
                     .copied()
                     .all(|operand| unsigned_widening(operand) || operand.variable().is_some());
             let operand = |term| {
-                let expression = spell_wrapping_uint64_operand(term, recurse(term)?)?;
+                let expression = spell_bounded_uint64_operand(term, recurse(term)?)?;
                 if unsigned_literal || (unsigned_word && unsigned_widening(V::Shared(term))) {
                     Some(expression)
                 } else {
@@ -4440,6 +4455,14 @@ pub(super) fn synthesize_surface_resource_subject(
     // A range counts its retained element width, which need not be the
     // pointee width of the name (for example, a struct field's backing).
     // Spell scalar coordinates explicitly; pointer casts retain provenance.
+    // A character-to-character cast preserves a narrow byte view. For a
+    // range that already names root byte coordinates, the void cast makes
+    // that root explicit regardless of the source pointer's type.
+    let surface_base = if range.element_width() == 1 && range.carrier_has_known_bounds() {
+        synthesize_observation_operand(surface_base, ProgramType::VoidPointer)?
+    } else {
+        surface_base
+    };
     let scalar_pointer_type = match range.element_width() {
         1 => Some(ProgramType::UInt8Pointer),
         2 => Some(ProgramType::UInt16Pointer),
@@ -4448,18 +4471,7 @@ pub(super) fn synthesize_surface_resource_subject(
         _ => None,
     };
     let surface_base = match scalar_pointer_type {
-        Some(target_type) => ContractExpression::CUnary {
-            operand: Box::new(surface_base),
-            lowered: ProgramExpression::Cast {
-                expression: Box::new(ProgramExpression::Value(int32(0))),
-                target_type,
-                integer_mode: crate::kernel::IntegerCastMode::Standard,
-                pointee_struct: None,
-                pointee_volatile: false,
-                pointee_constant: false,
-                explicit_qualification: false,
-            },
-        },
+        Some(target_type) => synthesize_observation_operand(surface_base, target_type)?,
         None => surface_base,
     };
     // The bounds are spelled as the terms they are, in either index kind.
