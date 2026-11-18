@@ -1619,6 +1619,7 @@ equality and predicate `Term` payloads remain assigned to 10q4.
 | 10q4b2 | Term schema and retained visitors | Retain roots in the five expression-bearing Term fields; extend selected-root dispatch and source/binder reservation, preserving exact native identity, scope, refusals and substitution. |
 | 10q4b2a | Raw retained Integer arithmetic (preparation) | Validate selected-root literal/variable/six-operator substitution before the Term dispatch switch; exact-source mode and the other node families remain required. |
 | 10q4b2b | Retained machine observations (preparation) | Reuse the shared numeric child walker and existing observation/retain/rekey policy, preserving literal readings, width, read scope and nonliteral no-op roots. |
+| 10q4b2c | Retained Boolean value connectives (preparation) | Reuse the active rewrite scope for literal/variable leaves and shared BoolIf/BoolEqual reconstruction; preserve native checking/raw constructor, scope and refusal rules. |
 | 10q4c | Equality and predicate producers | Forward actual evaluated roots into the carriers, close the producer inventory, and verify proof/refusal, fact stability and scaling parity. |
 
 Sequence and pointer-offset descriptors retain the operands migrated in their
@@ -1676,6 +1677,22 @@ an inactive preparation entry point. Integer conditionals need a same-scope reta
 walker; exporting a whole common guard is not the substitute. Exact-source
 matching, remaining families, the actual Term schema and 10q4c producer
 handoffs remain required.
+
+10q4b2c adds an inactive, explicitly bounded retained Boolean value walker.
+Literal and variable leaves use the same active native rewrite scope, while
+`map_boolean_with_connectives` memoizes the selected shared connective DAG.
+Existing constructors preserve guard selection, equal-arm folding and raw
+connectives in Integer-exact mode. Native/root substitution and changed-flag
+parity, lexical shadowing, checked source-collection refusal, and growing
+changed/no-op DAG retention passed all five focused checks. Compatibility
+reads follow the retention assertions. Broader affected checks, all regular
+scalers and quality remain pending on the integrated checkpoint; nightly was
+excluded. Native UInt8 Boolean constants are admitted, while ordinary Int32
+zero/one truth-word replacements remain explicit non-admission cases alongside
+symbolic scalar replacements. Scalar predicate/application/read leaves,
+compound exact/cited/collected guard lookup, Integer conditionals, the full
+Term schema and actual 10q4c producer handoffs remain required. No whole common
+guard is exported to substitute for a missing retained dispatch.
 
 The required 10q4b2 integration checklist is:
 
