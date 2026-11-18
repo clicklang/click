@@ -454,32 +454,38 @@ int tree_contains(struct tree_node* root, struct tree_node* target) {
         },
         HeapTree::Node(node, value, left_model, right_model) => {
             let { left: l, right: r } = unfold(t);
-            branch { step(); solve(); } else {}
+            branch { true => { step(); solve(); } false => {} }
             branch {
-                step();
-                let t = fold(tree_at(root), { model: HeapTree::Node(node, value, left_model, right_model) }, { left: l, right: r });
-                have address(node) == address(target);
-                solve();
-            } else {}
+                true => {
+                    step();
+                    let t = fold(tree_at(root), { model: HeapTree::Node(node, value, left_model, right_model) }, { left: l, right: r });
+                    have address(node) == address(target);
+                    solve();
+                }
+                false => {}
+            }
             have not(address(node) == address(target)) by {
                 rewrite(node, root);
                 normalize() using { address(root) != address(target); };
             }
             let { result: found_left } = step(tree_contains, { t: l });
             branch {
-                step();
-                have heap_member(left_model, target) by {
-                    have left_model == l.model by {
-                        rewrite(l.model, left_model);
-                        normalize();
+                true => {
+                    step();
+                    have heap_member(left_model, target) by {
+                        have left_model == l.model by {
+                            rewrite(l.model, left_model);
+                            normalize();
+                        }
+                        have heap_member(l.model, target) != false;
+                        rewrite(left_model, l.model);
+                        known();
                     }
-                    have heap_member(l.model, target) != false;
-                    rewrite(left_model, l.model);
-                    known();
+                    let t = fold(tree_at(root), { model: HeapTree::Node(node, value, left_model, right_model) }, { left: l, right: r });
+                    solve();
                 }
-                let t = fold(tree_at(root), { model: HeapTree::Node(node, value, left_model, right_model) }, { left: l, right: r });
-                solve();
-            } else {}
+                false => {}
+            }
             have not heap_member(left_model, target) by {
                 solve() using {
                     found_left == 0;

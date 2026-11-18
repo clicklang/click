@@ -19,9 +19,12 @@ int32 advance_old_state_interface(int32 x, int32 choose_first) {
     ensures result == old(x) by {
         step();
         branch {
-            step();
-        } else {
-            step();
+            true => {
+                step();
+            }
+            false => {
+                step();
+            }
         }
         step();
         solve();

@@ -22,22 +22,25 @@ int32 pick(int32 a, int32 c) {
  branch ensuring {
   fact 0 <= x;
   fact x <= 1;
- } then {
-  step();
-  if c == 0 {
-   have 0 <= x;
-   have x <= 1;
-  } else {
-   have 0 <= x;
-   have x <= 1;
-  }
- } else {
-  if c == 0 {
-   have 0 <= x;
-  } else {
-   have 0 <= x;
-  }
-  have x <= 1;
+ } {
+     true => {
+      step();
+      if c == 0 {
+       have 0 <= x;
+       have x <= 1;
+      } else {
+       have 0 <= x;
+       have x <= 1;
+      }
+     }
+     false => {
+      if c == 0 {
+       have 0 <= x;
+      } else {
+       have 0 <= x;
+      }
+      have x <= 1;
+     }
  }
  }
 }

@@ -1,7 +1,7 @@
 # A proof `match` in a top-level `branch` continuation
 
 The top-level sibling of `branch_continuation_nested_match.md`: the
-`branch`'s `then` arm returns and its `else` arm runs the continuation, a
+`branch`'s `true` arm returns and its `false` arm runs the continuation, a
 proof `match`, to function exit; the match arm splits at the C's second `if`
 with a proof `if`, each case stepping to exit with
 `step_until(function.exit)`. The match used to leave the arm proof
@@ -40,9 +40,12 @@ int32 f(int32* p, int32 x) {
     ensures result == 0 or result == 1;
 } by {
     branch {
-        step();
-        solve();
-    } else {}
+        true => {
+            step();
+            solve();
+        }
+        false => {}
+    }
     match c.m {
         T::A(w) => {
             if x < 5 {

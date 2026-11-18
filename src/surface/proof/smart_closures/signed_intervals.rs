@@ -111,6 +111,44 @@ pub(super) fn has_retained_read_source(proposition: &ClickProposition) -> bool {
     found
 }
 
+/// Result range and native observation bridge for one signed int32 sum.
+/// Retained operands keep their exact lowered identities in the ordinary proof.
+pub(super) fn is_int32_addition_obligation(goal: &Proposition) -> bool {
+    use crate::kernel::IntegerTerm;
+    let int32_sum = |term: &IntegerTerm| {
+        matches!(term, IntegerTerm::Add(a, b)
+        if [a, b].iter().all(|operand| match operand.as_ref() {
+            IntegerTerm::Machine(value) => value.ty() == MachineIntegerType::Int32,
+            IntegerTerm::Constant(_) => true,
+            _ => false,
+        }))
+    };
+    let native_add = |term: &IntegerTerm| {
+        matches!(term, IntegerTerm::Machine(value)
+            if value.ty() == MachineIntegerType::Int32
+                && matches!(value.operand_view().binary(),
+                    Some((MachineIntegerType::Int32, crate::kernel::MachineBinaryOp::Add, _))))
+    };
+    let Some((condition, true)) = goal.condition_native() else {
+        return false;
+    };
+    let at_limit = |endpoint: &IntegerTerm, limit: i32| {
+        endpoint
+            .as_const()
+            .is_some_and(|n| n == &BigInt::from(limit))
+    };
+    let (left, right) = match condition {
+        ConditionTerm::IntegerLessEqual(left, right) => (left, right),
+        ConditionTerm::IntegerGreaterEqual(left, right) => (right, left),
+        ConditionTerm::IntegerEqual(left, right) => {
+            return (native_add(left) && int32_sum(right))
+                || (native_add(right) && int32_sum(left));
+        }
+        _ => return false,
+    };
+    (at_limit(left, i32::MIN) && int32_sum(right)) || (int32_sum(left) && at_limit(right, i32::MAX))
+}
+
 /// The cast's destination and which written operand holds the original value.
 fn bounded_cast_shape(goal: &Proposition) -> Option<(crate::kernel::MachineIntegerFormat, bool)> {
     use crate::kernel::machine_integer::conversion;
@@ -219,6 +257,161 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             proof = closed.join()?;
         }
         proof.driver().apply_step(ProofStep::Known).map(Some)
+    }
+
+    /// Use one endpoint per operand, then weaken the summed endpoint.
+    /// All nonliteral endpoints come from the checked selected premises.
+    pub(in crate::surface::proof) fn try_int32_addition_using(
+        input: &Proof<'a>,
+        premises: &[ClickProposition],
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_int32_addition_using");
+        use super::super::wide_arithmetic::have;
+        use crate::kernel::IntegerTerm;
+        let Some((goal, true)) = input.goal().and_then(Proposition::condition_native) else {
+            return Ok(None);
+        };
+        if matches!(goal, ConditionTerm::IntegerEqual(..)) {
+            return if Self::known_bridge_using(input, premises)? {
+                input.driver().apply_step(ProofStep::Known).map(Some)
+            } else {
+                Ok(None)
+            };
+        }
+        let (left, right) = match goal {
+            ConditionTerm::IntegerLessEqual(left, right) => (left, right),
+            ConditionTerm::IntegerGreaterEqual(left, right) => (right, left),
+            _ => return Ok(None),
+        };
+        let Some(ClickProposition::Comparison {
+            left: written_left,
+            right: written_right,
+            ..
+        }) = input
+            .surface_goal()
+            .and_then(integer_composition::canonical_surface)
+        else {
+            return Ok(None);
+        };
+        let lower = left.as_const().is_some();
+        let (sum, written_sum, limit) = if lower {
+            (right, written_right, i64::from(i32::MIN))
+        } else {
+            (left, written_left, i64::from(i32::MAX))
+        };
+        let (IntegerTerm::Add(a, b), ContractExpression::Add(written_a, written_b)) =
+            (sum.as_ref(), &written_sum)
+        else {
+            return Ok(None);
+        };
+        let operands = [a, b];
+        let literal = |term: &IntegerTerm| {
+            term.as_const().and_then(ToPrimitive::to_i32).or_else(|| {
+                let IntegerTerm::Machine(value) = term else {
+                    return None;
+                };
+                value
+                    .ty()
+                    .constant_from_term(&value.operand_view().literal()?)?
+                    .to_integer()
+                    .to_i32()
+            })
+        };
+        let mut endpoints = operands.map(|operand| literal(operand));
+        for source in premises {
+            let premise = input.lower_cited_surface_proposition(source, "addition bound")?;
+            if !input.facts().listed_premise_available(&premise, &[], false) {
+                return Ok(None);
+            }
+            let readings =
+                crate::kernel::machine_integer::comparison::integer_readings_with_promotions(
+                    &premise,
+                );
+            for premise in std::iter::once(&premise).chain(&readings) {
+                let (lo, hi) = match premise.condition_native() {
+                    Some((ConditionTerm::IntegerLessEqual(lo, hi), true))
+                    | Some((ConditionTerm::IntegerGreaterEqual(hi, lo), true)) => (lo, hi),
+                    _ => continue,
+                };
+                let (value, endpoint) = if lower { (hi, lo) } else { (lo, hi) };
+                let Some(endpoint) = literal(endpoint) else {
+                    continue;
+                };
+                for (operand, slot) in operands.iter().zip(&mut endpoints) {
+                    if operand.value_read() == value.value_read()
+                        && slot.is_none_or(|old| {
+                            if lower {
+                                endpoint > old
+                            } else {
+                                endpoint < old
+                            }
+                        })
+                    {
+                        *slot = Some(endpoint);
+                    }
+                }
+            }
+        }
+        let [Some(a), Some(b)] = endpoints else {
+            return Ok(None);
+        };
+        let total = i64::from(a) + i64::from(b);
+        if (lower && total < limit) || (!lower && total > limit) {
+            return Ok(None);
+        }
+        let typed =
+            |value| super::super::surface_synthesis::integer_typed_expression(number(value));
+        let endpoint_a = typed(i64::from(a));
+        let endpoint_b = typed(i64::from(b));
+        let (a, b, c, d) = if lower {
+            (
+                endpoint_a.clone(),
+                (**written_a).clone(),
+                endpoint_b.clone(),
+                (**written_b).clone(),
+            )
+        } else {
+            (
+                (**written_a).clone(),
+                endpoint_a.clone(),
+                (**written_b).clone(),
+                endpoint_b.clone(),
+            )
+        };
+        let sources = vec![le(a.clone(), b.clone()), le(c.clone(), d.clone())];
+        let summed = add(endpoint_a, endpoint_b);
+        let limit = typed(limit);
+        let (first, middle, last) = if lower {
+            (limit, summed, written_sum)
+        } else {
+            (written_sum, summed, limit)
+        };
+        let before = le(first.clone(), middle.clone());
+        let after = le(middle.clone(), last.clone());
+        let (combined, weakened) = if lower {
+            (after.clone(), before.clone())
+        } else {
+            (before.clone(), after.clone())
+        };
+        let proof = input.driver().apply_step(have(
+            combined,
+            vec![apply("add_le", vec![a, b, c, d], sources)],
+        ))?;
+        let proof = proof
+            .driver()
+            .apply_step(have(weakened, vec![ProofStep::Known]))?;
+        let proof = proof.driver().apply_step(apply(
+            "le_transitive",
+            vec![first, middle, last],
+            vec![before, after],
+        ))?;
+        if proof.focused_discharged() {
+            Ok(Some(proof))
+        } else {
+            // The law publishes <= even when the written goal uses >=.
+            proof.driver().apply_step(ProofStep::Known).map(Some)
+        }
     }
 
     /// Close one selected interval obligation through ordinary emitters only.
@@ -338,7 +531,21 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         }
         let premises = atomic.as_slice();
         let scope = proof.driver().open_have(target.clone())?;
-        if (has_retained_read_source(&target) || premises.iter().any(has_retained_read_source))
+        let retained =
+            has_retained_read_source(&target) || premises.iter().any(has_retained_read_source);
+        let addition = retained
+            && scope
+                .body()
+                .goal()
+                .is_some_and(is_int32_addition_obligation);
+        let driver = scope.driver();
+        if addition
+            && let Some(closed) =
+                attempt::candidate_outcome(driver.try_int32_addition_using(premises))?.flatten()
+        {
+            return Ok(Some(closed.join()?));
+        }
+        if retained
             && let Some(closed) = {
                 // An exact type range can be computed even when its operand
                 // is written at a program point. Use the goal-local check
@@ -357,13 +564,13 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 } else {
                     ProofStep::NormalizeUsing(premises.to_vec())
                 };
-                attempt::candidate_outcome(scope.driver().apply_step(step))?
+                attempt::candidate_outcome(driver.apply_step(step))?
             }
             && closed.is_complete()
         {
             return Ok(Some(closed.join()?));
         }
-        if let Some(closed) = scope.driver().try_interval_fact_using(premises)? {
+        if let Some(closed) = driver.try_interval_fact_using(premises)? {
             return Ok(Some(closed.join()?));
         }
         // A visible initialized read is not necessarily a stored pure fact.

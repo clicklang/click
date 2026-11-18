@@ -67,50 +67,53 @@ int32 bubble_pass3(int32 p[3]) {
                 fact defined(j + 1);
                 fact p[j] <= p[j + 1];
                 fact all_le_range(p, 0, j, p[j + 1]);
-            } then {
-                step();
-                step();
-                step();
-                have defined(j + 1);
-                have p[j] <= p[j + 1];
-                have all_le_range(p, 0, j, p[j + 1]) by {
-                    if j == 0 {
-                        unfold(all_le_range(p, 0, j, p[j + 1]));
-                        solve();
-                    } else {
-                        have j == 1 by solve();
-                        have separate(memory(p[1]), memory(p[0])) by {
-                            apply(separation::separate_elements(p, 1 as uint64, 0 as uint64)) using {};
+            } {
+                true => {
+                    step();
+                    step();
+                    step();
+                    have defined(j + 1);
+                    have p[j] <= p[j + 1];
+                    have all_le_range(p, 0, j, p[j + 1]) by {
+                        if j == 0 {
+                            unfold(all_le_range(p, 0, j, p[j + 1]));
+                            solve();
+                        } else {
+                            have j == 1 by solve();
+                            have separate(memory(p[1]), memory(p[0])) by {
+                                apply(separation::separate_elements(p, 1 as uint64, 0 as uint64)) using {};
+                            }
+                            have separate(memory(p[2]), memory(p[0])) by {
+                                apply(separation::separate_elements(p, 2 as uint64, 0 as uint64)) using {};
+                            }
+                            have separate(memory(p[j]), memory(p[0])) by { rewrite(j, 1); known(); }
+                            have separate(memory(p[j + 1]), memory(p[0])) by { rewrite(j, 1); known(); }
+                            have separate(loop(0).statement(0).statement(1).footprint, memory(p[0])) by {
+                                normalize() using { separate(memory(p[j]), memory(p[0])); };
+                            }
+                            have at(loop(0).statement(0).statement(1).exit, p[0]) == at(loop(0).statement(0).statement(1).entry, p[0]) by {
+                                preserve(memory(p[0]), loop(0).statement(0).statement(1));
+                            }
+                            have separate(loop(0).statement(0).statement(2).footprint, memory(p[0])) by {
+                                normalize() using { separate(memory(p[j + 1]), memory(p[0])); };
+                            }
+                            have at(loop(0).statement(0).statement(2).exit, p[0]) == at(loop(0).statement(0).statement(2).entry, p[0]) by {
+                                preserve(memory(p[0]), loop(0).statement(0).statement(2));
+                            }
+                            unfold(all_le_range(p, 0, j, p[j + 1]));
+                            intro(); intro();
+                            have k == 0 by solve();
+                            solve();
                         }
-                        have separate(memory(p[2]), memory(p[0])) by {
-                            apply(separation::separate_elements(p, 2 as uint64, 0 as uint64)) using {};
-                        }
-                        have separate(memory(p[j]), memory(p[0])) by { rewrite(j, 1); known(); }
-                        have separate(memory(p[j + 1]), memory(p[0])) by { rewrite(j, 1); known(); }
-                        have separate(loop(0).statement(0).statement(1).footprint, memory(p[0])) by {
-                            normalize() using { separate(memory(p[j]), memory(p[0])); };
-                        }
-                        have at(loop(0).statement(0).statement(1).exit, p[0]) == at(loop(0).statement(0).statement(1).entry, p[0]) by {
-                            preserve(memory(p[0]), loop(0).statement(0).statement(1));
-                        }
-                        have separate(loop(0).statement(0).statement(2).footprint, memory(p[0])) by {
-                            normalize() using { separate(memory(p[j + 1]), memory(p[0])); };
-                        }
-                        have at(loop(0).statement(0).statement(2).exit, p[0]) == at(loop(0).statement(0).statement(2).entry, p[0]) by {
-                            preserve(memory(p[0]), loop(0).statement(0).statement(2));
-                        }
-                        unfold(all_le_range(p, 0, j, p[j + 1]));
-                        intro(); intro();
-                        have k == 0 by solve();
-                        solve();
                     }
                 }
-            } else {
-                have defined(j + 1);
-                have p[j] <= p[j + 1];
-                have all_le_range(p, 0, j, p[j + 1]) by {
-                    unfold(all_le_range(p, 0, j, p[j + 1]));
-                    solve();
+                false => {
+                    have defined(j + 1);
+                    have p[j] <= p[j + 1];
+                    have all_le_range(p, 0, j, p[j + 1]) by {
+                        unfold(all_le_range(p, 0, j, p[j + 1]));
+                        solve();
+                    }
                 }
             }
             step();

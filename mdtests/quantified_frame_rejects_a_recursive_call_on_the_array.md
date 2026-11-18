@@ -23,9 +23,12 @@ void zap(int32 *v, int32 n) {
     ensures forall (k: int32) { 0 <= k and to_integer(k) < to_integer(n - 1) implies v[k] == old(v[k]) };
 } by {
     branch {
-        step();
-        solve();
-    } else {}
+        true => {
+            step();
+            solve();
+        }
+        false => {}
+    }
     step();
     have 0 <= to_integer(n - 1) by { solve() using { 0 < n; }; }
     have to_integer(n - 1) <= 1000 by { solve() using { 0 < n; n <= 1000; }; }

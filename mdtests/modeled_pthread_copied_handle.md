@@ -41,7 +41,7 @@ int32 run(struct cell *p) {
 } by {
     step();
     step();
-    branch { step(); solve(); } else {}
+    branch { true => { step(); solve(); } false => {} }
     mark created;
     step();
     step();

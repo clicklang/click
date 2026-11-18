@@ -201,7 +201,7 @@ impl ParsedBlocks {
         children
     }
 
-    /// The two arm blocks of a proof `if` or `branch` in source order.
+    /// Two arm blocks in source order.
     pub(super) fn two_arms(
         &self,
         range: &Range<usize>,
@@ -228,49 +228,35 @@ impl ParsedBlocks {
         Ok(arms)
     }
 
-    /// The blocks of `both` in conjunct order, regardless of source order.
-    pub(super) fn both_arms(
+    /// Arm blocks in the order of their labels in the parsed tactic.
+    pub(super) fn labeled_arms(
         &self,
         tokens: &[SourceToken],
         range: &Range<usize>,
+        labels: [&str; 2],
     ) -> Result<[(usize, usize); 2], ClickError> {
-        let [first, second] = self.two_arms(range, "both")?;
-        if tokens[first.0 - 2].text == "right" {
-            Ok([second, first])
-        } else {
-            Ok([first, second])
-        }
-    }
-
-    /// The `returned` and `threw` arm blocks of
-    /// `outcomes { returned => { ... } threw => { ... } }`, in that order
-    /// whichever order they are written in.
-    pub(super) fn outcomes_arms(
-        &self,
-        tokens: &[SourceToken],
-        range: &Range<usize>,
-    ) -> Result<[(usize, usize); 2], ClickError> {
-        let mut returned = None;
-        let mut threw = None;
+        let mut arms = [None, None];
         for (open, close) in self.child_blocks(range) {
             let label = open.checked_sub(2).and_then(|index| {
                 if tokens[index].text == ")" {
+                    // An `outcomes` label may carry a payload binder.
                     index.checked_sub(3)
                 } else {
                     Some(index)
                 }
             });
-            match label.map(|index| tokens[index].text.as_str()) {
-                Some("returned") => returned = Some((open, close)),
-                Some("threw") => threw = Some((open, close)),
-                _ => {}
+            if let Some(index) =
+                label.and_then(|index| labels.iter().position(|label| *label == tokens[index].text))
+            {
+                arms[index] = Some((open, close));
             }
         }
-        match (returned, threw) {
-            (Some(returned), Some(threw)) => Ok([returned, threw]),
-            _ => Err(ClickError::new(
-                "could not locate the arms of a source `outcomes`",
-            )),
+        match arms {
+            [Some(first), Some(second)] => Ok([first, second]),
+            _ => Err(ClickError::new(format!(
+                "could not locate the arms of a source `{}`",
+                tokens[range.start].text
+            ))),
         }
     }
 

@@ -36,16 +36,19 @@ int32 run() {
 } by {
     step();
     step();
-    branch { step(); solve(); } else {}
+    branch { true => { step(); solve(); } false => {} }
     fold(authority(reference(obj)));
     step();
     step();
     branch {
-        unfold(authority(reference(obj)));
-        step();
-        step();
-        solve();
-    } else {}
+        true => {
+            unfold(authority(reference(obj)));
+            step();
+            step();
+            solve();
+        }
+        false => {}
+    }
     unfold(authority(reference(obj)));
     step();
     step();

@@ -40,7 +40,7 @@ void move(int32* source, int32* destination, int32* p) {
 }
 int32 lifecycle() { ensures result == 0 or result == 6; } by {
     step(); step(); step(); step(); step(); step();
-    branch { step_until(function.exit); solve(); } else {}
+    branch { true => { step_until(function.exit); solve(); } false => {} }
     step(); step(); step();
     fold(authority(slot(&source, _)));
     fold(authority(slot(&destination, _)));

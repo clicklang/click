@@ -18,7 +18,7 @@ uint64 branch_drain(uint64 len, int32 flag) {
         invariant len == 16u64;
         initialize by known();
         preserve by {
-            branch { step(); } else { step(); }
+            branch { true => { step(); } false => { step(); } }
         }
     }
     step_until(function.exit); solve();

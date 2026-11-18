@@ -386,7 +386,16 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(None);
         }
         let kernels = pairs.iter().map(|(k, _)| k.clone()).collect::<Vec<_>>();
-        if signed_intervals::has_retained_read_source(surface_goal) {
+        let retained = signed_intervals::has_retained_read_source(surface_goal);
+        let addition = retained && signed_intervals::is_int32_addition_obligation(goal);
+        if addition
+            && let Some(closed) =
+                attempt::candidate_outcome(Self::try_int32_addition_using(search_input, premises))?
+                    .flatten()
+        {
+            return Ok(Some(closed));
+        }
+        if retained {
             let step = if crate::surface::planning::solve::computes_with_known(goal) {
                 Some(ProofStep::Known)
             } else if crate::kernel::proof::fact_reasoning::normalize_using_conditions(

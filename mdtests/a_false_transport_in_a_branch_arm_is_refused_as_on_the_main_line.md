@@ -34,9 +34,12 @@ void mark_one(int32 a[], int32 n, int32 i, int32 m, int32 c) {
 } by {
     mark entry;
     branch {
-        step();
-        transport(at(entry, a[m]) == at(entry, a[m]), at(entry, a[m]) == 5);
-    } else {
+        true => {
+            step();
+            transport(at(entry, a[m]) == at(entry, a[m]), at(entry, a[m]) == 5);
+        }
+        false => {
+        }
     }
 }
 ```
