@@ -3339,7 +3339,9 @@ fn execute_verified_function_applications_with_suspension(
         let primary = applicable.remove(selected_position.unwrap_or(0));
         let PreparedVerifiedFunctionCall {
             name,
-            interface_name: _interface_name,
+            interface_name,
+            candidate_ordinal,
+            has_exact_write_ranges,
             storage,
             evidence,
             framed_rule,
@@ -3349,7 +3351,7 @@ fn execute_verified_function_applications_with_suspension(
             entry_contract_state,
             mut transfer,
             mut facts,
-            obligations,
+            mut obligations,
             effective_assumptions,
             bindings: selected_bindings,
         } = primary;
@@ -3358,22 +3360,46 @@ fn execute_verified_function_applications_with_suspension(
         // lends; the caller's other active loans (its own contract inputs,
         // an enclosing call's loans) are checked here, so a summary can
         // never havoc memory that is lent elsewhere.
-        if let Some(diagnostic) = entry_state.loan_ledger().and_then(|ledger| {
-            transfer.memory_effects.iter().find_map(|range| {
-                ledger.memory_access_refusal(
-                    range,
-                    &effective_assumptions,
-                    LoanRefusalOperation::MemoryAccess,
-                )
-            })
-        }) {
-            paths.push(FunctionPath::new(
-                FunctionOutcome::RuntimeError(RuntimeError::LoanRefusal(Box::new(diagnostic))),
-                facts,
-                obligations,
-            ));
-            continue;
-        }
+        let write_requirements = if suspended.is_some()
+            || application.representation_copy.is_some()
+            || !has_exact_write_ranges
+        {
+            // Worker admission and representation copies have their own
+            // effect rules. Folded or guarded projections can also widen an
+            // effect to a span containing bytes the callee cannot write.
+            if let Some(diagnostic) = entry_state.loan_ledger().and_then(|ledger| {
+                transfer.memory_effects.iter().find_map(|range| {
+                    ledger.memory_access_refusal(
+                        range,
+                        &effective_assumptions,
+                        LoanRefusalOperation::MemoryAccess,
+                    )
+                })
+            }) {
+                paths.push(FunctionPath::new(
+                    FunctionOutcome::RuntimeError(RuntimeError::LoanRefusal(Box::new(diagnostic))),
+                    facts,
+                    obligations,
+                ));
+                continue;
+            }
+            Vec::new()
+        } else {
+            verified_call_write_requirements(
+                caller_state.loan_ledger(),
+                &transfer.memory_effects,
+                || {
+                    CallRequirementSite::for_requirement(
+                        name,
+                        interface_name,
+                        candidate_ordinal,
+                        arguments,
+                        caller_state.memory(),
+                    )
+                },
+                interface.contract_requires().len(),
+            )
+        };
         // A checked mutex-use call may execute runtime lock/unlock operations.
         // Their representation writes are authorized by the selected use
         // transfer, not by the contract's ordinary mutable footprint. Keep
@@ -3497,7 +3523,7 @@ fn execute_verified_function_applications_with_suspension(
                 copy_initialization.as_ref(),
             )
         };
-        let exceptional_path = if let Some(payload_identity) = exceptional_payload_identity {
+        let mut exceptional_path = if let Some(payload_identity) = exceptional_payload_identity {
             Some(exceptional_direct_function_path(
                 caller_state,
                 interface,
@@ -5064,6 +5090,15 @@ fn execute_verified_function_applications_with_suspension(
             append_string_literal_loadable_facts(function, &outcome, &mut facts);
         }
         let call_parameters = CallParameters::of(&entry_contract_state, interface);
+        // The checked return partition recovers this call's loans. The
+        // transition that uses it still owes separation from the caller's
+        // pre-existing loans, on both normal and exceptional paths.
+        if let Some(path) = &mut exceptional_path
+            && matches!(path.outcome, FunctionOutcome::Throw { .. })
+        {
+            path.obligations.extend(write_requirements.iter().cloned());
+        }
+        obligations.extend(write_requirements);
         paths.push(FunctionPath {
             outcome,
             facts,
@@ -5081,13 +5116,50 @@ fn execute_verified_function_applications_with_suspension(
             ),
             call_parameters: call_parameters.clone(),
         });
-        if let Some(mut exceptional_path) = exceptional_path {
-            exceptional_path.call_parameters = call_parameters;
-            paths.push(exceptional_path);
+        if let Some(mut path) = exceptional_path {
+            path.call_parameters = call_parameters;
+            paths.push(path);
         }
     }
     budget.check_path_width(paths.len())?;
     Ok(paths)
+}
+
+fn verified_call_write_requirements(
+    ledger: Option<&LoanLedger>,
+    effects: &[MemoryRange],
+    call_site: impl FnOnce() -> CallRequirementSite,
+    first_ordinal: usize,
+) -> Vec<ProofObligation> {
+    let Some(ledger) = ledger else {
+        return Vec::new();
+    };
+    let mut requirements = effects
+        .iter()
+        .enumerate()
+        .filter_map(|(index, range)| {
+            ledger
+                .memory_access_requirement(range)
+                .map(|requirement| (index, requirement))
+        })
+        .peekable();
+    if requirements.peek().is_none() {
+        return Vec::new();
+    }
+    let site = Arc::new(call_site());
+    requirements
+        .map(|(index, requirement)| {
+            ProofObligation::verification_condition(requirement)
+                .with_call_requirement_site(Arc::new(CallRequirementSource::new(
+                    site.clone(),
+                    first_ordinal + index,
+                    None,
+                    false,
+                    None,
+                )))
+                .with_context("verified call write separation")
+        })
+        .collect()
 }
 
 fn refresh_call_written_locals(
@@ -5271,6 +5343,8 @@ struct PreparedVerifiedFunctionCall<'a> {
     /// a source-body handle for named callbacks.
     name: &'a str,
     interface_name: &'a str,
+    candidate_ordinal: usize,
+    has_exact_write_ranges: bool,
     /// Concrete declaration identity for global and static storage lowering.
     /// This is not evidence that the function body was checked.
     storage: Option<&'a ProgramFunction>,
@@ -6771,6 +6845,16 @@ fn prepare_verified_function_call<'a>(
                 );
         }
     }
+    let has_exact_write_ranges = if contract_interface.resource_derived_mutable_frame() {
+        projection_range_sources
+            .iter()
+            .all(|(_, source)| source.memory_own_range().is_some())
+    } else {
+        contract_interface
+            .contract_mutable()
+            .iter()
+            .all(|segment| segment.guard().is_none())
+    };
     transfer.memory_effects = mutable_ranges.clone();
     // A resource-derived call is authorized by exactly these checked inputs,
     // borrowed and consumed alike: its write set is projected from them
@@ -6829,6 +6913,8 @@ fn prepare_verified_function_call<'a>(
     Ok(Ok(PreparedVerifiedFunctionCall {
         name: application.name,
         interface_name: application.interface_name,
+        candidate_ordinal,
+        has_exact_write_ranges,
         storage: application.storage,
         evidence: application.evidence,
         framed_rule: application.framed_rule,
@@ -16196,45 +16282,6 @@ fn construct_composite_resource_body_with_source(
     })
 }
 
-fn resource_context_contains_exact_owned_fact(
-    context: &ResourceContext,
-    required: &ResourceFact,
-    assumptions: &PureFactContext,
-) -> bool {
-    if !required.is_own() {
-        return false;
-    }
-    if let ResourceFact::Own(Resource::Memory(required_range), _) = required {
-        // The pieces lying inside the required range start inside it, so
-        // the address index's candidates for that range include them all.
-        let exact_parts = context
-            .owned_memory_candidates_for(required_range, assumptions)
-            .into_iter()
-            .filter(|available| {
-                available.memory_own_range().is_some_and(|available_range| {
-                    memory_range_covers(required_range, available_range, assumptions)
-                })
-            })
-            .collect::<Vec<_>>();
-        let exact_parts =
-            ResourceContext::new_with_equalities(assumptions).unchecked_with_facts(exact_parts);
-        return exact_parts.validity_error(assumptions).is_none()
-            && exact_parts.satisfies_fact(required, assumptions);
-    }
-    context
-        .direct_match_candidates_for(required, assumptions)
-        .into_iter()
-        .any(|available| {
-            if !available.is_own() || available.family() != required.family() {
-                return false;
-            }
-            ResourceContext::new_with_equalities(assumptions)
-                .unchecked_with_fact(available.clone())
-                .without_fact_delaying_normalization(required, assumptions)
-                .is_some_and(|remaining| remaining.is_empty())
-        })
-}
-
 /// The proposition asserting the opposite of `proposition`, without adding a
 /// logical rule: a bare condition flips its value, a negation drops, and
 /// anything else is wrapped in one `Not`.
@@ -16432,8 +16479,8 @@ pub(super) fn expand_all_composite_resource_facts_with_composites(
         let missing = expansion
             .into_iter()
             .filter(|fact| {
-                !cached.facts().contains(fact)
-                    && !resource_context_contains_exact_owned_fact(&cached, fact, assumptions)
+                !cached.contains_exact_representation(fact)
+                    && !cached.covers_exact_owned_piece(fact, assumptions)
             })
             .collect::<Vec<_>>();
         // This is the selected held head's already established partition.
@@ -16482,8 +16529,8 @@ fn expand_checked_authority_controls(
         let children = children
             .into_iter()
             .filter(|child| {
-                !expanded.facts().contains(child)
-                    && !resource_context_contains_exact_owned_fact(&expanded, child, assumptions)
+                !expanded.contains_exact_representation(child)
+                    && !expanded.covers_exact_owned_piece(child, assumptions)
             })
             .collect::<Vec<_>>();
         expanded = expanded

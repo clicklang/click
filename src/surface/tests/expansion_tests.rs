@@ -22162,9 +22162,13 @@ fn explicit_entry_witnesses_for_cstr_calls_expand_without_search() {
             .iter()
             .map(|(name, text)| (name.as_str(), text.as_str()))
             .collect::<Vec<_>>();
+        assert!(!source.contains("transport("));
+        verify_c_sources(&source, &sources)
+            .unwrap_or_else(|error| panic!("{fixture}: {}", error.report()));
         let expanded = expand_c_claim_source_by_label(&source, &sources, "outer.ensures_0")
             .unwrap_or_else(|error| panic!("{fixture}: {error}"));
         assert!(expanded.contains("witness("), "{expanded}");
+        assert!(!expanded.contains("transport("), "{expanded}");
         assert!(!expanded.contains("extract("), "{expanded}");
         without_implicit_solve_for_claim("outer.contract", || {
             verify_c_sources(&expanded, &sources).map_err(|error| error.to_string())

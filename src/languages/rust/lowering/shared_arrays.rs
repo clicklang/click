@@ -20,6 +20,39 @@ fn pointer_type(element: &Type) -> Result<ProgramType, String> {
 pub(super) const SLICE_ITERATOR_FIELDS: [&str; 2] = ["ptr", "len"];
 
 impl Context<'_> {
+    /// `name = value` for a local `next` binds, as `assign` assigns a local:
+    /// stored to its object when it is memory-backed.
+    pub(super) fn bind_local(
+        &mut self,
+        name: &str,
+        value: ProgramExpression,
+    ) -> Result<ProgramStatement, String> {
+        if !self.locals.contains(name) {
+            return Err(format!("unknown Rust local `{name}`"));
+        }
+        Ok(match self.memory_values.get(name).copied() {
+            Some(value_type) => program_typed_store(
+                self.address(&E::Local { name: name.into() })?,
+                value,
+                value_type,
+            ),
+            None => program_assign(name, value),
+        })
+    }
+
+    /// Moves a slice iterator on by one element.
+    pub(super) fn shared_array_advance(&self, iterator: &str) -> ProgramStatement {
+        use crate::kernel::program_expression::{add, subtract, uint64_literal, variable};
+        let field = |suffix: &str| format!("{iterator}_{suffix}");
+        program_seq(
+            program_assign(field("ptr"), add(variable(field("ptr")), uint64_literal(1))),
+            program_assign(
+                field("len"),
+                subtract(variable(field("len")), uint64_literal(1)),
+            ),
+        )
+    }
+
     pub(super) fn shared_array_storage(
         &mut self,
         name: &str,
@@ -163,21 +196,7 @@ impl Context<'_> {
                 }
                 use crate::kernel::program_expression::{add, subtract, uint64_literal, variable};
                 let field = |suffix: &str| format!("{iterator}_{suffix}");
-                if !self.locals.contains(payload) {
-                    return Err(format!("unknown Rust local `{payload}`"));
-                }
-                // The element's reference, assigned as `assign` assigns a
-                // local: stored to its object when it is memory-backed.
-                let bind = match self.memory_values.get(payload).copied() {
-                    Some(value_type) => program_typed_store(
-                        self.address(&E::Local {
-                            name: payload.into(),
-                        })?,
-                        variable(field("ptr")),
-                        value_type,
-                    ),
-                    None => program_assign(payload, variable(field("ptr"))),
-                };
+                let bind = self.bind_local(payload, variable(field("ptr")))?;
                 let some = program_seq(
                     bind,
                     program_seq(

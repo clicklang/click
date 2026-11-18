@@ -535,7 +535,12 @@ fn normalize_condition_selection(
     {
         return Ok(());
     }
-    if let Some((condition, true)) = crate::kernel::spec::proposition_as_single_condition(goal)
+    // An offset match only proves numeric equality. A complete pointer goal
+    // also needs its provenance and bounds, including any opaque bounds owner.
+    if let Some((
+        condition @ (ConditionTerm::PointerEqual(..) | ConditionTerm::PointerOffsetEqual(..)),
+        true,
+    )) = crate::kernel::spec::proposition_as_single_condition(goal)
         && let Some((left, right)) = condition.pointer_offset_sides()
         && (crate::kernel::reasoning::memory_resolution::pointer_offsets_proven_equal_for_memory_resolution(
             left, right, &selected,

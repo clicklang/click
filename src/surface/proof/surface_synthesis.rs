@@ -3143,6 +3143,13 @@ fn synthesize_surface_atomic_proposition(
             ..
         }
     );
+    let signed_word = matches!(
+        condition,
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            ..
+        }
+    );
     let unsigned_word_equality = matches!(
         condition,
         ConditionTerm::Compare {
@@ -3193,6 +3200,10 @@ fn synthesize_surface_atomic_proposition(
         } else {
             synthesize_surface_bitvector(term, parameter_binding, state, bound_variables)?
         };
+        let mut expression = expression;
+        if signed_word {
+            spell_signed_low_word_operand(term, &mut expression);
+        }
         // A bare arithmetic expression in a reparsed equality can become Integer arithmetic.
         // Give the generated uint32 word expression an explicit machine context.
         if unsigned_word_equality
@@ -3250,6 +3261,40 @@ fn synthesize_surface_atomic_proposition(
         })
     } else {
         Some(ClickProposition::Not(Box::new(comparison)))
+    }
+}
+
+/// The low-word node carries no destination signedness. Retarget its cast
+/// in a signed comparison or its immediate conditional arms.
+fn spell_signed_low_word_operand(term: &MachineTerm, expression: &mut ContractExpression) {
+    let low_word = |term: &MachineTerm, expression: &mut ContractExpression| {
+        if matches!(term, cast_term!(UInt32From64, _))
+            && let ContractExpression::CUnary {
+                lowered: ProgramExpression::Cast { target_type, .. },
+                ..
+            } = expression
+            && *target_type == ProgramType::UInt32
+        {
+            *target_type = ProgramType::Int32;
+        }
+    };
+    if let (
+        MachineTerm::If {
+            then_term,
+            else_term,
+            ..
+        },
+        ContractExpression::If {
+            then_branch,
+            else_branch,
+            ..
+        },
+    ) = (term, &mut *expression)
+    {
+        low_word(then_term, then_branch);
+        low_word(else_term, else_branch);
+    } else {
+        low_word(term, expression);
     }
 }
 
