@@ -5643,7 +5643,7 @@ fn lower_mutex_held_at_state_in(
             if state.preserves_mutex_protocols
                 && (state.mutex_ledger.is_none() || state.opaque_mutex_acquisitions.is_some())
             {
-                let guard = super::mutexes::guard_resource(state, mutex.pointer(), true)
+                let guard = super::mutexes::guard_resource(state, mutex.address(), true)
                     .expect("abstract guard description");
                 // The guard is matched as written: the facts never make
                 // an aliased mutex held.
@@ -5668,7 +5668,7 @@ fn lower_mutex_held_at_state_in(
                 .mutex_ledger
                 .as_ref()
                 .map_or(ConditionTerm::Constant(false), |ledger| {
-                    ledger.held_condition(mutex.pointer())
+                    ledger.held_condition(mutex.address())
                 });
             SpecPropositionPath {
                 introductions: Vec::new(),
@@ -5808,7 +5808,7 @@ fn lower_spec_predicate_proposition_at_state_in(
             {
                 return Ok(Vec::new());
             }
-            path.proposition = pointer_same_object_proposition(left.pointer(), right.pointer());
+            path.proposition = pointer_same_object_proposition(left.address(), right.address());
         }
     }
     Ok(paths)
@@ -6345,7 +6345,7 @@ fn evaluate_resource_count_paths(
                 else {
                     return Err(ExecutionLimit::AuthorityCountNeedsExactPointer);
                 };
-                let anchor = pointer.pointer();
+                let anchor = pointer.address();
                 // Consuming an authority after its population is proved empty
                 // preserves that exact zero as an immutable observation. It
                 // does not restore ownership or permission to change members.
@@ -7581,7 +7581,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 };
                 path.value =
                     ProgramValue::Pointer(value.clone().with_bounds(Some(SubobjectBounds {
-                        start: value.pointer().clone(),
+                        start: value.address().clone(),
                         width: (*width).into(),
                     })))
                     .into();
@@ -7823,7 +7823,7 @@ fn evaluate_spec_pure_function_application_paths_in(
                 .collect();
             let application = (!all_null)
                 .then(|| SharedPureApplication::intern(name.to_owned(), call_arguments(arguments)));
-            let value = PointerValue::new(
+            let value = Pointer::new(
                 if all_null {
                     Address::null()
                 } else {
@@ -8031,8 +8031,8 @@ fn refine_object_pointer_argument_with_null(
     {
         return true;
     }
-    let names_declared_object = |value: &PointerValue| {
-        [value.pointer(), value.provenance()]
+    let names_declared_object = |value: &Pointer| {
+        [value.address(), value.provenance()]
             .into_iter()
             .any(|object| {
                 object.offset == AddressOffset::Constant(0)
@@ -8042,7 +8042,7 @@ fn refine_object_pointer_argument_with_null(
     if pointer.object_type_evidence().is_none()
         && (assumptions
             .equality_graph
-            .has_object_type(pointer.pointer(), object_class)
+            .has_object_type(pointer.address(), object_class)
             || names_declared_object(pointer)
             || {
                 // Complete-value equality can identify the declared object
@@ -8057,7 +8057,7 @@ fn refine_object_pointer_argument_with_null(
             }
             // A pointer the facts prove null meets the requirement too. It
             // keeps its written address rather than being respelled as null.
-            || proves_null(assumptions, pointer.pointer()))
+            || proves_null(assumptions, pointer.address()))
     {
         *pointer = pointer
             .clone()
@@ -8267,7 +8267,7 @@ fn array_ref_argument_memory(memory: &SymbolicMemory, pointer: &ProgramValue) ->
     };
     let interned = crate::kernel::intern_memory(memory.clone());
     crate::kernel::resource_tracker::last_same_version_point(
-        crate::kernel::resource_tracker::TrackedResource::Block(&pointer.pointer().base),
+        crate::kernel::resource_tracker::TrackedResource::Block(&pointer.address().base),
         &crate::kernel::resource_tracker::ProgramPoint::at(&interned),
     )
     .map(|point| point.memory().clone())
@@ -8370,7 +8370,7 @@ fn evaluate_spec_pointer_offset_paths_in(
                 value: (ProgramValue::Pointer(
                     pointer.clone().with_address(
                         pointer
-                            .pointer()
+                            .address()
                             .offset_by_typed_elements(elements, byte_width, unsigned, wide),
                     ),
                 ))
@@ -9989,11 +9989,11 @@ pub(super) fn program_value_comparison_proposition(
         {
             match operator {
                 ComparisonOperator::Equal => Some((
-                    pointer_equality_condition(left.pointer().clone(), right.pointer().clone()),
+                    pointer_equality_condition(left.address().clone(), right.address().clone()),
                     true,
                 )),
                 ComparisonOperator::NotEqual => Some((
-                    pointer_equality_condition(left.pointer().clone(), right.pointer().clone()),
+                    pointer_equality_condition(left.address().clone(), right.address().clone()),
                     false,
                 )),
                 ComparisonOperator::LessThan
@@ -10019,10 +10019,10 @@ pub(super) fn program_value_comparison_proposition(
         {
             match operator {
                 ComparisonOperator::Equal => {
-                    Some((pointer_is_null_condition(pointer.pointer().clone()), true))
+                    Some((pointer_is_null_condition(pointer.address().clone()), true))
                 }
                 ComparisonOperator::NotEqual => {
-                    Some((pointer_is_null_condition(pointer.pointer().clone()), false))
+                    Some((pointer_is_null_condition(pointer.address().clone()), false))
                 }
                 ComparisonOperator::LessThan
                 | ComparisonOperator::LessEqual
@@ -10361,7 +10361,7 @@ mod pointer_integer_observation_tests {
     #[test]
     fn integer_specifications_observe_bits_without_a_pointer_record() {
         let context = PureFactContext::new();
-        let pointer = PointerValue::new(
+        let pointer = Pointer::new(
             Address::symbolic(Variable(994_001)),
             ProgramType::Int32Pointer,
         );

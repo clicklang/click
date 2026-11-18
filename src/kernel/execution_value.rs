@@ -72,7 +72,7 @@ impl ExecutionValue {
                 }),
         }
     }
-    pub fn pointer(&self) -> Option<&PointerValue> {
+    pub fn pointer(&self) -> Option<&Pointer> {
         let value = match self {
             Self::Native(value) => value,
             Self::Shared(root) => root.pointer_native()?,
@@ -892,7 +892,7 @@ mod tests {
     #[test]
     fn pointer_local_storage_retains_root_and_native_identity() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = PointerValue::new(
+        let pointer = Pointer::new(
             Address::symbolic(Variable(1027000)),
             ProgramType::Int32Pointer,
         );
@@ -960,14 +960,14 @@ mod tests {
         assert_eq!(retagged.program_type(), ProgramType::VoidPointer);
         assert!(matches!(
             retagged.shared().unwrap().node(),
-            KernelTermNode::PointerValue { .. }
+            KernelTermNode::Pointer { .. }
         ));
     }
 
     #[test]
     fn pointer_memory_cells_keep_roots_and_the_previous_native_key() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = PointerValue::new(
+        let pointer = Pointer::new(
             Address::symbolic(Variable(1027500)),
             ProgramType::Int32Pointer,
         )
@@ -1006,7 +1006,7 @@ mod tests {
     fn pointer_store_history_keeps_the_root_after_cache_forgetting() {
         let _session = crate::kernel::VerificationSession::enter();
         let address = SymbolicMemory::local_pointer("retained_pointer_cell");
-        let pointer = PointerValue::new(
+        let pointer = Pointer::new(
             Address::symbolic(Variable(1027600)),
             ProgramType::Int32Pointer,
         )

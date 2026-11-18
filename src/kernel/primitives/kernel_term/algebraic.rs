@@ -392,7 +392,7 @@ mod tests {
     #[test]
     fn algebraic_constructor_match_keys_keep_native_field_identity() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = PointerValue::new(
+        let pointer = Pointer::new(
             Address::symbolic(Variable(999620)),
             ProgramType::Int32Pointer,
         );
@@ -416,7 +416,7 @@ mod tests {
                 arms: vec![AlgebraicBitvectorMatchArm {
                     variant: "Arm".into(),
                     bindings: vec![
-                        AlgebraicValue::Program(ProgramValue::Pointer(PointerValue::new(
+                        AlgebraicValue::Program(ProgramValue::Pointer(Pointer::new(
                             Address::symbolic(Variable(999623)),
                             ProgramType::Int32Pointer,
                         ))),
@@ -469,7 +469,7 @@ mod tests {
             KernelMatch::test_scrutinee(vec![AlgebraicValueType::Program(ProgramType::Bool)]);
         assert_ne!(root, KernelTermImport::default().algebraic(&other));
 
-        let pointer = PointerValue::new(
+        let pointer = Pointer::new(
             Address::symbolic(Variable(999600)),
             ProgramType::Int32Pointer,
         );

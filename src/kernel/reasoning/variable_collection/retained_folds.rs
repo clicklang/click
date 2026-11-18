@@ -359,7 +359,7 @@ pub(super) fn common_variables(
             KernelTermNode::PointerRead { value, .. }
             | KernelTermNode::PointerArithmetic { value, .. }
             | KernelTermNode::PointerCall { value, .. }
-            | KernelTermNode::PointerValue(value) => {
+            | KernelTermNode::Pointer(value) => {
                 super::retained_pointers::collect_pointer_variables(
                     value,
                     mode,
@@ -1087,7 +1087,7 @@ mod tests {
             },
             ConditionTerm::PointerValueEqual(
                 Box::new(
-                    PointerValue::new(
+                    Pointer::new(
                         Address::symbolic(Variable(970_010)),
                         ProgramType::Int32Pointer,
                     )
@@ -1096,10 +1096,7 @@ mod tests {
                         width: MachineTerm::Variable(Variable(970_012)),
                     })),
                 ),
-                Box::new(PointerValue::new(
-                    Address::null(),
-                    ProgramType::Int32Pointer,
-                )),
+                Box::new(Pointer::new(Address::null(), ProgramType::Int32Pointer)),
             ),
             ConditionTerm::PointerOffsetEqual(
                 Box::new(AddressOffset::Add(
@@ -1507,7 +1504,7 @@ mod mixed_argument_tests {
                 ],
             },
         };
-        let pointer = ProgramValue::Pointer(PointerValue::new(
+        let pointer = ProgramValue::Pointer(Pointer::new(
             Address::symbolic(Variable(1008512)),
             ProgramType::Int32Pointer,
         ));

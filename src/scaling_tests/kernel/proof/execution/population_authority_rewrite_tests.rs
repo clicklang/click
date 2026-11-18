@@ -20,7 +20,7 @@ fn private_member_facts_cannot_use_ambient_cell_ownership() {
     else {
         unreachable!()
     };
-    let pointer = pointer.pointer();
+    let pointer = pointer.address();
     let memory = SymbolicMemory::new()
         .with_block(pointer.base.clone(), 8)
         .store(

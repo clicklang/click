@@ -137,7 +137,7 @@ pub(super) fn bind(
             .pointer()?;
         parameter_destination = caller
             .clone()
-            .with_aggregate_return_destination(value.pointer().clone(), layout.clone());
+            .with_aggregate_return_destination(value.address().clone(), layout.clone());
         &parameter_destination
     } else if interface.aggregate_return_mode() == AggregateReturnMode::Copy {
         return Some(());
@@ -201,7 +201,7 @@ pub(super) fn complete(
     let ProgramValue::Pointer(pointer) = &value else {
         return Err(AggregateReturnRefusal::InvalidValue);
     };
-    if pointer.pointer() != &selected.pointer
+    if pointer.address() != &selected.pointer
         || state.locals.aggregate_object_pointer(CONTRACT_RESULT) != Some(&selected.pointer)
     {
         return Err(AggregateReturnRefusal::InvalidValue);

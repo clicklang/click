@@ -38,7 +38,7 @@ fn object_class_origin_lookup_is_independent_of_unrelated_facts() {
             )
         });
         let decoded = decoded.unwrap().unwrap();
-        assert_eq!(decoded.pointer(), &pointer);
+        assert_eq!(decoded.address(), &pointer);
         assert_eq!(decoded.object_class(), Some(class.clone()));
         assert!(obligations.is_empty());
         costs.push(work);
@@ -102,7 +102,7 @@ fn compound_word_address_lookup_skips_unrelated_equalities() {
                     ProgramType::Int32Pointer
                 )
                 .unwrap()
-                .map(|value| value.pointer().clone()),
+                .map(|value| value.address().clone()),
                 Some(pointer.clone())
             );
             assert!(obligations.is_empty());

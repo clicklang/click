@@ -5,7 +5,7 @@ use crate::kernel::{MachineCastSpelling, MachineTerm};
 
 #[test]
 fn separation_names_loaded_pointer_fields_at_their_declared_type() {
-    use crate::kernel::{MemoryRange, PointerValue, Resource};
+    use crate::kernel::{MemoryRange, Pointer, Resource};
     for scalar in ["uint8", "uint16", "int32", "uint64"] {
         let _session = crate::kernel::VerificationSession::enter();
         let function = syntax::parse_function(&format!(
@@ -30,7 +30,7 @@ fn separation_names_loaded_pointer_fields_at_their_declared_type() {
             );
         let range = |pointer| {
             Resource::Memory(MemoryRange::from_pointer_value(
-                &PointerValue::new(pointer, ProgramType::UInt8Pointer),
+                &Pointer::new(pointer, ProgramType::UInt8Pointer),
                 MachineTerm::constant(0),
                 MachineTerm::constant(4),
                 1,
@@ -57,9 +57,9 @@ fn separation_names_loaded_pointer_fields_at_their_declared_type() {
 
 #[test]
 fn separate_round_trips_without_generating_span_obligations() {
-    use crate::kernel::{MemoryRange, PointerValue, Resource};
+    use crate::kernel::{MemoryRange, Pointer, Resource};
     for wide in [false, true] {
-        let pointer = PointerValue::new(
+        let pointer = Pointer::new(
             Address::symbolic(Variable(997001)),
             ProgramType::Int32Pointer,
         );
@@ -731,7 +731,7 @@ fn exact_external_zero_based_byte_range_round_trips_symbolic_end() {
     let requirement = Proposition::MemoryLoadable {
         memory: state.memory().clone(),
         base: match &arguments[0] {
-            ProgramExpression::Value(ProgramValue::Pointer(pointer)) => pointer.pointer().clone(),
+            ProgramExpression::Value(ProgramValue::Pointer(pointer)) => pointer.address().clone(),
             _ => unreachable!(),
         },
         bytes: MachineTerm::add(MachineTerm::Variable(Variable(1)), MachineTerm::constant(1)),
@@ -766,7 +766,7 @@ fn exact_external_zero_based_byte_range_round_trips_symbolic_end() {
 fn exact_external_zero_based_byte_range_resolves_direct_variable_argument() {
     let (parameters, mut arguments, state) = external_byte_range_caller();
     let base = match &arguments[0] {
-        ProgramExpression::Value(ProgramValue::Pointer(pointer)) => pointer.pointer().clone(),
+        ProgramExpression::Value(ProgramValue::Pointer(pointer)) => pointer.address().clone(),
         _ => unreachable!(),
     };
     arguments[0] = ProgramExpression::Variable("bytes".into());
@@ -801,7 +801,7 @@ fn exact_external_zero_based_byte_range_rejects_ambiguous_alias() {
     let requirement = Proposition::MemoryLoadable {
         memory: state.memory().clone(),
         base: match &arguments[0] {
-            ProgramExpression::Value(ProgramValue::Pointer(pointer)) => pointer.pointer().clone(),
+            ProgramExpression::Value(ProgramValue::Pointer(pointer)) => pointer.address().clone(),
             _ => unreachable!(),
         },
         bytes: MachineTerm::constant(4),
@@ -4198,7 +4198,7 @@ fn volatile_read_event_results_raise_and_lower_exactly() {
                 true,
             ),
             ProgramValue::Pointer(pointer) => Proposition::ConditionIs(
-                ConditionTerm::pointer_equal(pointer.pointer().clone(), pointer.pointer().clone()),
+                ConditionTerm::pointer_equal(pointer.address().clone(), pointer.address().clone()),
                 true,
             ),
             _ => unreachable!(),
@@ -4652,13 +4652,13 @@ fn common_match_surface_preserves_typed_binders_and_relowers_nested_results() {
 #[test]
 fn common_pointer_calls_round_trip_nested_source_calls() {
     use crate::kernel::{
-        AddressBase, KernelTerm, KernelTermImport, PointerValue, PureFunctionArgument,
+        AddressBase, KernelTerm, KernelTermImport, Pointer, PureFunctionArgument,
         SharedPointerValue,
     };
     let _session = crate::kernel::VerificationSession::enter();
     let declarations = "function select(p: int32*) -> int32* { p }";
     let file = parser::parse(declarations).unwrap();
-    let input = ProgramValue::Pointer(PointerValue::new(
+    let input = ProgramValue::Pointer(Pointer::new(
         Address::symbolic(Variable(1025900)),
         ProgramType::Int32Pointer,
     ));
@@ -4707,7 +4707,7 @@ fn common_pointer_calls_round_trip_nested_source_calls() {
         };
         // Reconstruct the same nested common roots that the producer test
         // checks, keeping inner calls as children rather than exporting them.
-        fn common(pointer: &PointerValue) -> KernelTerm {
+        fn common(pointer: &Pointer) -> KernelTerm {
             let value = SharedPointerValue::import(pointer);
             let AddressBase::PureFunctionApplication(application) = &pointer.base else {
                 return KernelTerm::shared_pointer_value(value);
@@ -4775,7 +4775,7 @@ fn string_literal_pointer_raising_names_the_exact_source_occurrence() {
 
 #[test]
 fn typed_word_reads_round_trip_their_observation_without_a_sign_cast() {
-    use crate::kernel::{IntegerTerm, PointerValue};
+    use crate::kernel::{IntegerTerm, Pointer};
     for (format, name) in [
         (MachineIntegerType::Int64, "load_int64"),
         (MachineIntegerType::UInt64, "load_uint64"),
@@ -4787,10 +4787,7 @@ fn typed_word_reads_round_trip_their_observation_without_a_sign_cast() {
             .with_memory(memory.clone())
             .with_local(
                 "p",
-                ProgramValue::Pointer(PointerValue::new(
-                    pointer.clone(),
-                    ProgramType::UInt64Pointer,
-                )),
+                ProgramValue::Pointer(Pointer::new(pointer.clone(), ProgramType::UInt64Pointer)),
             );
         let read = crate::kernel::canonical_form_of_load(
             crate::kernel::intern_memory(memory),
@@ -6087,7 +6084,7 @@ fn mixed_float_boolean_calls_round_trip_existing_surface_syntax() {
 #[test]
 fn shared_pointer_call_arguments_keep_exact_native_name_policy() {
     let _session = crate::kernel::VerificationSession::enter();
-    let pointer = crate::kernel::PointerValue::new(
+    let pointer = crate::kernel::Pointer::new(
         Address::symbolic(Variable(1008590)),
         ProgramType::Int32Pointer,
     );
@@ -6398,13 +6395,13 @@ fn shared_boolean_raising_preserves_overflow_and_algebraic_spelling() {
 
 #[test]
 fn shared_pointer_comparisons_preserve_native_spelling() {
-    use crate::kernel::{KernelTermImport, PointerValue};
+    use crate::kernel::{KernelTermImport, Pointer};
     let _session = crate::kernel::VerificationSession::enter();
-    let left = PointerValue::new(
+    let left = Pointer::new(
         Address::symbolic(Variable(999988)),
         ProgramType::Int32Pointer,
     );
-    let right = PointerValue::new(
+    let right = Pointer::new(
         Address::symbolic(Variable(999989)),
         ProgramType::Int32Pointer,
     );
@@ -6423,10 +6420,10 @@ fn shared_pointer_comparisons_preserve_native_spelling() {
     for native in [
         ConditionTerm::PointerValueEqual(Box::new(left.clone()), Box::new(right.clone())),
         ConditionTerm::PointerEqual(
-            Box::new(left.pointer().clone()),
-            Box::new(right.pointer().clone()),
+            Box::new(left.address().clone()),
+            Box::new(right.address().clone()),
         ),
-        ConditionTerm::PointerEqual(Box::new(left.pointer().clone()), Box::new(Address::null())),
+        ConditionTerm::PointerEqual(Box::new(left.address().clone()), Box::new(Address::null())),
     ] {
         let expected = synthesize_surface_bool(&native, binding, &state, &names).unwrap();
         let root = KernelTermImport::default().condition(&native);
@@ -7810,9 +7807,9 @@ fn wrapping_product_in_conditionals_round_trip_after_rewrite() {
 
 #[test]
 fn a_non_null_pointer_equality_spells_each_address_by_its_parameter() {
-    use crate::kernel::PointerValue;
+    use crate::kernel::Pointer;
     let _session = crate::kernel::VerificationSession::enter();
-    let node = PointerValue::new(
+    let node = Pointer::new(
         Address::symbolic(Variable(999977)),
         ProgramType::Int32Pointer,
     );
@@ -7828,8 +7825,8 @@ fn a_non_null_pointer_equality_spells_each_address_by_its_parameter() {
     let state = ExecutionState::new();
     let equality = Proposition::ConditionIs(
         ConditionTerm::PointerEqual(
-            Box::new(node.pointer().clone()),
-            Box::new(node.pointer().clone()),
+            Box::new(node.address().clone()),
+            Box::new(node.address().clone()),
         ),
         true,
     );

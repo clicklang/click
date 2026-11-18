@@ -306,7 +306,7 @@ pub(crate) fn substitute_pointer_variable_in_proposition(
 pub(crate) fn substitute_pointer_value_in_proposition(
     proposition: &Proposition,
     from: Variable,
-    to: &PointerValue,
+    to: &Pointer,
 ) -> Result<Proposition, String> {
     let c = std::collections::BTreeMap::from([(
         from,
@@ -4537,7 +4537,7 @@ fn rewrite_integer_memory_loadable_with_walker(
     {
         integer_work(1)?;
         let Term::ProgramValue(ProgramValue::Pointer(pointer)) = walker.term(&Term::ProgramValue(
-            ProgramValue::Pointer(PointerValue::new(pointer.clone(), ProgramType::VoidPointer)),
+            ProgramValue::Pointer(Pointer::new(pointer.clone(), ProgramType::VoidPointer)),
         )) else {
             unreachable!("pointer rewrite changed its carrier")
         };
@@ -4545,7 +4545,7 @@ fn rewrite_integer_memory_loadable_with_walker(
         return Ok(Proposition::MemoryReadDefined {
             at: *at,
             memory: memory.clone(),
-            pointer: pointer.pointer().clone(),
+            pointer: pointer.address().clone(),
             value_type: *value_type,
         });
     }
@@ -4559,7 +4559,7 @@ fn rewrite_integer_memory_loadable_with_walker(
         unreachable!("memory-viewable helper called for another proposition carrier")
     };
     integer_work(1)?;
-    let pointer = ProgramValue::Pointer(PointerValue::new(base.clone(), ProgramType::VoidPointer));
+    let pointer = ProgramValue::Pointer(Pointer::new(base.clone(), ProgramType::VoidPointer));
     let Term::ProgramValue(ProgramValue::Pointer(pointer)) =
         walker.term(&Term::ProgramValue(pointer))
     else {
@@ -4574,7 +4574,7 @@ fn rewrite_integer_memory_loadable_with_walker(
         // SymbolicMemory states are immutable proof-state identities.  Keep the same
         // handle and rewrite only the selected address/width expressions.
         memory: memory.clone(),
-        base: pointer.pointer().clone(),
+        base: pointer.address().clone(),
         bytes,
         wide: *wide,
     })
@@ -8954,7 +8954,7 @@ mod integer_mixed_quantifier_tests {
         )
         .expect("pointer observations are Integer-valued");
         let pointer_value = |variable| {
-            Term::ProgramValue(ProgramValue::Pointer(PointerValue::new(
+            Term::ProgramValue(ProgramValue::Pointer(Pointer::new(
                 Address::symbolic(variable),
                 ProgramType::Int32Pointer,
             )))
@@ -9791,8 +9791,8 @@ mod checked_singleton_substitution_tests {
     use super::*;
     use crate::instrumentation::{self, TacticEvent, TacticWorkLimits, VerificationEvent};
 
-    fn pointer_value(variable: Variable) -> PointerValue {
-        PointerValue::new(Address::symbolic(variable), ProgramType::Int32Pointer)
+    fn pointer_value(variable: Variable) -> Pointer {
+        Pointer::new(Address::symbolic(variable), ProgramType::Int32Pointer)
     }
 
     fn pointer_term(variable: Variable) -> Term {
