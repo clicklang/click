@@ -765,11 +765,7 @@ fn walk_resource<S: VariableSubstitution + ?Sized>(resource: &Resource, s: &S) -
                             ))
                         }
                         StoredResourceField::Algebraic(root) => {
-                            let ProgramValue::Parameter(value) =
-                                root.algebraic_native_value().expect("algebraic field")
-                            else {
-                                unreachable!()
-                            };
+                            let value = root.algebraic_native_term().expect("algebraic field");
                             StoredResourceField::from_minted(AlgebraicValue::Algebraic(
                                 s.algebraic_term(value),
                             ))

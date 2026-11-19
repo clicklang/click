@@ -297,15 +297,9 @@ impl StoredAlgebraicTerm {
     pub(crate) fn native_compat(&self) -> &AlgebraicTerm {
         match &self.0 {
             StoredAlgebraic::Input(value) => value,
-            StoredAlgebraic::Shared(root) => {
-                let ProgramValue::Parameter(value) = root
-                    .algebraic_native_value()
-                    .expect("algebraic field output")
-                else {
-                    unreachable!()
-                };
-                value
-            }
+            StoredAlgebraic::Shared(root) => root
+                .algebraic_native_term()
+                .expect("algebraic field output"),
         }
     }
 }

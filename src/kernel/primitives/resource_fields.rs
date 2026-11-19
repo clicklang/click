@@ -73,14 +73,9 @@ impl StoredResourceField {
             Self::Integer(root) => {
                 ResourceFieldValue::Integer(root.integer_native_compat().expect("Integer field"))
             }
-            Self::Algebraic(root) => {
-                let ProgramValue::Parameter(value) =
-                    root.algebraic_native_value().expect("algebraic field")
-                else {
-                    unreachable!()
-                };
-                ResourceFieldValue::Algebraic(value)
-            }
+            Self::Algebraic(root) => ResourceFieldValue::Algebraic(
+                root.algebraic_native_term().expect("algebraic field"),
+            ),
         }
     }
 }

@@ -4013,10 +4013,12 @@ fn raise_kernel_term_dispatch(
         Node::AlgebraicRead(_) => raise_algebraic_read(term, parameter_binding, state)?,
         Node::Variable(_) if matches!(term.ty(), KernelType::Algebraic(_)) => {
             // Variable naming uses a bounded typed descriptor, not a tree export.
-            let ProgramValue::Parameter(variable) = term.algebraic_native_value()? else {
-                unreachable!("algebraic variable descriptor")
-            };
-            synthesize_surface_algebraic(variable, parameter_binding, state, bound_variables)?
+            synthesize_surface_algebraic(
+                term.algebraic_native_term()?,
+                parameter_binding,
+                state,
+                bound_variables,
+            )?
         }
         Node::IntegerLiteral(value) if value.sign() == num_bigint::Sign::Minus => {
             SurfaceTerm::Negate(Box::new(SurfaceTerm::IntegerLiteral((-value).to_string())))

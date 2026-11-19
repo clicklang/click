@@ -614,7 +614,7 @@ sequence below. These rows record planned scope, not completed implementation.
 | 10p | Migrate remaining expression payloads in sequence/resource descriptors. | Inventory and subdivide independent families before implementation; preserve legitimate opaque descriptor identities. | Complete: 10p1–10p6 landed, with every pushed commit verified upstream. |
 | 10q | Migrate remaining native expression payloads in proposition outputs. | Proposition outputs retain shared operands with unchanged fact identity, raising/lowering and proof admission. | 10q1–10q3 landed. 10q-A ([#3360](https://github.com/clicklang/click/pull/3360)) migrated program-value outputs. 10q-B ([#3370](https://github.com/clicklang/click/pull/3370)) migrated algebraic outputs. 10q-C ([#3384](https://github.com/clicklang/click/pull/3384)) migrated Integer equations from resource-field joins. 10q-D completes the producer inventory below. |
 | 10r | Remove obsolete machine compatibility caches and reverse bridges. | Remove only after their live readers migrate; account for any retained reader and reason. | Existing structural words can be borrowed by the observation reader without duplicating the native value. Live compatibility paths are recorded below. |
-| 10s | Remove obsolete Boolean, float and algebraic compatibility caches. | Remove only after their live readers migrate; preserve explicit native input/output boundaries. | Planned; after affected consumers. |
+| 10s | Remove obsolete Boolean, float and algebraic compatibility caches. | Remove only after their live readers migrate; preserve explicit native input/output boundaries. | Exact legacy Boolean and algebraic arguments are borrowed, and float atoms share one native slot. |
 | 10t | Closure audit: account for every remaining native adapter and remove dead APIs. | Inventory every remaining adapter/cache/native expression field with a live consumer and reason, remove dead APIs, and report any unresolved migration gaps. | Planned; final audit. |
 
 Keep one PR per coherent slice; subdivide when actual consumers warrant it.
@@ -642,6 +642,24 @@ certification and arithmetic readers. The weak Integer reverse link still
 lets the explicit exporter recover a live native operand without rewalking a
 shared Integer prefix. Conversion and fold tests exercise warm reuse and
 source lifetime. Both remain live compatibility paths.
+
+### 10s Boolean, float and algebraic compatibility readers
+
+A nonconstant legacy Boolean observation already owns the exact typed
+argument. The comparison and storage readers can borrow it directly. Minted
+conditions and remaining Boolean calls and reads still have selected native
+consumers. Their caches preserve producer syntax and typed call arguments.
+
+Float literals, variables and reads now share their native program-value
+slot with the operand view instead of holding a second native machine
+leaf. Legacy float arguments lend the value they already own. Compound
+float roots still export through the existing native program-value boundary.
+
+Algebraic field, constructor, and owned-output readers borrow an exact
+legacy argument directly. Readers that require a borrowed program carrier
+still use the selected `ProgramValue` wrapper. Algebraic loads retain a
+native read descriptor for the existing expression-variable collector,
+which follows load connections and history.
 
 ### 10a Storage inventory and completion criteria
 
