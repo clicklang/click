@@ -2925,7 +2925,17 @@ fn intern_kept_range_set_with_exclusions_and_hash(
     result
 }
 
+#[cfg(test)]
+thread_local! {
+    static KEPT_CALL_RANGE_QUERIES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 impl CallKeptRanges {
+    #[cfg(test)]
+    pub(crate) fn take_range_queries() -> usize {
+        KEPT_CALL_RANGE_QUERIES.with(|queries| queries.replace(0))
+    }
+
     pub(in crate::kernel) fn new(
         ranges: ResourceContext,
         premises: Vec<(ConditionTerm, bool)>,
@@ -3123,6 +3133,8 @@ impl CallKeptRanges {
         pointer: &Address,
         bytes: u32,
     ) -> Option<MemoryRange> {
+        #[cfg(test)]
+        KEPT_CALL_RANGE_QUERIES.with(|queries| queries.set(queries.get() + 1));
         let query = |ranges: &ResourceContext, include_views| {
             let context = placement.unwrap_or(assumptions);
             let place = || {
