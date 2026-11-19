@@ -281,13 +281,16 @@ fn shared_call_argument_readers_keep_dags_through_collection_and_rewrite() {
             let target = MachineTerm::Variable(replacement_variable);
             let mut rewrite =
                 crate::kernel::proof::term_rewrite::TermRewrite::for_bits_checked(&source, &target);
-            let result = rewrite.term(&Term::Integer(original));
+            let result = rewrite.term(&Term::Integer(original.into()));
             assert!(rewrite.refusal().is_none());
             let Term::Integer(result) = result else {
                 panic!("Integer call");
             };
             let mut variables = BTreeSet::new();
-            crate::kernel::prelude::collect_integer_variables(&result, &mut variables);
+            crate::kernel::prelude::collect_integer_variables(
+                result.native_compat(),
+                &mut variables,
+            );
             assert!(variables.contains(&replacement_variable));
             assert!(!variables.contains(&variable));
         });

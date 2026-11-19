@@ -2574,7 +2574,7 @@ fn collect_term_memory_loads(
             collect_bitvector_memory_loads(term, current_memory, loads, None, seen_integers)
         }
         Term::Integer(term) => {
-            collect_integer_memory_loads(term, current_memory, loads, seen_integers)
+            collect_integer_memory_loads(term.native_compat(), current_memory, loads, seen_integers)
         }
         Term::PointerOffset(offset) => {
             collect_pointer_offset_memory_loads(offset, current_memory, loads, seen_integers)
@@ -11027,7 +11027,7 @@ mod dynamic_current_load_tests {
     fn observed(root: crate::kernel::KernelTerm, format: MachineIntegerType) -> Term {
         let value = SharedMachineIntegerTerm::from_shared(format, root).unwrap();
         assert!(!value.has_boxed_operand());
-        Term::Integer(IntegerTerm::Machine(value))
+        Term::Integer(IntegerTerm::Machine(value).into())
     }
 
     fn load_payload(memory: &SymbolicMemory, format: MachineIntegerType) -> SharedIntegerTerm {
@@ -11127,16 +11127,19 @@ mod dynamic_current_load_tests {
             .unwrap();
         assert!(!endpoint.machine_operand().has_boxed_operand());
         let exports = KernelTermExport::machine_export_count();
-        let fold = Term::Integer(IntegerTerm::RangeFold {
-            index: IntegerRangeFoldIndex::UInt64 {
-                start: endpoint.clone(),
-                end: endpoint,
-            },
-            initial: IntegerTerm::constant_i64(0).into(),
-            accumulator: Variable(995002),
-            item: Variable(995003),
-            body: IntegerTerm::constant_i64(0).into(),
-        });
+        let fold = Term::Integer(
+            IntegerTerm::RangeFold {
+                index: IntegerRangeFoldIndex::UInt64 {
+                    start: endpoint.clone(),
+                    end: endpoint,
+                },
+                initial: IntegerTerm::constant_i64(0).into(),
+                accumulator: Variable(995002),
+                item: Variable(995003),
+                body: IntegerTerm::constant_i64(0).into(),
+            }
+            .into(),
+        );
         assert_eq!(
             current_memory_loads_in_term(&fold, &memory).unwrap(),
             vec![(pointer(), 8)]

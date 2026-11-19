@@ -21,8 +21,8 @@ fn integer_function_quantifier_substitution_preserves_shared_dags() {
             ));
         }
         let source = Proposition::Equal(
-            Term::Integer(value),
-            Term::Integer(IntegerTerm::constant_i64(0)),
+            Term::Integer(value.into()),
+            Term::Integer(IntegerTerm::constant_i64(0).into()),
         );
         let (result, measured) = crate::instrumentation::measure_deterministic_work(|| {
             substitute_integer_variable_in_pure_proposition(
@@ -32,9 +32,10 @@ fn integer_function_quantifier_substitution_preserves_shared_dags() {
             )
             .unwrap()
         });
-        let Proposition::Equal(Term::Integer(mut value), _) = result else {
+        let Proposition::Equal(Term::Integer(value), _) = result else {
             panic!("equality lost")
         };
+        let mut value = value.into_native_compat();
         for _ in 0..depth {
             let IntegerTerm::PureFunctionApplication(application) = value else {
                 panic!("application lost")
@@ -63,8 +64,8 @@ fn integer_substitution_nested_carrier_scopes_scale_with_shared_body() {
     let mut work = Vec::new();
     for depth in [8, 16, 32, 64] {
         let mut body = Proposition::Equal(
-            Term::Integer(IntegerTerm::var(source)),
-            Term::Integer(IntegerTerm::constant_i64(0)),
+            Term::Integer(IntegerTerm::var(source).into()),
+            Term::Integer(IntegerTerm::constant_i64(0).into()),
         );
         for index in (0..depth).rev() {
             let variable = Variable(9_300 + (index / 2) as u64);
@@ -110,8 +111,8 @@ fn integer_substitution_algebraic_capture_scales_with_nested_scopes() {
     let replacement = algebraic_projection(&algebraic_type, bound);
     let samples = [8, 16, 32, 64].map(|depth| {
         let mut source = Proposition::Equal(
-            Term::Integer(IntegerTerm::var(from)),
-            Term::Integer(replacement.clone()),
+            Term::Integer(IntegerTerm::var(from).into()),
+            Term::Integer(replacement.clone().into()),
         );
         for _ in 0..depth {
             source = Proposition::ForAll {
@@ -139,8 +140,8 @@ fn integer_substitution_algebraic_capture_scales_with_nested_scopes() {
         assert_eq!(
             remaining,
             Proposition::Equal(
-                Term::Integer(replacement.clone()),
-                Term::Integer(algebraic_projection(&algebraic_type, innermost))
+                Term::Integer(replacement.clone().into()),
+                Term::Integer(algebraic_projection(&algebraic_type, innermost).into())
             )
         );
         work

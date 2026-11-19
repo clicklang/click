@@ -1789,7 +1789,7 @@ impl Renderer<'_> {
         match term {
             Term::Condition(c) => self.condition(c),
             Term::Bitvector32(v) => self.bitvector(v),
-            Term::Integer(i) => self.integer(i),
+            Term::Integer(i) => self.integer(i.native_compat()),
             Term::PointerOffset(o) => self.offset(o, 0),
             Term::ProgramValue(v) => self.cvalue(v.native_compat()),
             Term::Memory(m) => self.memory(m),
@@ -2934,8 +2934,8 @@ mod tests {
         );
         assert!(!rendered.contains("c.value == (c.value + 1)"), "{rendered}");
         let integer = Proposition::Equal(
-            Term::Integer(IntegerTerm::Variable(Variable(988003))),
-            Term::Integer(IntegerTerm::Variable(Variable(988004))),
+            Term::Integer(IntegerTerm::Variable(Variable(988003)).into()),
+            Term::Integer(IntegerTerm::Variable(Variable(988004)).into()),
         );
         let rendered = super::render_proposition_labeled(&integer, &mut labels);
         assert!(rendered.contains("integer C=c.value"), "{rendered}");
@@ -2953,8 +2953,8 @@ mod tests {
             var: crate::kernel::Variable(7),
             sort: crate::kernel::Sort::Integer,
             body: Box::new(Proposition::Equal(
-                Term::Integer(integer),
-                Term::Integer(IntegerTerm::from(5)),
+                Term::Integer(integer.into()),
+                Term::Integer(IntegerTerm::from(5).into()),
             )),
         };
         let rendered = render_proposition(&proposition);
@@ -3179,8 +3179,8 @@ mod tests {
                 child = SharedIntegerTerm::from(IntegerTerm::Add(child.clone(), child));
             }
             let rendered = render_proposition(&Proposition::Equal(
-                Term::Integer(child.as_ref().clone()),
-                Term::Integer(IntegerTerm::from(0)),
+                Term::Integer(child.as_ref().clone().into()),
+                Term::Integer(IntegerTerm::from(0).into()),
             ));
             assert!(rendered.len() <= MAX_BYTES + 64);
             if depth >= 32 {
@@ -3223,8 +3223,8 @@ mod tests {
             body,
         };
         let rendered = render_proposition(&Proposition::Equal(
-            Term::Integer(fold),
-            Term::Integer(IntegerTerm::from(0)),
+            Term::Integer(fold.into()),
+            Term::Integer(IntegerTerm::from(0).into()),
         ));
         assert!(rendered.contains("2"));
         assert!(rendered.contains("9"));

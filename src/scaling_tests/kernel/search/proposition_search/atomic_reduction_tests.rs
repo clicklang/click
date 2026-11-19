@@ -68,12 +68,12 @@ fn repeated_unsigned_and_integer_reductions_reuse_selected_evidence() {
         (
             vec![le(integer(0), integer(1))],
             le(integer(0), integer(1)),
-            Term::Integer(integer(0)),
+            Term::Integer(integer(0).into()),
         ),
         (
             vec![eq(integer(0), integer(1))],
             eq(integer(0), integer(1)),
-            Term::Integer(integer(0)),
+            Term::Integer(integer(0).into()),
         ),
     ];
     for (case, (required, goal, argument)) in cases.into_iter().enumerate() {

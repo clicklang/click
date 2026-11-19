@@ -9188,11 +9188,14 @@ fn scalar_read_presence_survives_shared_admission_and_registry_reset() {
     let name = load_variable_for_exact_cell(&memory, &pointer, LoadKind::Int32, 4);
     let observed = |term| {
         Proposition::Equal(
-            Term::Integer(IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
-                MachineIntegerType::Int32,
-                term,
-            ))),
-            Term::Integer(IntegerTerm::constant_i64(0)),
+            Term::Integer(
+                IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
+                    MachineIntegerType::Int32,
+                    term,
+                ))
+                .into(),
+            ),
+            Term::Integer(IntegerTerm::constant_i64(0).into()),
         )
     };
     let shared = observed(MachineTerm::Variable(name));

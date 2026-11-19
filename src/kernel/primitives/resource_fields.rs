@@ -174,6 +174,23 @@ impl ResourceFieldValues {
             _ => None,
         }
     }
+    pub(crate) fn integer_term(&self, index: usize) -> Option<StoredIntegerTerm> {
+        let value = match self.0.as_ref() {
+            FieldStorage::Input(values) => values.get(index)?,
+            FieldStorage::Retained(values) => match values.get(index)? {
+                StoredResourceField::Integer(root) => {
+                    return StoredIntegerTerm::from_root(root.clone());
+                }
+                StoredResourceField::Input(value) => value,
+                _ => return None,
+            },
+        };
+        match value {
+            AlgebraicValue::Integer(value) => Some(value.clone().into()),
+            _ => None,
+        }
+    }
+
     pub(crate) fn retained_integer(&self, index: usize) -> Option<&KernelTerm> {
         match self.0.as_ref() {
             FieldStorage::Retained(values) => match values.get(index)? {

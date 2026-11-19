@@ -1507,7 +1507,9 @@ fn collect_resource_carriers(resource: &Resource, carriers: &mut CarrierVariable
 
 fn collect_integer_substitution_term_variables(term: &Term, variables: &mut CarrierVariables) {
     match term {
-        Term::Integer(value) => collect_integer_carriers(value, variables, &mut BTreeSet::new()),
+        Term::Integer(value) => {
+            collect_integer_carriers(value.native_compat(), variables, &mut BTreeSet::new())
+        }
         Term::Bitvector32(value) => collect_bitvector_carriers(value, variables),
         Term::ProgramValue(value) => {
             collect_program_value_carriers(value.native_compat(), variables)
@@ -1637,7 +1639,8 @@ fn exhausted_term(term: &Term) -> Term {
     match term {
         Term::Condition(_) => Term::Condition(ConditionTerm::Constant(false)),
         Term::Bitvector32(_) => Term::Bitvector32(MachineTerm::constant(0)),
-        Term::Integer(value) => Term::Integer(exhausted_integer(value)),
+        Term::Integer(value) if value.root().is_some() => term.clone(),
+        Term::Integer(value) => Term::Integer(exhausted_integer(value.native_compat()).into()),
         Term::PointerOffset(_) => Term::PointerOffset(exhausted_offset()),
         Term::ProgramValue(value) => match value.value() {
             ExecutionValue::Shared(_) => term.clone(),
@@ -3179,7 +3182,7 @@ impl<'a> TermRewrite<'a> {
                 Term::Condition(condition) => collect_condition_carriers(condition, &mut variables),
                 Term::Bitvector32(value) => collect_bitvector_carriers(value, &mut variables),
                 Term::Integer(value) => collect_integer_shared_carriers(
-                    &SharedIntegerTerm::from((*value).clone()),
+                    &SharedIntegerTerm::from(value.native_compat().clone()),
                     &mut variables,
                     &mut seen,
                 ),
@@ -3700,7 +3703,7 @@ impl<'a> TermRewrite<'a> {
         let result = match term {
             Term::Algebraic(v) => Term::Algebraic(self.algebraic(v.native_compat()).into()),
             Term::Bitvector32(v) => Term::Bitvector32(self.bits(v)),
-            Term::Integer(v) => Term::Integer(self.integer(v)),
+            Term::Integer(v) => Term::Integer(self.integer(v.native_compat()).into()),
             Term::ProgramValue(v) => Term::ProgramValue(self.value(v.native_compat()).into()),
             Term::Condition(v) => Term::Condition(self.condition(v)),
             Term::PointerOffset(v) => Term::PointerOffset(self.offset(v)),
@@ -6994,7 +6997,7 @@ mod tests {
                     IntegerTerm::TruncatingRemainder(child.clone(), child)
                 };
             }
-            let input = Term::Integer(expression);
+            let input = Term::Integer(expression.into());
             let renamings = BTreeMap::new();
             let mut rewrite =
                 TermRewrite::for_integer_variables(variable, &replacement, false, &renamings);
@@ -7002,7 +7005,7 @@ mod tests {
                 unreachable!()
             };
             assert!(rewrite.visits <= 2 * depth + 8);
-            let mut node: SharedIntegerTerm = output.into();
+            let mut node: SharedIntegerTerm = output.into_native_compat().into();
             for _ in 0..depth {
                 let (a, b) = match node.as_ref() {
                     IntegerTerm::TruncatingQuotient(a, b)
@@ -7044,7 +7047,7 @@ mod tests {
             let algebraic = BTreeMap::new();
             let mut rewrite =
                 TermRewrite::for_typed_variables(&program_values, &integers, &algebraic);
-            let term_source_0 @ Term::Integer(_) = rewrite.term(&Term::Integer(fold)) else {
+            let term_source_0 @ Term::Integer(_) = rewrite.term(&Term::Integer(fold.into())) else {
                 unreachable!()
             };
             let (Some(IntegerTerm::RangeFold {
@@ -7081,7 +7084,7 @@ mod tests {
             let target: SharedIntegerTerm = replacement.clone().into();
             for (left, right) in [(x.clone(), y.clone()), (y.clone(), x.clone())] {
                 let mut rewrite = TermRewrite::for_integer_exact(&source, &target);
-                let input = Term::Integer(IntegerTerm::Multiply(left.into(), right.into()));
+                let input = Term::Integer(IntegerTerm::Multiply(left.into(), right.into()).into());
                 let expected = match &input {
                     term_source_0 @ Term::Integer(_)
                         if let Some(IntegerTerm::Multiply(a, b)) =
@@ -7102,7 +7105,7 @@ mod tests {
                     }
                     _ => unreachable!(),
                 };
-                assert_eq!(rewrite.term(&input), Term::Integer(expected));
+                assert_eq!(rewrite.term(&input), Term::Integer(expected.into()));
                 assert!(rewrite.changed);
                 assert!(rewrite.refusal().is_none());
             }
@@ -7119,8 +7122,8 @@ mod tests {
                     expected = IntegerTerm::Multiply(child.clone(), child);
                 }
                 assert_eq!(
-                    rewrite.term(&Term::Integer(expression)),
-                    Term::Integer(expected)
+                    rewrite.term(&Term::Integer(expression.into())),
+                    Term::Integer(expected.into())
                 );
                 assert!(rewrite.changed);
                 assert!(rewrite.refusal().is_none());
@@ -7141,14 +7144,14 @@ mod tests {
                 let child: SharedIntegerTerm = expression.into();
                 expression = IntegerTerm::Multiply(child.clone(), child);
             }
-            let input = Term::Integer(expression);
+            let input = Term::Integer(expression.into());
             let conditions = HashMap::new();
             let mut rewrite = TermRewrite::for_conditions(&conditions);
             let Term::Integer(output) = rewrite.term(&input) else {
                 unreachable!()
             };
             assert_eq!(&Term::Integer(output.clone()), &input);
-            let root: SharedIntegerTerm = output.into();
+            let root: SharedIntegerTerm = output.into_native_compat().into();
             let mut pending = vec![root];
             let mut seen = std::collections::BTreeSet::new();
             while let Some(node) = pending.pop() {
@@ -7285,8 +7288,8 @@ mod tests {
             memory
         };
         let observed_array = |memory: SymbolicMemory, pointer: Address| {
-            Term::Integer(IntegerTerm::PureFunctionApplication(
-                SharedPureApplication::intern(
+            Term::Integer(
+                IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
                     "observe_array".into(),
                     vec![PureFunctionArgument::ArrayRef {
                         memory,
@@ -7296,8 +7299,9 @@ mod tests {
                         )),
                         element_type: ProgramType::UInt8,
                     }],
-                ),
-            ))
+                ))
+                .into(),
+            )
         };
         let rewrite = |term: &Term| {
             let mut walker = TermRewrite::for_pointer_variable(source, &replacement);
@@ -7784,7 +7788,7 @@ mod tests {
             &integer_replacements,
             &algebraic_replacements,
         );
-        let term_source_0 @ Term::Integer(_) = rewrite.term(&Term::Integer(body)) else {
+        let term_source_0 @ Term::Integer(_) = rewrite.term(&Term::Integer(body.into())) else {
             unreachable!()
         };
         let (Some(IntegerTerm::PureFunctionApplication(application)),) =
@@ -7821,7 +7825,8 @@ mod tests {
             &integer_replacements,
             &algebraic_replacements,
         );
-        let term_source_0 @ Term::Integer(_) = scoped_rewrite.term(&Term::Integer(scoped)) else {
+        let term_source_0 @ Term::Integer(_) = scoped_rewrite.term(&Term::Integer(scoped.into()))
+        else {
             unreachable!()
         };
         let (Some(IntegerTerm::AlgebraicMatch { arms, .. }),) = (term_source_0.integer_native(),)
@@ -7882,12 +7887,13 @@ mod tests {
                 Box::new(MachineTerm::constant(1))
             );
         }
-        let input = Term::Integer(IntegerTerm::Machine(
-            crate::kernel::SharedMachineIntegerTerm::intern(
+        let input = Term::Integer(
+            IntegerTerm::Machine(crate::kernel::SharedMachineIntegerTerm::intern(
                 crate::kernel::MachineIntegerType::Int32,
                 payload,
-            ),
-        ));
+            ))
+            .into(),
+        );
         let (result, _events) = crate::instrumentation::with_tactic_work_limits(
             crate::instrumentation::TacticWorkLimits {
                 simple: 4,
@@ -7999,7 +8005,7 @@ mod tests {
         let from = MachineTerm::Variable(binder);
         let to = MachineTerm::constant(7);
         let mut rewrite = TermRewrite::for_bits(&from, &to);
-        let output = rewrite.term(&Term::Integer(fold));
+        let output = rewrite.term(&Term::Integer(fold.into()));
         let term_source_0 @ Term::Integer(_) = output else {
             unreachable!()
         };
@@ -8032,7 +8038,7 @@ mod tests {
         let from = MachineTerm::Variable(binder);
         let to = MachineTerm::constant(7);
         let mut rewrite = TermRewrite::for_bits(&from, &to);
-        let output = rewrite.term(&Term::Integer(fold));
+        let output = rewrite.term(&Term::Integer(fold.into()));
         let term_source_0 @ Term::Integer(_) = output else {
             unreachable!()
         };
@@ -8069,7 +8075,7 @@ mod tests {
         let from = MachineTerm::Variable(Variable(996));
         let to = MachineTerm::Variable(binder);
         let mut rewrite = TermRewrite::for_bits(&from, &to);
-        let term_source_0 @ Term::Integer(_) = rewrite.term(&Term::Integer(fold)) else {
+        let term_source_0 @ Term::Integer(_) = rewrite.term(&Term::Integer(fold.into())) else {
             unreachable!()
         };
         let (Some(IntegerTerm::RangeFold { item, body, .. }),) = (term_source_0.integer_native(),)
@@ -8106,7 +8112,7 @@ mod tests {
         let renamings = BTreeMap::new();
         let mut rewrite =
             TermRewrite::for_integer_variables(source, &replacement, false, &renamings);
-        let term_source_0 @ Term::Integer(_) = rewrite.term(&Term::Integer(fold)) else {
+        let term_source_0 @ Term::Integer(_) = rewrite.term(&Term::Integer(fold.into())) else {
             unreachable!()
         };
         let (Some(IntegerTerm::RangeFold { item, body, .. }),) = (term_source_0.integer_native(),)
@@ -8176,7 +8182,7 @@ mod tests {
             );
             let exports = KernelTermExport::machine_export_count();
             let mut rewrite = TermRewrite::for_bits_checked(&source_term, &replacement);
-            let output = rewrite.term(&Term::Integer(fold));
+            let output = rewrite.term(&Term::Integer(fold.into()));
             assert!(rewrite.refusal().is_none());
             assert_eq!(KernelTermExport::machine_export_count(), exports);
             let term_source_0 @ Term::Integer(_) = output else {
@@ -8254,7 +8260,7 @@ mod tests {
         let source_term = MachineTerm::Variable(source);
         let replacement = MachineTerm::Variable(replacement_item);
         let mut rewrite = TermRewrite::for_bits(&source_term, &replacement);
-        let term_source_0 @ Term::Integer(_) = rewrite.term(&Term::Integer(fold)) else {
+        let term_source_0 @ Term::Integer(_) = rewrite.term(&Term::Integer(fold.into())) else {
             unreachable!()
         };
         let (Some(IntegerTerm::RangeFold { item, body, .. }),) = (term_source_0.integer_native(),)
@@ -8306,7 +8312,7 @@ mod tests {
         };
         let source_term = MachineTerm::Variable(source);
         let mut rewrite = TermRewrite::for_bits(&source_term, &replacement);
-        let term_source_0 @ Term::Integer(_) = rewrite.term(&Term::Integer(fold)) else {
+        let term_source_0 @ Term::Integer(_) = rewrite.term(&Term::Integer(fold.into())) else {
             unreachable!()
         };
         let (Some(IntegerTerm::RangeFold {
@@ -8373,7 +8379,7 @@ mod tests {
         };
         let source_term = MachineTerm::Variable(source);
         let mut rewrite = TermRewrite::for_bits(&source_term, &replacement);
-        let term_source_0 @ Term::Integer(_) = rewrite.term(&Term::Integer(fold)) else {
+        let term_source_0 @ Term::Integer(_) = rewrite.term(&Term::Integer(fold.into())) else {
             unreachable!()
         };
         let (Some(IntegerTerm::RangeFold {
@@ -8484,7 +8490,8 @@ mod tests {
             &integer_replacements,
             &algebraic_replacements,
         );
-        let term_source_0 @ Term::Integer(_) = rewrite.term(&Term::Integer(fold_with_match)) else {
+        let term_source_0 @ Term::Integer(_) = rewrite.term(&Term::Integer(fold_with_match.into()))
+        else {
             unreachable!()
         };
         let (Some(IntegerTerm::RangeFold {
@@ -8651,7 +8658,8 @@ mod tests {
             &capture_integer_replacements,
             &empty_algebraic,
         );
-        let term_source_0 @ Term::Integer(_) = capture_rewrite.term(&Term::Integer(capture_fold))
+        let term_source_0 @ Term::Integer(_) =
+            capture_rewrite.term(&Term::Integer(capture_fold.into()))
         else {
             unreachable!()
         };
@@ -8813,7 +8821,7 @@ mod tests {
             )),
         );
         let mut rewrite = TermRewrite::for_bits(&source, &replacement);
-        let _placeholder = rewrite.term(&Term::Integer(fold));
+        let _placeholder = rewrite.term(&Term::Integer(fold.into()));
     }
 
     #[test]
@@ -8840,7 +8848,7 @@ mod tests {
             )),
         );
         let mut rewrite = TermRewrite::for_bits(&source, &replacement);
-        let output = rewrite.term(&Term::Integer(fold));
+        let output = rewrite.term(&Term::Integer(fold.into()));
         assert_eq!(rewrite.refusal(), Some(RewriteRefusal::UnsupportedScope));
         assert!(matches!(&(
             output), term_source_0 @ Term::Integer(_) if matches!((term_source_0.integer_native(),), (Some(IntegerTerm::Constant(value)),) if *value == 0.into())));
@@ -9329,7 +9337,7 @@ mod comparison_read_batch_tests {
             for argument in [
                 Term::Bitvector32(machine_fold),
                 Term::Bitvector32(machine_match),
-                Term::Integer(integer_fold),
+                Term::Integer(integer_fold.into()),
             ] {
                 let input = Proposition::Predicate {
                     name: "scoped_read".into(),

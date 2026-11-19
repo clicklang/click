@@ -29,9 +29,12 @@ pub(crate) fn computes_leaf(goal: &Proposition) -> bool {
         Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) => {
             algebraic_equality(left.native_compat(), right.native_compat())
         }
-        Proposition::Equal(Term::Integer(left), Term::Integer(right)) => integer_affine_comparison(
-            &ConditionTerm::IntegerEqual(left.clone().into(), right.clone().into()),
-        ),
+        Proposition::Equal(Term::Integer(left), Term::Integer(right)) => {
+            integer_affine_comparison(&ConditionTerm::IntegerEqual(
+                left.native_compat().clone().into(),
+                right.native_compat().clone().into(),
+            ))
+        }
         Proposition::Equal(left, right)
             if matches!(
                 left,

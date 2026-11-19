@@ -223,7 +223,6 @@ impl StoredProgramValue {
 #[derive(Clone)]
 pub struct StoredIntegerTerm(StoredInteger);
 #[derive(Clone)]
-#[allow(dead_code)] // Prepared retained branch; native inputs stay native.
 enum StoredInteger {
     Input(Arc<IntegerTerm>),
     Shared(KernelTerm),
@@ -233,7 +232,6 @@ impl From<IntegerTerm> for StoredIntegerTerm {
         Self(StoredInteger::Input(Arc::new(value)))
     }
 }
-#[allow(dead_code)] // Term storage activates these entry points in the next slice.
 impl StoredIntegerTerm {
     pub(crate) fn from_root(root: KernelTerm) -> Option<Self> {
         (root.ty() == &KernelType::Integer).then(|| Self(StoredInteger::Shared(root)))

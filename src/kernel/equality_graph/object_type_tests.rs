@@ -209,7 +209,10 @@ fn opaque_call_interning_cannot_supply_another_scopes_type_annotations() {
     );
     assert_eq!(first, reused);
     let scalar = IntegerTerm::PureFunctionApplication(reused.clone());
-    let source = Proposition::Equal(Term::Integer(scalar.clone()), Term::Integer(scalar));
+    let source = Proposition::Equal(
+        Term::Integer(scalar.clone().into()),
+        Term::Integer(scalar.into()),
+    );
     let context = PureFactContext::new().assume_proposition(source);
     assert!(!can_type(&context, &p));
     let ty = super::algebraic_tests::model_type(

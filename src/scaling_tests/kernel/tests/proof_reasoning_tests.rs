@@ -573,8 +573,8 @@ fn forall_integer_instantiation_preserves_repeated_squaring_as_a_shared_expressi
             var: binder,
             sort: Sort::Integer,
             body: Box::new(Proposition::Equal(
-                Term::Integer(term),
-                Term::Integer(IntegerTerm::constant_i64(0)),
+                Term::Integer(term.into()),
+                Term::Integer(IntegerTerm::constant_i64(0).into()),
             )),
         };
         let (instance, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -589,7 +589,7 @@ fn forall_integer_instantiation_preserves_repeated_squaring_as_a_shared_expressi
         let Proposition::Equal(Term::Integer(term), _) = &instance else {
             panic!("equality")
         };
-        let mut current = term;
+        let mut current = term.native_compat();
         for _ in 0..depth {
             let IntegerTerm::Multiply(left, right) = current else {
                 panic!("instantiation must not evaluate repeated squares")
@@ -617,8 +617,8 @@ fn forall_integer_instantiation_charges_shared_replacement_only_once() {
             replacement = IntegerTerm::Add(child.clone(), child);
             body = Proposition::And(
                 Box::new(Proposition::Equal(
-                    Term::Integer(IntegerTerm::var(binder)),
-                    Term::Integer(IntegerTerm::constant_i64(0)),
+                    Term::Integer(IntegerTerm::var(binder).into()),
+                    Term::Integer(IntegerTerm::constant_i64(0).into()),
                 )),
                 Box::new(body),
             );
