@@ -275,8 +275,8 @@ pub(crate) fn reverse_equality(equality: &Proposition) -> Option<Proposition> {
     let reversed = match equality {
         Proposition::Equal(Term::Algebraic(a), Term::Algebraic(b)) => {
             return Some(Proposition::Equal(
-                Term::Algebraic(b.clone().into()),
-                Term::Algebraic(a.clone().into()),
+                Term::Algebraic(b.clone()),
+                Term::Algebraic(a.clone()),
             ));
         }
         condition_source_0 @ Proposition::ConditionIs(_, true)

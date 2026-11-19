@@ -1019,10 +1019,10 @@ int32 bad(int32 x) {
         let markdown = fs::read_to_string(&path).unwrap();
         let have_line = markdown
             .lines()
-            .position(|line| line == "        have st.live == 1 by {")
+            .position(|line| line == "            have st.live == 1 by {")
             .unwrap()
             + 1;
-        let from_have = run_location(&path, &format!("{have_line}:9")).unwrap();
+        let from_have = run_location(&path, &format!("{have_line}:13")).unwrap();
         assert_eq!(
             run_location(&path, &format!("{}", have_line + 1)).unwrap(),
             from_have
@@ -1033,7 +1033,7 @@ int32 bad(int32 x) {
                 .contains("to_integer(st.live) == to_integer(at(m, st.live) + got)")
         );
         assert_eq!(
-            run_location(&path, &format!("{premise_line}:20")).unwrap(),
+            run_location(&path, &format!("{premise_line}:24")).unwrap(),
             from_have
         );
         let error = run_location(&path, &format!("{premise_line}"))

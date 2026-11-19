@@ -780,15 +780,18 @@ fn guarded_child_preservation_keeps_the_consumed_read_refusal() {
         let error = verify_c_sources(&source, &sources).unwrap_err();
         let trace = error.trace_context_report().unwrap();
         assert!(error.message().contains("missing resource fact"), "{error}");
-        assert!(trace.contains("step(consume_child("), "{trace}");
+        assert!(
+            trace.contains("return ((struct cell*)(void*)child)->value;"),
+            "{trace}"
+        );
     });
     // Returning the same owned child is a positive control for the original C.
     let control = source.replace(
         "    consumes state: child_value(p);",
         "    owns state: child_value(p);\n    ensures state.number == old(state.number);",
     ).replace(
-        "    step(); step(); solve();",
-        "    step();\n    let { number: returned } = unfold(restored);\n    have returned == old(child.number) by { known(); }\n    step();\n    solve();",
+        "    step(); solve();\n}",
+        "    let { number: returned } = unfold(restored);\n    have returned == old(child.number) by { known(); }\n    step();\n    solve();\n}",
     );
     assert_ne!(source, control);
     verify_c_sources(&control, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
@@ -4794,7 +4797,7 @@ fn equality_search_expands_guarded_contract_refinement() {
     let expanded =
         expand_c_claim_source_by_label(&click, &sources, "increment_is_guarded_progress.ensures_0")
             .unwrap_or_else(|error| panic!("{}", error.message()));
-    assert!(expanded.contains("rewrite("), "{expanded}");
+    assert!(!expanded.contains("solve("), "{expanded}");
     verify_c_sources(&expanded, &sources)
         .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
 }

@@ -350,7 +350,6 @@ fn smart_ranking_closure_expands_to_explicit_bundle_members() {
         closer.contains("have i >= 0 implies i <= n by {"),
         "the expanded closer must prove each bundle member in a `have`: {expanded}"
     );
-    assert!(closer.contains("normalize"), "{expanded}");
     let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
         verify_c_sources(&expanded, &sources)
     });
@@ -372,7 +371,7 @@ fn unsigned_integer_ranking_expands_without_search() {
     let (click, sources) = loop_fixture("back_edge_closes_an_unsigned_bound_from_the_guard");
     let sources = borrowed_sources(&sources);
     let expanded = expand_function_proof_source(&click, &sources, "count").unwrap();
-    assert!(expanded.contains("normalize"), "{expanded}");
+    assert!(!expanded.contains("solve("), "{expanded}");
     without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
 }
 

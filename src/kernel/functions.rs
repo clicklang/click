@@ -8986,14 +8986,13 @@ impl<'a> OwnedFootprintDerivation<'a> {
         let mut budget = ExecutionBudget::beside_live_state();
         // An undecided guard counts the body as active: the footprint is an
         // upper bound, and a body that is not active owns nothing extra.
-        match evaluate_composite_resource_body_condition(
+        if let Some(false) = evaluate_composite_resource_body_condition(
             definition,
             &evaluation,
             &self.evaluation_assumptions,
             &mut budget,
         ) {
-            Some(false) => return,
-            Some(true) | None => {}
+            return;
         }
         for spec in contains {
             // Abstract tokens own no memory, regardless of their quantity.
