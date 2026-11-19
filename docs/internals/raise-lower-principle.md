@@ -465,6 +465,9 @@ Lowering never folds a comparison of two literals.
   `p == q` lowers to `PointerEqual` for them, and the round trip refuses.
 - A comparison of two `bool` literals, `true == false`, retains a
   `BoolEqual` of the two constants.
+- A comparison of same-width floating-point literals retains its operator,
+  width, and both bit patterns. Checking decides the result with IEEE
+  semantics, including signed zero and unordered NaN comparisons.
 - A logical Boolean comparison with identical operands also retains its
   `BoolEqual`. `==` and `!=` record opposite polarities on that node.
   The checker decides reflexivity, including when the comparison is a guard.

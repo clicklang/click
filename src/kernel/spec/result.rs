@@ -309,17 +309,19 @@ impl SpecValue {
         }
         if let (Some(left), Some(right_view)) = (self.float(), right.float())
             && left.format() == right_view.format()
-            && self.shared().is_some()
-            && right.shared().is_some()
+            && (left.literal_bits().is_some() && right_view.literal_bits().is_some()
+                || self.shared().is_some() && right.shared().is_some())
         {
             let format = left.format();
-            // Preserve the native producer's IEEE literal folding. The shared
-            // float reader uses the same bit operations without exporting trees.
-            let condition = match (
-                float_condition_constant_bits(left),
-                float_condition_constant_bits(right_view),
-            ) {
-                (Some(left), Some(right)) => {
+            // Preserve comparisons of literal atoms. Keep the existing
+            // evaluation path for compound constant arithmetic.
+            let folded = if left.literal_bits().is_some() && right_view.literal_bits().is_some() {
+                None
+            } else {
+                float_condition_constant_bits(left).zip(float_condition_constant_bits(right_view))
+            };
+            let condition = match folded {
+                Some((left, right)) => {
                     let native = match format {
                         KernelFloatType::Float32 => ConditionTerm::float32_compare(
                             MachineTerm::uint32_constant(left as u32),
@@ -334,7 +336,7 @@ impl SpecValue {
                     };
                     StoredConditionTerm::from_minted(native)
                 }
-                _ => StoredConditionTerm::from_root(
+                None => StoredConditionTerm::from_root(
                     KernelTerm::float_compare(
                         format,
                         op,

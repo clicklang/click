@@ -9021,3 +9021,73 @@ fn reflexive_boolean_comparisons_round_trip_after_exact_rewrite() {
         assert_eq!(fixture.lower(&text), *expected, "{text}");
     }
 }
+
+#[test]
+fn literal_float_comparisons_preserve_ieee_truth_and_round_trip() {
+    use crate::kernel::{ComparisonOperator as C, KernelFloatType as F};
+    let fixture = ConditionalRoundTrip::new(MachineIntegerType::Int32, "int32");
+    for (format, width, negative_zero, nan, negative_one, one) in [
+        (
+            F::Float32,
+            32,
+            0x80000000,
+            0x7fc00123,
+            0xbf800000,
+            0x3f800000,
+        ),
+        (
+            F::Float64,
+            64,
+            0x8000000000000000,
+            0x7ff8000000000123,
+            0xbff0000000000000,
+            0x3ff0000000000000,
+        ),
+    ] {
+        let literal = |bits: u64| format!("float{width}_from_bits(0x{bits:x}u{width})");
+        for (left, operator, right, token, truth) in [
+            (negative_zero, C::Equal, 0, "==", true),
+            (nan, C::Equal, nan, "==", false),
+            (nan, C::NotEqual, nan, "!=", true),
+            (nan, C::LessEqual, one, "<=", false),
+            (negative_one, C::LessThan, one, "<", true),
+            (one, C::GreaterThan, 0, ">", true),
+            (negative_zero, C::GreaterEqual, 0, ">=", true),
+        ] {
+            let written = format!("{} {token} {}", literal(left), literal(right));
+            let Proposition::ConditionIs(condition, true) = fixture.lower(&written) else {
+                panic!("expected a comparison: {written}");
+            };
+            let (actual_format, actual_operator, operands) =
+                condition.operand_view().float_comparison().expect(&written);
+            assert_eq!(actual_format, format, "{written}");
+            assert_eq!(actual_operator, operator, "{written}");
+            assert_eq!(
+                operands.map(|operand| operand.literal_bits()),
+                [Some(left), Some(right)],
+                "{written}"
+            );
+            assert_eq!(
+                PureFactContext::new().decide(condition.native_compat()),
+                Some(truth),
+                "{written}"
+            );
+            for polarity in [true, false] {
+                let expected = Proposition::condition_is(condition.clone(), polarity);
+                let raised = synthesize_surface_proposition(
+                    &expected,
+                    ParameterBinding::default(),
+                    &fixture.state,
+                )
+                .unwrap();
+                let text = crate::surface::printing::source_click_proposition(&raised);
+                assert_eq!(
+                    relower_written_proposition(&raised, &fixture.state).unwrap(),
+                    expected,
+                    "{text}"
+                );
+                assert_eq!(fixture.lower(&text), expected, "{text}");
+            }
+        }
+    }
+}

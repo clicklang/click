@@ -83,6 +83,11 @@ impl<'a> FloatOperandView<'a> {
             _ => None,
         }
     }
+    /// Read a literal operand without evaluating a compound float expression.
+    pub(crate) fn literal_bits(self) -> Option<u64> {
+        self.literal()?;
+        self.constant_bits()
+    }
     pub(crate) fn variable(self) -> Option<Variable> {
         match self {
             Self::Native(_, MachineTerm::Variable(variable)) => Some(*variable),

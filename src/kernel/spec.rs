@@ -9154,6 +9154,14 @@ fn evaluate_spec_if_paths_in(
                 }
 
                 Proposition::ConditionIs(condition, _)
+                    if condition.operand_view().float_comparison().is_some_and(
+                        |(_, _, operands)| operands.iter().all(|operand| operand.literal_bits().is_some()),
+                    ) =>
+                {
+                    true
+                }
+
+                Proposition::ConditionIs(condition, _)
                     if crate::kernel::machine_integer::comparison::is_bounded_machine_comparison(
                         condition.native_compat(),
                     ) =>

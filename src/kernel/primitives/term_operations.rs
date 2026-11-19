@@ -2660,6 +2660,22 @@ impl ConditionTerm {
         }
     }
 
+    pub(crate) fn literal_float_comparison_value(&self) -> Option<bool> {
+        let (format, operator, [left, right]) =
+            BooleanOperandView::Native(self).float_comparison()?;
+        let (exponent, fraction) = match format {
+            KernelFloatType::Float32 => (8, 23),
+            KernelFloatType::Float64 => (11, 52),
+        };
+        Some(compare_float_bits(
+            left.literal_bits()?,
+            right.literal_bits()?,
+            exponent,
+            fraction,
+            operator,
+        ))
+    }
+
     pub(crate) fn float32_compare(
         left: MachineTerm,
         right: MachineTerm,
@@ -5972,7 +5988,11 @@ pub(crate) fn proposition_holds_without_facts(proposition: &Proposition) -> bool
             PureFactContext::decide_intrinsically(condition) == Some(*value)
         }
         Proposition::ConditionIs(condition, value) => {
-            condition.native_compat().reflexive_value() == Some(*value)
+            let condition = condition.native_compat();
+            condition
+                .reflexive_value()
+                .or_else(|| condition.literal_float_comparison_value())
+                == Some(*value)
         }
         _ => false,
     }
