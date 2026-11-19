@@ -7845,29 +7845,26 @@ impl AnnotationLowerer<'_> {
                     return Err("expected an algebraic resource field".into());
                 };
                 let algebraic_type = self.cached_algebraic_kernel_type(ty)?;
-                let fixed = match self.fixed_resource_field(access, environment)? {
-                    Some(AlgebraicValue::Algebraic(AlgebraicTerm {
-                        node: AlgebraicTermNode::Variable(variable),
-                        ..
-                    })) => Some(variable),
-                    // A named state has only the value it holds; the
-                    // function entry also has its symbolic projection.
-                    Some(_) if environment.reference_state.is_some() => {
-                        return Err("only entry-bound symbolic resource fields support fixed states in this slice".into());
-                    }
-                    Some(_) | None => None,
-                };
-                let node = if let Some(variable) = fixed {
-                    SpecAlgebraicExpressionNode::Variable(variable)
-                } else {
-                    SpecAlgebraicExpressionNode::ResourceField(
+                let node = match self.fixed_resource_field(access, environment)? {
+                    Some(AlgebraicValue::Algebraic(value)) => match value.node {
+                        AlgebraicTermNode::Variable(variable) => {
+                            SpecAlgebraicExpressionNode::Variable(variable)
+                        }
+                        // A recorded point fixes the whole value, including
+                        // constructor payloads and their original pointers.
+                        _ => SpecAlgebraicExpressionNode::ProgramValue(Box::new(
+                            SpecExpression::Value(ProgramValue::Parameter(Box::new(value))),
+                        )),
+                    },
+                    Some(_) => return Err("resource field type mismatch".into()),
+                    None => SpecAlgebraicExpressionNode::ResourceField(
                         crate::kernel::ResourceFieldProjection {
                             identity: access.identity,
                             children: access.children.clone(),
                             field_index: access.field_index,
                             at_entry: environment.at_function_entry,
                         },
-                    )
+                    ),
                 };
                 Ok(SpecAlgebraicExpression {
                     algebraic_type,
