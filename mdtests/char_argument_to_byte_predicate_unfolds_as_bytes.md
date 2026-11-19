@@ -77,7 +77,7 @@ void copy_c(char* dst, const char* src) {
             apply(click::separation::contains_refl(statement(0).footprint));
         }
         have contains(memory(src[0..4]), memory(src[0u64..4u64])) by { normalize(); }
-        have forall (k: uint64) { k < 4u64 implies src[k] == old(src[k]) } by {
+        have forall (k: uint64) { k < 4u64 implies *(&src[k] as (uint8 *)) == old(*(&src[k] as (uint8 *))) } by {
             intro();
             intro();
             have contains(memory(src[0u64..4u64]), memory(src[k])) by {
@@ -96,7 +96,7 @@ void copy_c(char* dst, const char* src) {
                     contains(memory(src[0..4]), memory(src[k]));
                 };
             }
-            have src[k] == at(statement(0).entry, src[k]) by {
+            have *(&src[k] as (uint8 *)) == at(statement(0).entry, *(&src[k] as (uint8 *))) by {
                 preserve(memory(src[k]), statement(0));
             }
             known();
@@ -107,9 +107,10 @@ void copy_c(char* dst, const char* src) {
             unfold(bytes::equal(dst, 0u64, src, 0u64, 4u64));
             intro();
             intro();
-            instantiate(forall (k1: uint64) { true and k1 < 4u64 implies (dst as (uint8 *))[0u64 + k1] == old((src as (uint8 *))[0u64 + k1]) }, k);
-            instantiate(forall (k1: uint64) { k1 < 4u64 implies src[k1] == old(src[k1]) }, k);
-            solve();
+            instantiate(forall (k1: uint64) { true and k1 < 4u64 implies *(&dst[0u64 + k1] as (uint8 *)) == old(*(&src[0u64 + k1] as (uint8 *))) }, k);
+            instantiate(forall (k: uint64) { k < 4u64 implies *(&src[k] as (uint8 *)) == old(*(&src[k] as (uint8 *))) }, k);
+            rewrite(*(&src[k] as (uint8 *)), old(*(&src[k] as (uint8 *))));
+                known();
         }
         known();
     }
