@@ -6186,6 +6186,44 @@ mod tests {
     }
 
     #[test]
+    fn a_retired_local_no_pointer_reaches_is_not_part_of_a_read_projection() {
+        // A read through a pointer is named at the projection of its version
+        // point. Ending the lifetime of a local whose address is never taken
+        // changes nothing such a load can observe, so the projection, and
+        // with it the read's name, stays the same; ending the lifetime of a
+        // local whose address may be held changes it.
+        let _session = crate::kernel::VerificationSession::enter();
+        crate::kernel::primitives::set_never_address_taken_locals(
+            ["hidden".into()].into_iter().collect(),
+        );
+        let hidden: AddressBase = "local:hidden".into();
+        let escaped: AddressBase = "local:escaped".into();
+        let cell = Address::symbolic(Variable(93_101));
+        let base = SymbolicMemory::new()
+            .with_block(hidden.clone(), 4)
+            .with_block(escaped.clone(), 4);
+        let project = |memory: SymbolicMemory| {
+            crate::kernel::memory_history::canonical_projected_load_memory(
+                &crate::kernel::intern_memory(memory),
+                &cell,
+            )
+        };
+        let after_hidden = base.without_local_block(&hidden);
+        let after_escaped = base.without_local_block(&escaped);
+        assert_ne!(after_hidden, base, "the states differ by the retired local");
+        assert_eq!(
+            project(after_hidden),
+            project(base.clone()),
+            "an unreachable retired local is not part of the read's projection"
+        );
+        assert_ne!(
+            project(after_escaped),
+            project(base),
+            "a load through the pointer may observe a reachable retired local"
+        );
+    }
+
+    #[test]
     fn a_loaded_pointer_cannot_reach_storage_created_after_the_read() {
         let storage = AddressBase::Heap(8710);
         let early: AddressBase = "local:early_object".into();

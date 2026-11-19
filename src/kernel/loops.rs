@@ -3594,7 +3594,20 @@ fn join_loop_exit_storage_bookkeeping(
             .iter()
             .flat_map(|state| state.memory.forgotten.ended_local_blocks.iter().cloned())
             .collect::<crate::kernel::HashedOrdSet<_>>();
-        std::sync::Arc::make_mut(&mut memory.forgotten).ended_local_blocks = ended;
+        let ended_addressable = exits
+            .iter()
+            .flat_map(|state| {
+                state
+                    .memory
+                    .forgotten
+                    .ended_addressable_local_blocks
+                    .iter()
+                    .cloned()
+            })
+            .collect::<crate::kernel::HashedOrdSet<_>>();
+        let forgotten = std::sync::Arc::make_mut(&mut memory.forgotten);
+        forgotten.ended_local_blocks = ended;
+        forgotten.ended_addressable_local_blocks = ended_addressable;
         let marker = variables.next_in(budget).map_err(exhausted_identities)?;
         if markers_differ {
             // Keep the common history and mint one new epoch. A union of all

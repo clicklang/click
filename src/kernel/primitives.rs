@@ -8665,6 +8665,12 @@ pub struct ForgottenKnowledge {
     /// the block alone, retaining this tombstone makes stale aliases invalid
     /// even when a later proof step forgets or rejoins ordinary cells.
     pub(super) ended_local_blocks: HashedOrdSet<AddressBase>,
+    /// The entries of `ended_local_blocks` whose address some pointer value
+    /// may hold (`block_is_never_address_taken_local` is false). Only these
+    /// can make a load through a pointer observe a retired object, so only
+    /// these belong in a read's projection. Maintained wherever
+    /// `ended_local_blocks` changes, so naming never scans the whole set.
+    pub(super) ended_addressable_local_blocks: HashedOrdSet<AddressBase>,
     /// Set where cached values were dropped without the memory itself being
     /// known unchanged; see [`ForgottenFrom`]. Carried by later stores and by
     /// the projections used for load naming, so a state that has forgotten

@@ -7310,6 +7310,12 @@ pub(crate) fn substitute_pointer_variable_in_memory(
                 .iter()
                 .map(|block| substitute_pointer_variable_in_block(block, from, to))
                 .collect(),
+            ended_addressable_local_blocks: memory
+                .forgotten
+                .ended_addressable_local_blocks
+                .iter()
+                .map(|block| substitute_pointer_variable_in_block(block, from, to))
+                .collect(),
             // Carried unrewritten, for the reason given in
             // `substitute_bitvector_variable_in_memory_contents`.
             forgotten_from: memory.forgotten.forgotten_from,
