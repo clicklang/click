@@ -613,7 +613,7 @@ sequence below. These rows record planned scope, not completed implementation.
 | 10o | Migrate program-valued resource-field storage. | Program-valued fields retain shared operands while preserving resource identity and substitution. | Landed in [PR #3213](https://github.com/clicklang/click/pull/3213); all pushed commits verified on upstream. Local validation and final 648-check upstream integration passed. |
 | 10p | Migrate remaining expression payloads in sequence/resource descriptors. | Inventory and subdivide independent families before implementation; preserve legitimate opaque descriptor identities. | Complete: 10p1–10p6 landed, with every pushed commit verified upstream. |
 | 10q | Migrate remaining native expression payloads in proposition outputs. | Proposition outputs retain shared operands with unchanged fact identity, raising/lowering and proof admission. | 10q1–10q3 landed. 10q-A ([#3360](https://github.com/clicklang/click/pull/3360)) migrated program-value outputs. 10q-B ([#3370](https://github.com/clicklang/click/pull/3370)) migrated algebraic outputs. 10q-C ([#3384](https://github.com/clicklang/click/pull/3384)) migrated Integer equations from resource-field joins. 10q-D completes the producer inventory below. |
-| 10r | Remove obsolete machine compatibility caches and reverse bridges. | Remove only after their live readers migrate; account for any retained reader and reason. | Planned; after affected consumers. |
+| 10r | Remove obsolete machine compatibility caches and reverse bridges. | Remove only after their live readers migrate; account for any retained reader and reason. | Existing structural words can be borrowed by the observation reader without duplicating the native value. Live compatibility paths are recorded below. |
 | 10s | Remove obsolete Boolean, float and algebraic compatibility caches. | Remove only after their live readers migrate; preserve explicit native input/output boundaries. | Planned; after affected consumers. |
 | 10t | Closure audit: account for every remaining native adapter and remove dead APIs. | Inventory every remaining adapter/cache/native expression field with a live consumer and reason, remove dead APIs, and report any unresolved migration gaps. | Planned; final audit. |
 
@@ -628,6 +628,20 @@ local machine observation equivalence must not replace memory structural
 identity. Stop and discuss changes to proof semantics, syntax or snapshot
 architecture; representation cleanup must not require proof rewrites, new
 search indexes or increased budgets.
+
+### 10r Machine compatibility readers
+
+When an index has already retained or exported a structural word, the default
+observation reader borrows that word. A later supplied spelling cannot replace
+a previously selected output. An explicit native observation can still
+supply a different spelling, including a registered load name. Structural
+index reads and their existing native consumers retain their own contract.
+
+The root-owned machine leaf remains in use by conversion, load, call,
+certification and arithmetic readers. The weak Integer reverse link still
+lets the explicit exporter recover a live native operand without rewalking a
+shared Integer prefix. Conversion and fold tests exercise warm reuse and
+source lifetime. Both remain live compatibility paths.
 
 ### 10a Storage inventory and completion criteria
 
