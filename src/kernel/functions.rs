@@ -4929,14 +4929,14 @@ fn execute_verified_function_applications_with_suspension(
             }
         };
 
-        let mut return_state = caller_state.clone();
-        return_state.set_memory_of(&post_state);
+        let mut return_state = caller_state
+            .clone()
+            .with_call_return(&post_state, return_resources);
         refresh_call_written_locals(
             &mut return_state,
             &transfer.memory_effects,
             &effective_assumptions,
         );
-        return_state.resources = return_resources;
         return_state.loan_ledger = return_ledger;
         return_state.loan_participant = return_participant;
         return_state = return_state.with_loan_view_bindings(return_view_bindings);
@@ -5378,15 +5378,14 @@ fn exceptional_direct_function_path(
                 ));
             }
         };
-    let mut throw_state = caller_state.clone();
-    // The thrown memory is the post state's: continue its path.
-    throw_state.set_memory_of(&post_state);
+    let mut throw_state = caller_state
+        .clone()
+        .with_call_return(&post_state, resources);
     refresh_call_written_locals(
         &mut throw_state,
         &transfer.memory_effects,
         &post_assumptions,
     );
-    throw_state.resources = resources;
     throw_state.loan_ledger = ledger;
     throw_state.loan_participant = participant;
     throw_state = throw_state.with_loan_view_bindings(bindings);
@@ -21498,11 +21497,9 @@ fn function_outcome_from_body_with_resource_transfer(
         Ok(None) => {}
     }
 
-    let mut return_state = caller_state.clone();
-    // The caller resumes with the callee's memory, made by the steps the
-    // callee took: continue the callee's path, which began at the call.
-    return_state.set_memory_of(&state);
-    return_state.resources = return_resources;
+    let mut return_state = caller_state
+        .clone()
+        .with_call_return(&state, return_resources);
     return_state.loan_ledger = return_ledger;
     return_state.loan_participant = return_participant;
     return_state = return_state.with_loan_view_bindings(return_view_bindings);

@@ -10242,6 +10242,24 @@ impl ExecutionState {
     pub(crate) fn set_memory_continuing(&mut self, from: &Self, memory: SymbolicMemory) {
         let base = from.program_point();
         self.replace_memory(memory, false);
+        self.record_memory_continuation(&base);
+    }
+
+    /// Resume the caller with the callee's memory and the checked return
+    /// partition together. Resource recovery has already constructed the new
+    /// frame, so there is no old-frame projection to invalidate here.
+    pub(in crate::kernel) fn with_call_return(
+        mut self,
+        callee: &Self,
+        resources: ResourceContext,
+    ) -> Self {
+        let base = callee.program_point();
+        self.memory = callee.memory.clone();
+        self.record_memory_continuation(&base);
+        self.with_resource_context(resources)
+    }
+
+    fn record_memory_continuation(&mut self, base: &super::ProgramPoint) {
         let steps = self.memory.pending_steps.take();
         let shared = super::intern_memory_ref(&self.memory);
         self.point = if steps.is_none() && base.shared_memory() == &shared {
