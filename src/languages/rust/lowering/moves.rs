@@ -204,7 +204,13 @@ pub(super) fn lower(
         if matches!(local.value_type, Type::ChunkIterator | Type::ChunkOption) {
             declarations = program_seq(
                 declarations,
-                cx.chunk_storage(&local.name, local.value_type == Type::ChunkOption)?,
+                cx.chunk_storage(
+                    &local.name,
+                    local.value_type == Type::ChunkOption,
+                    owner,
+                    u32::try_from(index - owned_parameter_count)
+                        .map_err(|_| "MIR local index exceeds u32")?,
+                )?,
             );
             continue;
         }
@@ -1213,6 +1219,7 @@ fn loop_iterator(
             });
         if let Some(local) = user {
             return Some(RustLoopIterator {
+                chunk_fields: None,
                 slice_fields: None,
                 local,
                 kind: K::User,
@@ -1254,6 +1261,7 @@ fn loop_iterator(
                 _ => return None,
             };
             Some(RustLoopIterator {
+                chunk_fields: cx.mir_chunk_iterators.get(local).cloned(),
                 slice_fields: cx
                     .shared_array_iterators
                     .get(local)
@@ -1820,8 +1828,8 @@ mod tests {
                 enumerate_fields: BTreeMap::new(),
                 shared_array_options: BTreeMap::new(),
                 shared_scalar_slices: BTreeMap::new(),
-                mir_chunk_iterators: BTreeSet::new(),
-                chunk_options: BTreeSet::new(),
+                mir_chunk_iterators: BTreeMap::new(),
+                chunk_options: BTreeMap::new(),
                 local_arrays: BTreeSet::new(),
                 arrays: BTreeMap::new(),
                 owned_locals: BTreeSet::new(),

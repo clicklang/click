@@ -542,15 +542,28 @@ pub(crate) fn rust_iterator_method(
         }
         // A slice field reads as a slice parameter does: `iter.v` is its
         // data and `iter.v.len()` its length.
-        (K::Chunks, "v") => variable("v"),
-        (K::Chunks, "v.len()") => variable("v_len"),
-        (K::Chunks, "rem") => variable("rem"),
-        (K::Chunks, "rem.len()") => variable("rem_len"),
-        (K::Chunks, "chunk_size") => variable("chunk_size"),
-        (K::Chunks, "len()") => ProgramExpression::Divide(
-            Box::new(variable("v_len")),
-            Box::new(variable("chunk_size")),
-        ),
+        (K::Chunks, "v" | "v.len()" | "rem" | "rem.len()" | "chunk_size" | "len()") => {
+            let fields = iterator
+                .chunk_fields
+                .as_ref()
+                .ok_or("missing chunk iterator fields")?;
+            let field = match accessor {
+                "v" => &fields.remaining,
+                "v.len()" => &fields.remaining_length,
+                "rem" => &fields.remainder,
+                "rem.len()" => &fields.remainder_length,
+                "chunk_size" => &fields.size,
+                _ => {
+                    return Ok(ContractExpression::ProgramExpression(
+                        ProgramExpression::Divide(
+                            Box::new(ProgramExpression::Variable(fields.remaining_length.clone())),
+                            Box::new(ProgramExpression::Variable(fields.size.clone())),
+                        ),
+                    ));
+                }
+            };
+            ProgramExpression::Variable(field.clone())
+        }
         _ => {
             return Err(format!(
                 "`iter.{accessor}` is not an accessor of this loop's {} iterator{}",
