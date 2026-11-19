@@ -2707,7 +2707,6 @@ fn append_resource_clause_loadable_fact_with_store<F: ResourcePureFacts>(
 
 pub(super) fn append_lowered_resource_clause_loadable_fact(
     resource: &ResourceClause,
-    _parameters: &[crate::languages::interface::ImportedParameter],
     lowered: &ResourceFact,
     state: &ExecutionState,
     propositions: &mut Vec<Proposition>,
