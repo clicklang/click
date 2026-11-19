@@ -455,7 +455,7 @@ pub(in crate::kernel) fn apply_call_effect(
     guard: Option<&ResourceFact>,
     payload: Option<Variable>,
     definition: Option<&crate::kernel::CompositeResourceDefinition>,
-    definitions: &[crate::kernel::CompositeResourceDefinition],
+    definitions: &std::sync::Arc<[crate::kernel::CompositeResourceDefinition]>,
     assumptions: &PureFactContext,
     budget: &mut crate::kernel::ExecutionBudget,
 ) -> Result<
@@ -787,7 +787,7 @@ mod tests {
             true,
             &assumptions,
             None,
-            &[],
+            &Default::default(),
             None,
             &mut ExecutionBudget::new(),
         )
@@ -855,7 +855,7 @@ mod tests {
             false,
             &assumptions,
             None,
-            &[],
+            &Default::default(),
             None,
             &mut ExecutionBudget::new(),
         )

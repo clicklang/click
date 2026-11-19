@@ -518,49 +518,20 @@ be restricted to tests. Contract-entry own/view overlap checking still has a
 separate alias query. Cache retention independently uses indexed protection
 evidence to decide which observations survive.
 
-### C1: modular call framing — source candidate, also in scaling roadmap
+### C1: modular call framing
 
-When a verified call has memory effects,
-[`functions.rs`](../src/kernel/functions.rs) calls `call_kept_ownership` on the
-caller frame. Field-bearing instances stay opaque: call preparation does not
-open their bodies or gather their memory/facts. With no owned composites, the
-frame is retained directly without constructing `ProofSearch`. The selected
-instance-count regression guards that route against discovery.
+Verified calls, mutex transitions, and publication share the residual's
+resource indexes and the sorted composite definition table in
+`call_kept_ownership`. Kept reads select singleton folded owners from
+indexed address keys, then open only argument-direct bodies. Field-bearing
+instances and other opaque bodies supply no implicit memory ranges.
 
-The retained-instance route is covered by a discovery guard and the fixed-call
-instance-count scaling regression. The arena proof uses explicit separation
-and preservation for its selected retained headers and cells. Automatic
-statement-exit fact restatement is removed; calls publish producer facts at
-their original states rather than searching for extra current-state facts.
-
-Experimental removal: `ProofSearch::call_frame` no longer opens retained
-non-argument-direct composite bodies to discover hidden memory ranges. It
-retains ownership unchanged and adds no replacement obligations or bonus facts.
-The argument-direct family selection and lazy selected-address opening remain;
-neither family-count independence nor bounded candidate lookup is established.
-
-`call_frame_preparation_must_not_open_unrelated_composites` grows one retained
-family at 4/16/64 members, with a fixed one-cell call effect. It covers a nested
-one-cell wrapper and a load-dependent range body. Preparation work is now
-1 / 1 / 1 in both cases (previously 1,078 / 4,294 / 17,158 and
-1,926 / 7,686 / 30,726 respectively). The regression checks that no opened
-ranges are recorded. Setup, havoc and observation are outside the meter, so
-this is scoped frame-preparation evidence, not a complete call/step bound.
-
-The normal examples and markdown proof corpus both pass without proof repairs
-(104s and 353s). No C, contracts, axioms, obligations or e-graph reasoning changed.
-The population-membership safety test now expects opaque composite wrappers to
-record no hidden private range, retaining its shared-mutation rejection checks.
-Validation: 1,866 normal scaling/affected-module tests pass, plus the one
-directly affected nightly publication-scaling test. The full nightly was not run.
-Direct-family selection and selected-address candidate scans remain separate
-follow-up work; this removal does not establish the whole-call fast bound.
-
-For remaining coverage, hold the callee contract/effect fixed and grow
-distinct direct families and selected-address candidates. Measure call
-preparation, execution and completion together; retain opaque-body and
-refusal coverage. Coordinate with [Scaling](scaling.md), cause 3, without duplicating its
-implementation work or changing its priority here.
+`repeated_writing_calls_ignore_unrelated_folded_owners` varies call count and
+retained family count. `kept_call_reads_do_not_scan_same_block_owners_or_aliases`
+measures both hits and misses with 4, 16, 64, and 256 owners and aliases.
+`call_frame_preparation_must_not_open_unrelated_composites` covers nested and
+load-dependent bodies. The arena proof uses explicit separation and
+preservation for the retained headers and cells it needs.
 
 ### Statement-exit fact transport — boundary and remaining coverage
 

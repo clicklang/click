@@ -3107,20 +3107,15 @@ impl CallKeptRanges {
         };
         crate::kernel::assumptions::additive_base_spellings(range.base())
             .iter()
-            .flat_map(|base| residual.owned_composites_with_pointer_argument(base))
+            .filter_map(|base| residual.unique_owned_composite_with_pointer_argument(base))
             .any(|fact| self.direct_ranges(fact).contains(range))
     }
 
     /// The kept range holding the access. `placement` is the premises already
     /// assumed into `assumptions`, when the caller has built it once.
     ///
-    /// The listed ranges are asked first. Then the argument-direct
-    /// composites that can hold the access are opened: those with a pointer
-    /// argument equal to an additive base spelling of `pointer` or an exact
-    /// alias of one, and failing those, the ones with an argument in the
-    /// access's block, as the listed ranges' own block fallback reads them
-    /// ([`PureFactContext::kept_range_holding_access`]). Only those are
-    /// opened, never the residual's other composites.
+    /// After checking the listed ranges, try bounded indexed candidates for
+    /// an argument-direct owner. An ambiguous bucket supplies no candidate.
     pub(in crate::kernel) fn range_holding(
         &self,
         assumptions: &PureFactContext,
@@ -3154,31 +3149,23 @@ impl CallKeptRanges {
             })
             .or_else(|| {
                 let residual = self.direct.as_ref().and(self.residual.as_ref())?;
-                let spellings = crate::kernel::assumptions::additive_base_spellings(pointer);
-                let mut bases = spellings.clone();
-                for spelling in &spellings {
-                    bases.extend(assumptions.exact_pointer_aliases(spelling).cloned());
-                }
-                // Exclusive owners in the caller's original composition cannot
-                // overlap. Once the flat caller frame has failed above, an
-                // original flat owner rules out every unchanged composite.
-                // A transferred owner may have been repackaged into a new
-                // composite, so retain those candidates rather than declaring
-                // the access changed merely from a mutable-range summary.
+                let bases = assumptions.kept_frame_address_keys(pointer);
+                // A covering original flat owner excludes unchanged folded
+                // owners by exclusivity. A transferred owner may have been
+                // repackaged, so still consider newly introduced composites.
                 let residual = if self
                     .caller_before_transfer
                     .as_ref()
                     .is_some_and(|original| {
                         bases.iter().any(|base| {
                             original
-                                .owned_memory_members_with_base(base)
-                                .any(|(_, range)| {
-                                    original
-                                        .exact_resource_facts(&Resource::Memory(range.clone()))
-                                        .into_iter()
-                                        .any(|fact| fact.has_proven_positive_quantity(assumptions))
-                                        && assumptions
-                                            .kept_range_holds_access(range, pointer, bytes)
+                                .unique_owned_memory_fact_with_base(base)
+                                .is_some_and(|fact| {
+                                    fact.has_proven_positive_quantity(assumptions)
+                                        && fact.memory_own_range().is_some_and(|range| {
+                                            assumptions
+                                                .kept_range_holds_access(range, pointer, bytes)
+                                        })
                                 })
                         })
                     }) {
@@ -3186,35 +3173,35 @@ impl CallKeptRanges {
                 } else {
                     residual
                 };
-                let opened = |facts: &mut dyn Iterator<Item = &ResourceFact>| {
-                    let mut seen = BTreeSet::new();
-                    let mut ranges = Vec::new();
-                    for fact in facts {
-                        if seen.insert(fact.clone()) {
-                            ranges.extend(self.direct_ranges(fact));
-                        }
+                let mut seen = BTreeSet::new();
+                let mut covers = |fact: &ResourceFact| {
+                    if !seen.insert(fact.clone()) {
+                        return None;
                     }
-                    ResourceContext::new_with_equalities(assumptions)
-                        .unchecked_with_facts(ranges.into_iter().map(ResourceFact::own_memory))
-                };
-                query(
-                    &opened(
-                        &mut bases
-                            .iter()
-                            .flat_map(|base| residual.owned_composites_with_pointer_argument(base)),
-                    ),
-                    false,
-                )
-                .or_else(|| {
-                    let mut blocks = BTreeSet::from([&pointer.base]);
-                    blocks.extend(bases.iter().map(|base| &base.base));
+                    let ranges = self.direct_ranges(fact);
+                    if ranges.is_empty() {
+                        return None;
+                    }
                     query(
-                        &opened(&mut blocks.into_iter().flat_map(|block| {
-                            residual.owned_composites_with_argument_block(block)
-                        })),
+                        &ResourceContext::new_with_equalities(assumptions)
+                            .unchecked_with_facts(ranges.into_iter().map(ResourceFact::own_memory)),
                         false,
                     )
-                })
+                };
+                bases
+                    .iter()
+                    .filter_map(|base| residual.unique_owned_composite_with_pointer_argument(base))
+                    .find_map(&mut covers)
+                    .or_else(|| {
+                        let mut blocks = BTreeSet::from([&pointer.base]);
+                        blocks.extend(bases.iter().map(|base| &base.base));
+                        blocks
+                            .into_iter()
+                            .filter_map(|block| {
+                                residual.unique_owned_composite_with_argument_block(block)
+                            })
+                            .find_map(covers)
+                    })
             })
     }
 

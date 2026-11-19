@@ -62,7 +62,7 @@ fn helper_summary_keeps_the_selected_sibling_share_and_checked_evidence() {
         None,
         None,
         None,
-        &[],
+        &Default::default(),
         &assumptions,
         &mut crate::kernel::ExecutionBudget::new(),
     )
@@ -81,7 +81,7 @@ fn helper_summary_keeps_the_selected_sibling_share_and_checked_evidence() {
             Some(&guard),
             None,
             None,
-            &[],
+            &Default::default(),
             &assumptions,
             &mut crate::kernel::ExecutionBudget::new()
         )
@@ -95,7 +95,7 @@ fn helper_summary_keeps_the_selected_sibling_share_and_checked_evidence() {
         Some(&guard),
         None,
         None,
-        &[],
+        &Default::default(),
         &assumptions,
         &mut crate::kernel::ExecutionBudget::new(),
     )
@@ -115,7 +115,7 @@ fn helper_summary_keeps_the_selected_sibling_share_and_checked_evidence() {
         None,
         None,
         None,
-        &[],
+        &Default::default(),
         &assumptions,
         &mut crate::kernel::ExecutionBudget::new(),
     )
@@ -129,7 +129,7 @@ fn helper_summary_keeps_the_selected_sibling_share_and_checked_evidence() {
             Some(&guard),
             None,
             None,
-            &[],
+            &Default::default(),
             &assumptions,
             &mut crate::kernel::ExecutionBudget::new()
         )

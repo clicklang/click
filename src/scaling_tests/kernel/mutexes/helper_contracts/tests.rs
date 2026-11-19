@@ -47,7 +47,7 @@ fn helper_transfers_ignore_unrelated_resources_protocols_and_history() {
                 None,
                 None,
                 None,
-                &[],
+                &Default::default(),
                 &assumptions,
                 &mut ExecutionBudget::new(),
             )
@@ -61,7 +61,7 @@ fn helper_transfers_ignore_unrelated_resources_protocols_and_history() {
                 Some(&guard),
                 None,
                 None,
-                &[],
+                &Default::default(),
                 &assumptions,
                 &mut ExecutionBudget::new(),
             )
@@ -78,7 +78,7 @@ fn helper_transfers_ignore_unrelated_resources_protocols_and_history() {
                     None,
                     None,
                     None,
-                    &[],
+                    &Default::default(),
                     &assumptions,
                     &mut ExecutionBudget::new(),
                 )
@@ -93,7 +93,7 @@ fn helper_transfers_ignore_unrelated_resources_protocols_and_history() {
                     Some(&guard),
                     None,
                     None,
-                    &[],
+                    &Default::default(),
                     &assumptions,
                     &mut ExecutionBudget::new(),
                 )

@@ -237,7 +237,7 @@ impl AssumedMutexProtocol {
             guard,
             assumptions,
             None,
-            &[],
+            &Arc::default(),
             &mut crate::kernel::ExecutionBudget::beside_live_state(),
         )
     }
@@ -248,7 +248,7 @@ impl AssumedMutexProtocol {
         guard: &AssumedMutexGuard,
         assumptions: &PureFactContext,
         selected: Option<crate::kernel::Variable>,
-        definitions: &[crate::kernel::CompositeResourceDefinition],
+        definitions: &Arc<[crate::kernel::CompositeResourceDefinition]>,
         budget: &mut crate::kernel::ExecutionBudget,
     ) -> Result<AssumedMutexTransition, MutexTransitionError> {
         if guard.protocol != *self {
@@ -429,7 +429,7 @@ pub(in crate::kernel) fn opaque_runtime_transition(
         acquire,
         assumptions,
         None,
-        &[],
+        &Arc::default(),
         None,
         &mut crate::kernel::ExecutionBudget::beside_live_state(),
     )
@@ -441,7 +441,7 @@ pub(in crate::kernel) fn opaque_runtime_transition_with_payload(
     acquire: bool,
     assumptions: &PureFactContext,
     definition: Option<&crate::kernel::CompositeResourceDefinition>,
-    definitions: &[crate::kernel::CompositeResourceDefinition],
+    definitions: &Arc<[crate::kernel::CompositeResourceDefinition]>,
     payload_identity: Option<crate::kernel::Variable>,
     budget: &mut crate::kernel::ExecutionBudget,
 ) -> Result<(ExecutionState, CheckedLoanCallEvidenceSequence), MutexTransitionError> {
@@ -464,7 +464,7 @@ pub(super) fn opaque_runtime_transition_with_selected_use(
     acquire: bool,
     assumptions: &PureFactContext,
     definition: Option<&crate::kernel::CompositeResourceDefinition>,
-    definitions: &[crate::kernel::CompositeResourceDefinition],
+    definitions: &Arc<[crate::kernel::CompositeResourceDefinition]>,
     payload_identity: Option<crate::kernel::Variable>,
     budget: &mut crate::kernel::ExecutionBudget,
     selected_use: Option<&ResourceFact>,
@@ -648,7 +648,7 @@ fn forget_released_protected_memory(
     state: &ExecutionState,
     released: &ResourceFact,
     residual: &crate::kernel::ResourceContext,
-    definitions: &[crate::kernel::CompositeResourceDefinition],
+    definitions: &Arc<[crate::kernel::CompositeResourceDefinition]>,
     assumptions: &PureFactContext,
     budget: &mut crate::kernel::ExecutionBudget,
 ) -> Result<crate::kernel::SymbolicMemory, MutexTransitionError> {
@@ -665,9 +665,7 @@ fn forget_released_protected_memory(
     let kept = ranges
         .iter()
         .any(crate::kernel::MemoryRange::is_unnamed_footprint)
-        .then(|| {
-            crate::kernel::functions::call_kept_ownership(residual, definitions, state, assumptions)
-        });
+        .then(|| crate::kernel::functions::call_kept_ownership(residual, definitions, assumptions));
     let variable = budget
         .allocate_kernel_variable()
         .map_err(|_| "protected memory release exceeded its budget")?;
@@ -897,7 +895,7 @@ mod tests {
                 &guard,
                 &assumptions,
                 Some(replacement.identity()),
-                std::slice::from_ref(&definition),
+                &[definition.clone()].into(),
                 &mut budget,
             )
             .unwrap();
@@ -927,7 +925,7 @@ mod tests {
                     &guard,
                     &assumptions,
                     Some(wrong.identity()),
-                    std::slice::from_ref(&definition),
+                    &[definition.clone()].into(),
                     &mut budget,
                 )
                 .is_err()
@@ -938,7 +936,7 @@ mod tests {
                 &guard,
                 &assumptions,
                 None,
-                std::slice::from_ref(&definition),
+                &[definition.clone()].into(),
                 &mut budget,
             )
             .unwrap();

@@ -3357,26 +3357,6 @@ impl ResourceContext {
             })
     }
 
-    /// The owned folded composites with a C pointer argument equal to `base`,
-    /// read from the argument index: one unit to position and one per
-    /// composite returned.
-    pub(in crate::kernel) fn owned_composites_with_pointer_argument<'a>(
-        &'a self,
-        base: &Address,
-    ) -> impl Iterator<Item = &'a ResourceFact> + 'a {
-        crate::instrumentation::record_deterministic_work(1);
-        self.storage
-            .index
-            .owned_composites_by_pointer_argument
-            .get(base)
-            .into_iter()
-            .flat_map(ResourceEntryIds::iter)
-            .map(|entry| {
-                crate::instrumentation::record_deterministic_work(1);
-                self.fact(*entry)
-            })
-    }
-
     /// Select a sole folded owner naming this exact pointer argument.
     /// An ambiguous bucket needs separate selection evidence.
     pub(in crate::kernel) fn unique_owned_composite_with_pointer_argument(
@@ -3395,22 +3375,18 @@ impl ResourceContext {
         Some(self.fact(*entries.iter().next().expect("one indexed owner")))
     }
 
-    /// The owned folded composites with a C pointer argument in `block`.
-    pub(in crate::kernel) fn owned_composites_with_argument_block<'a>(
-        &'a self,
+    /// Select a sole folded owner with a pointer argument in the block.
+    pub(in crate::kernel) fn unique_owned_composite_with_argument_block(
+        &self,
         block: &AddressBase,
-    ) -> impl Iterator<Item = &'a ResourceFact> + 'a {
+    ) -> Option<&ResourceFact> {
         crate::instrumentation::record_deterministic_work(1);
-        self.storage
+        let entries = self
+            .storage
             .index
             .owned_composites_by_argument_block
-            .get(block)
-            .into_iter()
-            .flat_map(ResourceEntryIds::iter)
-            .map(|entry| {
-                crate::instrumentation::record_deterministic_work(1);
-                self.fact(*entry)
-            })
+            .get(block)?;
+        (entries.len() == 1).then(|| self.fact(*entries.iter().next().expect("one indexed owner")))
     }
 
     /// Identify a uniform folded frame eligible for projecting retirement by
@@ -3470,33 +3446,6 @@ impl ResourceContext {
     /// content-hashed persistent map.
     pub(in crate::kernel) fn owned_composite_facts(&self) -> &HashedOrdMap<ResourceFact, usize> {
         &self.storage.index.owned_composite_facts
-    }
-
-    /// The owned folded composites, grouped by family name, from the shape
-    /// index: a caller that answers a whole family at once never visits its
-    /// facts.
-    pub(in crate::kernel) fn owned_composite_families<'a>(
-        &'a self,
-    ) -> impl Iterator<Item = (&'a str, impl Iterator<Item = &'a ResourceFact> + 'a)> + 'a {
-        self.storage
-            .index
-            .exact_shapes
-            .iter()
-            .skip_while(|((family, _, _), _)| *family < ResourceFamily::Composite)
-            .take_while(|((family, _, _), _)| *family == ResourceFamily::Composite)
-            .map(move |((_, name, _), entries)| {
-                crate::instrumentation::record_deterministic_work(1);
-                (
-                    name.as_str(),
-                    entries
-                        .iter()
-                        .map(move |entry| {
-                            crate::instrumentation::record_deterministic_work(1);
-                            self.fact(*entry)
-                        })
-                        .filter(|fact| fact.is_own()),
-                )
-            })
     }
 
     /// Whether this context holds any owned instance with a C pointer
@@ -5241,6 +5190,14 @@ impl ResourceContext {
         self.fact(entry)
             .memory_own_range()
             .map(|range| (entry, range))
+    }
+
+    pub(in crate::kernel) fn unique_owned_memory_fact_with_base(
+        &self,
+        base: &Address,
+    ) -> Option<&ResourceFact> {
+        let (entry, _) = self.unique_owned_memory_member_with_base(base)?;
+        Some(self.fact(entry))
     }
 
     /// One unambiguous member under an explicit base. A crowded raw bucket

@@ -369,7 +369,6 @@ fn release_store(
                 super::functions::call_kept_ownership(
                     &next.resources,
                     &environment.modeled_mutex_definition_list,
-                    state,
                     assumptions,
                 )
             });
