@@ -2208,7 +2208,7 @@ int32 f(const uint8* p) {views p[0..1]; ensures result==0;} by {
     let { result: value } = step();
     mark loaded;
     have 0<=value as int32 and 255>=value as int32 by {solve();}
-    have value==load_uint8(p) by {solve();}
+    have value==load<uint8>(p) by {solve();}
     step();
     have x==0 by {solve();}
     have value==at(loaded, x) by {solve();}

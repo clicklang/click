@@ -199,7 +199,7 @@ int32 sum(int32 a[], int32 n) {
             have defined((total + a[i])) by {
                 have defined(total + a[i]);
                 all {
-                    defined(load_int32((a + i))) => {
+                    defined(load<int32>((a + i))) => {
                         known();
                     }
                     to_integer(total) + to_integer(a[i]) <= 2147483647 => { known(); }

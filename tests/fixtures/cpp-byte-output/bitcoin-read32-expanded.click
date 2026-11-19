@@ -80,7 +80,7 @@ void FixtureReader::read(std::span<std::byte> dst) {
     step();
     step();
     step() by {
-        have at(function.entry, 0u64) < at(function.entry, load_uint64(byte_offset(dst, 8))) by {
+        have at(function.entry, 0u64) < at(function.entry, load<uint64>(byte_offset(dst, 8))) by {
             rewrite(at(region(3).entry, at(region(1).exit, dst->_M_extent._M_extent_value)), at(region(3).entry, 4u64));
             known();
         }
@@ -130,13 +130,13 @@ void FixtureReader::read(std::span<std::byte> dst) {
             separate(memory(at(call(0).exit, call(0).result)[0]), memory(old(this->data)[0]));
         };
     }
-    have at(region(5).exit, load_uint8((old(this->data) + 0))) == at(region(5).entry, load_uint8((old(this->data) + 0))) by {
+    have at(region(5).exit, load<uint8>((old(this->data) + 0))) == at(region(5).entry, load<uint8>((old(this->data) + 0))) by {
         preserve(memory(old(this->data)[0]), region(5));
     }
-    have load_uint8((old(this->data) + 0)) == old(this->data[0]) by {
+    have load<uint8>((old(this->data) + 0)) == old(this->data[0]) by {
         known();
     }
-    have load_uint8((old(dst->_M_ptr) + 0)) == old(this->data[0]) by {
+    have load<uint8>((old(dst->_M_ptr) + 0)) == old(this->data[0]) by {
         known();
     }
     have separate(memory(at(call(0).exit, call(0).result)[0]), memory(old(this->data)[1])) by {
@@ -148,10 +148,10 @@ void FixtureReader::read(std::span<std::byte> dst) {
             separate(memory(at(call(0).exit, call(0).result)[0]), memory(old(this->data)[1]));
         };
     }
-    have at(region(5).exit, load_uint8((old(this->data) + 1))) == at(region(5).entry, load_uint8((old(this->data) + 1))) by {
+    have at(region(5).exit, load<uint8>((old(this->data) + 1))) == at(region(5).entry, load<uint8>((old(this->data) + 1))) by {
         preserve(memory(old(this->data)[1]), region(5));
     }
-    have load_uint8((old(this->data) + 1)) == old(this->data[1]) by {
+    have load<uint8>((old(this->data) + 1)) == old(this->data[1]) by {
         known();
     }
     have separate(memory(at(call(0).exit, call(0).result)[0]), memory(old(this->data)[2])) by {
@@ -163,10 +163,10 @@ void FixtureReader::read(std::span<std::byte> dst) {
             separate(memory(at(call(0).exit, call(0).result)[0]), memory(old(this->data)[2]));
         };
     }
-    have at(region(5).exit, load_uint8((old(this->data) + 2))) == at(region(5).entry, load_uint8((old(this->data) + 2))) by {
+    have at(region(5).exit, load<uint8>((old(this->data) + 2))) == at(region(5).entry, load<uint8>((old(this->data) + 2))) by {
         preserve(memory(old(this->data)[2]), region(5));
     }
-    have load_uint8((old(this->data) + 2)) == old(this->data[2]) by {
+    have load<uint8>((old(this->data) + 2)) == old(this->data[2]) by {
         known();
     }
     have separate(memory(at(call(0).exit, call(0).result)[0]), memory(old(this->data)[3])) by {
@@ -178,17 +178,17 @@ void FixtureReader::read(std::span<std::byte> dst) {
             separate(memory(at(call(0).exit, call(0).result)[0]), memory(old(this->data)[3]));
         };
     }
-    have at(region(5).exit, load_uint8((old(this->data) + 3))) == at(region(5).entry, load_uint8((old(this->data) + 3))) by {
+    have at(region(5).exit, load<uint8>((old(this->data) + 3))) == at(region(5).entry, load<uint8>((old(this->data) + 3))) by {
         preserve(memory(old(this->data)[3]), region(5));
     }
-    have load_uint8((old(this->data) + 3)) == old(this->data[3]) by {
+    have load<uint8>((old(this->data) + 3)) == old(this->data[3]) by {
         known();
     }
     step();
     step();
     step();
     step() by {
-        have at(function.entry, 1u64) < at(function.entry, load_uint64(byte_offset(dst, 8))) by {
+        have at(function.entry, 1u64) < at(function.entry, load<uint64>(byte_offset(dst, 8))) by {
             rewrite(at(region(9).entry, at(region(7).exit, dst->_M_extent._M_extent_value)), at(region(9).entry, 4u64));
             known();
         }
@@ -238,10 +238,10 @@ void FixtureReader::read(std::span<std::byte> dst) {
             separate(memory(at(call(1).exit, call(1).result)[0]), memory(old(this->data)[0]));
         };
     }
-    have at(region(11).exit, load_uint8((old(this->data) + 0))) == at(region(11).entry, load_uint8((old(this->data) + 0))) by {
+    have at(region(11).exit, load<uint8>((old(this->data) + 0))) == at(region(11).entry, load<uint8>((old(this->data) + 0))) by {
         preserve(memory(old(this->data)[0]), region(11));
     }
-    have load_uint8((old(this->data) + 0)) == old(this->data[0]) by {
+    have load<uint8>((old(this->data) + 0)) == old(this->data[0]) by {
         known();
     }
     have separate(memory(at(call(1).exit, call(1).result)[0]), memory(old(this->data)[1])) by {
@@ -253,10 +253,10 @@ void FixtureReader::read(std::span<std::byte> dst) {
             separate(memory(at(call(1).exit, call(1).result)[0]), memory(old(this->data)[1]));
         };
     }
-    have at(region(11).exit, load_uint8((old(this->data) + 1))) == at(region(11).entry, load_uint8((old(this->data) + 1))) by {
+    have at(region(11).exit, load<uint8>((old(this->data) + 1))) == at(region(11).entry, load<uint8>((old(this->data) + 1))) by {
         preserve(memory(old(this->data)[1]), region(11));
     }
-    have load_uint8((old(this->data) + 1)) == old(this->data[1]) by {
+    have load<uint8>((old(this->data) + 1)) == old(this->data[1]) by {
         known();
     }
     have separate(memory(old(dst->_M_ptr)[1]), memory(old(dst->_M_ptr)[0])) by {
@@ -272,13 +272,13 @@ void FixtureReader::read(std::span<std::byte> dst) {
             separate(memory(at(call(1).exit, call(1).result)[0]), memory(old(dst->_M_ptr)[0]));
         };
     }
-    have at(region(11).exit, load_uint8((old(dst->_M_ptr) + 0))) == at(region(11).entry, load_uint8((old(dst->_M_ptr) + 0))) by {
+    have at(region(11).exit, load<uint8>((old(dst->_M_ptr) + 0))) == at(region(11).entry, load<uint8>((old(dst->_M_ptr) + 0))) by {
         preserve(memory(old(dst->_M_ptr)[0]), region(11));
     }
-    have load_uint8((old(dst->_M_ptr) + 0)) == old(this->data[0]) by {
+    have load<uint8>((old(dst->_M_ptr) + 0)) == old(this->data[0]) by {
         known();
     }
-    have load_uint8((old(dst->_M_ptr) + 1)) == old(this->data[1]) by {
+    have load<uint8>((old(dst->_M_ptr) + 1)) == old(this->data[1]) by {
         known();
     }
     have separate(memory(at(call(1).exit, call(1).result)[0]), memory(old(this->data)[2])) by {
@@ -290,10 +290,10 @@ void FixtureReader::read(std::span<std::byte> dst) {
             separate(memory(at(call(1).exit, call(1).result)[0]), memory(old(this->data)[2]));
         };
     }
-    have at(region(11).exit, load_uint8((old(this->data) + 2))) == at(region(11).entry, load_uint8((old(this->data) + 2))) by {
+    have at(region(11).exit, load<uint8>((old(this->data) + 2))) == at(region(11).entry, load<uint8>((old(this->data) + 2))) by {
         preserve(memory(old(this->data)[2]), region(11));
     }
-    have load_uint8((old(this->data) + 2)) == old(this->data[2]) by {
+    have load<uint8>((old(this->data) + 2)) == old(this->data[2]) by {
         known();
     }
     have separate(memory(at(call(1).exit, call(1).result)[0]), memory(old(this->data)[3])) by {
@@ -305,17 +305,17 @@ void FixtureReader::read(std::span<std::byte> dst) {
             separate(memory(at(call(1).exit, call(1).result)[0]), memory(old(this->data)[3]));
         };
     }
-    have at(region(11).exit, load_uint8((old(this->data) + 3))) == at(region(11).entry, load_uint8((old(this->data) + 3))) by {
+    have at(region(11).exit, load<uint8>((old(this->data) + 3))) == at(region(11).entry, load<uint8>((old(this->data) + 3))) by {
         preserve(memory(old(this->data)[3]), region(11));
     }
-    have load_uint8((old(this->data) + 3)) == old(this->data[3]) by {
+    have load<uint8>((old(this->data) + 3)) == old(this->data[3]) by {
         known();
     }
     step();
     step();
     step();
     step() by {
-        have at(function.entry, 2u64) < at(function.entry, load_uint64(byte_offset(dst, 8))) by {
+        have at(function.entry, 2u64) < at(function.entry, load<uint64>(byte_offset(dst, 8))) by {
             rewrite(at(region(15).entry, at(region(13).exit, dst->_M_extent._M_extent_value)), at(region(15).entry, 4u64));
             known();
         }
@@ -365,10 +365,10 @@ void FixtureReader::read(std::span<std::byte> dst) {
             separate(memory(at(call(2).exit, call(2).result)[0]), memory(old(this->data)[0]));
         };
     }
-    have at(region(17).exit, load_uint8((old(this->data) + 0))) == at(region(17).entry, load_uint8((old(this->data) + 0))) by {
+    have at(region(17).exit, load<uint8>((old(this->data) + 0))) == at(region(17).entry, load<uint8>((old(this->data) + 0))) by {
         preserve(memory(old(this->data)[0]), region(17));
     }
-    have load_uint8((old(this->data) + 0)) == old(this->data[0]) by {
+    have load<uint8>((old(this->data) + 0)) == old(this->data[0]) by {
         known();
     }
     have separate(memory(at(call(2).exit, call(2).result)[0]), memory(old(this->data)[1])) by {
@@ -380,10 +380,10 @@ void FixtureReader::read(std::span<std::byte> dst) {
             separate(memory(at(call(2).exit, call(2).result)[0]), memory(old(this->data)[1]));
         };
     }
-    have at(region(17).exit, load_uint8((old(this->data) + 1))) == at(region(17).entry, load_uint8((old(this->data) + 1))) by {
+    have at(region(17).exit, load<uint8>((old(this->data) + 1))) == at(region(17).entry, load<uint8>((old(this->data) + 1))) by {
         preserve(memory(old(this->data)[1]), region(17));
     }
-    have load_uint8((old(this->data) + 1)) == old(this->data[1]) by {
+    have load<uint8>((old(this->data) + 1)) == old(this->data[1]) by {
         known();
     }
     have separate(memory(at(call(2).exit, call(2).result)[0]), memory(old(this->data)[2])) by {
@@ -395,10 +395,10 @@ void FixtureReader::read(std::span<std::byte> dst) {
             separate(memory(at(call(2).exit, call(2).result)[0]), memory(old(this->data)[2]));
         };
     }
-    have at(region(17).exit, load_uint8((old(this->data) + 2))) == at(region(17).entry, load_uint8((old(this->data) + 2))) by {
+    have at(region(17).exit, load<uint8>((old(this->data) + 2))) == at(region(17).entry, load<uint8>((old(this->data) + 2))) by {
         preserve(memory(old(this->data)[2]), region(17));
     }
-    have load_uint8((old(this->data) + 2)) == old(this->data[2]) by {
+    have load<uint8>((old(this->data) + 2)) == old(this->data[2]) by {
         known();
     }
     have separate(memory(old(dst->_M_ptr)[2]), memory(old(dst->_M_ptr)[0])) by {
@@ -414,10 +414,10 @@ void FixtureReader::read(std::span<std::byte> dst) {
             separate(memory(at(call(2).exit, call(2).result)[0]), memory(old(dst->_M_ptr)[0]));
         };
     }
-    have at(region(17).exit, load_uint8((old(dst->_M_ptr) + 0))) == at(region(17).entry, load_uint8((old(dst->_M_ptr) + 0))) by {
+    have at(region(17).exit, load<uint8>((old(dst->_M_ptr) + 0))) == at(region(17).entry, load<uint8>((old(dst->_M_ptr) + 0))) by {
         preserve(memory(old(dst->_M_ptr)[0]), region(17));
     }
-    have load_uint8((old(dst->_M_ptr) + 0)) == old(this->data[0]) by {
+    have load<uint8>((old(dst->_M_ptr) + 0)) == old(this->data[0]) by {
         known();
     }
     have separate(memory(old(dst->_M_ptr)[2]), memory(old(dst->_M_ptr)[1])) by {
@@ -433,13 +433,13 @@ void FixtureReader::read(std::span<std::byte> dst) {
             separate(memory(at(call(2).exit, call(2).result)[0]), memory(old(dst->_M_ptr)[1]));
         };
     }
-    have at(region(17).exit, load_uint8((old(dst->_M_ptr) + 1))) == at(region(17).entry, load_uint8((old(dst->_M_ptr) + 1))) by {
+    have at(region(17).exit, load<uint8>((old(dst->_M_ptr) + 1))) == at(region(17).entry, load<uint8>((old(dst->_M_ptr) + 1))) by {
         preserve(memory(old(dst->_M_ptr)[1]), region(17));
     }
-    have load_uint8((old(dst->_M_ptr) + 1)) == old(this->data[1]) by {
+    have load<uint8>((old(dst->_M_ptr) + 1)) == old(this->data[1]) by {
         known();
     }
-    have load_uint8((old(dst->_M_ptr) + 2)) == old(this->data[2]) by {
+    have load<uint8>((old(dst->_M_ptr) + 2)) == old(this->data[2]) by {
         known();
     }
     have separate(memory(at(call(2).exit, call(2).result)[0]), memory(old(this->data)[3])) by {
@@ -451,17 +451,17 @@ void FixtureReader::read(std::span<std::byte> dst) {
             separate(memory(at(call(2).exit, call(2).result)[0]), memory(old(this->data)[3]));
         };
     }
-    have at(region(17).exit, load_uint8((old(this->data) + 3))) == at(region(17).entry, load_uint8((old(this->data) + 3))) by {
+    have at(region(17).exit, load<uint8>((old(this->data) + 3))) == at(region(17).entry, load<uint8>((old(this->data) + 3))) by {
         preserve(memory(old(this->data)[3]), region(17));
     }
-    have load_uint8((old(this->data) + 3)) == old(this->data[3]) by {
+    have load<uint8>((old(this->data) + 3)) == old(this->data[3]) by {
         known();
     }
     step();
     step();
     step();
     step() by {
-        have at(function.entry, 3u64) < at(function.entry, load_uint64(byte_offset(dst, 8))) by {
+        have at(function.entry, 3u64) < at(function.entry, load<uint64>(byte_offset(dst, 8))) by {
             rewrite(at(region(21).entry, at(region(19).exit, dst->_M_extent._M_extent_value)), at(region(21).entry, 4u64));
             known();
         }
@@ -511,10 +511,10 @@ void FixtureReader::read(std::span<std::byte> dst) {
             separate(memory(at(call(3).exit, call(3).result)[0]), memory(old(this->data)[0]));
         };
     }
-    have at(region(23).exit, load_uint8((old(this->data) + 0))) == at(region(23).entry, load_uint8((old(this->data) + 0))) by {
+    have at(region(23).exit, load<uint8>((old(this->data) + 0))) == at(region(23).entry, load<uint8>((old(this->data) + 0))) by {
         preserve(memory(old(this->data)[0]), region(23));
     }
-    have load_uint8((old(this->data) + 0)) == old(this->data[0]) by {
+    have load<uint8>((old(this->data) + 0)) == old(this->data[0]) by {
         known();
     }
     have separate(memory(at(call(3).exit, call(3).result)[0]), memory(old(this->data)[1])) by {
@@ -526,10 +526,10 @@ void FixtureReader::read(std::span<std::byte> dst) {
             separate(memory(at(call(3).exit, call(3).result)[0]), memory(old(this->data)[1]));
         };
     }
-    have at(region(23).exit, load_uint8((old(this->data) + 1))) == at(region(23).entry, load_uint8((old(this->data) + 1))) by {
+    have at(region(23).exit, load<uint8>((old(this->data) + 1))) == at(region(23).entry, load<uint8>((old(this->data) + 1))) by {
         preserve(memory(old(this->data)[1]), region(23));
     }
-    have load_uint8((old(this->data) + 1)) == old(this->data[1]) by {
+    have load<uint8>((old(this->data) + 1)) == old(this->data[1]) by {
         known();
     }
     have separate(memory(at(call(3).exit, call(3).result)[0]), memory(old(this->data)[2])) by {
@@ -541,10 +541,10 @@ void FixtureReader::read(std::span<std::byte> dst) {
             separate(memory(at(call(3).exit, call(3).result)[0]), memory(old(this->data)[2]));
         };
     }
-    have at(region(23).exit, load_uint8((old(this->data) + 2))) == at(region(23).entry, load_uint8((old(this->data) + 2))) by {
+    have at(region(23).exit, load<uint8>((old(this->data) + 2))) == at(region(23).entry, load<uint8>((old(this->data) + 2))) by {
         preserve(memory(old(this->data)[2]), region(23));
     }
-    have load_uint8((old(this->data) + 2)) == old(this->data[2]) by {
+    have load<uint8>((old(this->data) + 2)) == old(this->data[2]) by {
         known();
     }
     have separate(memory(at(call(3).exit, call(3).result)[0]), memory(old(this->data)[3])) by {
@@ -556,10 +556,10 @@ void FixtureReader::read(std::span<std::byte> dst) {
             separate(memory(at(call(3).exit, call(3).result)[0]), memory(old(this->data)[3]));
         };
     }
-    have at(region(23).exit, load_uint8((old(this->data) + 3))) == at(region(23).entry, load_uint8((old(this->data) + 3))) by {
+    have at(region(23).exit, load<uint8>((old(this->data) + 3))) == at(region(23).entry, load<uint8>((old(this->data) + 3))) by {
         preserve(memory(old(this->data)[3]), region(23));
     }
-    have load_uint8((old(this->data) + 3)) == old(this->data[3]) by {
+    have load<uint8>((old(this->data) + 3)) == old(this->data[3]) by {
         known();
     }
     have separate(memory(old(dst->_M_ptr)[3]), memory(old(dst->_M_ptr)[0])) by {
@@ -575,10 +575,10 @@ void FixtureReader::read(std::span<std::byte> dst) {
             separate(memory(at(call(3).exit, call(3).result)[0]), memory(old(dst->_M_ptr)[0]));
         };
     }
-    have at(region(23).exit, load_uint8((old(dst->_M_ptr) + 0))) == at(region(23).entry, load_uint8((old(dst->_M_ptr) + 0))) by {
+    have at(region(23).exit, load<uint8>((old(dst->_M_ptr) + 0))) == at(region(23).entry, load<uint8>((old(dst->_M_ptr) + 0))) by {
         preserve(memory(old(dst->_M_ptr)[0]), region(23));
     }
-    have load_uint8((old(dst->_M_ptr) + 0)) == old(this->data[0]) by {
+    have load<uint8>((old(dst->_M_ptr) + 0)) == old(this->data[0]) by {
         known();
     }
     have separate(memory(old(dst->_M_ptr)[3]), memory(old(dst->_M_ptr)[1])) by {
@@ -594,10 +594,10 @@ void FixtureReader::read(std::span<std::byte> dst) {
             separate(memory(at(call(3).exit, call(3).result)[0]), memory(old(dst->_M_ptr)[1]));
         };
     }
-    have at(region(23).exit, load_uint8((old(dst->_M_ptr) + 1))) == at(region(23).entry, load_uint8((old(dst->_M_ptr) + 1))) by {
+    have at(region(23).exit, load<uint8>((old(dst->_M_ptr) + 1))) == at(region(23).entry, load<uint8>((old(dst->_M_ptr) + 1))) by {
         preserve(memory(old(dst->_M_ptr)[1]), region(23));
     }
-    have load_uint8((old(dst->_M_ptr) + 1)) == old(this->data[1]) by {
+    have load<uint8>((old(dst->_M_ptr) + 1)) == old(this->data[1]) by {
         known();
     }
     have separate(memory(old(dst->_M_ptr)[3]), memory(old(dst->_M_ptr)[2])) by {
@@ -613,13 +613,13 @@ void FixtureReader::read(std::span<std::byte> dst) {
             separate(memory(at(call(3).exit, call(3).result)[0]), memory(old(dst->_M_ptr)[2]));
         };
     }
-    have at(region(23).exit, load_uint8((old(dst->_M_ptr) + 2))) == at(region(23).entry, load_uint8((old(dst->_M_ptr) + 2))) by {
+    have at(region(23).exit, load<uint8>((old(dst->_M_ptr) + 2))) == at(region(23).entry, load<uint8>((old(dst->_M_ptr) + 2))) by {
         preserve(memory(old(dst->_M_ptr)[2]), region(23));
     }
-    have load_uint8((old(dst->_M_ptr) + 2)) == old(this->data[2]) by {
+    have load<uint8>((old(dst->_M_ptr) + 2)) == old(this->data[2]) by {
         known();
     }
-    have load_uint8((old(dst->_M_ptr) + 3)) == old(this->data[3]) by {
+    have load<uint8>((old(dst->_M_ptr) + 3)) == old(this->data[3]) by {
         known();
     }
     step() by {
@@ -637,10 +637,10 @@ void FixtureReader::read(std::span<std::byte> dst) {
             separate(memory(this->data), memory(old(dst->_M_ptr)[0]));
         };
     }
-    have at(region(24).exit, load_uint8((old(dst->_M_ptr) + 0))) == at(region(24).entry, load_uint8((old(dst->_M_ptr) + 0))) by {
+    have at(region(24).exit, load<uint8>((old(dst->_M_ptr) + 0))) == at(region(24).entry, load<uint8>((old(dst->_M_ptr) + 0))) by {
         preserve(memory(old(dst->_M_ptr)[0]), region(24));
     }
-    have at(region(24).exit, load_uint8((old(dst->_M_ptr) + 0))) == old(this->data[0]) by {
+    have at(region(24).exit, load<uint8>((old(dst->_M_ptr) + 0))) == old(this->data[0]) by {
         known();
     }
     have separate(memory(this->data), memory(old(dst->_M_ptr)[1])) by {
@@ -651,10 +651,10 @@ void FixtureReader::read(std::span<std::byte> dst) {
             separate(memory(this->data), memory(old(dst->_M_ptr)[1]));
         };
     }
-    have at(region(24).exit, load_uint8((old(dst->_M_ptr) + 1))) == at(region(24).entry, load_uint8((old(dst->_M_ptr) + 1))) by {
+    have at(region(24).exit, load<uint8>((old(dst->_M_ptr) + 1))) == at(region(24).entry, load<uint8>((old(dst->_M_ptr) + 1))) by {
         preserve(memory(old(dst->_M_ptr)[1]), region(24));
     }
-    have at(region(24).exit, load_uint8((old(dst->_M_ptr) + 1))) == old(this->data[1]) by {
+    have at(region(24).exit, load<uint8>((old(dst->_M_ptr) + 1))) == old(this->data[1]) by {
         known();
     }
     have separate(memory(this->data), memory(old(dst->_M_ptr)[2])) by {
@@ -665,10 +665,10 @@ void FixtureReader::read(std::span<std::byte> dst) {
             separate(memory(this->data), memory(old(dst->_M_ptr)[2]));
         };
     }
-    have at(region(24).exit, load_uint8((old(dst->_M_ptr) + 2))) == at(region(24).entry, load_uint8((old(dst->_M_ptr) + 2))) by {
+    have at(region(24).exit, load<uint8>((old(dst->_M_ptr) + 2))) == at(region(24).entry, load<uint8>((old(dst->_M_ptr) + 2))) by {
         preserve(memory(old(dst->_M_ptr)[2]), region(24));
     }
-    have at(region(24).exit, load_uint8((old(dst->_M_ptr) + 2))) == old(this->data[2]) by {
+    have at(region(24).exit, load<uint8>((old(dst->_M_ptr) + 2))) == old(this->data[2]) by {
         known();
     }
     have separate(memory(this->data), memory(old(dst->_M_ptr)[3])) by {
@@ -679,10 +679,10 @@ void FixtureReader::read(std::span<std::byte> dst) {
             separate(memory(this->data), memory(old(dst->_M_ptr)[3]));
         };
     }
-    have at(region(24).exit, load_uint8((old(dst->_M_ptr) + 3))) == at(region(24).entry, load_uint8((old(dst->_M_ptr) + 3))) by {
+    have at(region(24).exit, load<uint8>((old(dst->_M_ptr) + 3))) == at(region(24).entry, load<uint8>((old(dst->_M_ptr) + 3))) by {
         preserve(memory(old(dst->_M_ptr)[3]), region(24));
     }
-    have at(region(24).exit, load_uint8((old(dst->_M_ptr) + 3))) == old(this->data[3]) by {
+    have at(region(24).exit, load<uint8>((old(dst->_M_ptr) + 3))) == old(this->data[3]) by {
         known();
     }
     have separate(memory(this->remaining), memory(old(dst->_M_ptr)[0])) by {
@@ -693,10 +693,10 @@ void FixtureReader::read(std::span<std::byte> dst) {
             separate(memory(this->remaining), memory(old(dst->_M_ptr)[0]));
         };
     }
-    have at(region(25).exit, load_uint8((old(dst->_M_ptr) + 0))) == at(region(25).entry, load_uint8((old(dst->_M_ptr) + 0))) by {
+    have at(region(25).exit, load<uint8>((old(dst->_M_ptr) + 0))) == at(region(25).entry, load<uint8>((old(dst->_M_ptr) + 0))) by {
         preserve(memory(old(dst->_M_ptr)[0]), region(25));
     }
-    have at(region(25).exit, load_uint8((old(dst->_M_ptr) + 0))) == old(this->data[0]) by {
+    have at(region(25).exit, load<uint8>((old(dst->_M_ptr) + 0))) == old(this->data[0]) by {
         known();
     }
     have separate(memory(this->remaining), memory(old(dst->_M_ptr)[1])) by {
@@ -707,10 +707,10 @@ void FixtureReader::read(std::span<std::byte> dst) {
             separate(memory(this->remaining), memory(old(dst->_M_ptr)[1]));
         };
     }
-    have at(region(25).exit, load_uint8((old(dst->_M_ptr) + 1))) == at(region(25).entry, load_uint8((old(dst->_M_ptr) + 1))) by {
+    have at(region(25).exit, load<uint8>((old(dst->_M_ptr) + 1))) == at(region(25).entry, load<uint8>((old(dst->_M_ptr) + 1))) by {
         preserve(memory(old(dst->_M_ptr)[1]), region(25));
     }
-    have at(region(25).exit, load_uint8((old(dst->_M_ptr) + 1))) == old(this->data[1]) by {
+    have at(region(25).exit, load<uint8>((old(dst->_M_ptr) + 1))) == old(this->data[1]) by {
         known();
     }
     have separate(memory(this->remaining), memory(old(dst->_M_ptr)[2])) by {
@@ -721,10 +721,10 @@ void FixtureReader::read(std::span<std::byte> dst) {
             separate(memory(this->remaining), memory(old(dst->_M_ptr)[2]));
         };
     }
-    have at(region(25).exit, load_uint8((old(dst->_M_ptr) + 2))) == at(region(25).entry, load_uint8((old(dst->_M_ptr) + 2))) by {
+    have at(region(25).exit, load<uint8>((old(dst->_M_ptr) + 2))) == at(region(25).entry, load<uint8>((old(dst->_M_ptr) + 2))) by {
         preserve(memory(old(dst->_M_ptr)[2]), region(25));
     }
-    have at(region(25).exit, load_uint8((old(dst->_M_ptr) + 2))) == old(this->data[2]) by {
+    have at(region(25).exit, load<uint8>((old(dst->_M_ptr) + 2))) == old(this->data[2]) by {
         known();
     }
     have separate(memory(this->remaining), memory(old(dst->_M_ptr)[3])) by {
@@ -735,10 +735,10 @@ void FixtureReader::read(std::span<std::byte> dst) {
             separate(memory(this->remaining), memory(old(dst->_M_ptr)[3]));
         };
     }
-    have at(region(25).exit, load_uint8((old(dst->_M_ptr) + 3))) == at(region(25).entry, load_uint8((old(dst->_M_ptr) + 3))) by {
+    have at(region(25).exit, load<uint8>((old(dst->_M_ptr) + 3))) == at(region(25).entry, load<uint8>((old(dst->_M_ptr) + 3))) by {
         preserve(memory(old(dst->_M_ptr)[3]), region(25));
     }
-    have at(region(25).exit, load_uint8((old(dst->_M_ptr) + 3))) == old(this->data[3]) by {
+    have at(region(25).exit, load<uint8>((old(dst->_M_ptr) + 3))) == old(this->data[3]) by {
         known();
     }
     have separate(memory(this->data), memory(old(this->data)[0])) by {
@@ -749,10 +749,10 @@ void FixtureReader::read(std::span<std::byte> dst) {
             separate(memory(this->data), memory(old(this->data)[0]));
         };
     }
-    have at(region(24).exit, load_uint8((old(this->data) + 0))) == at(region(24).entry, load_uint8((old(this->data) + 0))) by {
+    have at(region(24).exit, load<uint8>((old(this->data) + 0))) == at(region(24).entry, load<uint8>((old(this->data) + 0))) by {
         preserve(memory(old(this->data)[0]), region(24));
     }
-    have at(region(24).exit, load_uint8((old(this->data) + 0))) == old(this->data[0]) by {
+    have at(region(24).exit, load<uint8>((old(this->data) + 0))) == old(this->data[0]) by {
         known();
     }
     have separate(memory(this->data), memory(old(this->data)[1])) by {
@@ -763,10 +763,10 @@ void FixtureReader::read(std::span<std::byte> dst) {
             separate(memory(this->data), memory(old(this->data)[1]));
         };
     }
-    have at(region(24).exit, load_uint8((old(this->data) + 1))) == at(region(24).entry, load_uint8((old(this->data) + 1))) by {
+    have at(region(24).exit, load<uint8>((old(this->data) + 1))) == at(region(24).entry, load<uint8>((old(this->data) + 1))) by {
         preserve(memory(old(this->data)[1]), region(24));
     }
-    have at(region(24).exit, load_uint8((old(this->data) + 1))) == old(this->data[1]) by {
+    have at(region(24).exit, load<uint8>((old(this->data) + 1))) == old(this->data[1]) by {
         known();
     }
     have separate(memory(this->data), memory(old(this->data)[2])) by {
@@ -777,10 +777,10 @@ void FixtureReader::read(std::span<std::byte> dst) {
             separate(memory(this->data), memory(old(this->data)[2]));
         };
     }
-    have at(region(24).exit, load_uint8((old(this->data) + 2))) == at(region(24).entry, load_uint8((old(this->data) + 2))) by {
+    have at(region(24).exit, load<uint8>((old(this->data) + 2))) == at(region(24).entry, load<uint8>((old(this->data) + 2))) by {
         preserve(memory(old(this->data)[2]), region(24));
     }
-    have at(region(24).exit, load_uint8((old(this->data) + 2))) == old(this->data[2]) by {
+    have at(region(24).exit, load<uint8>((old(this->data) + 2))) == old(this->data[2]) by {
         known();
     }
     have separate(memory(this->data), memory(old(this->data)[3])) by {
@@ -791,10 +791,10 @@ void FixtureReader::read(std::span<std::byte> dst) {
             separate(memory(this->data), memory(old(this->data)[3]));
         };
     }
-    have at(region(24).exit, load_uint8((old(this->data) + 3))) == at(region(24).entry, load_uint8((old(this->data) + 3))) by {
+    have at(region(24).exit, load<uint8>((old(this->data) + 3))) == at(region(24).entry, load<uint8>((old(this->data) + 3))) by {
         preserve(memory(old(this->data)[3]), region(24));
     }
-    have at(region(24).exit, load_uint8((old(this->data) + 3))) == old(this->data[3]) by {
+    have at(region(24).exit, load<uint8>((old(this->data) + 3))) == old(this->data[3]) by {
         known();
     }
     have separate(memory(this->remaining), memory(old(this->data)[0])) by {
@@ -805,10 +805,10 @@ void FixtureReader::read(std::span<std::byte> dst) {
             separate(memory(this->remaining), memory(old(this->data)[0]));
         };
     }
-    have at(region(25).exit, load_uint8((old(this->data) + 0))) == at(region(25).entry, load_uint8((old(this->data) + 0))) by {
+    have at(region(25).exit, load<uint8>((old(this->data) + 0))) == at(region(25).entry, load<uint8>((old(this->data) + 0))) by {
         preserve(memory(old(this->data)[0]), region(25));
     }
-    have at(region(25).exit, load_uint8((old(this->data) + 0))) == old(this->data[0]) by {
+    have at(region(25).exit, load<uint8>((old(this->data) + 0))) == old(this->data[0]) by {
         known();
     }
     have separate(memory(this->remaining), memory(old(this->data)[1])) by {
@@ -819,10 +819,10 @@ void FixtureReader::read(std::span<std::byte> dst) {
             separate(memory(this->remaining), memory(old(this->data)[1]));
         };
     }
-    have at(region(25).exit, load_uint8((old(this->data) + 1))) == at(region(25).entry, load_uint8((old(this->data) + 1))) by {
+    have at(region(25).exit, load<uint8>((old(this->data) + 1))) == at(region(25).entry, load<uint8>((old(this->data) + 1))) by {
         preserve(memory(old(this->data)[1]), region(25));
     }
-    have at(region(25).exit, load_uint8((old(this->data) + 1))) == old(this->data[1]) by {
+    have at(region(25).exit, load<uint8>((old(this->data) + 1))) == old(this->data[1]) by {
         known();
     }
     have separate(memory(this->remaining), memory(old(this->data)[2])) by {
@@ -833,10 +833,10 @@ void FixtureReader::read(std::span<std::byte> dst) {
             separate(memory(this->remaining), memory(old(this->data)[2]));
         };
     }
-    have at(region(25).exit, load_uint8((old(this->data) + 2))) == at(region(25).entry, load_uint8((old(this->data) + 2))) by {
+    have at(region(25).exit, load<uint8>((old(this->data) + 2))) == at(region(25).entry, load<uint8>((old(this->data) + 2))) by {
         preserve(memory(old(this->data)[2]), region(25));
     }
-    have at(region(25).exit, load_uint8((old(this->data) + 2))) == old(this->data[2]) by {
+    have at(region(25).exit, load<uint8>((old(this->data) + 2))) == old(this->data[2]) by {
         known();
     }
     have separate(memory(this->remaining), memory(old(this->data)[3])) by {
@@ -847,10 +847,10 @@ void FixtureReader::read(std::span<std::byte> dst) {
             separate(memory(this->remaining), memory(old(this->data)[3]));
         };
     }
-    have at(region(25).exit, load_uint8((old(this->data) + 3))) == at(region(25).entry, load_uint8((old(this->data) + 3))) by {
+    have at(region(25).exit, load<uint8>((old(this->data) + 3))) == at(region(25).entry, load<uint8>((old(this->data) + 3))) by {
         preserve(memory(old(this->data)[3]), region(25));
     }
-    have at(region(25).exit, load_uint8((old(this->data) + 3))) == old(this->data[3]) by {
+    have at(region(25).exit, load<uint8>((old(this->data) + 3))) == old(this->data[3]) by {
         known();
     }
     have separate(memory(this->data), memory(this->remaining)) by {
@@ -868,9 +868,9 @@ void FixtureReader::read(std::span<std::byte> dst) {
         known();
     }
     have to_integer(this->remaining) == (to_integer(old(this->remaining)) - to_integer(4u64)) by {
-        have (let integer_value: Integer = to_integer(((at(region(25).entry, load_uint64(byte_offset(this, 8))) - 4u64) as uint64)); integer_value) == (to_integer(old((load_uint64(byte_offset(this, 8)) as uint64))) - 4) by {
-            have 0 <= (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) - 4) by {
-                have 0 <= (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) - 4) by {
+        have (let integer_value: Integer = to_integer(((at(region(25).entry, load<uint64>(byte_offset(this, 8))) - 4u64) as uint64)); integer_value) == (to_integer(old((load<uint64>(byte_offset(this, 8)) as uint64))) - 4) by {
+            have 0 <= (to_integer(at(region(25).entry, load<uint64>(byte_offset(this, 8)))) - 4) by {
+                have 0 <= (to_integer(at(region(25).entry, load<uint64>(byte_offset(this, 8)))) - 4) by {
                     have ((-1 * old(to_integer(this->remaining))) + at(region(24).exit, to_integer(this->remaining))) == 0 by {
                         have at(region(24).exit, to_integer(this->remaining)) == old(to_integer(this->remaining)) by {
                             normalize() using {
@@ -964,90 +964,90 @@ void FixtureReader::read(std::span<std::byte> dst) {
                             (let integer_value: Integer = 0; integer_value) == (0 + 0);
                         };
                     }
-                    have ((-1 * at(region(24).exit, to_integer(this->remaining))) + 4) == (0 - (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) - 4)) by {
+                    have ((-1 * at(region(24).exit, to_integer(this->remaining))) + 4) == (0 - (to_integer(at(region(25).entry, load<uint64>(byte_offset(this, 8)))) - 4)) by {
                         normalize();
                     }
-                    apply(click::integer::difference_le(0, (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) - 4), ((-1 * at(region(24).exit, to_integer(this->remaining))) + 4))) using {
+                    apply(click::integer::difference_le(0, (to_integer(at(region(25).entry, load<uint64>(byte_offset(this, 8)))) - 4), ((-1 * at(region(24).exit, to_integer(this->remaining))) + 4))) using {
                         ((-1 * at(region(24).exit, to_integer(this->remaining))) + 4) <= 0;
                         ((-1 * at(region(24).exit, to_integer(this->remaining))) + 4) == (0 -
-                            (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) -
+                            (to_integer(at(region(25).entry, load<uint64>(byte_offset(this, 8)))) -
                             4));
                     };
                 }
                 normalize() using {
-                    0 <= (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) - 4);
+                    0 <= (to_integer(at(region(25).entry, load<uint64>(byte_offset(this, 8)))) - 4);
                 };
             }
-            have (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) - 4) <= 18446744073709551615 by {
-                have (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) - 4) <= 18446744073709551615 by {
-                    have (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) + -18446744073709551615) <= 0 by {
-                        have to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) <= 18446744073709551615 by {
+            have (to_integer(at(region(25).entry, load<uint64>(byte_offset(this, 8)))) - 4) <= 18446744073709551615 by {
+                have (to_integer(at(region(25).entry, load<uint64>(byte_offset(this, 8)))) - 4) <= 18446744073709551615 by {
+                    have (to_integer(at(region(25).entry, load<uint64>(byte_offset(this, 8)))) + -18446744073709551615) <= 0 by {
+                        have to_integer(at(region(25).entry, load<uint64>(byte_offset(this, 8)))) <= 18446744073709551615 by {
                             normalize();
                         }
-                        have to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) <= to_integer(18446744073709551615u64) by {
+                        have to_integer(at(region(25).entry, load<uint64>(byte_offset(this, 8)))) <= to_integer(18446744073709551615u64) by {
                             normalize() using {
-                                to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8))))
+                                to_integer(at(region(25).entry, load<uint64>(byte_offset(this, 8))))
                                     <= 18446744073709551615;
                             };
                         }
-                        have (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) + -18446744073709551615) == (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) - to_integer(18446744073709551615u64)) by {
+                        have (to_integer(at(region(25).entry, load<uint64>(byte_offset(this, 8)))) + -18446744073709551615) == (to_integer(at(region(25).entry, load<uint64>(byte_offset(this, 8)))) - to_integer(18446744073709551615u64)) by {
                             normalize();
                         }
-                        apply(click::integer::le_difference(to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))), to_integer(18446744073709551615u64), (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) + -18446744073709551615))) using {
-                            to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) <=
+                        apply(click::integer::le_difference(to_integer(at(region(25).entry, load<uint64>(byte_offset(this, 8)))), to_integer(18446744073709551615u64), (to_integer(at(region(25).entry, load<uint64>(byte_offset(this, 8)))) + -18446744073709551615))) using {
+                            to_integer(at(region(25).entry, load<uint64>(byte_offset(this, 8)))) <=
                                 to_integer(18446744073709551615u64);
-                            (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) +
+                            (to_integer(at(region(25).entry, load<uint64>(byte_offset(this, 8)))) +
                                 -18446744073709551615) == (to_integer(at(region(25).entry,
-                                load_uint64(byte_offset(this, 8)))) -
+                                load<uint64>(byte_offset(this, 8)))) -
                                 to_integer(18446744073709551615u64));
                         };
                     }
                     have (let integer_value: Integer = -4; integer_value) <= 0 by {
                         normalize();
                     }
-                    have (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) + -18446744073709551619) <= 0 by {
-                        have (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) + -18446744073709551615 + -4) <= (0 + 0) by {
-                            apply(click::integer::add_le((to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) + -18446744073709551615), 0, -4, 0)) using {
-                                (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8))))
+                    have (to_integer(at(region(25).entry, load<uint64>(byte_offset(this, 8)))) + -18446744073709551619) <= 0 by {
+                        have (to_integer(at(region(25).entry, load<uint64>(byte_offset(this, 8)))) + -18446744073709551615 + -4) <= (0 + 0) by {
+                            apply(click::integer::add_le((to_integer(at(region(25).entry, load<uint64>(byte_offset(this, 8)))) + -18446744073709551615), 0, -4, 0)) using {
+                                (to_integer(at(region(25).entry, load<uint64>(byte_offset(this, 8))))
                                     + -18446744073709551615) <= 0;
                                 (let integer_value: Integer = -4; integer_value) <= 0;
                             };
                         }
-                        have (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) + -18446744073709551619) == (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) + -18446744073709551615 + -4) by {
+                        have (to_integer(at(region(25).entry, load<uint64>(byte_offset(this, 8)))) + -18446744073709551619) == (to_integer(at(region(25).entry, load<uint64>(byte_offset(this, 8)))) + -18446744073709551615 + -4) by {
                             normalize();
                         }
                         have (let integer_value: Integer = 0; integer_value) == (0 + 0) by {
                             normalize();
                         }
-                        apply(click::integer::le_substitute((to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) + -18446744073709551615 + -4), (0 + 0), (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) + -18446744073709551619), 0)) using {
-                            (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) +
+                        apply(click::integer::le_substitute((to_integer(at(region(25).entry, load<uint64>(byte_offset(this, 8)))) + -18446744073709551615 + -4), (0 + 0), (to_integer(at(region(25).entry, load<uint64>(byte_offset(this, 8)))) + -18446744073709551619), 0)) using {
+                            (to_integer(at(region(25).entry, load<uint64>(byte_offset(this, 8)))) +
                                 -18446744073709551615 + -4) <= (0 + 0);
-                            (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) +
+                            (to_integer(at(region(25).entry, load<uint64>(byte_offset(this, 8)))) +
                                 -18446744073709551619) == (to_integer(at(region(25).entry,
-                                load_uint64(byte_offset(this, 8)))) + -18446744073709551615 + -4);
+                                load<uint64>(byte_offset(this, 8)))) + -18446744073709551615 + -4);
                             (let integer_value: Integer = 0; integer_value) == (0 + 0);
                         };
                     }
-                    have (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) + -18446744073709551619) == ((to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) - 4) - 18446744073709551615) by {
+                    have (to_integer(at(region(25).entry, load<uint64>(byte_offset(this, 8)))) + -18446744073709551619) == ((to_integer(at(region(25).entry, load<uint64>(byte_offset(this, 8)))) - 4) - 18446744073709551615) by {
                         normalize();
                     }
-                    apply(click::integer::difference_le((to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) - 4), 18446744073709551615, (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) + -18446744073709551619))) using {
-                        (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) +
+                    apply(click::integer::difference_le((to_integer(at(region(25).entry, load<uint64>(byte_offset(this, 8)))) - 4), 18446744073709551615, (to_integer(at(region(25).entry, load<uint64>(byte_offset(this, 8)))) + -18446744073709551619))) using {
+                        (to_integer(at(region(25).entry, load<uint64>(byte_offset(this, 8)))) +
                             -18446744073709551619) <= 0;
-                        (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) +
+                        (to_integer(at(region(25).entry, load<uint64>(byte_offset(this, 8)))) +
                             -18446744073709551619) == ((to_integer(at(region(25).entry,
-                            load_uint64(byte_offset(this, 8)))) - 4) - 18446744073709551615);
+                            load<uint64>(byte_offset(this, 8)))) - 4) - 18446744073709551615);
                     };
                 }
                 normalize() using {
-                    (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) - 4) <=
+                    (to_integer(at(region(25).entry, load<uint64>(byte_offset(this, 8)))) - 4) <=
                         18446744073709551615;
                 };
             }
-            have (let integer_value: Integer = to_integer(((at(region(25).entry, load_uint64(byte_offset(this, 8))) - 4u64) as uint64)); integer_value) == (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) - 4) by {
+            have (let integer_value: Integer = to_integer(((at(region(25).entry, load<uint64>(byte_offset(this, 8))) - 4u64) as uint64)); integer_value) == (to_integer(at(region(25).entry, load<uint64>(byte_offset(this, 8)))) - 4) by {
                 normalize() using {
-                    0 <= (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) - 4);
-                    (to_integer(at(region(25).entry, load_uint64(byte_offset(this, 8)))) - 4) <=
+                    0 <= (to_integer(at(region(25).entry, load<uint64>(byte_offset(this, 8)))) - 4);
+                    (to_integer(at(region(25).entry, load<uint64>(byte_offset(this, 8)))) - 4) <=
                         18446744073709551615;
                 };
             }

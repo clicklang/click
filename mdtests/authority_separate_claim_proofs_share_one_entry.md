@@ -15,7 +15,7 @@ int32 *select(int32 *result, int32 *next) {
     views result[0..1];
     views next[0..1];
     requires program::result[0] == 3 and next[0] == 7;
-    ensures load_int32(program::result) == 3;
+    ensures load<int32>(program::result) == 3;
     ensures *program::result == 3;
     ensures byte_offset(program::result, 0) == program::result;
     ensures address(program::result) == address(program::result);

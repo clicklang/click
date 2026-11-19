@@ -2,7 +2,7 @@ verifying "copy.cpp";
 int32 change(struct View value) {
  owns value.data[0..1];
  ensures result == 7;
- ensures load_int32(old(value.data)) == 9;
+ ensures load<int32>(old(value.data)) == 9;
 }
 int32 probe(struct View& input) {
  views input.data; views input.size;

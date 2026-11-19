@@ -270,10 +270,7 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "invariant",
     "known",
     "let",
-    "load_int32",
-    "load_int32_pointer",
-    "load_uint8",
-    "load_uint8_pointer",
+    "load",
     "loop",
     "mark",
     "match",
@@ -5813,7 +5810,7 @@ enum ContractSegmentSurface {
         /// How the contract spelled the struct the field belongs to, when the
         /// parse had it. A base reached through a link reads as `old->left`
         /// there, which is what the user wrote; the lowered `ProgramExpression` for
-        /// the same place reads as `load_int32_pointer(old)`, which is not.
+        /// the same place reads as `load<int32*>(old)`, which is not.
         base: Option<Box<ContractExpression>>,
         name: String,
         element_width: Option<u32>,

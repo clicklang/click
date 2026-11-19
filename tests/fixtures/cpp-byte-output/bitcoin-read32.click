@@ -87,39 +87,39 @@ void FixtureReader::read(std::span<std::byte> dst) {
     have separate(region(5).footprint, memory(old(this->data)[0])) by {
         normalize() using { separate(memory(at(call(0).exit, call(0).result)[0]), memory(old(this->data)[0])); };
     }
-    have at(region(5).exit, load_uint8(old(this->data) + 0)) == at(region(5).entry, load_uint8(old(this->data) + 0)) by {
+    have at(region(5).exit, load<uint8>(old(this->data) + 0)) == at(region(5).entry, load<uint8>(old(this->data) + 0)) by {
         preserve(memory(old(this->data)[0]), region(5));
     }
-    have load_uint8(old(this->data) + 0) == old(this->data[0]) by { solve(); }
+    have load<uint8>(old(this->data) + 0) == old(this->data[0]) by { solve(); }
 
-    have load_uint8(old(std_span_data(dst)) + 0) == old(this->data[0]) by { solve(); }
+    have load<uint8>(old(std_span_data(dst)) + 0) == old(this->data[0]) by { solve(); }
 
     have separate(memory(at(call(0).exit, call(0).result)[0]), memory(old(this->data)[1])) by { solve(); }
     have separate(region(5).footprint, memory(old(this->data)[1])) by {
         normalize() using { separate(memory(at(call(0).exit, call(0).result)[0]), memory(old(this->data)[1])); };
     }
-    have at(region(5).exit, load_uint8(old(this->data) + 1)) == at(region(5).entry, load_uint8(old(this->data) + 1)) by {
+    have at(region(5).exit, load<uint8>(old(this->data) + 1)) == at(region(5).entry, load<uint8>(old(this->data) + 1)) by {
         preserve(memory(old(this->data)[1]), region(5));
     }
-    have load_uint8(old(this->data) + 1) == old(this->data[1]) by { solve(); }
+    have load<uint8>(old(this->data) + 1) == old(this->data[1]) by { solve(); }
 
     have separate(memory(at(call(0).exit, call(0).result)[0]), memory(old(this->data)[2])) by { solve(); }
     have separate(region(5).footprint, memory(old(this->data)[2])) by {
         normalize() using { separate(memory(at(call(0).exit, call(0).result)[0]), memory(old(this->data)[2])); };
     }
-    have at(region(5).exit, load_uint8(old(this->data) + 2)) == at(region(5).entry, load_uint8(old(this->data) + 2)) by {
+    have at(region(5).exit, load<uint8>(old(this->data) + 2)) == at(region(5).entry, load<uint8>(old(this->data) + 2)) by {
         preserve(memory(old(this->data)[2]), region(5));
     }
-    have load_uint8(old(this->data) + 2) == old(this->data[2]) by { solve(); }
+    have load<uint8>(old(this->data) + 2) == old(this->data[2]) by { solve(); }
 
     have separate(memory(at(call(0).exit, call(0).result)[0]), memory(old(this->data)[3])) by { solve(); }
     have separate(region(5).footprint, memory(old(this->data)[3])) by {
         normalize() using { separate(memory(at(call(0).exit, call(0).result)[0]), memory(old(this->data)[3])); };
     }
-    have at(region(5).exit, load_uint8(old(this->data) + 3)) == at(region(5).entry, load_uint8(old(this->data) + 3)) by {
+    have at(region(5).exit, load<uint8>(old(this->data) + 3)) == at(region(5).entry, load<uint8>(old(this->data) + 3)) by {
         preserve(memory(old(this->data)[3]), region(5));
     }
-    have load_uint8(old(this->data) + 3) == old(this->data[3]) by { solve(); }
+    have load<uint8>(old(this->data) + 3) == old(this->data[3]) by { solve(); }
 
     step_until(call(1));
     step();
@@ -147,19 +147,19 @@ void FixtureReader::read(std::span<std::byte> dst) {
     have separate(region(11).footprint, memory(old(this->data)[0])) by {
         normalize() using { separate(memory(at(call(1).exit, call(1).result)[0]), memory(old(this->data)[0])); };
     }
-    have at(region(11).exit, load_uint8(old(this->data) + 0)) == at(region(11).entry, load_uint8(old(this->data) + 0)) by {
+    have at(region(11).exit, load<uint8>(old(this->data) + 0)) == at(region(11).entry, load<uint8>(old(this->data) + 0)) by {
         preserve(memory(old(this->data)[0]), region(11));
     }
-    have load_uint8(old(this->data) + 0) == old(this->data[0]) by { solve(); }
+    have load<uint8>(old(this->data) + 0) == old(this->data[0]) by { solve(); }
 
     have separate(memory(at(call(1).exit, call(1).result)[0]), memory(old(this->data)[1])) by { solve(); }
     have separate(region(11).footprint, memory(old(this->data)[1])) by {
         normalize() using { separate(memory(at(call(1).exit, call(1).result)[0]), memory(old(this->data)[1])); };
     }
-    have at(region(11).exit, load_uint8(old(this->data) + 1)) == at(region(11).entry, load_uint8(old(this->data) + 1)) by {
+    have at(region(11).exit, load<uint8>(old(this->data) + 1)) == at(region(11).entry, load<uint8>(old(this->data) + 1)) by {
         preserve(memory(old(this->data)[1]), region(11));
     }
-    have load_uint8(old(this->data) + 1) == old(this->data[1]) by { solve(); }
+    have load<uint8>(old(this->data) + 1) == old(this->data[1]) by { solve(); }
 
     have separate(memory(old(std_span_data(dst))[1]), memory(old(std_span_data(dst))[0])) by {
         apply(click::separation::separate_elements(old(std_span_data(dst)), 1, 0)) using { 1 != 0; };
@@ -168,30 +168,30 @@ void FixtureReader::read(std::span<std::byte> dst) {
     have separate(region(11).footprint, memory(old(std_span_data(dst))[0])) by {
         normalize() using { separate(memory(at(call(1).exit, call(1).result)[0]), memory(old(std_span_data(dst))[0])); };
     }
-    have at(region(11).exit, load_uint8(old(std_span_data(dst)) + 0)) == at(region(11).entry, load_uint8(old(std_span_data(dst)) + 0)) by {
+    have at(region(11).exit, load<uint8>(old(std_span_data(dst)) + 0)) == at(region(11).entry, load<uint8>(old(std_span_data(dst)) + 0)) by {
         preserve(memory(old(std_span_data(dst))[0]), region(11));
     }
-    have load_uint8(old(std_span_data(dst)) + 0) == old(this->data[0]) by { solve(); }
+    have load<uint8>(old(std_span_data(dst)) + 0) == old(this->data[0]) by { solve(); }
 
-    have load_uint8(old(std_span_data(dst)) + 1) == old(this->data[1]) by { solve(); }
+    have load<uint8>(old(std_span_data(dst)) + 1) == old(this->data[1]) by { solve(); }
 
     have separate(memory(at(call(1).exit, call(1).result)[0]), memory(old(this->data)[2])) by { solve(); }
     have separate(region(11).footprint, memory(old(this->data)[2])) by {
         normalize() using { separate(memory(at(call(1).exit, call(1).result)[0]), memory(old(this->data)[2])); };
     }
-    have at(region(11).exit, load_uint8(old(this->data) + 2)) == at(region(11).entry, load_uint8(old(this->data) + 2)) by {
+    have at(region(11).exit, load<uint8>(old(this->data) + 2)) == at(region(11).entry, load<uint8>(old(this->data) + 2)) by {
         preserve(memory(old(this->data)[2]), region(11));
     }
-    have load_uint8(old(this->data) + 2) == old(this->data[2]) by { solve(); }
+    have load<uint8>(old(this->data) + 2) == old(this->data[2]) by { solve(); }
 
     have separate(memory(at(call(1).exit, call(1).result)[0]), memory(old(this->data)[3])) by { solve(); }
     have separate(region(11).footprint, memory(old(this->data)[3])) by {
         normalize() using { separate(memory(at(call(1).exit, call(1).result)[0]), memory(old(this->data)[3])); };
     }
-    have at(region(11).exit, load_uint8(old(this->data) + 3)) == at(region(11).entry, load_uint8(old(this->data) + 3)) by {
+    have at(region(11).exit, load<uint8>(old(this->data) + 3)) == at(region(11).entry, load<uint8>(old(this->data) + 3)) by {
         preserve(memory(old(this->data)[3]), region(11));
     }
-    have load_uint8(old(this->data) + 3) == old(this->data[3]) by { solve(); }
+    have load<uint8>(old(this->data) + 3) == old(this->data[3]) by { solve(); }
 
     step_until(call(2));
     step();
@@ -219,28 +219,28 @@ void FixtureReader::read(std::span<std::byte> dst) {
     have separate(region(17).footprint, memory(old(this->data)[0])) by {
         normalize() using { separate(memory(at(call(2).exit, call(2).result)[0]), memory(old(this->data)[0])); };
     }
-    have at(region(17).exit, load_uint8(old(this->data) + 0)) == at(region(17).entry, load_uint8(old(this->data) + 0)) by {
+    have at(region(17).exit, load<uint8>(old(this->data) + 0)) == at(region(17).entry, load<uint8>(old(this->data) + 0)) by {
         preserve(memory(old(this->data)[0]), region(17));
     }
-    have load_uint8(old(this->data) + 0) == old(this->data[0]) by { solve(); }
+    have load<uint8>(old(this->data) + 0) == old(this->data[0]) by { solve(); }
 
     have separate(memory(at(call(2).exit, call(2).result)[0]), memory(old(this->data)[1])) by { solve(); }
     have separate(region(17).footprint, memory(old(this->data)[1])) by {
         normalize() using { separate(memory(at(call(2).exit, call(2).result)[0]), memory(old(this->data)[1])); };
     }
-    have at(region(17).exit, load_uint8(old(this->data) + 1)) == at(region(17).entry, load_uint8(old(this->data) + 1)) by {
+    have at(region(17).exit, load<uint8>(old(this->data) + 1)) == at(region(17).entry, load<uint8>(old(this->data) + 1)) by {
         preserve(memory(old(this->data)[1]), region(17));
     }
-    have load_uint8(old(this->data) + 1) == old(this->data[1]) by { solve(); }
+    have load<uint8>(old(this->data) + 1) == old(this->data[1]) by { solve(); }
 
     have separate(memory(at(call(2).exit, call(2).result)[0]), memory(old(this->data)[2])) by { solve(); }
     have separate(region(17).footprint, memory(old(this->data)[2])) by {
         normalize() using { separate(memory(at(call(2).exit, call(2).result)[0]), memory(old(this->data)[2])); };
     }
-    have at(region(17).exit, load_uint8(old(this->data) + 2)) == at(region(17).entry, load_uint8(old(this->data) + 2)) by {
+    have at(region(17).exit, load<uint8>(old(this->data) + 2)) == at(region(17).entry, load<uint8>(old(this->data) + 2)) by {
         preserve(memory(old(this->data)[2]), region(17));
     }
-    have load_uint8(old(this->data) + 2) == old(this->data[2]) by { solve(); }
+    have load<uint8>(old(this->data) + 2) == old(this->data[2]) by { solve(); }
 
     have separate(memory(old(std_span_data(dst))[2]), memory(old(std_span_data(dst))[0])) by {
         apply(click::separation::separate_elements(old(std_span_data(dst)), 2, 0)) using { 2 != 0; };
@@ -249,10 +249,10 @@ void FixtureReader::read(std::span<std::byte> dst) {
     have separate(region(17).footprint, memory(old(std_span_data(dst))[0])) by {
         normalize() using { separate(memory(at(call(2).exit, call(2).result)[0]), memory(old(std_span_data(dst))[0])); };
     }
-    have at(region(17).exit, load_uint8(old(std_span_data(dst)) + 0)) == at(region(17).entry, load_uint8(old(std_span_data(dst)) + 0)) by {
+    have at(region(17).exit, load<uint8>(old(std_span_data(dst)) + 0)) == at(region(17).entry, load<uint8>(old(std_span_data(dst)) + 0)) by {
         preserve(memory(old(std_span_data(dst))[0]), region(17));
     }
-    have load_uint8(old(std_span_data(dst)) + 0) == old(this->data[0]) by { solve(); }
+    have load<uint8>(old(std_span_data(dst)) + 0) == old(this->data[0]) by { solve(); }
 
     have separate(memory(old(std_span_data(dst))[2]), memory(old(std_span_data(dst))[1])) by {
         apply(click::separation::separate_elements(old(std_span_data(dst)), 2, 1)) using { 2 != 1; };
@@ -261,21 +261,21 @@ void FixtureReader::read(std::span<std::byte> dst) {
     have separate(region(17).footprint, memory(old(std_span_data(dst))[1])) by {
         normalize() using { separate(memory(at(call(2).exit, call(2).result)[0]), memory(old(std_span_data(dst))[1])); };
     }
-    have at(region(17).exit, load_uint8(old(std_span_data(dst)) + 1)) == at(region(17).entry, load_uint8(old(std_span_data(dst)) + 1)) by {
+    have at(region(17).exit, load<uint8>(old(std_span_data(dst)) + 1)) == at(region(17).entry, load<uint8>(old(std_span_data(dst)) + 1)) by {
         preserve(memory(old(std_span_data(dst))[1]), region(17));
     }
-    have load_uint8(old(std_span_data(dst)) + 1) == old(this->data[1]) by { solve(); }
+    have load<uint8>(old(std_span_data(dst)) + 1) == old(this->data[1]) by { solve(); }
 
-    have load_uint8(old(std_span_data(dst)) + 2) == old(this->data[2]) by { solve(); }
+    have load<uint8>(old(std_span_data(dst)) + 2) == old(this->data[2]) by { solve(); }
 
     have separate(memory(at(call(2).exit, call(2).result)[0]), memory(old(this->data)[3])) by { solve(); }
     have separate(region(17).footprint, memory(old(this->data)[3])) by {
         normalize() using { separate(memory(at(call(2).exit, call(2).result)[0]), memory(old(this->data)[3])); };
     }
-    have at(region(17).exit, load_uint8(old(this->data) + 3)) == at(region(17).entry, load_uint8(old(this->data) + 3)) by {
+    have at(region(17).exit, load<uint8>(old(this->data) + 3)) == at(region(17).entry, load<uint8>(old(this->data) + 3)) by {
         preserve(memory(old(this->data)[3]), region(17));
     }
-    have load_uint8(old(this->data) + 3) == old(this->data[3]) by { solve(); }
+    have load<uint8>(old(this->data) + 3) == old(this->data[3]) by { solve(); }
 
     step_until(call(3));
     step();
@@ -303,37 +303,37 @@ void FixtureReader::read(std::span<std::byte> dst) {
     have separate(region(23).footprint, memory(old(this->data)[0])) by {
         normalize() using { separate(memory(at(call(3).exit, call(3).result)[0]), memory(old(this->data)[0])); };
     }
-    have at(region(23).exit, load_uint8(old(this->data) + 0)) == at(region(23).entry, load_uint8(old(this->data) + 0)) by {
+    have at(region(23).exit, load<uint8>(old(this->data) + 0)) == at(region(23).entry, load<uint8>(old(this->data) + 0)) by {
         preserve(memory(old(this->data)[0]), region(23));
     }
-    have load_uint8(old(this->data) + 0) == old(this->data[0]) by { solve(); }
+    have load<uint8>(old(this->data) + 0) == old(this->data[0]) by { solve(); }
 
     have separate(memory(at(call(3).exit, call(3).result)[0]), memory(old(this->data)[1])) by { solve(); }
     have separate(region(23).footprint, memory(old(this->data)[1])) by {
         normalize() using { separate(memory(at(call(3).exit, call(3).result)[0]), memory(old(this->data)[1])); };
     }
-    have at(region(23).exit, load_uint8(old(this->data) + 1)) == at(region(23).entry, load_uint8(old(this->data) + 1)) by {
+    have at(region(23).exit, load<uint8>(old(this->data) + 1)) == at(region(23).entry, load<uint8>(old(this->data) + 1)) by {
         preserve(memory(old(this->data)[1]), region(23));
     }
-    have load_uint8(old(this->data) + 1) == old(this->data[1]) by { solve(); }
+    have load<uint8>(old(this->data) + 1) == old(this->data[1]) by { solve(); }
 
     have separate(memory(at(call(3).exit, call(3).result)[0]), memory(old(this->data)[2])) by { solve(); }
     have separate(region(23).footprint, memory(old(this->data)[2])) by {
         normalize() using { separate(memory(at(call(3).exit, call(3).result)[0]), memory(old(this->data)[2])); };
     }
-    have at(region(23).exit, load_uint8(old(this->data) + 2)) == at(region(23).entry, load_uint8(old(this->data) + 2)) by {
+    have at(region(23).exit, load<uint8>(old(this->data) + 2)) == at(region(23).entry, load<uint8>(old(this->data) + 2)) by {
         preserve(memory(old(this->data)[2]), region(23));
     }
-    have load_uint8(old(this->data) + 2) == old(this->data[2]) by { solve(); }
+    have load<uint8>(old(this->data) + 2) == old(this->data[2]) by { solve(); }
 
     have separate(memory(at(call(3).exit, call(3).result)[0]), memory(old(this->data)[3])) by { solve(); }
     have separate(region(23).footprint, memory(old(this->data)[3])) by {
         normalize() using { separate(memory(at(call(3).exit, call(3).result)[0]), memory(old(this->data)[3])); };
     }
-    have at(region(23).exit, load_uint8(old(this->data) + 3)) == at(region(23).entry, load_uint8(old(this->data) + 3)) by {
+    have at(region(23).exit, load<uint8>(old(this->data) + 3)) == at(region(23).entry, load<uint8>(old(this->data) + 3)) by {
         preserve(memory(old(this->data)[3]), region(23));
     }
-    have load_uint8(old(this->data) + 3) == old(this->data[3]) by { solve(); }
+    have load<uint8>(old(this->data) + 3) == old(this->data[3]) by { solve(); }
 
     have separate(memory(old(std_span_data(dst))[3]), memory(old(std_span_data(dst))[0])) by {
         apply(click::separation::separate_elements(old(std_span_data(dst)), 3, 0)) using { 3 != 0; };
@@ -342,10 +342,10 @@ void FixtureReader::read(std::span<std::byte> dst) {
     have separate(region(23).footprint, memory(old(std_span_data(dst))[0])) by {
         normalize() using { separate(memory(at(call(3).exit, call(3).result)[0]), memory(old(std_span_data(dst))[0])); };
     }
-    have at(region(23).exit, load_uint8(old(std_span_data(dst)) + 0)) == at(region(23).entry, load_uint8(old(std_span_data(dst)) + 0)) by {
+    have at(region(23).exit, load<uint8>(old(std_span_data(dst)) + 0)) == at(region(23).entry, load<uint8>(old(std_span_data(dst)) + 0)) by {
         preserve(memory(old(std_span_data(dst))[0]), region(23));
     }
-    have load_uint8(old(std_span_data(dst)) + 0) == old(this->data[0]) by { solve(); }
+    have load<uint8>(old(std_span_data(dst)) + 0) == old(this->data[0]) by { solve(); }
 
     have separate(memory(old(std_span_data(dst))[3]), memory(old(std_span_data(dst))[1])) by {
         apply(click::separation::separate_elements(old(std_span_data(dst)), 3, 1)) using { 3 != 1; };
@@ -354,10 +354,10 @@ void FixtureReader::read(std::span<std::byte> dst) {
     have separate(region(23).footprint, memory(old(std_span_data(dst))[1])) by {
         normalize() using { separate(memory(at(call(3).exit, call(3).result)[0]), memory(old(std_span_data(dst))[1])); };
     }
-    have at(region(23).exit, load_uint8(old(std_span_data(dst)) + 1)) == at(region(23).entry, load_uint8(old(std_span_data(dst)) + 1)) by {
+    have at(region(23).exit, load<uint8>(old(std_span_data(dst)) + 1)) == at(region(23).entry, load<uint8>(old(std_span_data(dst)) + 1)) by {
         preserve(memory(old(std_span_data(dst))[1]), region(23));
     }
-    have load_uint8(old(std_span_data(dst)) + 1) == old(this->data[1]) by { solve(); }
+    have load<uint8>(old(std_span_data(dst)) + 1) == old(this->data[1]) by { solve(); }
 
     have separate(memory(old(std_span_data(dst))[3]), memory(old(std_span_data(dst))[2])) by {
         apply(click::separation::separate_elements(old(std_span_data(dst)), 3, 2)) using { 3 != 2; };
@@ -366,12 +366,12 @@ void FixtureReader::read(std::span<std::byte> dst) {
     have separate(region(23).footprint, memory(old(std_span_data(dst))[2])) by {
         normalize() using { separate(memory(at(call(3).exit, call(3).result)[0]), memory(old(std_span_data(dst))[2])); };
     }
-    have at(region(23).exit, load_uint8(old(std_span_data(dst)) + 2)) == at(region(23).entry, load_uint8(old(std_span_data(dst)) + 2)) by {
+    have at(region(23).exit, load<uint8>(old(std_span_data(dst)) + 2)) == at(region(23).entry, load<uint8>(old(std_span_data(dst)) + 2)) by {
         preserve(memory(old(std_span_data(dst))[2]), region(23));
     }
-    have load_uint8(old(std_span_data(dst)) + 2) == old(this->data[2]) by { solve(); }
+    have load<uint8>(old(std_span_data(dst)) + 2) == old(this->data[2]) by { solve(); }
 
-    have load_uint8(old(std_span_data(dst)) + 3) == old(this->data[3]) by { solve(); }
+    have load<uint8>(old(std_span_data(dst)) + 3) == old(this->data[3]) by { solve(); }
 
     step_until(function.exit);
 
@@ -379,145 +379,145 @@ void FixtureReader::read(std::span<std::byte> dst) {
     have separate(region(24).footprint, memory(old(std_span_data(dst))[0])) by {
         normalize() using { separate(memory(this->data), memory(old(std_span_data(dst))[0])); };
     }
-    have at(region(24).exit, load_uint8(old(std_span_data(dst)) + 0)) == at(region(24).entry, load_uint8(old(std_span_data(dst)) + 0)) by {
+    have at(region(24).exit, load<uint8>(old(std_span_data(dst)) + 0)) == at(region(24).entry, load<uint8>(old(std_span_data(dst)) + 0)) by {
         preserve(memory(old(std_span_data(dst))[0]), region(24));
     }
-    have at(region(24).exit, load_uint8(old(std_span_data(dst)) + 0)) == old(this->data[0]) by { solve(); }
+    have at(region(24).exit, load<uint8>(old(std_span_data(dst)) + 0)) == old(this->data[0]) by { solve(); }
 
     have separate(memory(this->data), memory(old(std_span_data(dst))[1])) by { solve(); }
     have separate(region(24).footprint, memory(old(std_span_data(dst))[1])) by {
         normalize() using { separate(memory(this->data), memory(old(std_span_data(dst))[1])); };
     }
-    have at(region(24).exit, load_uint8(old(std_span_data(dst)) + 1)) == at(region(24).entry, load_uint8(old(std_span_data(dst)) + 1)) by {
+    have at(region(24).exit, load<uint8>(old(std_span_data(dst)) + 1)) == at(region(24).entry, load<uint8>(old(std_span_data(dst)) + 1)) by {
         preserve(memory(old(std_span_data(dst))[1]), region(24));
     }
-    have at(region(24).exit, load_uint8(old(std_span_data(dst)) + 1)) == old(this->data[1]) by { solve(); }
+    have at(region(24).exit, load<uint8>(old(std_span_data(dst)) + 1)) == old(this->data[1]) by { solve(); }
 
     have separate(memory(this->data), memory(old(std_span_data(dst))[2])) by { solve(); }
     have separate(region(24).footprint, memory(old(std_span_data(dst))[2])) by {
         normalize() using { separate(memory(this->data), memory(old(std_span_data(dst))[2])); };
     }
-    have at(region(24).exit, load_uint8(old(std_span_data(dst)) + 2)) == at(region(24).entry, load_uint8(old(std_span_data(dst)) + 2)) by {
+    have at(region(24).exit, load<uint8>(old(std_span_data(dst)) + 2)) == at(region(24).entry, load<uint8>(old(std_span_data(dst)) + 2)) by {
         preserve(memory(old(std_span_data(dst))[2]), region(24));
     }
-    have at(region(24).exit, load_uint8(old(std_span_data(dst)) + 2)) == old(this->data[2]) by { solve(); }
+    have at(region(24).exit, load<uint8>(old(std_span_data(dst)) + 2)) == old(this->data[2]) by { solve(); }
 
     have separate(memory(this->data), memory(old(std_span_data(dst))[3])) by { solve(); }
     have separate(region(24).footprint, memory(old(std_span_data(dst))[3])) by {
         normalize() using { separate(memory(this->data), memory(old(std_span_data(dst))[3])); };
     }
-    have at(region(24).exit, load_uint8(old(std_span_data(dst)) + 3)) == at(region(24).entry, load_uint8(old(std_span_data(dst)) + 3)) by {
+    have at(region(24).exit, load<uint8>(old(std_span_data(dst)) + 3)) == at(region(24).entry, load<uint8>(old(std_span_data(dst)) + 3)) by {
         preserve(memory(old(std_span_data(dst))[3]), region(24));
     }
-    have at(region(24).exit, load_uint8(old(std_span_data(dst)) + 3)) == old(this->data[3]) by { solve(); }
+    have at(region(24).exit, load<uint8>(old(std_span_data(dst)) + 3)) == old(this->data[3]) by { solve(); }
 
     have separate(memory(this->remaining), memory(old(std_span_data(dst))[0])) by { solve(); }
     have separate(region(25).footprint, memory(old(std_span_data(dst))[0])) by {
         normalize() using { separate(memory(this->remaining), memory(old(std_span_data(dst))[0])); };
     }
-    have at(region(25).exit, load_uint8(old(std_span_data(dst)) + 0)) == at(region(25).entry, load_uint8(old(std_span_data(dst)) + 0)) by {
+    have at(region(25).exit, load<uint8>(old(std_span_data(dst)) + 0)) == at(region(25).entry, load<uint8>(old(std_span_data(dst)) + 0)) by {
         preserve(memory(old(std_span_data(dst))[0]), region(25));
     }
-    have at(region(25).exit, load_uint8(old(std_span_data(dst)) + 0)) == old(this->data[0]) by { solve(); }
+    have at(region(25).exit, load<uint8>(old(std_span_data(dst)) + 0)) == old(this->data[0]) by { solve(); }
 
     have separate(memory(this->remaining), memory(old(std_span_data(dst))[1])) by { solve(); }
     have separate(region(25).footprint, memory(old(std_span_data(dst))[1])) by {
         normalize() using { separate(memory(this->remaining), memory(old(std_span_data(dst))[1])); };
     }
-    have at(region(25).exit, load_uint8(old(std_span_data(dst)) + 1)) == at(region(25).entry, load_uint8(old(std_span_data(dst)) + 1)) by {
+    have at(region(25).exit, load<uint8>(old(std_span_data(dst)) + 1)) == at(region(25).entry, load<uint8>(old(std_span_data(dst)) + 1)) by {
         preserve(memory(old(std_span_data(dst))[1]), region(25));
     }
-    have at(region(25).exit, load_uint8(old(std_span_data(dst)) + 1)) == old(this->data[1]) by { solve(); }
+    have at(region(25).exit, load<uint8>(old(std_span_data(dst)) + 1)) == old(this->data[1]) by { solve(); }
 
     have separate(memory(this->remaining), memory(old(std_span_data(dst))[2])) by { solve(); }
     have separate(region(25).footprint, memory(old(std_span_data(dst))[2])) by {
         normalize() using { separate(memory(this->remaining), memory(old(std_span_data(dst))[2])); };
     }
-    have at(region(25).exit, load_uint8(old(std_span_data(dst)) + 2)) == at(region(25).entry, load_uint8(old(std_span_data(dst)) + 2)) by {
+    have at(region(25).exit, load<uint8>(old(std_span_data(dst)) + 2)) == at(region(25).entry, load<uint8>(old(std_span_data(dst)) + 2)) by {
         preserve(memory(old(std_span_data(dst))[2]), region(25));
     }
-    have at(region(25).exit, load_uint8(old(std_span_data(dst)) + 2)) == old(this->data[2]) by { solve(); }
+    have at(region(25).exit, load<uint8>(old(std_span_data(dst)) + 2)) == old(this->data[2]) by { solve(); }
 
     have separate(memory(this->remaining), memory(old(std_span_data(dst))[3])) by { solve(); }
     have separate(region(25).footprint, memory(old(std_span_data(dst))[3])) by {
         normalize() using { separate(memory(this->remaining), memory(old(std_span_data(dst))[3])); };
     }
-    have at(region(25).exit, load_uint8(old(std_span_data(dst)) + 3)) == at(region(25).entry, load_uint8(old(std_span_data(dst)) + 3)) by {
+    have at(region(25).exit, load<uint8>(old(std_span_data(dst)) + 3)) == at(region(25).entry, load<uint8>(old(std_span_data(dst)) + 3)) by {
         preserve(memory(old(std_span_data(dst))[3]), region(25));
     }
-    have at(region(25).exit, load_uint8(old(std_span_data(dst)) + 3)) == old(this->data[3]) by { solve(); }
+    have at(region(25).exit, load<uint8>(old(std_span_data(dst)) + 3)) == old(this->data[3]) by { solve(); }
 
     have separate(memory(this->data), memory(old(this->data)[0])) by { solve(); }
     have separate(region(24).footprint, memory(old(this->data)[0])) by {
         normalize() using { separate(memory(this->data), memory(old(this->data)[0])); };
     }
-    have at(region(24).exit, load_uint8(old(this->data) + 0)) == at(region(24).entry, load_uint8(old(this->data) + 0)) by {
+    have at(region(24).exit, load<uint8>(old(this->data) + 0)) == at(region(24).entry, load<uint8>(old(this->data) + 0)) by {
         preserve(memory(old(this->data)[0]), region(24));
     }
-    have at(region(24).exit, load_uint8(old(this->data) + 0)) == old(this->data[0]) by { solve(); }
+    have at(region(24).exit, load<uint8>(old(this->data) + 0)) == old(this->data[0]) by { solve(); }
 
     have separate(memory(this->data), memory(old(this->data)[1])) by { solve(); }
     have separate(region(24).footprint, memory(old(this->data)[1])) by {
         normalize() using { separate(memory(this->data), memory(old(this->data)[1])); };
     }
-    have at(region(24).exit, load_uint8(old(this->data) + 1)) == at(region(24).entry, load_uint8(old(this->data) + 1)) by {
+    have at(region(24).exit, load<uint8>(old(this->data) + 1)) == at(region(24).entry, load<uint8>(old(this->data) + 1)) by {
         preserve(memory(old(this->data)[1]), region(24));
     }
-    have at(region(24).exit, load_uint8(old(this->data) + 1)) == old(this->data[1]) by { solve(); }
+    have at(region(24).exit, load<uint8>(old(this->data) + 1)) == old(this->data[1]) by { solve(); }
 
     have separate(memory(this->data), memory(old(this->data)[2])) by { solve(); }
     have separate(region(24).footprint, memory(old(this->data)[2])) by {
         normalize() using { separate(memory(this->data), memory(old(this->data)[2])); };
     }
-    have at(region(24).exit, load_uint8(old(this->data) + 2)) == at(region(24).entry, load_uint8(old(this->data) + 2)) by {
+    have at(region(24).exit, load<uint8>(old(this->data) + 2)) == at(region(24).entry, load<uint8>(old(this->data) + 2)) by {
         preserve(memory(old(this->data)[2]), region(24));
     }
-    have at(region(24).exit, load_uint8(old(this->data) + 2)) == old(this->data[2]) by { solve(); }
+    have at(region(24).exit, load<uint8>(old(this->data) + 2)) == old(this->data[2]) by { solve(); }
 
     have separate(memory(this->data), memory(old(this->data)[3])) by { solve(); }
     have separate(region(24).footprint, memory(old(this->data)[3])) by {
         normalize() using { separate(memory(this->data), memory(old(this->data)[3])); };
     }
-    have at(region(24).exit, load_uint8(old(this->data) + 3)) == at(region(24).entry, load_uint8(old(this->data) + 3)) by {
+    have at(region(24).exit, load<uint8>(old(this->data) + 3)) == at(region(24).entry, load<uint8>(old(this->data) + 3)) by {
         preserve(memory(old(this->data)[3]), region(24));
     }
-    have at(region(24).exit, load_uint8(old(this->data) + 3)) == old(this->data[3]) by { solve(); }
+    have at(region(24).exit, load<uint8>(old(this->data) + 3)) == old(this->data[3]) by { solve(); }
 
     have separate(memory(this->remaining), memory(old(this->data)[0])) by { solve(); }
     have separate(region(25).footprint, memory(old(this->data)[0])) by {
         normalize() using { separate(memory(this->remaining), memory(old(this->data)[0])); };
     }
-    have at(region(25).exit, load_uint8(old(this->data) + 0)) == at(region(25).entry, load_uint8(old(this->data) + 0)) by {
+    have at(region(25).exit, load<uint8>(old(this->data) + 0)) == at(region(25).entry, load<uint8>(old(this->data) + 0)) by {
         preserve(memory(old(this->data)[0]), region(25));
     }
-    have at(region(25).exit, load_uint8(old(this->data) + 0)) == old(this->data[0]) by { solve(); }
+    have at(region(25).exit, load<uint8>(old(this->data) + 0)) == old(this->data[0]) by { solve(); }
 
     have separate(memory(this->remaining), memory(old(this->data)[1])) by { solve(); }
     have separate(region(25).footprint, memory(old(this->data)[1])) by {
         normalize() using { separate(memory(this->remaining), memory(old(this->data)[1])); };
     }
-    have at(region(25).exit, load_uint8(old(this->data) + 1)) == at(region(25).entry, load_uint8(old(this->data) + 1)) by {
+    have at(region(25).exit, load<uint8>(old(this->data) + 1)) == at(region(25).entry, load<uint8>(old(this->data) + 1)) by {
         preserve(memory(old(this->data)[1]), region(25));
     }
-    have at(region(25).exit, load_uint8(old(this->data) + 1)) == old(this->data[1]) by { solve(); }
+    have at(region(25).exit, load<uint8>(old(this->data) + 1)) == old(this->data[1]) by { solve(); }
 
     have separate(memory(this->remaining), memory(old(this->data)[2])) by { solve(); }
     have separate(region(25).footprint, memory(old(this->data)[2])) by {
         normalize() using { separate(memory(this->remaining), memory(old(this->data)[2])); };
     }
-    have at(region(25).exit, load_uint8(old(this->data) + 2)) == at(region(25).entry, load_uint8(old(this->data) + 2)) by {
+    have at(region(25).exit, load<uint8>(old(this->data) + 2)) == at(region(25).entry, load<uint8>(old(this->data) + 2)) by {
         preserve(memory(old(this->data)[2]), region(25));
     }
-    have at(region(25).exit, load_uint8(old(this->data) + 2)) == old(this->data[2]) by { solve(); }
+    have at(region(25).exit, load<uint8>(old(this->data) + 2)) == old(this->data[2]) by { solve(); }
 
     have separate(memory(this->remaining), memory(old(this->data)[3])) by { solve(); }
     have separate(region(25).footprint, memory(old(this->data)[3])) by {
         normalize() using { separate(memory(this->remaining), memory(old(this->data)[3])); };
     }
-    have at(region(25).exit, load_uint8(old(this->data) + 3)) == at(region(25).entry, load_uint8(old(this->data) + 3)) by {
+    have at(region(25).exit, load<uint8>(old(this->data) + 3)) == at(region(25).entry, load<uint8>(old(this->data) + 3)) by {
         preserve(memory(old(this->data)[3]), region(25));
     }
-    have at(region(25).exit, load_uint8(old(this->data) + 3)) == old(this->data[3]) by { solve(); }
+    have at(region(25).exit, load<uint8>(old(this->data) + 3)) == old(this->data[3]) by { solve(); }
 
     have separate(memory(this->data), memory(this->remaining)) by { solve(); }
     have separate(region(24).footprint, memory(this->remaining)) by {

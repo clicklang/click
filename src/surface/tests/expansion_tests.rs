@@ -15851,7 +15851,7 @@ fn source_expander_derives_separation_from_call_postconditions() {
         .expect("call postconditions should expand into an explicit separation derivation");
     assert!(!expanded.contains("transport("), "{expanded}");
     assert!(expanded.contains("rewrite("), "{expanded}");
-    assert!(!expanded.contains("load_int32_pointer"), "{expanded}");
+    assert!(!expanded.contains("load<int32*>"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_c_sources(&expanded, &c_sources)
         .expect("the expanded separation derivation should check");

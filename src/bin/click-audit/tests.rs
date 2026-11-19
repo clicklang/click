@@ -1344,7 +1344,7 @@ fn audits_an_undecided_wide_guard_after_a_recursive_call() {
     // assumes the surface lowering of the guard while the C guard evaluates
     // against the state its own load resolved. Those agree only because
     // every integer scalar one to eight bytes wide is named where it is
-    // loaded; an unnamed `load_uint64` reads the whole current state, which
+    // loaded; an unnamed `load<uint64>` reads the whole current state, which
     // after the call differs by the `local:rest` cell the load cannot alias,
     // and audit reported `2 feasible condition paths` where `click verify`
     // passed.

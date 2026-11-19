@@ -117,7 +117,7 @@ fn readonly_scalar_initialization_preserves_address_and_expands() {
 fn typed_load_through_entry_pointer_reads_current_memory() {
     let source = "void probe(int32* p, int32* q) { *p = 7; p = q; }";
     let proof = r#"verifying "retained_state.c"; void probe(int32* p, int32* q) {
-        owns p[0..1]; ensures load_int32(old(p)) == 7;
+        owns p[0..1]; ensures load<int32>(old(p)) == 7;
     }"#;
     verify_c_sources(proof, &[("retained_state.c", source)]).unwrap();
     let expanded = expand_c_claim_source(
@@ -130,7 +130,7 @@ fn typed_load_through_entry_pointer_reads_current_memory() {
     verify_c_sources(&expanded, &[("retained_state.c", source)]).unwrap();
     assert!(
         verify_c_sources(
-            &proof.replace("load_int32(old(p))", "old(load_int32(p))"),
+            &proof.replace("load<int32>(old(p))", "old(load<int32>(p))"),
             &[("retained_state.c", source)]
         )
         .is_err()
@@ -142,7 +142,7 @@ fn typed_load_through_entry_pointer_reads_current_memory() {
 fn typed_pointer_load_through_entry_pointer_expands() {
     let source = "void probe(int32** p, int32* q, int32** r) { *p = q; p = r; }";
     let proof = r#"verifying "retained_state.c"; void probe(int32** p, int32* q, int32** r) {
-        owns p[0..1]; ensures load_int32_pointer(old(p)) == q;
+        owns p[0..1]; ensures load<int32*>(old(p)) == q;
     }"#;
     verify_c_sources(proof, &[("retained_state.c", source)]).unwrap();
     let expanded = expand_c_claim_source(

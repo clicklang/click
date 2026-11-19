@@ -769,19 +769,7 @@ id = "language.word.let"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
-id = "language.word.load_int32"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
-id = "language.word.load_int32_pointer"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
-id = "language.word.load_uint8"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
-id = "language.word.load_uint8_pointer"
+id = "language.word.load"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]

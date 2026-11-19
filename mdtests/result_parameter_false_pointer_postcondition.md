@@ -10,7 +10,7 @@ int32 *select(int32 *result, int32 *next) {
     views result[0..1];
     views next[0..1];
     requires program::result[0] == 3 and next[0] == 7;
-    ensures load_int32(program::result) == 7;
+    ensures load<int32>(program::result) == 7;
 }
 ```
 

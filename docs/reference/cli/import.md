@@ -638,8 +638,8 @@ storage. Refresh an existing import lock to retain this constructor call.
 
 Contracts cannot observe a modified private parameter object as though it were
 the caller's original object. Entry-state pointer values can still name
-backing effects: `load_int32(old(value.data))` reads current memory through the
-entry pointer, while `old(load_int32(value.data))` reads entry memory.
+backing effects: `load<int32>(old(value.data))` reads current memory through the
+entry pointer, while `old(load<int32>(value.data))` reads entry memory.
 
 The `int64-predicate` fixture is the first narrow bridge toward Bitcoin Core's
 `MoneyRange`: Clang retains the declaration identity and source span for a

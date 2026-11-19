@@ -1203,6 +1203,13 @@ struct ParsedType {
     reference: bool,
 }
 
+/// The type argument of a typed load `load<T>(p)` and its qualifiers.
+struct TypedLoadHead {
+    value_type: ProgramType,
+    volatile: bool,
+    pointee_constant: bool,
+}
+
 /// A recognized `(struct name *)` cast target in a contract expression.
 struct StructPointerCast {
     struct_name: String,
@@ -9068,7 +9075,6 @@ impl Parser {
                         | "float64_from_bits"
                 )
             )
-            && typed_load_type_from_name(self.peek_ident()).is_none()
             && self.peek_next() == Some(&Token::LParen)
             && !self.looks_like_region_result()
         {
@@ -12525,9 +12531,7 @@ impl Parser {
         if dereference {
             self.position += 1;
         }
-        let (mut surface_base, mut base) = if typed_load_type_from_name(self.peek_ident()).is_some()
-            && self.peek_next() == Some(&Token::LParen)
-        {
+        let (mut surface_base, mut base) = if self.at_typed_load() {
             let expression = self.parse_contract_primary()?;
             let base = contract_expression_as_program_expression(&expression).ok_or_else(|| {
                 self.error("memory segment base must be a current C pointer expression")
@@ -14217,6 +14221,68 @@ impl Parser {
         self.error(format!(
             "a Click cast is written after its operand: write `{written}`, not `({target}) e`"
         ))
+    }
+
+    /// Whether a typed load `load<T>(p)` starts here. A type word, a
+    /// qualifier, or `struct` after `load <` makes it one, so a comparison
+    /// `load < x` of a value named `load` keeps its meaning.
+    fn at_typed_load(&self) -> bool {
+        self.peek_ident() == Some("load")
+            && self.peek_next() == Some(&Token::LessThan)
+            && matches!(
+                self.tokens.get(self.position + 2),
+                Some(Token::Ident(word))
+                    if is_c_type_keyword(word)
+                        || matches!(word.as_str(), "const" | "volatile")
+                        || self.c_typedefs.contains_key(word.as_str())
+            )
+    }
+
+    /// The head `load<T>` of a typed load, leaving the parser at its `(`.
+    ///
+    /// `load<T>(p)` reads the object at `p` as `T`: it lowers to the
+    /// kernel's typed load, whose type is `T`. `T` is a scalar, a data
+    /// pointer, or a function pointer `R (*)(A, ...)`; `volatile T` makes
+    /// the access volatile, and `const T*` reads a pointer to `const T`.
+    fn take_typed_load_head(&mut self) -> Result<Option<TypedLoadHead>, ClickError> {
+        if !self.at_typed_load() {
+            return Ok(None);
+        }
+        self.position += 2;
+        let volatile = self.peek_ident() == Some("volatile");
+        if volatile {
+            self.position += 1;
+        }
+        let parsed = self.parse_type()?;
+        if parsed.reference {
+            return Err(self.error("`load<T>` reads an object; `T` cannot be a reference"));
+        }
+        if parsed.struct_name.is_some() && !parsed.struct_pointer {
+            return Err(self.error(
+                "`load<T>` reads a scalar, a pointer, or a function pointer; read a struct's fields",
+            ));
+        }
+        let (interface_type, pointee_constant) = if self.peek() == Some(&Token::LParen)
+            && self.peek_next() == Some(&Token::Star)
+            && self.tokens.get(self.position + 2) == Some(&Token::RParen)
+        {
+            self.position += 3;
+            (self.parse_function_pointer_signature_tail(parsed)?.0, false)
+        } else {
+            if parsed.constant && !parsed.interface_type.is_pointer() {
+                return Err(self.error("`const` in `load<T>` qualifies a pointer's pointee"));
+            }
+            (parsed.interface_type, parsed.pointee_constant)
+        };
+        if interface_type == InterfaceType::Void {
+            return Err(self.error("`load<T>` cannot read `void`"));
+        }
+        self.expect(Token::GreaterThan)?;
+        Ok(Some(TypedLoadHead {
+            value_type: interface_type.to_kernel_type(),
+            volatile,
+            pointee_constant,
+        }))
     }
 
     /// A native cast target. Pointer qualifiers add to the source view;
@@ -16095,11 +16161,13 @@ impl Parser {
             );
         }
 
-        let typed_load = typed_load_type_from_name(self.peek_ident());
-        if self.peek_next() == Some(&Token::LParen)
-            && let Some(value_type) = typed_load
+        if let Some(TypedLoadHead {
+            value_type,
+            volatile,
+            pointee_constant,
+        }) = self.take_typed_load_head()?
         {
-            self.position += 2;
+            self.expect(Token::LParen)?;
             let pointer = self.parse_contract_expression()?;
             self.expect(Token::RParen)?;
             let source_pointer = pointer.clone();
@@ -16109,8 +16177,8 @@ impl Parser {
                     ProgramExpression::TypedLoad {
                         pointer: Box::new(pointer),
                         value_type,
-                        volatile: false,
-                        pointee_constant: false,
+                        volatile,
+                        pointee_constant,
                         access_class: None,
                         source: Default::default(),
                     },
@@ -16125,8 +16193,8 @@ impl Parser {
                 lowered: ProgramExpression::TypedLoad {
                     pointer: Box::new(pointer),
                     value_type,
-                    volatile: false,
-                    pointee_constant: false,
+                    volatile,
+                    pointee_constant,
                     access_class: None,
                     source: Default::default(),
                 },
@@ -17536,24 +17604,6 @@ fn loop_clause_description(label: Option<&str>) -> String {
     match label {
         Some(label) => format!("the loop `{label}`"),
         None => "the loop".to_string(),
-    }
-}
-
-fn typed_load_type_from_name(name: Option<&str>) -> Option<ProgramType> {
-    match name {
-        Some("load_int32") => Some(ProgramType::Int32),
-        Some("load_uint8") => Some(ProgramType::UInt8),
-        Some("load_uint16") => Some(ProgramType::UInt16),
-        Some("load_uint32") => Some(ProgramType::UInt32),
-        Some("load_int64") => Some(ProgramType::Int64),
-        Some("load_uint64") => Some(ProgramType::UInt64),
-        Some("load_int32_pointer") => Some(ProgramType::Int32Pointer),
-        Some("load_uint8_pointer") => Some(ProgramType::UInt8Pointer),
-        Some("load_uint16_pointer") => Some(ProgramType::UInt16Pointer),
-        Some("load_int32_pointer_pointer") => Some(ProgramType::Int32PointerPointer),
-        Some("load_uint8_pointer_pointer") => Some(ProgramType::UInt8PointerPointer),
-        Some("load_uint16_pointer_pointer") => Some(ProgramType::UInt16PointerPointer),
-        _ => None,
     }
 }
 

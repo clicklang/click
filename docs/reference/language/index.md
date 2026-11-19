@@ -4433,14 +4433,14 @@ global named alone still denotes its pointer slot.
 Surface Click also has documented low-level memory reads for addresses that do
 not have a recoverable C source place:
 
-- `load_int32(pointer)`, `load_uint8(pointer)`, and `load_uint16(pointer)`
-- `load_uint32(pointer)`, `load_int64(pointer)`, and `load_uint64(pointer)`
-- `load_int32_pointer(pointer)`, `load_uint8_pointer(pointer)`, and `load_uint16_pointer(pointer)`
+- `load<int32>(pointer)`, `load<uint8>(pointer)`, and `load<uint16>(pointer)`
+- `load<uint32>(pointer)`, `load<int64>(pointer)`, and `load<uint64>(pointer)`
+- `load<int32*>(pointer)`, `load<uint8*>(pointer)`, and `load<uint16*>(pointer)`
 - `byte_offset(pointer, bytes)`
 
 Typed loads select memory from the surrounding clause independently of the
-point the pointer value was read at. `load_int32(old(p))` reads current memory through
-the entry-state pointer, while `old(load_int32(p))` reads entry-state memory.
+point the pointer value was read at. `load<int32>(old(p))` reads current memory through
+the entry-state pointer, while `old(load<int32>(p))` reads entry-state memory.
 Both require the corresponding read permission and initialized storage.
 
 `address(pointer)` is the `uint64` integer representation of an object pointer

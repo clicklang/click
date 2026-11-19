@@ -2388,7 +2388,7 @@ fn expanded_branch_condition_names_a_local_struct_pointer_field() {
         0,
     )
     .expect("a branch over a field should expand");
-    assert!(!expanded.contains("load_int32("), "{expanded}");
+    assert!(!expanded.contains("load<int32>("), "{expanded}");
     assert!(expanded.contains("->second) > "), "{expanded}");
     verify_c_sources(&expanded, &[("pick.c", c_source)])
         .expect("the expansion naming the field should verify");
