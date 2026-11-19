@@ -997,7 +997,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 integer_values = integer_values.with_inserted(name, value.clone());
             }
         }
-        let state = ExecutionState::new().with_memory(context.theorem_context.memory.clone());
+        let state = ExecutionState::at_point(&context.theorem_context.point);
         let recorded_states = RecordedStates::new();
         let algebraic_values = application
             .arguments

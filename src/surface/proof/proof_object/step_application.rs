@@ -1617,7 +1617,7 @@ impl<'a> Proof<'a> {
             }
         }
 
-        let state = ExecutionState::new().with_memory(context.theorem_context.memory.clone());
+        let state = ExecutionState::at_point(&context.theorem_context.point);
         let mut active_functions = BTreeSet::new();
         let value = evaluate_contract_expression_with_environment(
             &context.theorem_context.values,

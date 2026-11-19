@@ -88,7 +88,7 @@ fn model_argument_guard_work(prepare: bool) {
         let context = PureTheoremContext {
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
-            memory: memory.clone(),
+            point: crate::kernel::ProgramPoint::starting_at(&memory),
             values,
             integer_values: Default::default(),
             array_refs: arrays,

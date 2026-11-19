@@ -1182,8 +1182,7 @@ impl<'a> Proof<'a> {
                         integer_values = integer_values.with_inserted(name.clone(), value.clone());
                     }
                 }
-                let state =
-                    ExecutionState::new().with_memory(context.theorem_context.memory.clone());
+                let state = ExecutionState::at_point(&context.theorem_context.point);
                 self.apply_function_unfold_in_state(
                     application,
                     context.theorem_context.values.clone(),
