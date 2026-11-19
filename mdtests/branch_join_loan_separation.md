@@ -16,9 +16,9 @@ verifying "branch_join_loan_separation.c";
 int32 run(int32 *out, const int32 *input, int32 choice) {
     owns out[0..2];
     views input[0..1];
-    requires separate(memory((out as (uint8 *))[0..4]), memory(input[0..1]));
     ensures result == old(input[0]);
 } by {
+    have separate(memory((out as (uint8 *))[0..4]), memory(input[0..1])) by { solve(); }
     branch ensuring {
         fact 1 == 1;
     } {
