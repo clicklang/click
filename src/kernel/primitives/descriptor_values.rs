@@ -32,16 +32,6 @@ impl StoredMachineTerm {
         };
         Self(value.into())
     }
-    /// Admission for the nominal 32-bit Term payload. Native inputs retain
-    /// their written syntax; this does not widen or retag other root sorts.
-    #[cfg(test)]
-    pub(crate) fn from_word32_root(root: KernelTerm) -> Option<Self> {
-        matches!(
-            root.ty(),
-            KernelType::Program(ProgramType::Int32 | ProgramType::UInt32)
-        )
-        .then(|| Self(ExecutionValue::Shared(root).into()))
-    }
     pub(crate) fn from_value(value: ExecutionValue) -> Option<Self> {
         MachineIntegerType::from_program_type(value.program_type())?;
         if let ExecutionValue::Native(value) = &value
@@ -84,23 +74,6 @@ impl StoredMachineTerm {
     }
     pub(crate) fn root(&self) -> Option<&KernelTerm> {
         self.0.root()
-    }
-    #[cfg(test)]
-    pub(crate) fn into_native_compat(self) -> MachineTerm {
-        match self.0.into_native_compat() {
-            ProgramValue::Bool(value)
-            | ProgramValue::Int8(value)
-            | ProgramValue::UInt8(value)
-            | ProgramValue::Int16(value)
-            | ProgramValue::UInt16(value)
-            | ProgramValue::Int32(value)
-            | ProgramValue::UInt32(value)
-            | ProgramValue::Int64(value)
-            | ProgramValue::UInt64(value)
-            | ProgramValue::Int128(value)
-            | ProgramValue::UInt128(value) => value,
-            _ => unreachable!("machine descriptor operand"),
-        }
     }
     pub(crate) fn native_compat(&self) -> &MachineTerm {
         match self.0.native_compat() {
@@ -778,7 +751,7 @@ mod term_payload_contract_tests {
     }
 
     #[test]
-    fn word32_root_admission_preserves_native_format_and_rejects_other_sorts() {
+    fn machine_descriptor_admission_preserves_word32_format_and_rejects_nonmachine_sorts() {
         let _session = VerificationSession::enter();
         for format in [MachineIntegerType::Int32, MachineIntegerType::UInt32] {
             let variables = [Variable(991710), Variable(991711)];
@@ -790,7 +763,8 @@ mod term_payload_contract_tests {
                 }),
             )
             .unwrap();
-            let stored = StoredMachineTerm::from_word32_root(root.clone()).unwrap();
+            let stored =
+                StoredMachineTerm::from_value(ExecutionValue::Shared(root.clone())).unwrap();
             let exports = KernelTermExport::machine_export_count();
             assert_eq!(stored.clone().root().map(KernelTerm::id), Some(root.id()));
             assert!(!root.has_cached_native_argument());
@@ -805,17 +779,10 @@ mod term_payload_contract_tests {
             assert_eq!(stored.native_compat(), &native);
             assert_eq!(stored, input);
             assert_eq!(hash(&stored), hash(&native));
-            assert_eq!(stored.into_native_compat(), native);
         }
-        for ty in [
-            KernelType::Integer,
-            KernelType::Bool,
-            KernelType::Program(ProgramType::UInt64),
-            KernelType::Program(ProgramType::Int16),
-            KernelType::Program(ProgramType::Float32),
-        ] {
+        for ty in [KernelType::Bool, KernelType::Program(ProgramType::Float32)] {
             let root = KernelTerm::variable(ty, Variable(991712));
-            assert!(StoredMachineTerm::from_word32_root(root.clone()).is_none());
+            assert!(StoredMachineTerm::from_value(ExecutionValue::Shared(root.clone())).is_none());
             assert!(!root.has_cached_native_argument());
         }
     }

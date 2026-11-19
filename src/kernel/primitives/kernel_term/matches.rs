@@ -319,35 +319,6 @@ impl KernelConstructor {
             KernelTermNode::Constructor(self),
         )
     }
-    pub(crate) fn import(import: &mut KernelTermImport, value: &AlgebraicTerm) -> Option<Self> {
-        let AlgebraicTermNode::Constructor { variant, fields } = &value.node else {
-            return None;
-        };
-        Some(Self {
-            algebraic_type: value.algebraic_type.clone(),
-            variant: variant.clone(),
-            fields: fields
-                .iter()
-                .map(|field| import_value(import, field))
-                .collect(),
-        })
-    }
-    pub(crate) fn export(
-        &self,
-        export: &mut KernelTermExport,
-    ) -> Result<AlgebraicTerm, &'static str> {
-        Ok(AlgebraicTerm {
-            algebraic_type: self.algebraic_type.clone(),
-            node: AlgebraicTermNode::Constructor {
-                variant: self.variant.clone(),
-                fields: self
-                    .fields
-                    .iter()
-                    .map(|field| export_value(export, field))
-                    .collect::<Result<_, _>>()?,
-            },
-        })
-    }
 }
 
 #[cfg(test)]
@@ -648,13 +619,16 @@ mod tests {
                 fields: vec![AlgebraicValue::Integer(field)],
             },
         };
-        let common = KernelConstructor::import(&mut KernelTermImport::default(), &native).unwrap();
+        let common = KernelTermImport::default().algebraic(&native);
+        let KernelTermNode::Constructor(constructor) = common.node() else {
+            panic!("common constructor");
+        };
         assert!(matches!(
-            common.fields[0].node(),
+            constructor.fields[0].node(),
             KernelTermNode::IntegerOperation { .. }
         ));
         assert_eq!(
-            common.export(&mut KernelTermExport::default()).unwrap(),
+            KernelTermExport::default().algebraic(&common).unwrap(),
             native
         );
     }
