@@ -4227,8 +4227,8 @@ struct InterfaceJoinResources {
     arm_interface_resources: [Vec<ResourceFact>; 2],
     successor_interface_resources: Vec<ResourceFact>,
     successor_interface_resource_facts: Vec<Proposition>,
-    /// What neither arm changed, with the interface resources composed in,
-    /// in the one normal form the successor must carry.
+    /// What neither arm changed, with the checked interface resources
+    /// composed into that frame.
     expected_resources: ResourceContext,
 }
 
@@ -4322,11 +4322,14 @@ fn interface_join_resources(
         })
         .cloned()
         .collect::<Vec<_>>();
-    let expected_resources = common_resources
-        .install_established_partition(additions.iter().cloned(), successor_facts.assumptions())
-        .map_err(|_| "the interface resources do not form a valid successor context")?
-        .0
-        .normalized_around_facts(&additions, successor_facts.assumptions());
+    let assumptions = successor_facts.assumptions();
+    let (expected_resources, mut inserted) = common_resources
+        .install_established_partition(additions, assumptions)
+        .map_err(|_| "the interface resources do not form a valid successor context")?;
+    // Keep the native representation of structural resource witnesses.
+    // Each other published occurrence can coalesce with its indexed neighbors.
+    inserted.retain(|(fact, _)| !expected_resources.protects_structural_resource(fact.resource()));
+    let expected_resources = expected_resources.normalized_delta(inserted, assumptions);
     Ok(InterfaceJoinResources {
         arm_interface_resources,
         successor_interface_resources,

@@ -14,13 +14,12 @@ pub(super) fn apply_branch_interface_with_proof_facts(
     execution: &mut ExecutionProofState,
     proof_context: &ExecutionProofContext<'_>,
     available_pure_facts: &mut PureFactStore,
-    sibling_join_states: Option<&[&ExecutionState]>,
+    join_inputs: Option<(&[&ExecutionState; 2], &RecordedStates)>,
     // `join_next_kernel_variable` is the counter every sibling arm abstracts
     // from: the highest of the arms' own. The arms' abstractions are compared
     // for equality, so they must count from one shared lower bound rather
     // than each from its own.
     join_next_kernel_variable: u64,
-    needs_abstraction: bool,
 ) -> Result<(), ClickError> {
     // Lower the resolved proof-local values, but retain their written names
     // for later certificates. Internal pointer values are not source syntax.
@@ -114,26 +113,21 @@ pub(super) fn apply_branch_interface_with_proof_facts(
             }
         }
     }
-    if !needs_abstraction {
+    let Some((sibling_join_states, common_recorded_states)) = join_inputs else {
         *available_pure_facts = concrete_facts;
         return Ok(());
-    }
+    };
     let entry_state = execution.core.frontier.execution_start_state(state).clone();
     // `old(...)` in an interface fact means the function's entry, also
     // inside a loop body, where the region's own start is a later state.
     let old_reference = proof_context
         .old_reference_state(&execution.core.frontier, state)
         .clone();
-    let abstraction = match sibling_join_states {
-        Some(states) => abstract_execution_state_for_interface_join_across(
-            state,
-            states,
-            join_next_kernel_variable,
-        ),
-        None => {
-            abstract_execution_state_for_join(state, &BTreeMap::new(), join_next_kernel_variable)
-        }
-    };
+    let abstraction = abstract_execution_state_for_interface_join_across(
+        state,
+        sibling_join_states,
+        join_next_kernel_variable,
+    );
     let abstraction = abstraction.map_err(|message| {
         ClickError::new(format!(
             "`{claim_label}` tactic {tactic_index}: could not abstract `branch` target state: {message}"
@@ -142,17 +136,6 @@ pub(super) fn apply_branch_interface_with_proof_facts(
     let mut abstract_state = abstraction.state;
     let mut join_kernel_variable_mark = abstraction.next_kernel_variable;
 
-    // Branch abstraction discards incidental source-boundary states, but
-    // an explicit proof mark is a deliberate historical dependency. Preserve
-    // marks that were common to every continuing arm.
-    execution
-        .presentation
-        .recorded_states
-        .retain(|selector, _| matches!(selector, ProgramPointSelector::Mark(_)));
-    execution
-        .presentation
-        .recorded_states
-        .insert(target.clone(), abstract_state.clone());
     execution.presentation.case_assumptions.clear();
     execution.core.execution_abstraction = true;
 
@@ -268,10 +251,11 @@ pub(super) fn apply_branch_interface_with_proof_facts(
         }
     }
     abstract_state = abstract_state.with_resource_context(exported_resources.clone());
-    execution
-        .presentation
-        .recorded_states
-        .insert(target.clone(), abstract_state.clone());
+    let interface_records = execution.presentation.recorded_states.for_branch_interface(
+        common_recorded_states,
+        target,
+        &abstract_state,
+    );
 
     for (assertion, written) in assertions.iter().zip(written_assertions) {
         if let ProofAssertion::Fact(surface_fact) = assertion {
@@ -282,7 +266,7 @@ pub(super) fn apply_branch_interface_with_proof_facts(
                     surface_fact,
                     &exported_pure_facts,
                     parameter_binding,
-                    FixedStateFrame::new(&old_reference, &abstract_state, None, &execution.presentation.recorded_states),
+                    FixedStateFrame::new(&old_reference, &abstract_state, None, &interface_records),
                     SpecDefinitions::new(predicate_environment, click_function_environment),
                 )
                 .map_err(|message| {
@@ -308,10 +292,6 @@ pub(super) fn apply_branch_interface_with_proof_facts(
 
     // The checked join constructs the owning successor after consuming the
     // interface in both arms. This provisional context only supported lowering.
-    execution
-        .presentation
-        .recorded_states
-        .insert(target.clone(), abstract_state.clone());
     *state = abstract_state;
     // The abstraction issued identities from the execution's one counter, and
     // the joined execution continues from where it left it. Keeping the old

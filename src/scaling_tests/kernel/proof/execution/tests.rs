@@ -1158,6 +1158,79 @@ fn constructing_an_instance_fold_pays_for_its_body_once() {
 }
 
 #[test]
+fn an_interface_owned_export_normalizes_only_its_neighbors() {
+    use crate::kernel::{MemorySegment, program_expression::int32_literal};
+
+    use crate::kernel::primitives::take_whole_normalization_facts;
+
+    let mut samples = Vec::new();
+    for count in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer = ProgramExpression::Value(ProgramValue::typed_pointer(
+            Address {
+                base: AddressBase::ExternalArgument,
+                offset: AddressOffset::Constant(0),
+            },
+            ProgramType::Int32Pointer,
+        ));
+        let spec_at = |start, end| {
+            ResourceSpec::owned_memory(MemorySegment::new(
+                pointer.clone(),
+                int32_literal(start),
+                int32_literal(end),
+            ))
+        };
+        let facts = PureFactStore::default();
+        let state = ExecutionState::new();
+        let fact_at = |start, end| {
+            evaluate_interface_resource_spec(&spec_at(start, end), &state, &facts)
+                .expect("the footprint lowers")
+        };
+        let exported = fact_at(0, 1);
+        let adjacent = fact_at(1, 2);
+        let merged = fact_at(0, 2);
+        let frame = (0..count)
+            .map(|index| fact_at(4 + 2 * index, 5 + 2 * index))
+            .collect::<Vec<_>>();
+        let resources = ResourceContext::new_with_equalities(facts.assumptions())
+            .unchecked_with_facts(frame.iter().cloned().chain([exported, adjacent]));
+        let parent = ExecutionProofCore::at_entry(
+            state.clone().with_resource_context(resources.clone()),
+            ExecutionFrontier::default(),
+        );
+        take_whole_normalization_facts();
+        let (joined, work) = crate::instrumentation::measure_deterministic_work(|| {
+            interface_join_resources(
+                &parent,
+                [&parent, &parent],
+                [&facts, &facts],
+                &[spec_at(0, 1)],
+                &state,
+                &facts,
+            )
+        });
+        assert_eq!(take_whole_normalization_facts(), 0);
+        let successor = joined
+            .expect("both arms supply the export")
+            .expected_resources;
+        assert_eq!(successor.fact_count(), frame.len() + 1);
+        assert!(successor.contains_exact_representation(&merged));
+        for fact in &frame {
+            assert_eq!(
+                successor.owned_occurrences_for_fact(fact),
+                resources.owned_occurrences_for_fact(fact)
+            );
+        }
+        samples.push(work);
+    }
+    // Allow the indexed lookups to cost a little more in a deeper tree.
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 32),
+        "one export did too much work beside the disjoint frame: {samples:?}"
+    );
+}
+
+#[test]
 fn a_checked_interface_join_does_not_reconstruct_a_calls_havoc() {
     let mut samples = Vec::new();
     for count in [4u32, 8, 16, 32] {

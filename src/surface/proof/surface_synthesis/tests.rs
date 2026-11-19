@@ -4562,13 +4562,23 @@ fn volatile_read_event_results_follow_state_branches() {
             .region_result_value(&CodeRegionRef::Region(3))
             .is_err()
     );
-    left.retain(|_, _| true);
+    let interface = left.for_branch_interface(
+        &joined,
+        &ProgramPointRef {
+            region: CodeRegionRef::Region(4),
+            kind: ProgramPointKind::Entry,
+        },
+        &ExecutionState::new(),
+    );
+    assert!(
+        interface
+            .region_result_value(&CodeRegionRef::Region(3))
+            .is_err()
+    );
     assert_eq!(
         left.region_result_value(&CodeRegionRef::Region(3)).unwrap(),
         next
     );
-    left.retain(|_, _| false);
-    assert!(left.region_result_value(&CodeRegionRef::Region(3)).is_err());
     assert_eq!(
         ancestor
             .region_result_value(&CodeRegionRef::Region(3))

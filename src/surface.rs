@@ -29,10 +29,9 @@ use crate::kernel::{
     SpecPredicateArgument, SpecProposition, SpecResource, StatementOutcome, SymbolicExecution,
     SymbolicMemory, Term, TerminationRefusal, Theorem, UnsuitableCallback, Variable,
     VerifiedLoopRule, VerifiedPureTheorem as KernelVerifiedPureTheorem,
-    abstract_execution_state_for_join, assume_universally_quantified_pure_implication,
-    contract_refinement_context, int32, loop_invariants_hold_at_entry, program_assign,
-    program_condition_fact_memories, program_declare,
-    program_do_while_with_invariant_and_effect_checks, program_function,
+    assume_universally_quantified_pure_implication, contract_refinement_context, int32,
+    loop_invariants_hold_at_entry, program_assign, program_condition_fact_memories,
+    program_declare, program_do_while_with_invariant_and_effect_checks, program_function,
     program_function_contract_entry_state, program_function_contract_refinement_arguments,
     program_function_contract_refinement_context, program_function_entry_state,
     program_function_termination_plan, program_if, program_pointer_offsets_proven_equal_for_effect,
@@ -3618,6 +3617,9 @@ struct RecordedStates {
         >,
     >,
     version: std::sync::Arc<RecordedStateVersion>,
+    /// A temporary interface lowering scope reads marks from the common
+    /// tree without exposing its incidental program points.
+    interface_marks: Option<std::sync::Arc<RecordedInterfaceMarks>>,
     /// The labels the proof gave loops on this path. A program point is
     /// recorded once, under its loop's first label when it has one and as
     /// `loop(N)` otherwise; a lookup by either spelling, or by another label
@@ -3722,6 +3724,11 @@ struct RecordedStateVersion {
     origin: std::sync::Arc<()>,
 }
 
+struct RecordedInterfaceMarks {
+    root: Option<std::sync::Arc<RecordedStateNode>>,
+    call_result_snapshots: imbl::OrdMap<ProgramPointSelector, RecordedCallResults>,
+}
+
 impl Default for RecordedStates {
     fn default() -> Self {
         Self {
@@ -3736,6 +3743,7 @@ impl Default for RecordedStates {
                 history: None,
                 origin: std::sync::Arc::new(()),
             }),
+            interface_marks: None,
             loop_labels: None,
             source_layout: None,
             point_names: imbl::HashMap::new(),
@@ -3943,6 +3951,44 @@ impl RecordedStates {
 
     fn new() -> Self {
         Self::default()
+    }
+
+    /// The abstract interface can read its target and shared proof marks.
+    /// Its target is only a lowering input. Publication at the continuation
+    /// adds the checked successor to the ordinary indexes once.
+    fn for_branch_interface(
+        &self,
+        common: &Self,
+        target: &ProgramPointRef,
+        state: &ExecutionState,
+    ) -> Self {
+        let selector = self.recorded_spelling(target.clone().into());
+        let mut records = Self {
+            version: std::sync::Arc::new(RecordedStateVersion {
+                root: Some(recorded_state_node(
+                    selector.clone(),
+                    Some(state.clone()),
+                    None,
+                    None,
+                )),
+                history: None,
+                origin: std::sync::Arc::new(()),
+            }),
+            interface_marks: Some(std::sync::Arc::new(RecordedInterfaceMarks {
+                root: common.version.root.clone(),
+                call_result_snapshots: common.call_result_snapshots.clone(),
+            })),
+            loop_labels: self.loop_labels.clone(),
+            source_layout: self.source_layout.clone(),
+            loop_iterations: self.loop_iterations.clone(),
+            loop_iteration_variables: self.loop_iteration_variables.clone(),
+            ..Self::new()
+        };
+        records.effect_offsets.insert(selector.clone(), 0);
+        if records.records_call_snapshots() {
+            records.set_call_result_snapshot(&selector, Some(RecordedCallResults::default()));
+        }
+        records
     }
 
     fn get<K: RecordedStateKey + ?Sized>(&self, key: &K) -> Option<&ExecutionState> {
@@ -4181,8 +4227,13 @@ impl RecordedStates {
 
     fn call_results_at(&self, selector: &ProgramPointSelector) -> Option<&RecordedCallResults> {
         crate::instrumentation::record_deterministic_work(1);
-        self.call_result_snapshots
-            .get(&self.recorded_spelling(selector.clone()))
+        let selector = self.recorded_spelling(selector.clone());
+        if matches!(selector, ProgramPointSelector::Mark(_))
+            && let Some(marks) = &self.interface_marks
+        {
+            return marks.call_result_snapshots.get(&selector);
+        }
+        self.call_result_snapshots.get(&selector)
     }
 
     fn records_call_snapshots(&self) -> bool {
@@ -4716,7 +4767,13 @@ impl RecordedStates {
     }
 
     fn get_exact<K: RecordedStateKey + ?Sized>(&self, key: &K) -> Option<&ExecutionState> {
-        let mut node = self.version.root.as_deref();
+        let root = match &self.interface_marks {
+            Some(marks) if matches!(key.to_selector(), ProgramPointSelector::Mark(_)) => {
+                &marks.root
+            }
+            _ => &self.version.root,
+        };
+        let mut node = root.as_deref();
         while let Some(current) = node {
             match key.compare(&current.selector) {
                 std::cmp::Ordering::Less => node = current.left.as_deref(),
@@ -5326,32 +5383,6 @@ impl RecordedStates {
             .take_while(|(selector, _)| matches!(selector, ProgramPointSelector::Mark(_)))
             .take(limit)
             .collect()
-    }
-
-    fn retain(&mut self, mut keep: impl FnMut(&ProgramPointSelector, &mut ExecutionState) -> bool) {
-        let mut retained = Self::new();
-        retained.loop_labels = self.loop_labels.clone();
-        retained.source_layout = self.source_layout.clone();
-        retained.loop_iterations = self.loop_iterations.clone();
-        retained.loop_iteration_variables = self.loop_iteration_variables.clone();
-        for (selector, state) in self.iter() {
-            let mut state = state.clone();
-            if keep(selector, &mut state) {
-                retained.insert(selector.clone(), state);
-                retained.set_call_result_snapshot(
-                    selector,
-                    self.call_result_snapshots.get(selector).cloned(),
-                );
-                if let ProgramPointSelector::ProgramPoint(ProgramPointRef {
-                    region: CodeRegionRef::Region(index),
-                    kind: ProgramPointKind::Exit,
-                }) = selector
-                {
-                    retained.record_read_event_values(*index, self.read_event_values(*index));
-                }
-            }
-        }
-        *self = retained;
     }
 }
 

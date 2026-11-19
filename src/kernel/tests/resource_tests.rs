@@ -2615,14 +2615,17 @@ fn duplicate_authority_occurrences_survive_normalization_in_order() {
     };
     let first_range = ResourceFact::own_memory(memory_range(base.clone(), 0, 1));
     let second_range = ResourceFact::own_memory(memory_range(base, 1, 2));
-    let context = ResourceContext::new()
+    let assumptions = PureFactContext::new();
+    let (context, inserted) = ResourceContext::new()
         .unchecked_with_fact(authority.clone())
         .unchecked_with_fact(authority.clone())
         .unchecked_with_supported_facts_from_entry(0, &authority, [first_view.clone()])
         .unchecked_with_supported_facts_from_entry(1, &authority, [second_view.clone()])
-        .unchecked_with_fact(first_range.clone())
-        .unchecked_with_fact(second_range)
-        .normalized_around_facts(&[first_range], &PureFactContext::new());
+        .unchecked_with_fact(first_range)
+        .install_established_partition([second_range], &assumptions)
+        .expect("the adjacent range is disjoint");
+    let context = context.normalized_delta(inserted, &assumptions);
+    assert_eq!(context.fact_count(), 5, "the adjacent ranges coalesce");
 
     let occurrences = context.owned_occurrences_for_fact(&authority);
     assert_eq!(occurrences.len(), 2);
