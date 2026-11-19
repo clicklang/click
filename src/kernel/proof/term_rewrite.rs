@@ -4587,17 +4587,11 @@ impl<'a> TermRewrite<'a> {
             return None;
         }
         if accumulator_capture {
-            let Some(fresh) = self.fresh_variable() else {
-                return None;
-            };
-            accumulator = fresh;
+            accumulator = self.fresh_variable()?;
             self.scope_renaming_max = self.scope_renaming_max.max(accumulator.0);
         }
         if item_capture {
-            let Some(fresh) = self.fresh_variable() else {
-                return None;
-            };
-            item = fresh;
+            item = self.fresh_variable()?;
             self.scope_renaming_max = self.scope_renaming_max.max(item.0);
         }
 

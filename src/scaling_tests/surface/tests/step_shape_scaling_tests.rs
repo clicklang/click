@@ -1176,7 +1176,7 @@ fn writing_loop_havoc_ignores_untouched_scalar_slots() {
                 let c = c.replace("    int32 i;", &format!("    int32 i;\n{locals}"));
                 let proof = proof.replacen(
                     "    step();",
-                    &"    step();\n".repeat(1 + 2 * count).trim_end(),
+                    "    step();\n".repeat(1 + 2 * count).trim_end(),
                     1,
                 );
                 (c, proof)

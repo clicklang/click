@@ -55,17 +55,17 @@ impl TermRewrite<'_> {
                     MachineIntegerType::Int32 | MachineIntegerType::UInt32
                 ) {
                     for operand in &mut arguments {
-                        if let Some(value) = MachineOperandView::Shared(operand).literal() {
-                            if matches!(
+                        if let Some(value) = MachineOperandView::Shared(operand).literal()
+                            && matches!(
                                 value,
                                 MachineTerm::Constant {
                                     format: MachineIntegerType::UInt32,
                                     ..
                                 }
-                            ) {
-                                *operand = KernelTermImport::for_exact_field_inputs()
-                                    .machine(*format, &value.into_word32());
-                            }
+                            )
+                        {
+                            *operand = KernelTermImport::for_exact_field_inputs()
+                                .machine(*format, &value.into_word32());
                         }
                     }
                 }

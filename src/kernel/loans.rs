@@ -673,6 +673,7 @@ fn memory_range_aliases(range: &MemoryRange, assumptions: &PureFactContext) -> V
 /// refuses the writes that no partition can license: a store through the
 /// viewed pointer itself, through a pointer assumed equal to it, or into a
 /// concretely overlapping offset of the same object.
+#[cfg(test)]
 pub(crate) fn protected_range_proven_overlapping(
     query: &MemoryRange,
     protected: &MemoryRange,
@@ -6359,6 +6360,7 @@ impl LoanLedger {
     /// buckets for the query and its exact pointer aliases with
     /// [`protected_range_proven_overlapping`], whose polarity is documented
     /// there.
+    #[cfg(test)]
     pub(crate) fn permits_memory_access_with_assumptions(
         &self,
         range: &MemoryRange,

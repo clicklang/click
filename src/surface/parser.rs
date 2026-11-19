@@ -8320,10 +8320,7 @@ impl Parser {
                 }
                 *identity
             }
-            None => {
-                let identity = self.fresh_resource_identity();
-                identity
-            }
+            None => self.fresh_resource_identity(),
         };
         self.names
             .bind_instance(name.to_string(), (identity, family.clone()));
@@ -8631,10 +8628,7 @@ impl Parser {
                 }
                 identity
             }
-            None => {
-                let identity = self.fresh_resource_identity();
-                identity
-            }
+            None => self.fresh_resource_identity(),
         };
         self.names
             .bind_instance(name.clone(), (identity, resource_name.clone()));
@@ -10359,8 +10353,7 @@ impl Parser {
                 // expansion checks the supplied instance against it.
                 *identity
             } else if introduce {
-                let identity = self.fresh_resource_identity();
-                identity
+                self.fresh_resource_identity()
             } else {
                 return Err(self.unknown_instance(&name, "child resource"));
             };
@@ -10665,8 +10658,7 @@ impl Parser {
             }
             *identity
         } else {
-            let identity = self.fresh_resource_identity();
-            identity
+            self.fresh_resource_identity()
         };
         let declared = self
             .declared_resource_fields
@@ -11902,10 +11894,7 @@ impl Parser {
                     "interface binder `{name}` rebinds an instance of resource `{family}`, not `{resource_name}`"
                 )));
             }
-            None => {
-                let identity = self.fresh_resource_identity();
-                identity
-            }
+            None => self.fresh_resource_identity(),
         };
         self.names
             .bind_instance(name.clone(), (identity, resource_name.clone()));
@@ -13360,7 +13349,7 @@ impl Parser {
                 && self.rust_slice_params.contains(name)
             {
                 let length = ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                    crate::kernel::BindingName::slice_length(&name),
+                    crate::kernel::BindingName::slice_length(name),
                 ));
                 let end_expression = length;
                 let end = contract_expression_as_program_expression(&end_expression)

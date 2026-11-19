@@ -31,6 +31,7 @@ impl crate::kernel::search::ProofSearch<LoanLedger> {
 }
 
 impl crate::kernel::search::ProofSearch<LoanLedger> {
+    #[cfg(test)]
     pub(crate) fn loan_access(
         proof_input: &LoanLedger,
         range: &MemoryRange,

@@ -3613,7 +3613,7 @@ fn decided_algebraic_if(proposition: &Proposition) -> Option<(ConditionTerm, boo
         value,
         Proposition::Equal(
             Term::Algebraic(selected.as_ref().clone().into()),
-            Term::Algebraic(constructor.clone().into()),
+            Term::Algebraic(constructor.clone()),
         ),
     ))
 }

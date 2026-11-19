@@ -503,8 +503,6 @@ pub(crate) fn rust_iterator_method(
     accessor: &str,
 ) -> Result<ContractExpression, String> {
     use crate::languages::interface::RustIteratorKind as K;
-    let variable =
-        |suffix: &str| ProgramExpression::Variable(format!("{}_{suffix}", iterator.local).into());
     let expression = match (iterator.kind, accessor) {
         // A slice iterator is the slice it still covers: `iter.as_slice()`
         // reads as a slice parameter does, its data, and `iter.len()` is

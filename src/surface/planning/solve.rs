@@ -113,8 +113,8 @@ pub(in crate::surface) fn plan_explicit_equality_rewrites_from(
             }
             Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) => {
                 Proposition::Equal(
-                    Term::Algebraic(right.clone().into()),
-                    Term::Algebraic(left.clone().into()),
+                    Term::Algebraic(right.clone()),
+                    Term::Algebraic(left.clone()),
                 )
             }
             _ => return None,
