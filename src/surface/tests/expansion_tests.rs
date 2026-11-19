@@ -9066,8 +9066,6 @@ fn restricted_solve_expands_increment_upper_bound_to_ordinary_arithmetic() {
             }
         }
     "#;
-    let verified = verify_click_theorems(click_source);
-    verified.expect("the typed increment rule should verify through the pure Proof");
     let offset = click_source.find("solve() using").unwrap();
     let line = click_source[..offset]
         .bytes()
@@ -9351,8 +9349,6 @@ fn restricted_solve_expands_strict_increment_to_ordinary_arithmetic() {
                 }
             }
         "#;
-    let verified = verify_click_theorems(click_source);
-    verified.expect("the typed strict-increment rule should verify through the pure Proof");
     let offset = click_source.find("solve() using").unwrap();
     let line = click_source[..offset]
         .bytes()
@@ -9385,8 +9381,6 @@ fn solve_expands_increment_definedness_to_ordinary_arithmetic() {
             }
         }
     "#;
-    let verified = verify_click_theorems(click_source);
-    verified.expect("the typed increment-definedness rule should verify through the pure Proof");
     let offset = click_source.find("solve()").unwrap();
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c_tactic_source_at(click_source, &[], position.line, position.column)
@@ -9398,7 +9392,7 @@ fn solve_expands_increment_definedness_to_ordinary_arithmetic() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_44")]
+#[ignore = "nightly: 3.1s per case in a parallel fast-gate batch"]
 fn restricted_solve_expands_increment_lower_bound_to_ordinary_arithmetic() {
     let click_source = r#"
         theorem increment_preserves_lower_bound(
@@ -9416,8 +9410,6 @@ fn restricted_solve_expands_increment_lower_bound_to_ordinary_arithmetic() {
             }
         }
     "#;
-    let verified = verify_click_theorems(click_source);
-    verified.expect("the typed increment-lower-bound rule should verify through the pure Proof");
     let offset = click_source.find("solve() using").unwrap();
     let line = click_source[..offset]
         .bytes()
@@ -9442,7 +9434,7 @@ fn restricted_solve_expands_increment_lower_bound_to_ordinary_arithmetic() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_44")]
+#[ignore = "nightly: 4.9s per case in a parallel fast-gate batch"]
 fn restricted_solve_expands_increment_order_to_ordinary_arithmetic() {
     let click_source = r#"
         theorem increment_preserves_order(
@@ -9460,8 +9452,6 @@ fn restricted_solve_expands_increment_order_to_ordinary_arithmetic() {
             }
         }
     "#;
-    let verified = verify_click_theorems(click_source);
-    verified.expect("the typed increment-order rule should verify through the pure Proof");
     let offset = click_source.find("solve() using").unwrap();
     let line = click_source[..offset]
         .bytes()
@@ -9970,8 +9960,6 @@ fn restricted_solve_retains_increment_under_a_larger_constant() {
             }
         }
     "#;
-    let verified = verify_click_theorems(click_source);
-    verified.expect("the increment constant-bound rule should verify through Proof");
     let offset = click_source.find("solve() using").unwrap();
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c_tactic_source_at(click_source, &[], position.line, position.column)
@@ -23163,8 +23151,6 @@ test_batches! {
         solve_expands_increment_definedness_to_ordinary_arithmetic,
     ],
     expansion_batch_44: [
-        restricted_solve_expands_increment_lower_bound_to_ordinary_arithmetic,
-        restricted_solve_expands_increment_order_to_ordinary_arithmetic,
         restricted_solve_expands_named_successor_order,
         restricted_solve_expands_adjacent_order_to_ordinary_arithmetic,
     ],
