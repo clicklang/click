@@ -246,11 +246,6 @@ pub(super) fn operand(view: crate::kernel::MachineOperandView<'_>) -> MemoryEras
                 Box::new(memory_erased_address_key(address.exact_cell_key())),
                 *kind,
             ))
-        } else if let Some((_, address, kind)) = view.read() {
-            intern(Node::Load(
-                Box::new(memory_erased_address_key(address)),
-                kind,
-            ))
         } else if matches!(
             root.node(),
             crate::kernel::KernelTermNode::Fold(_)

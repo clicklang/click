@@ -86,14 +86,6 @@ impl ConditionTerm {
         Self::BoolEqual(Box::new(left), Box::new(right))
     }
 
-    /// The read of the one-byte `bool` cell at `pointer` in `memory`.
-    // Built by the kernel's tests until a front end reads `bool` cells
-    // (Stage 5, PR5) or a proof step asks for them.
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub(crate) fn bool_load(memory: SharedMemory, pointer: Address) -> Self {
-        Self::BoolLoad(crate::kernel::ProgramPoint::at(&memory), Box::new(pointer))
-    }
-
     /// Rule L-If: the case split `ConditionIs(self, value)` means, for a
     /// conditional `if c { a } else { b }`:
     /// `(ConditionIs(c, true) and ConditionIs(a, value)) or
