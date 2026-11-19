@@ -9480,6 +9480,62 @@ transport(at(filled, dst[0]) == 7, dst[0] == 7);
 }
 
 #[test]
+fn branch_view_entry_loadability_ignores_prior_effects() {
+    for slot in [0, 2] {
+        let contract = if slot == 0 {
+            "owns p[0..1];"
+        } else {
+            "views p[0..1]; owns p[2..3];"
+        };
+        let mut samples = Vec::new();
+        for size in [4, 16, 64] {
+            let stores = (0..size)
+                .map(|value| format!("p[{slot}] = {value};\n"))
+                .collect::<String>();
+            let steps = "step();\n".repeat(size + 3);
+            let program = format!(
+                "int32 original_value(int32* p, int32 flag) {{
+                    int32 original = p[0];
+                    int32 selected;
+                    {stores}
+                    if (flag < 0) {{ selected = original; }} else {{ selected = original; }}
+                    return selected;
+                }}"
+            );
+            let proof = format!(
+                r#"verifying "entry_view.c";
+                int32 original_value(int32* p, int32 flag) {{
+                    {contract}
+                    ensures result == old(p[0]);
+                }} by {{
+                    {steps}
+                    branch ensuring {{
+                        views p[0..1];
+                        fact selected == old(p[0]);
+                    }} {{
+                        true => {{ step(); }}
+                        false => {{ step(); }}
+                    }}
+                    step();
+                    solve();
+                }}"#
+            );
+            let (result, sample) = scaling_sample(size, || {
+                verify_c_sources(&proof, &[("entry_view.c", &program)])
+            });
+            result.unwrap_or_else(|error| panic!("{}", error.message()));
+            let work = sample.named_work["operation `branch interface entry loadability`"];
+            assert!(work > 0, "the interface must check the entry view");
+            samples.push((size, work));
+        }
+        assert!(
+            samples.iter().all(|(_, work)| *work == samples[0].1),
+            "changing the length of the store history at slot {slot} changed entry-loadability work: {samples:?}",
+        );
+    }
+}
+
+#[test]
 fn branch_interface_fact_publication_extends_one_indexed_context() {
     let c_source = "struct cell { int32 value; }; int32 bump(struct cell* p, int32 x, int32 flag) { p->value = flag; return 0; }";
     let mut samples = Vec::new();

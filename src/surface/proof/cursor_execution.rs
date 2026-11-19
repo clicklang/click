@@ -32,7 +32,6 @@ pub(super) fn apply_branch_interface_with_proof_facts(
     // for later certificates. Internal pointer values are not source syntax.
     assert_eq!(assertions.len(), written_assertions.len());
     let tactic_index = proof_context.tactic_index;
-    let parameters = proof_context.parsed_function.parameters();
     let parameter_binding = proof_context.parameter_binding();
     let predicate_environment = proof_context.spec_definitions.predicates;
     let click_function_environment = proof_context.spec_definitions.functions;
@@ -233,7 +232,6 @@ pub(super) fn apply_branch_interface_with_proof_facts(
             let mut projections = Vec::new();
             append_lowered_resource_clause_loadable_fact(
                 resource,
-                parameters,
                 &fact,
                 &abstract_state,
                 &mut projections,
@@ -244,36 +242,33 @@ pub(super) fn apply_branch_interface_with_proof_facts(
                     exported_pure_facts = exported_pure_facts.with_kernel_checked_fact(fact);
                 }
             }
-            // An `old(...)`-interface ensure needs the exported view's
-            // loadability in its entry-memory form. Export it exactly
-            // when the clause lowers at entry at all and the pre-advance
-            // proof state establishes it, the same gate `fact` assertions
-            // pass through.
-            let mut entry_loadables = Vec::new();
-            if let Ok(entry_lowered) =
-                lower_resource_clause_at_state(resource, parameter_binding, &entry_state)
-            {
-                append_lowered_resource_clause_loadable_fact(
-                    resource,
-                    parameters,
-                    &entry_lowered,
-                    &entry_state,
-                    &mut entry_loadables,
+            // An `old(...)` interface assertion may need the same view's
+            // loadability at region entry. Use the arm's checked facts to
+            // establish that spelling independently of the successor view.
+            if matches!(resource, ResourceClause::ViewMemory(_)) {
+                let _timing = crate::instrumentation::OperationTiming::new(
+                    proof_context.parsed_function.name(),
+                    claim_label,
+                    "branch interface entry loadability",
                 );
-            }
-            if !entry_loadables.is_empty() {
-                let mut pre_advance_facts = concrete_facts.clone();
-                for fact in &execution.core.effect_facts {
-                    if !pre_advance_facts.contains_top_level(fact.proposition()) {
-                        pre_advance_facts =
-                            pre_advance_facts.with_kernel_checked_fact(fact.proposition().clone());
-                    }
-                }
-                for fact in entry_loadables {
-                    if pre_advance_facts.assumptions().proves_exact(&fact)
-                        && !exported_pure_facts.contains_top_level(&fact)
-                    {
-                        exported_pure_facts = exported_pure_facts.with_kernel_checked_fact(fact);
+                if let Ok(entry_lowered) =
+                    lower_resource_clause_at_state(resource, parameter_binding, &entry_state)
+                {
+                    let mut entry_loadables = Vec::new();
+                    append_lowered_resource_clause_loadable_fact(
+                        resource,
+                        &entry_lowered,
+                        &entry_state,
+                        &mut entry_loadables,
+                    );
+                    for fact in entry_loadables {
+                        crate::instrumentation::record_deterministic_work(1);
+                        if concrete_facts.assumptions().proves_exact(&fact)
+                            && !exported_pure_facts.contains_top_level(&fact)
+                        {
+                            exported_pure_facts =
+                                exported_pure_facts.with_kernel_checked_fact(fact);
+                        }
                     }
                 }
             }
