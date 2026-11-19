@@ -2256,11 +2256,6 @@ pub(crate) fn collect_condition_bitvector_variables(
                 collect_condition_bitvector_variables(child, variables);
             }
         }
-        ConditionTerm::BoolLoad(memory, pointer) => {
-            collect_shared_memory_bitvector_variables(memory.shared_memory(), variables);
-            collect_pointer_bitvector_variables(pointer, variables);
-            collect_stored_load_connection_variables(memory.shared_memory(), pointer, variables);
-        }
     }
 }
 
@@ -3670,9 +3665,6 @@ fn collect_condition_capture_variables(
                 collect_condition_capture_variables(child, variables, integer_seen);
             }
         }
-        ConditionTerm::BoolLoad(_, pointer) => {
-            collect_pointer_capture_variables(pointer, variables, integer_seen)
-        }
     }
 }
 
@@ -4667,7 +4659,6 @@ fn collect_condition_scope_summary(
             }
             summary
         }
-        ConditionTerm::BoolLoad(_, pointer) => collect_pointer_scope_summary(pointer, summaries),
     }
 }
 
@@ -5383,8 +5374,6 @@ fn collect_condition_binder_variables(
                 );
             }
         }
-        // As a word-valued load: a read binds nothing.
-        ConditionTerm::BoolLoad(..) => {}
     }
 }
 

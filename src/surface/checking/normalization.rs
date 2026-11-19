@@ -346,8 +346,7 @@ pub(in crate::surface) fn normalize_condition_without_assumptions(
         // with no facts.
         ConditionTerm::BoolApplication(_)
         | ConditionTerm::BoolIf { .. }
-        | ConditionTerm::BoolEqual(..)
-        | ConditionTerm::BoolLoad(..) => {
+        | ConditionTerm::BoolEqual(..) => {
             crate::kernel::SelectedFacts::from_propositions(&[]).decide_selected_condition(condition)
         }
     }

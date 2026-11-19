@@ -707,11 +707,6 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                         tasks.push(HavocIdentityTask::Text(","));
                         tasks.push(HavocIdentityTask::Condition(*left));
                     }
-                    ConditionTerm::BoolLoad(_, pointer) => {
-                        identity.push_str("bload(");
-                        tasks.push(HavocIdentityTask::Text(")"));
-                        tasks.push(HavocIdentityTask::Pointer(*pointer));
-                    }
                 }
             }
         }
@@ -3728,6 +3723,13 @@ impl SymbolicMemory {
     ) -> Option<crate::kernel::effective_type::CAccessClass> {
         crate::instrumentation::record_deterministic_work(1);
         self.blocks.get(&pointer.base)?.declared_class.clone()
+    }
+
+    pub(crate) fn has_boolean_cell_type(&self, pointer: &Address) -> bool {
+        use crate::kernel::effective_type::{CAccessClass, CScalarClass};
+        self.declared_class(pointer)
+            .or_else(|| self.heap_effective_class(pointer))
+            == Some(CAccessClass::Scalar(CScalarClass::Bool))
     }
 
     /// The effective type a C store gave the heap cell starting at

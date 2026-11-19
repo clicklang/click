@@ -211,7 +211,6 @@ impl ConditionShape {
                 ConditionTerm::BoolIf { .. } | ConditionTerm::BoolEqual(..) => {
                     unreachable!("projected connective")
                 }
-                ConditionTerm::BoolLoad(..) => 19,
             },
         }
     }

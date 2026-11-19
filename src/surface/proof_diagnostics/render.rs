@@ -2020,13 +2020,6 @@ impl Renderer<'_> {
                 self.condition(b);
                 self.push(")");
             }
-            ConditionTerm::BoolLoad(memory, pointer) => {
-                self.push("read<Bool>(");
-                self.memory(memory.memory());
-                self.push(", pointer=");
-                self.pointer(pointer);
-                self.push(")");
-            }
             _ => self.push("condition(<bounded operation>)"),
         }
     }

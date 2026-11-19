@@ -3713,10 +3713,6 @@ fn collect_condition_bound_variables(
             collect_condition_bound_variables(left, variables);
             collect_condition_bound_variables(right, variables);
         }
-        ConditionTerm::BoolLoad(memory, pointer) => {
-            collect_memory_bitvector_variables(memory.memory(), variables);
-            collect_pointer_offset_bound_variables(&pointer.offset, variables);
-        }
     }
 }
 
@@ -5679,17 +5675,6 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_common_condition(
                     ))
                 }
             };
-            if let crate::kernel::KernelTermNode::BoolRead(read) = leaf.node() {
-                let (point, address) = read.parts();
-                return Ok(KernelTerm::boolean_read(
-                    point.with_renamed_memory(substitute_bitvector_variable_in_shared_memory(
-                        point.shared_memory(),
-                        from,
-                        to,
-                    )),
-                    map_address(address)?,
-                ));
-            }
             if let crate::kernel::KernelTermNode::PointerEqual(pair) = leaf.node() {
                 let [a, b] = pair.arguments();
                 return Ok(KernelTerm::pointer_equal_raw([
@@ -5895,12 +5880,6 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_condition(
                 |child| substitute_bitvector_variable_in_condition(child, from, to),
                 |argument| {
                     substitute_bitvector_variable_in_pure_function_argument(argument, from, to)
-                },
-                |memory, pointer| {
-                    (
-                        substitute_bitvector_variable_in_shared_memory(memory, from, to),
-                        substitute_bitvector_variable_in_pointer(pointer, from, to),
-                    )
                 },
             )
             .expect("a `Bool` value form maps"),

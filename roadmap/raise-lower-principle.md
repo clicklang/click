@@ -4489,8 +4489,7 @@ are removed.
 
 | Remaining reader | Live boundary |
 | --- | --- |
-| Raw `ConditionTerm::BoolLoad` and retained `BoolRead` | `BoolLoad` is a public kernel input. Import, checked rewriting, substitution, storage identity, and resource/connection collection preserve its state and address. The native read adapter is still used by Boolean storage, fold dependency collection and Surface synthesis. |
-| Ordinary C and Rust Boolean cell reads | `symbolic_load_value_unrecorded` constructs a `UInt8` memory read and uses the ordinary nonzero interpretation. There is no ordinary source producer of the raw logical `BoolLoad`. That byte comparison has a distinct fact identity. An exact Surface form would be needed to raise raw public input without changing its identity. |
+| Boolean cell reads | Native kernel inputs and C and Rust evaluation use `ConditionTerm::boolean_cell_read`, which represents the selected one-byte read as a nonzero comparison. Shared Boolean terms retain the same comparison and read operands. `load<Bool>(p)` raises the comparison when the read's memory records the Boolean type, preserving the selected state. |
 | Float read compatibility | `assumptions/float_conversions.rs` still uses the selected native descriptor to collect reads nested under conversions. |
 | Integer reverse bridge and native argument storage | Integer import/export and opaque binder collectors still use the reverse link. Checked source matching reads retained machine call arguments directly. Exact mixed arguments and consumers that require written output still use the existing call and argument adapters. |
 | Contract displacement compatibility | Dependency, binder and range variable readers use the retained root. Checked rewriting and rendering use the established native offset rules. Native equality, ordering and hashing still use original index identities, and exact legacy inputs retain their native representation. |

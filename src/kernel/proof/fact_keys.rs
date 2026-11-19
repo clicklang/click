@@ -555,8 +555,7 @@ fn memory_erased_condition_key(condition: &ConditionTerm) -> MemoryErasedConditi
         }
         ConditionTerm::BoolApplication(_)
         | ConditionTerm::BoolIf { .. }
-        | ConditionTerm::BoolEqual(..)
-        | ConditionTerm::BoolLoad(..) => {
+        | ConditionTerm::BoolEqual(..) => {
             unreachable!("`Bool` values use the exact proposition index")
         }
     }

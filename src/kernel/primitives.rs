@@ -1327,11 +1327,6 @@ pub enum ConditionTerm {
     /// true one merges the two values' classes in the e-graph, where their
     /// truth is shared; a false one contradicts that merge.
     BoolEqual(Box<ConditionTerm>, Box<ConditionTerm>),
-    /// The read of a one-byte `bool` cell at the pointer in the state:
-    /// `byte != 0` (the byte rule of Stage 5 bounds the byte to 0 or 1
-    /// where a front end produces the read). Two reads of one cell in one
-    /// state are one value.
-    BoolLoad(ProgramPoint, Box<Address>),
 }
 
 /// A condition's identity: the condition itself, with a 32-bit equality's
@@ -1373,7 +1368,6 @@ enum ConditionIdentity<'a> {
         else_condition: &'a ConditionTerm,
     },
     BoolEqual(&'a ConditionTerm, &'a ConditionTerm),
-    BoolLoad(&'a ProgramPoint, &'a Address),
 }
 
 /// A comparison side as its fact identity reads it
@@ -1586,7 +1580,6 @@ impl ConditionTerm {
                 else_condition,
             },
             Self::BoolEqual(left, right) => I::BoolEqual(left, right),
-            Self::BoolLoad(memory, pointer) => I::BoolLoad(memory, pointer),
         }
     }
 }

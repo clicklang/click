@@ -5549,6 +5549,109 @@ fn float_pointer_casts_round_trip_native_load_spelling() {
 }
 
 #[test]
+fn a_boolean_cell_read_round_trips_as_a_typed_load() {
+    use crate::kernel::effective_type::{CAccessClass, CScalarClass};
+    let _session = crate::kernel::VerificationSession::enter();
+    let pointer = Address {
+        base: AddressBase::Concrete("boolean-source-read".into()),
+        offset: AddressOffset::Constant(0),
+    };
+    let state = ExecutionState::new()
+        .with_memory(SymbolicMemory::new().with_classed_block(
+            pointer.base.clone(),
+            Some(CAccessClass::Scalar(CScalarClass::Bool)),
+            1,
+        ))
+        .with_local(
+            "p",
+            ProgramValue::typed_pointer(pointer.clone(), ProgramType::UInt8Pointer),
+        );
+    let read = crate::kernel::ProgramPoint::at(&crate::kernel::intern_memory_ref(state.memory()));
+    let condition = ConditionTerm::boolean_cell_read(read, pointer.clone());
+    let root = crate::kernel::KernelTermImport::default().condition(&condition);
+    let surface = raise_kernel_term(&root, ParameterBinding::default(), &state, &BTreeMap::new())
+        .expect("name of the Boolean cell read");
+    let text = diagnostics::describe_contract_expression(&surface);
+    assert_eq!(text, "load<Bool>(p)");
+    let parsed = parser::parse(&format!("function probe(p: uint8*) -> Bool {{ {text} }}"))
+        .expect("typed Boolean load parses");
+    let expression = parsed.click_function_definitions()[0].body().unwrap();
+    let spec = crate::surface::lowering::elaborate_fixed_state_expression(
+        expression,
+        BTreeMap::new(),
+        &state,
+        ProgramValueBindings::new(),
+        ProgramValueBindings::new(),
+        None,
+        &RecordedStates::new(),
+        SpecDefinitions::new(
+            &PredicateEnvironment::new(&[]),
+            &ClickFunctionEnvironment::new(&[]),
+        ),
+        BTreeSet::new(),
+        BTreeMap::new(),
+    )
+    .unwrap();
+    let (value, _) =
+        crate::kernel::program_evaluate_speresource_expression_with_checked_obligations(
+            &state,
+            &spec,
+            Some(&state),
+            &PureFactContext::new(),
+        )
+        .unwrap();
+    assert_eq!(value, ProgramValue::of_bool(condition.clone()));
+    for truth in [false, true] {
+        let goal = condition.truth_claim(truth);
+        let spelled =
+            synthesize_surface_proposition(&goal, ParameterBinding::default(), &state).unwrap();
+        let text = crate::surface::printing::source_click_proposition(&spelled);
+        assert!(text.contains("load<Bool>(p)"), "{text}");
+        let lowered = relower_written_proposition(&spelled, &state).unwrap();
+        assert_eq!(lowered, goal, "{text}");
+    }
+
+    let later = state
+        .clone()
+        .with_memory(state.memory().clone().with_block("later-boolean-read", 1));
+    let _entry =
+        SynthesisEntryScope(SYNTHESIS_ENTRY_STATE.with(|slot| slot.replace(Some(state.clone()))));
+    let old = raise_kernel_term(&root, ParameterBinding::default(), &later, &BTreeMap::new())
+        .expect("name of the Boolean read at entry");
+    assert_eq!(
+        diagnostics::describe_contract_expression(&old),
+        "old(load<Bool>(p))"
+    );
+    assert_eq!(
+        relower_written_proposition_with_states(
+            &bool_truth(old),
+            &state,
+            &later,
+            &RecordedStates::new(),
+        )
+        .unwrap(),
+        condition.truth_claim(true),
+    );
+
+    let byte_memory = crate::kernel::intern_memory(SymbolicMemory::new().with_classed_block(
+        pointer.base.clone(),
+        Some(CAccessClass::Scalar(CScalarClass::Char)),
+        1,
+    ));
+    let byte_test =
+        ConditionTerm::boolean_cell_read(crate::kernel::ProgramPoint::at(&byte_memory), pointer);
+    assert!(
+        synthesize_boolean_cell_read(
+            crate::kernel::BooleanOperandView::Native(byte_test.bool_negation_operand().unwrap()),
+            ParameterBinding::default(),
+            &state,
+            &BTreeMap::new(),
+        )
+        .is_none()
+    );
+}
+
+#[test]
 fn common_float_reads_round_trip_existing_cast_dereference_syntax() {
     for (format, spelling) in [
         (crate::kernel::KernelFloatType::Float32, "float"),

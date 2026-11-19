@@ -3580,7 +3580,6 @@ fn collect_condition_bitvector_atoms(
             collect_condition_bitvector_atoms(left, atoms);
             collect_condition_bitvector_atoms(right, atoms);
         }
-        ConditionTerm::BoolLoad(_, pointer) => collect_pointer_bitvector_atoms(pointer, atoms),
     }
 }
 

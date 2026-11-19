@@ -480,10 +480,6 @@ mod tests {
         assert!(rewrite.shared_boolean_operand(&root).is_none());
         assert!(rewrite.refusal().is_none());
         for unsupported in [
-            ConditionTerm::BoolLoad(
-                ProgramPoint::at(&intern_memory(SymbolicMemory::new())),
-                Box::new(Address::symbolic(Variable(998181))),
-            ),
             ConditionTerm::bool_application("unsupported_scalar_application", Vec::new()),
             ConditionTerm::AddressEqual(
                 Box::new(Address::symbolic(Variable(998182))),

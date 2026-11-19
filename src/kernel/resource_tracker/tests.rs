@@ -1685,13 +1685,18 @@ fn boolean_reads_report_only_the_one_byte_cell() {
             4,
         ),
     };
+    crate::kernel::eval::record_load_access_width(memory.memory(), &pointer, 1);
     let source =
-        ConditionTerm::BoolLoad(crate::kernel::ProgramPoint::at(&memory), Box::new(pointer));
+        ConditionTerm::boolean_cell_read(crate::kernel::ProgramPoint::at(&memory), pointer.clone());
     let root = KernelTermImport::default().condition(&source);
     let mut native = Vec::new();
     let mut shared = Vec::new();
     collect_condition_reads(&source, &mut native);
     collect_condition_operand_reads(BooleanOperandView::Shared(&root), &mut shared);
+    assert_eq!(
+        native[0].resource,
+        OwnedResource::Cell { pointer, bytes: 1 }
+    );
     assert_eq!(native.len(), 1);
     assert_eq!(shared, native);
 }

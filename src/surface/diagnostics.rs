@@ -932,7 +932,6 @@ pub(super) fn condition_kind(condition: &ConditionTerm) -> &'static str {
         ConditionTerm::BoolApplication(_) => "Bool function application",
         ConditionTerm::BoolIf { .. } => "Bool conditional",
         ConditionTerm::BoolEqual(..) => "Bool equality",
-        ConditionTerm::BoolLoad(..) => "bool read",
     }
 }
 
@@ -8515,9 +8514,6 @@ pub(super) fn describe_condition(condition: &ConditionTerm) -> String {
             describe_condition(left),
             describe_condition(right)
         ),
-        ConditionTerm::BoolLoad(_, pointer) => {
-            describe_load_at(pointer, ParameterBinding::default())
-        }
     }
 }
 
