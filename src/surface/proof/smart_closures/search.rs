@@ -189,20 +189,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // the goal names the complete product through an Integer let binding.
         let mut selected: [Option<(BigInt, ClickProposition, ContractExpression)>; 4] =
             std::array::from_fn(|_| None);
-        for (i, operand) in [x, y].into_iter().enumerate() {
-            if let Some(value) = operand.as_const() {
-                let written = super::super::surface_synthesis::integer_typed_expression(
-                    surface_signed_integer_literal(value),
-                );
-                let bound = ClickProposition::Comparison {
-                    left: written.clone(),
-                    operator: ComparisonOperator::LessEqual,
-                    right: written.clone(),
-                };
-                selected[2 * i] = Some((value.clone(), bound.clone(), written.clone()));
-                selected[2 * i + 1] = Some((value.clone(), bound, written));
-            }
-        }
         for surface in premises {
             let written = super::integer_composition::canonical_surface(surface)
                 .unwrap_or_else(|| surface.clone());
@@ -247,10 +233,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                                 };
                                 // Native bounds supply a machine spelling; theorem
                                 // arguments denote its mathematical observation.
-                                if matches!(operand.value_read(), IntegerTerm::Machine(_))
-                                    && super::integer_composition::observed_argument(&written)
-                                        .is_none()
-                                {
+                                if matches!(operand.value_read(), IntegerTerm::Machine(_)) {
                                     ContractExpression::Call {
                                         name: "to_integer".into(),
                                         arguments: vec![written],
@@ -3431,37 +3414,21 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 search_input.facts().assumptions(),
                 goal,
             )
-            // Short paths have their own checked rules.
+            // Weakening and two-premise transitivity can use one named lemma.
+            // Use a single normalization for longer chains of comparisons.
             && chain.len() > 2
+            // This path already names its complete evidence. The smart
+            // budget charges selecting and spelling its edges.
             && let Some(pairs) = Self::resolve_solve_premises_unmeasured(
                 search_input,
                 &chain,
                 introduced_surfaces,
             )
+            && let Some(closed) = attempt::candidate_outcome(search_input.driver().apply_step(
+                ProofStep::NormalizeUsing(pairs.into_iter().map(|(_, surface)| surface).collect()),
+            ))?
         {
-            let premises = pairs
-                .into_iter()
-                .map(|(_, surface)| surface)
-                .collect::<Vec<_>>();
-            // Pure proofs can expand the selected chain through Integer
-            // composition. Statement prerequisites can repeat the chain
-            // check for many operations, so keep their compact checker.
-            let closed = if matches!(search_input.context.as_ref(), ProofContext::Pure(_)) {
-                attempt::candidate_outcome(Self::try_integer_composition_using(
-                    search_input,
-                    &premises,
-                ))?
-                .flatten()
-            } else {
-                attempt::candidate_outcome(
-                    search_input
-                        .driver()
-                        .apply_step(ProofStep::NormalizeUsing(premises)),
-                )?
-            };
-            if let Some(closed) = closed {
-                return Ok(Some(closed));
-            }
+            return Ok(Some(closed));
         }
         // A separating conjunction already states its structural proof tree.
         // Decompose it before selecting ambient arithmetic/history candidates;
@@ -10983,11 +10950,17 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // Fixed-state obligations can lack a source presentation. Retain a
         // spelled have first; its ordinary child proof has a source goal and
         // follows the same selected-premise path as an authored proof.
+        //
+        // The spelled `have` must state this goal itself. `defined(p->f + 1)`
+        // also states that its read is defined, so for the overflow half of
+        // that conjunction it opens the whole conjunction, whose search
+        // splits it and reaches this half again without end.
         if search_input.surface_goal().is_none()
             && crate::kernel::proof::arithmetic_special::signed_definedness_query(goal).is_some()
             && let Some(spelled) = spell_signed_goal(goal, premise_pairs)
+            && let Ok(scope) = search_input.driver().open_have(spelled)
+            && scope.goal() == Some(goal)
         {
-            let scope = search_input.driver().open_have(spelled).ok()?;
             let selected = premise_pairs
                 .iter()
                 .map(|(_, p)| p.clone())
@@ -11324,8 +11297,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 })
                 .collect::<Option<Vec<_>>>()?;
             let Some(surface_goal) = base.surface_goal() else {
+                // As above: only a spelled `have` stating this goal itself.
                 let spelled = spell_signed_goal(goal, &pairs)?;
                 let scope = base.driver().open_have(spelled).ok()?;
+                if scope.goal() != base.goal() {
+                    return None;
+                }
                 let closed = scope.driver().try_restricted_solve_closure(listed)?;
                 return closed
                     .join()
