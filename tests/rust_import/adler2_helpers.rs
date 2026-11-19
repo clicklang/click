@@ -1453,7 +1453,7 @@ fn charon_adler2_four_byte_cursor_have_keeps_its_pre_regression_work_bound() {
         .iter()
         .find(|sample| {
             sample.tactic.claim.ends_with("_compute.contract")
-                && sample.tactic.source_index == 18
+                && sample.tactic.source_index == 16
                 && sample.tactic.tactic_name == "have"
         })
         .expect("the checked cursor advancement must be reached");

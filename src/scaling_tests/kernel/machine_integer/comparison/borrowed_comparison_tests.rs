@@ -69,10 +69,30 @@ fn conditional_atom_reads_fixed_roots_without_exporting_arithmetic() {
             let inner = conditional(variable.clone());
             let shallow = conditional(inner.clone());
             let nested_arithmetic = conditional(conditional(arithmetic.clone()));
-            let mut deep = inner;
+            let mut deep = inner.clone();
             for _ in 0..size {
                 deep = conditional(deep);
             }
+            let guarded = |operands| {
+                KernelTerm::machine_if_shared(
+                    format,
+                    [
+                        KernelTerm::boolean_comparison_raw(format, R::LessThan, operands),
+                        variable.clone(),
+                        literal(3),
+                    ],
+                )
+            };
+            cases.push((
+                guarded([inner.clone(), literal(8)]),
+                guarded([deep.clone(), literal(8)]),
+                true,
+            ));
+            cases.push((
+                guarded([literal(8), inner]),
+                guarded([literal(8), deep.clone()]),
+                true,
+            ));
             cases.push((shallow, nested_arithmetic, true));
             cases.push((deep, conditional(arithmetic.clone()), false));
             let mut compound = flag.clone();
@@ -356,15 +376,14 @@ fn machine_comparison_and_guard_reads_are_bounded_on_hits_and_misses() {
                     ),
                 ]
             });
-            let wrapping_cases = wrapping_cases.as_flattened();
-            let wrapping_hits = if format.format().is_signed() {
-                for (signed, ..) in wrapping_cases {
-                    assert!(bounded_comparison_operand(format, V::Shared(signed), true).is_none());
+            let signed = format.format().is_signed();
+            if signed {
+                for [literal, _] in &wrapping_cases {
+                    assert!(
+                        bounded_comparison_operand(format, V::Shared(&literal.0), true).is_none()
+                    );
                 }
-                &wrapping_cases[..0]
-            } else {
-                wrapping_cases
-            };
+            }
             let division_cases = [O::Divide, O::Remainder].map(|op| {
                 let operation =
                     |left, right| KernelTerm::machine_binary_shared(format, op, [left, right]);
@@ -385,9 +404,28 @@ fn machine_comparison_and_guard_reads_are_bounded_on_hits_and_misses() {
                 (
                     hit,
                     operation(arithmetic.clone(), literal(3)),
-                    operation(variable.clone(), other.clone()),
+                    operation(variable.clone(), arithmetic.clone()),
                 )
             });
+            let variable_divisors = [O::Divide, O::Remainder].map(|op| {
+                let operation =
+                    |left, right| KernelTerm::machine_binary_shared(format, op, [left, right]);
+                let hit = operation(variable.clone(), other.clone());
+                assert!(bounded_comparison_operand(format, V::Shared(&hit), false).is_none());
+                (
+                    hit,
+                    operation(arithmetic.clone(), other.clone()),
+                    operation(variable.clone(), arithmetic.clone()),
+                )
+            });
+            let variable_divisor_hits = if format.format().is_signed() {
+                for (signed, ..) in &variable_divisors {
+                    assert!(bounded_comparison_operand(format, V::Shared(signed), true).is_none());
+                }
+                &variable_divisors[..0]
+            } else {
+                &variable_divisors[..]
+            };
             use crate::kernel::MachineCastSpelling as C;
             let mut cast_cases = Vec::new();
             for (spelling, source, destination) in [
@@ -438,8 +476,13 @@ fn machine_comparison_and_guard_reads_are_bounded_on_hits_and_misses() {
                     .iter()
                     .chain(std::iter::once(&unary_case))
                     .chain(&shift_cases)
-                    .chain(wrapping_hits)
+                    .chain(wrapping_cases.iter().flat_map(|[literal, variables]| {
+                        [(!signed).then_some(literal), Some(variables)]
+                            .into_iter()
+                            .flatten()
+                    }))
                     .chain(&division_cases)
+                    .chain(variable_divisor_hits)
                     .chain(&cast_cases)
                 {
                     for operands in [

@@ -1,16 +1,11 @@
 # Copied bytes survive the terminator store after `memcpy`
 
-`label_copy`'s pattern: copy `n` bytes, then store the terminator at
-`dst[n]`, then state the copied bytes. `memcpy` states
-`bytes::equal(dst, 0u64, old(src), 0u64, n)`, a guarded universal over the
-reads `dst[k]` and `src[k]` for `k < n`. The `transport` carries it past the
-terminator store with the checked quantified frame, which takes the `uint64`
-binder like any C integer binder and assumes its guard `k < n` for each
-read: `dst[k]` misses the store at `dst[n]` by that guard, and `src[k]` is
-kept apart from `dst` by the `separate` requirement. The written source names
-its own binder; `transport` accepts it as the call's postcondition, which
-holds the binder its lowering chose. The `char *` arguments read the same
-`uint8` bytes in the `have`, the call's fact and the unfolded postcondition.
+After `memcpy`, writing the terminator at `dst[n]` leaves every copied
+byte `dst[k]` with `k < n` unchanged. The source byte is separate from
+the write footprints of both the call and the store. The proof preserves
+those reads individually and instantiates `memcpy`'s postcondition at the
+chosen index. Casting the `char *` arguments to `uint8 *` names the same
+byte reads as the unfolded postcondition.
 
 ```c filename=copy.c
 #include <string.h>
@@ -19,6 +14,7 @@ void copy_n(char *dst, const char *src, unsigned long n) { memcpy(dst, src, n); 
 
 ```click
 import click::bytes;
+import click::separation;
 verifying "copy.c";
 void copy_n(char* dst, const char* src, uint64 n) {
     views src[0u64..n];
@@ -32,12 +28,52 @@ void copy_n(char* dst, const char* src, uint64 n) {
     mark copied;
     step();
     have bytes::equal(dst, 0u64, src, 0u64, n) by {
-        transport(
-            at(copied, (0u64..n).all(|k| {
-                (dst as (uint8 *))[0u64 + k] == old((src as (uint8 *))[0u64 + k])
-            })),
-            (0u64..n).all(|k| { (dst as (uint8 *))[0u64 + k] == (src as (uint8 *))[0u64 + k] })
-        );
+        unfold(bytes::equal(dst, 0u64, src, 0u64, n));
+        intro(); intro();
+        have separate(memory((dst as (uint8 *))[n]), memory((dst as (uint8 *))[k])) by {
+            apply(separation::separate_elements(dst as (uint8 *), n, k));
+        }
+        have separate(statement(1).footprint, memory((dst as (uint8 *))[k])) by {
+            normalize() using { separate(memory((dst as (uint8 *))[n]), memory((dst as (uint8 *))[k])); };
+        }
+        have (dst as (uint8 *))[k] == at(copied, (dst as (uint8 *))[k]) by {
+            preserve(memory((dst as (uint8 *))[k]), statement(1));
+        }
+        instantiate(at(copied, (0u64..n).all(|j| {
+            (dst as (uint8 *))[0u64 + j] == old((src as (uint8 *))[0u64 + j])
+        })), k);
+        apply(separation::contains_element(src as (uint8 *), 0u64, n, k));
+        have contains(memory(dst[0u64..n]), statement(0).footprint) by { known(); }
+        apply(separation::separate_restrict(
+            memory(dst[0u64..n]), memory(src[0u64..n]),
+            statement(0).footprint, memory((src as (uint8 *))[k])
+        )) using {
+            separate(memory(dst[0u64..n]), memory(src[0u64..n]));
+            contains(memory(dst[0u64..n]), statement(0).footprint);
+            contains(memory(src[0u64..n]), memory((src as (uint8 *))[k]));
+        };
+        have at(copied, (src as (uint8 *))[k]) == old((src as (uint8 *))[k]) by {
+            preserve(memory((src as (uint8 *))[k]), statement(0));
+        }
+        apply(separation::contains_refl(memory((dst as (uint8 *))[n]))) using {};
+        apply(separation::separate_restrict(
+            memory((dst as (uint8 *))[n]), memory(src[0u64..n]),
+            memory((dst as (uint8 *))[n]), memory((src as (uint8 *))[k])
+        )) using {
+            separate(memory((dst as (uint8 *))[n]), memory(src[0u64..n]));
+            contains(memory((dst as (uint8 *))[n]), memory((dst as (uint8 *))[n]));
+            contains(memory(src[0u64..n]), memory((src as (uint8 *))[k]));
+        };
+        have separate(statement(1).footprint, memory((src as (uint8 *))[k])) by {
+            normalize() using { separate(memory((dst as (uint8 *))[n]), memory((src as (uint8 *))[k])); };
+        }
+        have (src as (uint8 *))[k] == at(copied, (src as (uint8 *))[k]) by {
+            preserve(memory((src as (uint8 *))[k]), statement(1));
+        }
+        rewrite((src as (uint8 *))[k], at(copied, (src as (uint8 *))[k]));
+        rewrite(at(copied, (src as (uint8 *))[k]), old((src as (uint8 *))[k]));
+        rewrite((dst as (uint8 *))[k], at(copied, (dst as (uint8 *))[k]));
+        known();
     }
 }
 ```

@@ -581,12 +581,12 @@ fn dynamic_body_fact_dependency(
 pub(super) fn materialize_folded_composite_resource_cells(
     resource_environment: &ResourceEnvironment,
     parameter_binding: ParameterBinding<'_>,
-    state: ExecutionState,
+    mut state: ExecutionState,
     claim_label: &str,
     spec_definitions: SpecDefinitions<'_>,
     assumptions: &PureFactContext,
 ) -> Result<ExecutionState, ClickError> {
-    let memory = materialize_folded_composite_resource_memory(
+    let naming_state = name_folded_composite_resource_cells(
         resource_environment,
         parameter_binding,
         &state,
@@ -594,17 +594,19 @@ pub(super) fn materialize_folded_composite_resource_cells(
         assumptions,
     )
     .map_err(|message| ClickError::new(format!("`{claim_label}` setup failed: {message}")))?;
-    Ok(state.with_materialized_memory_at_current_point(memory))
+    state.keep_memory_of(&naming_state);
+    Ok(state)
 }
 
-fn materialize_folded_composite_resource_memory(
+fn name_folded_composite_resource_cells(
     resource_environment: &ResourceEnvironment,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     spec_definitions: SpecDefinitions<'_>,
     assumptions: &PureFactContext,
-) -> Result<SymbolicMemory, String> {
-    let mut memory = state.memory().clone();
+) -> Result<ExecutionState, String> {
+    // Clause evaluation uses just the memory view and the caller's point.
+    let mut naming_state = ExecutionState::at_state(state);
     for resource in state.resources().facts() {
         let (name, resource_arguments) = match resource.resource() {
             Resource::Footprint(_) | Resource::Parameter(_) | Resource::Emp | Resource::Star(_) => {
@@ -646,16 +648,16 @@ fn materialize_folded_composite_resource_memory(
         .map_err(|message| {
             format!("could not instantiate composite resource `{name}` body: {message}")
         })?;
-        memory = materialize_composite_resource_memory(
+        naming_state = materialize_composite_resource_memory(
             name,
             composite_body,
             &substitutions,
             parameter_binding,
-            memory,
+            naming_state,
             assumptions,
         )?;
     }
-    Ok(memory)
+    Ok(naming_state)
 }
 
 /// The match arm one section's premises select for a held resource instance,
@@ -758,6 +760,7 @@ fn unmatched_instance_body(
     for field in definition.fields() {
         if matches!(field.click_type(), ClickType::Program(_)) {
             parameters.push(FunctionParameter {
+                slice_length: None,
                 name: field.name().to_string(),
                 click_type: field.click_type().clone(),
                 struct_name: None,
@@ -1225,7 +1228,7 @@ pub(super) fn project_initial_composite_resource_cores(
             composite_body,
             &substitutions,
             parameter_binding,
-            state.memory().clone(),
+            &state,
             &assumptions.clone().assume_entry_clause_spans().assume_held_resource_domains(),
     )
         .map_err(|message| {
@@ -1321,7 +1324,7 @@ fn project_selected_instance_arm_cells(
         body,
         &substitutions,
         parameter_binding,
-        state.memory().clone(),
+        &state,
         &assumptions
             .clone()
             .assume_entry_clause_spans()
@@ -2499,7 +2502,7 @@ fn apply_composite_observation_law_with_facts<F: ResourcePureFacts>(
         composite_body,
         &substitutions,
         parameter_binding,
-        state.memory().clone(),
+        state,
         &available_pure_facts
             .assumptions()
             .clone()
@@ -2591,7 +2594,7 @@ fn append_composite_definition_observable_facts<F: ResourcePureFacts>(
         composite_body,
         substitutions,
         parameter_binding,
-        fact_state.memory(),
+        fact_state,
         propositions,
     )?;
 
@@ -2651,7 +2654,7 @@ fn append_composite_resource_loadable_facts<F: ResourcePureFacts>(
     composite_body: &CompositeResourceBody,
     substitutions: &BTreeMap<String, ContractExpression>,
     parameter_binding: ParameterBinding<'_>,
-    memory: &SymbolicMemory,
+    state: &ExecutionState,
     propositions: &mut F,
 ) -> Result<(), String> {
     for contained in composite_body.contains() {
@@ -2664,7 +2667,7 @@ fn append_composite_resource_loadable_facts<F: ResourcePureFacts>(
         append_resource_clause_loadable_fact_with_store(
             &contained,
             parameter_binding,
-            memory,
+            state,
             propositions,
         )
         .map_err(|error| {
@@ -2682,11 +2685,10 @@ fn append_composite_resource_loadable_facts<F: ResourcePureFacts>(
 fn append_resource_clause_loadable_fact_with_store<F: ResourcePureFacts>(
     resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
-    memory: &SymbolicMemory,
+    state: &ExecutionState,
     propositions: &mut F,
 ) -> Result<(), ClickError> {
-    let state = ExecutionState::new().with_memory(memory.clone());
-    let Some(ranges) = resource_clause_memory_ranges_at_state(resource, parameter_binding, &state)?
+    let Some(ranges) = resource_clause_memory_ranges_at_state(resource, parameter_binding, state)?
     else {
         return Ok(());
     };
@@ -2695,7 +2697,9 @@ fn append_resource_clause_loadable_fact_with_store<F: ResourcePureFacts>(
             propositions.insert(guard);
         }
     }
-    if let Some(proposition) = resource_clause_loadable_prop(resource, parameter_binding, memory)? {
+    if let Some(proposition) =
+        resource_clause_loadable_prop_at_state(resource, parameter_binding, state)?
+    {
         propositions.insert(proposition);
     }
     Ok(())
@@ -2827,14 +2831,15 @@ fn materialize_composite_resource_memory(
     composite_body: &CompositeResourceBody,
     substitutions: &BTreeMap<String, ContractExpression>,
     parameter_binding: ParameterBinding<'_>,
-    memory: SymbolicMemory,
+    mut state: ExecutionState,
     assumptions: &PureFactContext,
-) -> Result<SymbolicMemory, String> {
+) -> Result<ExecutionState, String> {
     // This pass names cells only. Tokens and nested resource heads cannot
     // materialize a cell, and their formation belongs to resource admission,
     // not to preparing the memory in which that admission will be checked.
-    let naming_memory = memory.clone();
-    let mut memory = memory;
+    // All cells exposed by this body are named from its starting view.
+    // Later clauses can read the cells exposed by earlier clauses.
+    let naming_memory = state.memory().clone();
     for contained in composite_body.contains() {
         if !matches!(
             contained,
@@ -2849,7 +2854,7 @@ fn materialize_composite_resource_memory(
         let lowered = lower_resource_clause_at_state_with_assumptions(
             &contained,
             parameter_binding,
-            &ExecutionState::new().with_memory(memory.clone()),
+            &state,
             None,
             assumptions,
         )
@@ -2859,15 +2864,16 @@ fn materialize_composite_resource_memory(
                 error.raw_summary()
             )
         })?;
-        memory = materialize_composite_resource_cells_from_state(
-            memory,
+        let memory = materialize_composite_resource_cells_from_state(
+            state.memory().clone(),
             &naming_memory,
             &contained,
             &lowered,
             parameter_binding.parameters,
         );
+        state = state.with_materialized_memory_at_current_point(memory);
     }
-    Ok(memory)
+    Ok(state)
 }
 
 /// Instantiates the resource-state side of a composite definition. The result
@@ -2878,10 +2884,15 @@ pub(in crate::surface) fn instantiate_composite_resource_body_resources(
     composite_body: &CompositeResourceBody,
     substitutions: &BTreeMap<String, ContractExpression>,
     parameter_binding: ParameterBinding<'_>,
-    mut memory: SymbolicMemory,
+    state: &ExecutionState,
     assumptions: &PureFactContext,
 ) -> Result<(SymbolicMemory, ResourceContext), String> {
     let mut resources = ResourceContext::new();
+    let mut clause_base = ExecutionState::new();
+    clause_base.keep_memory_of(state);
+    // Keep the complete pending log for the caller's observation check.
+    // Each clause sees that log as a proof-only view at the same point.
+    let mut memory = state.memory().clone();
     // Every cell exposed by this one body expansion names the value it had
     // in the state before the expansion began.  Lower clauses against the
     // progressively materialized memory so a later clause can still address
@@ -2895,10 +2906,13 @@ pub(in crate::surface) fn instantiate_composite_resource_body_resources(
             instantiate_resource_clause(contained, substitutions).map_err(|message| {
                 format!("could not instantiate composite resource `{name}` body: {message}")
             })?;
+        let clause_state = clause_base
+            .clone()
+            .with_materialized_memory_at_current_point(memory.clone());
         let lowered = lower_resource_clause_at_state_with_assumptions(
             &contained,
             parameter_binding,
-            &ExecutionState::new().with_memory(memory.clone()),
+            &clause_state,
             None,
             assumptions,
         )
@@ -6249,6 +6263,49 @@ mod guarded_unmatched_materialization_tests {
     }
 
     #[test]
+    fn composite_cell_naming_reads_an_earlier_clause_at_the_caller_point() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let file = crate::surface::parser::parse_file_items(
+            "resource link(p: int32**) { owns p[0..1]; owns (*p)[0..1]; }",
+        )
+        .unwrap();
+        let resources = ResourceEnvironment::new(&file.resource_definitions);
+        let functions = ClickFunctionEnvironment::new(&[]);
+        let predicates = PredicateEnvironment::new(&[]);
+        let pointer = Address::symbolic(crate::kernel::Variable(88_027));
+        let held = ResourceFact::own_composite(
+            "link".into(),
+            vec![ProgramValue::typed_pointer(
+                pointer.clone(),
+                ProgramType::Int32PointerPointer,
+            )],
+        );
+        let state = ExecutionState::new()
+            .with_memory(SymbolicMemory::new().with_block(pointer.base.clone(), 8))
+            .with_resource_context(ResourceContext::new().unchecked_with_fact(held.clone()));
+        let point = state.observation_point_id().unwrap();
+        let named = materialize_folded_composite_resource_cells(
+            &resources,
+            ParameterBinding::new(&[], &[]),
+            state,
+            "linked entry naming",
+            SpecDefinitions::new(&predicates, &functions),
+            &PureFactContext::new(),
+        )
+        .unwrap();
+        let ExpressionOutcome::Value(ProgramValue::Pointer(link)) = named.memory().load(&pointer)
+        else {
+            panic!("the first clause exposes the pointer cell");
+        };
+        assert!(matches!(
+            named.memory().load(link.address()),
+            ExpressionOutcome::Value(ProgramValue::Int32(_))
+        ));
+        assert_eq!(named.observation_point_id(), Some(point));
+        assert!(named.resources().facts().contains(&held));
+    }
+
+    #[test]
     fn composite_unfold_keeps_the_point_while_naming_a_cell() {
         check_composite_body_point(ResourceBodyAccess::Finalize);
     }
@@ -6509,6 +6566,59 @@ mod guarded_unmatched_materialization_tests {
             ExpressionOutcome::Value(_)
         ));
         assert_eq!(entry.observation_point_id(), Some(point));
+    }
+
+    #[test]
+    fn body_instantiation_keeps_a_pending_store_in_the_observation_log() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let file = crate::surface::parser::parse_file_items(
+            "resource initialized_cell(p: int32*) { owns *p; }",
+        )
+        .unwrap();
+        let definition = &file.resource_definitions[0];
+        let pointer = Address::symbolic(crate::kernel::Variable(88_028));
+        let substitutions = resource_value_substitutions(
+            definition,
+            &[AlgebraicValue::Program(ProgramValue::typed_pointer(
+                pointer.clone(),
+                ProgramType::Int32Pointer,
+            ))],
+        )
+        .unwrap();
+        let slot = Address {
+            base: "local:slot".into(),
+            offset: crate::kernel::AddressOffset::Constant(0),
+        };
+        let start = ExecutionState::new()
+            .with_memory(SymbolicMemory::new().with_block(slot.base.clone(), 4));
+        let memory = start
+            .memory()
+            .clone()
+            .store(slot.clone(), ProgramValue::Int32(MachineTerm::constant(7)));
+        let state = start.with_materialized_memory(memory);
+        let point = state.observation_point_id().unwrap();
+        let (memory, _) = instantiate_composite_resource_body_resources(
+            definition.name(),
+            definition.composite_body().unwrap(),
+            &substitutions,
+            ParameterBinding::new(&[], &[]),
+            &state,
+            &PureFactContext::new(),
+        )
+        .unwrap();
+        assert!(matches!(
+            memory.load(&pointer),
+            ExpressionOutcome::Value(ProgramValue::Int32(_))
+        ));
+        let named = state.with_materialized_memory_at_current_point(memory);
+        assert_eq!(named.observation_point_id(), Some(point));
+        assert_eq!(
+            named
+                .program_point()
+                .indexed_local_integer_version(&slot, crate::kernel::LoadKind::Int32)
+                .and_then(|version| version.read_version_id()),
+            Some(point)
+        );
     }
 
     #[test]

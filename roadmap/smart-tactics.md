@@ -46,6 +46,45 @@ justify eager derived facts or cache rebuilding by calling them output: the
 delta must be required by the selected rule. Amortized claims need a total-work
 argument across repeated steps and persistent forks, as well as cold misses.
 
+## Program-point memory migration
+
+Execution history supplies point identities and records the effects between
+them. A memory view exposes what is available at a point in a proof context.
+Naming cells during a proof can extend that view at the same point. An ordinary
+read can select an earlier version point, while an exact read retains its
+selected point. See the [memory model](../docs/concepts/memory-model.md).
+
+The work sequence is:
+
+1. Recheck proof-only materialization after #3424. Reduce an actual disagreement
+   between the point walk and the legacy walk and repair any missing producer
+   evidence.
+2. Thread the caller's point through `materialize_composite_resource_memory`.
+3. Migrate `instantiate_composite_resource_body_resources`, using the caller's
+   point for a held resource and a setup root for standalone validation.
+4. Attach initialized access-segment cells to the function's entry root.
+5. Attach uninitialized ranges to that root and retain the definedness refusal.
+6. Maintain version indexes through straight-line batches of recorded effects.
+7. Carry versions through joins when both arms preserve the selected cell.
+8. Carry versions through calls using their checked effects, starting with a
+   disjoint write footprint.
+9. Construct point-based loop views, starting with one invariant-held cell.
+10. Carry the point selected by an exact read through lowering, keys and raising.
+11. Migrate other fixed-offset scalar reads, starting with Booleans. Check the
+    float lowering rule separately.
+12. Migrate pointer and function-pointer reads with provenance, bounds and
+    callability intact.
+13. Extend address coverage to parameter and heap storage, starting with fixed
+    offsets. Handle symbolic offsets in a separate slice.
+14. Handle reads assembled from bytes and establish their Click spelling.
+15. Migrate the remaining snapshot-keyed equality, observation, preservation and
+    raising paths. Remove each legacy route after its last production caller
+    moves.
+
+For each read slice, test which point it selects, its raise/lower round trip,
+and bounded work as unrelated history grows. Use `cell_version_on_path` for
+diagnostic comparisons in tests. Keep production selection indexed.
+
 ## Reading the inventory
 
 - **Scoped evidence:** named tests cover particular routes and growth axes;
@@ -64,23 +103,17 @@ six-group estimate covered only resource/loan candidates, not the verifier.
 
 ## Reconciled status and ownership
 
-The frozen inventory has **662 reference records**: 4 legacy bridges, 17 callers
-of those bridges, 6 operation references, 0 operation-to-driver references,
-16 mixed references, 122 driver references, 489 search references, 6 presentation
-references and 2 imports. These are neither independent walks nor
-runtime invocation counts. The [caller audit](../design/proof-boundary-classification.md)
-classifies every mixed and operation-to-driver record and groups all 6
-operation references. Registering the signed-definedness and unsigned-order
-helpers exposes four existing search-only caller records; it adds no runtime work.
+The [frozen inventory](../build_support/proof_search_edges.tsv) tracks
+caller/target pairs. The [caller audit](../design/proof-boundary-classification.md)
+records the original classification and reproductions.
 
 - **Confirmed architectural exceptions:** explicit legacy transport invokes
   discovery.
   Its fixed-state route retains uncharged transition-assumption reconstruction. No fresh
   scaling curve was run for this reconciliation.
-- **Unmeasured candidates:** four kernel bridges map to three groups, L1, R2
-  and C1. Other transition and declaration checks
-  need caller-specific evidence. Preserve these as candidates, not confirmed
-  performance regressions.
+- **Remaining candidates:** raw ownership admission (R2), composite call
+  framing (C1), and the entry-partition alias check (L1) still need
+  caller-specific cost evidence.
 - **Legitimate search:** driver-owned implicit solve and explicit smart
   planning. Generating obligations is fast work; solving them may be slow and
   expandable. Have/claim and resource-scope obligation scheduling, step/fold dispatch,
@@ -98,10 +131,10 @@ helpers exposes four existing search-only caller records; it adds no runtime wor
 - **Operation guards:** theorem application, scope completion, statement-result
   publication, prepared-step publication, have opening and contract-claim opening
   have test-build discovery guards.
-  Statement preparation retains loan-access, raw ownership-validation and
-  composite-framing dependencies. First guard failures mask later crossings;
-  re-probe complete preparation as each route is removed. See the [reproductions](../design/proof-boundary-classification.md#operation-discovery-guards-and-reproduced-crossings).
-  Statement preparation remains unguarded; no exception exempts its search.
+  The production paths formerly using the loan write guard now use explicit
+  evidence or obligations. Re-probe complete statement preparation for
+  remaining crossings, including ownership validation and composite framing.
+  See the [historical probes](../design/proof-boundary-classification.md#operation-discovery-guards-and-reproduced-crossings).
 - **Enforcement gap:** lexical dependency freezing and selected work counters
   do not prohibit every search call during expanded replay or detect arbitrary
   loops, shared-term export and copying. No global fast-proof guarantee yet.
@@ -110,8 +143,6 @@ Resource-scope completion now reports obligations to the driver, including
 nested opens; function-exit deferral is unchanged. C-branch and proof-case script
 interpretation now also lives in the driver; primitive split/focus/join operations
 do not run arm-script callbacks. No operation-to-driver records remain in the frozen inventory.
-For a new scaling experiment, L1 through an actual write remains a bounded
-candidate. Boundary cleanup and enforcement are alternative next slices below.
 Transport work should target a surviving generated form or a written legacy
 consumer and its retirement criterion, not accumulate already-covered shapes. These are separate
 work items; this reconciliation changes no behavior.
@@ -447,7 +478,7 @@ coverage. Pointer decisions consume explicitly stated separation instead of
 discovering it through ownership compositions or alias classes. Removing this
 copy does not establish a bound for every separation observation.
 
-### L1: write restrictions from active loans — in-progress migration
+### L1: write restrictions from active loans
 
 The pointee-store route generates a separation obligation without alias
 search. The source write regression is flat at 179 charged units with one loan
@@ -474,68 +505,33 @@ source write with one view and 4/16/64 aliases; `loan_access_requirement_is_reta
 covers descriptor generation and persistent closes with 4/16/64/256 loans.
 These scoped controls do not certify every loan caller or proof-publication cost.
 
-Checked scalar and bulk writes, allocation retirement, exact call and worker
-effects, loop heads and exits, ordinary branch memory joins, direct and modular
-mutex representation writes, and modular construction destinations now retain
-separation obligations. Automatic storage retirement and initialization use
-the object-identity index. A newly allocated aggregate result has no prior
-loan.
+Scalar and bulk writes, allocation retirement, call and worker effects, loop
+and branch boundaries, mutex writes, and direct and modular construction now
+check retained loan evidence or emit separation obligations. Automatic storage
+retirement and initialization use the object-identity index. Verified calls
+check each bounded write separately and refuse unnamed write effects with a
+live memory loan. The [rbtree insertion wrappers](rbtree-example.md#focused-verification-on-current-master)
+exercise that refusal with a recursive tree and a live callback-table view.
 
-Remaining uses of the legacy loan check cover unresolved call projections,
-direct constructor execution without a modular proof boundary, local-loan
-admission, and resource or authority rewrites. These need their own evidence
-before the legacy path can be removed. Cache retention remains a separate
-query.
+The legacy write guard has only test callers. Its bridge and search helper can
+be restricted to tests. Contract-entry own/view overlap checking still has a
+separate alias query. Cache retention independently uses indexed protection
+evidence to decide which observations survive.
 
-Independently grow symbolic loans at fixed aliases, cold/repeated queries, and
-persistent branches. Cache retention is separate from write permission: its
-selected-separation check now tests endpoints directly instead of using the
-alias-searching membership evidence builder. Retain nested-loan, width,
-overlap and ended-scope safety controls.
+### C1: modular call framing
 
-### C1: modular call framing — source candidate, also in scaling roadmap
+Verified calls, mutex transitions, and publication share the residual's
+resource indexes and the sorted composite definition table in
+`call_kept_ownership`. Kept reads select singleton folded owners from
+indexed address keys, then open only argument-direct bodies. Field-bearing
+instances and other opaque bodies supply no implicit memory ranges.
 
-When a verified call has memory effects,
-[`functions.rs`](../src/kernel/functions.rs) calls `call_kept_ownership` on the
-caller frame. Field-bearing instances stay opaque: call preparation does not
-open their bodies or gather their memory/facts. With no owned composites, the
-frame is retained directly without constructing `ProofSearch`. The selected
-instance-count regression guards that route against discovery.
-
-The retained-instance route is covered by a discovery guard and the fixed-call
-instance-count scaling regression. The arena proof uses explicit separation
-and preservation for its selected retained headers and cells. Automatic
-statement-exit fact restatement is removed; calls publish producer facts at
-their original states rather than searching for extra current-state facts.
-
-Experimental removal: `ProofSearch::call_frame` no longer opens retained
-non-argument-direct composite bodies to discover hidden memory ranges. It
-retains ownership unchanged and adds no replacement obligations or bonus facts.
-The argument-direct family selection and lazy selected-address opening remain;
-neither family-count independence nor bounded candidate lookup is established.
-
-`call_frame_preparation_must_not_open_unrelated_composites` grows one retained
-family at 4/16/64 members, with a fixed one-cell call effect. It covers a nested
-one-cell wrapper and a load-dependent range body. Preparation work is now
-1 / 1 / 1 in both cases (previously 1,078 / 4,294 / 17,158 and
-1,926 / 7,686 / 30,726 respectively). The regression checks that no opened
-ranges are recorded. Setup, havoc and observation are outside the meter, so
-this is scoped frame-preparation evidence, not a complete call/step bound.
-
-The normal examples and markdown proof corpus both pass without proof repairs
-(104s and 353s). No C, contracts, axioms, obligations or e-graph reasoning changed.
-The population-membership safety test now expects opaque composite wrappers to
-record no hidden private range, retaining its shared-mutation rejection checks.
-Validation: 1,866 normal scaling/affected-module tests pass, plus the one
-directly affected nightly publication-scaling test. The full nightly was not run.
-Direct-family selection and selected-address candidate scans remain separate
-follow-up work; this removal does not establish the whole-call fast bound.
-
-For remaining coverage, hold the callee contract/effect fixed and grow
-distinct direct families and selected-address candidates. Measure call
-preparation, execution and completion together; retain opaque-body and
-refusal coverage. Coordinate with [Scaling](scaling.md), cause 3, without duplicating its
-implementation work or changing its priority here.
+`repeated_writing_calls_ignore_unrelated_folded_owners` varies call count and
+retained family count. `kept_call_reads_do_not_scan_same_block_owners_or_aliases`
+measures both hits and misses with 4, 16, 64, and 256 owners and aliases.
+`call_frame_preparation_must_not_open_unrelated_composites` covers nested and
+load-dependent bodies. The arena proof uses explicit separation and
+preservation for the retained headers and cells it needs.
 
 ### Statement-exit fact transport — boundary and remaining coverage
 
@@ -546,11 +542,10 @@ guard test prevent that helper from silently returning to publication. The
 removed adapter's lower-level red diagnostic is retired: it measured a helper
 that publication no longer calls, not the cost of the operation after removal.
 
-This does not guard all statement preparation. Other cell-map/effect searches,
-transport re-validation, ownership validation, loan access, and composite
-framing remain separately scoped candidates. Keep ordinary obligation solving
-on the driver and optional fact discovery in expandable search; a missing
-bonus fact is not a new mandatory obligation.
+The publication guard covers the published result. Cell-map and effect
+queries, transport re-validation, ownership validation, and composite framing
+still need scoped checks during preparation. The driver owns obligation solving
+and expandable fact discovery.
 
 ### M1: reads, caches and history — coverage gaps
 

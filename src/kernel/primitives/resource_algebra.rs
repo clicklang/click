@@ -467,6 +467,7 @@ pub(super) fn nominal_ownership_block(block: &AddressBase) -> bool {
             | AddressBase::Temporary(_)
             | AddressBase::Concrete(_)
             | AddressBase::AutomaticLocal { .. }
+            | AddressBase::SliceLength { .. }
             | AddressBase::StaticObject { .. }
             | AddressBase::AggregateReturn { .. }
             | AddressBase::ContractResult
@@ -768,6 +769,7 @@ impl ResourceContextIndex {
                 AddressBase::Concrete(_)
                     | AddressBase::StaticObject { .. }
                     | AddressBase::AutomaticLocal { .. }
+                    | AddressBase::SliceLength { .. }
                     | AddressBase::ReferenceCarrier { .. }
             ) {
                 result.nonconcrete_memory_count += 1;
@@ -818,6 +820,7 @@ impl ResourceContextIndex {
                     block,
                     AddressBase::Concrete(_)
                         | AddressBase::AutomaticLocal { .. }
+                        | AddressBase::SliceLength { .. }
                         | AddressBase::StaticObject { .. }
                         | AddressBase::AggregateReturn { .. }
                         | AddressBase::ContractResult
@@ -1212,6 +1215,7 @@ impl ResourceContextIndex {
                 AddressBase::Concrete(_)
                     | AddressBase::StaticObject { .. }
                     | AddressBase::AutomaticLocal { .. }
+                    | AddressBase::SliceLength { .. }
                     | AddressBase::ReferenceCarrier { .. }
             ) {
                 result.nonconcrete_memory_count -= 1;
@@ -3353,26 +3357,6 @@ impl ResourceContext {
             })
     }
 
-    /// The owned folded composites with a C pointer argument equal to `base`,
-    /// read from the argument index: one unit to position and one per
-    /// composite returned.
-    pub(in crate::kernel) fn owned_composites_with_pointer_argument<'a>(
-        &'a self,
-        base: &Address,
-    ) -> impl Iterator<Item = &'a ResourceFact> + 'a {
-        crate::instrumentation::record_deterministic_work(1);
-        self.storage
-            .index
-            .owned_composites_by_pointer_argument
-            .get(base)
-            .into_iter()
-            .flat_map(ResourceEntryIds::iter)
-            .map(|entry| {
-                crate::instrumentation::record_deterministic_work(1);
-                self.fact(*entry)
-            })
-    }
-
     /// Select a sole folded owner naming this exact pointer argument.
     /// An ambiguous bucket needs separate selection evidence.
     pub(in crate::kernel) fn unique_owned_composite_with_pointer_argument(
@@ -3391,22 +3375,18 @@ impl ResourceContext {
         Some(self.fact(*entries.iter().next().expect("one indexed owner")))
     }
 
-    /// The owned folded composites with a C pointer argument in `block`.
-    pub(in crate::kernel) fn owned_composites_with_argument_block<'a>(
-        &'a self,
+    /// Select a sole folded owner with a pointer argument in the block.
+    pub(in crate::kernel) fn unique_owned_composite_with_argument_block(
+        &self,
         block: &AddressBase,
-    ) -> impl Iterator<Item = &'a ResourceFact> + 'a {
+    ) -> Option<&ResourceFact> {
         crate::instrumentation::record_deterministic_work(1);
-        self.storage
+        let entries = self
+            .storage
             .index
             .owned_composites_by_argument_block
-            .get(block)
-            .into_iter()
-            .flat_map(ResourceEntryIds::iter)
-            .map(|entry| {
-                crate::instrumentation::record_deterministic_work(1);
-                self.fact(*entry)
-            })
+            .get(block)?;
+        (entries.len() == 1).then(|| self.fact(*entries.iter().next().expect("one indexed owner")))
     }
 
     /// Identify a uniform folded frame eligible for projecting retirement by
@@ -3466,33 +3446,6 @@ impl ResourceContext {
     /// content-hashed persistent map.
     pub(in crate::kernel) fn owned_composite_facts(&self) -> &HashedOrdMap<ResourceFact, usize> {
         &self.storage.index.owned_composite_facts
-    }
-
-    /// The owned folded composites, grouped by family name, from the shape
-    /// index: a caller that answers a whole family at once never visits its
-    /// facts.
-    pub(in crate::kernel) fn owned_composite_families<'a>(
-        &'a self,
-    ) -> impl Iterator<Item = (&'a str, impl Iterator<Item = &'a ResourceFact> + 'a)> + 'a {
-        self.storage
-            .index
-            .exact_shapes
-            .iter()
-            .skip_while(|((family, _, _), _)| *family < ResourceFamily::Composite)
-            .take_while(|((family, _, _), _)| *family == ResourceFamily::Composite)
-            .map(move |((_, name, _), entries)| {
-                crate::instrumentation::record_deterministic_work(1);
-                (
-                    name.as_str(),
-                    entries
-                        .iter()
-                        .map(move |entry| {
-                            crate::instrumentation::record_deterministic_work(1);
-                            self.fact(*entry)
-                        })
-                        .filter(|fact| fact.is_own()),
-                )
-            })
     }
 
     /// Whether this context holds any owned instance with a C pointer
@@ -4477,6 +4430,33 @@ impl ResourceContext {
         .then(|| self.occurrence(entry))
     }
 
+    /// Resolve an authored input against the checked partition. An exact
+    /// principal occurrence wins over other views covering the same bytes.
+    /// After normalization a single covering principal may represent several
+    /// clauses, in which case they install one loan for that occurrence.
+    pub(crate) fn principal_input_view_occurrence(
+        &self,
+        required: &ResourceFact,
+        assumptions: &PureFactContext,
+    ) -> Option<ResourceOccurrenceId> {
+        crate::instrumentation::record_deterministic_work(1);
+        if let Some(entries) = self.storage.index.exact.get(required)
+            && entries.len() == 1
+            && let Some(entry) = entries.iter().next()
+        {
+            let occurrence = self.occurrence(*entry);
+            if self.view_occurrence_is_principal(occurrence) {
+                return Some(occurrence);
+            }
+        }
+        let candidates = self.view_occurrences_for_fact(required, assumptions);
+        let mut principals = candidates
+            .into_iter()
+            .filter(|occurrence| self.view_occurrence_is_principal(*occurrence));
+        let occurrence = principals.next()?;
+        principals.next().is_none().then_some(occurrence)
+    }
+
     /// Return indexed view occurrences that entail `required`. The caller
     /// resolves each occurrence through an explicit checked-state binding;
     /// this method never searches the loan ledger or unrelated frame entries.
@@ -5210,6 +5190,14 @@ impl ResourceContext {
         self.fact(entry)
             .memory_own_range()
             .map(|range| (entry, range))
+    }
+
+    pub(in crate::kernel) fn unique_owned_memory_fact_with_base(
+        &self,
+        base: &Address,
+    ) -> Option<&ResourceFact> {
+        let (entry, _) = self.unique_owned_memory_member_with_base(base)?;
+        Some(self.fact(entry))
     }
 
     /// One unambiguous member under an explicit base. A crowded raw bucket
@@ -14230,6 +14218,35 @@ fn symbolic_struct_coverage_uses_exact_element_indices() {
         &required(distant, 8u32.into()),
         &first
     ));
+}
+
+#[cfg(test)]
+#[test]
+fn exact_principal_input_view_ignores_covering_views() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let assumptions = PureFactContext::new();
+    let pointer = Address {
+        base: "local:input-view".into(),
+        offset: AddressOffset::Constant(0),
+    };
+    let required =
+        ResourceFact::view_memory(MemoryRange::new(pointer.clone(), 0u32.into(), 1u32.into()));
+    for count in [0u32, 16, 64, 256] {
+        let mut facts = ResourceContext::new().unchecked_with_fact(required.clone());
+        let exact = facts.indexed_view_witness(&required, &assumptions).unwrap();
+        for end in 2..count + 2 {
+            facts = facts.unchecked_with_fact(ResourceFact::view_memory(MemoryRange::new(
+                pointer.clone(),
+                0u32.into(),
+                end.into(),
+            )));
+        }
+        let (selected, work) = crate::instrumentation::measure_deterministic_work(|| {
+            facts.principal_input_view_occurrence(&required, &assumptions)
+        });
+        assert_eq!(selected, Some(exact));
+        assert_eq!(work, 1, "covering views: {count}");
+    }
 }
 
 #[cfg(test)]

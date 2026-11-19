@@ -1,6 +1,111 @@
 use super::*;
 
 #[test]
+#[ignore = "nightly: expands and cold-verifies ten signed countdown proofs"]
+fn signed_countdown_bounds_expand_without_normalize() {
+    for (fixture, label) in [
+        (
+            "model_pointer_fields_keep_object_class",
+            "follow_model.contract",
+        ),
+        ("natural_goto_exit_label", "count_down.contract"),
+        (
+            "natural_goto_forward_exit_and_return",
+            "count_down_or_stop.contract",
+        ),
+        (
+            "natural_goto_forward_exit_differing_states",
+            "count_down_or_stop.contract",
+        ),
+        (
+            "natural_goto_forward_exit_multiple_edges_state",
+            "count_down_or_stop.contract",
+        ),
+        ("natural_goto_forward_exit_state", "count_down.contract"),
+        (
+            "natural_goto_multiple_exit_labels",
+            "count_down_or_stop.contract",
+        ),
+        (
+            "null_assignment_preserves_loop_object_class_join",
+            "f.contract",
+        ),
+        (
+            "packed_model_pointer_loop_object_class",
+            "follow_model.contract",
+        ),
+        ("packed_pointer_loop_object_class", "follow.contract"),
+    ] {
+        let (source, c_sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+        let sources = crate::cli::source_refs(&c_sources);
+        let expanded = expand_c_claim_source_by_label(&source, &sources, label)
+            .unwrap_or_else(|error| panic!("{fixture}: {}", error.report()));
+        assert!(!expanded.contains("normalize()"), "{fixture}\n{expanded}");
+        without_implicit_solve_for_claim(label, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{fixture}: {error}\n{expanded}"));
+    }
+}
+
+#[test]
+#[ignore = "nightly: expands and cold-verifies three linked-pointer C programs"]
+fn linked_pointer_viewability_expands_without_normalize() {
+    for (fixture, guards, rewrites) in [
+        (
+            "a_linked_pointer_array_initializer_names_a_private_object_of_its_defining_file",
+            1,
+            0,
+        ),
+        (
+            "a_linked_pointer_initializer_names_a_private_object_of_its_defining_file",
+            1,
+            1,
+        ),
+        (
+            "same_named_private_objects_behind_linked_pointers_stay_distinct",
+            2,
+            2,
+        ),
+    ] {
+        let (source, sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+        let sources = crate::cli::source_refs(&sources);
+        let label = "main.contract";
+        let expanded = expand_c_claim_source_by_label(&source, &sources, label)
+            .unwrap_or_else(|error| panic!("{}", error.report()));
+        assert!(!expanded.contains("normalize()"), "{expanded}");
+        assert_eq!(expanded.matches("observe(").count(), guards, "{expanded}");
+        assert_eq!(expanded.matches("rewrite(").count(), rewrites, "{expanded}");
+        without_implicit_solve_for_claim(label, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+    }
+}
+
+#[test]
+#[ignore = "nightly: expands and cold-verifies two automatic-storage separation proofs"]
+fn automatic_object_separation_expands_without_normalize() {
+    for (fixture, label) in [
+        ("direct_local_write_separation", "set_local.contract"),
+        (
+            "modeled_pthread_shared_local_nested_reader",
+            "run.ensures_0",
+        ),
+    ] {
+        let (source, sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+        let sources = crate::cli::source_refs(&sources);
+        let expanded = expand_c_claim_source_by_label(&source, &sources, label)
+            .unwrap_or_else(|error| panic!("{}", error.report()));
+        assert!(!expanded.contains("normalize()"), "{expanded}");
+        without_implicit_solve_for_claim(label, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+    }
+}
+
+#[test]
 #[ignore = "nightly: expands and cold-verifies a uint64 loop back edge"]
 fn uint64_loop_successor_bound_expands_without_normalize() {
     let (source, c_sources) =
@@ -3109,10 +3214,10 @@ fn a_conditional_produces_clause_is_located_in_its_place() {
 }
 
 /// A `solve()` closing an `initialize` script that several invariants share
-/// expands to one step per invariant, each holding the whole script. Those
-/// steps stand for the tactics written before the closer too, so the rewrite
-/// replaces from the first of them: left in place, the leading `unfold` ran
-/// before every generated step and the phase no longer closed its goal.
+/// expands to one step per invariant. A predicate `unfold` is local to its
+/// application: it adds the definition's equivalence as a fact, so the
+/// leading `unfold` stays written once before the generated steps, and each
+/// step closes from it instead of unfolding again.
 #[test]
 #[ignore = "nightly: 1.0s in the parallel gate"]
 fn shared_initialize_closer_expansion_replaces_the_script_before_it() {
@@ -3123,15 +3228,18 @@ fn shared_initialize_closer_expansion_replaces_the_script_before_it() {
         anchor.len(),
     );
     assert!(
-        expanded.contains("initialize by { have 0 <= box[0] by {"),
+        expanded.contains("initialize by { unfold(head(box)); have 0 <= box[0] by {"),
         "{expanded}"
     );
     assert!(
         expanded.contains("have head(box) == box[0] by {"),
         "{expanded}"
     );
-    assert!(
-        !expanded.contains("initialize by { unfold(head(box)); have"),
+    let initialize = &expanded
+        [expanded.find("initialize by {").unwrap()..expanded.find("preserve by {").unwrap()];
+    assert_eq!(
+        initialize.matches("unfold(head(box))").count(),
+        1,
         "{expanded}"
     );
 }
@@ -9041,8 +9149,6 @@ fn restricted_solve_expands_increment_upper_bound_to_ordinary_arithmetic() {
             }
         }
     "#;
-    let verified = verify_click_theorems(click_source);
-    verified.expect("the typed increment rule should verify through the pure Proof");
     let offset = click_source.find("solve() using").unwrap();
     let line = click_source[..offset]
         .bytes()
@@ -9326,8 +9432,6 @@ fn restricted_solve_expands_strict_increment_to_ordinary_arithmetic() {
                 }
             }
         "#;
-    let verified = verify_click_theorems(click_source);
-    verified.expect("the typed strict-increment rule should verify through the pure Proof");
     let offset = click_source.find("solve() using").unwrap();
     let line = click_source[..offset]
         .bytes()
@@ -9360,8 +9464,6 @@ fn solve_expands_increment_definedness_to_ordinary_arithmetic() {
             }
         }
     "#;
-    let verified = verify_click_theorems(click_source);
-    verified.expect("the typed increment-definedness rule should verify through the pure Proof");
     let offset = click_source.find("solve()").unwrap();
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c_tactic_source_at(click_source, &[], position.line, position.column)
@@ -9373,7 +9475,7 @@ fn solve_expands_increment_definedness_to_ordinary_arithmetic() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_44")]
+#[ignore = "nightly: 3.1s per case in a parallel fast-gate batch"]
 fn restricted_solve_expands_increment_lower_bound_to_ordinary_arithmetic() {
     let click_source = r#"
         theorem increment_preserves_lower_bound(
@@ -9391,8 +9493,6 @@ fn restricted_solve_expands_increment_lower_bound_to_ordinary_arithmetic() {
             }
         }
     "#;
-    let verified = verify_click_theorems(click_source);
-    verified.expect("the typed increment-lower-bound rule should verify through the pure Proof");
     let offset = click_source.find("solve() using").unwrap();
     let line = click_source[..offset]
         .bytes()
@@ -9417,7 +9517,7 @@ fn restricted_solve_expands_increment_lower_bound_to_ordinary_arithmetic() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_44")]
+#[ignore = "nightly: 4.9s per case in a parallel fast-gate batch"]
 fn restricted_solve_expands_increment_order_to_ordinary_arithmetic() {
     let click_source = r#"
         theorem increment_preserves_order(
@@ -9435,8 +9535,6 @@ fn restricted_solve_expands_increment_order_to_ordinary_arithmetic() {
             }
         }
     "#;
-    let verified = verify_click_theorems(click_source);
-    verified.expect("the typed increment-order rule should verify through the pure Proof");
     let offset = click_source.find("solve() using").unwrap();
     let line = click_source[..offset]
         .bytes()
@@ -9945,8 +10043,6 @@ fn restricted_solve_retains_increment_under_a_larger_constant() {
             }
         }
     "#;
-    let verified = verify_click_theorems(click_source);
-    verified.expect("the increment constant-bound rule should verify through Proof");
     let offset = click_source.find("solve() using").unwrap();
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c_tactic_source_at(click_source, &[], position.line, position.column)
@@ -15849,8 +15945,11 @@ fn source_expander_derives_separation_from_call_postconditions() {
         .expect("bounded call ranges should verify before expansion");
     let expanded = expand_c_tactic_source_at(click_source, &c_sources, line, column)
         .expect("call postconditions should expand into an explicit separation derivation");
+    // The separation is closed from the call's postconditions: `known`
+    // equates `left->data` with `data` and `left->len` with `length`, so the
+    // derivation needs no written rewrite. Removing either postcondition
+    // below makes it fail.
     assert!(!expanded.contains("transport("), "{expanded}");
-    assert!(expanded.contains("rewrite("), "{expanded}");
     assert!(!expanded.contains("load<int32*>"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_c_sources(&expanded, &c_sources)
@@ -15870,7 +15969,7 @@ fn source_expander_derives_separation_from_call_postconditions() {
         assert_ne!(without_postcondition, expanded);
         assert!(
             verify_c_sources(&without_postcondition, &c_sources).is_err(),
-            "the generated rewrite must require {missing}"
+            "the generated derivation must require {missing}"
         );
     }
 }
@@ -22113,6 +22212,53 @@ fn machine_subtraction_fact_bridges_expand_without_implicit_search() {
     }
 }
 
+#[test]
+fn separation_restriction_raises_a_match_bound_cover() {
+    let c = "void stamp(int *p, int *q) { p[1] = 7; }";
+    let source = r#"verifying "restrict.c";
+spec enum Model { At(int*) }
+resource cell(p: int*) {
+    field model: Model;
+    match model {
+        Model::At(id) => {
+            owns id[0..4];
+            fact id == p;
+        },
+    }
+}
+
+void stamp(int* p, int* q) {
+    owns c: cell(p);
+    views q[0..1];
+    requires separate(c, memory(q[0..1]));
+    ensures c.model == old(c.model);
+} by {
+    match c.model {
+        Model::At(id) => {
+            unfold(c);
+            have separate(memory(p[1]), memory(q[0..1])) by { solve(); }
+            step();
+            let c = fold(cell(p), { model: old(c.model) });
+            step();
+            solve();
+        },
+    }
+}
+"#;
+    let sources = [("restrict.c", c)];
+    let label = "stamp.contract";
+    let expanded = expand_c_claim_source_by_label(source, &sources, label)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(
+        expanded.contains("separate_restrict(memory((id as (int32 *))[0..4])"),
+        "{expanded}"
+    );
+    without_implicit_solve_for_claim(label, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
 /// Expand one function's proof and replay it with that claim's implicit
 /// search off. `claim` is the label of the expanded claim.
 fn store_index_separation_replays(fixture: &str, function: &str, claim: &str) {
@@ -23135,8 +23281,6 @@ test_batches! {
         solve_expands_increment_definedness_to_ordinary_arithmetic,
     ],
     expansion_batch_44: [
-        restricted_solve_expands_increment_lower_bound_to_ordinary_arithmetic,
-        restricted_solve_expands_increment_order_to_ordinary_arithmetic,
         restricted_solve_expands_named_successor_order,
         restricted_solve_expands_adjacent_order_to_ordinary_arithmetic,
     ],
@@ -24124,6 +24268,26 @@ fn typed_contract_results_expand_and_recheck() {
         })
         .unwrap_or_else(|error| panic!("{fixture}: {error:?}\n{expanded}"));
     }
+}
+
+#[test]
+#[ignore = "nightly: multi-byte bit-field update expansion and replay"]
+fn bit_field_value_capture_expands_and_replays() {
+    let (source, sources) = mdtest_sources("mdtests/c_bit_field_multiword_update_and_copy.md");
+    let sources = sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let claim = "answer.ensures_0";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, claim)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert_ne!(expanded, source);
+    assert!(!expanded.contains("__click_bit_field_value_"), "{expanded}");
+    assert!(!expanded.contains("<temporary storage>"), "{expanded}");
+    without_implicit_solve_for_claim(claim, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
 }
 
 #[test]

@@ -567,6 +567,23 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
                                 ParameterBinding::new(&parameters, &arguments),
                             )
                         });
+                    let error = if environment
+                        .function_block
+                        .signature()
+                        .rust_loop_iterators()
+                        .get(loop_index)
+                        .and_then(Option::as_ref)
+                        .is_some_and(|iterator| iterator.range_bounds.is_some())
+                    {
+                        // The bound can hold the same value as a parameter at
+                        // entry. Keep the written accessor beside the lowered
+                        // obligation, where they may share a value spelling.
+                        let written =
+                            crate::surface::printing::source_click_proposition(item.proposition());
+                        error.with_context(format!("written invariant `{written}`"))
+                    } else {
+                        error
+                    };
                     error.with_context(format!(
                         "loop {loop_index} {} entry, owing `{owed}`",
                         item.title(invariant_index)

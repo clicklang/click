@@ -102,6 +102,8 @@ function or type; the rules are in
 
 ## Use proof friction to improve the tool
 
+When verification is slow, use the [`proof-optimization` skill](.agents/skills/proof-optimization/SKILL.md).
+
 When a proof fails, use the [`proof-repair` skill](.agents/skills/proof-repair/SKILL.md).
 Follow the [proof repair procedure](docs/concepts/tracing.md): record the goal
 that was not proved, write the argument as a chain of `have` goals, and refine
@@ -182,6 +184,12 @@ fact is impossible, name the value where it is introduced or add its Surface
 form, and treat the gap as a tooling defect. A new kernel fact or term form
 ships with its Surface form. See the
 [raise-lower principle](docs/internals/raise-lower-principle.md).
+
+Keep the proof-visible program tree faithful to the target-language source.
+Generated operations and typed temporaries belong to the source constructs
+that cause them. When changing a frontend or lowering, check statement
+selectors, diagnostics, and expansion replay. See
+[proof-visible program structure](docs/internals/raise-lower-principle.md#proof-visible-program-structure).
 
 Lowering is fact-stable: a term may depend on the program state and the
 resources held, but facts may only refuse it, discharge its obligations, or

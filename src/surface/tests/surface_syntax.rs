@@ -872,6 +872,7 @@ fn parses_checked_signature_and_contract_clauses() {
     assert_eq!(
         function.signature().parameters(),
         &[FunctionParameter {
+            slice_length: None,
             click_type: ClickType::Program(InterfaceType::Int32Pointer),
             name: "p".to_string(),
             struct_name: None,
@@ -976,6 +977,7 @@ fn parses_pure_theorem_definition() {
     assert_eq!(
         theorem.parameters(),
         &[FunctionParameter {
+            slice_length: None,
             click_type: ClickType::Program(InterfaceType::Int32),
             name: "x".to_string(),
             struct_name: None,
@@ -2854,6 +2856,7 @@ fn parses_array_parameter_signature_as_pointer() {
     assert_eq!(
         function.signature().parameters(),
         &[FunctionParameter {
+            slice_length: None,
             click_type: ClickType::Program(InterfaceType::Int32Pointer),
             name: "p".to_string(),
             struct_name: None,
@@ -2883,6 +2886,7 @@ fn parses_pilot_struct_pointer_signature_and_field_load() {
     assert_eq!(
         function.signature().parameters(),
         &[FunctionParameter {
+            slice_length: None,
             click_type: ClickType::Program(InterfaceType::Int32Pointer),
             name: "obj".to_string(),
             struct_name: Some("json_object".to_string()),
@@ -4191,20 +4195,19 @@ fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
     let byte = parser::parse("verifying \"c.rs\"; fn f(x: u8) -> u8 { ensures result == 'a'; }");
     assert!(byte.is_ok(), "{byte:?}");
     // A slice is one name over the pointer and length Rust passes.
+    let slices = parser::parse(
+        "verifying \"bytes.rs\"; fn length(bytes: &[u8], out: &mut [u32]) -> usize { \
+         ensures result == bytes.len() + out.len(); }",
+    )
+    .expect("the Rust spelling parses");
+    let parameters = slices.function_blocks()[0].signature().parameters();
     assert_eq!(
-        parser::parse(
-            "verifying \"bytes.rs\"; fn length(bytes: &[u8], out: &mut [u32]) -> usize { \
-             ensures result == bytes.len() + out.len(); }"
-        )
-        .expect("the Rust spelling parses")
-        .function_blocks(),
-        parser::parse(
-            "verifying \"bytes.c\"; uint64 length(const uint8* bytes, uint64 bytes_len, \
-             uint32* out, uint64 out_len) { ensures result == bytes_len + out_len; } \
-"
-        )
-        .expect("the C-shaped spelling parses")
-        .function_blocks(),
+        parameters[1].binding_name(),
+        crate::kernel::BindingName::slice_length("bytes"),
+    );
+    assert_eq!(
+        parameters[3].binding_name(),
+        crate::kernel::BindingName::slice_length("out"),
     );
     // `*bytes` is the whole slice, and a `usize` parameter written alone
     // as an index is the 32-bit index a place takes. The importer test
@@ -4257,8 +4260,8 @@ fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
     // a type, and an inherent method of a type in the type's own module.
     for (rust, c_shaped) in [
         (
-            "fn quad::walk(bytes: &[u8]) -> u32 { ensures result == 0u32; } @",
-            "uint32 __rust_q_I4_quad_I4_walk(const uint8* bytes, uint64 bytes_len) \
+            "fn quad::walk(byte: &u8) -> u32 { ensures result == 0u32; } @",
+            "uint32 __rust_q_I4_quad_I4_walk(const uint8* byte) \
              { ensures result == 0u32; }",
         ),
         (

@@ -368,20 +368,13 @@ fn resource_satisfaction_uses_transitive_addresses_without_restoring_consumed_ow
 
 #[test]
 fn framing_producer_leaves_non_direct_ownership_opaque() {
-    let (head, definition, memory, facts, sibling) = fixture();
+    let (head, definition, _, facts, sibling) = fixture();
     let head = ResourceFact::own(head.resource().clone());
     let residual = ResourceContext::new()
         .try_compose_with_fact(head, &facts)
         .unwrap();
-    let state = ExecutionState::new()
-        .with_memory(memory)
-        .with_resource_context(residual.clone());
-    let kept = crate::kernel::functions::call_kept_ownership(
-        &residual,
-        std::slice::from_ref(&definition),
-        &state,
-        &facts,
-    );
+    let kept =
+        crate::kernel::functions::call_kept_ownership(&residual, &[definition].into(), &facts);
     let opened = kept.opened_resources_for_test();
     assert!(
         opened.is_empty(),

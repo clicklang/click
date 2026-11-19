@@ -2489,7 +2489,7 @@ pub(in crate::surface) fn collect_contract_expression_referenced_names(
     names.extend(
         bindings
             .iter()
-            .filter_map(|binding| binding.unresolved_name().map(str::to_owned)),
+            .filter_map(|binding| binding.metadata_name().map(str::to_owned)),
     );
 }
 
@@ -2502,7 +2502,7 @@ pub(in crate::surface) fn collect_click_proposition_referenced_names(
     names.extend(
         bindings
             .iter()
-            .filter_map(|binding| binding.unresolved_name().map(str::to_owned)),
+            .filter_map(|binding| binding.metadata_name().map(str::to_owned)),
     );
 }
 
@@ -3061,6 +3061,11 @@ impl SubstitutionSourceMap for BTreeMap<SurfaceBinder, ContractExpression> {
     }
 }
 impl SubstitutionSourceMap for BinderMap<ContractExpression> {
+    fn replacement(&self, name: &crate::kernel::BindingName) -> Option<&ContractExpression> {
+        self.get(name)
+    }
+}
+impl SubstitutionSourceMap for PersistentBinderMap<ContractExpression> {
     fn replacement(&self, name: &crate::kernel::BindingName) -> Option<&ContractExpression> {
         self.get(name)
     }

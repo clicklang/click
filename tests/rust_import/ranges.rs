@@ -11,7 +11,14 @@ fn charon_range_loops_verify_from_their_bounds() {
     let p = Project::from_fixture("design/charon-trial/ranges");
     fs::write(p.root.join("borrow.click"), SIDECAR).unwrap();
     let prepared = p.prepared().unwrap();
-    ProgramVerificationSession::new_program_prepared(SIDECAR, &prepared)
+    let witness = r#"fn grid(n: u32, m: u32) -> u32 {
+    requires n == 2u32 and m == 3u32;
+    ensures result == 6u32;
+} by {
+    step_until(function.exit);
+}"#;
+    let gate = with_rust_fixture_contract(SIDECAR, "grid", witness);
+    ProgramVerificationSession::new_program_prepared(&gate, &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
     for (before, after, expected) in [
         // The count trails the yielded value, it does not lead it.
@@ -99,10 +106,11 @@ fn charon_range_loop_failures_name_the_iterator_as_the_proof_does() {
             .expect_err("a false claim about the loop fails");
         click::languages::rust::names::display_rust_names(&format!("{error}")).into_owned()
     };
-    // A false invariant fails at the loop's entry, naming the range's end.
+    // The entry value of the bound equals the parameter. The error still
+    // names the accessor from the invariant the proof actually wrote.
     let entry = failure(
-        "        invariant total == iter.start;\n",
-        "        invariant total == iter.start + 1u32;\n",
+        "        invariant iter.end == n;\n",
+        "        invariant iter.end != n;\n",
     );
     assert!(entry.contains("iter.end"), "{entry}");
     // Without the bound, the exit is not pinned, and the facts there name
@@ -115,5 +123,44 @@ fn charon_range_loop_failures_name_the_iterator_as_the_proof_does() {
     for rendered in [&entry, &exit] {
         assert!(!rendered.contains("__rust_mir"), "{rendered}");
         assert!(!rendered.contains("at(region("), "{rendered}");
+    }
+}
+
+#[test]
+#[ignore = "nightly: symbolic nested range proof took 5.3s in the focused gate profile"]
+fn charon_nested_range_grid_verifies_symbolically() {
+    let p = Project::from_fixture("design/charon-trial/ranges");
+    fs::write(p.root.join("borrow.click"), SIDECAR).unwrap();
+    let prepared = p.prepared().unwrap();
+    verify_rust_function(SIDECAR, &prepared, "grid").unwrap_or_else(|error| panic!("{error:?}"));
+}
+
+#[test]
+#[ignore = "nightly: expand and replay both range iterator forms"]
+fn charon_range_bounds_expand_and_replay() {
+    for (fixture, sidecar, claim) in [
+        ("ranges", SIDECAR, "count_to.contract"),
+        (
+            "inclusive-ranges",
+            include_str!("../../design/charon-trial/inclusive-ranges/inclusive.click"),
+            "count_through.contract",
+        ),
+    ] {
+        let p = Project::from_fixture(&format!("design/charon-trial/{fixture}"));
+        fs::write(p.root.join("borrow.click"), sidecar).unwrap();
+        let prepared = p.prepared().unwrap();
+        let expanded = click::surface::expand_program_prepared_claim_source_by_label(
+            sidecar, &prepared, claim,
+        )
+        .unwrap_or_else(|error| panic!("{claim}: {error}"));
+        assert_ne!(expanded, sidecar);
+        assert!(!expanded.contains("__rust_mir"), "{expanded}");
+        assert!(!expanded.contains("<range "), "{expanded}");
+        click::surface::without_implicit_solve_for_claim(claim, || {
+            ProgramVerificationSession::new_program_prepared(&expanded, &prepared)
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        })
+        .unwrap_or_else(|error| panic!("{claim}: {error}\n{expanded}"));
     }
 }

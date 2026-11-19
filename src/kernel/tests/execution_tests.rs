@@ -1559,7 +1559,7 @@ fn adding_a_loop_rule_collects_only_that_rules_variables() {
         required_assumptions: PureFactContext::new()
             .assume_proposition(guard_operand_fact(1_000_000 + index, true)),
         paths: Vec::new(),
-        composite_resource_definitions: Vec::new(),
+        composite_resource_definitions: Default::default(),
         recursion_anchor: None,
         variable_index: Default::default(),
     };

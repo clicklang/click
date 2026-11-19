@@ -3384,18 +3384,22 @@ fn axiomatic_span_dynamic_extent_requirement_is_proved_before_view_recovery() {
         "#include <span>\nstd::span<std::byte> probe(std::span<std::byte>& s) noexcept { return s.subspan(1, std::dynamic_extent); }\n",
         BYTE_SPAN_DEPENDENCIES,
     );
-    let source = r#"verifying "span-probe.cpp";
-std::span<std::byte> probe(std::span<std::byte>& s) {
+    let source = format!(
+        r#"verifying "span-probe.cpp";
+std::span<std::byte> probe(std::span<std::byte>& s) {{
     views std_span_data(s);
     views std_span_size(s);
     requires 1u64 <= std_span_size(s);
     ensures std_span_data(result) == std_span_data(s) + 1u64;
     ensures std_span_size(result) == std_span_size(s) - 1u64;
-}
-"#;
+}} by {{
+{DYNAMIC_SPAN_SUBVIEW_PROOF}
+}}
+"#
+    );
     let sidecar = root.join("span.click");
-    fs::write(&sidecar, source).unwrap();
-    let parsed = read_click_project(&sidecar, source).unwrap();
+    fs::write(&sidecar, &source).unwrap();
+    let parsed = read_click_project(&sidecar, &source).unwrap();
     verify_program_prepared_project(&parsed, &import).unwrap();
     let expanded = expand_project_claim_source_by_label(
         &parsed,
@@ -3403,6 +3407,7 @@ std::span<std::byte> probe(std::span<std::byte>& s) {
         "probe.contract",
     )
     .unwrap();
+    assert!(!expanded.contains("_M_"), "{expanded}");
     verify_program_prepared_project(&parsed.with_entry_source(expanded), &import).unwrap();
     let hostile = source.replace("1u64 <= std_span_size(s)", "std_span_size(s) == 0u64");
     let parsed = read_click_project(&sidecar, &hostile).unwrap();
@@ -3544,7 +3549,7 @@ int32& probe(std::span<int>& span) {{
 fn axiomatic_span_refuses_an_uncatalogued_standard_function() {
     let (root, import) = axiomatic_span_fixture(
         "axiomatic-empty",
-        "#include <span>\nbool probe(std::span<int>& span) { return span.empty(); }\n",
+        "#include <span>\nbool probe(std::span<unsigned int>& span) { return span.empty(); }\n",
         &[
             "sysroot/usr/include/c++/12/span",
             "sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h",
@@ -3558,10 +3563,10 @@ fn axiomatic_span_refuses_an_uncatalogued_standard_function() {
         .unwrap();
     assert_eq!(
         axiom.axiom.as_ref().unwrap().qualified_name,
-        "std::span<int>::empty"
+        "std::span<unsigned int>::empty"
     );
     let source = r#"verifying "span-probe.cpp";
-bool probe(std::span<int>& span) {
+bool probe(std::span<unsigned int>& span) {
     views std_span_size(span);
     ensures result == result;
 }
@@ -3588,6 +3593,16 @@ const BYTE_SPAN_DEPENDENCIES: &[&str] = &[
     "sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h",
 ];
 const UCHAR_SPAN: &str = "std::span<unsigned char>";
+
+// Pinned x86-64 dynamic spans have 16 bytes of result storage.
+const DYNAMIC_SPAN_SUBVIEW_PROOF: &str = r#"    step() {
+        requires separate(
+            memory((&result as (uint8 *))[0..16]),
+            memory(std_span_data(s)) * memory(std_span_size(s))
+        ) by { solve(); }
+    }
+    step_until(function.exit);
+    solve();"#;
 
 /// One caller of a generic `std::span` catalog entry: the C++ harness, the
 /// sidecar that proves it, and edits of that sidecar that must be refused,
@@ -3684,8 +3699,7 @@ theorem uint64_window_bounds(n: uint64) {{
     ensures std_span_size(result) == 2u64;
 }} by {{
     apply(uint64_window_bounds(std_span_size(s)));
-    step_until(function.exit);
-    solve();
+{DYNAMIC_SPAN_SUBVIEW_PROOF}
 }}"#
     );
     let last = format!(
@@ -3695,6 +3709,8 @@ theorem uint64_window_bounds(n: uint64) {{
     requires 1u64 <= std_span_size(s);
     ensures std_span_data(result) == std_span_data(s) + (std_span_size(s) - 1u64);
     ensures std_span_size(result) == 1u64;
+}} by {{
+{DYNAMIC_SPAN_SUBVIEW_PROOF}
 }}"#
     );
     let size_bytes = r#"uint64 probe(std::span<unsigned int>& s) {
@@ -3769,7 +3785,15 @@ fn axiomatic_span_byte_element_entries_verify() {
             dependencies: SPAN_DEPENDENCIES,
             harness: "std::span<unsigned char> probe(std::span<unsigned char>& s) noexcept { return s.first(1); }",
             sidecar: format!(
-                "{UCHAR_SPAN} probe({UCHAR_SPAN}& s) {{ views std_span_data(s); views std_span_size(s); requires 1u64 <= std_span_size(s); ensures std_span_data(result) == std_span_data(s); ensures std_span_size(result) == 1u64; }}"
+                r#"{UCHAR_SPAN} probe({UCHAR_SPAN}& s) {{
+    views std_span_data(s);
+    views std_span_size(s);
+    requires 1u64 <= std_span_size(s);
+    ensures std_span_data(result) == std_span_data(s);
+    ensures std_span_size(result) == 1u64;
+}} by {{
+{DYNAMIC_SPAN_SUBVIEW_PROOF}
+}}"#
             ),
             refusals: vec![],
         },
@@ -3784,6 +3808,8 @@ fn axiomatic_span_byte_element_entries_verify() {
     requires 1u64 <= std_span_size(s);
     ensures std_span_data(result) == std_span_data(s) + 1u64;
     ensures std_span_size(result) == std_span_size(s) - 1u64;
+}} by {{
+{DYNAMIC_SPAN_SUBVIEW_PROOF}
 }}"#
             ),
             refusals: vec![],
@@ -3810,7 +3836,7 @@ fn axiomatic_span_element_references_read_and_write() {
 }}"#
     );
     let write = format!(
-        r#"void probe({UCHAR_SPAN}& s, uint8 v) {{
+        r#"uint8 probe({UCHAR_SPAN}& s, uint8 v) {{
     views std_span_data(s);
     views std_span_size(s);
     owns std_span_data(s)[1];
@@ -3819,9 +3845,19 @@ fn axiomatic_span_element_references_read_and_write() {
     requires separate(memory(std_span_data(s)[1]), memory(std_span_size(s)));
     ensures std_span_data(s)[1] == v;
     ensures result == v;
+}} by {{
+    step();
+    let {{ result: element }} = step();
+    step() {{
+        requires separate(
+            memory(element[0]),
+            memory(std_span_data(s)) * memory(std_span_size(s))
+        ) by {{ solve(); }}
+    }}
+    step_until(function.exit);
+    solve();
 }}"#
-    )
-    .replace("void probe", "uint8 probe");
+    );
     let back = format!(
         r#"uint32 probe({UINT_SPAN}& s) {{
     views std_span_data(s);
@@ -4019,7 +4055,15 @@ fn axiomatic_const_element_span_subviews_verify() {
             dependencies: SPAN_DEPENDENCIES,
             harness: "std::span<const int> probe(std::span<const int>& s) noexcept { return s.first(1); }",
             sidecar: format!(
-                "{CONST_INT_SPAN} probe({CONST_INT_SPAN}& s) {{ views std_span_data(s); views std_span_size(s); requires 1u64 <= std_span_size(s); ensures std_span_data(result) == std_span_data(s); ensures std_span_size(result) == 1u64; }}"
+                r#"{CONST_INT_SPAN} probe({CONST_INT_SPAN}& s) {{
+    views std_span_data(s);
+    views std_span_size(s);
+    requires 1u64 <= std_span_size(s);
+    ensures std_span_data(result) == std_span_data(s);
+    ensures std_span_size(result) == 1u64;
+}} by {{
+{DYNAMIC_SPAN_SUBVIEW_PROOF}
+}}"#
             ),
             refusals: vec![],
         },
@@ -4085,8 +4129,20 @@ fn axiomatic_static_extent_span_subviews_verify() {
         dependencies: SPAN_DEPENDENCIES,
         harness: "std::span<int> probe(std::span<int, 4>& s) noexcept { return s.first(2); }",
         sidecar: format!(
-            "{} probe({STATIC_INT_SPAN}& s) {{ views std_span_data(s); ensures std_span_data(result) == std_span_data(s); ensures std_span_size(result) == 2u64; }}",
-            "std::span<int>"
+            r#"std::span<int> probe({STATIC_INT_SPAN}& s) {{
+    views std_span_data(s);
+    ensures std_span_data(result) == std_span_data(s);
+    ensures std_span_size(result) == 2u64;
+}} by {{
+    step() {{
+        requires separate(
+            memory((&result as (uint8 *))[0..16]),
+            memory((&s as (int32 *))[0..2])
+        ) by {{ known(); }}
+    }}
+    step_until(function.exit);
+    solve();
+}}"#
         ),
         refusals: vec![],
     }]);
@@ -4113,7 +4169,17 @@ fn defaulted_span_arguments_import_as_compiler_constants() {
     // The defaulted count runs to the end of the view.
     let span = "std::span<int>";
     let source = format!(
-        "verifying \"span-probe.cpp\";\n{span} probe({span}& s) {{ views std_span_data(s); views std_span_size(s); requires 1u64 <= std_span_size(s); ensures std_span_data(result) == std_span_data(s) + 1u64; ensures std_span_size(result) == std_span_size(s) - 1u64; }}\n"
+        r#"verifying "span-probe.cpp";
+{span} probe({span}& s) {{
+    views std_span_data(s);
+    views std_span_size(s);
+    requires 1u64 <= std_span_size(s);
+    ensures std_span_data(result) == std_span_data(s) + 1u64;
+    ensures std_span_size(result) == std_span_size(s) - 1u64;
+}} by {{
+{DYNAMIC_SPAN_SUBVIEW_PROOF}
+}}
+"#
     );
     let path = root.join("span.click");
     fs::write(&path, &source).unwrap();

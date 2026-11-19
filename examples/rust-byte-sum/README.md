@@ -8,7 +8,7 @@ The `Integer` specification folds the input at function entry. A prefix-sum
 invariant connects that specification to the accumulator. A mathematical
 bound `0 <= total <= 255 * i` proves every signed addition is safe; the
 native 64-bit `usize` counter retains checked indexing and increment checks.
-The measure `bytes_len - i` proves termination. The contract views the input,
+The measure `bytes.len() - i` proves termination. The contract views the input,
 so the function has no authority to modify it.
 
 The sidecar uses Integer specification arithmetic:

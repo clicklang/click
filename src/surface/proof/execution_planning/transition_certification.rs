@@ -752,7 +752,20 @@ fn certified_transitions_from_execution(
                     &prerequisite_assumptions
                 };
                 let proposition = obligation.proposition();
-                if collecting_step_requirements() && !obligation.is_assumable() {
+                // An allocation step can establish this exact separation
+                // before the temporary has a Surface name. Its predecessor
+                // fact is checked here, without opening a source proof.
+                let established_temporary_separation =
+                    matches!(proposition, Proposition::ResourceSeparate { left, .. }
+                        if matches!(left.as_ref(), crate::kernel::Resource::Memory(range)
+                            if matches!(&range.base().base,
+                                crate::kernel::AddressBase::AutomaticLocal { binding, .. }
+                                if binding.is_temporary())))
+                    && executed_under.contains_assumed_exact(proposition);
+                if collecting_step_requirements()
+                    && !obligation.is_assumable()
+                    && !established_temporary_separation
+                {
                     let description = crate::surface::diagnostics::describe_proof_obligation_context(obligation)
                         .map(|description| format!(" ({description})"))
                         .unwrap_or_default();

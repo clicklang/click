@@ -9,7 +9,7 @@ fn prove(body: &str) -> Result<Vec<VerifiedProgramTheorem>, ClickError> {
 
 const SIZES: &str = "
     function size(bytes: &[u8]) -> usize { bytes.len() }
-    function both(bytes: &[u8], extra: usize) -> usize { size(bytes) + extra }
+    function both(bytes: &[u8], bytes_len: usize) -> usize { size(bytes) + bytes_len }
 ";
 
 #[test]
@@ -59,7 +59,11 @@ fn a_pure_function_slice_parameter_is_its_pointer_and_length() {
         .iter()
         .map(|parameter| parameter.name())
         .collect::<Vec<_>>();
-    assert_eq!(parameters, ["bytes", "bytes_len", "extra"]);
+    assert_eq!(parameters, ["bytes", "bytes.len()", "bytes_len"]);
+    assert_eq!(
+        both.parameters()[1].binding_name(),
+        crate::kernel::BindingName::slice_length("bytes"),
+    );
 }
 
 #[test]

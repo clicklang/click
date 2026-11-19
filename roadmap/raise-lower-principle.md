@@ -682,7 +682,7 @@ The native forms below still have callers.
 | `SharedPureApplication` and `SpecCallArgument` | Call certification and spelling retain the exact typed argument carrier and stable call identity. The session memo prepares common arguments for evaluation and reuse. Native call arguments and typed opaque leaves can still contain proof-relevant metadata. |
 | `StoredMachineTerm`, `StoredConditionTerm`, `StoredIntegerTerm`, `StoredAlgebraicTerm`, `StoredProgramValue`, and outcome carriers | Native inputs keep the exact original payload. Fact keys, equality, proof rewriting, diagnostics and evaluation output APIs still request native views when their contract needs them. Resource dependency checking and evaluated proposition production can carry common roots. |
 | `SharedAddress`, `SharedAddressOffset`, `SharedPointer`, and native range and resource descriptors | Existing ownership, aliasing and read-over-write consumers use native address and pointer descriptors. Retained operands preserve exact offsets, object classes, load names and versions. Sequence values, resource fields, ranges, allocation counts and theorem/state bindings retain their migrated producers and explicit native input forms. |
-| `Term::PointerOffset` and `Proposition` address, memory, resource and program fields | Contract terms and their substitution and dependency readers still use `AddressOffset`. Memory judgments and volatile events carry address descriptors and memory identities. Program evaluation and verification judgments record the program input and execution state alongside their migrated value outcomes. These fields participate in judgment identity and checked rewriting. |
+| `Term::PointerOffset` and `Proposition` address, memory, resource and program fields | Contract terms retain shared offsets. Exact legacy inputs and selected rewrite, rendering, and identity readers still use `AddressOffset`. Memory judgments and volatile events carry address descriptors and memory identities. Program evaluation and verification judgments record the program input and execution state alongside their migrated value outcomes. These fields participate in judgment identity and checked rewriting. |
 | `SpecExpression`, `SpecIntegerExpression::Term`, and typed algebraic and fold syntax | Declaration checking and public kernel APIs still accept typed specification syntax, including native inputs. The evaluators use this syntax to produce common operands and fact/definedness obligations. The raising boundary still needs explicit rewrite and naming adapters for selected forms. |
 
 This closes the package's producer and storage work. An entirely common-form
@@ -4431,6 +4431,63 @@ gate passed 7,663 unit/API tests, 58 examples and 5,107 Markdown fixtures. Both
 regular corpora passed fact-stability auditing with zero differences. The
 focused volatile census passed 11 fixtures and reported the one miss above.
 These are scoped measurements, not evidence that the split is already complete.
+
+## Package 11: shared operands in checking
+
+Deliver one PR per slice. The authorized implementation sequence is 11a–11e.
+Each slice preserves fact identity, raise/lower behavior, and deterministic
+scaling. If a slice requires a new search index, a larger budget, a proof
+rewrite, or a change to snapshot identity, pause and isolate the case before
+changing the plan.
+
+| Slice | Scope and completion criterion |
+| --- | --- |
+| 11a | Collect Boolean read dependencies from the retained read. Preserve exact stored-cell connections and history dependencies without building a native Boolean term. |
+| 11b | Collect float read dependencies from the retained read. Preserve both widths, exact stored-cell connections, and selected read origins. |
+| 11c | Collect algebraic read dependencies from the retained read. Remove its native read adapter when its last consumer moves. |
+| 11d | Raise retained Boolean and float reads directly. Check identity on raise/lower for named reads and reads across stores. |
+| 11e | Build machine read fact keys from retained load shape and width. Preserve fact identity across registered names and memory versions. |
+| 11f | Move shape-only machine conversion and comparison readers onto the operand view. Preserve polarity, width, and refusals. |
+| 11g | Build Integer fold fact keys from the retained fold. Preserve binder scope, range kind, free variables, and memory-state identity. |
+| 11h | Keep checked Integer fold substitution in shared form. Check endpoint and body substitution against native reference tests for capture and refusal. |
+| 11i | Move dependency and bound-variable readers for contract pointer offsets onto shared offsets. Preserve collected reads and variables. |
+| 11j | Retain the shared offset in the contract term. Cover checked rewriting, raising, and fact identity. |
+| 11k | Move one scalar machine-result certificate reader onto retained typed arguments. Preserve call identity and exact argument spelling. |
+| 11l | Delete adapters and cache branches whose last readers have moved. Update the live-boundary inventory with the callers that remain. |
+
+11d moves float read raising to the retained program point and address. The
+raw logical `BoolLoad` needs its own representation decision. A source `bool`
+cell read lowers to a byte comparison, so raising a raw `BoolLoad` as that
+source read would change the term on relowering. Keep the raw case open until
+it has an exact spelling or its remaining native inputs migrate.
+
+After 11e, Boolean, float, and algebraic dependency collection reads retained
+descriptors. Machine read candidate keys also take the retained address and
+load kind. Exact cell lookup and address key construction still use the same
+native address keys. Candidate selection still erases memory state, and
+checked transport still establishes any needed equality across versions.
+11f reads comparison shapes and conversion destinations through the operand
+view. 11g builds the outer Integer fold key from the retained descriptor with
+the existing binder rules. It still keys Integer descendants through the
+native Integer key walker. 11h keeps fold endpoints and arithmetic children
+in the retained rewrite path. Opaque children and capture summaries still
+use the established native Integer rules.
+
+11i reads contract offset dependencies and binder identities through the
+shared offset. 11j makes the shared offset the stored contract payload and
+uses it for the range constructor's variable check. Scaled indices retain
+their original handles for native ordering and hashing. Rendering and checked
+rewriting keep their established native offset policies, and offsets with
+exact native-only indices keep that input representation.
+
+11k reads pure machine calls in checked source matching through the existing
+application identity and retained typed arguments. It builds no native
+call carrier for that match. Native call spelling and the identity policy
+for opaque arguments stay available.
+
+The next planned checker slice is 11l. Before 11l, audit the raw `BoolLoad`
+producers and decide whether their inputs can migrate to the existing byte
+comparison or require an exact Surface spelling.
 
 ## Delivery and history
 

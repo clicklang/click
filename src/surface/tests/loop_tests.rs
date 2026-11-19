@@ -370,8 +370,8 @@ fn unsigned_integer_ranking_expands_without_search() {
     without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
 }
 
-/// A stored byte counter also needs the cast identity for its narrowing;
-/// the generated proof spells the promoted operation at iteration entry.
+/// A stored byte counter also needs its narrowing's range; the generated
+/// proof spells the promoted operation, `(x as int32)`, at iteration entry.
 #[test]
 #[ignore = "nightly: Integer ranking expansion exceeds 0.5s in the parallel gate"]
 fn promoted_integer_ranking_expands_without_search() {
@@ -379,7 +379,7 @@ fn promoted_integer_ranking_expands_without_search() {
     let sources = borrowed_sources(&sources);
     let expanded = expand_function_proof_source(&click, &sources, "clear").unwrap();
     assert!(expanded.contains("normalize"), "{expanded}");
-    assert!(expanded.contains("integer_cast_identity"), "{expanded}");
+    assert!(expanded.contains("(x as int32)"), "{expanded}");
     without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
 }
 
@@ -2660,6 +2660,16 @@ fn pointer_cursor_invariant_expands_and_replays() {
     verify_c_sources(&click, &sources).unwrap();
     let expanded = expand_function_proof_source(&click, &sources, "f").unwrap();
     assert!(!expanded.contains("transport("), "{expanded}");
+    assert!(expanded.matches("normalize()").count() <= 4, "{expanded}");
+    for law in ["product_lower_bound", "product_upper_bound"] {
+        assert!(
+            expanded
+                .matches(&format!("apply(click::integer::{law}("))
+                .count()
+                >= 4,
+            "{expanded}"
+        );
+    }
     without_implicit_solve_for_claim("f.contract", || {
         verify_c_sources(&expanded, &sources).map_err(|error| error.report())
     })

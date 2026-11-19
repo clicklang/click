@@ -2,15 +2,27 @@
 set -euo pipefail
 
 if [[ $# != 2 ]]; then
-    echo "Usage: $0 /path/to/json-c-checkout {version|array-list}" >&2
+    echo "Usage: $0 /path/to/json-c-checkout {version|array-list|array-index}" >&2
     exit 2
 fi
 
 integration_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 checkout=$1
+sidecars=("$2.click")
 case $2 in
-    version) source_file=json_c_version.c ;;
-    array-list) source_file=arraylist.c ;;
+    version)
+        source_file=json_c_version.c
+        source_options='{}'
+        ;;
+    array-list)
+        source_file=arraylist.c
+        source_options='{"projection": "dependency-closure", "functions": ["array_list_length"]}'
+        ;;
+    array-index)
+        source_file=arraylist.c
+        source_options='{"projection": "dependency-closure", "functions": ["array_list_get_idx"]}'
+        sidecars=(array-index-out-of-range.click array-index-in-range.click)
+        ;;
     *) echo "Unknown json-c proof: $2" >&2; exit 2 ;;
 esac
 
@@ -34,13 +46,16 @@ cat > "$work_dir/source/click.project.json" <<JSON
       "compiler": "/usr/bin/gcc",
       "env": {"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
       "args": ["-D_GNU_SOURCE", "-DJSON_C_DLL", "-I.", "-I../build"],
-      "sources": {"$source_file": {}}
+      "sources": {"$source_file": $source_options}
     }
   }
 }
 JSON
 
-sidecar="$work_dir/source/$2.click"
-cp "$integration_dir/$2.click" "$sidecar"
-"${CLICK:-click}" import lock "$sidecar"
-"${CLICK:-click}" verify "$sidecar"
+for sidecar in "${sidecars[@]}"; do
+    cp "$integration_dir/$sidecar" "$work_dir/source/$sidecar"
+done
+"${CLICK:-click}" import lock "$work_dir/source/${sidecars[0]}"
+for sidecar in "${sidecars[@]}"; do
+    "${CLICK:-click}" verify "$work_dir/source/$sidecar"
+done

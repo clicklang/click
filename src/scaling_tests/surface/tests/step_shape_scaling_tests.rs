@@ -73,6 +73,72 @@ fn branch_interface_reuses_saved_states_beside_growing_locals_and_marks() {
     }
 }
 
+#[test]
+fn recorded_state_join_visits_only_changed_loop_counts() {
+    use crate::kernel::{IntegerTerm, Variable};
+    use crate::persistent::measure_persistent_work;
+
+    let mut samples = Vec::new();
+    for count in [16, 64, 256] {
+        let original = |index: usize| Variable(8_300_000 + index as u64);
+        let agreed = Variable(8_310_000);
+        let left_only = Variable(8_310_001);
+        let right_only = Variable(8_310_002);
+        let new_common = Variable(8_310_003);
+
+        let mut parent = RecordedStates::new();
+        for index in 0..count {
+            parent.record_loop_iterations(index, &IntegerTerm::Variable(original(index)));
+        }
+        let unchanged = parent.common_descendant(&parent, &parent).unwrap();
+        assert!(
+            unchanged
+                .loop_iterations
+                .shares_root_with(&parent.loop_iterations)
+        );
+        assert!(
+            unchanged
+                .loop_iteration_variables
+                .shares_root_with(&parent.loop_iteration_variables)
+        );
+
+        let mut left = parent.clone();
+        let mut right = parent.clone();
+        for arm in [&mut left, &mut right] {
+            arm.record_loop_iterations(0, &IntegerTerm::Variable(agreed));
+            arm.record_loop_iterations(count, &IntegerTerm::Variable(new_common));
+        }
+        left.record_loop_iterations(1, &IntegerTerm::Variable(left_only));
+        right.record_loop_iterations(1, &IntegerTerm::Variable(right_only));
+        left.record_loop_iterations(count + 1, &IntegerTerm::Variable(Variable(8_310_004)));
+
+        let (joined, work) =
+            measure_persistent_work(|| left.common_descendant(&right, &parent).unwrap());
+        assert_eq!(joined.loop_naming_iterations(agreed), Some(0));
+        assert_eq!(joined.loop_naming_iterations(original(0)), None);
+        assert_eq!(joined.loop_naming_iterations(original(1)), Some(1));
+        assert_eq!(
+            joined.loop_naming_iterations(original(count - 1)),
+            Some(count - 1)
+        );
+        assert_eq!(joined.loop_naming_iterations(new_common), Some(count));
+        assert_eq!(joined.loop_naming_iterations(left_only), None);
+        assert_eq!(joined.loop_naming_iterations(right_only), None);
+        assert!(!joined.loop_iterations.contains_key(&(count + 1)));
+        assert_eq!(parent.loop_naming_iterations(original(0)), Some(0));
+        samples.push((count, work));
+    }
+    let (small_count, small_work) = samples[0];
+    for &(count, work) in &samples {
+        // The same changed keys can take logarithmically longer to look up.
+        let extra_levels = (count.ilog2() - small_count.ilog2()) as usize;
+        assert!(
+            work <= small_work + 24 * extra_levels,
+            "a fixed loop-count delta should only visit changed map paths: {samples:?}"
+        );
+    }
+}
+
 const TOUCH_C: &str = "";
 // An extern contract: the call takes the same contract-application path as a
 // verified callee's, without spending the test's time verifying its body.
@@ -603,7 +669,7 @@ impl Run {
 /// each must cost the same at every position, as a step must.
 const RESOURCE_TACTICS: [&str; 2] = ["unfold", "fold"];
 
-fn run(shape: fn(usize) -> (String, String), n: usize) -> Run {
+fn run(shape: impl FnOnce(usize) -> (String, String), n: usize) -> Run {
     let (c, click) = shape(n);
     let (result, samples) = crate::instrumentation::collect_tactic_work(|| {
         verify_c_sources(&click, &[("hunt.c", c.as_str())])
@@ -857,6 +923,123 @@ fn a_call_ignores_aliases_of_an_owned_object() {
 #[test]
 fn a_call_ignores_unrelated_owned_objects() {
     assert_flat_across("many_objects", many_objects, [1, 3], "touch(data);");
+}
+
+#[test]
+fn repeated_writing_calls_ignore_unrelated_folded_owners() {
+    let check = |owners, calls, distinct_families| {
+        let fixture = |owners| {
+            let parameters = (0..owners)
+                .map(|index| format!("int32* p{index}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let family = |index| if distinct_families { index } else { 0 };
+            let definitions = lines(if distinct_families { owners } else { 1 }, |index| {
+                format!("resource boxed{index}(p: int32*) {{ owns *p; }}")
+            });
+            let kept = lines(owners, |index| {
+                format!("    owns boxed{}(p{index});", family(index))
+            });
+            let c = format!(
+                "void caller(int32* scratch, {parameters}) {{\n{}\n}}",
+                lines(calls, |_| "    ping(scratch);".into())
+            );
+            let click = format!(
+                r#"verifying "hunt.c";
+{definitions}
+extern void ping(int32* scratch) {{ owns *scratch; ensures *scratch == 7; }}
+void caller(int32* scratch, {parameters}) {{
+    owns *scratch;
+{kept}
+}} by {{
+{}
+}}"#,
+                steps(calls)
+            );
+            (c, click)
+        };
+        let result = run(fixture, owners);
+        result
+            .statement_steps("repeated writing calls")
+            .iter()
+            .map(|(_, work)| *work)
+            .collect::<Vec<_>>()
+    };
+
+    let widths = [2, 4, 8, 16];
+    let by_width = widths.map(|owners| check(owners, 4, false));
+    for (owners, work) in widths.into_iter().zip(&by_width).skip(1) {
+        // The second call catches the cell index up with the first call's
+        // removals. Charge the diff and the index update once per owner.
+        assert!(
+            work[1] <= by_width[0][1] + 2 * (owners - widths[0]) + 8,
+            "catching up the call cell index revisits folded owners: {by_width:?}"
+        );
+        for (baseline, widened) in by_width[0][2..].iter().zip(&work[2..]) {
+            assert!(
+                *widened <= baseline + 8,
+                "writing calls revisit retained folded owners: {by_width:?}"
+            );
+        }
+    }
+    // Grow the call sequence at a fixed width to detect repeated upkeep.
+    let longer = check(16, 12, false);
+    assert!(
+        longer[4..].iter().all(|work| *work <= longer[3] + 32),
+        "repeated writing calls revisit earlier calls: {longer:?}"
+    );
+    for (owners, one_family) in widths.into_iter().zip(&by_width) {
+        let distinct = check(owners, 4, true);
+        assert_eq!(
+            &one_family[2..],
+            &distinct[2..],
+            "writing calls enumerate {owners} retained resource families"
+        );
+    }
+}
+
+#[test]
+fn inline_stores_ignore_unrelated_owned_parameter_runs() {
+    let samples = [4, 8, 16, 32].map(|owners| {
+        let parameters = (0..owners)
+            .map(|index| format!("int32* p{index}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let kept = lines(owners, |index| format!("    owns *p{index};"));
+        let c = format!(
+            "#include \"ping.h\"\nvoid caller(int32* scratch, {parameters}) {{\n{}\n}}",
+            lines(4, |index| format!("    ping(scratch, {});", 7 + index))
+        );
+        let header = "static inline void ping(int32* p, int32 value) { *p = value; }";
+        let click = format!(
+            r#"verifying "hunt.c";
+void caller(int32* scratch, {parameters}) {{
+    owns *scratch;
+{kept}
+    ensures *scratch == 10;
+}} by {{
+{}
+}}"#,
+            steps(4)
+        );
+        let (verified, samples) = crate::instrumentation::collect_tactic_work(|| {
+            verify_c_sources(&click, &[("hunt.c", &c), ("ping.h", header)])
+        });
+        verified.unwrap_or_else(|error| panic!("{owners} owners: {}", error.message()));
+        let calls: Vec<_> = samples
+            .into_iter()
+            .filter(|sample| {
+                sample.tactic.claim == "caller.contract" && sample.tactic.tactic_name == "step"
+            })
+            .map(|sample| sample.work)
+            .collect();
+        assert_eq!(calls.len(), 4);
+        calls[3]
+    });
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 8),
+        "one inline store revisits unrelated parameter runs: {samples:?}"
+    );
 }
 
 // Splitting a caller's owner must not enumerate the other parameter owners

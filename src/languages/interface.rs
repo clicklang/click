@@ -1412,7 +1412,9 @@ impl ImportedParameter {
                 binding.reference_referent(),
             ) {
                 (Some(actual), Some(written)) => written.is_named(actual.source_name()),
-                (None, None) => binding.is_named(self.name()),
+                (None, None) if self.binding_name().slice_length_of().is_none() => {
+                    binding.is_named(self.name())
+                }
                 _ => false,
             }
     }
@@ -1857,6 +1859,7 @@ pub struct RustLoopIterator {
     pub local: String,
     pub kind: RustIteratorKind,
     pub(crate) count_binding: Option<crate::kernel::BindingName>,
+    pub(crate) range_bounds: Option<[crate::kernel::BindingName; 2]>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -1899,10 +1902,9 @@ pub enum RustIteratorKind {
     /// size, which a proof reads as `iter.v`, `iter.v.len()`,
     /// `iter.rem`, `iter.rem.len()` and `iter.chunk_size`.
     Chunks,
-    /// `Range`: `_start` and `_end`.
+    /// `Range`: its start and end bounds.
     Range,
-    /// `RangeInclusive`: `_start`, `_end`, and `_done`, whether it has
-    /// yielded its end.
+    /// `RangeInclusive`: its start and end bounds, which can represent emptiness.
     RangeInclusive,
     /// A crate's own struct that implements `Iterator`: the struct itself,
     /// whose `next` the loop calls. A proof reads its fields as the

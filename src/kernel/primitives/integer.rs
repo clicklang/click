@@ -110,7 +110,8 @@ pub struct SharedPureApplication(Arc<SharedPureApplicationNode>);
 /// The original name remains available for users of the Integer term API.
 pub type SharedIntegerApplication = SharedPureApplication;
 
-struct PureApplicationIdentity {
+#[derive(Eq, PartialEq, Hash)]
+pub(crate) struct PureApplicationIdentity {
     id: u64,
 }
 
@@ -164,17 +165,16 @@ impl PureApplicationInterner {
         name: String,
         arguments: Vec<PureFunctionArgument>,
     ) -> SharedPureApplication {
-        let keys = application_argument_keys(&arguments);
-        self.intern_keyed(name, arguments, keys)
+        let identity = self.intern_identity(&name, application_argument_keys(&arguments));
+        SharedPureApplication::with_identity(identity, name, arguments)
     }
 
-    fn intern_keyed(
+    fn intern_identity(
         &mut self,
-        name: String,
-        arguments: Vec<PureFunctionArgument>,
+        name: &str,
         argument_keys: Vec<PureApplicationArgumentKey>,
-    ) -> SharedPureApplication {
-        crate::instrumentation::record_deterministic_work(arguments.len().saturating_add(1));
+    ) -> Arc<PureApplicationIdentity> {
+        crate::instrumentation::record_deterministic_work(argument_keys.len().saturating_add(1));
         let mut hasher = crate::id_hash::FingerprintHasher::default();
         name.hash(&mut hasher);
         argument_keys.hash(&mut hasher);
@@ -203,14 +203,13 @@ impl PureApplicationInterner {
                 self.cleanup.push_back((fingerprint, pointer));
             }
         }
-        let identity = self
-            .buckets
+        self.buckets
             .get(&key)
             .and_then(|bucket| {
                 bucket
                     .iter()
                     .find_map(|(old_name, old_arguments, identity)| {
-                        (old_name == &name && old_arguments == &argument_keys)
+                        (old_name == name && old_arguments == &argument_keys)
                             .then(|| identity.upgrade())
                             .flatten()
                     })
@@ -223,14 +222,23 @@ impl PureApplicationInterner {
                     .expect("Pure application interner ID exhausted");
                 let identity = Arc::new(PureApplicationIdentity { id });
                 self.buckets.entry(key).or_default().push((
-                    name.clone(),
+                    name.to_owned(),
                     argument_keys,
                     Arc::downgrade(&identity),
                 ));
                 self.cleanup
                     .push_back((key, Arc::as_ptr(&identity) as usize));
                 identity
-            });
+            })
+    }
+}
+
+impl SharedPureApplication {
+    fn with_identity(
+        identity: Arc<PureApplicationIdentity>,
+        name: String,
+        arguments: Vec<PureFunctionArgument>,
+    ) -> Self {
         // Semantic identity is interned separately from the exact payload.
         // A caller never receives a previous producer's native/shared reading,
         // and repeated readings do not accumulate a bucket of payload versions.
@@ -240,9 +248,7 @@ impl PureApplicationInterner {
             common_arguments: Mutex::new(None),
         }))
     }
-}
 
-impl SharedPureApplication {
     /// Prepared children belong to this exact producer payload. Opaque fallback
     /// identities are created by callers and must not be cached here: they name
     /// this application and would create a reference cycle.
@@ -277,9 +283,47 @@ impl SharedPureApplication {
         cached.as_ref().unwrap().values[index].clone()
     }
     pub(crate) fn intern(name: String, arguments: Vec<PureFunctionArgument>) -> Self {
+        let identity = Self::identity_for(&name, &arguments);
+        Self::with_identity(identity, name, arguments)
+    }
+
+    pub(crate) fn identity_for(
+        name: &str,
+        arguments: &[PureFunctionArgument],
+    ) -> Arc<PureApplicationIdentity> {
+        Self::intern_identity(name, application_argument_keys(arguments))
+    }
+
+    pub(super) fn identity_for_machine_roots(
+        name: &str,
+        arguments: &[KernelTerm],
+    ) -> Option<Arc<PureApplicationIdentity>> {
+        if arguments
+            .iter()
+            .any(|argument| !argument.is_shared_machine_operand())
+        {
+            return None;
+        }
+        let keys = arguments
+            .iter()
+            .map(|argument| {
+                let KernelType::Program(ty) = argument.ty() else {
+                    return None;
+                };
+                let format = MachineIntegerType::from_program_type(*ty)?;
+                let identity = SharedMachineIntegerTerm::observe_shared(format, argument.clone())?;
+                Some(PureApplicationArgumentKey::Machine(identity))
+            })
+            .collect::<Option<Vec<_>>>()?;
+        Some(Self::intern_identity(name, keys))
+    }
+
+    fn intern_identity(
+        name: &str,
+        argument_keys: Vec<PureApplicationArgumentKey>,
+    ) -> Arc<PureApplicationIdentity> {
         static INTERNER: OnceLock<Mutex<PureApplicationInterner>> = OnceLock::new();
-        // Compute word identities outside the application-interner lock.
-        let argument_keys = application_argument_keys(&arguments);
+        // The typed word identities were computed outside this lock.
         INTERNER
             .get_or_init(|| {
                 Mutex::new(PureApplicationInterner {
@@ -290,8 +334,13 @@ impl SharedPureApplication {
             })
             .lock()
             .expect("Pure application interner lock poisoned")
-            .intern_keyed(name, arguments, argument_keys)
+            .intern_identity(name, argument_keys)
     }
+
+    pub(crate) fn identity(&self) -> Arc<PureApplicationIdentity> {
+        self.0.identity.clone()
+    }
+
     pub(crate) fn id(&self) -> u64 {
         self.0.identity.id
     }

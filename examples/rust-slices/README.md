@@ -5,10 +5,9 @@ indexed reads and writes, local slice copies and reborrows, and a direct call
 that passes a slice. Indexing proves the Rust `usize` bounds check before
 forming an address. Byte mutation uses Click's existing ownership resources.
 
-A Rust parameter `bytes: &[u8]` lowers to `const uint8* bytes, uint64 bytes_len`;
-`&mut [u8]` uses a mutable byte pointer. The pinned target's `usize` is a
-64-bit unsigned value. The generated `<parameter>_len` name must not collide
-with another parameter. Slice metadata is copied and passed together.
+A Rust parameter `bytes: &[u8]` passes a shared byte pointer and a length.
+Proofs write `bytes.len()` for the length. The pinned target's `usize` is a
+64-bit unsigned value. Slice metadata is copied and passed together.
 
 `read` and `write` have variable-length contracts. Their memory ranges keep
 the 64-bit `bytes.len()` bound, so they state no limit on the length; lengths,

@@ -5578,6 +5578,7 @@ fn common_float_reads_round_trip_existing_cast_dereference_syntax() {
         let surface =
             raise_kernel_term(&root, ParameterBinding::default(), &state, &BTreeMap::new())
                 .unwrap();
+        assert!(!root.has_cached_native_argument());
         let text = diagnostics::describe_contract_expression(&surface);
         let parsed = parser::parse(&format!(
             "function probe(p: uint8*) -> {spelling} {{ {text} }}"
@@ -8296,6 +8297,32 @@ fn variable_shift_counts_in_conditionals_round_trip_after_rewrite() {
 }
 
 #[test]
+fn signed_variable_arithmetic_in_conditionals_round_trips_after_rewrite() {
+    use MachineIntegerType as T;
+    for (format, spelling) in [(T::Int32, "int32"), (T::Int64, "int64")] {
+        let mut fixture = ConditionalRoundTrip::new(format, spelling);
+        fixture.state = fixture.state.with_local(
+            "w",
+            format.value_from_term(MachineTerm::Variable(Variable(999712))),
+        );
+        for operator in ["+", "-", "*", "&"] {
+            let equality = fixture.lower(&format!("x == ((z {operator} w) as {spelling})"));
+            for reverse in [false, true] {
+                for (guards, arm) in [
+                    (&["flag", "not flag"][..], "x"),
+                    (&["x < y", "x == y", "y <= x", "y != x"][..], "z"),
+                ] {
+                    for guard in guards {
+                        let original = fixture.goal(guard, reverse, arm);
+                        fixture.check(&original, &equality, guard, reverse);
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn wrapping_add_subtract_in_conditionals_round_trip_after_rewrite() {
     use crate::kernel::MachineIntegerType as T;
     for (format, spelling, boundary) in [
@@ -8342,6 +8369,35 @@ fn two_variable_unsigned_arithmetic_in_conditionals_round_trips_after_rewrite() 
                     for guard in guards {
                         let original = fixture.goal(guard, reverse, then_value);
                         fixture.check(&original, &equality, guard, reverse);
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn variable_divisors_in_conditionals_round_trip_after_rewrite() {
+    use MachineIntegerType as T;
+    for (format, spelling) in [(T::UInt32, "uint32"), (T::UInt64, "uint64")] {
+        let mut fixture = ConditionalRoundTrip::new(format, spelling);
+        fixture.state = fixture.state.with_local(
+            "w",
+            format.value_from_term(MachineTerm::Variable(Variable(999712))),
+        );
+        for operator in ["/", "%"] {
+            let literal = format!("(3 as {spelling})");
+            for divisor in ["w", literal.as_str()] {
+                let equality = fixture.lower(&format!("x == (z {operator} {divisor})"));
+                for reverse in [false, true] {
+                    for (guards, arm) in [
+                        (&["flag", "not flag"][..], "x"),
+                        (&["x < y", "x == y", "y <= x", "y != x"][..], "z"),
+                    ] {
+                        for guard in guards {
+                            let original = fixture.goal(guard, reverse, arm);
+                            fixture.check(&original, &equality, guard, reverse);
+                        }
                     }
                 }
             }
@@ -8718,4 +8774,68 @@ fn identical_word_comparisons_keep_their_comparison_through_lowering() {
         matches!(range.native_compat(), ConditionTerm::Constant(true)),
         "{range:?}"
     );
+}
+
+#[test]
+fn pure_machine_conditional_operands_round_trip_after_rewrite() {
+    use MachineIntegerType as T;
+    for (format, spelling) in [
+        (T::Int32, "int32"),
+        (T::UInt32, "uint32"),
+        (T::Int64, "int64"),
+        (T::UInt64, "uint64"),
+    ] {
+        let mut fixture = ConditionalRoundTrip::new(format, spelling);
+        fixture.state = fixture.state.with_local(
+            "inner",
+            ProgramValue::of_bool(ConditionTerm::Variable(Variable(999712))),
+        );
+        for replacement in [
+            "y",
+            "if inner { y } else { z }",
+            "if y < z { y } else { z }",
+        ] {
+            let equality = fixture.lower(&format!("x == ({replacement})"));
+            for (guards, arm) in [
+                (&["flag", "not flag"][..], "x"),
+                (&["x < y", "y <= x", "x == y", "y != x"][..], "z"),
+            ] {
+                for guard in guards {
+                    for reverse in [false, true] {
+                        let original = fixture.goal(guard, reverse, arm);
+                        fixture.check(&original, &equality, guard, reverse);
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn exact_rewrite_keeps_equal_scalar_conditional_arms_through_lowering() {
+    use crate::kernel::proof::PureFactStore;
+    let fixture = ConditionalRoundTrip::new(MachineIntegerType::Int32, "int32");
+    let equality = fixture.lower("to_integer(y) + 1 == to_integer(z) + 1");
+    for written in [
+        "to_integer(if flag { to_int32(to_integer(y) + 1) } else { to_int32(to_integer(z) + 1) }) + 1 <= 100",
+        "(if flag { if to_integer(y) + 1 < 0 { true } else { false } } else { if to_integer(z) + 1 < 0 { true } else { false } }) == true",
+    ] {
+        let original = fixture.lower(written);
+        let proof = PureFactStore::from_ordered(std::slice::from_ref(&equality))
+            .check_equality_rewrite(&original, &equality)
+            .unwrap();
+        let expected = proof.proposition();
+        assert_ne!(expected, &original);
+        let raised =
+            synthesize_surface_proposition(expected, ParameterBinding::default(), &fixture.state)
+                .unwrap();
+        let text = crate::surface::printing::source_click_proposition(&raised);
+        assert!(text.contains("if flag"), "{text}");
+        assert_eq!(
+            relower_written_proposition(&raised, &fixture.state).unwrap(),
+            *expected,
+            "{text}"
+        );
+        assert_eq!(fixture.lower(&text), *expected, "{text}");
+    }
 }

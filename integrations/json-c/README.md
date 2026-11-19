@@ -29,16 +29,25 @@ system headers. This was tested with GCC 14.2 and CMake 3.31.
 integrations/json-c/verify.sh json-c array-list
 ```
 
-The [array length proof](array-list.click) is a pending claim. Preprocessing
-finishes, and Click accepts the function-type typedef used for the list's
-callback. The parser reaches an assignment inside an `if` condition in
-`array_list_new2` at `arraylist.c:56`. That assignment writes to `arr->array`.
-Click currently restricts assignment expressions to simple variables.
+The [array length proof](array-list.click) verifies that
+`array_list_length()` returns the stored length of a readable array list.
+The import selects `array_list_length` as its only function root. This makes
+Click check the original accessor and the list declaration while leaving the
+unrelated allocator body outside the dependency closure.
 
-The array-length sidecar selects `array_list_length`, but the importer parses
-the allocator too. The next step is to let the C dependency-closure importer
-start from a named function. The target proof for `array_list_get_idx` is that
-an out-of-range index returns null and an in-range index returns the stored
-pointer.
+```sh
+integrations/json-c/verify.sh json-c array-index
+```
+
+The index proofs share an import lock with `array_list_get_idx` as its only
+function root. Two sidecars cover the cases for the `size_t` index.
+
+- [Out of range](array-index-out-of-range.click). When the index is at least
+  the stored length, the function returns `NULL`. The proof views only
+  `arr->length`.
+- [In range](array-index-in-range.click). When the index is less than the
+  stored length, the function returns the pointer in the selected slot.
+  The proof views the length, the backing-array pointer field, and that one
+  slot. Ownership of the object the pointer refers to is unnecessary.
 
 [release]: https://github.com/json-c/json-c/tree/05180c1fa385eb39274cf0a17223da1b82832773

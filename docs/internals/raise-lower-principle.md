@@ -43,6 +43,32 @@ When a fact has no Surface form, today's code works around it rather than failin
 None of these is unsound, since every cited Surface form is lowered again and
 checked. Each one costs completeness, expansion, or a readable report.
 
+## Proof-visible program structure
+
+The proof-visible program tree follows the target-language source. Build its
+statement hierarchy and local declarations from the statements and declarations
+the author wrote. Preserve their identity, order, and nesting through lowering.
+Frontends may introduce typed temporaries and execution steps to model the
+source's behavior. Retain the source construct responsible for each generated
+operation and attribute the operation to that construct in the execution layout.
+Reserve source statement selectors and local names for written constructs.
+
+For example, a C bit-field update such as `p->delta++` is one source statement.
+Its execution saves a value and may perform several byte stores. A proof can
+distinguish those operations through the statement's existing atomic region
+selectors. A diagnostic points to the written update and identifies the
+operation that failed. [Program regions and points](../reference/language/index.md#at)
+
+Review frontend and lowering changes against these checks.
+
+- Statement selectors still resolve to the same written constructs. Changes
+  to the internal step sequence leave source statement numbering and nesting
+  intact.
+- A failure in a generated operation identifies the source responsible for
+  it and describes the operation in terms of that source.
+- `click expand` emits source-backed selectors and names. The expanded proof
+  replays with implicit solving disabled.
+
 ## The rule
 
 - **Raise by construction, not by search.** A fact's Surface form follows from
@@ -466,14 +492,16 @@ guards, or same-variable 32/64-bit comparison guards retain their `if` node and
 guard during logical lowering. Their arm domains remain guarded, including
 unselected reads and invalid shifts. Checking selects the arm when needed.
 The comparison boundary recognizes fixed-size native conditionals, including
-one immediate conditional in either arm. A guard can be a Boolean variable, an
+one immediate conditional in either arm or on either side of a machine
+comparison guard. A guard can be a Boolean variable, an
 equality of two Boolean variables, or a 32/64-bit comparison. Machine comparison
 operands and innermost arms can be literal or variable leaves, one bitwise
 operation (`&`, `|`, `^`, `~`)
 over such leaves, a right shift or unsigned left shift by an in-range literal
-count or with two variable operands, an unsigned sum, difference, or product over two variables or a variable
-and a literal,
+count or with two variable operands, a sum, difference, or product over two variables, or an unsigned one over a
+variable and a literal,
 a quotient or remainder of a variable by a nonzero literal (excluding signed `-1`),
+an unsigned quotient or remainder over two variables,
 a signedness cast of one variable, or a 32-to-64-bit widening or 64-to-32-bit
 low-word cast of a leaf. A signed
 comparison spells the low-word cast with its signed destination. Wide equality retains an unsigned
@@ -486,6 +514,9 @@ checking selects the arm. The
 reader inspects only the operator and its immediate leaves. Negated Boolean
 variables use the same guard with swapped arms. This preserves the comparison
 family without exporting arithmetic DAGs or using ambient facts to select an arm.
+A Boolean or 32/64-bit machine conditional can retain identical arms after an
+exact rewrite. Logical lowering keeps that conditional when its guard is
+representable and symbolic. Checking can then use the common value.
 Other result families retain their existing selected-arm behavior; literal Boolean
 and closed 32-bit equality guards keep their normal forms.
 

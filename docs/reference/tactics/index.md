@@ -1588,6 +1588,10 @@ available when one of these holds:
   all four bytes are recorded initialized. These checks use the goal's
   memory state and decline if its lifetime or initialization needs further
   evidence.
+- It is a separation of memory ranges on two distinct automatic objects,
+  or between an automatic object and storage incoming to the function.
+  The check uses the exact block identities in the goal. Forming the
+  ranges still carries the ordinary range obligations.
 - It follows by exact Boolean unit propagation. Admitting `A or B` and
   `not A` makes `B` available; admitting `A implies B` and `A` makes `B`
   available. Either admission order works, and consequences propagate through
@@ -2159,7 +2163,7 @@ For equality goals, use an ordinary `have` to establish the equality, then
 or mismatched endpoints is a local refusal. This tactic is distinct from a
 loop's `preserve by { ... }` proof block.
 
-- Read equality. [`preserve_step_carries_a_fact.md`](https://github.com/clicklang/click/blob/master/mdtests/preserve_step_carries_a_fact.md)
+- Read equality. [`preserve_step_carries_a_fact.md`](https://github.com/clicklang/click/blob/master/mdtests/preserve_step_carries_a_fact.md) and [`memcpy_then_terminator_keeps_copied_bytes.md`](https://github.com/clicklang/click/blob/master/mdtests/memcpy_then_terminator_keeps_copied_bytes.md)
 - Range viewability. [`cstr_plain_char_kernel_requirement_reaches_callee.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_plain_char_kernel_requirement_reaches_callee.md)
 
 `region.footprint` is a resource descriptor, not ownership. Execution records
@@ -3678,7 +3682,7 @@ introduced.
 Click checks that transport only; expansion is unchanged, and profiling charges
 the named evidence.
 
-**Checked examples:** [`field_derived_precise_effect_after_metadata_write.md`](https://github.com/clicklang/click/blob/master/mdtests/field_derived_precise_effect_after_metadata_write.md), [`have_viewable_prefix_of_a_range.md`](https://github.com/clicklang/click/blob/master/mdtests/have_viewable_prefix_of_a_range.md), [`sweep_maintains_a_zero_unmarked_count.md`](https://github.com/clicklang/click/blob/master/mdtests/sweep_maintains_a_zero_unmarked_count.md), [`sweep_prefix_survives_its_endpoint_store_by_solve.md`](https://github.com/clicklang/click/blob/master/mdtests/sweep_prefix_survives_its_endpoint_store_by_solve.md), [`quantified_frame_carries_a_fact_past_the_excluded_store.md`](https://github.com/clicklang/click/blob/master/mdtests/quantified_frame_carries_a_fact_past_the_excluded_store.md), [`quantified_frame_preserves_uint64_equality.md`](https://github.com/clicklang/click/blob/master/mdtests/quantified_frame_preserves_uint64_equality.md), [`memcpy_then_terminator_keeps_copied_bytes.md`](https://github.com/clicklang/click/blob/master/mdtests/memcpy_then_terminator_keeps_copied_bytes.md), [`a_guarded_memset_value_claim_crosses_a_disjoint_store.md`](https://github.com/clicklang/click/blob/master/mdtests/a_guarded_memset_value_claim_crosses_a_disjoint_store.md), [`simple_statement_step_explicit_transport.md`](https://github.com/clicklang/click/blob/master/mdtests/simple_statement_step_explicit_transport.md)
+**Checked examples:** [`field_derived_precise_effect_after_metadata_write.md`](https://github.com/clicklang/click/blob/master/mdtests/field_derived_precise_effect_after_metadata_write.md), [`have_viewable_prefix_of_a_range.md`](https://github.com/clicklang/click/blob/master/mdtests/have_viewable_prefix_of_a_range.md), [`sweep_maintains_a_zero_unmarked_count.md`](https://github.com/clicklang/click/blob/master/mdtests/sweep_maintains_a_zero_unmarked_count.md), [`sweep_prefix_survives_its_endpoint_store_by_solve.md`](https://github.com/clicklang/click/blob/master/mdtests/sweep_prefix_survives_its_endpoint_store_by_solve.md), [`quantified_frame_carries_a_fact_past_the_excluded_store.md`](https://github.com/clicklang/click/blob/master/mdtests/quantified_frame_carries_a_fact_past_the_excluded_store.md), [`quantified_frame_preserves_uint64_equality.md`](https://github.com/clicklang/click/blob/master/mdtests/quantified_frame_preserves_uint64_equality.md), [`a_guarded_memset_value_claim_crosses_a_disjoint_store.md`](https://github.com/clicklang/click/blob/master/mdtests/a_guarded_memset_value_claim_crosses_a_disjoint_store.md), [`simple_statement_step_explicit_transport.md`](https://github.com/clicklang/click/blob/master/mdtests/simple_statement_step_explicit_transport.md)
 
 ### Unfolding predicates
 
@@ -4035,6 +4039,12 @@ held as a unit owner or view. This form also works at function exit and
 inside a `have` proof with a concrete program state. It performs indexed
 permission lookups, without looking for a covering range or following
 history. The held resources do not change.
+
+For a fixed-size linked-pointer view, `solve()` can emit this observation
+directly when the range already names held storage. When the base is a
+pointer read from an initializer, expansion cites its equality with the
+file-qualified object, rewrites the view to that object, and observes the
+exact held range.
 
 A saved range selects the pointer value at a recorded point; its bounds are
 evaluated in the surrounding state. `observe(at(point, p)[lo..hi])` establishes

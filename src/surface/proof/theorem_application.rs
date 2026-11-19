@@ -862,6 +862,7 @@ pub(in crate::surface::proof) fn instantiate_generic_theorem_application_definit
                 "click::separation::contains_subrange"
                     | "click::separation::contains_element"
                     | "click::separation::contains_rebase"
+                    | "click::separation::contains_joined_ranges"
                     | "click::separation::separate_adjacent_ranges"
             ) {
                 "interval law bounds must be int32 or uint64"
@@ -879,6 +880,7 @@ pub(in crate::surface::proof) fn instantiate_generic_theorem_application_definit
             | "click::separation::contains_subrange"
             | "click::separation::contains_element"
             | "click::separation::contains_rebase"
+            | "click::separation::contains_joined_ranges"
             | "click::separation::separate_adjacent_ranges"
     ) {
         let parameter = &concrete.parameters()[0];

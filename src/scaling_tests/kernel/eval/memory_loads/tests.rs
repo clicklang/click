@@ -1624,7 +1624,7 @@ fn opaque_word_call_frame(size: u32) -> (SymbolicMemory, PureFactContext, Addres
         crate::kernel::primitives::CallKeptRanges::new(
             ResourceContext::new(),
             vec![],
-            Some(std::sync::Arc::new(vec![definition])),
+            Some([definition].into()),
         ),
         &context,
     );
@@ -1714,14 +1714,9 @@ fn a_call_frame_step_queries_its_kept_range_once() {
             kept.range_holding(&context, None, &word, 8)
         });
         assert!(range.is_none());
-        if size == 256 {
-            // Keep the fixture large enough that a second range lookup
-            // exceeds the step's fixed overhead allowance below.
-            assert!(
-                lookup_work > 512,
-                "duplicated lookup must be detectable: {lookup_work}"
-            );
-        }
+        // Count lookups directly now that a miss is cheaper than the
+        // step's fixed overhead allowance.
+        crate::kernel::primitives::CallKeptRanges::take_range_queries();
         let (effect, step_work) = crate::instrumentation::measure_deterministic_work(|| {
             crate::kernel::resource_tracker::step_effect::affects(
                 &derivation,
@@ -1740,6 +1735,11 @@ fn a_call_frame_step_queries_its_kept_range_once() {
             effect,
             crate::kernel::resource_tracker::step_effect::StepEffect::NotShownSeparate(_)
         ));
+        assert_eq!(
+            crate::kernel::primitives::CallKeptRanges::take_range_queries(),
+            1,
+            "{size}: queries per call step"
+        );
         assert!(
             step_work <= lookup_work + 512,
             "{size}: lookup {lookup_work}, step {step_work}"

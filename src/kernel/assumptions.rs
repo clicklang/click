@@ -2657,9 +2657,12 @@ fn collect_term_memory_loads(
         Term::Integer(term) => {
             collect_integer_memory_loads(term.native_compat(), current_memory, loads, seen_integers)
         }
-        Term::PointerOffset(offset) => {
-            collect_pointer_offset_memory_loads(offset, current_memory, loads, seen_integers)
-        }
+        Term::PointerOffset(offset) => collect_pointer_offset_memory_loads(
+            offset.native_compat(),
+            current_memory,
+            loads,
+            seen_integers,
+        ),
         Term::ProgramValue(value) => {
             if let Some(root) = value.root()
                 && root.is_shared_machine_operand()

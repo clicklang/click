@@ -3948,6 +3948,11 @@ is not owned at this state"
 (`mdtests/a_consumed_resource_instance_is_named_at_a_mark.md`,
 `mdtests/a_resource_instance_is_not_named_at_a_mark_where_it_is_not_held.md`).
 
+A field read such as `at(saved, c.model)` keeps the model held at the
+selected point, including any constructor and its payloads. The proof can
+match on that saved value after unfolding the instance
+(`mdtests/a_saved_resource_model_keeps_its_constructor_payload.md`).
+
 Every selector names a region: a stretch of the program with an `.entry` and
 an `.exit`. `function` is the whole body and `loop(i)` is a loop. The regions
 `step()` crosses one at a time are the *atomic* regions, and `region(N)` is the

@@ -16,7 +16,8 @@ use std::sync::{Arc, OnceLock};
 mod bindings;
 pub use bindings::{
     BindingDeclaration, BindingName, GeneratedBinderId, LocalBindingId, LocalFunctionId,
-    LocalStorageInstance, StaticBindingId, StaticBindingMetadata, StaticBindingOwner,
+    LocalStorageInstance, SliceLengthBinding, StaticBindingId, StaticBindingMetadata,
+    StaticBindingOwner,
 };
 
 /// Opaque creation identity carried by a modeled `pthread_t` word. Its ID is
@@ -96,7 +97,9 @@ pub use kernel_term::{
     KernelTermNode, KernelType,
 };
 #[allow(unused_imports)]
-pub(crate) use kernel_term::{PointerRewrite, PointerRewriteError, SharedAddressBase};
+pub(crate) use kernel_term::{
+    KernelMemoryRead, PointerRewrite, PointerRewriteError, SharedAddressBase,
+};
 mod machine_integer;
 pub use machine_integer::{
     MachineIntegerConstant, MachineIntegerDivisionError, MachineIntegerFormat, MachineIntegerWidth,
@@ -110,10 +113,11 @@ pub use integer::{
 };
 pub use integer::{MachineIntegerType, SharedMachineIntegerTerm, SignedDefinedWidth};
 pub(crate) use integer::{
-    MachineOperandView, clear_shared_machine_variable_cache, machine_operand_syntax_cmp,
-    shared_condition_operand_leaf_pairs, shared_machine_conversion_leaves,
-    shared_machine_read_leaves, shared_machine_read_uses, shared_machine_syntax_equal,
-    shared_machine_syntax_variables, shared_operand_leaf_pairs, shared_state_read_pairs,
+    MachineOperandView, PureApplicationIdentity, clear_shared_machine_variable_cache,
+    machine_operand_syntax_cmp, shared_condition_operand_leaf_pairs,
+    shared_machine_conversion_leaves, shared_machine_read_leaves, shared_machine_read_uses,
+    shared_machine_syntax_equal, shared_machine_syntax_variables, shared_operand_leaf_pairs,
+    shared_state_read_pairs,
 };
 mod alias_candidates;
 pub(crate) use alias_candidates::{AliasCandidates, BlockKeyed};
@@ -161,7 +165,7 @@ pub use sequence_values::{SequenceValues, SequenceValuesIter};
 mod descriptor_values;
 pub use descriptor_values::{
     StoredAlgebraicTerm, StoredConditionTerm, StoredIntegerTerm, StoredMachineTerm,
-    StoredProgramValue,
+    StoredPointerOffset, StoredProgramValue,
 };
 mod resource_fields;
 pub(crate) use resource_fields::StoredResourceField;
@@ -2565,6 +2569,7 @@ impl Pointer {
                     | AddressBase::ContractException
                     | AddressBase::StaticObject { .. }
                     | AddressBase::AutomaticLocal { .. }
+                    | AddressBase::SliceLength { .. }
                     | AddressBase::ReferenceCarrier { .. }
                     | AddressBase::Concrete(_)
                     | AddressBase::Heap(_)
@@ -3088,6 +3093,11 @@ pub enum AddressBase {
         referent: Arc<BindingName>,
         instance: LocalStorageInstance,
     },
+    /// Internal storage of the length component of a slice.
+    SliceLength {
+        slice: SliceLengthBinding,
+        instance: LocalStorageInstance,
+    },
     StaticObject {
         binding: StaticBindingId,
     },
@@ -3114,6 +3124,11 @@ impl std::hash::Hash for AddressBase {
             }
             Self::ContractResult => 13u64.hash(state),
             Self::ContractException => 15u64.hash(state),
+            Self::SliceLength { slice, instance } => {
+                17u64.hash(state);
+                slice.hash(state);
+                instance.hash(state);
+            }
             Self::StaticObject { binding } => {
                 12u64.hash(state);
                 binding.hash(state);
@@ -3247,7 +3262,9 @@ impl AddressBase {
 
     pub(crate) fn starts_with(&self, prefix: &str) -> bool {
         match self {
-            Self::AutomaticLocal { instance, .. } | Self::ReferenceCarrier { instance, .. } => {
+            Self::AutomaticLocal { instance, .. }
+            | Self::ReferenceCarrier { instance, .. }
+            | Self::SliceLength { instance, .. } => {
                 prefix == "local:"
                     || match instance {
                         LocalStorageInstance::ValueParameter => prefix == "local:value-parameter:",
@@ -3272,6 +3289,7 @@ impl AddressBase {
             | Self::ContractException
             | Self::StaticObject { .. }
             | Self::AutomaticLocal { .. }
+            | Self::SliceLength { .. }
             | Self::ReferenceCarrier { .. }
             | Self::StringLiteral { .. }
             | Self::Function(_)
@@ -3385,6 +3403,7 @@ impl AddressBase {
                         | Self::ContractException
                         | Self::StaticObject { .. }
                         | Self::AutomaticLocal { .. }
+                        | Self::SliceLength { .. }
                         | Self::ReferenceCarrier { .. }
                         | Self::Concrete(_)
                         | Self::Function(_)
@@ -3410,6 +3429,7 @@ impl AddressBase {
                         | Self::ContractResult
                         | Self::ContractException
                         | Self::AutomaticLocal { .. }
+                        | Self::SliceLength { .. }
                         | Self::ReferenceCarrier { .. }
                         | Self::StaticObject { .. }
                 ) && matches!(
@@ -3418,6 +3438,7 @@ impl AddressBase {
                         | Self::ContractResult
                         | Self::ContractException
                         | Self::AutomaticLocal { .. }
+                        | Self::SliceLength { .. }
                         | Self::ReferenceCarrier { .. }
                         | Self::StaticObject { .. }
                         | Self::Concrete(_)
@@ -3428,6 +3449,7 @@ impl AddressBase {
                         | Self::ContractResult
                         | Self::ContractException
                         | Self::AutomaticLocal { .. }
+                        | Self::SliceLength { .. }
                         | Self::ReferenceCarrier { .. }
                         | Self::StaticObject { .. }
                 ) && matches!(self, Self::Concrete(_)))
@@ -3491,6 +3513,9 @@ impl std::fmt::Display for AddressBase {
             Self::AggregateReturn { frame } => write!(formatter, "result.storage(frame, {frame})"),
             Self::ContractResult => formatter.write_str("result.storage()"),
             Self::ContractException => formatter.write_str("exception.storage()"),
+            Self::SliceLength { slice, instance } => {
+                write!(formatter, "{slice}.storage({instance})")
+            }
             Self::StaticObject { binding } => write!(formatter, "{binding}.storage()"),
             Self::ReferenceCarrier { referent, instance } => {
                 write!(
@@ -6718,7 +6743,7 @@ pub struct FunctionContractInterface {
     pub(crate) resource_derived_frame_mixed: bool,
     pub(crate) contract_claims: Vec<FunctionContractClaim>,
     pub(crate) opaque_contract_supported: bool,
-    pub(crate) composite_resource_definitions: Vec<CompositeResourceDefinition>,
+    pub(crate) composite_resource_definitions: Arc<[CompositeResourceDefinition]>,
     /// Shape summary built with the registered definitions. Substitution
     /// changes operands without changing guard presence or recursion.
     pub(crate) composite_definitions_need_entry_cases: bool,
@@ -10207,6 +10232,17 @@ pub(crate) fn intern_derivation_base(memory: &mut SymbolicMemory) -> SharedMemor
 pub(crate) fn record_memory_derivation(result: &mut SymbolicMemory, derivation: MemoryDerivation) {
     let variable_base = derivation.base().clone();
     let derivation = Arc::new(derivation);
+    let names_existing_cells = match derivation.as_ref() {
+        MemoryDerivation::CellObserved { .. } => true,
+        MemoryDerivation::CellsSeeded { base, run } => {
+            matches!(run.value_mode(), cell_store::RunValueMode::Load)
+                && (run.element_width() == run.value_width()
+                    || (run.element_width() > run.value_width()
+                        && run.element_type() != ProgramType::Bool))
+                && base.read_identity() == run.source().read_identity()
+        }
+        _ => false,
+    };
     // The log this value carries from the path that made it; the step is
     // added once the result's arena identity is known.
     let inherited = result.pending_steps.take();
@@ -10223,30 +10259,22 @@ pub(crate) fn record_memory_derivation(result: &mut SymbolicMemory, derivation: 
             inherited,
             derivation.clone(),
             produced,
+            names_existing_cells,
         ));
         return;
     }
     // Interning borrows the arena, so it has to finish before the write.
     let read_identity = match derivation.as_ref() {
         MemoryDerivation::CellsForgotten { base }
-        | MemoryDerivation::CellObserved { base }
         | MemoryDerivation::BlockDeclared { base, .. }
         | MemoryDerivation::ObjectInitializationRecorded { base, .. } => {
             // Declaration/initialization metadata writes no values. Keep the
             // bytes' identity; type, lifetime and access use this state.
             Some(base.read_identity())
         }
-        MemoryDerivation::CellsSeeded { base, run }
-            if matches!(run.value_mode(), cell_store::RunValueMode::Load)
-                && (run.element_width() == run.value_width()
-                    || (run.element_width() > run.value_width()
-                        && run.element_type() != ProgramType::Bool))
-                && base.read_identity() == run.source().read_identity() =>
-        {
-            // Copying the same bytes already in the base is materialization,
-            // including sibling runs copied from an equivalent earlier source.
-            Some(base.read_identity())
-        }
+        // Naming the same bytes includes runs copied from an equivalent
+        // earlier source, even if their cache entries differ.
+        _ if names_existing_cells => Some(variable_base.read_identity()),
         _ => None,
     };
     // A state this call interns is one no query has seen yet, so filling
@@ -10261,6 +10289,7 @@ pub(crate) fn record_memory_derivation(result: &mut SymbolicMemory, derivation: 
         inherited,
         derivation.clone(),
         derived.clone(),
+        names_existing_cells,
     ));
     C_MEMORY_ARENA.with(|arena| {
         let mut arena = arena.borrow_mut();
@@ -13252,7 +13281,7 @@ pub enum Term {
     Condition(StoredConditionTerm),
     Bitvector32(StoredMachineTerm),
     Integer(StoredIntegerTerm),
-    PointerOffset(AddressOffset),
+    PointerOffset(StoredPointerOffset),
     ProgramValue(StoredProgramValue),
     Sequence(SequenceTerm),
     Algebraic(StoredAlgebraicTerm),

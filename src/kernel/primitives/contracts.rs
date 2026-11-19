@@ -864,7 +864,7 @@ impl FunctionContractInterface {
             resource_derived_frame_mixed: false,
             contract_claims: Vec::new(),
             opaque_contract_supported: true,
-            composite_resource_definitions: Vec::new(),
+            composite_resource_definitions: Default::default(),
             composite_definitions_need_entry_cases: false,
             ordinary_abstract_families: Vec::new(),
             predicate_unfoldings: Vec::new(),
@@ -1529,7 +1529,7 @@ impl ProgramFunction {
                     .iter()
                     .any(|clause| clause.guard().is_some())
         });
-        interface.composite_resource_definitions = definitions;
+        interface.composite_resource_definitions = definitions.into();
         let rule =
             super::super::functions::SummaryResourceTransferRule::compile(&self.contract_interface);
         Arc::make_mut(&mut self.contract_interface).resource_transfer_rule = Arc::new(rule);
@@ -3000,7 +3000,7 @@ impl MemoryRange {
         let (lower, upper) = (lower?, upper?);
         let mut mentioned = BTreeSet::new();
         for term in [
-            Term::PointerOffset(base.offset.clone()),
+            Term::PointerOffset(StoredPointerOffset::from_written(&base.offset)),
             Term::Bitvector32(lower.clone().into()),
             Term::Bitvector32(upper.clone().into()),
         ] {
@@ -4245,9 +4245,9 @@ impl ExecutionEnvironment {
                 && rule.symbolic_entry_state.memory == state.memory
                 && crate::kernel::api::contract_certification::resource_contexts_definitionally_equal_with_definitions(
                     &rule.composite_resource_definitions,
-                    rule.symbolic_entry_state.memory(),
+                    &rule.symbolic_entry_state.program_point(),
                     rule.symbolic_entry_state.resources(),
-                    state.memory(),
+                    &state.program_point(),
                     state.resources(),
                     assumptions,
                 );

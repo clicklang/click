@@ -1537,27 +1537,17 @@ permitted stores or a transition that drops the fact:
   transferred and residual resources form one valid composition, and owned
   memory is exclusive, so a byte an owned residual member holds is disjoint
   from every byte the callee can own, and a callee writes only what it owns.
-  A residual field-bearing instance is opened one layer, as `unfold` opens
-  it: its unconditional, unmatched body's owned memory, with field-free
-  composites expanded, and its own facts, which become the premises that
-  place a cell expressed through the instance's cells (`region->start`) in a
-  range expressed through its fields. A residual folded composite is
-  expanded, except one whose definition is argument-direct
-  (`CompositeResourceDefinition::has_argument_direct_body`: unconditional,
-  unmatched, witness-free and non-recursive, every clause an unguarded owned
-  segment expressed from its parameters without a load). Such a body's ranges
-  are a function of the composite fact alone, so the call opens none of
-  them: `CallKeptRanges` carries those families' definitions and names the
-  residual's composites in its identity (the index's content-hashed
-  `owned_composite_facts`), and a question about one address opens only the
-  composites with a pointer argument equal to an additive base form of
-  it or an exact alias of one, failing those the ones with an argument in its
-  block (the composite argument indexes), as the listed ranges' own lookup
-  reads them. The checker's exact-range test re-derives a range the same way,
-  and diagnostics open every such composite on request. A call therefore
-  costs the same beside any number of held argument-direct composites
-  (`a_call_keeps_argument_direct_composites_in_work_independent_of_their_number`,
-  `a_call_keeps_an_argument_direct_composites_memory_without_opening_it`).
+  Residual field-bearing instances and non-argument-direct bodies stay
+  opaque. `CallKeptRanges` shares the definition table and records the
+  residual's composite facts through the persistent `owned_composite_facts`
+  map. A kept read first checks listed flat ranges and views. It can then
+  select a folded owner from a singleton bucket under an additive, indexed
+  storage, class, or unique alias key, with a singleton block fallback.
+  Only a selected argument-direct body is opened, and the resulting range
+  must cover the whole access. Ambiguous lookups need explicit framing
+  evidence. Diagnostics can enumerate the kept bodies on request.
+  `kept_call_reads_do_not_scan_same_block_owners_or_aliases` covers hits and
+  misses with growing same-block ownership and alias buckets.
   Ordinary C calls also retain the caller's pre-transfer composition as an
   exclusion index. After the listed and residual flat ranges fail, a positive
   flat owner covering the queried bytes rules out every unchanged residual

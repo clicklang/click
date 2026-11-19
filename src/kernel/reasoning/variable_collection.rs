@@ -748,7 +748,28 @@ pub(in crate::kernel) fn collect_term_bitvector_variables(
         Term::Bitvector32(bits) => collect_bitvector_variables(bits.native_compat(), variables),
         Term::Integer(integer) => collect_integer_variables(integer.native_compat(), variables),
         Term::PointerOffset(offset) => {
-            collect_pointer_offset_bitvector_variables(offset, variables)
+            if let Some(root) = offset.root() {
+                root.visit_root_in_order(false, |node| match node {
+                    crate::kernel::KernelAddressOffset::Variable(variable)
+                        if collecting_connection_variables()
+                            || COORDINATE_VARIABLES.with(std::cell::Cell::get) =>
+                    {
+                        variables.insert(*variable);
+                    }
+                    node => {
+                        if let Some(index) = node.index() {
+                            visit_machine_operand_carrier_leaves(
+                                MachineOperandView::Shared(index),
+                                |leaf| {
+                                    collect_operand_bitvector_variables(leaf, variables);
+                                },
+                            );
+                        }
+                    }
+                });
+            } else {
+                collect_pointer_offset_bitvector_variables(offset.native_compat(), variables);
+            }
         }
         Term::ProgramValue(value) => {
             collect_program_value_bitvector_variables(value.native_compat(), variables);
@@ -3279,6 +3300,26 @@ fn collect_stored_load_connection_variables(
     }
 }
 
+fn collect_machine_read_variables(
+    memory: &SharedMemory,
+    pointer: &Address,
+    kind: LoadKind,
+    variables: &mut BTreeSet<Variable>,
+) {
+    collect_shared_memory_bitvector_variables(memory, variables);
+    collect_pointer_bitvector_variables(pointer, variables);
+    collect_stored_load_connection_variables(memory, pointer, variables);
+    if COLLECTING_HAVOC_RANGES.with(std::cell::Cell::get)
+        && let Some(origin) =
+            crate::kernel::eval::scalar_read_origin_for_cell(memory, pointer, kind)
+        && origin != *memory
+    {
+        // A structural version can precede the live DAG whose changed
+        // ranges the framing query needs.
+        collect_shared_memory_bitvector_variables(&origin, variables);
+    }
+}
+
 pub(crate) fn collect_bitvector_variables(term: &MachineTerm, variables: &mut BTreeSet<Variable>) {
     match term {
         MachineTerm::ThreadHandle(_) => {}
@@ -3365,21 +3406,8 @@ pub(crate) fn collect_bitvector_variables(term: &MachineTerm, variables: &mut BT
                 collect_bitvector_variables(&arm.body, variables);
             }
         }
-        MachineTerm::MemoryLoad(memory, pointer, _) => {
-            collect_shared_memory_bitvector_variables(memory.shared_memory(), variables);
-            collect_pointer_bitvector_variables(pointer, variables);
-            collect_stored_load_connection_variables(memory.shared_memory(), pointer, variables);
-            if COLLECTING_HAVOC_RANGES.with(std::cell::Cell::get)
-                && let Some(origin) = crate::kernel::eval::scalar_read_observation(
-                    crate::kernel::MachineOperandView::Legacy(term),
-                )
-                .and_then(|read| read.origin)
-                && origin != *memory.shared_memory()
-            {
-                // Like a named read, a structural version can precede the
-                // live DAG whose changed ranges the framing query needs.
-                collect_shared_memory_bitvector_variables(&origin, variables);
-            }
+        MachineTerm::MemoryLoad(memory, pointer, kind) => {
+            collect_machine_read_variables(memory.shared_memory(), pointer, *kind, variables);
         }
         MachineTerm::IntegerAddress(pointer, _) => {
             collect_pointer_bitvector_variables(pointer, variables);
@@ -3698,7 +3726,7 @@ fn collect_pointer_capture_variables(
         | AddressBase::ExternalObject(variable) => {
             variables.insert(*variable);
         }
-        AddressBase::ContractResult | AddressBase::ContractException | AddressBase::AggregateReturn { .. } | AddressBase::StaticObject { .. } | AddressBase::AutomaticLocal { .. } | AddressBase::ReferenceCarrier { .. } | AddressBase::Concrete(_)
+        AddressBase::ContractResult | AddressBase::ContractException | AddressBase::AggregateReturn { .. } | AddressBase::StaticObject { .. } | AddressBase::AutomaticLocal { .. } | AddressBase::ReferenceCarrier { .. } | AddressBase::SliceLength { .. } | AddressBase::Concrete(_)
         | AddressBase::StringLiteral { .. }
         | AddressBase::Function(_)
         | AddressBase::ExternalArgument
@@ -5767,6 +5795,7 @@ fn collect_address_base_bitvector_variables(
         | AddressBase::AggregateReturn { .. }
         | AddressBase::StaticObject { .. }
         | AddressBase::AutomaticLocal { .. }
+        | AddressBase::SliceLength { .. }
         | AddressBase::ReferenceCarrier { .. }
         | AddressBase::Concrete(_)
         | AddressBase::StringLiteral { .. }
@@ -6411,6 +6440,7 @@ fn block_variables(block: &AddressBase, contents: &MemoryBlock) -> BTreeSet<Vari
         | AddressBase::AggregateReturn { .. }
         | AddressBase::StaticObject { .. }
         | AddressBase::AutomaticLocal { .. }
+        | AddressBase::SliceLength { .. }
         | AddressBase::ReferenceCarrier { .. }
         | AddressBase::Concrete(_)
         | AddressBase::StringLiteral { .. }
@@ -6774,6 +6804,7 @@ pub(in crate::kernel) fn collect_memory_bitvector_variables_whole(
             | AddressBase::AggregateReturn { .. }
             | AddressBase::StaticObject { .. }
             | AddressBase::AutomaticLocal { .. }
+            | AddressBase::SliceLength { .. }
             | AddressBase::ReferenceCarrier { .. }
             | AddressBase::Concrete(_)
             | AddressBase::StringLiteral { .. }

@@ -4874,6 +4874,7 @@ impl parser::ProgramLayouts {
                     captures
                         .iter()
                         .map(|capture| FunctionParameter {
+                            slice_length: None,
                             click_type: ClickType::Program(capture.interface_type()),
                             name: capture.name().to_string(),
                             struct_name: None,
@@ -5924,7 +5925,7 @@ fn with_closure_instance(
     )];
     arguments.extend(parameters.iter().map(|parameter| {
         SpecPredicateArgument::Value(SpecExpression::ProgramExpression(
-            crate::kernel::program_expression::variable(parameter.name()),
+            crate::kernel::program_expression::variable(parameter.binding_name()),
         ))
     }));
     let instance = crate::kernel::program_function(
@@ -7336,6 +7337,7 @@ pub(in crate::surface) fn check_signature(
             || expected.pointee_is_constant() != actual.pointee_is_constant()
             || expected.is_reference() != actual.is_reference()
             || expected.name() != actual.name()
+            || expected.binding_name().slice_length_of() != actual.binding_name().slice_length_of()
             || expected.struct_name() != actual.struct_name()
             || expected.function_pointer_signature() != actual.function_pointer_signature()
         {

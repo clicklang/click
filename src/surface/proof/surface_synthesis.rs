@@ -1307,7 +1307,7 @@ pub(in crate::surface) fn synthesize_surface_value(
     {
         return synthesize_materialized_result(pointer.address());
     }
-    if matches!(value, ProgramValue::Pointer(pointer) if matches!(pointer.address().base, AddressBase::ContractResult | AddressBase::ContractException | AddressBase::AggregateReturn { .. } | AddressBase::StringLiteral { .. } | AddressBase::AutomaticLocal { .. } | AddressBase::ReferenceCarrier { .. } | AddressBase::StaticObject { .. }))
+    if matches!(value, ProgramValue::Pointer(pointer) if matches!(pointer.address().base, AddressBase::ContractResult | AddressBase::ContractException | AddressBase::AggregateReturn { .. } | AddressBase::StringLiteral { .. } | AddressBase::AutomaticLocal { .. } | AddressBase::ReferenceCarrier { .. } | AddressBase::SliceLength { .. } | AddressBase::StaticObject { .. }))
     {
         return Some(ContractExpression::ProgramExpression(
             ProgramExpression::Value(value.clone()),
@@ -3244,14 +3244,15 @@ fn synthesize_surface_atomic_proposition(
             )
         {
             synthesize_uint32_operand(expression)
-        } else if signed_order
-            && (bitvector_spells_uint32(term, parameter_binding, state, bound_variables)
-                || matches!(
-                    expression,
-                    ContractExpression::Add(..)
-                        | ContractExpression::Subtract(..)
-                        | ContractExpression::Multiply(..)
-                ))
+        } else if (signed_word && is_signed_variable_arithmetic32(term, &expression))
+            || (signed_order
+                && (bitvector_spells_uint32(term, parameter_binding, state, bound_variables)
+                    || matches!(
+                        expression,
+                        ContractExpression::Add(..)
+                            | ContractExpression::Subtract(..)
+                            | ContractExpression::Multiply(..)
+                    )))
         {
             synthesize_int32_operand(expression)
         } else {
@@ -3281,6 +3282,21 @@ fn synthesize_surface_atomic_proposition(
     } else {
         Some(ClickProposition::Not(Box::new(comparison)))
     }
+}
+
+fn is_signed_variable_arithmetic32(term: &MachineTerm, expression: &SurfaceTerm) -> bool {
+    matches!(
+        term,
+        MachineTerm::Binary {
+            format: MachineIntegerType::Int32,
+            op: MachineBinaryOp::Add | MachineBinaryOp::Subtract | MachineBinaryOp::Multiply,
+            left,
+            right,
+        } if matches!((left.as_ref(), right.as_ref()), (MachineTerm::Variable(_), MachineTerm::Variable(_)))
+    ) && matches!(
+        expression,
+        SurfaceTerm::Add(..) | SurfaceTerm::Subtract(..) | SurfaceTerm::Multiply(..)
+    )
 }
 
 /// The low-word node carries no destination signedness. Retarget its cast
@@ -3931,14 +3947,14 @@ fn raise_integer_operation(
 }
 
 // A printed comparison operand or conditional arm can reparse arithmetic as
-// Integer. Keep the machine context of the bounded unsigned operation there.
-fn spell_bounded_uint64_operand(
+// Integer. Keep the machine context of the bounded operation there.
+fn spell_bounded_wide_arithmetic_operand(
     term: &crate::kernel::KernelTerm,
     expression: SurfaceTerm,
 ) -> Option<SurfaceTerm> {
     use crate::kernel::KernelTermNode as Node;
     if let Node::MachineBinary {
-        format: MachineIntegerType::UInt64,
+        format: format @ (MachineIntegerType::Int64 | MachineIntegerType::UInt64),
         operator,
         arguments,
     } = term.node()
@@ -3950,13 +3966,18 @@ fn spell_bounded_uint64_operand(
                         Node::Variable(_),
                         Node::Variable(_) | Node::MachineLiteral(_)
                     ] | [Node::MachineLiteral(_), Node::Variable(_)]
-                )
+                ) && (*format == MachineIntegerType::UInt64
+                    || arguments
+                        .iter()
+                        .all(|child| matches!(child.node(), Node::Variable(_))))
             }
             MachineBinaryOp::Divide | MachineBinaryOp::Remainder => {
-                matches!(arguments[0].node(), Node::Variable(_))
-                    && crate::kernel::MachineOperandView::Shared(&arguments[1])
-                        .uint64_constant()
-                        .is_some_and(|divisor| divisor != 0)
+                *format == MachineIntegerType::UInt64
+                    && matches!(arguments[0].node(), Node::Variable(_))
+                    && (matches!(arguments[1].node(), Node::Variable(_))
+                        || crate::kernel::MachineOperandView::Shared(&arguments[1])
+                            .uint64_constant()
+                            .is_some_and(|divisor| divisor != 0))
             }
             _ => false,
         }
@@ -3969,7 +3990,7 @@ fn spell_bounded_uint64_operand(
                 | SurfaceTerm::Remainder(..)
         )
     {
-        synthesize_observation_operand(expression, ProgramType::UInt64)
+        synthesize_observation_operand(expression, format.program_type())
     } else {
         Some(expression)
     }
@@ -4078,7 +4099,7 @@ fn raise_kernel_term_dispatch(
         Node::BoolIf { arguments } | Node::MachineIf { arguments } => {
             let arm = |index: usize| {
                 let term = &arguments[index];
-                let expression = spell_bounded_uint64_operand(term, recurse(term)?)?;
+                let expression = spell_bounded_wide_arithmetic_operand(term, recurse(term)?)?;
                 // The signed 64-bit reading of an unsigned variable retains
                 // the word, so its name needs the arm's type on the surface.
                 if term.ty() == &KernelType::Program(ProgramType::Int64)
@@ -4158,7 +4179,7 @@ fn raise_kernel_term_dispatch(
                     .copied()
                     .all(|operand| unsigned_cast(operand) || operand.variable().is_some());
             let operand = |term| {
-                let expression = spell_bounded_uint64_operand(term, recurse(term)?)?;
+                let expression = spell_bounded_wide_arithmetic_operand(term, recurse(term)?)?;
                 if unsigned_literal || (unsigned_word && unsigned_cast(V::Shared(term))) {
                     Some(expression)
                 } else {
@@ -4297,7 +4318,12 @@ fn raise_kernel_term_dispatch(
         | Node::FloatCall(_) => {
             raise_float_expression(term, parameter_binding, state, bound_variables)?
         }
-        Node::FloatRead(_) => raise_float_read(term, parameter_binding, state, bound_variables)?,
+        Node::FloatRead(read) => {
+            let KernelType::Program(value_type) = term.ty() else {
+                unreachable!("float read type");
+            };
+            raise_float_read(read, *value_type, parameter_binding, state, bound_variables)?
+        }
         Node::FloatLiteral { .. } => SurfaceTerm::ProgramExpression(ProgramExpression::Value(
             crate::kernel::KernelTermExport::float(term).ok()?,
         )),
@@ -4565,6 +4591,103 @@ fn synthesize_unsigned_comparison(
     })
 }
 
+/// One argument of a declared resource, spelled by the value it carries.
+fn synthesize_surface_resource_argument(
+    argument: &crate::kernel::AlgebraicValue,
+    parameter_binding: ParameterBinding<'_>,
+    state: &ExecutionState,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
+) -> Option<ContractExpression> {
+    use crate::kernel::AlgebraicValue as A;
+    match argument {
+        // A local's storage is spelled by the local, `&pool`, as a memory
+        // range's base is.
+        A::Program(ProgramValue::Pointer(pointer))
+            if let Some(name) = state.locals().name_for_slot(pointer.address()) =>
+        {
+            let object = ProgramExpression::Variable(surface_local_name(name));
+            Some(ContractExpression::ProgramExpression(
+                if state.locals().array_object_element_type(name).is_some() {
+                    object
+                } else {
+                    ProgramExpression::AddressOf(Box::new(object))
+                },
+            ))
+        }
+        A::Program(ProgramValue::Pointer(pointer)) => synthesize_surface_pointer_expression(
+            pointer,
+            parameter_binding,
+            state,
+            bound_variables,
+        ),
+        A::Program(ProgramValue::Parameter(term)) => {
+            synthesize_surface_algebraic(term, parameter_binding, state, bound_variables)
+        }
+        A::Algebraic(term) => {
+            synthesize_surface_algebraic(term, parameter_binding, state, bound_variables)
+        }
+        A::Integer(term) => synthesize_surface_integer(
+            &term.clone().into(),
+            parameter_binding,
+            state,
+            bound_variables,
+        ),
+        A::Program(
+            ProgramValue::Int8(value)
+            | ProgramValue::UInt8(value)
+            | ProgramValue::Int16(value)
+            | ProgramValue::UInt16(value)
+            | ProgramValue::Int32(value)
+            | ProgramValue::UInt32(value)
+            | ProgramValue::Int64(value)
+            | ProgramValue::UInt64(value),
+        ) => synthesize_surface_bitvector(value, parameter_binding, state, bound_variables),
+        _ => None,
+    }
+}
+
+/// A call result already carries its native pointer type. When that type
+/// supplies the range stride, use the saved pointer directly.
+fn synthesize_saved_result_range_base(
+    base: &ContractExpression,
+    range: &MemoryRange,
+) -> Option<ContractExpression> {
+    let ContractExpression::RegionResult(region) = base else {
+        return None;
+    };
+    if range.element_width() == 1 && range.carrier_has_known_bounds() {
+        return None;
+    }
+    let selector = ProgramPointSelector::ProgramPoint(ProgramPointRef {
+        region: region.clone(),
+        kind: ProgramPointKind::Exit,
+    });
+    SYNTHESIS_RECORDED_POINTS.with(|slot| {
+        let points = slot.borrow();
+        let points = points.as_ref()?;
+        points.get(&selector)?;
+        let ProgramValue::Pointer(pointer) = points
+            .region_result_value_at(region, Some(&selector))
+            .ok()?
+        else {
+            return None;
+        };
+        if pointer.address() != range.base()
+            || matches!(
+                pointer.object_class(),
+                Some(crate::kernel::effective_type::CAccessClass::Struct(_))
+            )
+            || pointer.program_type().pointee_type()?.byte_width() != range.element_width()
+        {
+            return None;
+        }
+        Some(ContractExpression::At {
+            selector,
+            expression: Box::new(base.clone()),
+        })
+    })
+}
+
 pub(super) fn synthesize_surface_resource_subject(
     resource: &Resource,
     parameter_binding: ParameterBinding<'_>,
@@ -4591,6 +4714,35 @@ pub(super) fn synthesize_surface_resource_subject(
     if matches!(resource, Resource::Emp) {
         return Some(ResourceSubject::Emp);
     }
+    // A declared composite or token is its name applied to its arguments,
+    // `list(node)` or `slot(&pool, p)`, which lowering reads back to the
+    // same resource.
+    if let Resource::Composite { name, arguments } | Resource::Token { name, arguments } = resource
+    {
+        let kind = if matches!(resource, Resource::Composite { .. }) {
+            crate::surface::ResourceKind::Composite
+        } else {
+            crate::surface::ResourceKind::Token
+        };
+        let arguments = arguments
+            .native_values()
+            .iter()
+            .map(|argument| {
+                synthesize_surface_resource_argument(
+                    argument,
+                    parameter_binding,
+                    state,
+                    bound_variables,
+                )
+            })
+            .collect::<Option<Vec<_>>>()?;
+        return Some(ResourceSubject::Declared {
+            kind,
+            name: name.clone(),
+            arguments,
+            parameter_types: Vec::new(),
+        });
+    }
     let Resource::Memory(range) = resource else {
         return None;
     };
@@ -4614,28 +4766,29 @@ pub(super) fn synthesize_surface_resource_subject(
             bound_variables,
         )?
     };
-    // A range counts its retained element width, which need not be the
-    // pointee width of the name (for example, a struct field's backing).
-    // Spell scalar coordinates explicitly; pointer casts retain provenance.
-    // A character-to-character cast preserves a narrow byte view. For a
-    // range that already names root byte coordinates, the void cast makes
-    // that root explicit regardless of the source pointer's type.
-    let surface_base = if range.element_width() == 1 && range.carrier_has_known_bounds() {
-        synthesize_observation_operand(surface_base, ProgramType::VoidPointer)?
-    } else {
-        surface_base
-    };
-    let scalar_pointer_type = match range.element_width() {
-        1 => Some(ProgramType::UInt8Pointer),
-        2 => Some(ProgramType::UInt16Pointer),
-        4 => Some(ProgramType::Int32Pointer),
-        8 => Some(ProgramType::UInt64Pointer),
-        _ => None,
-    };
-    let surface_base = match scalar_pointer_type {
-        Some(target_type) => synthesize_observation_operand(surface_base, target_type)?,
-        None => surface_base,
-    };
+    let surface_base =
+        if let Some(saved_result) = synthesize_saved_result_range_base(&surface_base, range) {
+            saved_result
+        } else {
+            // A range counts its retained element width, which need not be the
+            // pointee width of the name (for example, a struct field's backing).
+            // Spell scalar coordinates explicitly; pointer casts retain provenance.
+            // A character-to-character cast preserves a narrow byte view. For a
+            // range that already names root byte coordinates, the void cast makes
+            // that root explicit regardless of the source pointer's type.
+            let surface_base = if range.element_width() == 1 && range.carrier_has_known_bounds() {
+                synthesize_observation_operand(surface_base, ProgramType::VoidPointer)?
+            } else {
+                surface_base
+            };
+            match range.element_width() {
+                1 => synthesize_observation_operand(surface_base, ProgramType::UInt8Pointer)?,
+                2 => synthesize_observation_operand(surface_base, ProgramType::UInt16Pointer)?,
+                4 => synthesize_observation_operand(surface_base, ProgramType::Int32Pointer)?,
+                8 => synthesize_observation_operand(surface_base, ProgramType::UInt64Pointer)?,
+                _ => surface_base,
+            }
+        };
     // The bounds are spelled as the terms they are, in either index kind.
     let (range_start, range_end) = range.bound_terms();
     let surface_start =
@@ -5735,6 +5888,13 @@ fn synthesize_surface_bitvector(
                 // must not choose the access width. A word read states its
                 // own type, including through byte-addressed struct fields.
                 let typed_word = value_type.is_none() && *kind == crate::kernel::LoadKind::Int32;
+                // Unless the pointer is known to point at `uint8`, a byte read
+                // is spelled through an explicit byte view,
+                // `*(&dst[i] as (uint8 *))`: a bare `*` reads the pointer's
+                // own element type (`int8` through a plain `char *`), and the
+                // printed `*` drops a typed load's type.
+                let byte_view = *kind == crate::kernel::LoadKind::UInt8
+                    && value_type != Some(ProgramType::UInt8);
                 let value_type = if *kind == crate::kernel::LoadKind::UInt8 {
                     Some(ProgramType::UInt8)
                 } else if typed_word {
@@ -5743,6 +5903,15 @@ fn synthesize_surface_bitvector(
                     value_type
                 };
                 let load = match value_type {
+                    _ if byte_view => ProgramExpression::Load(Box::new(ProgramExpression::Cast {
+                        expression: Box::new(pointer.clone()),
+                        target_type: ProgramType::UInt8Pointer,
+                        integer_mode: crate::kernel::IntegerCastMode::Standard,
+                        pointee_struct: None,
+                        pointee_volatile: false,
+                        pointee_constant: false,
+                        explicit_qualification: false,
+                    })),
                     Some(value_type) if value_type == ProgramType::UInt8 || typed_word => {
                         ProgramExpression::TypedLoad {
                             pointer: Box::new(pointer.clone()),
@@ -5918,26 +6087,27 @@ fn synthesize_surface_bitvector(
             condition,
             then_term,
             else_term,
-        } => Some(ContractExpression::If {
-            condition: Box::new(synthesize_surface_proposition_with_bound_variables(
-                &Proposition::condition_is((**condition).clone(), true),
-                parameter_binding,
-                state,
-                bound_variables,
-            )?),
-            then_branch: Box::new(synthesize_surface_bitvector(
-                then_term,
-                parameter_binding,
-                state,
-                bound_variables,
-            )?),
-            else_branch: Box::new(synthesize_surface_bitvector(
-                else_term,
-                parameter_binding,
-                state,
-                bound_variables,
-            )?),
-        }),
+        } => {
+            let arm = |term: &MachineTerm| {
+                let expression =
+                    synthesize_surface_bitvector(term, parameter_binding, state, bound_variables)?;
+                if is_signed_variable_arithmetic32(term, &expression) {
+                    synthesize_int32_operand(expression)
+                } else {
+                    Some(expression)
+                }
+            };
+            Some(ContractExpression::If {
+                condition: Box::new(synthesize_surface_proposition_with_bound_variables(
+                    &Proposition::condition_is((**condition).clone(), true),
+                    parameter_binding,
+                    state,
+                    bound_variables,
+                )?),
+                then_branch: Box::new(arm(then_term)?),
+                else_branch: Box::new(arm(else_term)?),
+            })
+        }
         MachineTerm::RangeFold { .. } => {
             folds::raise_machine_fold(term, parameter_binding, state, bound_variables)
         }
@@ -6876,6 +7046,7 @@ fn synthesize_surface_pointer(
             | AddressBase::AggregateReturn { .. }
             | AddressBase::StringLiteral { .. }
             | AddressBase::AutomaticLocal { .. }
+            | AddressBase::SliceLength { .. }
             | AddressBase::ReferenceCarrier { .. }
             | AddressBase::StaticObject { .. }
     ) {
@@ -7581,27 +7752,26 @@ fn synthesize_state_pointer_expression(
 /// A float load states its width with an existing pointer cast. This keeps the
 /// spelling exact even when the available address name is a byte pointer.
 fn raise_float_read(
-    root: &crate::kernel::KernelTerm,
+    read: &crate::kernel::KernelMemoryRead,
+    value_type: ProgramType,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<SurfaceTerm> {
-    let read = root.float_read_native()?;
-    let MachineTerm::MemoryLoad(memory, _, _) = read else {
-        unreachable!("float read descriptor")
-    };
+    let (point, address) = read.parts();
+    let memory = point.shared_memory();
     // Float producers retain the raw state, rather than the integer load's
     // canonical selection. Spelling must reproduce that same producer input.
     let reads_state = |state: &ExecutionState| {
-        crate::kernel::intern_memory_ref(state.memory()).arena_id()
-            == memory.shared_memory().arena_id()
+        crate::kernel::intern_memory_ref(state.memory()).arena_id() == memory.arena_id()
     };
     if !reads_state(state) {
         if let Some(entry) = SYNTHESIS_ENTRY_STATE.with(|slot| slot.borrow().clone())
             && reads_state(&entry)
         {
             return Some(SurfaceTerm::Old(Box::new(raise_float_read(
-                root,
+                read,
+                value_type,
                 parameter_binding,
                 &entry,
                 bound_variables,
@@ -7610,26 +7780,26 @@ fn raise_float_read(
         let (selector, recorded) = SYNTHESIS_RECORDED_POINTS.with(|slot| {
             let slot = slot.borrow();
             let points = slot.as_ref()?;
-            let (selector, recorded) = points.point_reading_memory(memory.shared_memory())?;
+            let (selector, recorded) = points.point_reading_memory(memory)?;
             reads_state(recorded).then(|| (selector.clone(), recorded.clone()))
         })?;
         return Some(SurfaceTerm::At {
             selector,
             expression: Box::new(raise_float_read(
-                root,
+                read,
+                value_type,
                 parameter_binding,
                 &recorded,
                 bound_variables,
             )?),
         });
     }
-    let MachineTerm::MemoryLoad(_, pointer, _) = read else {
-        unreachable!()
-    };
-    let pointer = synthesize_surface_pointer(pointer, parameter_binding, state, bound_variables)?;
-    let crate::kernel::KernelType::Program(value_type) = root.ty() else {
-        unreachable!()
-    };
+    let pointer = synthesize_surface_pointer(
+        address.exact_cell_key(),
+        parameter_binding,
+        state,
+        bound_variables,
+    )?;
     Some(SurfaceTerm::Index(
         Box::new(SurfaceTerm::ProgramExpression(ProgramExpression::Cast {
             expression: Box::new(ProgramExpression::Cast {

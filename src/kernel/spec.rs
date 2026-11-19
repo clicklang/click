@@ -2829,7 +2829,9 @@ fn proposition_mentions_integer_variable(proposition: &Proposition, variable: Va
                 integer_carrier_in_program_value(value.native_compat(), variable)
             }
             Term::Sequence(sequence) => sequence_contains_integer_variable(sequence, variable),
-            Term::PointerOffset(offset) => integer_carrier_in_pointer_offset(offset, variable),
+            Term::PointerOffset(offset) => {
+                integer_carrier_in_pointer_offset(offset.native_compat(), variable)
+            }
             Term::Algebraic(value) => integer_carrier_in_algebraic(value.native_compat(), variable),
             // A state may carry a mathematical machine conversion in a
             // nested local.  Keep this conservative

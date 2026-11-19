@@ -191,7 +191,7 @@ fn resource_satisfaction_does_not_scan_unrelated_resources_or_equalities() {
 fn fresh_and_framing_publication_do_not_scan_ambient_inputs() {
     let mut samples = Vec::new();
     for size in [16, 64, 256, 1024] {
-        let (head, definition, memory, mut facts, _) = fixture();
+        let (head, definition, _, mut facts, _) = fixture();
         for i in 0..size {
             facts = facts.assume_condition(
                 ConditionTerm::equal(
@@ -205,13 +205,11 @@ fn fresh_and_framing_publication_do_not_scan_ambient_inputs() {
         let residual = ResourceContext::new()
             .try_compose_with_fact(head.clone(), &facts)
             .unwrap();
-        let ambient = residual
+        let _ambient = residual
             .clone()
             .try_compose_with_facts((0..size).map(|i| coverage_piece(895_000 + i, 0, 1)), &facts)
             .unwrap();
-        let state = ExecutionState::new()
-            .with_memory(memory)
-            .with_resource_context(ambient);
+        let definitions = [definition].into();
         let (((), work), map_work) = crate::persistent::measure_persistent_work(|| {
             crate::instrumentation::measure_deterministic_work(|| {
                 let fresh = ResourceContext::new_with_equalities(&facts)
@@ -223,12 +221,8 @@ fn fresh_and_framing_publication_do_not_scan_ambient_inputs() {
                         .unwrap()
                         .exact()
                 );
-                let kept = crate::kernel::functions::call_kept_ownership(
-                    &residual,
-                    std::slice::from_ref(&definition),
-                    &state,
-                    &facts,
-                );
+                let kept =
+                    crate::kernel::functions::call_kept_ownership(&residual, &definitions, &facts);
                 let opened = kept.opened_resources_for_test();
                 assert!(
                     opened.is_empty(),

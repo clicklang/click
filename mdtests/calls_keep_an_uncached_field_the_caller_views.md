@@ -2,7 +2,8 @@
 
 `keep` retains its view of `b->v` across both calls. Transferring the `cells`
 resource does not end that view: the checked call transition excludes writes
-that conflict with it. Each recorded frame therefore preserves the uncached
+that conflict with it. The declared byte bounds for both arrays are
+separate from the retained view. Each recorded frame therefore preserves the uncached
 read, and the original transport proof checks across both calls.
 
 ```c filename=calls_keep_an_uncached_field_the_caller_views.c
@@ -40,11 +41,19 @@ void touch(int32* flags, int32* data, int32 n) {
 int32 keep(int32* flags, int32* data, int32 n, struct box* b) {
     owns cells(flags, data, n);
     views b->v;
+    requires separate(memory(flags[0..n]), memory(b->v));
+    requires separate(memory(data[0..n]), memory(b->v));
     ensures result == old(b->v);
 } by {
     mark m0;
-    step();
-    step();
+    step() {
+        requires separate(memory(flags[0..n]), memory(b->v)) by known();
+        requires separate(memory(data[0..n]), memory(b->v)) by known();
+    }
+    step() {
+        requires separate(memory(flags[0..n]), memory(b->v)) by known();
+        requires separate(memory(data[0..n]), memory(b->v)) by known();
+    }
     have b->v == old(b->v) by {
         have b->v == old(b->v) by {
             normalize() using {

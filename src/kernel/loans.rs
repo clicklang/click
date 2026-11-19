@@ -6333,6 +6333,7 @@ impl LoanLedger {
         Ok(loans.iter().copied().collect())
     }
 
+    #[cfg(test)]
     fn first_active_memory_overlap_with_assumptions(
         &self,
         range: &MemoryRange,
@@ -6380,6 +6381,15 @@ impl LoanLedger {
         let _fast = crate::kernel::search::FastOperationScope::enter("loan access requirement");
         let footprint = self.storage.data.active_footprint.resource();
         if matches!(footprint, Resource::Emp) || memory_range_is_empty(range) {
+            return None;
+        }
+        // A slice length occupies its own automatic cell. When the retained
+        // footprint names one memory range, the block identities can settle
+        // separation without asking the proof to name the metadata's address.
+        if matches!(range.base().base, AddressBase::SliceLength { .. })
+            && let Resource::Memory(protected) = &footprint
+            && range.base().blocks_proven_distinct(protected.base())
+        {
             return None;
         }
         Some(super::Proposition::ResourceSeparate {
@@ -6439,6 +6449,7 @@ impl LoanLedger {
     /// and it revisits the same index buckets the check itself used, so a
     /// permitted access costs nothing and a refused one never walks the
     /// ledger.
+    #[cfg(test)]
     pub(crate) fn memory_access_refusal(
         &self,
         range: &MemoryRange,
@@ -6462,6 +6473,7 @@ impl LoanLedger {
 
     /// The first active loan whose protected footprint explains a refusal of
     /// `range`, with the protected range and the loan's origin.
+    #[cfg(test)]
     fn conflicting_memory_loan(
         &self,
         range: &MemoryRange,
@@ -6509,6 +6521,7 @@ impl LoanLedger {
     /// the symbolic buckets. Fewer assumptions prove fewer overlaps, so this is the
     /// more permissive form; the ordinary owned-authority check remains the
     /// primary guard on every write.
+    #[cfg(test)]
     pub(crate) fn permits_memory_access(&self, range: &MemoryRange) -> Result<(), LoanRefusal> {
         self.permits_memory_access_with_assumptions(range, &PureFactContext::default())
     }

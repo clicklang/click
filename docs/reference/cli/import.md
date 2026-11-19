@@ -133,6 +133,14 @@ no other source. `click import lock` runs the pinned Charon named by the
 and records each crate file's digest so that a changed file is refused by name.
 Verification needs neither Charon nor `CLICK_CHARON`.
 
+The Rust compiler still checks the crate. Click lowers the configured roots
+and their reachable dependencies. An unsupported body in an unrelated
+same-file function can stay outside this slice. A call to that function
+brings its body into the slice and reports the unsupported construct at
+its source location, as checked by
+`charon_function_root_checks_an_unsupported_sibling_only_when_called` in
+`tests/rust_import.rs`.
+
 A C++ unit gives `exceptions` and `rtti` (both default `false`) and `args`, the
 Clang arguments of its build, which Click writes into a compilation database of
 its own at lock time; the standard is C++20 and the target
@@ -290,9 +298,16 @@ assembly are silently deleted to make an import pass.
 The preliminary C++ frontend boundary accepts one C++20 translation unit
 selected by exactly one entry in a JSON compilation database, with one
 selected free function or ordinary method and the uniquely named definitions
-reachable from its supported direct call statements. In the baseline profile,
-exceptions are disabled and every selected or reachable function must declare
-`noexcept`. A second, deliberately smaller profile may retain the compilation
+reachable from its supported direct call statements.
+An unrelated same-file body can use statements outside the supported slice.
+A call from a selected function brings the callee into the exporter, which
+reports unsupported statements at their source location. See
+`cpp_function_root_checks_an_unsupported_sibling_only_when_called` in
+`tests/cpp_import.rs`.
+
+In the baseline profile, exceptions are disabled and every selected or
+reachable function must declare `noexcept`. A second, deliberately smaller
+profile may retain the compilation
 command's enabled exception mode: free functions and ordinary methods may omit
 `noexcept`, but the closed reachable graph must contain only Click's checked
 normal-returning operations. This profile permits borrowed trivial records,
@@ -2682,16 +2697,30 @@ that implements Click's contracts.
 
 ## Dependency-closure projection
 
-A source entry may set `"projection": "dependency-closure"`. Click then
-imports only part of the locked artifact: every function definition written
-in the translation unit's own source file (the file the first line marker
-names), and, transitively, every file-scope declaration that defines a name a
-kept declaration mentions. That includes types, struct, union, and enum tags,
-enumeration constants, typedefs, objects, prototypes, and inline helpers.
-Everything kept is parsed, lowered, and checked as usual, so an unsupported
-construct inside the closure is still rejected with its original location.
-Declarations outside the closure are not parsed, and nothing is claimed about
-them.
+A C source entry may set `"projection": "dependency-closure"` and list the
+functions to select by their C names:
+
+```json
+"sources": {
+  "arraylist.c": {
+    "projection": "dependency-closure",
+    "functions": ["array_list_get_idx"]
+  }
+}
+```
+
+The names must identify definitions in the translation unit's primary
+source file (the file the first line marker names). With `functions` omitted
+or empty, projection starts from every function defined in this file.
+The named roots are recorded in the lock. Run `click import lock` after
+changing them.
+
+Projection keeps the roots and, transitively, file-scope declarations
+that define names a kept declaration mentions. That includes types, tags,
+enumeration constants, typedefs, objects, prototypes, and helper bodies.
+An unsupported construct in a kept item is rejected at its original
+location. An unreferenced sibling can use features outside Click's C
+subset. Only functions with proof blocks in the sidecar are verified.
 
 Two rules keep the omission checked rather than permissive:
 
@@ -2704,16 +2733,19 @@ Two rules keep the omission checked rather than permissive:
   attribute, the projection is refused, because such a function runs
   without being named.
 
+With explicit function roots, Click refuses file-scope assembly and GNU
+asm labels. Both can bind symbols through strings that the name-based
+dependency calculation cannot follow.
+
 Every other declaration that defines a needed name is kept, including
 redeclarations that add attributes such as `weak`. Omitted declarations are
 blanked in place, so line numbers and original-source locations are
 unchanged. The option is part of the import configuration and therefore of
 the lock's identity.
 
-This is a bounded arrangement for importing one kernel translation unit
-whose headers declare far more than its functions use. It is not a general
-statement that omitted header declarations are harmless, and it does not
-validate them.
+The dependency calculation is conservative. Its name-based analysis can
+keep additional declarations with the same spelling. The prepared artifact
+and lock still cover the entire preprocessed translation unit and its inputs.
 
 ## Locations and trust boundary
 

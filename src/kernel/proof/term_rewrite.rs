@@ -1515,7 +1515,9 @@ fn collect_integer_substitution_term_variables(term: &Term, variables: &mut Carr
             collect_program_value_carriers(value.native_compat(), variables)
         }
         Term::Condition(value) => collect_condition_carriers(value.native_compat(), variables),
-        Term::PointerOffset(value) => collect_pointer_offset_carriers(value, variables),
+        Term::PointerOffset(value) => {
+            collect_pointer_offset_carriers(value.native_compat(), variables)
+        }
         Term::Algebraic(value) => collect_algebraic_carriers(value.native_compat(), variables),
         _ => {}
     }
@@ -1641,7 +1643,7 @@ fn exhausted_term(term: &Term) -> Term {
         Term::Bitvector32(_) => Term::Bitvector32(MachineTerm::constant(0).into()),
         Term::Integer(value) if value.root().is_some() => term.clone(),
         Term::Integer(value) => Term::Integer(exhausted_integer(value.native_compat()).into()),
-        Term::PointerOffset(_) => Term::PointerOffset(exhausted_offset()),
+        Term::PointerOffset(_) => Term::PointerOffset(exhausted_offset().into()),
         Term::ProgramValue(value) => match value.value() {
             ExecutionValue::Shared(_) => term.clone(),
             ExecutionValue::Native(value) => {
@@ -1887,8 +1889,9 @@ pub(crate) struct TermRewrite<'a> {
     // Recursive read-address walks must share this memo: each address can
     // reference the same earlier read more than once. Include lexical scope
     // and temporary rewrite modes so entries never cross interpretations.
-    shared_machine_cache:
-        Option<std::rc::Rc<std::cell::RefCell<HashMap<(u64, u64, bool, bool, bool), KernelTerm>>>>,
+    shared_machine_cache: Option<
+        std::rc::Rc<std::cell::RefCell<HashMap<(u64, u64, bool, bool, bool, bool), KernelTerm>>>,
+    >,
     integer_shadowed: bool,
     scope: RewriteScope,
     scope_id: u64,
@@ -3191,7 +3194,7 @@ impl<'a> TermRewrite<'a> {
                     &mut seen,
                 ),
                 Term::PointerOffset(offset) => {
-                    collect_pointer_offset_carriers(offset, &mut variables)
+                    collect_pointer_offset_carriers(offset.native_compat(), &mut variables)
                 }
                 Term::ProgramValue(value) => {
                     collect_program_value_carriers(value.native_compat(), &mut variables);
@@ -3710,7 +3713,7 @@ impl<'a> TermRewrite<'a> {
             Term::Integer(v) => Term::Integer(self.integer(v.native_compat()).into()),
             Term::ProgramValue(v) => Term::ProgramValue(self.value(v.native_compat()).into()),
             Term::Condition(v) => Term::Condition(self.condition(v.native_compat()).into()),
-            Term::PointerOffset(v) => Term::PointerOffset(self.offset(v)),
+            Term::PointerOffset(v) => Term::PointerOffset(self.offset(v.native_compat()).into()),
             _ => term.clone(),
         };
         if self.checked_work_exhausted() {
@@ -4421,29 +4424,24 @@ impl<'a> TermRewrite<'a> {
         result
     }
 
-    fn rewrite_integer_range_fold(
-        &mut self,
-        index: &IntegerRangeFoldIndex,
-        initial: &SharedIntegerTerm,
-        original_accumulator: Variable,
-        original_item: Variable,
-        body: &SharedIntegerTerm,
-    ) -> IntegerTerm {
+    fn retained_integer_fold(&mut self, fold: &KernelFold) -> Option<KernelFold> {
+        let original_accumulator = fold.accumulator;
+        let original_item = fold.item;
         if self.integer_exact.is_some()
             || self.pointer_exact.is_some()
             || self.pointer_offset_exact.is_some()
         {
             self.unsupported_integer_scope = true;
-            return IntegerTerm::constant_i64(0);
+            return None;
         }
-        let item_is_integer = matches!(index, IntegerRangeFoldIndex::Integer { .. });
+        let item_is_integer = fold.index == KernelFoldIndex::Integer;
         if !item_is_integer && self.has_composite_bitvector_source() {
             // A composite source can contain variables whose binding status
             // changes under this C-item binder.  Refuse that scope until a
             // carrier-aware source summary is available; plain variable
             // sources remain fully supported.
             self.unsupported_integer_scope = true;
-            return IntegerTerm::constant_i64(0);
+            return None;
         }
         let integer_source = self.integer_variables.as_ref().map(|mapping| mapping.from);
         let c_source = self
@@ -4468,7 +4466,7 @@ impl<'a> TermRewrite<'a> {
             self.ensure_replacement_carriers();
         }
         if self.checked_work_exhausted() {
-            return IntegerTerm::constant_i64(0);
+            return None;
         }
         let integer_replacement_contains = self
             .integer_replacement_variables
@@ -4535,45 +4533,37 @@ impl<'a> TermRewrite<'a> {
         };
 
         // Fold endpoints and the initial value live outside the body scope.
-        let index = match index {
-            IntegerRangeFoldIndex::Int32 { start, end }
-            | IntegerRangeFoldIndex::UInt64 { start, end } => {
-                let start = self.range_endpoint(start);
-                if self.checked_work_exhausted() {
-                    return IntegerTerm::constant_i64(0);
-                }
-                let end = self.range_endpoint(end);
-                match index {
-                    IntegerRangeFoldIndex::Int32 { .. } => {
-                        IntegerRangeFoldIndex::Int32 { start, end }
-                    }
-                    IntegerRangeFoldIndex::UInt64 { .. } => {
-                        IntegerRangeFoldIndex::UInt64 { start, end }
-                    }
-                    IntegerRangeFoldIndex::Integer { .. } => unreachable!(),
-                }
-            }
-            IntegerRangeFoldIndex::Integer { start, end } => {
-                let start = self.integer_shared(start).into();
-                if self.checked_work_exhausted() {
-                    return IntegerTerm::constant_i64(0);
-                }
-                let end = self.integer_shared(end).into();
-                IntegerRangeFoldIndex::Integer { start, end }
-            }
+        let [start, end, initial, body] = &fold.arguments;
+        let (start, end) = if item_is_integer {
+            (
+                self.shared_fold_integer_child(start)?,
+                self.shared_fold_integer_child(end)?,
+            )
+        } else {
+            let format = if fold.index == KernelFoldIndex::Int32 {
+                MachineIntegerType::Int32
+            } else {
+                MachineIntegerType::UInt64
+            };
+            let start = self.retained_fold_endpoint(start, format)?;
+            let end = self.retained_fold_endpoint(end, format)?;
+            (start, end)
         };
-        let initial = self.integer_shared(initial).into();
+        let initial = self.shared_fold_integer_child(initial)?;
         if self.checked_work_exhausted() {
-            return IntegerTerm::constant_i64(0);
+            return None;
         }
 
         let body_variable_max = if accumulator_capture || item_capture {
-            self.body_variable_max(body)
+            // The existing capture summary accounts for every native and
+            // opaque binder family. Request it only when a binder must move.
+            let native = self.fold_integer_bridge.integer(body).ok()?;
+            self.body_variable_max(&native)
         } else {
             0
         };
         if self.checked_work_exhausted() {
-            return IntegerTerm::constant_i64(0);
+            return None;
         }
         let mut fresh_upper = body_variable_max
             .max(self.integer_replacement_variable_max.unwrap_or(0))
@@ -4596,18 +4586,18 @@ impl<'a> TermRewrite<'a> {
             self.fresh_next = self.fresh_next.max(next);
         } else if accumulator_capture || item_capture {
             self.integer_work_exhausted = true;
-            return IntegerTerm::constant_i64(0);
+            return None;
         }
         if accumulator_capture {
             let Some(fresh) = self.fresh_variable() else {
-                return IntegerTerm::constant_i64(0);
+                return None;
             };
             accumulator = fresh;
             self.scope_renaming_max = self.scope_renaming_max.max(accumulator.0);
         }
         if item_capture {
             let Some(fresh) = self.fresh_variable() else {
-                return IntegerTerm::constant_i64(0);
+                return None;
             };
             item = fresh;
             self.scope_renaming_max = self.scope_renaming_max.max(item.0);
@@ -4639,7 +4629,7 @@ impl<'a> TermRewrite<'a> {
             let parent_shadowed = self.integer_shadowed;
             self.bump_scope_id();
             if self.checked_work_exhausted() {
-                return IntegerTerm::constant_i64(0);
+                return None;
             }
             let mut changes = Vec::new();
             self.remove_fold_scope_mapping(true, original_accumulator, &mut changes);
@@ -4680,22 +4670,34 @@ impl<'a> TermRewrite<'a> {
             body
         };
 
-        IntegerTerm::RangeFold {
-            index,
-            initial,
+        Some(KernelFold {
+            index: fold.index,
             accumulator,
             item,
-            body: body.into(),
-        }
+            arguments: [start, end, initial, body?],
+        })
     }
 
-    fn integer_fold_body(&mut self, body: &SharedIntegerTerm) -> IntegerTerm {
+    fn retained_fold_endpoint(
+        &mut self,
+        root: &KernelTerm,
+        format: MachineIntegerType,
+    ) -> Option<KernelTerm> {
+        let endpoint = SharedIntegerRangeEndpoint::from_shared(root.clone())?;
+        let rewritten = self.range_endpoint(&endpoint);
+        if self.checked_work_exhausted() {
+            return None;
+        }
+        Some(KernelFold::import_endpoint(format, &rewritten))
+    }
+
+    fn integer_fold_body(&mut self, body: &KernelTerm) -> Option<KernelTerm> {
         if self.conditions.is_some() {
-            return body.as_ref().clone();
+            return Some(body.clone());
         }
         let previous = self.resolve_registered_loads;
         self.resolve_registered_loads = true;
-        let body = self.integer_shared(body);
+        let body = self.shared_fold_integer_child(body);
         self.resolve_registered_loads = previous;
         body
     }
@@ -7221,15 +7223,15 @@ mod tests {
             },
             4,
         );
-        let rewritten = rewrite.term(&Term::PointerOffset(offset));
+        let rewritten = rewrite.term(&Term::PointerOffset(offset.into()));
         assert!(matches!(
             rewritten,
-            Term::PointerOffset(AddressOffset::Int32Scaled { value, .. })
-                if matches!(value.structural_value(), MachineTerm::IntegerToMachine {
+            Term::PointerOffset(offset)
+                if matches!(offset.native_compat(), AddressOffset::Int32Scaled { value, .. } if matches!(value.structural_value(), MachineTerm::IntegerToMachine {
                     value,
                     destination: MachineIntegerType::Int32,
                 } if value.as_ref().as_const().and_then(|value| value.to_i64())
-                    == Some(2_147_483_648))
+                    == Some(2_147_483_648)))
         ));
     }
 
@@ -7248,14 +7250,14 @@ mod tests {
             },
             4,
         );
-        let rewritten = rewrite.term(&Term::PointerOffset(offset));
+        let rewritten = rewrite.term(&Term::PointerOffset(offset.into()));
         assert!(matches!(
             rewritten,
-            Term::PointerOffset(AddressOffset::Int32Scaled { value, .. })
-                if matches!(value.structural_value(), MachineTerm::IntegerToMachine {
+            Term::PointerOffset(offset)
+                if matches!(offset.native_compat(), AddressOffset::Int32Scaled { value, .. } if matches!(value.structural_value(), MachineTerm::IntegerToMachine {
                     value,
                     destination: MachineIntegerType::Int32,
-                } if matches!(value.as_ref(), IntegerTerm::Variable(variable) if *variable == Variable(3_103_903)))
+                } if matches!(value.as_ref(), IntegerTerm::Variable(variable) if *variable == Variable(3_103_903))))
         ));
     }
 
@@ -7274,8 +7276,11 @@ mod tests {
             },
             4,
         );
-        let rewritten = rewrite.term(&Term::PointerOffset(offset));
-        assert_eq!(rewritten, Term::PointerOffset(AddressOffset::Constant(-4)));
+        let rewritten = rewrite.term(&Term::PointerOffset(offset.into()));
+        assert_eq!(
+            rewritten,
+            Term::PointerOffset(AddressOffset::Constant(-4).into())
+        );
     }
 
     #[test]

@@ -38,6 +38,7 @@ fn address_base_payload(block: &AddressBase) -> Option<usize> {
         | AddressBase::AggregateReturn { .. }
         | AddressBase::StaticObject { .. }
         | AddressBase::AutomaticLocal { .. }
+        | AddressBase::SliceLength { .. }
         | AddressBase::ReferenceCarrier { .. } => 1,
         AddressBase::Concrete(name) | AddressBase::Function(name) => {
             1usize.checked_add(name.len())?
@@ -275,12 +276,14 @@ fn address_base_equal(left: &AddressBase, right: &AddressBase) -> bool {
             | AddressBase::AggregateReturn { .. }
             | AddressBase::StaticObject { .. }
             | AddressBase::AutomaticLocal { .. }
+            | AddressBase::SliceLength { .. }
             | AddressBase::ReferenceCarrier { .. },
             AddressBase::ContractResult
             | AddressBase::ContractException
             | AddressBase::AggregateReturn { .. }
             | AddressBase::StaticObject { .. }
             | AddressBase::AutomaticLocal { .. }
+            | AddressBase::SliceLength { .. }
             | AddressBase::ReferenceCarrier { .. },
         ) => left == right,
         _ => false,

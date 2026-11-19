@@ -7845,29 +7845,26 @@ impl AnnotationLowerer<'_> {
                     return Err("expected an algebraic resource field".into());
                 };
                 let algebraic_type = self.cached_algebraic_kernel_type(ty)?;
-                let fixed = match self.fixed_resource_field(access, environment)? {
-                    Some(AlgebraicValue::Algebraic(AlgebraicTerm {
-                        node: AlgebraicTermNode::Variable(variable),
-                        ..
-                    })) => Some(variable),
-                    // A named state has only the value it holds; the
-                    // function entry also has its symbolic projection.
-                    Some(_) if environment.reference_state.is_some() => {
-                        return Err("only entry-bound symbolic resource fields support fixed states in this slice".into());
-                    }
-                    Some(_) | None => None,
-                };
-                let node = if let Some(variable) = fixed {
-                    SpecAlgebraicExpressionNode::Variable(variable)
-                } else {
-                    SpecAlgebraicExpressionNode::ResourceField(
+                let node = match self.fixed_resource_field(access, environment)? {
+                    Some(AlgebraicValue::Algebraic(value)) => match value.node {
+                        AlgebraicTermNode::Variable(variable) => {
+                            SpecAlgebraicExpressionNode::Variable(variable)
+                        }
+                        // A recorded point fixes the whole value, including
+                        // constructor payloads and their original pointers.
+                        _ => SpecAlgebraicExpressionNode::ProgramValue(Box::new(
+                            SpecExpression::Value(ProgramValue::Parameter(Box::new(value))),
+                        )),
+                    },
+                    Some(_) => return Err("resource field type mismatch".into()),
+                    None => SpecAlgebraicExpressionNode::ResourceField(
                         crate::kernel::ResourceFieldProjection {
                             identity: access.identity,
                             children: access.children.clone(),
                             field_index: access.field_index,
                             at_entry: environment.at_function_entry,
                         },
-                    )
+                    ),
                 };
                 Ok(SpecAlgebraicExpression {
                     algebraic_type,
@@ -9506,7 +9503,7 @@ impl AnnotationLowerer<'_> {
             });
         }
 
-        if name.local_id().is_some()
+        if (name.local_id().is_some() || matches!(name, crate::kernel::BindingName::SliceLength(_)))
             && let Some(state) = environment.reference_state.as_ref().or_else(|| {
                 (environment.at_function_entry && !environment.function_contract)
                     .then_some(self.entry_state)
@@ -9675,12 +9672,17 @@ impl AnnotationLowerer<'_> {
 
         if let ProgramExpression::AddressOf(target)
         | ProgramExpression::CheckedObjectAddress(target) = expression
-            && matches!(
-                target.as_ref(),
-                ProgramExpression::Variable(crate::kernel::BindingName::Generated(_))
-            )
+            && let ProgramExpression::Variable(binding) = target.as_ref()
         {
-            return Err("a specification binder has no C storage address".into());
+            match binding {
+                crate::kernel::BindingName::Generated(_) => {
+                    return Err("a specification binder has no C storage address".into());
+                }
+                crate::kernel::BindingName::SliceLength(_) => {
+                    return Err("a slice length has no program storage address".into());
+                }
+                _ => {}
+            }
         }
 
         if let ProgramExpression::AddressOf(target)
@@ -10545,6 +10547,11 @@ impl AnnotationLowerer<'_> {
             | ProgramExpression::CheckedObjectAddress(target) => match target.as_ref() {
                 ProgramExpression::TypedLoad { value_type, .. } => Some(*value_type),
                 ProgramExpression::Variable(name) => self.c_variable_type(name),
+                // `&p[i]` and `&*p` point at `p`'s element: `*&p[i]` reads
+                // what `p[i]` reads, not an `int32`.
+                ProgramExpression::Index(base, _) | ProgramExpression::Load(base) => {
+                    self.program_expression_array_element_type(base, environment)
+                }
                 _ => None,
             },
             ProgramExpression::Cast { target_type, .. } => target_type.pointee_type(),

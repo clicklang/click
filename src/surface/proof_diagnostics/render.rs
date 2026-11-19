@@ -1790,7 +1790,7 @@ impl Renderer<'_> {
             Term::Condition(c) => self.condition(c.native_compat()),
             Term::Bitvector32(v) => self.bitvector(v.native_compat()),
             Term::Integer(i) => self.integer(i.native_compat()),
-            Term::PointerOffset(o) => self.offset(o, 0),
+            Term::PointerOffset(o) => self.offset(o.native_compat(), 0),
             Term::ProgramValue(v) => self.cvalue(v.native_compat()),
             Term::Memory(m) => self.memory(m),
             Term::ExecutionState(s) => self.state(s),
@@ -2474,6 +2474,7 @@ impl Renderer<'_> {
         }
         self.push("pointer(");
         match &p.base {
+            crate::kernel::AddressBase::SliceLength { .. } => self.fmt(format_args!("{}", p.base)),
             crate::kernel::AddressBase::ReferenceCarrier { referent, instance } => self.fmt(
                 format_args!("reference carrier of {referent} [{instance:?}]"),
             ),
@@ -2879,6 +2880,29 @@ mod tests {
 
     fn render_proposition(proposition: &Proposition) -> String {
         render_proposition_labeled(proposition, &mut MemoryStateLabels::ambient())
+    }
+
+    #[test]
+    fn retained_contract_offset_diagnostic_preserves_shape_and_width() {
+        use crate::kernel::{AddressOffset, MachineTerm, Term};
+        let _session = crate::kernel::VerificationSession::enter();
+        let offset = AddressOffset::Add(
+            Box::new(AddressOffset::scaled_int64_node(
+                MachineTerm::uint64_constant(3),
+                8,
+                true,
+            )),
+            Box::new(AddressOffset::Constant(-2)),
+        );
+        let claim = Proposition::Equal(
+            Term::PointerOffset(offset.into()),
+            Term::PointerOffset(AddressOffset::Constant(22).into()),
+        );
+        let source = surface::source(&claim, &mut MemoryStateLabels::ambient());
+        assert!(source.contains(" * 8 + -2"), "{source}");
+        let typed = render_internal_proposition_labeled(&claim, &mut MemoryStateLabels::ambient());
+        assert!(typed.contains("uint64("), "{typed}");
+        assert!(typed.contains("*8 bytes+-2)"), "{typed}");
     }
 
     #[test]

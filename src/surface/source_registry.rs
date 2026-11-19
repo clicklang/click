@@ -600,6 +600,7 @@ mod tests {
                 parameters: parameter_names
                     .iter()
                     .map(|name| FunctionParameter {
+                        slice_length: None,
                         click_type: ClickType::Program(InterfaceType::Int32),
                         name: (*name).to_string(),
                         struct_name: None,

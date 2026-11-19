@@ -411,7 +411,7 @@ fn bounded_comparison_operand(
             match arguments.map(|argument| argument.variable().is_some()) {
                 // Exact rewriting keeps the explicit operator format for
                 // two variables. Arithmetic with a literal can use word32.
-                [true, true] if unsigned => false,
+                [true, true] => false,
                 [true, false] | [false, true] if unsigned || word32 => word32,
                 _ => return None,
             }
@@ -421,11 +421,12 @@ fn bounded_comparison_operand(
         O::Divide | O::Remainder
             if in_conditional
                 && arguments[0].variable().is_some()
-                && arguments[1]
-                    .literal()
-                    .and_then(|literal| format.constant_from_term(&literal))
-                    .and_then(|constant| constant.to_i128())
-                    .is_some_and(|divisor| !matches!(divisor, 0 | -1)) =>
+                && ((!format.format().is_signed() && arguments[1].variable().is_some())
+                    || arguments[1]
+                        .literal()
+                        .and_then(|literal| format.constant_from_term(&literal))
+                        .and_then(|constant| constant.to_i128())
+                        .is_some_and(|divisor| !matches!(divisor, 0 | -1))) =>
         {
             false
         }
@@ -465,11 +466,12 @@ fn bounded_comparison_operand(
 }
 
 /// Read a fixed-size native conditional, including an immediate conditional
-/// in either arm. The inner reader accepts only bounded operands.
+/// in either arm or as an immediate operand of its machine comparison guard.
+/// The inner reader accepts only bounded operands.
 fn conditional_atom(root: &crate::kernel::KernelTerm) -> Option<MachineTerm> {
-    read_conditional_atom(root, |format, arm| {
-        conditional_operand_atom(format, arm)
-            .or_else(|| read_conditional_atom(arm, conditional_operand_atom))
+    read_conditional_atom(root, |format, operand| {
+        conditional_operand_atom(format, operand)
+            .or_else(|| read_conditional_atom(operand, conditional_operand_atom))
     })
 }
 
@@ -483,7 +485,7 @@ fn conditional_operand_atom(
 
 fn read_conditional_atom(
     root: &crate::kernel::KernelTerm,
-    arm: impl Fn(MachineIntegerType, &crate::kernel::KernelTerm) -> Option<MachineTerm>,
+    operand: impl Fn(MachineIntegerType, &crate::kernel::KernelTerm) -> Option<MachineTerm>,
 ) -> Option<MachineTerm> {
     use crate::kernel::KernelTermNode as N;
     let N::MachineIf { arguments } = root.node() else {
@@ -516,8 +518,8 @@ fn read_conditional_atom(
             relation,
             arguments: guard,
         } if matches!(format.format().bits(), 32 | 64) => {
-            let mut left = conditional_operand_atom(*format, &guard[0])?;
-            let mut right = conditional_operand_atom(*format, &guard[1])?;
+            let mut left = operand(*format, &guard[0])?;
+            let mut right = operand(*format, &guard[1])?;
             if format.format().bits() == 32 {
                 left = left.into_word32();
                 right = right.into_word32();
@@ -533,8 +535,8 @@ fn read_conditional_atom(
     };
     Some(MachineTerm::If {
         condition: Box::new(condition),
-        then_term: Box::new(arm(result_format, &arguments[1])?),
-        else_term: Box::new(arm(result_format, &arguments[2])?),
+        then_term: Box::new(operand(result_format, &arguments[1])?),
+        else_term: Box::new(operand(result_format, &arguments[2])?),
     })
 }
 
@@ -561,24 +563,6 @@ fn condition_for_operand_views_in(
     structural: bool,
 ) -> ConditionTerm {
     use crate::kernel::{CompareRelation as R, MachineOperandView as V};
-    // Calls and pointer addresses remain native comparison atoms, as before producer migration.
-    // The root reading retains numeric argument handles; it does not export
-    // the argument DAG or turn a machine fact into an Integer fact.
-    let operands = operands.map(|operand| match operand {
-        V::Shared(root)
-            if matches!(
-                root.node(),
-                crate::kernel::KernelTermNode::Call { .. }
-                    | crate::kernel::KernelTermNode::IntegerAddress { .. }
-            ) =>
-        {
-            V::Legacy(
-                root.machine_conversion_leaf()
-                    .expect("machine comparison atom"),
-            )
-        }
-        operand => operand,
-    });
     if format == MachineIntegerType::Int64 && relation != R::Equal {
         let holds = |a, b| match relation {
             R::LessThan => a < b,
@@ -610,6 +594,24 @@ fn condition_for_operand_views_in(
             return ConditionTerm::Constant(result);
         }
     }
+    // Calls and pointer addresses remain native comparison atoms, as before producer migration.
+    // The root reading retains numeric argument handles; it does not export
+    // the argument DAG or turn a machine fact into an Integer fact.
+    let operands = operands.map(|operand| match operand {
+        V::Shared(root)
+            if matches!(
+                root.node(),
+                crate::kernel::KernelTermNode::Call { .. }
+                    | crate::kernel::KernelTermNode::IntegerAddress { .. }
+            ) =>
+        {
+            V::Legacy(
+                root.machine_conversion_leaf()
+                    .expect("machine comparison atom"),
+            )
+        }
+        operand => operand,
+    });
     let atoms = operands.map(|operand| match operand {
         V::Shared(root) => root
             .machine_constant_reading()

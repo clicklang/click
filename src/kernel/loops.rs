@@ -1883,9 +1883,9 @@ fn loop_state_components_match_at_back_edge_inner(
         .without_owned_instance_read_views();
     if !crate::kernel::api::contract_certification::resource_contexts_definitionally_equal_with_definitions(
         composite_resource_definitions,
-        top_state.memory(),
+        &top_state.program_point(),
         &top_resources,
-        next_state.memory(),
+        &next_state.program_point(),
         &next_resources,
         assumptions,
     ) {

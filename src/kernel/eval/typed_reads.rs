@@ -31,7 +31,22 @@ impl ReadType {
 
 use crate::kernel::program_point::ProgramPointId;
 
-type ReadKey = (SharedMemory, Address, ReadType, Option<ProgramPointId>);
+#[derive(Clone, Eq, PartialEq, Hash)]
+enum ReadPoint {
+    Version(ProgramPointId),
+    Memory(SharedMemory),
+}
+
+impl ReadPoint {
+    fn of(memory: &SymbolicMemory, version: Option<ProgramPointId>) -> Self {
+        match version {
+            Some(version) => Self::Version(version),
+            None => Self::Memory(crate::kernel::intern_memory_ref(memory)),
+        }
+    }
+}
+
+type ReadKey = (ReadPoint, Address, ReadType);
 type Reads = imbl::HashMap<ReadKey, ProgramValue>;
 thread_local! {
     static READS: std::cell::RefCell<Option<Reads>> = const { std::cell::RefCell::new(None) };
@@ -88,17 +103,16 @@ pub(super) fn record(memory: &SymbolicMemory, address: &Address, value: &Program
         }
         _ => None,
     };
-    let memory = crate::kernel::intern_memory_ref(memory);
+    // An indexed observation names the write itself. Lowering through any
+    // view that selects that write supplies the same complete observation.
+    let point = ReadPoint::of(memory, version);
     READS.with(|reads| {
         let mut slot = reads.borrow_mut();
         let reads = slot.as_mut().expect("active typed read scope");
-        reads.insert(
-            (memory.clone(), address.clone(), kind, version),
-            value.clone(),
-        );
+        reads.insert((point.clone(), address.clone(), kind), value.clone());
         if matches!(kind, ReadType::Pointer(_)) {
             reads.insert(
-                (memory, address.clone(), ReadType::IntegerAddress, None),
+                (point, address.clone(), ReadType::IntegerAddress),
                 value.clone(),
             );
         }
@@ -157,12 +171,7 @@ fn get_version(
         reads
             .borrow()
             .as_ref()?
-            .get(&(
-                crate::kernel::intern_memory_ref(memory),
-                address.clone(),
-                kind.key(),
-                version,
-            ))
+            .get(&(ReadPoint::of(memory, version), address.clone(), kind.key()))
             .cloned()
     })
 }

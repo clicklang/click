@@ -189,6 +189,20 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // the goal names the complete product through an Integer let binding.
         let mut selected: [Option<(BigInt, ClickProposition, ContractExpression)>; 4] =
             std::array::from_fn(|_| None);
+        for (i, operand) in [x, y].into_iter().enumerate() {
+            if let Some(value) = operand.as_const() {
+                let written = super::super::surface_synthesis::integer_typed_expression(
+                    surface_signed_integer_literal(value),
+                );
+                let bound = ClickProposition::Comparison {
+                    left: written.clone(),
+                    operator: ComparisonOperator::LessEqual,
+                    right: written.clone(),
+                };
+                selected[2 * i] = Some((value.clone(), bound.clone(), written.clone()));
+                selected[2 * i + 1] = Some((value.clone(), bound, written));
+            }
+        }
         for surface in premises {
             let written = super::integer_composition::canonical_surface(surface)
                 .unwrap_or_else(|| surface.clone());
@@ -233,7 +247,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                                 };
                                 // Native bounds supply a machine spelling; theorem
                                 // arguments denote its mathematical observation.
-                                if matches!(operand.value_read(), IntegerTerm::Machine(_)) {
+                                if matches!(operand.value_read(), IntegerTerm::Machine(_))
+                                    && super::integer_composition::observed_argument(&written)
+                                        .is_none()
+                                {
                                     ContractExpression::Call {
                                         name: "to_integer".into(),
                                         arguments: vec![written],
@@ -620,6 +637,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             attempt::candidate_outcome(Self::try_conditional_bound_using(input, &[]))?.flatten()
         {
             return Ok(Some(closed));
+        }
+        if let Some(proof) = Self::try_linked_pointer_viewability(input)? {
+            return Ok(Some(proof));
         }
         attempt::try_steps(input, budget, candidates)
     }
@@ -6287,6 +6307,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let Some(view) = search_input.premise_fixed_state_view() else {
             return Ok(None);
         };
+        // A covering range can be based on a pointer bound by an enclosing
+        // match or a value retained at a recorded program point.
+        let _binder_names = search_input.requirement_binder_name_scope();
+        let _recorded_points = super::surface_synthesis::SynthesisRecordedPointsScope::enter(
+            view.fixed_state.recorded_states,
+        );
         let mut candidates = search_input
             .facts()
             .assumptions()
@@ -10256,6 +10282,95 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             .apply_step(ProofStep::ArithmeticUsing(premises))
             .ok()
             .filter(|closed| closed.is_complete() || closed.focused_discharged()))
+    }
+
+    /// Name the file-scope object selected by the pointer's defining
+    /// store. Replay cites that equality and checks the current permission.
+    fn try_linked_pointer_viewability(
+        search_input: &Proof<'a>,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_linked_pointer_viewability");
+        let Some(Proposition::MemoryLoadable {
+            base,
+            bytes,
+            wide: false,
+            ..
+        }) = search_input.goal()
+        else {
+            return Ok(None);
+        };
+        let Some(ClickProposition::Loadable { segment }) = search_input.surface_goal() else {
+            return Ok(None);
+        };
+        let ContractSegmentSurface::Range {
+            base: written,
+            start,
+            end,
+        } = &segment.surface
+        else {
+            return Ok(None);
+        };
+        if segment.state != ContractSegmentState::Current || bytes.as_const().is_none() {
+            return Ok(None);
+        }
+        let stored = crate::kernel::pointer_read_over_immediate_store(base);
+        let address = stored.as_ref().unwrap_or(base);
+        let AddressBase::StaticObject { binding } = &address.base else {
+            return Ok(None);
+        };
+        if binding.function().is_some() || address.offset != AddressOffset::Constant(0) {
+            return Ok(None);
+        }
+
+        let observe = |segment| ProofStep::ObserveResource(ResourceClause::ViewMemory(segment));
+        let observed =
+            attempt::candidate_outcome(search_input.driver().apply_step(observe(segment.clone())))?;
+        let proof = if let Some(proof) = observed {
+            proof
+        } else if stored.is_some() {
+            let candidate = (|| {
+                let object = ProgramExpression::AddressOf(Box::new(ProgramExpression::Variable(
+                    binding.clone().into(),
+                )));
+                let object_expression = ContractExpression::ProgramExpression(object.clone());
+                let equality = ClickProposition::Comparison {
+                    left: written.clone(),
+                    operator: ComparisonOperator::Equal,
+                    right: object_expression.clone(),
+                };
+                let proof =
+                    search_input
+                        .driver()
+                        .apply_step(super::super::wide_arithmetic::have(
+                            equality.clone(),
+                            vec![ProofStep::Known],
+                        ))?;
+                let rewritten = proof.driver().apply_step(ProofStep::Rewrite(equality))?;
+                if rewritten.focused_discharged() {
+                    return Ok(rewritten);
+                }
+                rewritten.driver().apply_step(observe(ContractSegment {
+                    base: object,
+                    surface: ContractSegmentSurface::Range {
+                        base: object_expression,
+                        start: start.clone(),
+                        end: end.clone(),
+                    },
+                    ..segment.clone()
+                }))
+            })();
+            let Some(proof) = attempt::candidate_outcome(candidate)? else {
+                return Ok(None);
+            };
+            proof
+        } else {
+            return Ok(None);
+        };
+        if proof.focused_discharged() {
+            return Ok(Some(proof));
+        }
+        attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Known))
     }
 
     /// Both forms of solve select the same explicit endpoint proof. Ambient

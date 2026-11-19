@@ -2419,6 +2419,10 @@ id = "library.cpp.std::span<T>::data"
 path = "reference/library/index.md#stdspant"
 
 [[item]]
+id = "library.cpp.std::span<T>::empty"
+path = "reference/library/index.md#stdspant"
+
+[[item]]
 id = "library.cpp.std::span<T>::first"
 path = "reference/library/index.md#stdspant"
 
@@ -2440,6 +2444,10 @@ path = "reference/library/index.md#stdspant"
 
 [[item]]
 id = "library.cpp.std::span<T>::size_bytes"
+path = "reference/library/index.md#stdspant"
+
+[[item]]
+id = "library.cpp.std::span<T>::span"
 path = "reference/library/index.md#stdspant"
 
 [[item]]
@@ -4746,6 +4754,10 @@ path = "reference/library/index.md#separationcontains_trans"
 [[item]]
 id = "library.theorem.separation::contains_left"
 path = "reference/library/index.md#separationcontains_left"
+
+[[item]]
+id = "library.theorem.separation::contains_joined_ranges"
+path = "reference/library/index.md#separationcontains_joined_ranges"
 
 [[item]]
 id = "library.theorem.separation::contains_right"

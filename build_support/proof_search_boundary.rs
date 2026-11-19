@@ -233,7 +233,6 @@ pub fn inventory(path: &str, file: &syn::File) -> BTreeMap<String, usize> {
                         | "ownership_overlap"
                         | "owned_anchor_distinctness"
                         | "composition_context"
-                        | "call_frame"
                 ) {
                     "legacy-bridge"
                 } else {

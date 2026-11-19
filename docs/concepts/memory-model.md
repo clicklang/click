@@ -40,6 +40,12 @@ use the existing version selection, including across joins and unclassified effe
 Signed and unsigned 64-bit reads share a version of the same 64 bits.
 Signed and unsigned 128-bit reads retain their distinct load kinds.
 
+Naming existing cells during a resource proof can change the view at a
+point. The producer records which suffix only names cells and where it
+started. A view with this evidence retains the point's indexed versions
+when read directly and when execution next records a store. A replacement
+without that evidence cannot use those versions.
+
 A pending log of recorded transitions reaches a successor point even when
 its final memory contents equal its predecessor's. Repeatedly requesting that
 successor, or creating an evaluation frame there, retains its point ID. The

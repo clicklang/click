@@ -1310,6 +1310,7 @@ pub(super) fn with_function_parameter_types<T>(
                     .iter()
                     .enumerate()
                     .map(|(index, ty)| FunctionParameter {
+                        slice_length: None,
                         name: format!("argument{index}"),
                         click_type: ty.clone(),
                         struct_name: None,
@@ -4476,7 +4477,9 @@ pub(in crate::surface) fn infer_program_expression_type(
             }
             crate::kernel::BindingName::ContractResult => variables.get("result").copied(),
             crate::kernel::BindingName::ContractException => variables.get("exception").copied(),
-            crate::kernel::BindingName::Local(_) | crate::kernel::BindingName::Static(_) => name
+            crate::kernel::BindingName::Local(_)
+            | crate::kernel::BindingName::Static(_)
+            | crate::kernel::BindingName::SliceLength(_) => name
                 .program_type()
                 .and_then(|ty| interface_type_from_program_type(&ty)),
         },

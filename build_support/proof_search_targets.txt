@@ -6,8 +6,6 @@ atomic_derivation_premises
 available_rewrite_equality
 available_surface_fact
 available_surface_fact_raw
-call_frame
-call_kept_ownership
 carried_machine_facts
 check_typed_atomic_solve_candidate
 composition_context
@@ -225,6 +223,7 @@ try_resource_separation_restriction_closure
 universal_candidates
 try_resource_descriptor_rewrite_closure
 requirement_kernel_atoms_for_search
+try_linked_pointer_viewability
 try_ordinary_viewability_restriction_closure
 try_universal_steps_with_arithmetic
 try_history_indexed_equalities
@@ -234,6 +233,7 @@ try_recorded_footprint_preservation
 publish_selected_fact
 try_signed_interval_using
 ordinary_integer_fact
+try_signed_countdown_using
 apply_signed_interval_composition
 
 apply_specialized_composition

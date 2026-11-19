@@ -1383,7 +1383,9 @@ impl Printer<'_> {
             Term::Condition(condition) => {
                 self.condition(condition.native_compat(), true, depth + 1)
             }
-            Term::PointerOffset(offset) => Some(atom(self.offset(offset, depth + 1))),
+            Term::PointerOffset(offset) => {
+                Some(atom(self.offset(offset.native_compat(), depth + 1)))
+            }
             Term::Memory(memory) => Some(atom(self.state_phrase(memory))),
             Term::ExecutionState(state) => Some(atom(self.state_phrase(state.memory()))),
             Term::Sequence(_) => Some(atom("<a sequence>")),
@@ -1878,12 +1880,44 @@ impl Printer<'_> {
                         load_type_spelling(kind),
                         address.text
                     ))
+                } else if self.source_mode()
+                    && Self::declared_element_differs(naming, pointer, kind)
+                {
+                    // A read whose type is not the named pointer's own
+                    // element, a `uint8` read through a plain `char *`,
+                    // states its type: a bare `*` reads the element type.
+                    atom(format!(
+                        "*({} as ({} *))",
+                        address.text,
+                        load_type_spelling(kind)
+                    ))
                 } else {
                     atom(dereference(address))
                 }
             }
         };
         Some(place)
+    }
+
+    /// Whether a named pointer with this address's base declares an element
+    /// that a `kind` read does not read.
+    fn declared_element_differs(
+        naming: &Option<std::sync::Arc<NamingTables>>,
+        pointer: &Address,
+        kind: crate::kernel::LoadKind,
+    ) -> bool {
+        naming.as_deref().is_some_and(|naming| {
+            naming.1.iter().any(|value| match value {
+                crate::kernel::ProgramExpression::Value(crate::kernel::ProgramValue::Pointer(
+                    base,
+                )) if base.address().base == pointer.base => base
+                    .program_type()
+                    .pointee_type()
+                    .and_then(crate::kernel::LoadKind::of_type)
+                    .is_some_and(|read| !read.reads_word_of(kind)),
+                _ => false,
+            })
+        })
     }
 
     /// `place` read in `memory`.

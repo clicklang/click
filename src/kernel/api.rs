@@ -4105,13 +4105,10 @@ fn install_borrowed_contract_inputs(
         ) {
             continue;
         }
-        let candidates = state
+        let Some(occurrence) = state
             .resources()
-            .view_occurrences_for_fact(&input.fact, assumptions)
-            .into_iter()
-            .filter(|occurrence| state.resources().view_occurrence_is_principal(*occurrence))
-            .collect::<Vec<_>>();
-        let [occurrence] = candidates.as_slice() else {
+            .principal_input_view_occurrence(&input.fact, assumptions)
+        else {
             return Err(LoanRefusal::MissingLoanBinding.diagnostic_with_subject(
                 LoanRefusalOperation::Entry,
                 LoanRefusalSubject::for_resource(input.fact),
@@ -4119,12 +4116,12 @@ fn install_borrowed_contract_inputs(
         };
         let viewed = state
             .resources()
-            .view_fact_at_occurrence(*occurrence)
+            .view_fact_at_occurrence(occurrence)
             .cloned()
             .ok_or_else(|| {
                 LoanRefusal::MissingLoanBinding.diagnostic_with_subject(
                     LoanRefusalOperation::Entry,
-                    LoanRefusalSubject::with_support_id(*occurrence),
+                    LoanRefusalSubject::with_support_id(occurrence),
                 )
             })?;
         // Address-backed aggregate parameters and compiler-created local
@@ -4155,10 +4152,10 @@ fn install_borrowed_contract_inputs(
             let owner = owner.clone();
             return Err(LoanRefusal::ActiveDependency.diagnostic_with_subject(
                 LoanRefusalOperation::Entry,
-                LoanRefusalSubject::for_supported_view(viewed, owner, *occurrence),
+                LoanRefusalSubject::for_supported_view(viewed, owner, occurrence),
             ));
         }
-        selected.entry(*occurrence).or_insert(viewed);
+        selected.entry(occurrence).or_insert(viewed);
     }
 
     if selected.is_empty() {
@@ -5280,7 +5277,7 @@ fn symbolic_execution_statement_execution_with_loop_rule(
         loop_evidence,
         required_assumptions: assumptions.clone(),
         paths: paths.clone(),
-        composite_resource_definitions: Vec::new(),
+        composite_resource_definitions: Default::default(),
         // The rule records the anchor its own body was stepped under. A
         // self-call in that body raised the descent obligations exactly when
         // this is set. Every body obligation has already been discharged
@@ -5743,9 +5740,9 @@ pub(crate) fn execution_evidence_states_match(
     left_without_ghost_difference == *right
         && contract_certification::resource_contexts_definitionally_equal_with_definitions(
             function.composite_resource_definitions(),
-            left.memory(),
+            &left.program_point(),
             left.resources(),
-            right.memory(),
+            &right.program_point(),
             right.resources(),
             assumptions,
         )
@@ -5769,9 +5766,9 @@ pub(crate) fn function_entry_representation_states_match(
         && memories_definitionally_equal(left.memory(), right.memory(), assumptions)
         && contract_certification::resource_contexts_definitionally_equal_with_definitions(
             function.composite_resource_definitions(),
-            left.memory(),
+            &left.program_point(),
             left.resources(),
-            right.memory(),
+            &right.program_point(),
             right.resources(),
             assumptions,
         )

@@ -556,6 +556,14 @@ impl Parser {
             "__click_bit_field_{purpose}_{}",
             self.next_local_binding
         )));
+        self.track_bit_field_binding(name, interface_type)
+    }
+
+    fn track_bit_field_binding(
+        &mut self,
+        name: BindingName,
+        interface_type: InterfaceType,
+    ) -> BindingName {
         self.variable_types.insert(name.clone(), interface_type);
         self.scopes
             .last_mut()
@@ -778,7 +786,18 @@ impl Parser {
         };
         // Save the converted value before writing any byte: a field may
         // span bytes and its RHS may read from the same allocation.
-        let temporary = self.hidden_bit_field_binding("value", InterfaceType::UInt32);
+        let owner = self
+            .binding_function
+            .clone()
+            .ok_or_else(|| self.error_here("a bit-field store requires a function body"))?;
+        let ordinal = self.next_local_binding;
+        self.next_local_binding = ordinal.checked_add(1).expect("binding ordinal fits u32");
+        let temporary = self.track_bit_field_binding(
+            LocalBindingId::temporary(owner, ordinal)
+                .with_scope_depth(self.scopes.len() as u32)
+                .into(),
+            InterfaceType::UInt32,
+        );
         let positioned = CExpression::ShiftLeft(
             Box::new(scalar_cast(value, InterfaceType::UInt32)),
             Box::new(CExpression::Int32Literal(field.placement.shift_in_word())),

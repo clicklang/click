@@ -640,6 +640,161 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         Self::try_integer_composition_using(input, premises)
     }
 
+    /// Use the selected positivity and exact subtraction identity to close a
+    /// signed countdown bound. Keep both observations at their written points.
+    pub(in crate::surface::proof) fn try_signed_countdown_using(
+        input: &Proof<'a>,
+        premises: &[ClickProposition],
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_signed_countdown_using");
+        use super::super::wide_arithmetic::have;
+        use crate::kernel::{IntegerTerm, SharedMachineIntegerTerm};
+
+        const MAX_PREMISES: usize = 16;
+        if premises.len() < 2 || premises.len() > MAX_PREMISES {
+            return Ok(None);
+        }
+        let Some((zero, current)) = input.goal().and_then(signed_nonstrict_parts) else {
+            return Ok(None);
+        };
+        if zero.constant32() != Some(0) {
+            return Ok(None);
+        }
+        let Some((_, ComparisonOperator::LessEqual, written_current)) =
+            input.surface_goal().and_then(integer_surface_ordered_parts)
+        else {
+            return Ok(None);
+        };
+        let current = SharedMachineIntegerTerm::intern(MachineIntegerType::Int32, current.clone());
+
+        let mut selected = Vec::with_capacity(premises.len());
+        for source in premises {
+            let Some(premise) = attempt::candidate_outcome(
+                input.lower_cited_surface_proposition(source, "signed countdown premise"),
+            )?
+            else {
+                return Ok(None);
+            };
+            if !input.facts().listed_premise_available(&premise, &[], false) {
+                return Ok(None);
+            }
+            selected.push((premise, source));
+        }
+
+        let Some((difference, previous, amount)) = selected.iter().find_map(|(premise, source)| {
+            let (ConditionTerm::IntegerEqual(left, right), true) = premise.condition_native()?
+            else {
+                return None;
+            };
+            let (written_left, ComparisonOperator::Equal, written_right) =
+                integer_surface_ordered_parts(source)?
+            else {
+                return None;
+            };
+            for (result, exact, written_exact) in
+                [(left, right, &written_right), (right, left, &written_left)]
+            {
+                let IntegerTerm::Machine(observation) = result.as_ref() else {
+                    continue;
+                };
+                if observation != &current
+                    && !input.facts().pure_known_available(&Proposition::condition_is(
+                        ConditionTerm::IntegerEqual(
+                            IntegerTerm::Machine(current.clone()).into(),
+                            result.clone(),
+                        ),
+                        true,
+                    ))
+                {
+                    continue;
+                }
+                let IntegerTerm::Subtract(base, unit) = exact.as_ref() else {
+                    continue;
+                };
+                let ContractExpression::Subtract(written_base, written_unit) = written_exact else {
+                    continue;
+                };
+                if unit.value_read().as_const().and_then(ToPrimitive::to_i32) != Some(1)
+                    || !selected.iter().any(|(premise, _)| {
+                        let readings =
+                            crate::kernel::machine_integer::comparison::integer_readings_with_promotions(premise);
+                        std::iter::once(premise).chain(&readings).any(|reading| {
+                            integer_order(reading).is_some_and(|(lower, upper, strict)| {
+                                strict
+                                    && lower.value_read().as_const().is_some_and(Zero::is_zero)
+                                    && upper.value_read() == base.value_read()
+                            })
+                        })
+                    })
+                {
+                    continue;
+                }
+                return Some((
+                    written_exact.clone(),
+                    (**written_base).clone(),
+                    (**written_unit).clone(),
+                ));
+            }
+            None
+        }) else {
+            return Ok(None);
+        };
+
+        let proof = (|| {
+            let zero = number(0);
+            let one = super::super::surface_synthesis::integer_typed_expression(number(1));
+            let positive = ClickProposition::Comparison {
+                left: zero.clone(),
+                operator: ComparisonOperator::LessThan,
+                right: previous.clone(),
+            };
+            let step = le(add(zero.clone(), one.clone()), previous.clone());
+            let lower = le(one.clone(), previous.clone());
+            let unit = le(amount.clone(), one.clone());
+            let exact_bound = le(
+                ContractExpression::Subtract(Box::new(one.clone()), Box::new(one.clone())),
+                difference.clone(),
+            );
+            let observed = to_integer(&written_current);
+            let identity = eq(observed.clone(), difference);
+            let proof = input
+                .driver()
+                .apply_step(have(positive.clone(), vec![ProofStep::Known]))?;
+            let proof = proof.driver().apply_step(have(
+                step,
+                vec![apply(
+                    "lt_step_le",
+                    vec![zero.clone(), previous.clone()],
+                    vec![positive],
+                )],
+            ))?;
+            let proof = proof
+                .driver()
+                .apply_step(have(lower.clone(), vec![ProofStep::Known]))?;
+            let proof = proof
+                .driver()
+                .apply_step(have(unit.clone(), vec![ProofStep::Known]))?;
+            let proof = proof.driver().apply_step(have(
+                exact_bound,
+                vec![apply(
+                    "subtract_le",
+                    vec![one.clone(), previous, one, amount],
+                    vec![lower, unit],
+                )],
+            ))?;
+            let proof = proof
+                .driver()
+                .apply_step(have(identity.clone(), vec![ProofStep::Known]))?;
+            let proof = proof.driver().apply_step(have(
+                le(zero, observed),
+                vec![ProofStep::Rewrite(identity), ProofStep::Known],
+            ))?;
+            proof.driver().apply_step(ProofStep::Known)
+        })();
+        attempt::candidate_outcome(proof)
+    }
+
     /// Prove a stated fact without any route back to a signed certificate.
     pub(in crate::surface::proof) fn ordinary_integer_fact(
         proof: &Proof<'a>,
@@ -668,6 +823,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             && let Some(closed) =
                 attempt::candidate_outcome(driver.try_int32_add_sub_using(premises))?.flatten()
         {
+            return Ok(Some(closed.join()?));
+        }
+        if retained && let Some(closed) = driver.try_signed_countdown_using(premises)? {
             return Ok(Some(closed.join()?));
         }
         if retained
@@ -1320,12 +1478,29 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     )),
                     _ => None,
                 };
+                let retained_product = matches!(node, IntervalMultiply { .. })
+                    && inputs.iter().any(has_retained_read_source);
                 let result_identity = if let Some(exact) = exact {
                     let bounds = [
                         le(number(i64::from(i32::MIN)), exact.clone()),
                         le(exact.clone(), number(i64::from(i32::MAX))),
                     ];
                     for bound in &bounds {
+                        if retained_product {
+                            let candidate = (|| {
+                                let scope = proof.driver().open_have(bound.clone())?;
+                                scope
+                                    .driver()
+                                    .try_product_bound_using(&inputs)?
+                                    .filter(|closed| closed.is_complete())
+                                    .map(|closed| closed.join())
+                                    .transpose()
+                            })();
+                            if let Some(next) = attempt::candidate_outcome(candidate)?.flatten() {
+                                proof = next;
+                                continue;
+                            }
+                        }
                         let Some(next) =
                             Self::ordinary_integer_fact(&proof, bound.clone(), &inputs)?
                         else {
@@ -1356,28 +1531,31 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 }
                 let lower = le(number(lo), observed(&term));
                 let upper = le(observed(&term), number(hi));
-                let add_sub_identity = result_identity.filter(|_| {
-                    matches!(
-                        term,
-                        ContractExpression::Add(..) | ContractExpression::Subtract(..)
-                    ) && inputs.iter().any(has_retained_read_source)
+                let retained_identity = result_identity.filter(|_| {
+                    retained_product
+                        || (matches!(
+                            term,
+                            ContractExpression::Add(..) | ContractExpression::Subtract(..)
+                        ) && inputs.iter().any(has_retained_read_source))
                 });
                 for bound in [&lower, &upper] {
-                    if let Some(identity) = &add_sub_identity {
-                        // Keep the native value's spelling in the fact we publish.
-                        // The already-established equality turns its bound into
-                        // an ordinary Integer addition or subtraction bound.
+                    if let Some(identity) = &retained_identity {
+                        // Retain the native endpoint after proving its bound
+                        // through the checked exact-operation identity.
                         let candidate = (|| {
                             let scope = proof.driver().open_have(bound.clone())?;
                             let rewritten = scope
                                 .driver()
                                 .apply_step(ProofStep::Rewrite(identity.clone()))?;
-                            let Some(closed) =
+                            let closed = if retained_product {
+                                rewritten.driver().try_product_bound_using(&inputs)?
+                            } else {
                                 rewritten.driver().try_int32_add_sub_using(&inputs)?
-                            else {
-                                return Ok(None);
                             };
-                            closed.is_complete().then(|| closed.join()).transpose()
+                            closed
+                                .filter(|closed| closed.is_complete())
+                                .map(|closed| closed.join())
+                                .transpose()
                         })();
                         if let Some(next) = attempt::candidate_outcome(candidate)?.flatten() {
                             proof = next;

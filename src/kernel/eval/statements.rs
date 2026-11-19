@@ -4525,15 +4525,57 @@ fn execute_execution_statement_leaf_paths(
                     begin_aggregate_construction(state, name, layout, budget)?
                 }
             };
+            let mut facts = Vec::new();
             let outcome = match declared {
-                Ok(state) => StatementOutcome::Normal(Box::new(note_declared_population_storage(
-                    state, name,
-                ))),
+                Ok(declared) => {
+                    if *kind == AggregateDeclarationKind::ConstructionDestination
+                        && name.local_id().is_some_and(LocalBindingId::is_temporary)
+                        && let Some(ledger) = state.loan_ledger()
+                    {
+                        // A new hidden automatic object cannot be part of a
+                        // loan admitted before its lifetime began. Retain the
+                        // exact pre-declaration footprint: a later borrow of
+                        // the object still changes the write prerequisite.
+                        let pointer = declared.locals.slot(name).expect("new construction slot");
+                        let bytes = layout.size_bytes();
+                        if let Ok(signed_bytes) = i32::try_from(bytes) {
+                            let range = MemoryRange::new_with_element_width(
+                                pointer.clone(),
+                                0u32.into(),
+                                (signed_bytes as u32).into(),
+                                1,
+                            );
+                            facts.extend(
+                                ledger
+                                    .memory_access_requirement(&range)
+                                    .map(ExecutionPureFact::certified),
+                            );
+                        }
+                        // Modular effects can name the complete object as one
+                        // aggregate element instead of a contiguous byte range.
+                        if bytes != 0 && bytes != 1 {
+                            let range = MemoryRange::new_with_element_width(
+                                pointer.clone(),
+                                0u32.into(),
+                                1u32.into(),
+                                bytes,
+                            );
+                            facts.extend(
+                                ledger
+                                    .memory_access_requirement(&range)
+                                    .map(ExecutionPureFact::certified),
+                            );
+                        }
+                    }
+                    StatementOutcome::Normal(Box::new(note_declared_population_storage(
+                        declared, name,
+                    )))
+                }
                 Err(refusal) => StatementOutcome::RuntimeError(refusal),
             };
             vec![StatementExecutionPath::new(
                 outcome,
-                Vec::new().into(),
+                facts.into(),
                 Vec::new(),
             )]
         }
