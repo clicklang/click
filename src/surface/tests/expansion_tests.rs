@@ -24272,22 +24272,53 @@ fn typed_contract_results_expand_and_recheck() {
 
 #[test]
 #[ignore = "nightly: multi-byte bit-field update expansion and replay"]
-fn bit_field_value_capture_expands_and_replays() {
+fn bit_field_pointer_and_value_capture_expand_and_replay() {
     let (source, sources) = mdtest_sources("mdtests/c_bit_field_multiword_update_and_copy.md");
     let sources = sources
         .iter()
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
-    let claim = "answer.ensures_0";
+    let source = format!(
+        "{source}\nby {{ step_until(statement(2)); have p != 0; step_until(function.exit); solve(); }}"
+    );
+    let claim = "answer.contract";
     let expanded = expand_c_claim_source_by_label(&source, &sources, claim)
         .unwrap_or_else(|error| panic!("{}", error.report()));
     assert_ne!(expanded, source);
+    assert!(expanded.contains("have p != 0"), "{expanded}");
+    assert!(
+        !expanded.contains("__click_bit_field_pointer_"),
+        "{expanded}"
+    );
     assert!(!expanded.contains("__click_bit_field_value_"), "{expanded}");
     assert!(!expanded.contains("<temporary storage>"), "{expanded}");
     without_implicit_solve_for_claim(claim, || {
         verify_c_sources(&expanded, &sources).map_err(|error| error.report())
     })
     .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
+fn bit_field_pointer_keeps_later_local_ordinals() {
+    let c = r#"
+        struct flags { unsigned int ready : 1; };
+        int answer(void) {
+            struct flags f = {1};
+            struct flags *p = &f;
+            int after = p->ready;
+            return after;
+        }
+    "#;
+    let click = r#"
+        verifying "fields.c";
+        int32 answer() { ensures result == 1; } by {
+            step_until(statement(3));
+            have answer.local(4) == 1;
+            step_until(function.exit);
+            solve();
+        }
+    "#;
+    verify_c_sources(click, &[("fields.c", c)]).unwrap();
 }
 
 #[test]
