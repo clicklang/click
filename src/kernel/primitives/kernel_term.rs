@@ -367,7 +367,8 @@ impl PartialEq for NodeKey {
                             address: q,
                         },
                     ) => {
-                        m.shared_memory().arena_id() == n.shared_memory().arena_id()
+                        m.read_version_id() == n.read_version_id()
+                            && m.shared_memory().arena_id() == n.shared_memory().arena_id()
                             && a == b
                             && p == q
                     }

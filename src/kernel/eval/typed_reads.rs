@@ -89,6 +89,13 @@ pub(super) fn record(memory: &SymbolicMemory, address: &Address, value: &Program
     crate::instrumentation::record_deterministic_work(1);
     let kind = kind.key();
     let version = match value {
+        ProgramValue::Pointer(value) => value
+            .address()
+            .as_loaded_value()
+            .filter(|read| {
+                read.defining_address == *address && read.displacement == AddressOffset::Constant(0)
+            })
+            .and_then(|read| read.point.read_version_id()),
         ProgramValue::Int8(MachineTerm::MemoryLoad(point, _, LoadKind::Int8))
         | ProgramValue::UInt8(MachineTerm::MemoryLoad(point, _, LoadKind::UInt8))
         | ProgramValue::Int16(MachineTerm::MemoryLoad(point, _, LoadKind::Int16))
@@ -138,6 +145,12 @@ pub(in crate::kernel) fn get_at(
     kind: ReadType,
 ) -> Option<ProgramValue> {
     let version = match kind {
+        ReadType::Pointer(value_type) => point
+            .indexed_local_typed_version(address, value_type)
+            .and_then(|point| point.read_version_id()),
+        ReadType::IntegerAddress => point
+            .indexed_local_pointer_version(address)
+            .and_then(|point| point.read_version_id()),
         ReadType::Integer(
             format @ (MachineIntegerType::Int8
             | MachineIntegerType::UInt8

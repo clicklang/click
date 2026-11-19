@@ -1162,6 +1162,7 @@ struct AlphaRegisteredLoadRecord {
     retained_state: AlphaStateKey,
     pointer: AlphaAddressKey,
     kind: LoadKind,
+    pointer_read_type: Option<(ProgramType, bool)>,
 }
 
 /// Weak entries by descriptor fingerprint. A record removes its own entry
@@ -1221,11 +1222,13 @@ fn alpha_registered_load_descriptor_fingerprint(
     retained_state: &AlphaStateKey,
     pointer: &AlphaAddressKey,
     kind: LoadKind,
+    pointer_read_type: Option<(ProgramType, bool)>,
 ) -> u64 {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     retained_state.hash(&mut hasher);
     pointer.hash(&mut hasher);
     kind.hash(&mut hasher);
+    pointer_read_type.hash(&mut hasher);
     hasher.finish()
 }
 
@@ -1234,8 +1237,14 @@ fn intern_alpha_registered_load(
     retained_state: AlphaStateKey,
     pointer: AlphaAddressKey,
     kind: LoadKind,
+    pointer_read_type: Option<(ProgramType, bool)>,
 ) -> Option<AlphaRegisteredLoadId> {
-    let fingerprint = alpha_registered_load_descriptor_fingerprint(&retained_state, &pointer, kind);
+    let fingerprint = alpha_registered_load_descriptor_fingerprint(
+        &retained_state,
+        &pointer,
+        kind,
+        pointer_read_type,
+    );
     let mut interner_state = interner.lock().ok()?;
     let bucket = interner_state.buckets.entry(fingerprint).or_default();
     if crate::instrumentation::deadline_exceeded_with_work(bucket.len().max(1)) {
@@ -1249,6 +1258,7 @@ fn intern_alpha_registered_load(
         if record.retained_state == retained_state
             && record.pointer == pointer
             && record.kind == kind
+            && record.pointer_read_type == pointer_read_type
         {
             return Some(AlphaRegisteredLoadId(record));
         }
@@ -1267,6 +1277,7 @@ fn intern_alpha_registered_load(
         retained_state,
         pointer,
         kind,
+        pointer_read_type,
     });
     bucket.push(Arc::downgrade(&record));
     Some(AlphaRegisteredLoadId(record))
@@ -2078,7 +2089,7 @@ fn alpha_registered_load_pointer_with_bindings<const ALLOW_LOADS: bool>(
             }
         };
         alpha_work_checkpoint(bindings, 1)?;
-        let load_id = intern_alpha_registered_load(&interner, retained_state, pointer, kind)?;
+        let load_id = intern_alpha_registered_load(&interner, retained_state, pointer, kind, None)?;
         Some((load_id, *next_binder))
     })();
     bindings.registered_load_stack.remove(&variable);
@@ -2112,8 +2123,11 @@ fn alpha_pointer_load_with_bindings<const ALLOW_LOADS: bool>(
         return None;
     }
     let result = (|| {
-        let (memory, address) = crate::kernel::eval::registered_pointer_load(identity)?;
-        let retained_state = alpha_retained_state_key(&memory, bindings)?;
+        let (point, address, value_type) =
+            crate::kernel::eval::registered_pointer_load_point(identity)?;
+        let mut retained_state = alpha_retained_state_key(point.shared_memory(), bindings)?;
+        retained_state.read_version = point.read_version_id();
+        let pointer_read_type = value_type.map(|ty| (ty, point.is_exact_read()));
         let address =
             alpha_pointer_key_with_bindings::<ALLOW_LOADS>(&address, bindings, next_binder)?;
         let interner = match bindings.load_interner.clone() {
@@ -2125,8 +2139,13 @@ fn alpha_pointer_load_with_bindings<const ALLOW_LOADS: bool>(
             }
         };
         alpha_work_checkpoint(bindings, 1)?;
-        let load_id =
-            intern_alpha_registered_load(&interner, retained_state, address, LoadKind::Bits64)?;
+        let load_id = intern_alpha_registered_load(
+            &interner,
+            retained_state,
+            address,
+            LoadKind::Bits64,
+            pointer_read_type,
+        )?;
         Some((load_id, *next_binder))
     })();
     bindings.pointer_load_stack.remove(&identity);
@@ -2702,6 +2721,7 @@ fn alpha_bitvector_key_with_bindings<const ALLOW_LOADS: bool>(
                 retained_state,
                 pointer,
                 *kind,
+                None,
             )?)
         }
         MachineTerm::MemoryLoad(point, pointer, kind) if point.read_version_id().is_some() => {

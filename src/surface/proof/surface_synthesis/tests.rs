@@ -4248,6 +4248,60 @@ fn local_read_test_claim(value_type: ProgramType) -> ClickProposition {
 }
 
 #[test]
+fn exact_read_raises_at_its_own_point_when_another_point_has_equal_memory() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let slot = local_read_test_address("slot");
+    let state = ExecutionState::new()
+        .with_memory(SymbolicMemory::new().with_block("local:slot", 4))
+        .with_local(
+            "p",
+            ProgramValue::typed_pointer(slot.clone(), ProgramType::Int32Pointer),
+        );
+    let first = local_read_test_store(&state, &slot, ProgramType::Int32, 7);
+    let second = local_read_test_store(&first, &slot, ProgramType::Int32, 7);
+    assert_eq!(first.memory(), second.memory());
+
+    let mut claim = local_read_test_claim(ProgramType::Int32);
+    let ClickProposition::Comparison { left, .. } = &mut claim else {
+        unreachable!("test comparison");
+    };
+    *left = ContractExpression::Exact(Box::new(left.clone()));
+    let exact = relower_written_proposition(&claim, &first).unwrap();
+    let read = local_test_read_operand(&exact, ProgramType::Int32);
+    let MachineTerm::MemoryLoad(point, ..) = read else {
+        panic!("expected exact read: {read:?}");
+    };
+    assert!(point.is_exact_read());
+    assert_eq!(point.read_version_id(), first.program_point_id());
+    assert_ne!(exact, relower_written_proposition(&claim, &second).unwrap());
+
+    let selector = ProgramPointSelector::Mark("first".into());
+    let mut points = RecordedStates::new();
+    points.insert(selector.clone(), first);
+    let _points = SynthesisRecordedPointsScope::enter(&points);
+    let root = crate::kernel::KernelTermImport::default().machine(MachineIntegerType::Int32, read);
+    let raised = raise_kernel_term(
+        &root,
+        ParameterBinding::default(),
+        &second,
+        &BTreeMap::new(),
+    )
+    .expect("the exact read has a recorded point");
+    assert!(
+        matches!(&raised, ContractExpression::At { selector: at, expression }
+        if at == &selector && matches!(expression.as_ref(), ContractExpression::Exact(_)))
+    );
+    let ClickProposition::Comparison { left, .. } = &mut claim else {
+        unreachable!("test comparison");
+    };
+    *left = raised;
+    assert_eq!(
+        relower_written_proposition_with_states(&claim, &second, &second, &points),
+        Ok(exact)
+    );
+}
+
+#[test]
 fn ordinary_indexed_integer_reads_select_the_write_on_their_own_path() {
     check_local_read_versions(ProgramType::Int8, ProgramType::UInt8);
     check_local_read_versions(ProgramType::UInt8, ProgramType::Int8);

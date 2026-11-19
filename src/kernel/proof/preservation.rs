@@ -1095,7 +1095,7 @@ mod tests {
                 .program_point()
                 .indexed_local_integer_version(&slot, load_kind)
                 .unwrap();
-            let path = crate::kernel::eval::evaluate_indexed_integer_read(
+            let path = crate::kernel::eval::evaluate_indexed_read(
                 state.memory(),
                 version,
                 slot.clone(),

@@ -280,7 +280,7 @@ pub(in crate::kernel) fn evaluate_logical_memory_load_paths(
 }
 
 /// A logical integer read whose version was selected from the execution path.
-pub(in crate::kernel) fn evaluate_indexed_integer_read(
+pub(in crate::kernel) fn evaluate_indexed_read(
     memory: &SymbolicMemory,
     version: ProgramPoint,
     pointer: Address,
@@ -288,6 +288,54 @@ pub(in crate::kernel) fn evaluate_indexed_integer_read(
     mut facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
 ) -> ExpressionPath {
+    if value_type.is_pointer() {
+        let ProgramValue::Pointer(stored) = version
+            .indexed_stored_value()
+            .expect("indexed pointer store")
+            .native()
+            .numeric_value()
+        else {
+            unreachable!("indexed pointer store");
+        };
+        let stored = stored.clone();
+        record_load_access_width(version.memory(), &pointer, value_type.byte_width());
+        let read = Pointer::from_point_read(version, value_type, &pointer);
+        facts.push(ExecutionPureFact::logical_pointer_value_equation(
+            stored,
+            read.clone(),
+        ));
+        let value = ProgramValue::Pointer(read);
+        super::typed_reads::record(memory, &pointer, &value);
+        return ExpressionPath {
+            outcome: ExpressionOutcome::Value(value),
+            facts,
+            obligations,
+        };
+    }
+    if value_type == ProgramType::Bool {
+        let ProgramValue::Bool(stored) = version
+            .indexed_stored_value()
+            .expect("indexed Boolean store")
+            .native()
+            .numeric_value()
+        else {
+            unreachable!("indexed Boolean store");
+        };
+        let stored = ConditionTerm::truth_of_bool_word(stored);
+        let read = ConditionTerm::boolean_cell_read(version, pointer.clone());
+        facts.push(ExecutionPureFact {
+            logical_read_equation: true,
+            ..ExecutionPureFact::certified(Proposition::condition_is(
+                ConditionTerm::bool_equal(read.clone(), stored),
+                true,
+            ))
+        });
+        return ExpressionPath {
+            outcome: ExpressionOutcome::Value(ProgramValue::of_bool(read)),
+            facts,
+            obligations,
+        };
+    }
     let stored = version
         .indexed_integer_store_bits()
         .expect("an indexed integer version comes from a direct store")
@@ -344,13 +392,13 @@ pub(in crate::kernel) fn evaluate_indexed_integer_read(
 /// read's address, provenance and bounds owner are the same exact read
 /// ([`Pointer::from_read`]). It adds no facts and grants no access.
 pub(in crate::kernel) fn evaluate_exact_logical_memory_load_paths(
-    memory: &SymbolicMemory,
+    point: ProgramPoint,
     pointer: Address,
     value_type: ProgramType,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
 ) -> Vec<ExpressionPath> {
-    let outcome = match exact_logical_read_value(memory, &pointer, value_type) {
+    let outcome = match exact_logical_read_value(point, &pointer, value_type) {
         Some(value) => ExpressionOutcome::Value(value),
         None => ExpressionOutcome::RuntimeError(RuntimeError::LoadTypeMismatch {
             pointer,
@@ -368,8 +416,8 @@ pub(in crate::kernel) fn evaluate_exact_logical_memory_load_paths(
 /// [`evaluate_exact_logical_memory_load_paths`]'s value: the exact read
 /// constructor evaluation uses for a cell of `memory`, for the integer and
 /// pointer cells whose ordinary reads name their version.
-pub(in crate::kernel) fn exact_logical_read_value(
-    memory: &SymbolicMemory,
+fn exact_logical_read_value(
+    point: ProgramPoint,
     pointer: &Address,
     value_type: ProgramType,
 ) -> Option<ProgramValue> {
@@ -377,17 +425,29 @@ pub(in crate::kernel) fn exact_logical_read_value(
         return None;
     }
     if value_type.is_pointer() {
-        record_load_access_width(memory, pointer, value_type.byte_width());
-        let state = crate::kernel::intern_memory_ref(memory);
-        // `Pointer::from_read` names its provenance by the unchanged-bytes
-        // source of `state`; the address names the same read.
-        let read = Address::loaded_value(&state.unchanged_bytes_source(), pointer);
-        return Some(ProgramValue::Pointer(Pointer::from_read(
-            read, value_type, &state, pointer,
+        record_load_access_width(point.memory(), pointer, value_type.byte_width());
+        return Some(ProgramValue::Pointer(Pointer::from_point_read(
+            point.for_exact_read(),
+            value_type,
+            pointer,
         )));
     }
-    symbolic_load_value(memory, pointer, value_type)
-        .map(|value| complete_loaded_word(value, memory, pointer))
+    let point = point.for_exact_read();
+    record_load_access_width(point.memory(), pointer, value_type.byte_width());
+    let value = if value_type == ProgramType::Bool {
+        ProgramValue::of_bool(ConditionTerm::boolean_cell_read(
+            point.clone(),
+            pointer.clone(),
+        ))
+    } else {
+        let bits = MachineTerm::MemoryLoad(
+            point.clone(),
+            Box::new(pointer.clone()),
+            LoadKind::of_type(value_type)?,
+        );
+        ProgramValue::from_bitvector_term(value_type, bits)?
+    };
+    Some(complete_loaded_word(value, point.memory(), pointer))
 }
 
 fn evaluate_logical_memory_load_paths_unbridged(
@@ -2507,7 +2567,7 @@ thread_local! {
     /// neither a scalar load variable nor its mutable maximum access width
     /// decides membership in this registry.
     static POINTER_LOAD_REGISTRY: std::cell::RefCell<
-        std::collections::HashMap<PointerLoadId, (SharedMemory, Address)>,
+        std::collections::HashMap<PointerLoadId, (ProgramPoint, Address, Option<ProgramType>)>,
     > = std::cell::RefCell::new(std::collections::HashMap::new());
     /// The read observation a pointer-load name was first produced from, whose
     /// epoch-scoped live origin answers what existed when the value was read
@@ -2583,7 +2643,8 @@ pub(crate) struct LoadRegistryState {
     wide_observations: imbl::HashMap<(u64, Variable), (SharedMemory, Address)>,
     variables: std::collections::HashMap<Variable, RegisteredLoad>,
     read_observations: read_observations::State,
-    pointers: std::collections::HashMap<PointerLoadId, (SharedMemory, Address)>,
+    pointers:
+        std::collections::HashMap<PointerLoadId, (ProgramPoint, Address, Option<ProgramType>)>,
     pointer_sources: std::collections::HashMap<PointerLoadId, read_observations::Id>,
     widths: std::collections::HashMap<(SharedMemory, Address), u32>,
     widths_at_address: std::collections::HashMap<Address, u32>,
@@ -2826,6 +2887,23 @@ fn decide_closed_conditions(proposition: &Proposition) -> Option<Proposition> {
 }
 
 fn comparison_form_uncached(proposition: &Proposition) -> Option<Proposition> {
+    if let Some((condition, value)) = proposition.condition_native() {
+        if let ConditionTerm::BoolEqual(left, right) = condition {
+            let left_value = read_over_write_boolean(left);
+            let right_value = read_over_write_boolean(right);
+            if left_value.is_some() || right_value.is_some() {
+                return Some(Proposition::condition_is(
+                    ConditionTerm::bool_equal(
+                        left_value.unwrap_or_else(|| left.as_ref().clone()),
+                        right_value.unwrap_or_else(|| right.as_ref().clone()),
+                    ),
+                    *value,
+                ));
+            }
+        } else if let Some(stored) = read_over_write_boolean(condition) {
+            return Some(Proposition::condition_is(stored, *value));
+        }
+    }
     // SymbolicMemory states stay opaque: only the proposition's own terms are
     // visited, never the cells of a state a read names.
     let mut collector =
@@ -2914,6 +2992,37 @@ fn comparison_form_uncached(proposition: &Proposition) -> Option<Proposition> {
     (&resolved != proposition).then_some(resolved)
 }
 
+/// A Boolean read gets the logical value of its recorded store. For an
+/// exact read, the selected point's index can supply that store directly.
+fn read_over_write_boolean(condition: &ConditionTerm) -> Option<ConditionTerm> {
+    let ConditionTerm::Compare {
+        format: MachineIntegerType::UInt8,
+        relation: CompareRelation::Equal,
+        left,
+        right,
+    } = condition.bool_negation_operand()?
+    else {
+        return None;
+    };
+    if right.bool_constant_value() != Some(false) {
+        return None;
+    }
+    let MachineTerm::MemoryLoad(point, pointer, LoadKind::UInt8) = left.as_ref() else {
+        return None;
+    };
+    let version;
+    let point = if point.is_exact_read() {
+        version = point.indexed_local_typed_version(pointer, ProgramType::Bool)?;
+        &version
+    } else {
+        point
+    };
+    let ProgramValue::Bool(stored) = point.indexed_stored_value()?.native() else {
+        return None;
+    };
+    Some(ConditionTerm::truth_of_bool_word(stored))
+}
+
 /// Arithmetic congruence for selected comparison queries. Unlike the
 /// read-over-write form, this is not an additional fact to publish or index.
 pub(crate) fn arithmetic_comparison_form(proposition: &Proposition) -> Option<Proposition> {
@@ -2933,6 +3042,14 @@ pub(crate) fn pointer_read_over_immediate_store(pointer: &Address) -> Option<Add
     let read = pointer.as_loaded_value()?;
     if read.displacement != AddressOffset::Constant(0) {
         return None;
+    }
+
+    if let Some(ProgramValue::Pointer(stored)) = read
+        .point
+        .indexed_stored_value()
+        .map(StoredMemoryValue::native)
+    {
+        return Some(stored.address().clone());
     }
     let source = crate::kernel::prelude::canonical_load_projection_source(
         &read.defining_memory,
@@ -2970,6 +3087,14 @@ pub(crate) fn pointer_read_over_write_program_value(pointer: &Address) -> Option
     let read = pointer.as_loaded_value()?;
     if read.displacement != AddressOffset::Constant(0) {
         return None;
+    }
+
+    if let Some(ProgramValue::Pointer(stored)) = read
+        .point
+        .indexed_stored_value()
+        .map(StoredMemoryValue::native)
+    {
+        return Some(stored.clone());
     }
     // Only a cached pointer can be the stored pointer; anything else needs no
     // walk of the cell's history, nor a run's element built to look at.
@@ -3245,9 +3370,22 @@ pub(crate) fn registered_load_kind_for_variable(variable: &Variable) -> Option<L
     reason = "the typed load producer migrates after this identity foundation"
 )]
 pub(crate) fn pointer_load_identity(memory: &SharedMemory, address: &Address) -> PointerLoadId {
+    pointer_load_at_point(ProgramPoint::at(memory), address, None)
+}
+
+pub(crate) fn pointer_load_at_point(
+    point: ProgramPoint,
+    address: &Address,
+    value_type: Option<ProgramType>,
+) -> PointerLoadId {
     use std::hash::{Hash, Hasher};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    memory.arena_id().hash(&mut hasher);
+    point.shared_memory().arena_id().hash(&mut hasher);
+    if let Some(id) = point.read_version_id() {
+        id.hash(&mut hasher);
+        point.is_exact_read().hash(&mut hasher);
+        value_type.hash(&mut hasher);
+    }
     address.hash(&mut hasher);
     let mut slot = hasher.finish() % POINTER_LOAD_ID_RANGE;
     POINTER_LOAD_REGISTRY.with(|registry| {
@@ -3255,8 +3393,13 @@ pub(crate) fn pointer_load_identity(memory: &SharedMemory, address: &Address) ->
         loop {
             let identity = PointerLoadId(slot);
             match registry.get(&identity) {
-                Some((known_memory, known_address))
-                    if known_memory.arena_id() == memory.arena_id() && known_address == address =>
+                Some((known_point, known_address, known_type))
+                    if known_point.read_version_id() == point.read_version_id()
+                        && known_point.is_exact_read() == point.is_exact_read()
+                        && *known_type == value_type
+                        && known_point.shared_memory().arena_id()
+                            == point.shared_memory().arena_id()
+                        && known_address == address =>
                 {
                     return identity;
                 }
@@ -3269,7 +3412,7 @@ pub(crate) fn pointer_load_identity(memory: &SharedMemory, address: &Address) ->
                         registry.len() < LOAD_VARIABLE_REGISTRY_CAPACITY,
                         "pointer-load registry capacity exhausted"
                     );
-                    registry.insert(identity, (memory.clone(), address.clone()));
+                    registry.insert(identity, (point, address.clone(), value_type));
                     return identity;
                 }
             }
@@ -3323,7 +3466,13 @@ thread_local! {
 }
 
 fn immediate_stored_address_base(identity: PointerLoadId) -> Option<AddressBase> {
-    let (memory, address) = registered_pointer_load(identity)?;
+    let (point, address, _) = registered_pointer_load_point(identity)?;
+    if let Some(ProgramValue::Pointer(stored)) =
+        point.indexed_stored_value().map(StoredMemoryValue::native)
+    {
+        return Some(stored.address().base.clone());
+    }
+    let memory = point.into_shared_memory();
     if !holds_pointer_cell(memory.memory(), &address) {
         return None;
     }
@@ -3338,6 +3487,13 @@ fn immediate_stored_address_base(identity: PointerLoadId) -> Option<AddressBase>
 
 /// Decode a pointer-load name without consulting scalar-load metadata.
 pub(crate) fn registered_pointer_load(identity: PointerLoadId) -> Option<(SharedMemory, Address)> {
+    let (point, address, _) = registered_pointer_load_point(identity)?;
+    Some((point.into_shared_memory(), address))
+}
+
+pub(crate) fn registered_pointer_load_point(
+    identity: PointerLoadId,
+) -> Option<(ProgramPoint, Address, Option<ProgramType>)> {
     POINTER_LOAD_REGISTRY.with(|registry| registry.borrow().get(&identity).cloned())
 }
 
@@ -3588,6 +3744,13 @@ pub(crate) fn record_pointer_load_source(identity: PointerLoadId, read: &Machine
 }
 
 fn pointer_load_origin(identity: PointerLoadId) -> Option<SharedMemory> {
+    if let Some(memory) = POINTER_LOAD_REGISTRY.with(|registry| {
+        let registry = registry.borrow();
+        let (point, _, value_type) = registry.get(&identity)?;
+        value_type.is_some().then(|| point.shared_memory().clone())
+    }) {
+        return Some(memory);
+    }
     let observation =
         POINTER_LOAD_SOURCES.with(|sources| sources.borrow().get(&identity).copied())?;
     read_observations::observation(observation)?.origin
@@ -4059,15 +4222,15 @@ fn select_scalar_reads_impl(term: &MachineTerm, retain_selected: bool) -> Machin
                         );
                     }
                     MachineTerm::MemoryLoad(memory, pointer, kind) => {
-                        term_results.push(
-                            if retain_selected
-                                && is_selected_scalar_read(memory.shared_memory(), pointer, *kind)
-                            {
-                                term.clone()
-                            } else {
-                                canonical_scalar_read(term)
-                            },
-                        );
+                        term_results.push(if memory.is_exact_read() {
+                            comparison_identity_of_exact_read(memory, pointer, *kind)
+                        } else if retain_selected
+                            && is_selected_scalar_read(memory.shared_memory(), pointer, *kind)
+                        {
+                            term.clone()
+                        } else {
+                            canonical_scalar_read(term)
+                        });
                     }
                     MachineTerm::IntegerAddress(_, _) | MachineTerm::IntegerToMachine { .. } => {
                         term_results.push(term.clone())
@@ -4899,6 +5062,19 @@ pub(crate) fn latest_wide_load_observation(variable: &Variable) -> Option<Machin
                 )
             })
     })
+}
+
+/// The equality graph can use the ordinary version of an exact read without
+/// changing the retained proof term. Local cells use their indexed receipt.
+pub(crate) fn comparison_identity_of_exact_read(
+    point: &ProgramPoint,
+    pointer: &Address,
+    kind: LoadKind,
+) -> MachineTerm {
+    match point.indexed_local_integer_version(pointer, kind) {
+        Some(version) => MachineTerm::MemoryLoad(version, Box::new(pointer.clone()), kind),
+        None => canonical_form_of_load(point.shared_memory().clone(), pointer.clone(), kind),
+    }
 }
 
 /// Compatibility adapter for the existing selected-version read policy.
