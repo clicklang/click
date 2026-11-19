@@ -107,10 +107,17 @@ impl<'a> Proof<'a> {
     /// again, so spelling it here would synthesize the rest of the bundle
     /// once per member. Anything else keeps its children unspelled.
     fn bundle_member_surface_children(&self) -> [CheckedBothSurfaceChild; 2] {
+        // A loop bundle member keeps its synthesized form. Any other child,
+        // such as a conjunct of `defined(p->f + 1)` (the read's definedness
+        // and the sum's bounds), raises canonically: a child without a
+        // Surface goal cannot be searched as a goal of its own.
         let child = |kernel: Option<&Proposition>| CheckedBothSurfaceChild {
-            surface: kernel
-                .filter(|kernel| !matches!(kernel, Proposition::And(..)))
-                .and_then(|kernel| self.synthesized_bundle_member_surface(kernel)),
+            surface: kernel.and_then(|kernel| {
+                (!matches!(kernel, Proposition::And(..)))
+                    .then(|| self.synthesized_bundle_member_surface(kernel))
+                    .flatten()
+                    .or_else(|| self.conjunct_goal_spelling(kernel))
+            }),
             introductions: None,
         };
         match self.goal() {
