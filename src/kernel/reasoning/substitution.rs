@@ -2596,7 +2596,20 @@ fn collect_term_bound_variables(term: &Term, variables: &mut BTreeSet<Variable>)
         Term::Integer(integer) => {
             collect_integer_bound_variables(integer.native_compat(), variables)
         }
-        Term::PointerOffset(offset) => collect_pointer_offset_bound_variables(offset, variables),
+        Term::PointerOffset(offset) => {
+            if let Some(root) = offset.root() {
+                root.visit_root_in_order(false, |node| {
+                    if let Some(index) = node.index() {
+                        collect_offset_index_bound_variables(
+                            MachineOperandView::Shared(index),
+                            variables,
+                        );
+                    }
+                });
+            } else {
+                collect_pointer_offset_bound_variables(offset.native_compat(), variables);
+            }
+        }
         Term::ProgramValue(value) => {
             collect_program_value_bound_variables(value.native_compat(), variables);
         }
@@ -3712,9 +3725,16 @@ fn collect_pointer_offset_bound_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     offset.for_each_scaled_operand(|value| {
-        visit_machine_operand_scoped_leaves(value.operand_view(), |leaf| {
-            collect_scoped_leaf_bound_variables(leaf, variables)
-        })
+        collect_offset_index_bound_variables(value.operand_view(), variables);
+    });
+}
+
+fn collect_offset_index_bound_variables(
+    view: MachineOperandView<'_>,
+    variables: &mut BTreeSet<Variable>,
+) {
+    visit_machine_operand_scoped_leaves(view, |leaf| {
+        collect_scoped_leaf_bound_variables(leaf, variables)
     });
 }
 
@@ -3737,7 +3757,8 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_term(
             substitute_bitvector_variable_in_integer(integer.native_compat(), from, to).into(),
         ),
         Term::PointerOffset(offset) => Term::PointerOffset(
-            substitute_bitvector_variable_in_pointer_offset(offset, from, to),
+            substitute_bitvector_variable_in_pointer_offset(offset.native_compat(), from, to)
+                .into(),
         ),
         Term::ProgramValue(value) => Term::ProgramValue(
             substitute_bitvector_variable_in_program_value(value.native_compat(), from, to).into(),
@@ -10428,4 +10449,29 @@ mod float_conversion_freshness_tests {
         assert!(expected.contains(&Variable(999983)) && expected.contains(&Variable(999984)));
         assert_eq!(actual, expected);
     }
+}
+
+#[cfg(test)]
+#[test]
+fn contract_offset_freshness_includes_retained_fold_binders() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let end = Variable(999985);
+    let accumulator = Variable(999986);
+    let item = Variable(999987);
+    let offset = AddressOffset::scaled_int32_node(
+        MachineTerm::RangeFold {
+            start: Box::new(MachineTerm::constant(0)),
+            end: Box::new(MachineTerm::Variable(end)),
+            initial: Box::new(MachineTerm::constant(0)),
+            accumulator,
+            item,
+            body: Box::new(MachineTerm::Variable(accumulator)),
+        },
+        4,
+    );
+    let stored = crate::kernel::StoredPointerOffset::from(offset);
+    assert!(stored.root().is_some());
+    let mut actual = BTreeSet::new();
+    collect_term_bound_variables(&Term::PointerOffset(stored), &mut actual);
+    assert_eq!(actual, BTreeSet::from([accumulator, item]));
 }

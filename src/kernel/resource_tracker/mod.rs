@@ -1421,7 +1421,13 @@ fn collect_term_reads(term: &Term, reads: &mut Vec<ResourceRead>) {
         Term::Condition(condition) => collect_condition_reads(condition.native_compat(), reads),
         Term::Bitvector32(term) => collect_bitvector_reads(term.native_compat(), reads),
         Term::Integer(term) => collect_integer_term_reads(term.native_compat(), reads),
-        Term::PointerOffset(offset) => collect_offset_reads(offset, reads),
+        Term::PointerOffset(offset) => {
+            if let Some(root) = offset.root() {
+                collect_shared_offset_reads(root, reads);
+            } else {
+                collect_offset_reads(offset.native_compat(), reads);
+            }
+        }
         Term::Algebraic(term) => {
             term.native_compat()
                 .for_each_machine_operand(|term| collect_operand_reads(term, reads));
@@ -1518,27 +1524,13 @@ fn collect_condition_operand_reads(
             for value in values {
                 for address in value.addresses() {
                     collect_address_base_reads(address.node().base.native_atom(), reads);
-                    address.node().offset.visit_root_in_order(true, |node| {
-                        if let Some(index) = node.index() {
-                            collect_operand_reads(
-                                crate::kernel::MachineOperandView::Shared(index),
-                                reads,
-                            );
-                        }
-                    });
+                    collect_shared_offset_reads(&address.node().offset, reads);
                 }
             }
         } else if let Some(addresses) = leaf.pointer_addresses() {
             for address in addresses {
                 collect_address_base_reads(address.node().base.native_atom(), reads);
-                address.node().offset.visit_root_in_order(true, |node| {
-                    if let Some(index) = node.index() {
-                        collect_operand_reads(
-                            crate::kernel::MachineOperandView::Shared(index),
-                            reads,
-                        );
-                    }
-                });
+                collect_shared_offset_reads(&address.node().offset, reads);
             }
         } else if let Some(offsets) = leaf.pointer_offsets() {
             crate::kernel::SharedAddressOffset::visit_pair_in_order(&offsets, true, |node| {
@@ -1625,6 +1617,17 @@ fn collect_address_base_reads(block: &AddressBase, reads: &mut Vec<ResourceRead>
             ProgramPoint::at(&memory),
         );
     }
+}
+
+fn collect_shared_offset_reads(
+    offset: &crate::kernel::SharedAddressOffset,
+    reads: &mut Vec<ResourceRead>,
+) {
+    offset.visit_root_in_order(true, |node| {
+        if let Some(index) = node.index() {
+            collect_operand_reads(crate::kernel::MachineOperandView::Shared(index), reads);
+        }
+    });
 }
 
 fn collect_offset_reads(offset: &AddressOffset, reads: &mut Vec<ResourceRead>) {

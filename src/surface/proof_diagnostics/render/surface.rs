@@ -1383,7 +1383,9 @@ impl Printer<'_> {
             Term::Condition(condition) => {
                 self.condition(condition.native_compat(), true, depth + 1)
             }
-            Term::PointerOffset(offset) => Some(atom(self.offset(offset, depth + 1))),
+            Term::PointerOffset(offset) => {
+                Some(atom(self.offset(offset.native_compat(), depth + 1)))
+            }
             Term::Memory(memory) => Some(atom(self.state_phrase(memory))),
             Term::ExecutionState(state) => Some(atom(self.state_phrase(state.memory()))),
             Term::Sequence(_) => Some(atom("<a sequence>")),

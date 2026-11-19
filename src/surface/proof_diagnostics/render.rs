@@ -1790,7 +1790,7 @@ impl Renderer<'_> {
             Term::Condition(c) => self.condition(c.native_compat()),
             Term::Bitvector32(v) => self.bitvector(v.native_compat()),
             Term::Integer(i) => self.integer(i.native_compat()),
-            Term::PointerOffset(o) => self.offset(o, 0),
+            Term::PointerOffset(o) => self.offset(o.native_compat(), 0),
             Term::ProgramValue(v) => self.cvalue(v.native_compat()),
             Term::Memory(m) => self.memory(m),
             Term::ExecutionState(s) => self.state(s),

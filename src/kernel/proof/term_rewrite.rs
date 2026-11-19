@@ -1515,7 +1515,9 @@ fn collect_integer_substitution_term_variables(term: &Term, variables: &mut Carr
             collect_program_value_carriers(value.native_compat(), variables)
         }
         Term::Condition(value) => collect_condition_carriers(value.native_compat(), variables),
-        Term::PointerOffset(value) => collect_pointer_offset_carriers(value, variables),
+        Term::PointerOffset(value) => {
+            collect_pointer_offset_carriers(value.native_compat(), variables)
+        }
         Term::Algebraic(value) => collect_algebraic_carriers(value.native_compat(), variables),
         _ => {}
     }
@@ -1641,7 +1643,7 @@ fn exhausted_term(term: &Term) -> Term {
         Term::Bitvector32(_) => Term::Bitvector32(MachineTerm::constant(0).into()),
         Term::Integer(value) if value.root().is_some() => term.clone(),
         Term::Integer(value) => Term::Integer(exhausted_integer(value.native_compat()).into()),
-        Term::PointerOffset(_) => Term::PointerOffset(exhausted_offset()),
+        Term::PointerOffset(_) => Term::PointerOffset(exhausted_offset().into()),
         Term::ProgramValue(value) => match value.value() {
             ExecutionValue::Shared(_) => term.clone(),
             ExecutionValue::Native(value) => {
@@ -3192,7 +3194,7 @@ impl<'a> TermRewrite<'a> {
                     &mut seen,
                 ),
                 Term::PointerOffset(offset) => {
-                    collect_pointer_offset_carriers(offset, &mut variables)
+                    collect_pointer_offset_carriers(offset.native_compat(), &mut variables)
                 }
                 Term::ProgramValue(value) => {
                     collect_program_value_carriers(value.native_compat(), &mut variables);
@@ -3711,7 +3713,7 @@ impl<'a> TermRewrite<'a> {
             Term::Integer(v) => Term::Integer(self.integer(v.native_compat()).into()),
             Term::ProgramValue(v) => Term::ProgramValue(self.value(v.native_compat()).into()),
             Term::Condition(v) => Term::Condition(self.condition(v.native_compat()).into()),
-            Term::PointerOffset(v) => Term::PointerOffset(self.offset(v)),
+            Term::PointerOffset(v) => Term::PointerOffset(self.offset(v.native_compat()).into()),
             _ => term.clone(),
         };
         if self.checked_work_exhausted() {
@@ -7221,15 +7223,15 @@ mod tests {
             },
             4,
         );
-        let rewritten = rewrite.term(&Term::PointerOffset(offset));
+        let rewritten = rewrite.term(&Term::PointerOffset(offset.into()));
         assert!(matches!(
             rewritten,
-            Term::PointerOffset(AddressOffset::Int32Scaled { value, .. })
-                if matches!(value.structural_value(), MachineTerm::IntegerToMachine {
+            Term::PointerOffset(offset)
+                if matches!(offset.native_compat(), AddressOffset::Int32Scaled { value, .. } if matches!(value.structural_value(), MachineTerm::IntegerToMachine {
                     value,
                     destination: MachineIntegerType::Int32,
                 } if value.as_ref().as_const().and_then(|value| value.to_i64())
-                    == Some(2_147_483_648))
+                    == Some(2_147_483_648)))
         ));
     }
 
@@ -7248,14 +7250,14 @@ mod tests {
             },
             4,
         );
-        let rewritten = rewrite.term(&Term::PointerOffset(offset));
+        let rewritten = rewrite.term(&Term::PointerOffset(offset.into()));
         assert!(matches!(
             rewritten,
-            Term::PointerOffset(AddressOffset::Int32Scaled { value, .. })
-                if matches!(value.structural_value(), MachineTerm::IntegerToMachine {
+            Term::PointerOffset(offset)
+                if matches!(offset.native_compat(), AddressOffset::Int32Scaled { value, .. } if matches!(value.structural_value(), MachineTerm::IntegerToMachine {
                     value,
                     destination: MachineIntegerType::Int32,
-                } if matches!(value.as_ref(), IntegerTerm::Variable(variable) if *variable == Variable(3_103_903)))
+                } if matches!(value.as_ref(), IntegerTerm::Variable(variable) if *variable == Variable(3_103_903))))
         ));
     }
 
@@ -7274,8 +7276,11 @@ mod tests {
             },
             4,
         );
-        let rewritten = rewrite.term(&Term::PointerOffset(offset));
-        assert_eq!(rewritten, Term::PointerOffset(AddressOffset::Constant(-4)));
+        let rewritten = rewrite.term(&Term::PointerOffset(offset.into()));
+        assert_eq!(
+            rewritten,
+            Term::PointerOffset(AddressOffset::Constant(-4).into())
+        );
     }
 
     #[test]

@@ -335,14 +335,53 @@ impl StoredConditionTerm {
     }
 }
 
+/// Contract offset with its retained reader initialized on first use.
+#[derive(Clone)]
+pub struct StoredPointerOffset(Arc<PointerOffsetInput>);
+
+struct PointerOffsetInput {
+    written: AddressOffset,
+    shared: OnceLock<Option<SharedAddressOffset>>,
+}
+
+impl From<AddressOffset> for StoredPointerOffset {
+    fn from(written: AddressOffset) -> Self {
+        Self(Arc::new(PointerOffsetInput {
+            written,
+            shared: OnceLock::new(),
+        }))
+    }
+}
+
+impl StoredPointerOffset {
+    pub(crate) fn native_compat(&self) -> &AddressOffset {
+        &self.0.written
+    }
+
+    pub(crate) fn root(&self) -> Option<&SharedAddressOffset> {
+        self.0
+            .shared
+            .get_or_init(|| {
+                // Preserve the native identity of exact legacy indices.
+                let written = &self.0.written;
+                (!written.any_scaled_operand(|value| value.shared_operand().is_none()))
+                    .then(|| KernelAddressOffset::import(written))
+            })
+            .as_ref()
+    }
+}
+
 macro_rules! native_descriptor_identity {
-    ($carrier:ty) => {
+    ($carrier:ty) => { native_descriptor_identity!($carrier, |a: &$carrier, b: &$carrier| {
+        matches!((a.root(), b.root()), (Some(a), Some(b)) if a == b)
+    }); };
+    ($carrier:ty, $same:expr) => {
         impl std::fmt::Debug for $carrier {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { self.native_compat().fmt(f) }
         }
         impl PartialEq for $carrier {
             fn eq(&self, other: &Self) -> bool {
-                matches!((self.root(), other.root()), (Some(a), Some(b)) if a == b) || self.native_compat() == other.native_compat()
+                ($same)(self, other) || self.native_compat() == other.native_compat()
             }
         }
         impl Eq for $carrier {}
@@ -351,7 +390,7 @@ macro_rules! native_descriptor_identity {
         }
         impl Ord for $carrier {
             fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-                if matches!((self.root(), other.root()), (Some(a), Some(b)) if a == b) { std::cmp::Ordering::Equal }
+                if ($same)(self, other) { std::cmp::Ordering::Equal }
                 else { self.native_compat().cmp(other.native_compat()) }
             }
         }
@@ -364,6 +403,7 @@ native_descriptor_identity!(StoredProgramValue);
 native_descriptor_identity!(StoredIntegerTerm);
 native_descriptor_identity!(StoredAlgebraicTerm);
 native_descriptor_identity!(StoredConditionTerm);
+native_descriptor_identity!(StoredPointerOffset, |_, _| false);
 
 #[cfg(test)]
 mod protocol_value_tests {
