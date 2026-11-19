@@ -4386,6 +4386,15 @@ fn construct_interface_abstraction(
         join_next_kernel_variable,
     )
     .map_err(|_| "the else interface state could not be abstracted")?;
+    if abstract_then
+        .unproved_memory_separation(root_facts)
+        .is_some()
+        || abstract_else
+            .unproved_memory_separation(root_facts)
+            .is_some()
+    {
+        return Err("branch memory join requires separation from active loans at the split");
+    }
     // Both abstractions derive from the memory at the split, so they are
     // compared by what each changed from it.
     if abstract_then.next_kernel_variable != abstract_else.next_kernel_variable

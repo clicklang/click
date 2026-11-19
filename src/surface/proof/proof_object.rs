@@ -3632,7 +3632,7 @@ impl<'a> Proof<'a> {
         self.step_error_with_details(error.message, None, None, error.rejected_fact, Vec::new())
     }
 
-    fn step_error_with_requirement(
+    pub(super) fn step_error_with_requirement(
         &self,
         message: impl Into<String>,
         comparison: Option<crate::surface::proof_trace::ChildArgumentTrace>,
