@@ -257,7 +257,8 @@ fn construction_binding_retains_the_full_destination_loan_requirement() {
     };
     assert!(obligation.requires_statement_entry());
     let bytes = node_layout().size_bytes();
-    let range = MemoryRange::new_with_element_width(destination, 0u32.into(), bytes.into(), 1);
+    let range =
+        MemoryRange::new_with_element_width(destination.clone(), 0u32.into(), bytes.into(), 1);
     assert_eq!(
         obligation.proposition(),
         &ledger.memory_access_requirement(&range).unwrap(),
@@ -277,15 +278,16 @@ fn construction_binding_retains_the_full_destination_loan_requirement() {
     );
     assert_eq!(direct_obligations, obligations);
 
-    assert!(
-        construction_return::bind(
-            &caller,
-            function.contract_interface(),
-            &mut ExecutionState::new(),
-            None,
-        )
-        .is_none()
+    let expressions = arguments.map(ProgramExpression::Value);
+    let entry = crate::kernel::program_function_entry_state(&caller, &function, &expressions)
+        .expect("naming the result at a proof frontier does not write to it");
+    assert_eq!(
+        entry.locals.aggregate_object_pointer(CONTRACT_RESULT),
+        Some(&destination)
     );
+    assert_eq!(entry.memory(), caller.memory());
+    assert_eq!(entry.resources(), caller.resources());
+    assert_eq!(entry.loan_ledger(), caller.loan_ledger());
 }
 
 #[test]
