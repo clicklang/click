@@ -2066,7 +2066,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                             step(); // Select the nonempty near-child parent update.
                                                             have separate(memory(parent->__rb_parent_color), memory(tmp2->__rb_parent_color));
                                                             let near_call_left = fold(rb_saved_link(&iid->rb_left), { model: RbSavedLink::Link(iid->rb_left) });
-                                                            let near_call_right = fold(rb_saved_link(&iid->rb_right), { model: RbSavedLink::Link(iid->rb_right) });
+                                                            let near_call_right = fold(rb_saved_link(&iid->rb_right), { model: RbSavedLink::Link(parent) });
                                                             step(rb_set_parent, {});
                                                             unfold(near_call_left);
                                                             unfold(near_call_right);
@@ -2097,8 +2097,8 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                             have id->rb_right == node;
                                                             have parent->rb_right == node;
                                                             have parent->rb_left == tmp2 by { normalize() using { at(near_update, parent->rb_left == tmp2); tmp2 == nid; sibling == iid; tmp1 == sid; }; }
-                                                            have sibling->rb_right == parent by { transport(at(near_update, sibling->rb_right) == parent, sibling->rb_right == parent) using { at(near_update, sibling->rb_right) == parent; separate(memory(sibling->rb_right), memory(tmp2->__rb_parent_color)); tmp2 == nid; sibling == iid; parent == id; }; }
-                                                            have iid->rb_right == parent by { transport(at(near_update, iid->rb_right) == parent, iid->rb_right == parent) using { at(near_update, iid->rb_right) == parent; separate(memory(iid->rb_right), memory(tmp2->__rb_parent_color)); tmp2 == nid; }; }
+                                                            have iid->rb_right == parent by known();
+                                                            have sibling->rb_right == parent by { rewrite(sibling, iid); known(); }
                                                             have sibling->rb_left == tmp1;
                                                             have iid->rb_left == sid by { normalize() using { tmp1 == sid; }; }
                                                         },
@@ -3046,7 +3046,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                                     step(); // Select the nonempty near-child parent update.
                                                                     have separate(memory(parent->__rb_parent_color), memory(tmp2->__rb_parent_color));
                                                                     let near_call_left = fold(rb_saved_link(&iid->rb_left), { model: RbSavedLink::Link(iid->rb_left) });
-                                                                    let near_call_right = fold(rb_saved_link(&iid->rb_right), { model: RbSavedLink::Link(iid->rb_right) });
+                                                                    let near_call_right = fold(rb_saved_link(&iid->rb_right), { model: RbSavedLink::Link(parent) });
                                                                     step(rb_set_parent, {});
                                                                     unfold(near_call_left);
                                                                     unfold(near_call_right);
@@ -3077,8 +3077,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                                     have id->rb_right == node;
                                                                     have parent->rb_right == node;
                                                                     have parent->rb_left == tmp2 by { normalize() using { at(near_update, parent->rb_left == tmp2); tmp2 == nid; sibling == iid; tmp1 == zid; }; }
-                                                                    have iid->rb_right == parent by { transport(at(near_update, iid->rb_right) == parent, iid->rb_right == parent) using { at(near_update, iid->rb_right) == parent; separate(memory(iid->rb_right), memory(tmp2->__rb_parent_color)); tmp2 == nid; sibling == iid; parent == id; }; }
-                                                                    have iid->rb_right == parent by { transport(at(near_update, iid->rb_right) == parent, iid->rb_right == parent) using { at(near_update, iid->rb_right) == parent; separate(memory(iid->rb_right), memory(tmp2->__rb_parent_color)); tmp2 == nid; }; }
+                                                                    have iid->rb_right == parent by known();
                                                                     have iid->rb_left == tmp1;
                                                                     have iid->rb_left == zid by { normalize() using { tmp1 == zid; }; }
                                                                 },
@@ -3988,7 +3987,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                             mark near_tag;
                                                             step(); // Select the nonempty near-child parent update.
                                                             have separate(memory(parent->__rb_parent_color), memory(tmp2->__rb_parent_color));
-                                                            let near_call_left = fold(rb_saved_link(&iid->rb_left), { model: RbSavedLink::Link(iid->rb_left) });
+                                                            let near_call_left = fold(rb_saved_link(&iid->rb_left), { model: RbSavedLink::Link(parent) });
                                                             let near_call_right = fold(rb_saved_link(&iid->rb_right), { model: RbSavedLink::Link(iid->rb_right) });
                                                             step(rb_set_parent, {});
                                                             unfold(near_call_left);
@@ -4020,8 +4019,8 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                             have id->rb_left == node;
                                                             have parent->rb_left == node;
                                                             have parent->rb_right == tmp2 by { normalize() using { at(near_update, parent->rb_right == tmp2); tmp2 == nid; sibling == iid; tmp1 == sid; }; }
-                                                            have sibling->rb_left == parent by { transport(at(near_update, sibling->rb_left) == parent, sibling->rb_left == parent) using { at(near_update, sibling->rb_left) == parent; separate(memory(sibling->rb_left), memory(tmp2->__rb_parent_color)); tmp2 == nid; sibling == iid; parent == id; }; }
-                                                            have iid->rb_left == parent by { transport(at(near_update, iid->rb_left) == parent, iid->rb_left == parent) using { at(near_update, iid->rb_left) == parent; separate(memory(iid->rb_left), memory(tmp2->__rb_parent_color)); tmp2 == nid; }; }
+                                                            have iid->rb_left == parent by known();
+                                                            have sibling->rb_left == parent by { rewrite(sibling, iid); known(); }
                                                             have sibling->rb_right == tmp1;
                                                             have iid->rb_right == sid by { normalize() using { tmp1 == sid; }; }
                                                         },
@@ -4966,7 +4965,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                                     mark near_tag;
                                                                     step(); // Select the nonempty near-child parent update.
                                                                     have separate(memory(parent->__rb_parent_color), memory(tmp2->__rb_parent_color));
-                                                                    let near_call_left = fold(rb_saved_link(&iid->rb_left), { model: RbSavedLink::Link(iid->rb_left) });
+                                                                    let near_call_left = fold(rb_saved_link(&iid->rb_left), { model: RbSavedLink::Link(parent) });
                                                                     let near_call_right = fold(rb_saved_link(&iid->rb_right), { model: RbSavedLink::Link(iid->rb_right) });
                                                                     step(rb_set_parent, {});
                                                                     unfold(near_call_left);
@@ -4998,8 +4997,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                                     have id->rb_left == node;
                                                                     have parent->rb_left == node;
                                                                     have parent->rb_right == tmp2 by { normalize() using { at(near_update, parent->rb_right == tmp2); tmp2 == nid; sibling == iid; tmp1 == zid; }; }
-                                                                    have iid->rb_left == parent by { transport(at(near_update, iid->rb_left) == parent, iid->rb_left == parent) using { at(near_update, iid->rb_left) == parent; separate(memory(iid->rb_left), memory(tmp2->__rb_parent_color)); tmp2 == nid; sibling == iid; parent == id; }; }
-                                                                    have iid->rb_left == parent by { transport(at(near_update, iid->rb_left) == parent, iid->rb_left == parent) using { at(near_update, iid->rb_left) == parent; separate(memory(iid->rb_left), memory(tmp2->__rb_parent_color)); tmp2 == nid; }; }
+                                                                    have iid->rb_left == parent by known();
                                                                     have iid->rb_right == tmp1;
                                                                     have iid->rb_right == zid by { normalize() using { tmp1 == zid; }; }
                                                                 },
