@@ -4467,9 +4467,11 @@ fn raise_kernel_term_dispatch(
         Node::ProgramParameter { .. } => unreachable!("parameter envelope was peeled"),
         Node::PointerCall { call, .. } => recurse(call)?,
         Node::ArrayReference { point, pointer, .. } => {
-            synthesize_at_memory(point.shared_memory(), state, |selected| {
+            let raise = |selected: &ExecutionState| {
                 raise_kernel_term(pointer, parameter_binding, selected, bound_variables)
-            })?
+            };
+            synthesize_at_program_point(point, state, raise)
+                .or_else(|| synthesize_at_memory(point.shared_memory(), state, raise))?
         }
 
         Node::PointerRead { value, .. }
@@ -6352,6 +6354,39 @@ fn synthesize_surface_call(
     Some(SurfaceTerm::Call {
         name: generic_instance_source_name(name).into(),
         arguments,
+    })
+}
+
+/// Name the originating view when the argument retained a recorded point.
+fn synthesize_at_program_point(
+    point: &crate::kernel::ProgramPoint,
+    state: &ExecutionState,
+    raise: impl Fn(&ExecutionState) -> Option<SurfaceTerm>,
+) -> Option<SurfaceTerm> {
+    let id = point.id()?;
+    let matches = |state: &ExecutionState| {
+        let actual = state.program_point();
+        actual.id() == Some(id)
+            && actual.shared_memory().arena_id() == point.shared_memory().arena_id()
+    };
+    if matches(state) {
+        return raise(state);
+    }
+    if let Some(entry) = SYNTHESIS_ENTRY_STATE.with(|slot| slot.borrow().clone())
+        && matches(&entry)
+    {
+        return Some(SurfaceTerm::Old(Box::new(raise(&entry)?)));
+    }
+    let (selector, recorded) = SYNTHESIS_RECORDED_POINTS.with(|slot| {
+        let slot = slot.borrow();
+        let points = slot.as_ref()?;
+        let selector = points.point_name(id)?;
+        Some((selector.clone(), points.get_exact(selector)?.clone()))
+    })?;
+    matches(&recorded).then_some(())?;
+    Some(SurfaceTerm::At {
+        selector,
+        expression: Box::new(raise(&recorded)?),
     })
 }
 

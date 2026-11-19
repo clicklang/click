@@ -96,6 +96,11 @@ equation that raises and lowers at the same version point. Read selection
 through unrelated symbolic addresses needs a checked way to identify the
 affected storage.
 
+Array arguments can skip a recorded suffix of disjoint local stores and
+declarations. The block selector still handles other effects, and native
+array arguments still use the memory key. The scalar naming walk is a
+separate caller of the same block routine.
+
 ## Reading the inventory
 
 - **Scoped evidence:** named tests cover particular routes and growth axes;

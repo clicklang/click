@@ -8454,19 +8454,19 @@ fn evaluate_spec_pure_function_argument_paths_in(
             evaluate_spec_algebraic_argument_paths_in(scope, expression, assumptions, budget)
         }
         SpecPureFunctionArgument::ArrayRef {
-            point: memory,
+            point: source,
             pointer,
             element_type,
         } => {
-            let memory = match memory {
-                SpecPoint::Current => state.memory(),
+            let source = match source {
+                SpecPoint::Current => state.program_point(),
                 SpecPoint::FunctionEntry | SpecPoint::LoopEntry => {
                     let Some(entry) = loop_entry_state else {
                         return Ok(Vec::new());
                     };
-                    entry.memory()
+                    entry.program_point()
                 }
-                SpecPoint::At(point) => point.memory(),
+                SpecPoint::At(point) => point.clone(),
             };
             Ok(evaluate_spec_expression_paths_with_algebraic_bindings_in(
                 scope,
@@ -8478,18 +8478,18 @@ fn evaluate_spec_pure_function_argument_paths_in(
             .map(|path| {
                 // Preserve the existing selected state; retain the pointer
                 // expression separately from its native descriptor reading.
-                let memory = array_ref_argument_memory(memory, &path.value.native());
+                let version = array_ref_argument_point(&source, &path.value.native());
                 let value = if budget.machine_result_production_disabled
                     || !path.value.program_type().is_pointer()
                 {
                     SpecCallArgument::Native(PureFunctionArgument::ArrayRef {
-                        memory,
+                        memory: version.memory().clone(),
                         pointer: path.value.into_native(),
                         element_type: *element_type,
                     })
                 } else {
                     SpecCallArgument::Shared(KernelTerm::shared_array_reference(
-                        ProgramPoint::at(&crate::kernel::intern_memory_ref(&memory)),
+                        version,
                         path.value.common_operand(),
                         *element_type,
                     ))
@@ -8513,17 +8513,24 @@ fn evaluate_spec_pure_function_argument_paths_in(
 /// argument that is not a pointer at all keeps the live state, which is
 /// always sound and merely as fragile as before; so does a block the walk
 /// cannot separate from anything, because it then crosses no edge.
-fn array_ref_argument_memory(memory: &SymbolicMemory, pointer: &ProgramValue) -> SymbolicMemory {
+fn array_ref_argument_point(source: &ProgramPoint, pointer: &ProgramValue) -> ProgramPoint {
     let ProgramValue::Pointer(pointer) = pointer else {
-        return memory.clone();
+        return source.clone();
     };
-    let interned = crate::kernel::intern_memory(memory.clone());
-    crate::kernel::resource_tracker::last_same_version_point(
-        crate::kernel::resource_tracker::TrackedResource::Block(&pointer.address().base),
-        &crate::kernel::resource_tracker::ProgramPoint::at(&interned),
-    )
-    .map(|point| point.memory().clone())
-    .unwrap_or_else(|| memory.clone())
+    let block = &pointer.address().base;
+    let start = source.array_read_start(block);
+    let version = crate::kernel::resource_tracker::last_same_version_point(
+        crate::kernel::resource_tracker::TrackedResource::Block(block),
+        &start,
+    );
+    // The legacy block selector has only a memory view. If it stops at the
+    // recorded start itself, keep the point from which that view came.
+    match version {
+        Some(version) if version.shared_memory().arena_id() != start.shared_memory().arena_id() => {
+            version
+        }
+        _ => start,
+    }
 }
 
 pub(in crate::kernel) fn program_value_bitvector_term(value: &ProgramValue) -> Option<MachineTerm> {
