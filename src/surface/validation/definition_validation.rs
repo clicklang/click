@@ -1662,6 +1662,9 @@ fn validate_resource_fact_memory_read_authority(
         ))
     })?;
     let array_refs = pure_theorem_array_refs(definition.parameters(), &values, &memory);
+    // The definition is checked over one memory: start one path there and
+    // evaluate every fact and read at that point.
+    let at = crate::kernel::ProgramPoint::starting_at(&memory);
     let mut scalar_assumptions = formation
         .recorded
         .into_iter()
@@ -1675,7 +1678,7 @@ fn validate_resource_fact_memory_read_authority(
             body_fact,
             predicate_definitions,
             ContractEnvironment::new(&values, &array_refs),
-            &memory,
+            &at,
             spec_definitions,
             &mut Vec::new(),
             &mut scalar_assumptions,
@@ -1684,11 +1687,12 @@ fn validate_resource_fact_memory_read_authority(
     }
     let empty_memory = SymbolicMemory::new();
     let empty_array_refs = pure_theorem_array_refs(definition.parameters(), &values, &empty_memory);
+    let empty_at = crate::kernel::ProgramPoint::starting_at(&empty_memory);
     collect_resource_fact_scalar_assumptions_from_proposition(
         fact,
         predicate_definitions,
         ContractEnvironment::new(&values, &empty_array_refs),
-        &empty_memory,
+        &empty_at,
         spec_definitions,
         &mut Vec::new(),
         &mut scalar_assumptions,
@@ -1705,7 +1709,7 @@ fn validate_resource_fact_memory_read_authority(
             composite_body.contains(),
             &assumptions,
             ContractEnvironment::new(&values, &array_refs),
-            &memory,
+            &at,
             spec_definitions,
         );
         if !analysis.covered {
@@ -1724,7 +1728,7 @@ fn collect_resource_fact_scalar_assumptions_from_proposition(
     proposition: &ClickProposition,
     predicate_definitions: &BTreeMap<&str, &PredicateDefinition>,
     contract_environment: ContractEnvironment<'_>,
-    memory: &SymbolicMemory,
+    at: &crate::kernel::ProgramPoint,
     spec_definitions: SpecDefinitions<'_>,
     visited_predicates: &mut Vec<String>,
     assumptions: &mut Vec<ResourceFactScalarAssumption>,
@@ -1737,7 +1741,7 @@ fn collect_resource_fact_scalar_assumptions_from_proposition(
         | ClickProposition::Loadable { .. }
         | ClickProposition::Defined { .. } => {
             let source = describe_click_proposition(proposition);
-            let state = ExecutionState::new().with_memory(memory.clone());
+            let state = ExecutionState::at_point(at);
             if let Ok(proposition) =
                 crate::surface::proof::lower_fixed_state_proposition_through_kernel(
                     proposition,
@@ -1759,7 +1763,7 @@ fn collect_resource_fact_scalar_assumptions_from_proposition(
                 proposition,
                 predicate_definitions,
                 contract_environment,
-                memory,
+                at,
                 spec_definitions,
                 visited_predicates,
                 assumptions,
@@ -1774,7 +1778,7 @@ fn collect_resource_fact_scalar_assumptions_from_proposition(
                 left,
                 predicate_definitions,
                 contract_environment,
-                memory,
+                at,
                 spec_definitions,
                 visited_predicates,
                 assumptions,
@@ -1784,7 +1788,7 @@ fn collect_resource_fact_scalar_assumptions_from_proposition(
                 right,
                 predicate_definitions,
                 contract_environment,
-                memory,
+                at,
                 spec_definitions,
                 visited_predicates,
                 assumptions,
@@ -1812,7 +1816,7 @@ fn collect_resource_fact_scalar_assumptions_from_proposition(
                 &body,
                 predicate_definitions,
                 contract_environment,
-                memory,
+                at,
                 spec_definitions,
                 visited_predicates,
                 assumptions,
@@ -2969,7 +2973,7 @@ fn analyze_resource_fact_read_authority(
     contained: &[ResourceClause],
     assumptions: &PureFactContext,
     contract_environment: ContractEnvironment<'_>,
-    memory: &SymbolicMemory,
+    at: &crate::kernel::ProgramPoint,
     spec_definitions: SpecDefinitions<'_>,
 ) -> ResourceFactReadAuthorityAnalysis {
     let mut notes = Vec::new();
@@ -3009,7 +3013,7 @@ fn analyze_resource_fact_read_authority(
                     end,
                     assumptions,
                     contract_environment,
-                    memory,
+                    at,
                     spec_definitions,
                 )
             }) {
@@ -3024,7 +3028,7 @@ fn analyze_resource_fact_read_authority(
                 &read.index,
                 assumptions,
                 contract_environment,
-                memory,
+                at,
                 spec_definitions,
             ) {
                 return ResourceFactReadAuthorityAnalysis {
@@ -3045,7 +3049,7 @@ fn analyze_resource_fact_read_authority(
             read,
             assumptions,
             contract_environment,
-            memory,
+            at,
         ) {
             return ResourceFactReadAuthorityAnalysis {
                 covered: true,
@@ -3102,9 +3106,9 @@ fn evaluated_segment_covers_resource_fact_read(
     read: &ResourceFactRead,
     assumptions: &PureFactContext,
     contract_environment: ContractEnvironment<'_>,
-    memory: &SymbolicMemory,
+    at: &crate::kernel::ProgramPoint,
 ) -> bool {
-    let state = ExecutionState::new().with_memory(memory.clone());
+    let state = ExecutionState::at_point(at);
     let evaluate = |expression: &ProgramExpression| {
         crate::surface::proof::evaluate_program_expression_through_kernel(
             expression,
@@ -3149,10 +3153,10 @@ fn symbolic_segment_covers_range(
     required_end: &ProgramExpression,
     assumptions: &PureFactContext,
     contract_environment: ContractEnvironment<'_>,
-    memory: &SymbolicMemory,
+    at: &crate::kernel::ProgramPoint,
     spec_definitions: SpecDefinitions<'_>,
 ) -> bool {
-    let state = ExecutionState::new().with_memory(memory.clone());
+    let state = ExecutionState::at_point(at);
     let evaluate = |expression: &ProgramExpression| {
         crate::surface::proof::evaluate_fixed_state_expression_through_kernel(
             &ContractExpression::ProgramExpression(expression.clone()),
@@ -3197,10 +3201,10 @@ fn symbolic_segment_covers_index(
     index: &ProgramExpression,
     assumptions: &PureFactContext,
     contract_environment: ContractEnvironment<'_>,
-    memory: &SymbolicMemory,
+    at: &crate::kernel::ProgramPoint,
     spec_definitions: SpecDefinitions<'_>,
 ) -> bool {
-    let state = ExecutionState::new().with_memory(memory.clone());
+    let state = ExecutionState::at_point(at);
     let evaluate = |expression: &ProgramExpression| {
         crate::surface::proof::evaluate_fixed_state_expression_through_kernel(
             &ContractExpression::ProgramExpression(expression.clone()),
@@ -3419,7 +3423,7 @@ mod read_authority_tests {
             contained,
             assumptions,
             ContractEnvironment::new(values, &BTreeMap::new()),
-            &SymbolicMemory::new(),
+            &crate::kernel::ProgramPoint::starting_at(&SymbolicMemory::new()),
             SpecDefinitions::new(
                 &PredicateEnvironment::new(&[]),
                 &ClickFunctionEnvironment::new(&[]),
