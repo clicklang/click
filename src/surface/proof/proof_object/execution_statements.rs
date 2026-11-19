@@ -1352,7 +1352,7 @@ impl<'a> Proof<'a> {
             .presentation
             .surface_record
             .retained_have_facts
-            .introduced_since(&original.presentation.surface_record.retained_have_facts)
+            .suffix_since(&original.presentation.surface_record.retained_have_facts)
             .expect("obligation proofs append retained facts");
         for fact in retained {
             execution
@@ -1362,11 +1362,11 @@ impl<'a> Proof<'a> {
                     proven.presentation.surface_propositions.surface(&fact)?,
                     &fact,
                 )?;
-            execution.presentation.surface_record.retained_have_facts = execution
+            execution
                 .presentation
                 .surface_record
                 .retained_have_facts
-                .with_kernel_checked_fact(fact);
+                .push(fact);
         }
         if prepared_fold {
             candidate.state = candidate

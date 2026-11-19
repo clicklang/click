@@ -216,7 +216,7 @@ mod tests {
         let left = Proposition::condition_is(condition(401), true);
         let right = Proposition::condition_is(condition(402), true);
         let pair = Proposition::And(Box::new(left.clone()), Box::new(right.clone()));
-        let root = PureFactStore::from_statement_facts(std::slice::from_ref(&original), None, None);
+        let root = PureFactStore::from_ordered(std::slice::from_ref(&original));
         let branch = root.with_kernel_checked_fact(pair.clone());
         let view = PureFactList::from_produced_store(branch.clone());
         assert!(view.facts.shares_exact_index_with(&branch));

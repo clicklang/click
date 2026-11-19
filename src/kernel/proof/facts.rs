@@ -1046,7 +1046,7 @@ impl PureFactStore {
         if selected.len() == self.len() {
             return self.clone();
         }
-        Self::from_statement_facts(&selected, None, Some(self))
+        Self::from_source_retaining_reservations(&selected, Some(self))
     }
 
     /// Show only the statement's explicit premises while using the incoming
@@ -1061,28 +1061,6 @@ impl PureFactStore {
             view = view.with_list_fact(fact);
         }
         view
-    }
-
-    pub(crate) fn from_statement_facts(
-        facts: &[Proposition],
-        context: Option<PureFactContext>,
-        reservations: Option<&Self>,
-    ) -> Self {
-        struct Selected<'a> {
-            facts: &'a [Proposition],
-            context: Option<PureFactContext>,
-        }
-        impl PropositionSource for Selected<'_> {
-            fn propositions(&self) -> impl Iterator<Item = &Proposition> {
-                self.facts.iter()
-            }
-            fn pure_context(&self) -> PureFactContext {
-                self.context
-                    .clone()
-                    .unwrap_or_else(|| self.facts.pure_context())
-            }
-        }
-        Self::from_source_retaining_reservations(&Selected { facts, context }, reservations)
     }
 
     /// Bounded newest-first view for diagnostics. This deliberately exposes
