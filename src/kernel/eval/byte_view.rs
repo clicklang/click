@@ -145,6 +145,7 @@ pub(in crate::kernel) fn indexed_uint32_byte_read(
         let version = point.indexed_integer_version(&address, LoadKind::UInt8)?;
         let path = super::memory_loads::evaluate_indexed_read(
             version,
+            point,
             address,
             ProgramType::UInt8,
             facts,

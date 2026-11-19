@@ -1009,6 +1009,15 @@ impl ProgramPoint {
         }
     }
 
+    /// Read applications use the execution version when known. Legacy views
+    /// retain their existing read identity across pure memory materialization.
+    pub(in crate::kernel) fn congruence_read_key(&self) -> ReadKey {
+        match self.read_version_id() {
+            Some(id) => self.read_key_at(id),
+            None => ReadKey::Memory(self.memory.read_identity()),
+        }
+    }
+
     pub(in crate::kernel) fn observation_key(&self) -> ReadKey {
         match self.id() {
             Some(id) => self.read_key_at(id),

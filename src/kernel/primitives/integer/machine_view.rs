@@ -1,9 +1,9 @@
 //! Borrowed root views of machine operands. Inspecting a shared root never
 //! requests its boxed expansion; child observations retain child handles.
 use super::*;
-use crate::kernel::MachineCastSpelling;
 use crate::kernel::constant_u32;
 use crate::kernel::int32_constant;
+use crate::kernel::{MachineCastSpelling, ProgramPoint};
 use crate::kernel::{constant_i64, int64_constant};
 
 // Only written machine variables are cached. Registered-load dependencies are
@@ -691,14 +691,18 @@ impl<'a> MachineOperandView<'a> {
     /// Native compatibility view of a selected read. Shared addresses are adapted
     /// once at the read leaf; surrounding arithmetic is never exported.
     pub(crate) fn read(self) -> Option<(&'a SharedMemory, &'a Address, LoadKind)> {
-        if let Some(value) = self.retained_native_input() {
-            return Self::Legacy(value).read();
-        }
+        let (point, address, kind) = self.read_point()?;
+        Some((point.shared_memory(), address, kind))
+    }
 
+    pub(in crate::kernel) fn read_point(self) -> Option<(&'a ProgramPoint, &'a Address, LoadKind)> {
+        if let Some(value) = self.retained_native_input() {
+            return Self::Legacy(value).read_point();
+        }
         match self {
-            Self::Shared(term) => Self::Legacy(term.machine_read_leaf()?).read(),
-            Self::Legacy(MachineTerm::MemoryLoad(memory, address, kind)) => {
-                Some((memory.shared_memory(), address, *kind))
+            Self::Shared(term) => Self::Legacy(term.machine_read_leaf()?).read_point(),
+            Self::Legacy(MachineTerm::MemoryLoad(point, address, kind)) => {
+                Some((point, address, *kind))
             }
             Self::Legacy(_) => None,
         }

@@ -131,7 +131,7 @@ pub(super) use memory_loads::{
 };
 pub(crate) use memory_loads::{
     is_selected_scalar_read, latest_scalar_read_observation, registered_scalar_read_term,
-    scalar_read_for_exact_cell, scalar_read_observation,
+    scalar_read_for_exact_cell, scalar_read_for_exact_cell_at, scalar_read_observation,
 };
 pub(crate) use memory_loads::{latest_pointer_read_observation, latest_wide_load_observation};
 #[cfg(test)]

@@ -887,7 +887,10 @@ pub(in crate::kernel) fn load_state_and_pointer(
     // Checking follows the recorded observation, even when structural version
     // selection retained an earlier representative state in the term.
     Some((
-        (*read.origin.unwrap_or(read.memory)).clone(),
+        (*read
+            .origin
+            .unwrap_or_else(|| read.point.into_shared_memory()))
+        .clone(),
         read.pointer,
         read.kind,
     ))
@@ -2849,16 +2852,16 @@ fn collect_memory_read_descriptor(
     width: Option<u32>,
     seen_integers: &mut BTreeSet<u64>,
 ) -> Result<(), String> {
-    let (memory, pointer, kind) = operand.read().expect("read descriptor");
+    let (point, pointer, kind) = operand.read_point().expect("read descriptor");
     // Produced reads own an access width and observation point. Their numeric
     // interpretation can be wider (byte promotion) without widening the read.
     // Explicit unmaterialized descriptors retain their caller-supplied width.
-    let observation = crate::kernel::eval::is_selected_scalar_read(memory, pointer, kind)
+    let observation = crate::kernel::eval::is_selected_scalar_read(point, pointer, kind)
         .then(|| crate::kernel::eval::scalar_read_observation(operand).expect("selected read"));
     let memory = observation
         .as_ref()
-        .map(|read| read.origin.as_ref().unwrap_or(&read.memory))
-        .unwrap_or(memory);
+        .map(|read| read.origin.as_ref().unwrap_or(read.point.shared_memory()))
+        .unwrap_or(point.shared_memory());
     let width = observation.as_ref().map(|read| read.bytes).or(width);
     if MemoryStateIdentity::of(memory.memory()) == MemoryStateIdentity::of(current_memory) {
         let width = width
