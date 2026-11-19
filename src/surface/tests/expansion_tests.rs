@@ -969,7 +969,7 @@ fn cases_obligation_expands_before_execution_arms() {
         );
     let explicit = after.replace(
         "            cases {",
-        "            have x == 0 or x == 1 by { known(); known(); }\n            cases {",
+        "            have x == 0 or x == 1 by { rewrite(1, y); known(); }\n            cases {",
     );
     let result_cases = after
         .replace("x == 0 =>", "result == 0 =>")
