@@ -1,19 +1,14 @@
+import "shape.interface.click";
 verifying "shapes.rs";
 
-// The interface of `area`: what a call through `Shape` may assume of any
-// implementation. Its receiver is a value of unknown type, so it reads
-// nothing through `self`. `twice` has a default body, written with its
-// proof: verified once, its calls of `area` assuming `area`'s interface, and
-// its contract is `twice`'s interface, which an implementation that writes
-// its own `twice` refines.
+// Verify the default body of `twice` once. Its calls of `area` use the
+// imported contract, and overrides of `twice` refine this contract.
 trait trait_methods::Shape {
-    fn area(&self, scale: i32) -> i32 {
-        requires 0 <= scale and scale <= 1000;
-        ensures scale < result and result <= 3001;
-    }
     fn twice(&self, scale: i32) -> i32 {
         requires 0 <= scale and scale <= 1000;
         ensures result <= 6002;
+    } by {
+        step_until(call(trait_methods::Shape::area, 0));
     }
 }
 

@@ -638,15 +638,17 @@ method-interface rules below
 ### Trait method interfaces
 
 A method of a crate trait, `pub trait Shape { fn area(&self, scale: i32) ->
-i32; }`, has an interface: the sidecar's `trait` block states it, with the
-trait named by its path and no proof, as an `extern fn` is declared,
+i32; }`, has a contract in a `trait` block. Put required methods in an
+imported `.interface.click` file and name the trait by its path, as in
 `trait trait_methods::Shape { fn area(&self, scale: i32) -> i32 { requires 0
 <= scale and scale <= 1000; ensures scale < result and result <= 3001; } }`.
+A sidecar verifying a default method declares that method separately in
+its own `trait` block.
 
 A call through a trait bound, `shape.area(scale)` for `shape: &T` and
-`T: Shape`, or through a `&dyn Shape`, is checked against the interface, as
-a call of an `extern fn` is: its caller establishes the `requires` and has
-only the `ensures`. The head writes a bound parameter as the source does,
+`T: Shape`, or through a `&dyn Shape`, uses that contract. The caller
+establishes the `requires` and may use the `ensures`. The head writes a
+bound parameter as the source does,
 `fn trait_methods::total<T: trait_methods::Shape>(shape: &T, scale: i32)`
 or `shape: &dyn trait_methods::Shape`. A call on a known type,
 `square.area(scale)`, is a call of that type's implementation, under its
@@ -670,9 +672,9 @@ refused, naming both, as is one with no contract. Without a `trait` block,
 a call through the trait has no contract.
 
 A default method, `fn twice(&self, scale: i32) -> i32 { self.area(scale) +
-self.area(scale) }` in the trait, has its interface written in the `trait`
-block with the proof of its default body: `fn twice(&self, scale: i32) ->
-i32 { requires ...; ensures result <= 6002; }`, with the proof omitted.
+self.area(scale) }` in the trait, can be verified with its contract in a
+sidecar `trait` block: `fn twice(&self, scale: i32) ->
+i32 { requires ...; ensures result <= 6002; } by { ... }`.
 The body is verified once, for every type: a call of `area` in it is a call
 through the trait, under `area`'s interface, and with object state it holds
 the object as any method of the trait does. A call of `twice` through a

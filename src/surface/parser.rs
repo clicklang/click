@@ -2582,16 +2582,13 @@ impl Parser {
             }
         }
         // A crate trait method's implementation, or a C++ override, inherits
-        // its interface, which the sidecar may declare before or after it: a
-        // trait's method, external or a default method with its proof, or the
-        // virtual method overridden, whose contract a call through it assumes.
+        // its interface from the current module or its imports. A call
+        // through a trait or a virtual method uses that same contract.
         let cpp = self.language == SourceLanguage::Cpp;
         // Imported blocks are already parsed in their own module's scope.
-        let imported_cpp_method = |name: &str| {
+        let imported_method = |name: &str| {
             imported_callees.iter().find_map(|callee| match callee {
-                ImportedCallee::Function(block) if cpp && block.signature().name() == name => {
-                    Some(*block)
-                }
+                ImportedCallee::Function(block) if block.signature().name() == name => Some(*block),
                 _ => None,
             })
         };
@@ -2627,7 +2624,7 @@ impl Parser {
             let Some(interface) = function_blocks
                 .iter()
                 .find(|block| block.signature().name() == interface)
-                .or_else(|| imported_cpp_method(&interface))
+                .or_else(|| imported_method(&interface))
                 .cloned()
             else {
                 continue;
