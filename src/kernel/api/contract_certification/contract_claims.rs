@@ -507,9 +507,9 @@ pub fn program_function_outcomes_definitionally_equal(
                 assumptions,
             ) || resource_contexts_definitionally_equal(
                 function,
-                left_state.memory(),
+                &left_state.program_point(),
                 left_state.resources(),
-                right_state.memory(),
+                &right_state.program_point(),
                 right_state.resources(),
                 assumptions,
             )

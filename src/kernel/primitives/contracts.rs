@@ -4245,9 +4245,9 @@ impl ExecutionEnvironment {
                 && rule.symbolic_entry_state.memory == state.memory
                 && crate::kernel::api::contract_certification::resource_contexts_definitionally_equal_with_definitions(
                     &rule.composite_resource_definitions,
-                    rule.symbolic_entry_state.memory(),
+                    &rule.symbolic_entry_state.program_point(),
                     rule.symbolic_entry_state.resources(),
-                    state.memory(),
+                    &state.program_point(),
                     state.resources(),
                     assumptions,
                 );
