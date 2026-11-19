@@ -422,7 +422,12 @@ fn bounded_comparison_operand(
         O::ShiftRight | O::ShiftLeft
             if operator == O::ShiftRight || !format.format().is_signed() =>
         {
-            if super::bounds::constant_shift_count(arguments[1])? >= width {
+            let variable_shift = in_conditional
+                && arguments
+                    .iter()
+                    .all(|argument| argument.variable().is_some());
+            // Evaluation checks the shift domain before a fact may use it.
+            if !variable_shift && super::bounds::constant_shift_count(arguments[1])? >= width {
                 return None;
             }
             false
