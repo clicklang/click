@@ -3368,10 +3368,9 @@ fn execute_verified_function_applications_with_suspension(
                 caller_state.memory(),
             )
         };
-        let write_requirements = if suspended.is_some() || !has_exact_write_ranges {
-            // Worker admission has its own effect rules. Folded or guarded
-            // projections can widen an effect to a span containing bytes
-            // the callee cannot write.
+        let write_requirements = if !has_exact_write_ranges {
+            // An unresolved projection can widen an effect to bytes the
+            // callee cannot write. Keep its conservative admission check.
             if let Some(diagnostic) = entry_state.loan_ledger().and_then(|ledger| {
                 transfer.memory_effects.iter().find_map(|range| {
                     ledger.memory_access_refusal(
@@ -3395,7 +3394,11 @@ fn execute_verified_function_applications_with_suspension(
                 &transfer.memory_effects,
                 call_site,
                 interface.contract_requires().len(),
-                "verified call write separation",
+                if suspended.is_some() {
+                    "suspended worker write separation"
+                } else {
+                    "verified call write separation"
+                },
             )
         };
         // A checked mutex-use call may execute runtime lock/unlock operations.
@@ -3442,6 +3445,9 @@ fn execute_verified_function_applications_with_suspension(
                 mutex_storage_effects.push(range);
             }
         }
+        // A protocol summary retains the storage coordinates from the
+        // selected authority. Until those coordinates have a checked
+        // caller-side spelling, keep the conservative guard for this effect.
         if let Some(diagnostic) = mutex_storage_effects.iter().find_map(|range| {
             transfer
                 .stable_view_plan
@@ -3454,11 +3460,13 @@ fn execute_verified_function_applications_with_suspension(
                     )
                 })
                 .or_else(|| {
-                    entry_state.stable_loan_memory_access_refusal(
-                        range,
-                        &effective_assumptions,
-                        LoanRefusalOperation::MemoryAccess,
-                    )
+                    entry_state.loan_ledger().and_then(|ledger| {
+                        ledger.memory_access_refusal(
+                            range,
+                            &effective_assumptions,
+                            LoanRefusalOperation::MemoryAccess,
+                        )
+                    })
                 })
         }) {
             paths.push(FunctionPath::new(
@@ -3683,7 +3691,8 @@ fn execute_verified_function_applications_with_suspension(
                             .into_certified(),
                         );
                     }
-                    post_state.set_memory_directly(successor.memory.clone());
+                    // The helper's successor made this memory: stand where it stands.
+                    post_state.keep_memory_of(&successor);
                     post_state.mutex_ledger = successor.mutex_ledger.clone();
                     post_state.opaque_mutex_acquisitions =
                         successor.opaque_mutex_acquisitions.clone();
@@ -4586,11 +4595,6 @@ fn execute_verified_function_applications_with_suspension(
                     &output_resources,
                     interface,
                     &allocation_assumptions,
-                    if suspended.is_some() {
-                        post_state.loan_ledger()
-                    } else {
-                        None
-                    },
                     caller_state,
                     &post_state,
                 )
@@ -4808,6 +4812,7 @@ fn execute_verified_function_applications_with_suspension(
                     })
                 && worker_effects
                     .iter()
+                    .chain(&retired_allocations)
                     .all(|range| is_external_memory_pointer(range.base()))
                 && output_resources.facts().iter().all(|fact| match fact {
                     ResourceFact::Own(Resource::Memory(range), quantity) => {
@@ -4846,6 +4851,19 @@ fn execute_verified_function_applications_with_suspension(
                     deferred: deferred_exchange.clone(),
                 })
             };
+            // The checked partition has already separated projected writes
+            // from views issued to this worker. A whole allocation may
+            // exceed that projection, so retirement also protects the loans
+            // opened by the worker's entry transfer.
+            obligations.extend(write_requirements);
+            obligations.extend(verified_call_loan_requirements(
+                entry_state.loan_ledger(),
+                &retired_allocations,
+                call_site,
+                interface.contract_requires().len() + transfer.memory_effects.len(),
+                "suspended worker allocation retirement separation",
+            ));
+            worker_effects.extend(retired_allocations);
             completions.push((
                 super::threads::WorkerCompletion::checked(
                     plan,
@@ -5127,15 +5145,13 @@ fn execute_verified_function_applications_with_suspension(
         // The retirement ranges are the consumed allocation tokens at
         // entry. Return facts may decide continuity, but they cannot prove
         // that retiring one of those allocations was permitted.
-        if suspended.is_none() {
-            obligations.extend(verified_call_loan_requirements(
-                entry_state.loan_ledger(),
-                &retired_allocations,
-                call_site,
-                interface.contract_requires().len() + transfer.memory_effects.len(),
-                "verified call allocation retirement separation",
-            ));
-        }
+        obligations.extend(verified_call_loan_requirements(
+            entry_state.loan_ledger(),
+            &retired_allocations,
+            call_site,
+            interface.contract_requires().len() + transfer.memory_effects.len(),
+            "verified call allocation retirement separation",
+        ));
         paths.push(FunctionPath {
             outcome,
             facts,
@@ -5344,7 +5360,8 @@ fn exceptional_direct_function_path(
             }
         };
     let mut throw_state = caller_state.clone();
-    throw_state.set_memory(memory);
+    // The thrown memory is the post state's: continue its path.
+    throw_state.set_memory_of(&post_state);
     refresh_call_written_locals(
         &mut throw_state,
         &transfer.memory_effects,
@@ -5740,7 +5757,7 @@ fn prepare_verified_function_call<'a>(
                         .is_some_and(KernelTerm::is_shared_machine_operand)
             });
     crate::instrumentation::record_deterministic_work(parameters.len());
-    let (argument_values, argument_obligations) = if retains_words {
+    let (argument_values, mut argument_obligations) = if retains_words {
         (
             VerifiedCallArguments::BoundWords,
             arguments_path.obligations.clone(),
@@ -5763,6 +5780,7 @@ fn prepare_verified_function_call<'a>(
         &argument_values,
         application.storage,
         &arguments_path.values,
+        &mut argument_obligations,
     ) else {
         return Ok(Err(FunctionPath::new(
             FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(
@@ -7070,7 +7088,7 @@ pub(super) fn contracts_for_pointer(
                 .iter()
                 .skip(2)
                 .map(|argument| match argument {
-                    Term::ProgramValue(value) => Some(value.clone()),
+                    Term::ProgramValue(value) => Some(value.native_compat().clone()),
                     _ => None,
                 })
                 .collect::<Option<Vec<_>>>()?;
@@ -7610,7 +7628,7 @@ fn function_contract_requirement_is_proven(
             let Some(values) = values
                 .iter()
                 .map(|value| match value {
-                    Term::ProgramValue(value) => Some(value.clone()),
+                    Term::ProgramValue(value) => Some(value.native_compat().clone()),
                     _ => None,
                 })
                 .collect::<Option<Vec<_>>>()
@@ -9975,7 +9993,6 @@ fn apply_verified_heap_allocation_delta(
     output_resources: &ResourceContext,
     interface: &FunctionContractInterface,
     assumptions: &PureFactContext,
-    worker_ledger: Option<&LoanLedger>,
     mutex_state: &ExecutionState,
     output_state: &ExecutionState,
 ) -> Result<VerifiedAllocationDelta, VerifiedAllocationDeltaError> {
@@ -10180,19 +10197,6 @@ fn apply_verified_heap_allocation_delta(
             ));
         }
         let allocation_range = bytes.byte_range(base.clone());
-        // Suspended worker admission still checks before publishing its
-        // separately recoverable state. Ordinary calls carry an obligation.
-        if let Some(diagnostic) = worker_ledger.and_then(|ledger| {
-            ledger.memory_access_refusal(
-                &allocation_range,
-                &allocation_assumptions,
-                LoanRefusalOperation::MemoryAccess,
-            )
-        }) {
-            return Err(VerifiedAllocationDeltaError::Runtime(
-                RuntimeError::LoanRefusal(Box::new(diagnostic)),
-            ));
-        }
         if let Some(error) = super::mutexes::storage_retirement_refusal(
             mutex_state,
             &allocation_range,
@@ -11613,14 +11617,23 @@ fn with_private_aggregate_parameter_owners(
     interface: &FunctionContractInterface,
 ) -> ResourceContext {
     // Only the selected parameters, never the caller's unrelated frame.
-    // Argument binding has already allocated each slot independently.
+    // Prepared C++ arguments already belong to the full expression.
+    // Their original owner remains in the caller's transfer frame unless
+    // explicitly selected by the resource interface.
     for parameter in interface.parameters() {
         crate::instrumentation::record_deterministic_work(1);
         if let Some(layout) = parameter.aggregate_layout()
-            && let Some(slot) = callee.locals.slot(parameter.binding_name().clone())
+            && let Some(LocalBinding::AggregateObject {
+                slot,
+                proof_input_for,
+                ..
+            }) = callee.locals.binding(parameter.binding_name())
+            && slot.base.prepared_argument_binding().is_none()
         {
-            resources = resources
-                .unchecked_with_fact(private_aggregate_storage_owner(slot.clone(), layout));
+            let owner = private_aggregate_storage_owner(slot.clone(), layout);
+            if proof_input_for.is_none() || resources.exact_count(&owner) == 0 {
+                resources = resources.unchecked_with_fact(owner);
+            }
         }
     }
     resources
@@ -20854,7 +20867,7 @@ fn end_function_body_automatic_lifetimes(
         if slot.base.is_local_block()
             && !(function.return_aggregate_layout().is_some()
                 && matches!(returned, Some(ProgramValue::Pointer(pointer)) if pointer.address().base == slot.base))
-            && !caller.has_block(&slot.base)
+            && (!caller.has_block(&slot.base) || state.locals.is_proof_input_slot(slot))
             && memory.has_block(&slot.base)
         {
             if !selected.insert(slot.base.clone()) {
@@ -20923,7 +20936,11 @@ pub(in crate::kernel) fn function_exit_memory(
     match value.pointer() {
         Some(pointer)
             if pointer.address().base.is_local_block()
-                && !caller_state.memory.has_block(&pointer.address().base) =>
+                && (!caller_state.memory.has_block(&pointer.address().base)
+                    || callee_state.locals.is_proof_input_slot(&Address {
+                        base: pointer.address().base.clone(),
+                        offset: AddressOffset::Constant(0),
+                    })) =>
         {
             let block = &pointer.address().base;
             if let Some(error) = callee_state.automatic_storage_loan_refusal(block) {

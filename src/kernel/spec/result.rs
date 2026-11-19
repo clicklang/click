@@ -857,6 +857,68 @@ mod condition_output_tests {
     }
 
     #[test]
+    fn evaluated_predicate_arguments_keep_the_original_program_root() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let format = MachineIntegerType::Int32;
+        let operand =
+            KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(10993746));
+        let root = KernelTerm::machine_binary_shared(
+            format,
+            MachineBinaryOp::Add,
+            [operand.clone(), operand],
+        );
+        let state = ExecutionState::new().with_retained_local("x", root.clone().into());
+        let expression = SpecProposition::Predicate {
+            name: "retained_argument".into(),
+            arguments: vec![SpecPredicateArgument::Value(
+                SpecExpression::ProgramExpression(ProgramExpression::Variable("x".into())),
+            )],
+            resource_state_dependent: false,
+        };
+        let exports = KernelTermExport::machine_export_count();
+        let paths = lower_spec_proposition_at_state_with_loop_entry(
+            &state,
+            &expression,
+            None,
+            &PureFactContext::new(),
+            &mut ExecutionBudget::new(),
+        )
+        .unwrap();
+        let [path] = paths.as_slice() else {
+            panic!("one predicate path")
+        };
+        let Proposition::Predicate { arguments, .. } = &path.proposition else {
+            panic!("predicate output")
+        };
+        let [Term::ExecutionState(_), Term::ProgramValue(argument)] = arguments.as_slice() else {
+            panic!("one evaluated program argument")
+        };
+        assert_eq!(argument.root(), Some(&root));
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        assert!(!root.has_cached_native_argument());
+        let native = ProgramValue::Int32(MachineTerm::Binary {
+            format,
+            op: MachineBinaryOp::Add,
+            left: Box::new(MachineTerm::Variable(Variable(10993746))),
+            right: Box::new(MachineTerm::Variable(Variable(10993746))),
+        });
+        let mut expected = path.proposition.clone();
+        let Proposition::Predicate { arguments, .. } = &mut expected else {
+            unreachable!()
+        };
+        arguments[1] = Term::ProgramValue(native.into());
+        assert_eq!(path.proposition, expected);
+        assert_eq!(path.proposition.cmp(&expected), std::cmp::Ordering::Equal);
+        fn hash(value: &impl std::hash::Hash) -> u64 {
+            use std::hash::Hasher;
+            let mut state = std::collections::hash_map::DefaultHasher::new();
+            value.hash(&mut state);
+            state.finish()
+        }
+        assert_eq!(hash(&path.proposition), hash(&expected));
+    }
+
+    #[test]
     fn lowered_float_classification_keeps_the_execution_value_root() {
         let _session = crate::kernel::VerificationSession::enter();
         for format in [KernelFloatType::Float32, KernelFloatType::Float64] {

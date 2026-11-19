@@ -586,6 +586,11 @@ fn prepare_pure_induction_tactics(
                     declarations(&proof_if.then_tactics, found);
                     declarations(&proof_if.else_tactics, found);
                 }
+                ProofTactic::All(all) => {
+                    for arm in &all.arms {
+                        declarations(&arm.tactics, found);
+                    }
+                }
                 ProofTactic::Both(both) => {
                     declarations(&both.left_tactics, found);
                     declarations(&both.right_tactics, found);
@@ -695,6 +700,18 @@ fn prepare_pure_induction_tactics(
                         structural,
                         active,
                     )?,
+                })),
+                ProofTactic::All(all) => Ok(ProofTactic::All(ProofAll {
+                    arms: all
+                        .arms
+                        .iter()
+                        .map(|arm| {
+                            Ok(ProofAllArm {
+                                proposition: arm.proposition.clone(),
+                                tactics: transform(&arm.tactics, hypothesis, structural, active)?,
+                            })
+                        })
+                        .collect::<Result<_, ClickError>>()?,
                 })),
                 ProofTactic::Both(both) => Ok(ProofTactic::Both(ProofBoth {
                     left_tactics: transform(&both.left_tactics, hypothesis, structural, active)?,
@@ -2019,7 +2036,7 @@ fn contract_fact_values(fact: &Proposition) -> Option<Vec<ProgramValue>> {
         .get(2..)?
         .iter()
         .map(|argument| match argument {
-            Term::ProgramValue(value) => Some(value.clone()),
+            Term::ProgramValue(value) => Some(value.native_compat().clone()),
             _ => None,
         })
         .collect()

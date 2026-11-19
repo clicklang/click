@@ -894,6 +894,10 @@ id = "language.word.both"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
+id = "language.word.positional"
+path = "reference/tactics/index.md#conjunctions"
+
+[[item]]
 id = "language.word.statement"
 path = "reference/language/grammar.md#word-index"
 
@@ -1342,7 +1346,7 @@ id = "tactic.intro"
 path = "reference/tactics/index.md#proposition-reasoning"
 
 [[item]]
-id = "tactic.both"
+id = "tactic.all"
 path = "reference/tactics/index.md#proposition-reasoning"
 
 [[item]]
@@ -1559,7 +1563,7 @@ path = "reference/tactics/index.md#proposition-reasoning"
 id = "tactic-form.intro-as"
 path = "reference/tactics/index.md#proposition-reasoning"
 [[item]]
-id = "tactic-form.both"
+id = "tactic-form.all"
 path = "reference/tactics/index.md#proposition-reasoning"
 [[item]]
 id = "tactic-form.enumerate"

@@ -438,7 +438,7 @@ fn program_update_expression(
     }
 }
 
-pub(in crate::kernel) fn memory_write_permission_outcome(
+pub(in crate::kernel) fn memory_write_storage_outcome(
     state: &ExecutionState,
     pointer: &Address,
     bytes: u32,
@@ -452,9 +452,6 @@ pub(in crate::kernel) fn memory_write_permission_outcome(
     );
     if let Some(error) = super::super::mutexes::storage_write_refusal(state, &range, assumptions) {
         return Some(StatementOutcome::RuntimeError(error));
-    }
-    if let Some(outcome) = stable_loan_memory_range_outcome(state, &range, assumptions) {
-        return Some(outcome);
     }
     memory_write_ownership_outcome(state, range, assumptions)
 }
@@ -511,22 +508,6 @@ fn memory_write_ownership_outcome(
         ));
     }
     None
-}
-
-fn stable_loan_memory_range_outcome(
-    state: &ExecutionState,
-    range: &MemoryRange,
-    assumptions: &PureFactContext,
-) -> Option<StatementOutcome> {
-    state
-        .stable_loan_memory_access_refusal(
-            range,
-            assumptions,
-            crate::kernel::LoanRefusalOperation::MemoryAccess,
-        )
-        .map(|diagnostic| {
-            StatementOutcome::RuntimeError(RuntimeError::LoanRefusal(Box::new(diagnostic)))
-        })
 }
 
 pub(in crate::kernel) fn write_program_lvalue_paths(
@@ -757,11 +738,16 @@ fn write_program_lvalue_paths_for_initialization(
             }
             if let Some(pointer) = state.locals.slot(&name) {
                 let bytes = value.program_type().byte_width();
-                let outcome = if initialization
+                let outcome = if !state.memory.has_block(&pointer.base)
                     || crate::kernel::block_is_never_address_taken_local(&pointer.base)
-                    || !state.memory.has_block(&pointer.base)
+                    || (initialization && pointer.base.is_local_block())
                 {
-                    memory_write_permission_outcome(state, pointer, bytes, &effective_assumptions)
+                    memory_write_storage_outcome(state, pointer, bytes, &effective_assumptions)
+                        .or_else(|| {
+                            state
+                                .automatic_storage_loan_refusal(&pointer.base)
+                                .map(StatementOutcome::RuntimeError)
+                        })
                 } else {
                     // Name the declared slot with the same carrier as `&name`.
                     let range = MemoryRange::from_pointer_value(
@@ -1501,7 +1487,7 @@ fn execute_program_aggregate_copy_paths(
                         &mut obligations,
                     )
                 }
-                AggregateCopyDestination::ResultTemporary => memory_write_permission_outcome(
+                AggregateCopyDestination::ResultTemporary => memory_write_storage_outcome(
                     state,
                     target_pointer.address(),
                     layout.size_bytes(),
@@ -3777,6 +3763,13 @@ pub(in crate::kernel) fn end_scope_automatic_lifetimes(
             continue;
         };
         if slot.base.is_local_block() && memory.has_block(&slot.base) {
+            if slot.base.prepared_argument_binding().is_some()
+                && let Some(resource) = state.resources.prepared_argument_resource_name(&slot.base)
+            {
+                return Err(RuntimeError::FunctionContract(format!(
+                    "C++ by-value argument still holds `{resource}` at the end of the full expression"
+                )));
+            }
             if let Some(error) = state.population_storage_retirement_refusal(&slot.base) {
                 return Err(error);
             }
@@ -5683,8 +5676,8 @@ pub(in crate::kernel) fn assertion_truthiness_obligation(
     label: Option<&str>,
 ) -> ProofObligation {
     let obligation = ProofObligation::verification_condition(Proposition::Equal(
-        Term::ProgramValue(value.clone()),
-        Term::ProgramValue(int32(1)),
+        Term::ProgramValue(value.clone().into()),
+        Term::ProgramValue(int32(1).into()),
     ))
     .with_assertion_failure();
     match label {

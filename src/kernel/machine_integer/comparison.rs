@@ -367,14 +367,17 @@ fn bounded_comparison_operand(
     if in_conditional
         && let Some((spelling, source, destination, child)) = operand.cast()
         && observation.format().bits() == destination.format().bits()
-        && matches!(
+        && (matches!(
             spelling,
             crate::kernel::MachineCastSpelling::Int64From32
                 | crate::kernel::MachineCastSpelling::Int64FromUInt32
                 | crate::kernel::MachineCastSpelling::UInt64FromInt32
                 | crate::kernel::MachineCastSpelling::UInt64From32
                 | crate::kernel::MachineCastSpelling::UInt32From64
-        )
+        ) || (child.variable().is_some()
+            && (spelling == crate::kernel::MachineCastSpelling::UInt64FromInt64
+                || (spelling == crate::kernel::MachineCastSpelling::Generic
+                    && crate::kernel::is_sign_cast32(source, destination)))))
     {
         crate::instrumentation::record_deterministic_work(1);
         return Some(MachineTerm::cast_node(
@@ -446,10 +449,28 @@ fn bounded_comparison_operand(
     })
 }
 
-/// A conditional with a Boolean variable or atomic comparison guard is a
-/// fixed-size native comparison atom. Never traverse an arithmetic DAG.
+/// Read a fixed-size native conditional, including an immediate conditional
+/// in either arm. The inner reader accepts only bounded operands.
 fn conditional_atom(root: &crate::kernel::KernelTerm) -> Option<MachineTerm> {
-    use crate::kernel::{KernelTermNode as N, MachineOperandView as V};
+    read_conditional_atom(root, |format, arm| {
+        conditional_operand_atom(format, arm)
+            .or_else(|| read_conditional_atom(arm, conditional_operand_atom))
+    })
+}
+
+fn conditional_operand_atom(
+    format: MachineIntegerType,
+    root: &crate::kernel::KernelTerm,
+) -> Option<MachineTerm> {
+    let operand = crate::kernel::MachineOperandView::Shared(root);
+    comparison_leaf_operand(operand).or_else(|| bounded_comparison_operand(format, operand, true))
+}
+
+fn read_conditional_atom(
+    root: &crate::kernel::KernelTerm,
+    arm: impl Fn(MachineIntegerType, &crate::kernel::KernelTerm) -> Option<MachineTerm>,
+) -> Option<MachineTerm> {
+    use crate::kernel::KernelTermNode as N;
     let N::MachineIf { arguments } = root.node() else {
         return None;
     };
@@ -462,19 +483,26 @@ fn conditional_atom(root: &crate::kernel::KernelTerm) -> Option<MachineTerm> {
         _ => return None,
     };
     crate::instrumentation::record_deterministic_work(1);
-    let atom = |format, root: &crate::kernel::KernelTerm| {
-        comparison_leaf_operand(V::Shared(root))
-            .or_else(|| bounded_comparison_operand(format, V::Shared(root), true))
-    };
     let condition = match arguments[0].node() {
         N::Variable(variable) => ConditionTerm::Variable(*variable),
+        N::BoolEqual {
+            arguments: [left, right],
+        } => {
+            let (N::Variable(left), N::Variable(right)) = (left.node(), right.node()) else {
+                return None;
+            };
+            ConditionTerm::BoolEqual(
+                Box::new(ConditionTerm::Variable(*left)),
+                Box::new(ConditionTerm::Variable(*right)),
+            )
+        }
         N::BoolCompare {
             format,
             relation,
             arguments: guard,
         } if matches!(format.format().bits(), 32 | 64) => {
-            let mut left = atom(*format, &guard[0])?;
-            let mut right = atom(*format, &guard[1])?;
+            let mut left = conditional_operand_atom(*format, &guard[0])?;
+            let mut right = conditional_operand_atom(*format, &guard[1])?;
             if format.format().bits() == 32 {
                 left = left.into_word32();
                 right = right.into_word32();
@@ -490,8 +518,8 @@ fn conditional_atom(root: &crate::kernel::KernelTerm) -> Option<MachineTerm> {
     };
     Some(MachineTerm::If {
         condition: Box::new(condition),
-        then_term: Box::new(atom(result_format, &arguments[1])?),
-        else_term: Box::new(atom(result_format, &arguments[2])?),
+        then_term: Box::new(arm(result_format, &arguments[1])?),
+        else_term: Box::new(arm(result_format, &arguments[2])?),
     })
 }
 

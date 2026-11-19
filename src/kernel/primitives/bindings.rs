@@ -81,8 +81,11 @@ pub struct LocalBindingId(Arc<LocalDeclaration>);
 enum LocalBindingKind {
     Source,
     Temporary,
+    PreparedArgument,
     LoopEscape,
     EnumerateCount,
+    SliceIteratorPointer,
+    SliceIteratorLength,
     ChunkIterator(ChunkIteratorField),
 }
 
@@ -128,10 +131,18 @@ impl LocalBindingId {
     }
     /// A frontend temporary is distinct from all source declaration ordinals.
     pub(crate) fn temporary(owner: LocalFunctionId, ordinal: u32) -> Self {
+        Self::frontend_temporary(owner, ordinal, LocalBindingKind::Temporary)
+    }
+
+    pub(crate) fn prepared_argument(owner: LocalFunctionId, ordinal: u32) -> Self {
+        Self::frontend_temporary(owner, ordinal, LocalBindingKind::PreparedArgument)
+    }
+
+    fn frontend_temporary(owner: LocalFunctionId, ordinal: u32, kind: LocalBindingKind) -> Self {
         Self(Arc::new(LocalDeclaration {
             owner,
             parameter: false,
-            kind: LocalBindingKind::Temporary,
+            kind,
             ordinal,
             scope_depth: 0,
             spelling: None,
@@ -192,10 +203,37 @@ impl LocalBindingId {
         })
     }
 
+    pub(crate) fn slice_iterator_fields(
+        owner: LocalFunctionId,
+        ordinal: u32,
+        pointer_type: ProgramType,
+    ) -> [Self; 2] {
+        [
+            (LocalBindingKind::SliceIteratorPointer, pointer_type),
+            (LocalBindingKind::SliceIteratorLength, ProgramType::UInt64),
+        ]
+        .map(|(kind, ty)| {
+            Self(Arc::new(LocalDeclaration {
+                owner: owner.clone(),
+                parameter: false,
+                kind,
+                ordinal,
+                scope_depth: 0,
+                spelling: None,
+                program_type: OnceLock::from(ty),
+                array_shape: OnceLock::new(),
+                struct_name: OnceLock::new(),
+            }))
+        })
+    }
+
     pub(crate) fn is_iterator_field(&self) -> bool {
         matches!(
             self.0.kind,
-            LocalBindingKind::EnumerateCount | LocalBindingKind::ChunkIterator(_)
+            LocalBindingKind::EnumerateCount
+                | LocalBindingKind::SliceIteratorPointer
+                | LocalBindingKind::SliceIteratorLength
+                | LocalBindingKind::ChunkIterator(_)
         )
     }
 
@@ -204,7 +242,14 @@ impl LocalBindingId {
     }
 
     pub fn is_temporary(&self) -> bool {
-        self.0.kind == LocalBindingKind::Temporary
+        matches!(
+            self.0.kind,
+            LocalBindingKind::Temporary | LocalBindingKind::PreparedArgument
+        )
+    }
+
+    pub(crate) fn is_prepared_argument(&self) -> bool {
+        self.0.kind == LocalBindingKind::PreparedArgument
     }
     pub(crate) fn with_scope_depth(self, scope_depth: u32) -> Self {
         Self(Arc::new(LocalDeclaration {
@@ -299,6 +344,13 @@ impl Hash for LocalBindingId {
             LocalBindingKind::Temporary => (&self.0.owner, 2u8, self.0.ordinal).hash(state),
             LocalBindingKind::LoopEscape => (&self.0.owner, 3u8, self.0.ordinal).hash(state),
             LocalBindingKind::EnumerateCount => (&self.0.owner, 4u8, self.0.ordinal).hash(state),
+            LocalBindingKind::PreparedArgument => (&self.0.owner, 5u8, self.0.ordinal).hash(state),
+            LocalBindingKind::SliceIteratorPointer => {
+                (&self.0.owner, 7u8, self.0.ordinal).hash(state)
+            }
+            LocalBindingKind::SliceIteratorLength => {
+                (&self.0.owner, 8u8, self.0.ordinal).hash(state)
+            }
             LocalBindingKind::ChunkIterator(field) => {
                 (&self.0.owner, 9u8, self.0.ordinal, field).hash(state)
             }
@@ -336,8 +388,21 @@ impl std::fmt::Display for CanonicalLocalBinding<'_> {
         if id.0.kind == LocalBindingKind::LoopEscape {
             return f.write_str("<loop escape>");
         }
-        if id.0.kind == LocalBindingKind::EnumerateCount {
-            return f.write_str("<enumeration count>");
+        let slice_field = match id.0.kind {
+            LocalBindingKind::EnumerateCount => return f.write_str("<enumeration count>"),
+            LocalBindingKind::SliceIteratorPointer => Some("pointer"),
+            LocalBindingKind::SliceIteratorLength => Some("length"),
+            _ => None,
+        };
+        if let Some(field) = slice_field {
+            // Include the declaration identity in symbolic storage diagnostics.
+            return write!(
+                f,
+                "<slice iterator {field} of {:?}::{}.local({})>",
+                id.source(),
+                id.function(),
+                id.ordinal()
+            );
         }
         if let LocalBindingKind::ChunkIterator(field) = id.0.kind {
             let field = match field {

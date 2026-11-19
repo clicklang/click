@@ -612,7 +612,7 @@ sequence below. These rows record planned scope, not completed implementation.
 | 10n | Migrate theorem argument and recorded-state value storage. | Stored arguments and recorded values retain shared operands with unchanged substitution and state selection. | Landed in [PR #3181](https://github.com/clicklang/click/pull/3181); all six pushed commits verified on upstream. Validation and program-point integration evidence below. |
 | 10o | Migrate program-valued resource-field storage. | Program-valued fields retain shared operands while preserving resource identity and substitution. | Landed in [PR #3213](https://github.com/clicklang/click/pull/3213); all pushed commits verified on upstream. Local validation and final 648-check upstream integration passed. |
 | 10p | Migrate remaining expression payloads in sequence/resource descriptors. | Inventory and subdivide independent families before implementation; preserve legitimate opaque descriptor identities. | Complete: 10p1–10p6 landed, with every pushed commit verified upstream. |
-| 10q | Migrate remaining native expression payloads in proposition outputs. | Proposition outputs retain shared operands with unchanged fact identity, raising/lowering and proof admission. | In progress: 10q1–10q3 landed; 10q4a landed in PR #3305. The 10q4b1/10q4b2a preparations landed in PR #3322 and observations in PR #3334; logical/Integer conditional rewriting landed in PR #3337; scalar Boolean preparation is locally validated. The full 10q4b2 Term schema/retained visitors and 10q4c producer handoffs remain required. |
+| 10q | Migrate remaining native expression payloads in proposition outputs. | Proposition outputs retain shared operands with unchanged fact identity, raising/lowering and proof admission. | In progress: 10q1–10q3 landed. 10q-A switches program-valued terms and their memory-load and predicate handoffs. The remaining producer slices are 10q-B–D below. |
 | 10r | Remove obsolete machine compatibility caches and reverse bridges. | Remove only after their live readers migrate; account for any retained reader and reason. | Planned; after affected consumers. |
 | 10s | Remove obsolete Boolean, float and algebraic compatibility caches. | Remove only after their live readers migrate; preserve explicit native input/output boundaries. | Planned; after affected consumers. |
 | 10t | Closure audit: account for every remaining native adapter and remove dead APIs. | Inventory every remaining adapter/cache/native expression field with a live consumer and reason, remove dead APIs, and report any unresolved migration gaps. | Planned; final audit. |
@@ -1612,6 +1612,30 @@ equality and predicate `Term` payloads remain assigned to 10q4.
 
 ### 10q4 Expression-bearing Term outputs (in progress)
 
+The remaining work is delivered by production output. Each PR changes a
+`Term` payload and an exercised handoff together. Migrate readers as needed
+for that handoff, and keep live compatibility readers explicit for 10r–10t.
+The earlier preparation below is retained as implementation history.
+
+| Slice | Output and acceptance |
+| --- | --- |
+| 10q-A | `Term::ProgramValue` retains the carrier from an evaluated memory load through resource dependency checking and forwards evaluated predicate arguments. Exact native fact identity and dependency checks continue to hold. Split the predicate handoff only if its integration requires a separate review. |
+| 10q-B | `Term::Algebraic` retains evaluated equality and match-arm operands, with constructor identity, projection and ownership checks preserved. |
+| 10q-C | `Term::Integer` retains existing roots at Integer equation handoffs, starting with resource-field and loop-exit equations. |
+| 10q-D | Carry stored conditions and loadability counts through the resource walker, account for live `Condition` and `Bitvector32` producers, and close the producer inventory with the regular gate and fact-stability audit. |
+
+10q-A uses `StoredProgramValue` for `Term::ProgramValue`. The resource
+walker reuses the carrier already supplied by a memory-load outcome and
+visits shared scalar read and arithmetic roots through the existing read
+summaries. Specification predicate lowering forwards evaluated program
+arguments through the same carrier. Native fact identity is preserved.
+Selected native rewrite, alpha-key, contract decoding and rendering readers
+remain explicit for 10r–10t. The affected tests (660), all 1,962 regular
+scaling checks and four audited proof fixtures passed. The selected fact
+audits recorded zero term or path changes.
+
+#### Earlier Term reader and rewrite preparation
+
 | Subslice | Boundary | Acceptance |
 | --- | --- | --- |
 | 10q4a | Structural native payload readers | PR #3305 merged as `a421b34a8`; all three pushed commits were verified upstream. Native views and consuming pointer extraction preserve matching and ownership. |
@@ -1745,7 +1769,8 @@ borrowing, diagnostic and synthesis checks and quality passed. The delta had no
 shared walker, Boolean/Integer or exporter changes; the complete regular scaler
 verdict above applies to the unchanged migration code. Nightly was excluded.
 
-The required 10q4b2 integration checklist is:
+The earlier 10q4b2 inventory identified these reader and rewrite boundaries.
+Use it to locate consumers reached by each production slice:
 
 - Visit selected common children, Fold binders and Match arm declarations for
   source/capture reservation and bound-variable collection without exporting
@@ -1777,7 +1802,7 @@ selected changed Fold/Match compatibility bridges remain explicitly assigned
 to 10r–10t; changed results must retain roots. They are not a blanket native
 fallback for common arithmetic, call or connective prefixes. Measure exports
 before compatibility DTO/identity oracles materialize their selected outputs.
-The full schema/visitor integration and 10q4c actual producers remain required.
+The production slices above own the remaining schema changes and producer handoffs.
 
 ## Chunk 3: machine-valued pure-function results
 

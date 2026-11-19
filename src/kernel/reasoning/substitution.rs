@@ -877,10 +877,12 @@ fn walk_execution_state<S: VariableSubstitution + ?Sized>(
                     layout,
                     slot,
                     constant,
+                    proof_input_for,
                 } => LocalBinding::AggregateObject {
                     layout: layout.clone(),
                     slot: s.local_slot(slot),
                     constant: *constant,
+                    proof_input_for: proof_input_for.clone(),
                 },
             };
             (name.clone(), binding)
@@ -2593,7 +2595,9 @@ fn collect_term_bound_variables(term: &Term, variables: &mut BTreeSet<Variable>)
         Term::Bitvector32(bits) => collect_bitvector_bound_variables(bits, variables),
         Term::Integer(integer) => collect_integer_bound_variables(integer, variables),
         Term::PointerOffset(offset) => collect_pointer_offset_bound_variables(offset, variables),
-        Term::ProgramValue(value) => collect_program_value_bound_variables(value, variables),
+        Term::ProgramValue(value) => {
+            collect_program_value_bound_variables(value.native_compat(), variables);
+        }
         Term::Sequence(sequence) => collect_sequence_bound_variables(sequence, variables),
         Term::Algebraic(term) => collect_algebraic_bound_variables(term, variables),
         Term::ExecutionState(state) => collect_execution_state_bound_variables(state, variables),
@@ -3731,7 +3735,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_term(
             substitute_bitvector_variable_in_pointer_offset(offset, from, to),
         ),
         Term::ProgramValue(value) => Term::ProgramValue(
-            substitute_bitvector_variable_in_program_value(value, from, to),
+            substitute_bitvector_variable_in_program_value(value.native_compat(), from, to).into(),
         ),
         Term::Sequence(sequence) => Term::Sequence(substitute_bitvector_variable_in_sequence(
             sequence, from, to,
@@ -4598,7 +4602,7 @@ fn rewrite_integer_memory_loadable_with_walker(
     {
         integer_work(1)?;
         let term_source_0 @ Term::ProgramValue(_) = walker.term(&Term::ProgramValue(
-            ProgramValue::Pointer(Pointer::new(pointer.clone(), ProgramType::VoidPointer)),
+            ProgramValue::Pointer(Pointer::new(pointer.clone(), ProgramType::VoidPointer)).into(),
         )) else {
             unreachable!("pointer rewrite changed its carrier")
         };
@@ -4625,7 +4629,8 @@ fn rewrite_integer_memory_loadable_with_walker(
     };
     integer_work(1)?;
     let pointer = ProgramValue::Pointer(Pointer::new(base.clone(), ProgramType::VoidPointer));
-    let term_source_0 @ Term::ProgramValue(_) = walker.term(&Term::ProgramValue(pointer)) else {
+    let term_source_0 @ Term::ProgramValue(_) = walker.term(&Term::ProgramValue(pointer.into()))
+    else {
         unreachable!("pointer rewrite changed its carrier")
     };
     let (Some(ProgramValue::Pointer(pointer)),) = (term_source_0.program_value_native(),) else {
@@ -6261,7 +6266,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_pointer(
 ) -> Address {
     if matches!(pointer.base, AddressBase::PureFunctionApplication(_)) {
         let source = MachineTerm::Variable(from);
-        let term = Term::ProgramValue(ProgramValue::pointer(pointer.clone()));
+        let term = Term::ProgramValue(ProgramValue::pointer(pointer.clone()).into());
         let Some(ProgramValue::Pointer(result)) =
             crate::kernel::proof::term_rewrite::TermRewrite::for_bits(&source, to)
                 .term(&term)
@@ -6833,7 +6838,7 @@ fn substitute_pointer_variable_in_term(term: &Term, from: Variable, to: &Address
         }
         Term::Bitvector32(_) | Term::PointerOffset(_) => term.clone(),
         Term::ProgramValue(value) => Term::ProgramValue(
-            substitute_pointer_variable_in_program_value(value, from, to),
+            substitute_pointer_variable_in_program_value(value.native_compat(), from, to).into(),
         ),
         Term::Sequence(sequence) => {
             Term::Sequence(substitute_pointer_variable_in_sequence(sequence, from, to))
@@ -6988,11 +6993,11 @@ fn substitute_pointer_variable_in_program_value(
 ) -> ProgramValue {
     let Term::ProgramValue(value) =
         crate::kernel::proof::term_rewrite::TermRewrite::for_pointer_variable(from, to)
-            .term(&Term::ProgramValue(value.clone()))
+            .term(&Term::ProgramValue(value.clone().into()))
     else {
         unreachable!("C value rewriting preserves its carrier")
     };
-    value
+    value.into()
 }
 
 fn substitute_pointer_variable_in_pointer(
@@ -7001,7 +7006,7 @@ fn substitute_pointer_variable_in_pointer(
     to: &Address,
 ) -> Address {
     if matches!(&pointer.base, AddressBase::PureFunctionApplication(_)) {
-        let term = Term::ProgramValue(ProgramValue::pointer(pointer.clone()));
+        let term = Term::ProgramValue(ProgramValue::pointer(pointer.clone()).into());
         let Some(ProgramValue::Pointer(result)) =
             crate::kernel::proof::term_rewrite::TermRewrite::for_pointer_variable(from, to)
                 .term(&term)
@@ -9031,10 +9036,13 @@ mod integer_mixed_quantifier_tests {
         )
         .expect("pointer observations are Integer-valued");
         let pointer_value = |variable| {
-            Term::ProgramValue(ProgramValue::Pointer(Pointer::new(
-                Address::symbolic(variable),
-                ProgramType::Int32Pointer,
-            )))
+            Term::ProgramValue(
+                ProgramValue::Pointer(Pointer::new(
+                    Address::symbolic(variable),
+                    ProgramType::Int32Pointer,
+                ))
+                .into(),
+            )
         };
         let proposition = Proposition::ForAll {
             name: Default::default(),
@@ -9871,7 +9879,7 @@ mod checked_singleton_substitution_tests {
     }
 
     fn pointer_term(variable: Variable) -> Term {
-        Term::ProgramValue(ProgramValue::Pointer(pointer_value(variable)))
+        Term::ProgramValue(ProgramValue::Pointer(pointer_value(variable)).into())
     }
 
     #[test]

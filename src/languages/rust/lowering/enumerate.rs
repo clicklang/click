@@ -14,7 +14,7 @@ impl Context<'_> {
         owner: &LocalFunctionId,
         ordinal: u32,
     ) -> Result<ProgramStatement, String> {
-        let storage = self.shared_array_storage(name, element, option)?;
+        let storage = self.shared_array_storage(name, element, option, owner, ordinal)?;
         let field = if option {
             let index = format!("{name}_index");
             if !self.locals.insert(index.clone()) {
@@ -101,6 +101,7 @@ impl Context<'_> {
             if taken == Some(false) {
                 return Ok(program_skip());
             }
+            let fields = self.shared_array_iterator(iterator)?.fields.clone();
             let mut some = program_skip();
             if let Some(index) = index {
                 some = program_seq(some, self.bind_local(index, variable(count.clone()))?);
@@ -112,10 +113,10 @@ impl Context<'_> {
             if let Some(element) = element {
                 some = program_seq(
                     some,
-                    self.bind_local(element, variable(self.binding(&format!("{iterator}_ptr"))))?,
+                    self.bind_local(element, variable(fields.pointer.clone()))?,
                 );
             }
-            some = program_seq(some, self.shared_array_advance(iterator));
+            some = program_seq(some, shared_arrays::advance(&fields));
             return Ok(match taken {
                 Some(_) => some,
                 None => program_if(self.shared_array_has_next(iterator)?, some, program_skip()),

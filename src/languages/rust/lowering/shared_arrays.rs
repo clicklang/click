@@ -1,9 +1,10 @@
 //! A shared slice iterator, `core::slice::Iter<'_, T>`, is held as the slice
-//! it still covers, what `iter.as_slice()` returns: its data `<it>_ptr` and
-//! its length `<it>_len`, which is `iter.len()`. `core`'s iterator holds
+//! it still covers, what `iter.as_slice()` returns, and its length as read
+//! by `iter.len()`. `core`'s iterator holds
 //! the same slice as a start and an end pointer. `next` yields the element
-//! at `ptr` and moves the slice on by one, as `core`'s does.
+//! at the cursor and moves the slice on by one, as `core`'s does.
 use super::*;
+use crate::languages::interface::SliceIteratorFields;
 /// The cursor's pointer type, as a Rust reference to the element lowers.
 fn pointer_type(element: &Type) -> Result<ProgramType, String> {
     if !element.is_integer() {
@@ -16,8 +17,25 @@ fn pointer_type(element: &Type) -> Result<ProgramType, String> {
     .to_kernel_type())
 }
 
-/// The fields of a slice iterator, by suffix, after the slice it covers.
-pub(super) const SLICE_ITERATOR_FIELDS: [&str; 2] = ["ptr", "len"];
+pub(super) struct SliceIteratorStorage {
+    element: ProgramType,
+    pub(super) fields: SliceIteratorFields,
+}
+
+/// Move the iterator on by one element.
+pub(super) fn advance(fields: &SliceIteratorFields) -> ProgramStatement {
+    use crate::kernel::program_expression::{add, subtract, uint64_literal, variable};
+    program_seq(
+        program_assign(
+            fields.pointer.clone(),
+            add(variable(fields.pointer.clone()), uint64_literal(1)),
+        ),
+        program_assign(
+            fields.length.clone(),
+            subtract(variable(fields.length.clone()), uint64_literal(1)),
+        ),
+    )
+}
 
 impl Context<'_> {
     /// `name = value` for a local `next` binds, as `assign` assigns a local:
@@ -40,20 +58,13 @@ impl Context<'_> {
         })
     }
 
-    /// Moves a slice iterator on by one element.
-    pub(super) fn shared_array_advance(&self, iterator: &str) -> ProgramStatement {
-        use crate::kernel::program_expression::{add, subtract, uint64_literal, variable};
-        let field = |suffix: &str| format!("{iterator}_{suffix}");
-        program_seq(
-            program_assign(
-                self.binding(&field("ptr")),
-                add(variable(self.binding(&field("ptr"))), uint64_literal(1)),
-            ),
-            program_assign(
-                self.binding(&field("len")),
-                subtract(variable(self.binding(&field("len"))), uint64_literal(1)),
-            ),
-        )
+    pub(super) fn shared_array_iterator(
+        &self,
+        name: &str,
+    ) -> Result<&SliceIteratorStorage, String> {
+        self.shared_array_iterators
+            .get(name)
+            .ok_or_else(|| "unknown shared iterator".into())
     }
 
     pub(super) fn shared_array_storage(
@@ -61,23 +72,46 @@ impl Context<'_> {
         name: &str,
         element: &Type,
         option: bool,
+        owner: &LocalFunctionId,
+        ordinal: u32,
     ) -> Result<ProgramStatement, String> {
-        let pointer = pointer_type(element)?;
+        let pointer_type = pointer_type(element)?;
         let element = scalar_type(element)?.to_kernel_type();
         if !self.locals.insert(name.into()) {
             return Err("shared iterator state identity collision".into());
         }
-        let fields = if option {
-            self.shared_array_options.insert(name.into(), element);
-            vec![
-                ("some", ProgramType::Int32, false),
-                ("pointer", pointer, true),
-            ]
-        } else {
-            self.shared_array_iterators.insert(name.into(), element);
-            // The length is a `usize`.
-            vec![("ptr", pointer, true), ("len", ProgramType::UInt64, false)]
-        };
+        if !option {
+            let [pointer, length] =
+                LocalBindingId::slice_iterator_fields(owner.clone(), ordinal, pointer_type)
+                    .map(BindingName::from);
+            self.shared_array_iterators.insert(
+                name.into(),
+                SliceIteratorStorage {
+                    element,
+                    fields: SliceIteratorFields {
+                        pointer: pointer.clone(),
+                        length: length.clone(),
+                    },
+                },
+            );
+            return Ok(program_seq(
+                program_declare_with_all_qualifiers(
+                    pointer,
+                    pointer_type,
+                    false,
+                    false,
+                    false,
+                    true,
+                ),
+                program_declare(length, ProgramType::UInt64),
+            ));
+        }
+
+        self.shared_array_options.insert(name.into(), element);
+        let fields = [
+            ("some", ProgramType::Int32, false),
+            ("pointer", pointer_type, true),
+        ];
         let mut result = program_skip();
         for (suffix, ty, constant) in fields {
             let field = format!("{name}_{suffix}");
@@ -114,10 +148,9 @@ impl Context<'_> {
         target: &str,
         source: &E,
     ) -> Result<ProgramStatement, String> {
-        let expected = *self
-            .shared_array_iterators
-            .get(target)
-            .ok_or("unknown shared iterator")?;
+        let state = self.shared_array_iterator(target)?;
+        let expected = state.element;
+        let fields = state.fields.clone();
         let (pointer, length, element) = self.indexed_parts(source)?;
         if element != expected {
             return Err("shared array iterator source element mismatch".into());
@@ -136,8 +169,8 @@ impl Context<'_> {
         Ok(program_seq(
             program_seq(p_capture, l_capture),
             program_seq(
-                program_assign(self.binding(&format!("{target}_ptr")), p),
-                program_assign(self.binding(&format!("{target}_len")), l),
+                program_assign(fields.pointer, p),
+                program_assign(fields.length, l),
             ),
         ))
     }
@@ -147,12 +180,10 @@ impl Context<'_> {
         &self,
         iterator: &str,
     ) -> Result<ProgramExpression, String> {
-        if !self.shared_array_iterators.contains_key(iterator) {
-            return Err("unknown shared iterator".into());
-        }
+        let length = self.shared_array_iterator(iterator)?.fields.length.clone();
         Ok(crate::kernel::program_expression::less_than(
             crate::kernel::program_expression::uint64_literal(0),
-            crate::kernel::program_expression::variable(self.binding(&format!("{iterator}_len"))),
+            crate::kernel::program_expression::variable(length),
         ))
     }
 
@@ -161,25 +192,25 @@ impl Context<'_> {
         target: &str,
         source: &str,
     ) -> Result<ProgramStatement, String> {
-        if target == source
-            || !self.shared_array_iterators.contains_key(target)
-            || self.shared_array_iterators.get(target) != self.shared_array_iterators.get(source)
+        use crate::kernel::program_expression::variable;
+        let target_fields = self.shared_array_iterators.get(target);
+        let source_fields = self.shared_array_iterators.get(source);
+        if let (Some(destination), Some(origin)) = (target_fields, source_fields)
+            && target != source
+            && destination.element == origin.element
         {
-            return Err("invalid shared iterator move".into());
-        }
-        let mut result = program_skip();
-        for suffix in SLICE_ITERATOR_FIELDS {
-            result = program_seq(
-                result,
+            return Ok(program_seq(
                 program_assign(
-                    self.binding(&format!("{target}_{suffix}")),
-                    crate::kernel::program_expression::variable(
-                        self.binding(&format!("{source}_{suffix}")),
-                    ),
+                    destination.fields.pointer.clone(),
+                    variable(origin.fields.pointer.clone()),
                 ),
-            );
+                program_assign(
+                    destination.fields.length.clone(),
+                    variable(origin.fields.length.clone()),
+                ),
+            ));
         }
-        Ok(result)
+        Err("invalid shared iterator move".into())
     }
 
     /// `next` of a slice iterator: the `Option` built in `option`, or, once
@@ -196,59 +227,26 @@ impl Context<'_> {
         match (option, payload) {
             (Some(option), None) => self.shared_array_next_with(iterator, option, program_skip()),
             (None, Some(payload)) => {
-                if !self.shared_array_iterators.contains_key(iterator) {
-                    return Err("unknown shared iterator".into());
-                }
+                let fields = self.shared_array_iterator(iterator)?.fields.clone();
                 if taken == Some(false) {
                     return Ok(program_skip());
                 }
-                use crate::kernel::program_expression::{add, subtract, uint64_literal, variable};
-                let field = |suffix: &str| format!("{iterator}_{suffix}");
-                let bind = self.bind_local(payload, variable(self.binding(&field("ptr"))))?;
-                let some = program_seq(
-                    bind,
-                    program_seq(
-                        program_assign(
-                            self.binding(&field("ptr")),
-                            add(variable(self.binding(&field("ptr"))), uint64_literal(1)),
-                        ),
-                        program_assign(
-                            self.binding(&field("len")),
-                            subtract(variable(self.binding(&field("len"))), uint64_literal(1)),
-                        ),
-                    ),
-                );
+                use crate::kernel::program_expression::variable;
+                let bind = self.bind_local(payload, variable(fields.pointer.clone()))?;
+                let some = program_seq(bind, advance(&fields));
                 Ok(match taken {
                     Some(_) => some,
                     None => program_if(self.shared_array_has_next(iterator)?, some, program_skip()),
                 })
             }
-            // The arm the header decided does not yield, once the loop reads no
-            // `Option`: the iterator is empty and stays so.
-            (None, None) if taken == Some(false) => {
-                if !self.shared_array_iterators.contains_key(iterator) {
-                    return Err("unknown shared iterator".into());
-                }
-                Ok(program_skip())
-            }
-            // The arm that yields, when nothing reads what it yields: the
-            // iterator only moves on.
-            (None, None) if taken == Some(true) => {
-                if !self.shared_array_iterators.contains_key(iterator) {
-                    return Err("unknown shared iterator".into());
-                }
-                use crate::kernel::program_expression::{add, subtract, uint64_literal, variable};
-                let field = |suffix: &str| format!("{iterator}_{suffix}");
-                Ok(program_seq(
-                    program_assign(
-                        self.binding(&field("ptr")),
-                        add(variable(self.binding(&field("ptr"))), uint64_literal(1)),
-                    ),
-                    program_assign(
-                        self.binding(&field("len")),
-                        subtract(variable(self.binding(&field("len"))), uint64_literal(1)),
-                    ),
-                ))
+            // When nothing reads the result, only a yielding arm moves on.
+            (None, None) if taken.is_some() => {
+                let fields = &self.shared_array_iterator(iterator)?.fields;
+                Ok(if taken == Some(true) {
+                    advance(fields)
+                } else {
+                    program_skip()
+                })
             }
             _ => Err("Rust slice next binds neither its Option nor its element".into()),
         }
@@ -262,30 +260,22 @@ impl Context<'_> {
         option: &str,
         yielded: ProgramStatement,
     ) -> Result<ProgramStatement, String> {
-        if !self.shared_array_iterators.contains_key(iterator)
-            || self.shared_array_iterators.get(iterator) != self.shared_array_options.get(option)
-        {
+        let Some(state) = self
+            .shared_array_iterators
+            .get(iterator)
+            .filter(|state| self.shared_array_options.get(option) == Some(&state.element))
+        else {
             return Err("shared iterator Option element mismatch".into());
-        }
-        use crate::kernel::program_expression::{
-            add, int32_literal, subtract, uint64_literal, variable,
         };
-        let field = |suffix: &str| format!("{iterator}_{suffix}");
+        use crate::kernel::program_expression::{int32_literal, variable};
         let mut some = program_assign(self.binding(&format!("{option}_some")), int32_literal(1));
         for statement in [
             program_assign(
                 self.binding(&format!("{option}_pointer")),
-                variable(self.binding(&field("ptr"))),
+                variable(state.fields.pointer.clone()),
             ),
             yielded,
-            program_assign(
-                self.binding(&field("ptr")),
-                add(variable(self.binding(&field("ptr"))), uint64_literal(1)),
-            ),
-            program_assign(
-                self.binding(&field("len")),
-                subtract(variable(self.binding(&field("len"))), uint64_literal(1)),
-            ),
+            advance(&state.fields),
         ] {
             some = program_seq(some, statement);
         }
@@ -294,5 +284,39 @@ impl Context<'_> {
             some,
             program_assign(self.binding(&format!("{option}_some")), int32_literal(0)),
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::languages::rust::schema::Place;
+
+    #[test]
+    fn slice_iterator_fields_are_distinct_from_source_locals() {
+        let mut export = crate::languages::rust::charon::decode(
+            include_bytes!("../../../../design/charon-trial/slice-iter/.click/sum/sum.rs.ullbc"),
+            "sum.rs",
+            include_bytes!("../../../../design/charon-trial/slice-iter/sum.rs"),
+        )
+        .unwrap();
+        let function = export
+            .functions
+            .iter_mut()
+            .find(|f| f.name == "sum")
+            .unwrap();
+        let mir = function.mir.as_mut().unwrap();
+        let iterator = mir
+            .locals
+            .iter()
+            .find(|local| matches!(local.value_type, Type::SharedArrayIterator { .. }))
+            .unwrap();
+        let colliding = ["ptr", "len"].map(|field| Place {
+            name: format!("{}_{field}", iterator.name),
+            value_type: Type::Usize,
+            span: iterator.span.clone(),
+        });
+        mir.locals.extend(colliding);
+        super::super::lower(&export).unwrap();
     }
 }

@@ -33,7 +33,7 @@ int32 loop_entry_guard_intro(int32 p[3]) {
 
         initialize by {
             have i >= 0 and i <= 3 by {
-                both {
+                all positional {
                     left => {
                         normalize();
                     }

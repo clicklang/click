@@ -811,6 +811,9 @@ pub(super) fn aggregate_argument_read_refusal(
         let ProgramValue::Pointer(source) = value else {
             continue;
         };
+        if is_prepared_aggregate_argument(state, source.address(), layout) {
+            continue;
+        }
         if let Some(refusal) = crate::kernel::eval::subobject_access_refusal(
             source.address(),
             source,

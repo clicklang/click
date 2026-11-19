@@ -301,7 +301,7 @@ pub(in crate::kernel) fn disprove_builtin_prop(proposition: &Proposition) -> boo
             sequence_terms_definitely_distinct(left, right)
         }
         Proposition::Equal(Term::ProgramValue(left), Term::ProgramValue(right)) => {
-            program_values_definitely_distinct(left, right)
+            program_values_definitely_distinct(left.native_compat(), right.native_compat())
         }
         Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) => {
             algebraic_terms_definitely_distinct(left, right)

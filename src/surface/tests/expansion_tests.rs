@@ -3365,9 +3365,9 @@ theorem fixed_integer_witness(value: int32) {
         z == 0 and to_integer(value + 1) == to_integer(value + 1)
     } by {
         witness(0);
-        both {
+        all positional {
             left => {
-                both {
+                all positional {
                     left => {
                         known();
                     }
@@ -3377,7 +3377,7 @@ theorem fixed_integer_witness(value: int32) {
                 }
             }
             right => {
-                both {
+                all positional {
                     left => {
                         normalize();
                     }
@@ -3395,7 +3395,10 @@ theorem fixed_integer_witness(value: int32) {
     let fixed_expanded =
         expand_c_claim_source_by_label(fixed_witness, &[], "fixed_integer_witness.witness_fixed")
             .expect("fixed Integer witness should expand");
-    assert!(fixed_expanded.contains("both {"), "{fixed_expanded}");
+    assert!(
+        fixed_expanded.contains("all positional {"),
+        "{fixed_expanded}"
+    );
     verify_c_sources(&fixed_expanded, &[]).expect("expanded fixed Integer witness should recheck");
 
     let missing_definedness = r#"
@@ -4265,6 +4268,25 @@ fn whole_claim_expansion_of_a_user_tactic_omits_the_supplied_ending() {
     let position =
         expansion::position_at_offset(&expanded, expanded.find("have y.tag == 7 by {").unwrap());
     verify_c_sources_at(&expanded, &sources, position.line, position.column)
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+}
+
+/// The outer call of `y = f(f(y));` owes `f`'s requirement of the inner
+/// call's result. Whole-claim expansion renders its certificate after
+/// checking ends, and must still spell that result by its call, never as
+/// the diagnostic `f(…)`.
+#[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_18")]
+fn whole_claim_expansion_spells_an_inner_call_result_by_its_call() {
+    let (click, sources) = mdtest_sources("mdtests/execute_until_runs_to_a_statement_region.md");
+    let sources = sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c_claim_source_by_label(&click, &sources, "probe.contract")
+        .unwrap_or_else(|error| panic!("{}", error.message()));
+    assert!(!expanded.contains('…'), "{expanded}");
+    verify_c_sources(&expanded, &sources)
         .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
 }
 
@@ -6276,7 +6298,7 @@ fn post_execution_solve_builds_recursive_conjunction_on_proof() {
     )
     .expect("the retained conjunction should expand");
     assert!(!expanded.contains("solve();"), "{expanded}");
-    assert!(expanded.contains("both {"), "{expanded}");
+    assert!(expanded.contains("all {"), "{expanded}");
     verify_c_sources(&expanded, &[("first.c", c_source)])
         .expect("the retained conjunction should verify independently");
 }
@@ -6350,7 +6372,7 @@ fn post_execution_smart_have_builds_recursive_conjunction_on_proof() {
     )
     .expect("the retained smart have should expand");
     assert!(!expanded.contains("by solve()"), "{expanded}");
-    assert!(expanded.contains("both {"), "{expanded}");
+    assert!(expanded.contains("all {"), "{expanded}");
     verify_c_sources(&expanded, &[("first.c", c_source)])
         .expect("the retained smart have should verify independently");
 }
@@ -7759,7 +7781,7 @@ fn pure_structural_solve_builds_recursive_conjunction_on_proof() {
             expected_applications,
             "{expanded}"
         );
-        assert!(expanded.contains("both {"), "{expanded}");
+        assert!(expanded.contains("all {"), "{expanded}");
         verify_click_theorems(&expanded)
             .expect("the retained pure conjunction should verify independently");
     }
@@ -8047,7 +8069,7 @@ fn pure_rewrite_retains_a_structural_surface_successor_for_solve() {
     let expanded = expand_c_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("the retained rewrite successor should expand");
     assert_eq!(expanded.matches("rewrite(").count(), 3, "{expanded}");
-    assert!(expanded.contains("both {"), "{expanded}");
+    assert!(expanded.contains("all {"), "{expanded}");
     assert!(!expanded.contains("solve();"), "{expanded}");
     verify_click_theorems(&expanded)
         .expect("the expanded rewrite and structural child proofs should verify independently");
@@ -16569,7 +16591,7 @@ fn outcome_predecessor_bound_solve_expands_to_arithmetic_steps() {
         position.column,
     )
     .expect("the predecessor bound solve should expand to the named rule");
-    assert!(expanded.contains("both {"), "{expanded}");
+    assert!(expanded.contains("all {"), "{expanded}");
     assert!(expanded.contains("click::integer::"), "{expanded}");
     assert!(!expanded.contains("solve()"), "{expanded}");
     verify_c_sources(&expanded, &[("drop_one.c", c_source)]).unwrap_or_else(|error| {
@@ -21267,7 +21289,7 @@ fn arithmetic_in_each_both_arm_is_selected_at_its_location() {
  requires 0 <= a;
  requires 0 <= b;
  ensures 0 <= a and 0 <= b by {
-  both {
+  all positional {
       left => {
        solve() using { 0 <= a; };
       }
@@ -21379,8 +21401,24 @@ fn integer_arithmetic_contract_let_expansion_preserves_the_integer_body() {
         .collect::<Vec<_>>();
     let expanded = expand_c_claim_source_by_label(source, &sources, "grow.contract")
         .expect("a C-valued let around Integer arithmetic must expand");
+    assert!(!expanded.contains("normalize()"), "{expanded}");
     crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &sources))
         .expect("the expanded Integer body must cold verify without implicit solving");
+}
+
+#[test]
+#[ignore = "nightly: expands and cold-verifies a pass-count loop"]
+fn historical_integer_algebra_leaves_expand_without_normalize() {
+    let (source, sources) = mdtest_sources("mdtests/a_loop_is_ranked_by_its_pass_count.md");
+    let sources = sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c_claim_source_by_label(&source, &sources, "doubled.contract")
+        .expect("the pass-count loop should expand");
+    assert!(!expanded.contains("normalize();"), "{expanded}");
+    crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &sources))
+        .expect("the expanded loop should cold verify");
 }
 
 #[test]
@@ -22334,7 +22372,7 @@ fn structural_invariant_bundles_expand_as_ordered_member_haves() {
             requires a == b;
             requires b == 0;
             ensures a == 0 and (a == 0 implies a + 1 == 1) by {
-                both {
+                all positional {
                     left => {
                         have a == 0 by {
                             rewrite(a, b); rewrite(b, 0); normalize();
@@ -22359,7 +22397,7 @@ fn structural_invariant_bundles_expand_as_ordered_member_haves() {
     .unwrap();
     let printed = format_proof_certificate(&closure);
     assert!(!printed.contains("close_invariants"), "{printed}");
-    assert!(!printed.contains("both {"), "{printed}");
+    assert!(!printed.contains("all {"), "{printed}");
     assert!(!printed.contains("intro()"), "{printed}");
     assert_eq!(printed.matches("have a == 0 by").count(), 1, "{printed}");
     assert!(
@@ -22374,7 +22412,7 @@ fn structural_invariant_bundles_expand_as_ordered_member_haves() {
             requires a == b;
             requires b == 0;
             ensures a == 0 and (a == 0 implies a + 1 == 1)
-            {} both {{ left => {{ known(); }} right => {{ intro(); known(); }} }}
+            {} all positional {{ left => {{ known(); }} right => {{ intro(); known(); }} }}
             }}
         }}
     "#,
@@ -22810,6 +22848,7 @@ test_batches! {
         whole_claim_expansion_of_a_user_tactic_omits_the_supplied_ending,
     ],
     expansion_batch_18: [
+        whole_claim_expansion_spells_an_inner_call_result_by_its_call,
         whole_claim_expansion_of_a_user_tactic_preserves_refuted_arms,
         whole_claim_expansion_keeps_post_execution_tactics_in_their_match_arm,
         whole_claim_expansion_keeps_tactics_before_a_nested_match,
@@ -24245,6 +24284,29 @@ fn indexed_iterated_ownership_expands_and_rechecks() {
         "{}",
         error.report()
     );
+}
+
+#[test]
+fn conjunction_expansion_raises_lowered_definedness_bounds() {
+    let source = r#"
+theorem increment_domain(x: int32) {
+    requires defined(x + 1);
+    ensures checked: defined(x + 1) by {
+        all positional {
+            left => { solve(); }
+            right => { solve(); }
+        }
+    }
+}
+"#;
+    let expanded = expand_c_claim_source_by_label(source, &[], "increment_domain.checked")
+        .expect("the definedness bounds should expand");
+    assert!(expanded.contains("all {"), "{expanded}");
+    assert!(!expanded.contains("all positional"), "{expanded}");
+    assert!(expanded.contains("2147483647"), "{expanded}");
+    assert!(expanded.contains("-2147483648"), "{expanded}");
+    crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &[]))
+        .expect("the raised bounds should replay without implicit solve");
 }
 
 #[test]

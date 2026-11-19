@@ -1853,6 +1853,7 @@ pub(super) fn declared_pointer_locals(
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct RustLoopIterator {
     pub(crate) chunk_fields: Option<ChunkIteratorFields>,
+    pub(crate) slice_fields: Option<SliceIteratorFields>,
     pub local: String,
     pub kind: RustIteratorKind,
     pub(crate) count_binding: Option<crate::kernel::BindingName>,
@@ -1879,10 +1880,16 @@ impl ChunkIteratorFields {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub(crate) struct SliceIteratorFields {
+    pub(crate) pointer: crate::kernel::BindingName,
+    pub(crate) length: crate::kernel::BindingName,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum RustIteratorKind {
     /// `core::slice::Iter` or a shared array's iterator: the slice it still
-    /// covers, `_ptr` and `_len`, which a proof reads as `iter.as_slice()`
+    /// covers, whose pointer and length a proof reads as `iter.as_slice()`
     /// and `iter.len()`.
     Slice,
     /// `Enumerate<Iter<T>>`: the slice iterator's fields and its count,

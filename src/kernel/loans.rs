@@ -7007,7 +7007,8 @@ impl LoanLedger {
                 loan,
                 root,
             } => {
-                let (permitted, memory_backing, mutex_root) = match parent {
+                let (permitted, memory_backing, mutex_root, repeats_parent_footprint) = match parent
+                {
                     ReborrowBinding::View(binding) => {
                         self.validate_view_binding(binding.clone(), *lender)?;
                         let record = self
@@ -7017,7 +7018,12 @@ impl LoanLedger {
                             .get(&binding.loan)
                             .ok_or(LoanRefusal::MissingLoan)?;
                         let (permitted, backing) = reborrowed_authority(record, &binding.viewed);
-                        (permitted, backing, None)
+                        let repeats_parent = backing.len() == record.memory_backing.len()
+                            && backing
+                                .iter()
+                                .zip(&record.memory_backing)
+                                .all(|(child, parent)| child.spatial_key() == parent.spatial_key());
+                        (permitted, backing, None, repeats_parent)
                     }
                     ReborrowBinding::MutexUse(binding) => {
                         self.mutex_use_identity_description(*binding, *lender)?;
@@ -7027,7 +7033,7 @@ impl LoanLedger {
                             .loans
                             .get(&binding.0.loan)
                             .ok_or(LoanRefusal::MissingLoan)?;
-                        (Vec::new(), Vec::new(), record.mutex_root)
+                        (Vec::new(), Vec::new(), record.mutex_root, false)
                     }
                 };
                 let parent = parent.authority();
@@ -7118,7 +7124,11 @@ impl LoanLedger {
                         pinned_by: None,
                     },
                 );
-                data.active_footprint = data.active_footprint.with_loan(*loan, &memory_backing);
+                // The parent remains pinned. Reuse its footprint for an
+                // exact repeat, retaining any other checked child spelling.
+                if !repeats_parent_footprint {
+                    data.active_footprint = data.active_footprint.with_loan(*loan, &memory_backing);
+                }
                 for range in &memory_backing {
                     // A symbolic parent range stays protected by the parent
                     // entry, which remains active while its share is pinned.
@@ -7359,7 +7369,10 @@ impl LoanLedger {
                     },
                 );
                 if let Some(record) = data.loans.get(&scope_record.loan).cloned() {
-                    data.active_footprint = data.active_footprint.without_loan(scope_record.loan);
+                    if !matches!(record.origin, LoanOrigin::Reborrowed) {
+                        data.active_footprint =
+                            data.active_footprint.without_loan(scope_record.loan);
+                    }
                     data.unindexed_memory = without_unindexed_memory(
                         &data.unindexed_memory,
                         scope_record.loan,

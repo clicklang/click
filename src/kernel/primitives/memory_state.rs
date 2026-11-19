@@ -1647,6 +1647,7 @@ impl LocalEnvironment {
                 layout,
                 slot,
                 constant,
+                proof_input_for: None,
             },
         );
     }
@@ -1988,6 +1989,18 @@ impl LocalEnvironment {
 
     pub(in crate::kernel) fn slots(&self) -> impl Iterator<Item = &Address> {
         self.slots.keys()
+    }
+
+    pub(in crate::kernel) fn is_proof_input_slot(&self, slot: &Address) -> bool {
+        self.name_for_slot(slot).is_some_and(|name| {
+            matches!(
+                self.bindings.get(name),
+                Some(LocalBinding::AggregateObject {
+                    proof_input_for: Some(_),
+                    ..
+                })
+            )
+        })
     }
 
     pub(crate) fn name_for_slot(&self, pointer: &Address) -> Option<&BindingName> {
@@ -10271,8 +10284,10 @@ impl ExecutionState {
             .after(super::intern_memory_ref(&self.memory), steps);
     }
 
-    /// Keep `before`'s memory, and so stand where `before` stood: a state
-    /// rebuilt around unchanged memory has not moved.
+    /// Take `before`'s memory and stand where `before` stood, without the
+    /// resource invalidation of [`Self::set_memory_of`]: for a state rebuilt
+    /// around unchanged memory, or one taking the memory a transition that
+    /// already accounted for its resources produced.
     pub(crate) fn keep_memory_of(&mut self, before: &Self) {
         self.memory = before.memory.clone();
         self.point = before.point.clone();
@@ -10375,19 +10390,6 @@ impl ExecutionState {
             .clone()
             .with_loan_dependency_state(self.loan_view_bindings.state());
         self
-    }
-
-    /// The bounded explanation of a refused access, or `None` when the
-    /// access is permitted or no ledger is active.
-    pub(crate) fn stable_loan_memory_access_refusal(
-        &self,
-        range: &MemoryRange,
-        assumptions: &PureFactContext,
-        operation: crate::kernel::LoanRefusalOperation,
-    ) -> Option<crate::kernel::LoanRefusalDiagnostic> {
-        self.loan_ledger
-            .as_ref()
-            .and_then(|ledger| ledger.memory_access_refusal(range, assumptions, operation))
     }
 
     pub(in crate::kernel) fn automatic_storage_loan_refusal(

@@ -124,6 +124,7 @@ pub(super) fn bind(
     caller: &ExecutionState,
     interface: &FunctionContractInterface,
     callee: &mut ExecutionState,
+    loan_obligations: Option<&mut Vec<ProofObligation>>,
 ) -> Option<()> {
     let parameter_destination;
     let selected_state = if let Some((index, layout)) = interface.construction_parameter() {
@@ -152,18 +153,46 @@ pub(super) fn bind(
     {
         return None;
     }
-    let writable = |pointer: &Address, bytes| {
-        caller
-            .resources
-            .memory_write_range(pointer, bytes, &PureFactContext::new())
-            .is_some()
-            && crate::kernel::eval::memory_write_permission_outcome(
+    let assumptions = PureFactContext::new();
+    let mut pending = Vec::new();
+    let mut writable = |pointer: &Address, bytes| {
+        if caller
+            .resources()
+            .memory_write_range(pointer, bytes, &assumptions)
+            .is_none()
+            || crate::kernel::eval::memory_write_storage_outcome(
                 caller,
                 pointer,
                 bytes,
-                &PureFactContext::new(),
+                &assumptions,
             )
-            .is_none()
+            .is_some()
+        {
+            return false;
+        }
+        let Some(ledger) = caller
+            .loan_ledger()
+            .filter(|ledger| ledger.has_active_memory_loans())
+        else {
+            return true;
+        };
+        let range =
+            MemoryRange::new_with_element_width(pointer.clone(), 0u32.into(), 1u32.into(), bytes);
+        if loan_obligations.is_some() {
+            if let Some(requirement) = ledger.memory_access_requirement(&range) {
+                pending.push(
+                    ProofObligation::verification_condition(requirement)
+                        .with_statement_entry_required(true)
+                        .with_context("construction destination write separation"),
+                );
+            }
+            true
+        } else {
+            // Body execution binds directly and has no modular entry proof.
+            ledger
+                .permits_memory_access_with_assumptions(&range, &assumptions)
+                .is_ok()
+        }
     };
     let authorized = if interface.construction_parameter().is_some() {
         // Native constructor contracts own fields, not padding. The body and
@@ -180,6 +209,9 @@ pub(super) fn bind(
     };
     if !authorized {
         return None;
+    }
+    if let Some(obligations) = loan_obligations {
+        obligations.extend(pending);
     }
     callee.aggregate_destination = selected_state.aggregate_destination.clone();
     if interface.construction_parameter().is_none() {

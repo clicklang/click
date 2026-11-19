@@ -3758,6 +3758,50 @@ pub fn program_function_input_objects_state(
     program_function_entry_state_with(caller_state, function, arguments, true)
 }
 
+/// Keeps the identity of each aggregate proof input explicitly named by a
+/// logical resource. Select by the materialized slot's exact pointer key.
+pub(crate) fn with_resource_keyed_aggregate_proof_inputs(
+    mut state: ExecutionState,
+    function: &ProgramFunction,
+) -> ExecutionState {
+    let mut owner = None;
+    for parameter in function.parameters() {
+        crate::instrumentation::record_deterministic_work(1);
+        if parameter.aggregate_layout().is_none() {
+            continue;
+        }
+        let name = parameter.binding_name();
+        let Some(LocalBinding::AggregateObject {
+            layout,
+            slot,
+            constant,
+            ..
+        }) = state.locals.binding(name)
+        else {
+            continue;
+        };
+        if state
+            .resources
+            .owned_instances_with_pointer_argument(slot)
+            .next()
+            .is_none()
+        {
+            continue;
+        }
+        let owner = owner.get_or_insert_with(|| Arc::<str>::from(function.name()));
+        state.locals.insert_binding(
+            name.clone(),
+            LocalBinding::AggregateObject {
+                layout: layout.clone(),
+                slot: slot.clone(),
+                constant: *constant,
+                proof_input_for: Some(owner.clone()),
+            },
+        );
+    }
+    state
+}
+
 fn program_function_entry_state_with(
     caller_state: &ExecutionState,
     function: &ProgramFunction,
@@ -7663,7 +7707,7 @@ pub(crate) fn prove_program_function_contract_refinement(
         || !values
             .iter()
             .zip(context.contract.value_arguments())
-            .all(|(term, value)| matches!(term, Term::ProgramValue(term) if term == value))
+            .all(|(term, value)| matches!(term, Term::ProgramValue(term) if term.native_compat() == value))
     {
         return None;
     }
@@ -7689,7 +7733,7 @@ pub(crate) fn prove_program_function_contract_refinement(
                 name: source.predicate_name(),
                 arguments: [
                     state.clone(),
-                    Term::ProgramValue(ProgramValue::Pointer(context.pointer.clone())),
+                    Term::ProgramValue(ProgramValue::Pointer(context.pointer.clone()).into()),
                 ]
                 .into_iter()
                 .chain(
@@ -7697,7 +7741,7 @@ pub(crate) fn prove_program_function_contract_refinement(
                         .value_arguments()
                         .iter()
                         .cloned()
-                        .map(Term::ProgramValue),
+                        .map(|value| Term::ProgramValue(value.into())),
                 )
                 .collect(),
             };
@@ -7817,10 +7861,15 @@ pub(crate) fn prove_executed_contract_refinement(
                 .predicate_name(),
             arguments: [
                 state.clone(),
-                Term::ProgramValue(ProgramValue::Pointer(pointer.clone())),
+                Term::ProgramValue(ProgramValue::Pointer(pointer.clone()).into()),
             ]
             .into_iter()
-            .chain(source_values.iter().cloned().map(Term::ProgramValue))
+            .chain(
+                source_values
+                    .iter()
+                    .cloned()
+                    .map(|value| Term::ProgramValue(value.into())),
+            )
             .collect(),
         };
         implication = Proposition::Implies(Box::new(premise), Box::new(implication));
@@ -7848,7 +7897,7 @@ fn executed_conclusion_values(
         .get(2..)?
         .iter()
         .map(|argument| match argument {
-            Term::ProgramValue(value) => Some(value.clone()),
+            Term::ProgramValue(value) => Some(value.native_compat().clone()),
             _ => None,
         })
         .collect::<Option<Vec<_>>>()?;

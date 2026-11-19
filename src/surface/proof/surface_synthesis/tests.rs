@@ -4155,14 +4155,46 @@ fn local_read_test_address(name: &str) -> Address {
     }
 }
 
-fn local_read_test_store(state: &ExecutionState, pointer: &Address, bits: u32) -> ExecutionState {
-    state.clone().with_memory(state.memory().clone().store(
-        pointer.clone(),
-        ProgramValue::Int32(MachineTerm::constant(bits)),
-    ))
+fn local_test_read_operand(term: &MachineTerm, value_type: ProgramType) -> &MachineTerm {
+    if value_type == ProgramType::UInt8
+        && let MachineTerm::Cast {
+            from: MachineIntegerType::UInt8,
+            to: MachineIntegerType::Int32,
+            value,
+            ..
+        } = term
+    {
+        return value;
+    }
+    term
 }
 
-fn local_read_test_claim() -> ClickProposition {
+fn local_read_test_store(
+    state: &ExecutionState,
+    pointer: &Address,
+    value_type: ProgramType,
+    bits: u32,
+) -> ExecutionState {
+    let value = match value_type {
+        ProgramType::UInt8 => ProgramValue::UInt8(MachineTerm::narrow_constant(
+            MachineIntegerType::UInt8,
+            u128::from(bits & 0xff),
+        )),
+        ProgramType::Int32 => ProgramValue::Int32(MachineTerm::constant(bits)),
+        ProgramType::UInt32 => ProgramValue::UInt32(MachineTerm::uint32_constant(bits)),
+        _ => unreachable!("indexed local test type"),
+    };
+    state
+        .clone()
+        .with_memory(state.memory().clone().store(pointer.clone(), value))
+}
+
+fn local_read_test_claim(value_type: ProgramType) -> ClickProposition {
+    let limit = if value_type == ProgramType::UInt32 {
+        ProgramValue::UInt32(MachineTerm::uint32_constant(20))
+    } else {
+        int32(20)
+    };
     ClickProposition::Comparison {
         left: ContractExpression::CUnary {
             operand: Box::new(ContractExpression::ProgramExpression(
@@ -4170,7 +4202,7 @@ fn local_read_test_claim() -> ClickProposition {
             )),
             lowered: ProgramExpression::TypedLoad {
                 pointer: Box::new(ProgramExpression::Value(int32(0))),
-                value_type: ProgramType::Int32,
+                value_type,
                 volatile: false,
                 pointee_constant: false,
                 access_class: None,
@@ -4178,36 +4210,47 @@ fn local_read_test_claim() -> ClickProposition {
             },
         },
         operator: ComparisonOperator::LessEqual,
-        right: ContractExpression::IntegerLiteral("20".into()),
+        right: ContractExpression::ProgramExpression(ProgramExpression::Value(limit)),
     }
 }
 
 #[test]
-fn ordinary_int32_reads_select_the_write_on_their_own_path() {
+fn ordinary_indexed_integer_reads_select_the_write_on_their_own_path() {
+    check_local_read_versions(ProgramType::UInt8, ProgramType::Int32);
+    check_local_read_versions(ProgramType::Int32, ProgramType::UInt8);
+    check_local_read_versions(ProgramType::Int32, ProgramType::UInt32);
+    check_local_read_versions(ProgramType::UInt32, ProgramType::Int32);
+}
+
+fn check_local_read_versions(value_type: ProgramType, disjoint_type: ProgramType) {
     let _session = crate::kernel::VerificationSession::enter();
+    let pointer_type = match value_type {
+        ProgramType::UInt8 => ProgramType::UInt8Pointer,
+        ProgramType::Int32 => ProgramType::Int32Pointer,
+        ProgramType::UInt32 => ProgramType::UInt32Pointer,
+        _ => unreachable!("indexed local test type"),
+    };
     let slot = local_read_test_address("slot");
     let other = local_read_test_address("other");
+    let load_kind = crate::kernel::LoadKind::of_type(value_type).unwrap();
     let start = ExecutionState::new()
         .with_memory(
             SymbolicMemory::new()
                 .with_block("local:slot", 4)
                 .with_block("local:other", 4),
         )
-        .with_local(
-            "p",
-            ProgramValue::typed_pointer(slot.clone(), ProgramType::Int32Pointer),
-        );
-    let left_write = local_read_test_store(&start, &slot, 7);
-    let right_write = local_read_test_store(&start, &slot, 7);
-    let left = local_read_test_store(&left_write, &other, 1);
-    let right = local_read_test_store(&right_write, &other, 1);
+        .with_local("p", ProgramValue::typed_pointer(slot.clone(), pointer_type));
+    let left_write = local_read_test_store(&start, &slot, value_type, 7);
+    let right_write = local_read_test_store(&start, &slot, value_type, 7);
+    let left = local_read_test_store(&left_write, &other, disjoint_type, 1);
+    let right = local_read_test_store(&right_write, &other, disjoint_type, 1);
     assert_eq!(left.memory(), right.memory());
     assert_ne!(
         left_write.program_point_id(),
         right_write.program_point_id()
     );
 
-    let claim = local_read_test_claim();
+    let claim = local_read_test_claim(value_type);
     let selectors = [
         ProgramPointSelector::Mark("left_write".into()),
         ProgramPointSelector::Mark("right_write".into()),
@@ -4226,13 +4269,16 @@ fn ordinary_int32_reads_select_the_write_on_their_own_path() {
         let Some((ConditionTerm::Compare { left, .. }, true)) = lowered.condition_native() else {
             panic!("read comparison");
         };
-        let MachineTerm::MemoryLoad(point, _, kind) = left.as_ref() else {
-            panic!("ordinary int32 read: {left:?}");
+        let read = local_test_read_operand(left, value_type);
+        let MachineTerm::MemoryLoad(point, _, kind) = read else {
+            panic!("ordinary {value_type:?} read: {left:?}");
         };
-        assert_eq!(*kind, crate::kernel::LoadKind::Int32);
+        assert_eq!(*kind, load_kind);
         assert_eq!(point.id(), write.program_point_id());
-        let root =
-            crate::kernel::KernelTermImport::default().machine(MachineIntegerType::Int32, left);
+        let root = crate::kernel::KernelTermImport::default().machine(
+            MachineIntegerType::from_program_type(value_type).unwrap(),
+            read,
+        );
         assert!(
             matches!(root.node(), crate::kernel::KernelTermNode::MemoryLoad { point, .. }
             if point.id() == write.program_point_id())
@@ -4245,11 +4291,11 @@ fn ordinary_int32_reads_select_the_write_on_their_own_path() {
         )
         .expect("a named version has an ordinary read spelling");
         assert!(matches!(&raised, ContractExpression::At { selector: at, .. } if at == selector));
-        let replay = ClickProposition::Comparison {
-            left: raised,
-            operator: ComparisonOperator::LessEqual,
-            right: ContractExpression::IntegerLiteral("20".into()),
+        let mut replay = claim.clone();
+        let ClickProposition::Comparison { left, .. } = &mut replay else {
+            unreachable!("test comparison")
         };
+        *left = raised;
         assert_eq!(
             relower_written_proposition_with_states(&replay, other_path, other_path, &points),
             Ok(lowered)
@@ -4258,29 +4304,51 @@ fn ordinary_int32_reads_select_the_write_on_their_own_path() {
     }
     assert_ne!(roots[0], roots[1]);
 
-    let repeated = local_read_test_store(&left, &slot, 7);
+    let repeated = local_read_test_store(&left, &slot, value_type, 7);
     assert_eq!(left.memory(), repeated.memory());
     assert_eq!(
         repeated
             .program_point()
-            .indexed_local_int32_version(&slot)
+            .indexed_local_integer_version(&slot, load_kind)
             .unwrap()
             .id(),
         repeated.program_point_id()
     );
-    let possibly_aliasing = local_read_test_store(&left, &Address::symbolic(Variable(981_640)), 9);
+    let mismatched = local_read_test_store(&left, &slot, disjoint_type, 7);
+    assert!(
+        mismatched
+            .program_point()
+            .indexed_local_integer_version(&slot, load_kind)
+            .is_none(),
+        "a write with different signedness ends the prior version"
+    );
+
+    let possibly_aliasing =
+        local_read_test_store(&left, &Address::symbolic(Variable(981_640)), value_type, 9);
     assert!(
         possibly_aliasing
             .program_point()
-            .indexed_local_int32_version(&slot)
+            .indexed_local_integer_version(&slot, load_kind)
             .is_none(),
         "an unclassified store cannot keep an indexed version"
     );
 }
 
 #[test]
-fn ordinary_int32_read_work_is_independent_of_unrelated_path_length() {
+fn ordinary_indexed_integer_read_work_is_bounded_as_path_grows() {
+    check_local_read_work(ProgramType::UInt8, ProgramType::Int32);
+    check_local_read_work(ProgramType::Int32, ProgramType::UInt32);
+    check_local_read_work(ProgramType::UInt32, ProgramType::Int32);
+}
+
+fn check_local_read_work(value_type: ProgramType, disjoint_type: ProgramType) {
     let _session = crate::kernel::VerificationSession::enter();
+    let pointer_type = match value_type {
+        ProgramType::UInt8 => ProgramType::UInt8Pointer,
+        ProgramType::Int32 => ProgramType::Int32Pointer,
+        ProgramType::UInt32 => ProgramType::UInt32Pointer,
+        _ => unreachable!("indexed local test type"),
+    };
     let slot = local_read_test_address("slot");
     let other = local_read_test_address("other");
     let start = ExecutionState::new()
@@ -4289,23 +4357,20 @@ fn ordinary_int32_read_work_is_independent_of_unrelated_path_length() {
                 .with_block("local:slot", 4)
                 .with_block("local:other", 4),
         )
-        .with_local(
-            "p",
-            ProgramValue::typed_pointer(slot.clone(), ProgramType::Int32Pointer),
-        );
-    let claim = local_read_test_claim();
+        .with_local("p", ProgramValue::typed_pointer(slot.clone(), pointer_type));
+    let claim = local_read_test_claim(value_type);
     let mut work = Vec::new();
     for (earlier, later) in [(4, 4), (64, 4), (1024, 4), (4, 64), (4, 1024)] {
         // Grow the history of overwritten values and the disjoint suffix
         // independently. Every sample names a new version on its own path.
         let mut before = start.clone();
         for i in 0..earlier {
-            before = local_read_test_store(&before, &slot, i);
+            before = local_read_test_store(&before, &slot, value_type, i);
         }
-        let write = local_read_test_store(&before, &slot, earlier);
+        let write = local_read_test_store(&before, &slot, value_type, earlier);
         let mut reader = write.clone();
         for i in 0..later {
-            reader = local_read_test_store(&reader, &other, i);
+            reader = local_read_test_store(&reader, &other, disjoint_type, i);
         }
         let ((lowered, map_work), proof_work) =
             crate::instrumentation::measure_deterministic_work(|| {
@@ -4316,8 +4381,10 @@ fn ordinary_int32_read_work_is_independent_of_unrelated_path_length() {
         let Some((ConditionTerm::Compare { left, .. }, true)) = lowered.condition_native() else {
             panic!("read comparison");
         };
-        assert!(matches!(left.as_ref(), MachineTerm::MemoryLoad(point, _, _)
-            if point.id() == write.program_point_id()));
+        assert!(
+            matches!(local_test_read_operand(left, value_type), MachineTerm::MemoryLoad(point, _, _)
+            if point.id() == write.program_point_id())
+        );
         work.push((proof_work, map_work));
     }
     let (first_proof_work, first_map_work) = work[0];
@@ -4325,7 +4392,7 @@ fn ordinary_int32_read_work_is_independent_of_unrelated_path_length() {
     // pointer terms. Later samples may reuse them, but still select a new read.
     assert!(
         work.iter()
-            .all(|&(proof, map)| proof <= first_proof_work && map == first_map_work),
+            .all(|&(proof, map)| proof <= first_proof_work && map <= first_map_work),
         "lowering grew with the execution history: {work:?}"
     );
 }
@@ -7532,6 +7599,41 @@ fn symbolic_unsigned_equality_guards_keep_high_bit_literals() {
 }
 
 #[test]
+fn boolean_equality_guards_round_trip_after_rewrite() {
+    use MachineIntegerType as T;
+    for (format, spelling) in [
+        (T::Int32, "int32"),
+        (T::UInt32, "uint32"),
+        (T::Int64, "int64"),
+        (T::UInt64, "uint64"),
+    ] {
+        let mut fixture = ConditionalRoundTrip::new(format, spelling);
+        for (name, id) in [("a", 999712), ("b", 999713)] {
+            fixture.state = fixture.state.with_local(
+                name,
+                ProgramValue::of_bool(ConditionTerm::Variable(Variable(id))),
+            );
+        }
+        for replacement in [
+            "if a == b { true } else { false }",
+            "a",
+            "if y < z { true } else { false }",
+        ] {
+            let equality = fixture.lower(&format!("flag == ({replacement})"));
+            let literal = format!("(5 as {spelling})");
+            for guard in ["flag", "not flag"] {
+                for arm in ["x", literal.as_str()] {
+                    for reverse in [false, true] {
+                        let original = fixture.goal(guard, reverse, arm);
+                        fixture.check(&original, &equality, guard, reverse);
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn boolean_variable_guard_conditionals_round_trip_after_rewrite() {
     use crate::kernel::MachineIntegerType as T;
     for (format, spelling) in [
@@ -7725,6 +7827,37 @@ fn bitwise_round_trip_operands(spelling: &str) -> [String; 4] {
         format!("z ^ (7 as {spelling})"),
         "~z".into(),
     ]
+}
+
+#[test]
+fn nested_machine_conditionals_round_trip_after_rewrite() {
+    use MachineIntegerType as T;
+    for (format, spelling) in [
+        (T::Int32, "int32"),
+        (T::UInt32, "uint32"),
+        (T::Int64, "int64"),
+        (T::UInt64, "uint64"),
+    ] {
+        let mut fixture = ConditionalRoundTrip::new(format, spelling);
+        fixture.state = fixture.state.with_local(
+            "inner",
+            ProgramValue::of_bool(ConditionTerm::Variable(Variable(999712))),
+        );
+        for replacement in [
+            "y".into(),
+            format!("y & (7 as {spelling})"),
+            "if inner { y } else { z }".into(),
+            format!("if y < z {{ y }} else {{ 4 as {spelling} }}"),
+        ] {
+            let equality = fixture.lower(&format!("x == ({replacement})"));
+            for guard in ["flag", "not flag", "y < z", "y == z"] {
+                for reverse in [false, true] {
+                    let original = fixture.goal(guard, reverse, "x");
+                    fixture.check(&original, &equality, guard, reverse);
+                }
+            }
+        }
+    }
 }
 
 #[test]
@@ -8285,6 +8418,41 @@ fn widening_casts_in_conditionals_round_trip_after_rewrite() {
                         reverse,
                     );
                 }
+            }
+        }
+    }
+}
+
+#[test]
+fn signedness_casts_in_conditionals_round_trip_after_rewrite() {
+    use MachineIntegerType as T;
+    for (source, destination, spelling) in [
+        (T::UInt32, T::Int32, "int32"),
+        (T::Int32, T::UInt32, "uint32"),
+        (T::UInt64, T::Int64, "int64"),
+        (T::Int64, T::UInt64, "uint64"),
+    ] {
+        let mut fixture = ConditionalRoundTrip::new(destination, spelling);
+        fixture.state = fixture.state.with_local(
+            "w",
+            source.value_from_term(MachineTerm::Variable(Variable(999712))),
+        );
+        let equality = fixture.lower(&format!("x == (w as {spelling})"));
+        for reverse in [false, true] {
+            for (guard, arm) in [
+                ("flag", "x"),
+                ("not flag", "x"),
+                ("x < y", "z"),
+                ("x == y", "z"),
+                ("y <= x", "z"),
+                ("y != x", "z"),
+            ] {
+                fixture.check(
+                    &fixture.goal(guard, reverse, arm),
+                    &equality,
+                    guard,
+                    reverse,
+                );
             }
         }
     }

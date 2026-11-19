@@ -799,7 +799,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         }
         if matches!(goal, Proposition::And(_, _)) {
             let (split_proof, split, ids) = driver_proof.split_focused_both()?;
-            let marker = split_proof.checkpoint();
+            let marker = split_proof.conjunction_checkpoint(ids)?;
             let Some(left) = split_proof
                 .focus_branch(ids[0])?
                 .driver()

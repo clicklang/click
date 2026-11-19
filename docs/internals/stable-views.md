@@ -231,6 +231,14 @@ addresses require separation from the ledger's live memory footprint,
 including same-value writes. A nested reader reborrows the local loan through
 its exact resource binding.
 
+Modeled pthread mutex operations on automatic storage carry representation
+separation obligations. External mutex operations and modular mutex summaries
+still use a conservative check when the representation range lacks a checked
+caller-side spelling. Modular construction checks the destination fields, or
+the complete result span for a construction return. Fresh aggregate result
+temporaries cannot have a prior loan. Automatic initialization checks the
+active-loan index for the storage identity.
+
 For a suspended modeled-pthread worker borrowing a parent view, the checked
 entry splits the parent's current share. The parent retains one sibling and
 the worker reborrows the other. A join ends that worker's child scope, returns
@@ -373,7 +381,12 @@ summary as synchronous calls, but keeps the worker's output resources and
 postconditions in an opaque completion registry. Spawn requires termination
 evidence for the exact verified function. Failed creation preserves the
 parent; an empty or ambiguous summary refuses rather than removing its path.
-Successful creation exposes only the mutable-footprint havoc to the parent.
+Creation requires entry separation for each exact worker write range against
+existing loans. A whole-allocation retirement also covers loans opened by the
+worker transfer. Both conditions are checked at `pthread_create`, before
+either runtime outcome can be used. Successful creation exposes the write
+and retirement effects to the parent. An unresolved write projection keeps
+its conservative admission check.
 
 Join composes the explicit worker output delta into the current parent frame
 and closes just that worker's loans against the current ledger. It never

@@ -334,6 +334,7 @@ impl Metadata<'_> {
                     arguments,
                     value_type,
                     span,
+                    ..
                 } => {
                     self.callee(callee)?;
                     self.value_type(value_type)?;

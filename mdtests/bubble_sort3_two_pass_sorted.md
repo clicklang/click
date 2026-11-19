@@ -71,11 +71,11 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
         initialize by {
             have j >= 0 and j <= 2 by {
                 unfold(all_le_range(p, 0, j, p[j]));
-                both {
-                    left => {
+                all {
+                    j >= 0 => {
                         normalize();
                     }
-                    right => {
+                    j <= 2 => {
                         normalize();
                     }
                 }
@@ -187,11 +187,11 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
         initialize by {
             have j >= 0 and j <= 1 by {
                 unfold(all_le_range(p, 0, j, p[j]));
-                both {
-                    left => {
+                all {
+                    j >= 0 => {
                         normalize();
                     }
-                    right => {
+                    j <= 1 => {
                         normalize();
                     }
                 }
