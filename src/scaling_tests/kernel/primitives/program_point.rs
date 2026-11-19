@@ -165,12 +165,15 @@ fn sealing_checked_footprints_ignores_cells_in_untouched_objects() {
             &PureFactContext::new(),
             None,
         );
-        let mut loop_memory = written.memory().clone().with_loop_memory_havoc_preserving_loans(
-            Variable(38_132),
-            &std::collections::BTreeSet::from([slot.base.clone()]),
-            Some(&ranges),
-            None,
-        );
+        let mut loop_memory = written
+            .memory()
+            .clone()
+            .with_loop_memory_havoc_preserving_loans(
+                Variable(38_132),
+                &std::collections::BTreeSet::from([slot.base.clone()]),
+                Some(&ranges),
+                None,
+            );
         // Measure sealing the already prepared effects, including the indexed
         // lookup. Building the legacy memory views is a separate operation.
         let call_steps = call_memory.pending_steps.take();
@@ -191,5 +194,8 @@ fn sealing_checked_footprints_ignores_cells_in_untouched_objects() {
         });
         samples.push((count, work));
     }
-    assert!(samples.iter().all(|&(_, work)| work == samples[0].1), "{samples:?}");
+    assert!(
+        samples.iter().all(|&(_, work)| work == samples[0].1),
+        "{samples:?}"
+    );
 }
