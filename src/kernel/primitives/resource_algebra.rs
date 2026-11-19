@@ -4477,6 +4477,35 @@ impl ResourceContext {
         .then(|| self.occurrence(entry))
     }
 
+    /// Resolve an authored input against the checked partition. An exact
+    /// principal occurrence wins over other views covering the same bytes.
+    /// After normalization a single covering principal may represent several
+    /// clauses, in which case they install one loan for that occurrence.
+    pub(crate) fn principal_input_view_occurrence(
+        &self,
+        required: &ResourceFact,
+        assumptions: &PureFactContext,
+    ) -> Option<ResourceOccurrenceId> {
+        let mut exact = self
+            .storage
+            .index
+            .exact
+            .get(required)
+            .into_iter()
+            .flat_map(|entries| entries.iter())
+            .map(|entry| self.occurrence(*entry))
+            .filter(|occurrence| self.view_occurrence_is_principal(*occurrence));
+        if let Some(occurrence) = exact.next() {
+            return exact.next().is_none().then_some(occurrence);
+        }
+        let candidates = self.view_occurrences_for_fact(required, assumptions);
+        let mut principals = candidates
+            .into_iter()
+            .filter(|occurrence| self.view_occurrence_is_principal(*occurrence));
+        let occurrence = principals.next()?;
+        principals.next().is_none().then_some(occurrence)
+    }
+
     /// Return indexed view occurrences that entail `required`. The caller
     /// resolves each occurrence through an explicit checked-state binding;
     /// this method never searches the loan ledger or unrelated frame entries.
