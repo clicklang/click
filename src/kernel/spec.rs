@@ -2879,7 +2879,7 @@ fn proposition_mentions_integer_variable(proposition: &Proposition, variable: Va
             }
             // An application's arguments or a read's address may carry
             // one; keep the scope, as for an opaque payload.
-            ConditionTerm::BoolApplication(_) | ConditionTerm::BoolLoad(..) => true,
+            ConditionTerm::BoolApplication(_) => true,
             ConditionTerm::BoolIf { .. } | ConditionTerm::BoolEqual(..) => condition
                 .bool_children()
                 .any(|child| condition_contains(child, variable)),
@@ -9134,6 +9134,15 @@ fn evaluate_spec_if_paths_in(
         // select an arm; logical lowering retains both guarded values.
         let retained_comparison = !budget.machine_result_production_disabled
             && match &condition_path.proposition {
+                Proposition::ConditionIs(condition, _)
+                    if matches!(
+                        condition.root().map(KernelTerm::node),
+                        Some(KernelTermNode::BoolEqual { .. })
+                    ) =>
+                {
+                    true
+                }
+
                 Proposition::ConditionIs(condition, _)
                     if crate::kernel::machine_integer::comparison::is_bounded_machine_comparison(
                         condition.native_compat(),

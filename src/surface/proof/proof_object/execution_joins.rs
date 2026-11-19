@@ -514,7 +514,7 @@ impl<'a> Proof<'a> {
     ) -> Result<(), ClickError> {
         if let Some(condition_theorem) = arm.condition_theorem
             && !matches!(
-                implication_body(condition_theorem.proposition()),
+                condition_theorem.execution_conclusion(),
                 Proposition::ProgramConditionEvaluates {
                     outcome: ConditionOutcome::Value(actual),
                     ..
@@ -946,7 +946,7 @@ impl<'a> Proof<'a> {
                     &parent_execution.core.state,
                     &target,
                     &common_states,
-                    context.arguments,
+                    context.parameter_binding(),
                     context.spec_definitions,
                 )),
                 ProofAssertion::Resource(_) => None,
@@ -3724,6 +3724,7 @@ impl<'a> Proof<'a> {
         &self,
         split: Option<ConditionSplit>,
     ) -> Result<(Self, ExecutionSplit<'a>), ClickError> {
+        let _timing = crate::instrumentation::OperationTiming::new("", "", "C branch split");
         let prepared = self.prepare_execution_branch(split)?;
         let Some(Obligation::Frontier(_)) = self.focused_obligation() else {
             return Err(self.step_error("`branch` requires an open execution frontier"));

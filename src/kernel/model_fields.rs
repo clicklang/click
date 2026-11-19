@@ -22,7 +22,7 @@
 //! premise and no name a term carries depends on it.
 
 use crate::kernel::primitives::{
-    AlgebraicTerm, AlgebraicTermNode, IntegerTerm, MachineTerm, Variable,
+    AlgebraicTerm, AlgebraicTermNode, InstanceId, IntegerTerm, MachineTerm, Variable,
 };
 use std::sync::Arc;
 
@@ -88,7 +88,7 @@ pub(crate) enum ModelMint {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ModelFieldOrigin {
     /// The instance the field belongs to, by the identity the state indexes.
-    pub(crate) identity: Variable,
+    pub(crate) identity: InstanceId,
     /// The field's declared name, for spelling `c.rank`.
     pub(crate) field: Arc<str>,
     pub(crate) field_index: usize,
@@ -100,13 +100,13 @@ thread_local! {
         std::collections::HashMap<Variable, ModelFieldOrigin>,
     > = std::cell::RefCell::new(std::collections::HashMap::new());
     static INSTANCE_SPELLINGS: std::cell::RefCell<
-        std::collections::HashMap<Variable, Arc<str>>,
+        std::collections::HashMap<InstanceId, Arc<str>>,
     > = std::cell::RefCell::new(std::collections::HashMap::new());
     /// The field of a schema an `(instance, index)` key is, so a refusal that
     /// holds the tracker's key rather than a term can still spell it. Filled by
     /// the same insert as the table above.
     static INSTANCE_FIELD_NAMES: std::cell::RefCell<
-        std::collections::HashMap<(Variable, usize), Arc<str>>,
+        std::collections::HashMap<(InstanceId, usize), Arc<str>>,
     > = std::cell::RefCell::new(std::collections::HashMap::new());
     /// The population whose function-entry count each variable is, so a
     /// diagnostic spells it `old(count(R(p, _)))`.
@@ -137,7 +137,7 @@ pub(crate) fn register_model_field_variable(variable: Variable, origin: ModelFie
 
 /// The reader's own spelling of one field of one instance, `c.rank`, from the
 /// tracker's key rather than from a term.
-pub(crate) fn instance_field_surface(identity: Variable, field_index: usize) -> Option<String> {
+pub(crate) fn instance_field_surface(identity: InstanceId, field_index: usize) -> Option<String> {
     let owner = registered_instance_spelling(identity)?;
     let field = INSTANCE_FIELD_NAMES
         .with(|registry| registry.borrow().get(&(identity, field_index)).cloned())?;
@@ -153,7 +153,7 @@ pub(crate) fn registered_model_field_origin(variable: Variable) -> Option<ModelF
 /// binder, `c`. The surface supplies it where it resolves a field access,
 /// because an instance identity is a kernel variable and only the surface knows
 /// what it was called.
-pub(crate) fn register_instance_spelling(identity: Variable, spelling: &str) {
+pub(crate) fn register_instance_spelling(identity: InstanceId, spelling: &str) {
     INSTANCE_SPELLINGS.with(|registry| {
         let mut registry = registry.borrow_mut();
         if registry.len() >= MAX_REGISTERED {
@@ -165,7 +165,7 @@ pub(crate) fn register_instance_spelling(identity: Variable, spelling: &str) {
     });
 }
 
-pub(crate) fn registered_instance_spelling(identity: Variable) -> Option<Arc<str>> {
+pub(crate) fn registered_instance_spelling(identity: InstanceId) -> Option<Arc<str>> {
     INSTANCE_SPELLINGS.with(|registry| registry.borrow().get(&identity).cloned())
 }
 
@@ -220,8 +220,8 @@ pub(crate) fn registered_population_entry_count(
 #[derive(Clone)]
 pub(crate) struct ModelFieldRegistryState {
     variables: std::collections::HashMap<Variable, ModelFieldOrigin>,
-    spellings: std::collections::HashMap<Variable, Arc<str>>,
-    field_names: std::collections::HashMap<(Variable, usize), Arc<str>>,
+    spellings: std::collections::HashMap<InstanceId, Arc<str>>,
+    field_names: std::collections::HashMap<(InstanceId, usize), Arc<str>>,
     entry_counts: std::collections::HashMap<Variable, PopulationEntryCount>,
 }
 

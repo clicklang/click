@@ -45,6 +45,18 @@ pub(in crate::kernel) fn wrap_proof_facts(
     facts: &(impl ExecutionFactSource + ?Sized),
     obligations: &[ProofObligation],
 ) -> Proposition {
+    wrap_ambient_proof_facts(
+        wrap_local_proof_facts(proposition, facts, obligations),
+        &assumptions.prop_facts,
+        &assumptions.condition_facts,
+    )
+}
+
+pub(in crate::kernel) fn wrap_local_proof_facts(
+    proposition: Proposition,
+    facts: &(impl ExecutionFactSource + ?Sized),
+    obligations: &[ProofObligation],
+) -> Proposition {
     let proposition = obligations
         .iter()
         .rev()
@@ -52,7 +64,7 @@ pub(in crate::kernel) fn wrap_proof_facts(
             Proposition::Implies(Box::new(obligation.proposition().clone()), Box::new(body))
         });
 
-    let proposition = facts
+    facts
         .fact_iter()
         .filter(|fact| fact.is_public())
         .filter(|fact| {
@@ -62,25 +74,30 @@ pub(in crate::kernel) fn wrap_proof_facts(
         .rev()
         .fold(proposition, |body, fact| {
             Proposition::Implies(Box::new(fact.proposition().clone()), Box::new(body))
-        });
+        })
+}
 
-    let proposition = assumptions
-        .prop_facts
+pub(in crate::kernel) fn wrap_ambient_proof_facts(
+    proposition: Proposition,
+    propositions: &crate::kernel::fact_collections::FactSet<Proposition>,
+    conditions: &crate::kernel::fact_collections::FactMap<ConditionTerm, bool>,
+) -> Proposition {
+    let proposition = propositions
         .scan_for_upkeep()
         .rev()
         .fold(proposition, |body, proposition| {
             Proposition::Implies(Box::new(proposition.clone()), Box::new(body))
         });
 
-    assumptions.condition_facts.scan_for_upkeep().rev().fold(
-        proposition,
-        |body, (condition, value)| {
+    conditions
+        .scan_for_upkeep()
+        .rev()
+        .fold(proposition, |body, (condition, value)| {
             Proposition::Implies(
                 Box::new(Proposition::condition_is(condition.clone(), *value)),
                 Box::new(body),
             )
-        },
-    )
+        })
 }
 
 /// Why one node at the head of a lowered proposition exists.

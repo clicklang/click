@@ -590,6 +590,14 @@ joins. Separately grow explicit arms, changed entries and invariant text.
 Classify retained-state traversal against these actual inputs and changes;
 exclude unavoidable explicit path enumeration from the ambient test.
 
+Loop exit reconciliation uses persistent differences to select local
+initialization, local value, and cell changes. The gate's
+`a_loop_exit_join_visits_only_changed_bindings_and_cells` grows both
+shared maps at 4/16/64/256. It checks a two-exit local join and selection of a
+cell present only on a later exit. Reconstructing a residual memory witness
+can still compare equal cell maps during interning, and restating exit facts
+can substitute through an entire memory snapshot.
+
 ### E1 and Q1: logical steps and evidence lifecycle — deferred evidence/gaps
 
 [Scaling](scaling.md), cause 4, records repeated execution, result revalidation

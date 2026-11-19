@@ -6,6 +6,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 mod program_values;
+use crate::kernel::InstanceId;
 use crate::kernel::RetainedProgramValue;
 use program_values::ProgramValueBindings;
 use std::fmt;
@@ -1294,7 +1295,7 @@ pub struct ResourceChildBody {
     /// parameters and fields are what the child's arguments and field
     /// equations are checked against.
     resource: String,
-    identity: Variable,
+    identity: crate::kernel::InstanceId,
     arguments: Vec<ContractExpression>,
     field_bindings: Vec<crate::kernel::ResourceChildField>,
 }
@@ -1439,7 +1440,7 @@ pub struct ContractResourceArgument {
     /// The caller's instance name.
     name: String,
     resource_name: String,
-    identity: Variable,
+    identity: InstanceId,
 }
 
 /// One entry of a call step's binder map: a binder the callee declared, and
@@ -1450,11 +1451,11 @@ pub struct CallBinderBinding {
     /// The callee's binder name, written on the left of the map entry.
     binder: String,
     /// The identity the callee's own contract gave that binder.
-    binder_identity: Variable,
+    binder_identity: InstanceId,
     /// The caller's instance name.
     instance: String,
     /// The caller's instance identity.
-    identity: Variable,
+    identity: InstanceId,
     /// The resource a produced instance is, from the callee's contract;
     /// `None` for an instance the caller supplies.
     family: Option<String>,
@@ -1474,11 +1475,11 @@ impl CallBinderBinding {
         &self.instance
     }
 
-    pub(crate) fn binder_identity(&self) -> Variable {
+    pub(crate) fn binder_identity(&self) -> InstanceId {
         self.binder_identity
     }
 
-    pub(crate) fn identity(&self) -> Variable {
+    pub(crate) fn identity(&self) -> InstanceId {
         self.identity
     }
 
@@ -2267,7 +2268,7 @@ pub struct IteratedResourceClause {
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ResourceInstanceBinding {
     name: String,
-    identity: Variable,
+    identity: crate::kernel::InstanceId,
     children: Vec<String>,
     schema: Option<crate::kernel::ResourceFieldSchema>,
     fields: Option<crate::kernel::ResourceFieldValues>,
@@ -2275,14 +2276,14 @@ pub struct ResourceInstanceBinding {
     fold_fields: Option<Vec<(String, ContractExpression)>>,
     /// Explicit child slot, surface name, and instance identity. Shared to
     /// keep recursive tactic syntax small.
-    child_bindings: Option<std::sync::Arc<[(String, String, Variable)]>>,
+    child_bindings: Option<std::sync::Arc<[(String, String, crate::kernel::InstanceId)]>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ResourceFieldAccess {
     owner: String,
     resource_name: String,
-    identity: Variable,
+    identity: crate::kernel::InstanceId,
     children: Vec<String>,
     field: String,
     field_index: usize,
@@ -2300,7 +2301,7 @@ pub enum ResourceSubject {
     Emp,
     Instance {
         name: String,
-        identity: crate::kernel::Variable,
+        identity: crate::kernel::InstanceId,
         /// `at(point, name)`: the instance as it was held at that recorded
         /// state, for an instance the current state no longer holds.
         at: Option<ProgramPointSelector>,
@@ -3595,7 +3596,7 @@ fn model_field_variable<'a>(
 
 fn instance_holds_field_value(
     state: &ExecutionState,
-    identity: crate::kernel::Variable,
+    identity: crate::kernel::InstanceId,
     field_index: usize,
     variable: crate::kernel::Variable,
 ) -> bool {

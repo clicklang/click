@@ -3023,11 +3023,11 @@ pub(in crate::surface) fn narrow_typed_arithmetic(
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::surface) struct InstanceRename {
     pub(in crate::surface) name: String,
-    pub(in crate::surface) identity: Variable,
+    pub(in crate::surface) identity: InstanceId,
     /// The identity the renamed reads take, when the new name denotes a
     /// different instance: a caller's instance bound to a callee's binder.
     /// `None` keeps the identity.
-    pub(in crate::surface) target_identity: Option<Variable>,
+    pub(in crate::surface) target_identity: Option<InstanceId>,
 }
 
 /// Nothing is renamed. A values-only pass borrows this instead of allocating
@@ -3344,7 +3344,7 @@ impl<'a> ContractSubstitutions<'a> {
     pub(in crate::surface) fn instance_rename(
         &self,
         owner: &str,
-        identity: Variable,
+        identity: InstanceId,
     ) -> Option<String> {
         self.instance_renames
             .get(owner)
@@ -3357,8 +3357,8 @@ impl<'a> ContractSubstitutions<'a> {
     fn instance_rename_target(
         &self,
         owner: &str,
-        identity: Variable,
-    ) -> Option<(String, Variable)> {
+        identity: InstanceId,
+    ) -> Option<(String, InstanceId)> {
         self.instance_renames
             .get(owner)
             .filter(|rename| rename.identity == identity)
@@ -3946,7 +3946,7 @@ fn substitute_contract_expression_node(
         ContractExpression::IntegerLiteral(_) => Ok(expression.clone()),
         ContractExpression::ResourceField(access)
             if let Some(fields) = substitutions.body_field_values
-                && access.identity == Variable(u64::MAX)
+                && access.identity == InstanceId::from_variable(Variable(u64::MAX))
                 && access.owner == "__body"
                 && access.children.is_empty() =>
         {
@@ -4980,7 +4980,7 @@ pub(in crate::surface) fn resource_body_program_expression(
     expression: &ContractExpression,
 ) -> Option<ProgramExpression> {
     contract_expression_as_program_expression_resolving_fields(expression, &|access| {
-        (access.identity == Variable(u64::MAX)
+        (access.identity == InstanceId::from_variable(Variable(u64::MAX))
             && access.owner == "__body"
             && access.children.is_empty()
             && access

@@ -373,7 +373,7 @@ fn assumed_authority_contracts_preserve_named_identity_without_lifecycle_rights(
     interface
         .resource_ensures
         .retain(|spec| spec.family() == ResourceFamily::PopulationAuthority);
-    let identity = Variable::allocate_fresh().unwrap();
+    let identity = InstanceId::from_variable(Variable::allocate_fresh().unwrap());
     let schema = ResourceFieldSchema::new(vec![(
         "serial".into(),
         ResourceFieldType::Program(ProgramType::Int32),
@@ -425,7 +425,7 @@ fn assumed_authority_contracts_preserve_named_identity_without_lifecycle_rights(
     changed.resource_ensures.pop();
     changed.resource_ensures.push(
         ResourceSpec::instance(
-            Variable::allocate_fresh().unwrap(),
+            InstanceId::from_variable(Variable::allocate_fresh().unwrap()),
             "member".into(),
             schema,
             member,
@@ -467,7 +467,7 @@ fn companion_interface(member_family: &str) -> FunctionContractInterface {
         crate::kernel::program_expression::int32_literal(1),
     ));
     let parent = ResourceSpec::instance(
-        Variable(991_010),
+        InstanceId::from_variable(Variable(991_010)),
         "link".into(),
         ResourceFieldSchema::new(vec![("tag".into(), ResourceFieldType::Integer)]).unwrap(),
         ResourceSpec::composite(

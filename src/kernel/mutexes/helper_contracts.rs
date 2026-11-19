@@ -8,7 +8,6 @@ use super::assumed_protocol::{AssumedMutexGuard, AssumedMutexProtocol};
 use super::*;
 use crate::kernel::{
     FunctionContractInterface, ResourceFamily, ResourceSpec, ResourceTerm, ResourceTransferRole,
-    Variable,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -453,7 +452,7 @@ pub(in crate::kernel) fn apply_call_effect(
     required: &ResourceFact,
     effect: HelperEffect,
     guard: Option<&ResourceFact>,
-    payload: Option<Variable>,
+    payload: Option<crate::kernel::InstanceId>,
     definition: Option<&crate::kernel::CompositeResourceDefinition>,
     definitions: &std::sync::Arc<[crate::kernel::CompositeResourceDefinition]>,
     assumptions: &PureFactContext,
@@ -670,7 +669,7 @@ mod tests {
     use crate::kernel::{
         ExecutionBudget, FunctionOutcome, ProgramExpression, ProgramFunction, ProgramType,
         ProgramValue, ResourceAccessMode, ResourceContext, ResourceQuantity, ResourceStateSource,
-        program_function, program_skip,
+        Variable, program_function, program_skip,
     };
 
     fn mutex() -> Address {

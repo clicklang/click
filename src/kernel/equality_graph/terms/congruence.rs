@@ -2098,7 +2098,7 @@ impl TermClasses {
                 self.address(b.base.clone(), b.offset.clone()).0,
             ),
             C::AddressOffsetEqual(a, b) => (OffsetEq, self.intern(a), self.intern(b)),
-            C::BoolApplication(_) | C::BoolIf { .. } | C::BoolEqual(..) | C::BoolLoad(..) => {
+            C::BoolApplication(_) | C::BoolIf { .. } | C::BoolEqual(..) => {
                 return self.bool_node(condition);
             }
             _ => return None,
@@ -2142,7 +2142,7 @@ impl TermClasses {
             C::PointerEqual(..) => ConditionKind::PointerEq,
             C::AddressOffsetEqual(..) => ConditionKind::OffsetEq,
             C::BoolEqual(..) => ConditionKind::BoolEq,
-            C::BoolApplication(_) | C::BoolIf { .. } | C::BoolLoad(..) => ConditionKind::BoolValue,
+            C::BoolApplication(_) | C::BoolIf { .. } => ConditionKind::BoolValue,
             _ => return None,
         })
     }
@@ -2191,11 +2191,6 @@ impl TermClasses {
                 let right = self.bool_node(right)?;
                 self.intern_node(Node::Condition(ConditionKind::BoolEq, left, right))
             }
-            C::BoolLoad(memory, pointer) => {
-                let head = self.intern_node(Node::BoolRead(memory.shared_memory().read_identity()));
-                let address = self.address(pointer.base.clone(), pointer.offset.clone()).0;
-                self.intern_node(Node::Apply(head, address))
-            }
             condition => self.condition_node(condition)?,
         };
         Some(node)
@@ -2223,7 +2218,7 @@ impl TermClasses {
                     None => return false,
                 }
             }
-            C::BoolApplication(_) | C::BoolIf { .. } | C::BoolEqual(..) | C::BoolLoad(..) => {
+            C::BoolApplication(_) | C::BoolIf { .. } | C::BoolEqual(..) => {
                 let Some(node) = self.bool_node(condition) else {
                     return false;
                 };

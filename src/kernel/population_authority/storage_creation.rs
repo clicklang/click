@@ -150,9 +150,9 @@ struct OpaqueImport {
     symbolic_member_holder: Option<Holder>,
     symbolic_delta: Option<(bool, MachineTerm)>,
     /// Occurrences consumed by checked named rewrites, independent of count observations.
-    consumed_named: PersistentMap<crate::kernel::Variable, Arc<crate::kernel::ResourceInstance>>,
+    consumed_named: PersistentMap<crate::kernel::InstanceId, Arc<crate::kernel::ResourceInstance>>,
     /// Named births remain distinct from entry occurrences, even after death.
-    born_named: PersistentMap<crate::kernel::Variable, ()>,
+    born_named: PersistentMap<crate::kernel::InstanceId, ()>,
     named_counts: PersistentMap<ResourceDescription, NamedCountChange>,
     /// Unresolved indices permit exact observation only of this single selection.
     named_selection: Option<ResourceDescription>,
@@ -2605,7 +2605,7 @@ impl CreationEvents {
     pub(in crate::kernel) fn consumed_imported_instance(
         &self,
         description: &ResourceDescription,
-        identity: crate::kernel::Variable,
+        identity: crate::kernel::InstanceId,
     ) -> Option<&crate::kernel::ResourceInstance> {
         let scope = self.governing_authority(description)?;
         let import = self.0.opaque_imports.get(&scope)?;

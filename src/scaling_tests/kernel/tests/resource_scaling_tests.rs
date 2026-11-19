@@ -43,7 +43,7 @@ fn owned_instance(identity: u64) -> ResourceFact {
     .unwrap();
     ResourceFact::own(Resource::Instance(
         ResourceInstance::new(
-            Variable(identity),
+            InstanceId::from_variable(Variable(identity)),
             "counter".into(),
             Vec::new().into(),
             schema,
@@ -437,7 +437,7 @@ fn field_endpoint_definitions() -> Vec<CompositeResourceDefinition> {
     .with_children(vec![ResourceChildSpec {
         name: "rest".into(),
         resource: "suffix".into(),
-        binding: Variable(90),
+        binding: InstanceId::from_variable(Variable(90)),
         arguments: vec![SpecExpression::ProgramExpression(
             crate::kernel::program_expression::variable("p"),
         )],
@@ -450,7 +450,7 @@ fn field_endpoint_definitions() -> Vec<CompositeResourceDefinition> {
 
 fn field_endpoint_instance(name: &str, field: &str, identity: u64) -> ResourceInstance {
     ResourceInstance::new(
-        Variable(identity),
+        InstanceId::from_variable(Variable(identity)),
         name.into(),
         vec![ProgramValue::pointer(heap_base(TARGET_HEAP)).into()].into(),
         ResourceFieldSchema::new(vec![(
@@ -487,7 +487,7 @@ fn field_endpoint_fold_and_unfold_ignore_unrelated_resources() {
                            instance: &ResourceInstance,
                            definition: &CompositeResourceDefinition,
                            unfold: bool,
-                           children: Option<&[(String, Variable)]>| {
+                           children: Option<&[(String, InstanceId)]>| {
                 crate::kernel::rewrite_resource_instance_selecting_children(
                     state,
                     instance,
@@ -562,7 +562,7 @@ fn window_definitions(cells: u32) -> Vec<CompositeResourceDefinition> {
 fn window_instance(block: u64, identity: u64) -> ResourceFact {
     ResourceFact::own(Resource::Instance(
         ResourceInstance::new(
-            Variable(identity),
+            InstanceId::from_variable(Variable(identity)),
             "window".into(),
             vec![ProgramValue::pointer(heap_base(block)).into()].into(),
             ResourceFieldSchema::new(vec![(
@@ -716,7 +716,7 @@ fn holder_definitions(cells: u32) -> Vec<CompositeResourceDefinition> {
 fn holder_instance(block: u64, identity: u64) -> ResourceFact {
     ResourceFact::own(Resource::Instance(
         ResourceInstance::new(
-            Variable(identity),
+            InstanceId::from_variable(Variable(identity)),
             "holder".into(),
             vec![ProgramValue::pointer(heap_base(block)).into()].into(),
             ResourceFieldSchema::new(vec![(
@@ -1430,7 +1430,7 @@ fn layered_definitions(layers: usize) -> Vec<CompositeResourceDefinition> {
                 vec![ResourceChildSpec {
                     name: "child".into(),
                     resource: layer_name(layer - 1),
-                    binding: Variable(5_000_000 + layer as u64),
+                    binding: InstanceId::from_variable(Variable(5_000_000 + layer as u64)),
                     arguments: vec![SpecExpression::ProgramExpression(
                         crate::kernel::program_expression::variable("p"),
                     )],
@@ -1457,7 +1457,7 @@ fn layered_definitions(layers: usize) -> Vec<CompositeResourceDefinition> {
 fn layered_instance(layers: usize) -> ResourceFact {
     ResourceFact::own(Resource::Instance(
         ResourceInstance::new(
-            Variable(2 * TARGET_HEAP),
+            InstanceId::from_variable(Variable(2 * TARGET_HEAP)),
             layer_name(layers - 1),
             vec![ProgramValue::pointer(heap_base(TARGET_HEAP)).into()].into(),
             tag_schema(),
@@ -1676,7 +1676,7 @@ fn unfold_beside_descriptors_of_its_type_ignores_unrelated_descriptors() {
             _ => unreachable!("a pointer cell is materialized as a pointer"),
         };
         let instance = ResourceInstance::new(
-            Variable(2 * TARGET_HEAP),
+            InstanceId::from_variable(Variable(2 * TARGET_HEAP)),
             "slot".into(),
             vec![ProgramValue::typed_pointer(region.clone(), ProgramType::Int32Pointer).into()]
                 .into(),
@@ -1754,7 +1754,7 @@ fn unfold_beside_descriptors_of_its_type_ignores_unrelated_descriptors() {
 fn parameter_window_instance(parameter: u64, identity: u64) -> ResourceFact {
     ResourceFact::own(Resource::Instance(
         ResourceInstance::new(
-            Variable(identity),
+            InstanceId::from_variable(Variable(identity)),
             "window".into(),
             vec![ProgramValue::pointer(parameter_base(parameter)).into()].into(),
             ResourceFieldSchema::new(vec![(
@@ -2642,7 +2642,7 @@ fn matched_input_argument_views_ignore_unrelated_definitions_and_owners() {
     )])
     .unwrap();
     let target = ResourceInstance::new(
-        Variable(TARGET_HEAP),
+        InstanceId::from_variable(Variable(TARGET_HEAP)),
         "zz_target".into(),
         vec![].into(),
         schema.clone(),

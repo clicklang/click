@@ -38,14 +38,14 @@ struct DeclaredResourceScope {
     /// in source order. A proof name keeps one identity in its declaration,
     /// so two alternative arms can bind it to different resources; each arm
     /// starts from the state before the alternatives ([`Self::alternatives`]).
-    families: std::cell::RefCell<BTreeMap<Variable, InstanceFamily>>,
+    families: std::cell::RefCell<BTreeMap<InstanceId, InstanceFamily>>,
     /// The previous value of each `families` entry changed since the
     /// declaration began, so an arm's changes can be undone.
-    family_log: std::cell::RefCell<Vec<(Variable, Option<InstanceFamily>)>>,
+    family_log: std::cell::RefCell<Vec<(InstanceId, Option<InstanceFamily>)>>,
     /// The arms enclosing proof `match`es select, innermost last: the
     /// instance, its field and the variant.
-    selected_arms: std::cell::RefCell<Vec<(Variable, String, String)>>,
-    unowned_resource_parameters: std::cell::RefCell<BTreeMap<Variable, SurfaceBinder>>,
+    selected_arms: std::cell::RefCell<Vec<(InstanceId, String, String)>>,
+    unowned_resource_parameters: std::cell::RefCell<BTreeMap<InstanceId, SurfaceBinder>>,
     /// The enclosing C function's parameters of signed character pointer
     /// type. A resource argument naming one, passed to `uint8` bytes, is
     /// read through its explicit byte view, as a predicate argument is.
@@ -117,11 +117,11 @@ impl DeclaredResourceScope {
         self.definitions.contains_key(name)
     }
 
-    fn family(&self, identity: Variable) -> Option<InstanceFamily> {
+    fn family(&self, identity: InstanceId) -> Option<InstanceFamily> {
         self.families.borrow().get(&identity).cloned()
     }
 
-    fn set_family(&self, identity: Variable, family: Option<InstanceFamily>) {
+    fn set_family(&self, identity: InstanceId, family: Option<InstanceFamily>) {
         let previous = match &family {
             Some(family) => self.families.borrow_mut().insert(identity, family.clone()),
             None => self.families.borrow_mut().remove(&identity),
@@ -133,7 +133,7 @@ impl DeclaredResourceScope {
 
     /// The resource of the instance `identity`, if the current path has
     /// fixed it.
-    fn instance_resource(&self, identity: Variable) -> Option<String> {
+    fn instance_resource(&self, identity: InstanceId) -> Option<String> {
         match self.family(identity)? {
             InstanceFamily::Child(name) | InstanceFamily::Instance(name) => Some(name),
             InstanceFamily::FieldValue | InstanceFamily::Ambiguous(_) => None,
@@ -142,7 +142,7 @@ impl DeclaredResourceScope {
 
     /// Refuses a use of `name` when alternative paths bound it to
     /// instances of different resources.
-    fn refuse_ambiguous(&self, identity: Variable, name: &str) -> Result<(), ClickError> {
+    fn refuse_ambiguous(&self, identity: InstanceId, name: &str) -> Result<(), ClickError> {
         match self.family(identity) {
             Some(InstanceFamily::Ambiguous(resources)) => Err(ClickError::new(format!(
                 "`{name}` names a `{}` instance on one path and a `{}` instance on another; give each its own name",
@@ -155,24 +155,24 @@ impl DeclaredResourceScope {
     /// Record the resource of `identity`. An explicit `fold(name(...), ...)`
     /// construction names its own resource, so it also replaces whatever
     /// child slot the identity was introduced by.
-    fn record_instance(&self, identity: Variable, name: &str, construction: bool) {
+    fn record_instance(&self, identity: InstanceId, name: &str, construction: bool) {
         if !construction && matches!(self.family(identity), Some(InstanceFamily::Child(_))) {
             return;
         }
         self.set_family(identity, Some(InstanceFamily::Instance(name.to_string())));
     }
 
-    fn record_field_binder(&self, identity: Variable) {
+    fn record_field_binder(&self, identity: InstanceId) {
         self.set_family(identity, Some(InstanceFamily::FieldValue));
     }
 
-    fn record_child(&self, identity: Variable, name: &str) {
+    fn record_child(&self, identity: InstanceId, name: &str) {
         self.set_family(identity, Some(InstanceFamily::Child(name.to_string())));
     }
 
     /// The resource slot `slot` of `parent`'s instance `identity` owns in
     /// the arm an enclosing proof `match` on its matched field selects.
-    fn selected_arm_slot(&self, identity: Variable, parent: &str, slot: &str) -> Option<String> {
+    fn selected_arm_slot(&self, identity: InstanceId, parent: &str, slot: &str) -> Option<String> {
         let info = self.get(parent)?;
         let (field, arms) = info.arm_child_slots.as_ref().as_ref()?;
         let selected = self.selected_arms.borrow();
@@ -247,7 +247,7 @@ impl DeclaredResourceScope {
 /// Alternative arms in progress ([`DeclaredResourceScope::begin_alternatives`]).
 struct Alternatives {
     start: usize,
-    outcomes: std::cell::RefCell<Vec<BTreeMap<Variable, Option<InstanceFamily>>>>,
+    outcomes: std::cell::RefCell<Vec<BTreeMap<InstanceId, Option<InstanceFamily>>>>,
 }
 
 fn join_instance_families(

@@ -427,7 +427,7 @@ pub(in crate::surface) fn resource_body_children<'b>(
             .collect::<Result<Vec<_>, _>>()
             .map_err(ClickError::new)
     };
-    let mut equations = BTreeMap::<(Variable, &str), Vec<(usize, &ContractExpression)>>::new();
+    let mut equations = BTreeMap::<(InstanceId, &str), Vec<(usize, &ContractExpression)>>::new();
     for (index, fact) in body.facts.iter().enumerate() {
         if let ClickProposition::Comparison {
             left,
@@ -620,7 +620,7 @@ pub(in crate::surface) fn resource_body_children<'b>(
             };
             let source = match value {
                 ContractExpression::ResourceField(access)
-                    if access.identity == Variable(u64::MAX)
+                    if access.identity == InstanceId::from_variable(Variable(u64::MAX))
                         && access.owner == "__body"
                         && access.children.is_empty() =>
                 {

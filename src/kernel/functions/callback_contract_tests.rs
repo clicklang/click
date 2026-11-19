@@ -37,7 +37,7 @@ fn resource_call_arguments_are_checked_in_kernel_and_fields_are_fresh() {
     .unwrap();
     let parameter = |identity| {
         ResourceSpec::instance(
-            Variable(identity),
+            InstanceId::from_variable(Variable(identity)),
             format!("cell{identity}"),
             schema.clone(),
             ResourceSpec::composite(ResourceAccessMode::Own, "marker".into(), vec![], vec![]),
@@ -65,7 +65,7 @@ fn resource_call_arguments_are_checked_in_kernel_and_fields_are_fresh() {
     // Reserve the identifier immediately after the call's memory/result IDs.
     // Post-field generation must skip it, not accidentally preserve the field.
     let before = ResourceInstance::new(
-        Variable(10),
+        InstanceId::from_variable(Variable(10)),
         "marker".into(),
         vec![].into(),
         schema.clone(),
@@ -103,7 +103,9 @@ fn resource_call_arguments_are_checked_in_kernel_and_fields_are_fresh() {
         panic!("call failed: {:?}", paths[0].outcome);
     };
     assert!(after.resource_bindings.is_none());
-    let returned = after.owned_resource_instance(Variable(10)).unwrap();
+    let returned = after
+        .owned_resource_instance(InstanceId::from_variable(Variable(10)))
+        .unwrap();
     assert_ne!(returned.fields(), before.fields());
     for (state, contract, environment) in [
         (
@@ -151,7 +153,7 @@ fn direct_call_map_is_checked_in_kernel_like_named_proof_arguments() {
     .unwrap();
     let parameter = |identity| {
         ResourceSpec::instance(
-            Variable(identity),
+            InstanceId::from_variable(Variable(identity)),
             format!("cell{identity}"),
             schema.clone(),
             ResourceSpec::composite(ResourceAccessMode::Own, "marker".into(), vec![], vec![]),
@@ -169,7 +171,7 @@ fn direct_call_map_is_checked_in_kernel_like_named_proof_arguments() {
     let owned = |identity: u64| {
         ResourceFact::own(Resource::Instance(
             ResourceInstance::new(
-                Variable(identity),
+                InstanceId::from_variable(Variable(identity)),
                 "marker".into(),
                 vec![].into(),
                 schema.clone(),
@@ -830,7 +832,7 @@ fn direct_and_named_callback_resource_interfaces_agree_across_families() {
         ResourceFieldType::Program(ProgramType::Int32),
     )])
     .unwrap();
-    let identity = Variable(700);
+    let identity = InstanceId::from_variable(Variable(700));
     let instance_resource = ResourceSpec::composite(
         ResourceAccessMode::Own,
         "parity_instance".into(),
@@ -880,7 +882,7 @@ fn direct_and_named_callback_resource_interfaces_agree_across_families() {
         .with_proof_parameters(vec![instance_spec]);
     let instance_environment = ExecutionEnvironment::new()
         .with_selected_call_contract("ParityInstance")
-        .with_selected_call_resource_arguments(vec![identity]);
+        .with_selected_call_resource_arguments(vec![identity.variable()]);
     let (direct, callback) = direct_and_callback_resource_transition(
         &instance_function,
         &instance_state,

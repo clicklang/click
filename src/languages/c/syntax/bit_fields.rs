@@ -47,7 +47,7 @@ impl BitFieldRecord {
 #[derive(Clone, Debug)]
 pub(super) struct LocalBitFields {
     record: Arc<BitFieldRecord>,
-    word: BindingName,
+    storage: BindingName,
     /// A runtime binding is retained even though its pointee is fixed by
     /// syntax. Reading it still checks that C executed its initializer.
     pointer: Option<BindingName>,
@@ -58,7 +58,7 @@ impl LocalBitFields {
     fn address(&self) -> CExpression {
         match &self.pointer {
             Some(pointer) => CExpression::Variable(pointer.clone()),
-            None => CExpression::AddressOf(Box::new(CExpression::Variable(self.word.clone()))),
+            None => CExpression::AddressOf(Box::new(CExpression::Variable(self.storage.clone()))),
         }
     }
 
@@ -452,15 +452,15 @@ impl Parser {
             }
         };
         self.expect(Token::Semicolon)?;
-        let word = self.hidden_bit_field_word(record_value_type(&record.storage));
+        self.reserve_bit_field_carrier_ordinal();
         let object = LocalBitFields {
             record,
-            word,
+            storage: binding.clone(),
             pointer: None,
             read_only: false,
         };
         let declaration = CStatement::DeclareStructValue {
-            name: object.word.clone().into(),
+            name: object.storage.clone().into(),
             layout: object.record.storage.clone(),
             site: CSite::NONE,
         };
@@ -515,11 +515,7 @@ impl Parser {
         }
         self.expect(Token::Semicolon)?;
         let address = scalar_cast(object.address(), InterfaceType::UInt32Pointer);
-        // Preserve canonical selectors for declarations following this alias.
-        self.next_local_binding = self
-            .next_local_binding
-            .checked_add(1)
-            .expect("binding ordinal fits u32");
+        self.reserve_bit_field_carrier_ordinal();
         object.pointer = Some(binding.clone());
         object.read_only = parsed.pointee_constant;
         self.variable_types
@@ -551,12 +547,12 @@ impl Parser {
         Ok(source)
     }
 
-    fn hidden_bit_field_word(&mut self, interface_type: InterfaceType) -> BindingName {
-        let name = self.new_automatic_binding(Some(format!(
-            "__click_bit_field_word_{}",
-            self.next_local_binding
-        )));
-        self.track_bit_field_binding(name, interface_type)
+    /// Preserve canonical selectors for locals after a former carrier.
+    fn reserve_bit_field_carrier_ordinal(&mut self) {
+        self.next_local_binding = self
+            .next_local_binding
+            .checked_add(1)
+            .expect("binding ordinal fits u32");
     }
 
     fn track_bit_field_binding(

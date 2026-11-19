@@ -9,7 +9,7 @@ fn schema() -> ResourceFieldSchema {
 }
 fn cell(identity: u64, argument: u32) -> ResourceInstance {
     ResourceInstance::new(
-        Variable(identity),
+        InstanceId::from_variable(Variable(identity)),
         "cell".into(),
         vec![int32(argument).into()].into(),
         schema(),
@@ -19,7 +19,7 @@ fn cell(identity: u64, argument: u32) -> ResourceInstance {
 }
 fn definition() -> CompositeResourceDefinition {
     let parameter = ResourceSpec::instance(
-        Variable(90),
+        InstanceId::from_variable(Variable(90)),
         "cell".into(),
         schema(),
         ResourceSpec::declared(
@@ -50,7 +50,7 @@ fn definition() -> CompositeResourceDefinition {
 }
 fn wrapper(reference: &ResourceInstance) -> ResourceInstance {
     ResourceInstance::new(
-        Variable(20),
+        InstanceId::from_variable(Variable(20)),
         "wrapper".into(),
         vec![int32(3).into()].into(),
         schema(),
@@ -139,7 +139,7 @@ fn owning_definition() -> CompositeResourceDefinition {
     definition().with_children(vec![ResourceChildSpec {
         name: "cell".into(),
         resource: "cell".into(),
-        binding: Variable(90),
+        binding: InstanceId::from_variable(Variable(90)),
         arguments: vec![SpecExpression::ProgramExpression(
             crate::kernel::program_expression::variable("p"),
         )],
@@ -227,7 +227,7 @@ fn owned_reference_rejects_substituting_a_different_child_occurrence() {
             &definitions,
             &PureFactContext::new(),
             false,
-            Some(&[("cell".into(), Variable(11))])
+            Some(&[("cell".into(), InstanceId::from_variable(Variable(11)))])
         )
         .is_err()
     );
@@ -283,7 +283,7 @@ fn section_reference_lookup_does_not_duplicate_existing_owned_instances() {
             ResourceFact::own(Resource::Instance(child.clone())),
             ResourceFact::own(Resource::Instance(record.clone())),
         ]));
-    let named_spec = |instance: &ResourceInstance, references: Vec<Variable>| {
+    let named_spec = |instance: &ResourceInstance, references: Vec<InstanceId>| {
         ResourceSpec::instance(
             instance.identity(),
             instance.name().into(),

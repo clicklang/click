@@ -211,7 +211,7 @@ fn retained_membership_does_not_preserve_the_shared_body_across_a_call() {
             ),
             _ => ResourceFact::own(Resource::Instance(
                 ResourceInstance::new(
-                    Variable(780_100),
+                    InstanceId::from_variable(Variable(780_100)),
                     "wrapper".into(),
                     vec![
                         ProgramValue::pointer(shared.clone()).into(),

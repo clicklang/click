@@ -391,7 +391,7 @@ mod loop_rule_tests {
     }
     fn instance(parity: u32) -> ResourceInstance {
         ResourceInstance::new(
-            Variable(707),
+            crate::kernel::InstanceId::from_variable(Variable(707)),
             "loop_guard".into(),
             vec![].into(),
             schema(),
@@ -401,7 +401,7 @@ mod loop_rule_tests {
     }
     fn binder() -> ResourceSpec {
         ResourceSpec::instance(
-            Variable(707),
+            crate::kernel::InstanceId::from_variable(Variable(707)),
             "guard".into(),
             schema(),
             ResourceSpec::declared(

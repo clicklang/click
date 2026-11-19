@@ -774,7 +774,7 @@ mod saved_states {
 
     fn instance(identity: u64, rank: u32, mark: i64) -> ResourceInstance {
         ResourceInstance::new(
-            Variable(identity),
+            InstanceId::from_variable(Variable(identity)),
             "cell".into(),
             vec![ProgramValue::Int32(MachineTerm::constant(7)).into()].into(),
             schema(),
@@ -795,7 +795,7 @@ mod saved_states {
 
     fn rank() -> TrackedResource<'static> {
         TrackedResource::ModelField {
-            identity: Variable(1),
+            identity: InstanceId::from_variable(Variable(1)),
             children: &[],
             field_index: 0,
         }
@@ -872,7 +872,7 @@ mod saved_states {
         let entry = holding(1, 3, 0);
         let after = holding(1, 3, 0);
         let other = TrackedResource::ModelField {
-            identity: Variable(2),
+            identity: InstanceId::from_variable(Variable(2)),
             children: &[],
             field_index: 0,
         };
@@ -890,7 +890,7 @@ mod saved_states {
         let after = holding(1, 3, 0);
         let child = &["left".to_string()];
         let field = TrackedResource::ModelField {
-            identity: Variable(1),
+            identity: InstanceId::from_variable(Variable(1)),
             children: child,
             field_index: 0,
         };
@@ -1685,13 +1685,18 @@ fn boolean_reads_report_only_the_one_byte_cell() {
             4,
         ),
     };
+    crate::kernel::eval::record_load_access_width(memory.memory(), &pointer, 1);
     let source =
-        ConditionTerm::BoolLoad(crate::kernel::ProgramPoint::at(&memory), Box::new(pointer));
+        ConditionTerm::boolean_cell_read(crate::kernel::ProgramPoint::at(&memory), pointer.clone());
     let root = KernelTermImport::default().condition(&source);
     let mut native = Vec::new();
     let mut shared = Vec::new();
     collect_condition_reads(&source, &mut native);
     collect_condition_operand_reads(BooleanOperandView::Shared(&root), &mut shared);
+    assert_eq!(
+        native[0].resource,
+        OwnedResource::Cell { pointer, bytes: 1 }
+    );
     assert_eq!(native.len(), 1);
     assert_eq!(shared, native);
 }

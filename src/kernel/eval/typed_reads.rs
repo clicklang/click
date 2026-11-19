@@ -193,7 +193,7 @@ fn get_version(
 /// resource or field search is needed to apply the preservation primitive.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct FieldSelection {
-    pub(crate) identity: Variable,
+    pub(crate) identity: InstanceId,
     pub(crate) index: usize,
 }
 thread_local! {

@@ -236,7 +236,7 @@ fn normalized_resource_specs_validate_families_and_preserve_transfer_metadata() 
 
     let schema = ResourceFieldSchema::new(vec![]).unwrap();
     let instance_term = ResourceTerm::Instance {
-        identity: Variable(77),
+        identity: InstanceId::from_variable(Variable(77)),
         binder: "cell".into(),
         schema: schema.clone(),
         resource: Box::new(ResourceTerm::Composite {
@@ -272,7 +272,7 @@ fn normalized_resource_specs_validate_families_and_preserve_transfer_metadata() 
     assert!(matches!(
         ResourceSpec::new(
             ResourceTerm::Instance {
-                identity: Variable(78),
+                identity: InstanceId::from_variable(Variable(78)),
                 binder: "token".into(),
                 schema,
                 resource: Box::new(ResourceTerm::Token {
@@ -330,7 +330,7 @@ fn validated_resource_rebuilds_preserve_metadata_and_instance_bodies() {
 
     let schema = ResourceFieldSchema::new(vec![]).unwrap();
     let instance = ResourceSpec::instance(
-        variable,
+        InstanceId::from_variable(variable),
         "cell".into(),
         schema,
         ResourceSpec::composite(ResourceAccessMode::Own, "cell".into(), vec![], vec![]),
@@ -349,7 +349,7 @@ fn validated_resource_rebuilds_preserve_metadata_and_instance_bodies() {
     assert!(matches!(
         ResourceSpec::new(
             ResourceTerm::Instance {
-                identity: variable,
+                identity: InstanceId::from_variable(variable),
                 binder: "cell".into(),
                 schema: ResourceFieldSchema::new(vec![]).unwrap(),
                 resource: Box::new(ResourceTerm::Composite {
@@ -842,7 +842,7 @@ fn instance_memory_fixture() -> (
         offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(100)), 4),
     };
     let instance = ResourceInstance::new(
-        Variable(1),
+        InstanceId::from_variable(Variable(1)),
         "cell".into(),
         vec![ProgramValue::pointer(pointer).into()].into(),
         schema.clone(),
@@ -997,7 +997,7 @@ fn recursive_child_fixture() -> (
                     ResourceChildSpec {
                         name: "left".into(),
                         resource: "cell".into(),
-                        binding: Variable(90),
+                        binding: InstanceId::from_variable(Variable(90)),
                         arguments: vec![SpecExpression::ProgramExpression(
                             crate::kernel::program_expression::variable("lp"),
                         )],
@@ -1006,7 +1006,7 @@ fn recursive_child_fixture() -> (
                     ResourceChildSpec {
                         name: "right".into(),
                         resource: "cell".into(),
-                        binding: Variable(91),
+                        binding: InstanceId::from_variable(Variable(91)),
                         arguments: vec![SpecExpression::ProgramExpression(
                             crate::kernel::program_expression::variable("rp"),
                         )],
@@ -1028,13 +1028,13 @@ fn independent_children_kernel_consumes_names_and_accepts_replacements() {
     let (instance, definition, state) = recursive_child_fixture();
     let assumptions = PureFactContext::new();
     let children = vec![
-        ("left".into(), Variable(501)),
-        ("right".into(), Variable(502)),
+        ("left".into(), InstanceId::from_variable(Variable(501))),
+        ("right".into(), InstanceId::from_variable(Variable(502))),
     ];
     let rewrite = |state: &ExecutionState,
                    instance: &ResourceInstance,
                    unfold,
-                   children: &[(String, Variable)]| {
+                   children: &[(String, InstanceId)]| {
         crate::kernel::rewrite_resource_instance_selecting_children(
             state,
             instance,
@@ -1062,16 +1062,19 @@ fn independent_children_kernel_consumes_names_and_accepts_replacements() {
         open.resource_instance_at_path(instance.identity(), &["left".into()])
             .is_none()
     );
-    let left = open.owned_resource_instance(Variable(501)).unwrap().clone();
+    let left = open
+        .owned_resource_instance(InstanceId::from_variable(Variable(501)))
+        .unwrap()
+        .clone();
     let raw = rewrite(&open, &left, true, &[]).unwrap().state;
     assert!(raw.owned_resource_instance(left.identity()).is_none());
     assert!(rewrite(&raw, &instance, false, &children).is_err());
     let mut replacement = left.clone();
-    replacement.identity = Variable(503);
+    replacement.identity = InstanceId::from_variable(Variable(503));
     let replaced = rewrite(&raw, &replacement, false, &[]).unwrap().state;
     let selected = vec![
-        ("left".into(), Variable(503)),
-        ("right".into(), Variable(502)),
+        ("left".into(), InstanceId::from_variable(Variable(503))),
+        ("right".into(), InstanceId::from_variable(Variable(502))),
     ];
     let closed = rewrite(&replaced, &instance, false, &selected)
         .unwrap()
@@ -1083,7 +1086,7 @@ fn independent_children_kernel_consumes_names_and_accepts_replacements() {
             .is_none()
     );
     assert!(matches!(
-        closed.resources().instance_consumption(Variable(503)),
+        closed.resources().instance_consumption(InstanceId::from_variable(Variable(503))),
         Some(InstanceConsumption::FoldChild { parent, slot })
             if *parent == instance.identity() && slot.as_ref() == "left"
     ));
@@ -1091,7 +1094,7 @@ fn independent_children_kernel_consumes_names_and_accepts_replacements() {
     assert!(
         reopened
             .resources()
-            .instance_consumption(Variable(503))
+            .instance_consumption(InstanceId::from_variable(Variable(503)))
             .is_none()
     );
     // Refolding and unfolding a sibling state do not change the original.
@@ -1109,14 +1112,14 @@ fn independent_children_kernel_consumes_names_and_accepts_replacements() {
     assert!(closed.instance_field_scope.is_empty());
     for bad in [
         vec![],
-        vec![("left".into(), Variable(501))],
+        vec![("left".into(), InstanceId::from_variable(Variable(501)))],
         vec![
-            ("left".into(), Variable(501)),
-            ("right".into(), Variable(501)),
+            ("left".into(), InstanceId::from_variable(Variable(501))),
+            ("right".into(), InstanceId::from_variable(Variable(501))),
         ],
         vec![
             ("left".into(), instance.identity()),
-            ("right".into(), Variable(502)),
+            ("right".into(), InstanceId::from_variable(Variable(502))),
         ],
     ] {
         assert!(rewrite(&state, &instance, true, &bad).is_err());
@@ -1158,8 +1161,8 @@ fn unfolding_a_child_retains_its_checked_pointer_read_in_the_callers_graph() {
         .proposition()
         .clone();
     let children = [
-        ("left".into(), Variable(501)),
-        ("right".into(), Variable(502)),
+        ("left".into(), InstanceId::from_variable(Variable(501))),
+        ("right".into(), InstanceId::from_variable(Variable(502))),
     ];
     let Proposition::ConditionIs(condition, truth) = &equation else {
         unreachable!()
@@ -1234,8 +1237,8 @@ fn recursive_child_kernel_rejects_implicit_parent_handles() {
         "recursive children require explicit independent child selections"
     );
     let children = [
-        ("left".into(), Variable(501)),
-        ("right".into(), Variable(502)),
+        ("left".into(), InstanceId::from_variable(Variable(501))),
+        ("right".into(), InstanceId::from_variable(Variable(502))),
     ];
     let opened = crate::kernel::rewrite_resource_instance_selecting_children(
         &state,
@@ -1299,8 +1302,8 @@ fn recursive_child_kernel_keeps_unknown_submodels_folded() {
     );
     let assumptions = PureFactContext::new();
     let children = [
-        ("left".into(), Variable(501)),
-        ("right".into(), Variable(502)),
+        ("left".into(), InstanceId::from_variable(Variable(501))),
+        ("right".into(), InstanceId::from_variable(Variable(502))),
     ];
     let open = crate::kernel::rewrite_resource_instance_selecting_children(
         &state,
@@ -1313,7 +1316,9 @@ fn recursive_child_kernel_keeps_unknown_submodels_folded() {
     )
     .unwrap()
     .state;
-    let child = open.owned_resource_instance(Variable(501)).unwrap();
+    let child = open
+        .owned_resource_instance(InstanceId::from_variable(Variable(501)))
+        .unwrap();
     assert_eq!(child.fields(), &[AlgebraicValue::Algebraic(unknown)]);
     assert!(rewrite_resource_instance(&open, child, &definition, &assumptions, true).is_err());
     let closed = crate::kernel::rewrite_resource_instance_selecting_children(
@@ -1377,7 +1382,7 @@ fn instance_memory_guard_requires_a_proved_case_and_exposes_only_that_case() {
         assert_eq!(folded_without_read_views(closed), state);
         let raw = ExecutionState::new().with_resource_context(open.resources().clone());
         let mut fresh = instance.clone();
-        fresh.identity = Variable(999);
+        fresh.identity = InstanceId::from_variable(Variable(999));
         let (constructed, _) =
             rewrite_resource_instance(&raw, &fresh, &definition, &assumptions, false).unwrap();
         assert!(constructed.instance_field_scope.is_empty());
@@ -1465,7 +1470,7 @@ fn resource_match_kernel_checks_schema_case_and_ownership() {
     assert!(!open.resources().is_empty());
     assert!(open.instance_field_scope.is_empty());
     let mut fresh = instance.clone();
-    fresh.identity = Variable(999);
+    fresh.identity = InstanceId::from_variable(Variable(999));
     fresh.fields = vec![AlgebraicValue::Algebraic(constructor("Set"))].into();
     let raw = ExecutionState::new().with_resource_context(open.resources().clone());
     let (constructed, _) =
@@ -1553,14 +1558,14 @@ fn instance_memory_fold_requires_body_ownership_not_an_open_handle() {
     );
     let raw = ExecutionState::new().with_resource_context(opened.resources.clone());
     let mut constructed = instance.clone();
-    constructed.identity = Variable(2);
+    constructed.identity = InstanceId::from_variable(Variable(2));
     // This fixture's field is unconstrained by its body. Any well-typed value
     // is legitimate; neither its identity nor field must match an old package.
     constructed.fields = vec![int32(8).into()].into();
     let (folded, _) =
         rewrite_resource_instance(&raw, &constructed, &definition, &assumptions, false).unwrap();
     assert_eq!(
-        folded.owned_resource_instance(Variable(2)),
+        folded.owned_resource_instance(InstanceId::from_variable(Variable(2))),
         Some(&constructed)
     );
     assert!(folded.instance_field_scope.is_empty());
@@ -1579,7 +1584,7 @@ fn field_instance(identity: u64, model: AlgebraicTerm, revision: u32) -> Resourc
     ])
     .unwrap();
     ResourceInstance::new(
-        Variable(identity),
+        InstanceId::from_variable(Variable(identity)),
         "marked_cell".into(),
         vec![int32(7).into()].into(),
         schema,
@@ -1599,7 +1604,7 @@ fn resource_instances_validate_fields_without_expanding_symbolic_values() {
     );
     let make = |schema, fields| {
         ResourceInstance::new(
-            Variable(2),
+            InstanceId::from_variable(Variable(2)),
             "marked_cell".into(),
             instance.arguments.clone(),
             schema,
@@ -1678,7 +1683,11 @@ fn resource_instances_are_exclusive_not_counted_or_viewable() {
                 .is_none()
         );
         let invalid_context = ResourceContext::new().unchecked_with_fact(fact);
-        assert!(invalid_context.owned_instance(Variable(2)).is_none());
+        assert!(
+            invalid_context
+                .owned_instance(InstanceId::from_variable(Variable(2)))
+                .is_none()
+        );
         assert!(
             !invalid_context
                 .normalized(&assumptions)
@@ -1697,13 +1706,21 @@ fn resource_instances_are_exclusive_not_counted_or_viewable() {
                 .is_err()
         );
         let invalid = context.clone().unchecked_with_fact(fact);
-        assert!(invalid.owned_instance(Variable(2)).is_none());
+        assert!(
+            invalid
+                .owned_instance(InstanceId::from_variable(Variable(2)))
+                .is_none()
+        );
         assert!(!invalid.normalized(&assumptions).is_valid(&assumptions));
     }
     let remaining = context
         .without_fact_delaying_normalization(&owned, &assumptions)
         .unwrap();
-    assert!(remaining.owned_instance(Variable(2)).is_none());
+    assert!(
+        remaining
+            .owned_instance(InstanceId::from_variable(Variable(2)))
+            .is_none()
+    );
     assert!(!remaining.satisfies_fact(&owned, &assumptions));
 }
 
@@ -1768,7 +1785,7 @@ fn resource_instance_projections_use_owned_current_or_explicit_entry_state() {
     for (at_entry, expected) in [(false, 4), (true, 3)] {
         let expression = SpecExpression::ResourceField {
             projection: ResourceFieldProjection {
-                identity: Variable(10),
+                identity: InstanceId::from_variable(Variable(10)),
                 children: vec![],
                 field_index: 1,
                 at_entry,
@@ -1790,7 +1807,7 @@ fn resource_instance_projections_use_owned_current_or_explicit_entry_state() {
     let projection = |at_entry| SpecAlgebraicExpression {
         algebraic_type: ty.clone(),
         node: SpecAlgebraicExpressionNode::ResourceField(ResourceFieldProjection {
-            identity: Variable(10),
+            identity: InstanceId::from_variable(Variable(10)),
             children: vec![],
             field_index: 0,
             at_entry,
@@ -1882,7 +1899,7 @@ fn resource_instance_projections_use_owned_current_or_explicit_entry_state() {
     ] {
         let expression = SpecExpression::ResourceField {
             projection: ResourceFieldProjection {
-                identity: Variable(identity),
+                identity: InstanceId::from_variable(Variable(identity)),
                 children: vec![],
                 field_index,
                 at_entry: false,
@@ -3914,7 +3931,7 @@ fn integer_resource_fields_require_mathematical_values() {
     assert!(!schema.is_fieldless());
     let make = |value| {
         ResourceInstance::new(
-            Variable(1),
+            InstanceId::from_variable(Variable(1)),
             "account".into(),
             vec![].into(),
             schema.clone(),
@@ -3947,7 +3964,7 @@ fn matched_resource_integer_binding_is_checked_and_substituted() {
     )])
     .unwrap();
     let instance = ResourceInstance::new(
-        Variable(991_000),
+        InstanceId::from_variable(Variable(991_000)),
         "integer_box".into(),
         vec![].into(),
         schema.clone(),
@@ -4066,7 +4083,7 @@ fn matched_resource_integer_binding_does_not_capture_free_integer_field() {
     // numeric identity used by the selected constructor binding. It must
     // remain free when the arm's `value` placeholder is instantiated.
     let instance = ResourceInstance::new(
-        Variable(991_100),
+        InstanceId::from_variable(Variable(991_100)),
         "integer_capture_box".into(),
         vec![].into(),
         schema.clone(),
@@ -4082,7 +4099,7 @@ fn matched_resource_integer_binding_does_not_capture_free_integer_field() {
         // placeholder binding installed by `instance_body_evaluation`, not
         // through the concrete instance identity.  Keep the field payload's
         // free Integer identity independent from that resource placeholder.
-        identity: Variable(u64::MAX),
+        identity: InstanceId::from_variable(Variable(u64::MAX)),
         children: vec![],
         field_index: 1,
         at_entry: false,
@@ -6329,7 +6346,7 @@ fn named_population_members_keep_identity_and_fields_independent_of_count() {
     .with_instance_schema(Some(schema.clone()));
     let member = |serial| {
         ResourceInstance::new(
-            Variable::allocate_fresh().unwrap(),
+            InstanceId::from_variable(Variable::allocate_fresh().unwrap()),
             "ticket".into(),
             arguments.clone(),
             schema.clone(),
@@ -6510,7 +6527,7 @@ fn predicate_population_state_reads_saved_count_without_transfer_rights() {
     // a second branch of the linear population ledger.
     let forged = retained_state.with_resource_context(one.resources().clone());
     let instance = ResourceInstance::new(
-        Variable::allocate_fresh().unwrap(),
+        InstanceId::from_variable(Variable::allocate_fresh().unwrap()),
         "member".into(),
         arguments,
         ResourceFieldSchema::new(vec![(

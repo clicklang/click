@@ -603,7 +603,7 @@ mod tests {
         .unwrap();
         let instance = |identity, value| {
             ResourceInstance::new(
-                Variable(identity),
+                InstanceId::from_variable(Variable(identity)),
                 "model".into(),
                 vec![].into(),
                 schema.clone(),
@@ -657,7 +657,7 @@ mod tests {
             Preservation {
                 separation,
                 field: Some(typed_reads::FieldSelection {
-                    identity: Variable(8_390_900),
+                    identity: InstanceId::from_variable(Variable(8_390_900)),
                     index: 0,
                 }),
                 result: goal.clone(),
@@ -744,11 +744,11 @@ mod tests {
         );
         for field in [
             typed_reads::FieldSelection {
-                identity: Variable(8_390_999),
+                identity: InstanceId::from_variable(Variable(8_390_999)),
                 index: 0,
             },
             typed_reads::FieldSelection {
-                identity: Variable(8_390_900),
+                identity: InstanceId::from_variable(Variable(8_390_900)),
                 index: 1,
             },
         ] {

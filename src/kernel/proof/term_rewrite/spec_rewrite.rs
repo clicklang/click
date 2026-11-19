@@ -165,7 +165,9 @@ fn collect_spec_integer_carriers(
     }
     match expression {
         SpecIntegerExpression::ResourceField(projection) => {
-            variables.program_values.insert(projection.identity);
+            variables
+                .program_values
+                .insert(projection.identity.variable());
         }
         SpecIntegerExpression::Term(term) => {
             collect_integer_carriers(term, variables, integer_seen)
@@ -303,7 +305,9 @@ fn collect_spec_expression_carriers(
             collect_spec_integer_carriers(value, variables, integer_seen)
         }
         SpecExpression::ResourceField { projection, .. } => {
-            variables.program_values.insert(projection.identity);
+            variables
+                .program_values
+                .insert(projection.identity.variable());
         }
         SpecExpression::AlgebraicMatch { scrutinee, arms } => {
             collect_spec_algebraic_carriers(scrutinee, variables, integer_seen);
@@ -504,7 +508,9 @@ fn collect_spec_algebraic_carriers(
         }
         SpecAlgebraicExpressionNode::Binding(_) => {}
         SpecAlgebraicExpressionNode::ResourceField(projection) => {
-            variables.program_values.insert(projection.identity);
+            variables
+                .program_values
+                .insert(projection.identity.variable());
         }
         SpecAlgebraicExpressionNode::ProgramValue(value) => {
             collect_spec_expression_carriers(value, variables, integer_seen)

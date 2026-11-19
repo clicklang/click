@@ -306,7 +306,10 @@ pub(super) fn selected_resource_instance_case_facts(
         .iter()
         .filter_map(|fact| match fact.resource() {
             Resource::Instance(instance)
-                if fact.is_own() && bound_instances.values().any(|id| *id == instance.identity) =>
+                if fact.is_own()
+                    && bound_instances
+                        .values()
+                        .any(|id| *id == instance.identity.variable()) =>
             {
                 Some(instance)
             }
@@ -372,7 +375,10 @@ pub(super) fn selected_instance_resource_load_values(
     let mut conflicting = BTreeSet::new();
     let mut seen = BTreeSet::new();
     for identity in bindings.values().copied().filter(|id| seen.insert(*id)) {
-        let Some(instance) = state.resources().owned_instance(identity) else {
+        let Some(instance) = state
+            .resources()
+            .owned_instance(InstanceId::from_variable(identity))
+        else {
             continue;
         };
         let Ok(index) = definitions.binary_search_by(|definition| {
@@ -549,7 +555,7 @@ pub(super) fn check_unmatched_instance_children(
         if child.name.is_empty()
             || reserved.contains(child.name.as_str())
             || !names.insert(child.name.as_str())
-            || child.binding == Variable(u64::MAX)
+            || child.binding == InstanceId::from_variable(Variable(u64::MAX))
             || !bindings.insert(child.binding)
             || child.arguments.len() != child_definition.parameters.len()
             || child.field_bindings.len() != child_schema.fields().len()
@@ -687,7 +693,7 @@ pub(in crate::kernel) fn selected_instance_match_arm<'a>(
                 || reserved.contains(child.name.as_str())
                 || names.contains(&child.name)
                 || !child_names.insert(&child.name)
-                || child.binding == Variable(u64::MAX)
+                || child.binding == InstanceId::from_variable(Variable(u64::MAX))
                 || !child_bindings.insert(child.binding)
                 || child.arguments.len() != child_definition.parameters.len()
                 || child.field_bindings.len() != child_schema.fields().len()
@@ -925,7 +931,7 @@ pub(in crate::kernel) fn instance_body_evaluation(
     }
     evaluation.resource_bindings = Some(std::sync::Arc::new(BTreeMap::from([(
         Variable(u64::MAX),
-        instance.identity,
+        instance.identity.variable(),
     )])));
     // A C-typed field is stable model data of this instance, so the body may
     // name it wherever it may name a matched constructor payload: as a memory

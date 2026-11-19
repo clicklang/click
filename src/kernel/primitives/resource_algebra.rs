@@ -478,7 +478,7 @@ pub(super) fn nominal_ownership_block(block: &AddressBase) -> bool {
 impl ResourceContextIndex {
     /// Files or withdraws one identity as able to fail instance validity:
     /// held twice, or held once with other than one owned unit.
-    fn refresh_suspect_instance(&mut self, identity: Variable) {
+    fn refresh_suspect_instance(&mut self, identity: InstanceId) {
         let suspect = self
             .instances
             .get(&identity)
@@ -1825,7 +1825,7 @@ impl ResourceContext {
         &'a self,
         earlier: Option<&'a Self>,
     ) -> Vec<&'a ResourceInstance> {
-        let identities: Vec<Variable> = match earlier {
+        let identities: Vec<InstanceId> = match earlier {
             Some(earlier) => self
                 .storage
                 .index
@@ -1841,7 +1841,7 @@ impl ResourceContext {
             .collect()
     }
 
-    pub fn owned_instance(&self, identity: Variable) -> Option<&ResourceInstance> {
+    pub fn owned_instance(&self, identity: InstanceId) -> Option<&ResourceInstance> {
         let entries = self.storage.index.instances.get(&identity)?;
         if entries.len() != 1 {
             return None;
@@ -9068,7 +9068,7 @@ fn wide_normalization_endpoint_key(view: MachineOperandView<'_>) -> WideNormaliz
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 enum ResourceNormalizationKey {
-    Instance(Variable),
+    Instance(InstanceId),
     TrackedResource(Resource),
     ExactShape(ResourceFamily, String, usize),
     /// A token or composite whose first argument is a pointer into a block
@@ -9791,7 +9791,7 @@ fn shape_root_key(
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(in crate::kernel) enum OwnedMemberKey {
     TrackedResource(Resource),
-    Instance(Variable),
+    Instance(InstanceId),
     IteratedBlock(AddressBase),
     Shape(ResourceFamily, String, usize),
     /// A token or composite's shape and first-pointer root, the narrower
@@ -13827,7 +13827,7 @@ mod support_removal_tests {
             ))
         };
         let instance = ResourceInstance::new(
-            Variable(8_779_101),
+            InstanceId::from_variable(Variable(8_779_101)),
             "body".into(),
             vec![].into(),
             ResourceFieldSchema::new(vec![(

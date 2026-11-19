@@ -439,8 +439,8 @@ fn stored_child_arguments_require_owned_memory() {
         },
     )];
     let children = vec![
-        ("left".into(), Variable(501)),
-        ("right".into(), Variable(502)),
+        ("left".into(), InstanceId::from_variable(Variable(501))),
+        ("right".into(), InstanceId::from_variable(Variable(502))),
     ];
     let assumptions = PureFactContext::new();
     let rewrite = |state: &ExecutionState,
@@ -639,20 +639,21 @@ fn independent_children_kernel_work_ignores_unrelated_instances() {
     let (instance, definition, initial) = recursive_child_fixture();
     let assumptions = PureFactContext::new();
     let children = vec![
-        ("left".into(), Variable(501)),
-        ("right".into(), Variable(502)),
+        ("left".into(), InstanceId::from_variable(Variable(501))),
+        ("right".into(), InstanceId::from_variable(Variable(502))),
     ];
     let mut samples = Vec::new();
     for size in [16, 32, 64, 128] {
         let mut state = initial.clone();
         for identity in 10_000..10_000 + size {
-            state
-                .resources
-                .record_instance_consumption(Variable(identity), Some(InstanceConsumption::Unfold));
+            state.resources.record_instance_consumption(
+                InstanceId::from_variable(Variable(identity)),
+                Some(InstanceConsumption::Unfold),
+            );
         }
         for identity in 2..=size {
             let mut unrelated = instance.clone();
-            unrelated.identity = Variable(identity);
+            unrelated.identity = InstanceId::from_variable(Variable(identity));
             state.resources = state
                 .resources
                 .unchecked_with_fact(ResourceFact::own(Resource::Instance(unrelated)));
@@ -749,7 +750,7 @@ fn instance_memory_fold_work_is_local_to_the_selected_instance() {
         let mut state = initial.clone();
         for identity in 2..=size {
             let mut unrelated = instance.clone();
-            unrelated.identity = Variable(identity);
+            unrelated.identity = InstanceId::from_variable(Variable(identity));
             state.resources = state
                 .resources
                 .unchecked_with_fact(ResourceFact::own(Resource::Instance(unrelated)));
@@ -815,22 +816,34 @@ fn resource_instance_lookup_and_transfer_scale_by_identity() {
         let (remaining, query_work) = crate::instrumentation::measure_deterministic_work(|| {
             assert_eq!(
                 state
-                    .owned_resource_instance(Variable(size + 1))
+                    .owned_resource_instance(InstanceId::from_variable(Variable(size + 1)))
                     .unwrap()
                     .identity(),
-                Variable(1)
+                InstanceId::from_variable(Variable(1))
             );
             // A formal absent from the map must not fall back to a caller ID.
-            assert!(state.owned_resource_instance(Variable(1)).is_none());
+            assert!(
+                state
+                    .owned_resource_instance(InstanceId::from_variable(Variable(1)))
+                    .is_none()
+            );
             let mut missing = retained_state.clone();
             missing.resources = ResourceContext::new();
             assert!(
                 missing
-                    .owned_resource_instance(Variable(size + 1))
+                    .owned_resource_instance(InstanceId::from_variable(Variable(size + 1)))
                     .is_none()
             );
-            assert!(context.owned_instance(Variable(1)).is_some());
-            assert!(context.owned_instance(Variable(size + 1)).is_none());
+            assert!(
+                context
+                    .owned_instance(InstanceId::from_variable(Variable(1)))
+                    .is_some()
+            );
+            assert!(
+                context
+                    .owned_instance(InstanceId::from_variable(Variable(size + 1)))
+                    .is_none()
+            );
             assert!(context.satisfies_fact(&selected, &assumptions));
             context
                 .without_fact_delaying_normalization(&selected, &assumptions)
@@ -3057,7 +3070,7 @@ fn known_resource_constructor_skips_predicate_refutation_work() {
     )])
     .unwrap();
     let instance = ResourceInstance::new(
-        Variable(850000),
+        InstanceId::from_variable(Variable(850000)),
         "choice".into(),
         vec![].into(),
         schema.clone(),
@@ -3159,7 +3172,7 @@ fn known_exclusion_skips_refutation_of_unpublishable_arms() {
     )])
     .unwrap();
     let instance = ResourceInstance::new(
-        Variable(850100),
+        InstanceId::from_variable(Variable(850100)),
         "choice".into(),
         vec![].into(),
         schema.clone(),
@@ -3387,8 +3400,8 @@ fn checked_child_read_definitions_scale_with_exchanges_not_ambient_facts() {
         },
     )];
     let children = [
-        ("left".into(), Variable(501)),
-        ("right".into(), Variable(502)),
+        ("left".into(), InstanceId::from_variable(Variable(501))),
+        ("right".into(), InstanceId::from_variable(Variable(502))),
     ];
     let measure = |steps, unrelated| {
         let mut context = PureFactContext::new();

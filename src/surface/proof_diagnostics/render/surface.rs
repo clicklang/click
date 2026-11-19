@@ -991,15 +991,6 @@ impl Printer<'_> {
                     operand(right, ATOM)
                 )));
             }
-            ConditionTerm::BoolLoad(memory, pointer) => {
-                let read = self.load(
-                    memory.memory(),
-                    pointer,
-                    crate::kernel::LoadKind::UInt8,
-                    depth,
-                )?;
-                return Some(if polarity { read } else { negation(read) });
-            }
             _ => {}
         }
         let (operator, left, right) = condition.as_bitvector_comparison()?;
@@ -1665,7 +1656,6 @@ impl Printer<'_> {
                         ConditionTerm::Variable(_)
                             | ConditionTerm::Constant(_)
                             | ConditionTerm::BoolApplication(_)
-                            | ConditionTerm::BoolLoad(..)
                     ) {
                         condition
                     } else {

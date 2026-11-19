@@ -6,10 +6,8 @@ mod comparison;
 mod complete_pointer;
 mod composition;
 mod overflow;
-mod read;
 mod storage;
 pub use complete_pointer::KernelPointerEquality;
-pub use read::KernelBooleanRead;
 mod pointer_comparison;
 
 /// Borrow a Boolean root or an exact native compatibility payload. Inspecting
@@ -147,16 +145,6 @@ impl<'a> BooleanOperandView<'a> {
                 (None, None) => {}
                 _ => return false,
             }
-            match (left.read(), right.read()) {
-                (Some((am, a)), Some((bm, b))) => {
-                    if am != bm || !a.syntax_equal(&b) {
-                        return false;
-                    }
-                    continue;
-                }
-                (None, None) => {}
-                _ => return false,
-            }
             match (left.overflow(), right.overflow()) {
                 (Some((af, ao, a)), Some((bf, bo, b))) => {
                     if af != bf
@@ -257,11 +245,6 @@ impl<'a> BooleanOperandView<'a> {
     /// condition. Borrow existing leaves; only common compound roots export.
     pub(crate) fn native(self) -> std::borrow::Cow<'a, ConditionTerm> {
         if let Self::Shared(root) = self
-            && let Some(read) = root.boolean_read_native()
-        {
-            return std::borrow::Cow::Borrowed(read);
-        }
-        if let Self::Shared(root) = self
             && let Some(value) = root.cached_condition_output()
         {
             return std::borrow::Cow::Borrowed(value);
@@ -273,19 +256,6 @@ impl<'a> BooleanOperandView<'a> {
             unreachable!()
         };
         std::borrow::Cow::Owned(KernelTermExport::condition(root).expect("Boolean operand"))
-    }
-
-    pub(crate) fn read(self) -> Option<(ProgramPoint, SharedAddress)> {
-        if let Self::Shared(root) = self
-            && let KernelTermNode::BoolRead(read) = root.node()
-        {
-            let (point, address) = read.parts();
-            return Some((point.clone(), address.clone()));
-        }
-        let ConditionTerm::BoolLoad(memory, address) = self.native_leaf()? else {
-            return None;
-        };
-        Some((memory.clone(), SharedAddress::import(address)))
     }
 
     pub(crate) fn pointer_values(self) -> Option<[SharedPointer; 2]> {
@@ -395,7 +365,6 @@ impl<'a> BooleanOperandView<'a> {
                 if matches!(
                     root.node(),
                     KernelTermNode::BoolIf { .. }
-                        | KernelTermNode::BoolRead(_)
                         | KernelTermNode::BoolEqual { .. }
                         | KernelTermNode::Call { .. }
                 ) =>
@@ -605,9 +574,6 @@ impl KernelTermImport {
         use KernelTermNode as Node;
         crate::instrumentation::record_deterministic_work(1);
         let node = match condition {
-            Old::BoolLoad(memory, address) => {
-                return KernelTerm::boolean_read(memory.clone(), SharedAddress::import(address));
-            }
             Old::Overflows {
                 format,
                 op,
@@ -700,10 +666,6 @@ impl KernelTermExport {
         }
         crate::instrumentation::record_deterministic_work(1);
         Ok(match term.node() {
-            Node::BoolRead(read) => {
-                let (point, address) = read.parts();
-                Old::BoolLoad(point.clone(), Box::new(address.export()?))
-            }
             Node::BoolOverflow {
                 format,
                 operation,
@@ -958,9 +920,9 @@ mod tests {
         let from = Variable(971_010);
         let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let source = ConditionTerm::BoolEqual(
-            Box::new(ConditionTerm::BoolLoad(
+            Box::new(ConditionTerm::boolean_cell_read(
                 crate::kernel::ProgramPoint::at(&memory.clone()),
-                Box::new(Address::symbolic(from)),
+                Address::symbolic(from),
             )),
             Box::new(ConditionTerm::Constant(true)),
         );
@@ -974,9 +936,9 @@ mod tests {
         assert_eq!(
             restored,
             ConditionTerm::BoolEqual(
-                Box::new(ConditionTerm::BoolLoad(
+                Box::new(ConditionTerm::boolean_cell_read(
                     crate::kernel::ProgramPoint::at(&memory),
-                    Box::new(pointer)
+                    pointer
                 )),
                 Box::new(ConditionTerm::Constant(true)),
             )

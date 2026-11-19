@@ -146,7 +146,7 @@ pub(super) enum ShadowRestore {
     /// hid.
     Resource {
         name: String,
-        binding: (Variable, String),
+        binding: (InstanceId, String),
         target: Option<(ResourceClause, bool)>,
     },
     /// Whether `name` had a binding of `kind` before a binder changed it.
@@ -168,7 +168,7 @@ pub(super) enum ShadowRestore {
     /// The resource instance `name` named before a binder bound it.
     InstanceBinding {
         name: String,
-        previous: Option<(Variable, String)>,
+        previous: Option<(InstanceId, String)>,
     },
     /// The target `name` held before a binder gave it one.
     InstanceTarget {
@@ -249,7 +249,7 @@ impl NameKind {
 #[derive(Clone, Debug, Default)]
 pub(super) struct NameTable {
     names: [BTreeSet<String>; KINDS],
-    pub(super) resource_bindings: BTreeMap<String, (Variable, String)>,
+    pub(super) resource_bindings: BTreeMap<String, (InstanceId, String)>,
     pub(super) resource_fields: BTreeMap<String, ResourceFieldAccess>,
     pub(super) resource_targets: ResourceTargets,
     /// In a resource that declares no fields and names a child: the hidden
@@ -390,7 +390,7 @@ impl NameTable {
     }
 
     /// Binds `name` to a resource instance until the open scope ends.
-    pub(super) fn bind_instance(&mut self, name: String, binding: (Variable, String)) {
+    pub(super) fn bind_instance(&mut self, name: String, binding: (InstanceId, String)) {
         self.ended_instance_names.remove(&name);
         let previous = self.resource_bindings.insert(name.clone(), binding);
         self.undo

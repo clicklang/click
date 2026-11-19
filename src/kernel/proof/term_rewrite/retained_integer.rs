@@ -400,9 +400,9 @@ mod tests {
         assert!(exact.shared_integer_operand(&root).is_none());
         assert!(exact.refusal_status().is_none());
         assert!(!root.has_cached_native_argument());
-        let guard = KernelTermImport::default().condition(&ConditionTerm::BoolLoad(
-            ProgramPoint::at(&intern_memory(SymbolicMemory::new())),
-            Box::new(Address::symbolic(Variable(991941))),
+        let guard = KernelTermImport::default().condition(&ConditionTerm::bool_application(
+            "unsupported_integer_rewrite_guard",
+            Vec::new(),
         ));
         let conditional = KernelTerm::integer_if_raw([guard, root.clone(), root.clone()]);
         let renamings = BTreeMap::new();

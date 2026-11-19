@@ -5135,9 +5135,6 @@ pub(crate) fn term_is_shallow_structural_cache_key(term: &MachineTerm) -> bool {
                     pending.push(Node::Condition(right, depth + 1));
                     pending.push(Node::Condition(left, depth + 1));
                 }
-                ConditionTerm::BoolLoad(_, pointer) => {
-                    pending.push(Node::Offset(&pointer.offset, depth + 1));
-                }
             },
             Node::Offset(offset, depth) => match offset {
                 AddressOffset::Constant(_) | AddressOffset::Variable(_) => {}
@@ -6395,22 +6392,7 @@ fn collect_condition_operand_memories(
             return;
         }
 
-        if let Some((point, address)) = leaf.read() {
-            let memory = point.into_shared_memory();
-            if !memories.contains(&memory) {
-                memories.push(memory);
-            }
-            let mut seen = BTreeSet::new();
-            address.node().offset.visit_root_in_order(false, |node| {
-                if let Some(index) = node.index() {
-                    collect_operand_memories(
-                        crate::kernel::MachineOperandView::Shared(index),
-                        memories,
-                        &mut seen,
-                    );
-                }
-            });
-        } else if let Some((_, operands)) = leaf.machine_arguments() {
+        if let Some((_, operands)) = leaf.machine_arguments() {
             let mut seen = BTreeSet::new();
             for operand in operands {
                 collect_operand_memories(operand, memories, &mut seen);
@@ -6535,12 +6517,6 @@ fn collect_condition_memories(condition: &ConditionTerm, memories: &mut Vec<Shar
         ConditionTerm::BoolEqual(left, right) => {
             collect_condition_memories(left, memories);
             collect_condition_memories(right, memories);
-        }
-        ConditionTerm::BoolLoad(memory, pointer) => {
-            if !memories.contains(memory.shared_memory()) {
-                memories.push(memory.shared_memory().clone());
-            }
-            collect_pointer_offset_memories(&pointer.offset, memories);
         }
     }
 }
@@ -6692,8 +6668,7 @@ pub(in crate::kernel) fn transport_framed_common_condition(
         | Node::Variable(_)
         | Node::BoolIf { .. }
         | Node::BoolEqual { .. }
-        | Node::Call { .. }
-        | Node::BoolRead(_) => None,
+        | Node::Call { .. } => None,
         Node::PointerEqual(pair) => {
             let [a, b] = pair.arguments();
             let mapped = crate::kernel::KernelTerm::pointer_equal_raw([
@@ -9437,9 +9412,9 @@ mod common_boolean_transport_tests {
                 Box::new(ConditionTerm::Constant(true)),
                 Box::new(ConditionTerm::Constant(false)),
             ),
-            ConditionTerm::BoolLoad(
+            ConditionTerm::boolean_cell_read(
                 crate::kernel::ProgramPoint::at(&memory),
-                Box::new(Address::symbolic(Variable(972_003))),
+                Address::symbolic(Variable(972_003)),
             ),
         ] {
             assert!(
@@ -9457,7 +9432,7 @@ mod common_boolean_transport_tests {
 mod common_boolean_read_tests {
     use super::*;
     #[test]
-    fn boolean_reads_keep_state_dependency_order() {
+    fn boolean_reads_use_the_same_state_candidates_as_byte_reads() {
         let _session = crate::kernel::VerificationSession::enter();
         let before = SymbolicMemory::new()
             .with_block("bool-memory-index", 4)
@@ -9468,9 +9443,9 @@ mod common_boolean_read_tests {
         );
         let old = crate::kernel::intern_memory(before);
         let new = crate::kernel::intern_memory(after);
-        let source = ConditionTerm::BoolLoad(
+        let source = ConditionTerm::boolean_cell_read(
             crate::kernel::ProgramPoint::at(&new.clone()),
-            Box::new(Address {
+            Address {
                 base: AddressBase::Symbolic(Variable(999370)),
                 offset: AddressOffset::scaled_int32_node(
                     MachineTerm::MemoryLoad(
@@ -9480,7 +9455,7 @@ mod common_boolean_read_tests {
                     ),
                     4,
                 ),
-            }),
+            },
         );
         let root = crate::kernel::KernelTermImport::default().condition(&source);
         let mut expected = Vec::new();
@@ -9491,6 +9466,8 @@ mod common_boolean_read_tests {
             &mut actual,
         );
         assert_eq!(actual, expected);
-        assert_eq!(actual, vec![new, old]);
+        // The machine-read candidate contributes its own state. Its address
+        // is checked separately by the load transport rule.
+        assert_eq!(actual, vec![new]);
     }
 }

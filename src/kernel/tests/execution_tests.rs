@@ -2709,7 +2709,7 @@ fn a_rebound_binder_field_never_reuses_a_havocked_local_variable() {
         let fields = arbitrary_resource_instance_fields(
             &schema,
             crate::kernel::functions::ModelFieldMintSite {
-                identity: Variable(1),
+                identity: InstanceId::from_variable(Variable(1)),
                 minted_by: &crate::kernel::model_fields::ModelMint::Refinement,
             },
             &mut budget,
@@ -3086,7 +3086,7 @@ fn loop_entry_lowering_limit_is_spelled_in_words() {
         operator: ComparisonOperator::LessEqual,
         right: SpecExpression::ResourceField {
             projection: ResourceFieldProjection {
-                identity: Variable(10),
+                identity: InstanceId::from_variable(Variable(10)),
                 children: vec![],
                 field_index: 0,
                 at_entry: false,

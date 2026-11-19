@@ -10,9 +10,7 @@ pub(in crate::kernel) fn substitute_pointer_boolean_value(
     let mut rewrite = TermRewrite::for_pointer_variable(from, to);
     let mut variables = rewrite.new_carrier_variables();
     B::Shared(root).for_each_dependency_leaf(|leaf| {
-        if let Some((_, address)) = leaf.read() {
-            collect_common_address_carriers(&address, &mut variables);
-        } else if let Some((_, operands)) = leaf.machine_arguments() {
+        if let Some((_, operands)) = leaf.machine_arguments() {
             for operand in operands {
                 collect_machine_operand_carriers(operand, &mut variables);
             }
@@ -72,10 +70,6 @@ pub(in crate::kernel) fn substitute_pointer_boolean_value(
         }
         if let KernelTermNode::BoolOverflow { format,operation,arguments } = leaf.node() {
             return Ok(KernelTerm::boolean_overflow_raw(*format,*operation,[rewrite.shared_machine_operand(&arguments[0]).ok_or(())?,rewrite.shared_machine_operand(&arguments[1]).ok_or(())?]));
-        }
-        if let KernelTermNode::BoolRead(read) = leaf.node() {
-            let (memory,address) = read.parts();
-            return Ok(KernelTerm::boolean_read(memory.clone(),rewrite.boolean_address(address).ok_or(())?));
         }
         if let KernelTermNode::PointerEqual(pair) = leaf.node() {
             let [a,b] = pair.arguments();

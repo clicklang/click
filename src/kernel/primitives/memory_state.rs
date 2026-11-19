@@ -707,11 +707,6 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                         tasks.push(HavocIdentityTask::Text(","));
                         tasks.push(HavocIdentityTask::Condition(*left));
                     }
-                    ConditionTerm::BoolLoad(_, pointer) => {
-                        identity.push_str("bload(");
-                        tasks.push(HavocIdentityTask::Text(")"));
-                        tasks.push(HavocIdentityTask::Pointer(*pointer));
-                    }
                 }
             }
         }
@@ -3728,6 +3723,13 @@ impl SymbolicMemory {
     ) -> Option<crate::kernel::effective_type::CAccessClass> {
         crate::instrumentation::record_deterministic_work(1);
         self.blocks.get(&pointer.base)?.declared_class.clone()
+    }
+
+    pub(crate) fn has_boolean_cell_type(&self, pointer: &Address) -> bool {
+        use crate::kernel::effective_type::{CAccessClass, CScalarClass};
+        self.declared_class(pointer)
+            .or_else(|| self.heap_effective_class(pointer))
+            == Some(CAccessClass::Scalar(CScalarClass::Bool))
     }
 
     /// The effective type a C store gave the heap cell starting at
@@ -8765,7 +8767,7 @@ impl ExecutionState {
 
     pub(crate) fn resource_instance_at_path(
         &self,
-        identity: Variable,
+        identity: InstanceId,
         children: &[String],
     ) -> Option<&ResourceInstance> {
         if !children.is_empty() {
@@ -8773,20 +8775,27 @@ impl ExecutionState {
         }
         self.resource_instance_fields(identity)
     }
-    pub(crate) fn resource_instance_fields(&self, identity: Variable) -> Option<&ResourceInstance> {
-        let actual = match &self.resource_bindings {
-            Some(bindings) => *bindings.get(&identity)?,
-            None => identity,
-        };
+    /// The caller instance a call-local instance binder names.
+    fn bound_instance(&self, identity: InstanceId) -> Option<InstanceId> {
+        match &self.resource_bindings {
+            Some(bindings) => bound_instance(bindings, identity),
+            None => Some(identity),
+        }
+    }
+    pub(crate) fn resource_instance_fields(
+        &self,
+        identity: InstanceId,
+    ) -> Option<&ResourceInstance> {
+        let actual = self.bound_instance(identity)?;
         self.resources
             .owned_instance(actual)
             .or_else(|| self.instance_field_scope.owned_instance(actual))
     }
-    pub(crate) fn owned_resource_instance(&self, identity: Variable) -> Option<&ResourceInstance> {
-        let actual = match &self.resource_bindings {
-            Some(bindings) => *bindings.get(&identity)?,
-            None => identity,
-        };
+    pub(crate) fn owned_resource_instance(
+        &self,
+        identity: InstanceId,
+    ) -> Option<&ResourceInstance> {
+        let actual = self.bound_instance(identity)?;
         self.resources.owned_instance(actual)
     }
     pub(crate) fn resolve_named_mutex_authority(

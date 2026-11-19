@@ -976,8 +976,6 @@ fn collect_condition_carriers(condition: &ConditionTerm, variables: &mut Carrier
             }
             collect_condition_carriers(right, variables);
         }
-        // As a word-sized read: only the pointer expression participates.
-        ConditionTerm::BoolLoad(_, pointer) => collect_pointer_carriers(pointer, variables),
     }
 }
 
@@ -5606,9 +5604,9 @@ impl<'a> TermRewrite<'a> {
         // `Bool` conditional's condition.
         if let Some(conditions) = &mut self.collected_conditions {
             match v {
-                ConditionTerm::Variable(_)
-                | ConditionTerm::BoolApplication(_)
-                | ConditionTerm::BoolLoad(..) => conditions.push(v.clone()),
+                ConditionTerm::Variable(_) | ConditionTerm::BoolApplication(_) => {
+                    conditions.push(v.clone())
+                }
                 // Each part of a `Bool` conditional or equality guards it.
                 v if v.is_bool_value_form() => conditions.extend(
                     v.bool_children()
@@ -5742,9 +5740,6 @@ impl<'a> TermRewrite<'a> {
                             ),
                         )
                     }
-                    ConditionTerm::BoolLoad(memory, pointer) => {
-                        ConditionTerm::BoolLoad(memory.clone(), Box::new(self.pointer(pointer)))
-                    }
                     // A rewrite that decided a conditional's condition, or
                     // made an equality's operands one, leaves what the
                     // folding constructors would have built, as the word
@@ -5768,7 +5763,6 @@ impl<'a> TermRewrite<'a> {
                         .map_bool_value_form(
                             |_| children.next().expect("one rewrite per child"),
                             |argument| argument.clone(),
-                            |memory, pointer| (memory.clone(), pointer.clone()),
                         )
                         .expect("a `Bool` value form maps"),
                 };

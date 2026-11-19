@@ -412,7 +412,7 @@ pub(in crate::surface) fn parsed_source_spans(
     let mut parser = Parser::with_program_layouts(source, layouts, None)?;
     parser.plain_char = Some(crate::languages::c::target::CTarget::SUPPORTED.plain_char());
     Ok(SourceSpans::clone(
-        parser.parse_file_items()?.source_spans(),
+        parser.parse_file_items(&[])?.source_spans(),
     ))
 }
 
@@ -503,7 +503,7 @@ pub(super) fn parse_file_items(source: &str) -> Result<ClickFile, ClickError> {
     let mut parser =
         Parser::new(source).map_err(|error| error.with_kind(ClickErrorKind::Syntax))?;
     parser.plain_char = Some(crate::languages::c::target::CTarget::SUPPORTED.plain_char());
-    parser.parse_file_items()
+    parser.parse_file_items(&[])
 }
 
 /// Parses file items as a library module reads them, for tests that state a
@@ -521,11 +521,12 @@ pub(super) fn parse_library_file_items(source: &str) -> Result<ClickFile, ClickE
     )
     .map_err(|error| error.with_kind(ClickErrorKind::Syntax))?;
     parser.plain_char = Some(crate::languages::c::target::CTarget::SUPPORTED.plain_char());
-    parser.parse_file_items()
+    parser.parse_file_items(&[])
 }
 
 pub(in crate::surface) enum ImportedCallee<'a> {
     Function(&'a FunctionBlock),
+    Tactic(&'a TacticDefinition),
     Contract(&'a ContractDefinition),
 }
 
@@ -577,6 +578,7 @@ pub(super) fn parse_file_items_for_module(
     for callee in imported_callees {
         let (named_contract, block) = match callee {
             ImportedCallee::Function(block) => (false, *block),
+            ImportedCallee::Tactic(tactic) => (false, tactic.function_block()),
             ImportedCallee::Contract(definition) => {
                 parser.contract_proof_bindings.insert(
                     definition.name().to_string(),
@@ -652,7 +654,7 @@ pub(super) fn parse_file_items_for_module(
             );
         }
     }
-    parser.parse_file_items()
+    parser.parse_file_items(imported_callees)
 }
 
 /// Whether `name` is the leading word of a built-in tactic or proof form, which
@@ -959,7 +961,7 @@ struct Parser {
     /// resource is declared by the parent's matched arm, which may not be
     /// parsed yet, so the recorded family is the parent's and every family
     /// comparison against these instances is left to declaration expansion.
-    child_slot_identities: BTreeSet<Variable>,
+    child_slot_identities: BTreeSet<InstanceId>,
     in_resource_definition: bool,
     /// The fields of each resource declared so far, hidden ones included.
     declared_resource_fields: BTreeMap<String, Vec<ResourceFieldDefinition>>,
@@ -1189,7 +1191,7 @@ struct Parser {
 /// block, recorded so a caller's call step can bind it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::surface) struct CalleeResourceBinder {
-    pub(in crate::surface) identity: Variable,
+    pub(in crate::surface) identity: InstanceId,
     // None denotes a supplied resource assertion parameter. Its concrete
     // family is checked by the instantiated runtime contract in the kernel.
     pub(in crate::surface) family: Option<String>,
@@ -2119,7 +2121,7 @@ impl Parser {
     }
 
     fn parse_file(mut self) -> Result<ClickFile, ClickError> {
-        let file = self.parse_file_items()?;
+        let file = self.parse_file_items(&[])?;
         let mut file = super::validation::expand_declared_resource_clauses_for_project(file)
             .map_err(|error| {
                 error
@@ -2407,7 +2409,10 @@ impl Parser {
             .is_some_and(|origin| origin.filename.ends_with(".interface.click"))
     }
 
-    fn parse_file_items(&mut self) -> Result<ClickFile, ClickError> {
+    fn parse_file_items(
+        &mut self,
+        imported_callees: &[ImportedCallee<'_>],
+    ) -> Result<ClickFile, ClickError> {
         self.index_default_source_aliases();
         self.index_algebraic_variant_fields();
         let mut imports = Vec::new();
@@ -2581,6 +2586,15 @@ impl Parser {
         // trait's method, external or a default method with its proof, or the
         // virtual method overridden, whose contract a call through it assumes.
         let cpp = self.language == SourceLanguage::Cpp;
+        // Imported blocks are already parsed in their own module's scope.
+        let imported_cpp_method = |name: &str| {
+            imported_callees.iter().find_map(|callee| match callee {
+                ImportedCallee::Function(block) if cpp && block.signature().name() == name => {
+                    Some(*block)
+                }
+                _ => None,
+            })
+        };
         for (implementation, interface) in std::mem::take(&mut self.rust_trait_implementations) {
             // An override of a method of a class whose object carries state, or
             // of a defining class's method, is stated on its own memory, by its
@@ -2613,6 +2627,7 @@ impl Parser {
             let Some(interface) = function_blocks
                 .iter()
                 .find(|block| block.signature().name() == interface)
+                .or_else(|| imported_cpp_method(&interface))
                 .cloned()
             else {
                 continue;
@@ -3918,7 +3933,8 @@ impl Parser {
             return;
         };
         let is_parent = |access: &ResourceFieldAccess| {
-            access.owner == "__body" && access.identity == Variable(u64::MAX)
+            access.owner == "__body"
+                && access.identity == InstanceId::from_variable(Variable(u64::MAX))
         };
         let (child, parent) = match (is_parent(one), is_parent(other)) {
             (false, true) => (one, other),
@@ -3964,7 +3980,7 @@ impl Parser {
             let hidden = ResourceFieldAccess {
                 owner: "__body".into(),
                 resource_name: resource_name.into(),
-                identity: Variable(u64::MAX),
+                identity: InstanceId::from_variable(Variable(u64::MAX)),
                 children: vec![],
                 field: hidden_name.clone(),
                 field_index: fields.len(),
@@ -4026,7 +4042,7 @@ impl Parser {
                         ResourceFieldAccess {
                             owner: "__body".into(),
                             resource_name: resource_name.into(),
-                            identity: Variable(u64::MAX),
+                            identity: InstanceId::from_variable(Variable(u64::MAX)),
                             children: vec![],
                             field: field.name.clone(),
                             field_index,
@@ -7915,7 +7931,7 @@ impl Parser {
                 }
                 type_arguments.push((
                     binder.clone(),
-                    declaration.identity,
+                    declaration.identity.variable(),
                     self.parse_declared_resource_call()?,
                 ));
                 if self.peek() != Some(&Token::Comma) {
@@ -8207,8 +8223,7 @@ impl Parser {
                 *identity
             }
             None => {
-                let identity = Variable(self.next_resource_identity);
-                self.next_resource_identity += 1;
+                let identity = self.fresh_resource_identity();
                 identity
             }
         };
@@ -8281,7 +8296,7 @@ impl Parser {
                 let resource = family.map(|family| ResourceClause::Named {
                     binding: ResourceInstanceBinding {
                         name: binder.name().to_string(),
-                        identity: Variable(binder.identity),
+                        identity: InstanceId::from_variable(Variable(binder.identity)),
                         children: vec![],
                         schema: None,
                         fields: None,
@@ -8304,7 +8319,7 @@ impl Parser {
                 binders.insert(
                     binder.name().to_string(),
                     CalleeResourceBinder {
-                        identity: Variable(binder.identity),
+                        identity: InstanceId::from_variable(Variable(binder.identity)),
                         family: family.map(str::to_string),
                         resource,
                         parameter_names: vec!["mutex".to_string(), "attributes".to_string()],
@@ -8327,7 +8342,7 @@ impl Parser {
             .insert(
                 "payload".to_string(),
                 CalleeResourceBinder {
-                    identity: Variable(ATOMIC_INIT_PAYLOAD_BINDER_ID),
+                    identity: InstanceId::from_variable(Variable(ATOMIC_INIT_PAYLOAD_BINDER_ID)),
                     family: None,
                     resource: None,
                     parameter_names: vec!["object".to_string(), "value".to_string()],
@@ -8363,7 +8378,7 @@ impl Parser {
     /// name it: the map gives its value.
     fn value_parameter_callee_binder() -> CalleeResourceBinder {
         CalleeResourceBinder {
-            identity: Variable(0),
+            identity: InstanceId::from_variable(Variable(0)),
             family: None,
             resource: None,
             parameter_names: Vec::new(),
@@ -8519,8 +8534,7 @@ impl Parser {
                 identity
             }
             None => {
-                let identity = Variable(self.next_resource_identity);
-                self.next_resource_identity += 1;
+                let identity = self.fresh_resource_identity();
                 identity
             }
         };
@@ -8575,9 +8589,8 @@ impl Parser {
         if let Some(held) = self.hidden_binder(&target) {
             return held;
         }
-        let identity = Variable(self.next_resource_identity);
-        self.next_resource_identity += 1;
-        let binder = format!("#{name}{}", identity.0);
+        let identity = self.fresh_resource_identity();
+        let binder = format!("#{name}{}", identity.variable().0);
         self.names
             .bind_instance(binder.clone(), (identity, name.clone()));
         let named = ResourceClause::Named {
@@ -10024,6 +10037,13 @@ impl Parser {
 
     /// The refusal for a name that binds no resource instance here: one
     /// whose binding block has ended is refused as out of scope.
+    /// A fresh identity for a resource binder this file introduces.
+    fn fresh_resource_identity(&mut self) -> InstanceId {
+        let identity = InstanceId::from_variable(Variable(self.next_resource_identity));
+        self.next_resource_identity += 1;
+        identity
+    }
+
     fn unknown_instance(&self, name: &str, kind: &str) -> ClickError {
         if self.names.ended_instance_names.contains(name) {
             self.error(format!(
@@ -10194,7 +10214,7 @@ impl Parser {
         family: Option<&str>,
         bindings: Vec<(String, String)>,
         introduce: bool,
-    ) -> Result<Vec<(String, String, Variable)>, ClickError> {
+    ) -> Result<Vec<(String, String, InstanceId)>, ClickError> {
         let ResourceClause::Declared { name: written, .. } = parent else {
             return Err(self.error("child bindings require a declared resource family"));
         };
@@ -10229,8 +10249,7 @@ impl Parser {
                 if self.names.resource_bindings.contains_key(&name) {
                     return Err(self.error("field output conflicts with a resource binding"));
                 }
-                let identity = Variable(self.next_resource_identity);
-                self.next_resource_identity += 1;
+                let identity = self.fresh_resource_identity();
                 self.names.insert(NameKind::ProofBinder, name.clone());
                 result.push((slot, name, identity));
                 continue;
@@ -10242,8 +10261,7 @@ impl Parser {
                 // expansion checks the supplied instance against it.
                 *identity
             } else if introduce {
-                let identity = Variable(self.next_resource_identity);
-                self.next_resource_identity += 1;
+                let identity = self.fresh_resource_identity();
                 identity
             } else {
                 return Err(self.unknown_instance(&name, "child resource"));
@@ -10549,8 +10567,7 @@ impl Parser {
             }
             *identity
         } else {
-            let identity = Variable(self.next_resource_identity);
-            self.next_resource_identity += 1;
+            let identity = self.fresh_resource_identity();
             identity
         };
         let declared = self
@@ -10646,7 +10663,7 @@ impl Parser {
     fn fill_hidden_fold_fields(
         &self,
         declared: &[ResourceFieldDefinition],
-        child_bindings: &[(String, String, Variable)],
+        child_bindings: &[(String, String, InstanceId)],
         fields: &mut Vec<(String, ContractExpression)>,
     ) {
         for field in declared {
@@ -11788,8 +11805,7 @@ impl Parser {
                 )));
             }
             None => {
-                let identity = Variable(self.next_resource_identity);
-                self.next_resource_identity += 1;
+                let identity = self.fresh_resource_identity();
                 identity
             }
         };
@@ -18348,7 +18364,7 @@ mod integer_quantifier_parser_tests {
         "#;
         let file = Parser::new(source)
             .unwrap()
-            .parse_file_items()
+            .parse_file_items(&[])
             .expect("adjacent function contracts should parse");
         let Ensure::Proposition(ClickProposition::Comparison { left, .. }) =
             file.function_blocks()[0].ensures()[0].ensure()
@@ -18382,7 +18398,7 @@ mod integer_quantifier_parser_tests {
                 }
             }
         "#;
-        Parser::new(source).unwrap().parse_file_items().expect(
+        Parser::new(source).unwrap().parse_file_items(&[]).expect(
             "an expression at a program point must not parse as a proposition at that point",
         );
     }
@@ -18661,7 +18677,7 @@ mod tactic_classification_tests {
                 let cell = BTreeMap::from([(
                     "cell".to_string(),
                     CalleeResourceBinder {
-                        identity: Variable(1),
+                        identity: InstanceId::from_variable(Variable(1)),
                         family: Some("reference".to_string()),
                         resource: None,
                         parameter_names: Vec::new(),
@@ -18677,10 +18693,13 @@ mod tactic_classification_tests {
                 parser
                     .contract_resource_binders
                     .insert("Contract".to_string(), cell);
-                parser
-                    .names
-                    .resource_bindings
-                    .insert("c".to_string(), (Variable(2), "reference".to_string()));
+                parser.names.resource_bindings.insert(
+                    "c".to_string(),
+                    (
+                        InstanceId::from_variable(Variable(2)),
+                        "reference".to_string(),
+                    ),
+                );
                 parser.parse_proof_tactic()
             });
             let tactic = match parsed {
@@ -18740,7 +18759,7 @@ mod loop_name_tests {
             "lp".to_string(),
             std::sync::Arc::new(["n", "p", "i"].map(str::to_string).into()),
         );
-        Parser::with_program_layouts(&source, layouts, None)?.parse_file_items()
+        Parser::with_program_layouts(&source, layouts, None)?.parse_file_items(&[])
     }
 
     #[test]
@@ -18824,10 +18843,10 @@ mod preserve_syntax_tests {
 
     fn parser(source: &str) -> Parser {
         let mut parser = Parser::new(source).unwrap();
-        parser
-            .names
-            .resource_bindings
-            .insert("r".into(), (Variable(123), "Node".into()));
+        parser.names.resource_bindings.insert(
+            "r".into(),
+            (InstanceId::from_variable(Variable(123)), "Node".into()),
+        );
         parser.resource_parameters.insert("R".into(), 0);
         parser
             .declared_resource_fields

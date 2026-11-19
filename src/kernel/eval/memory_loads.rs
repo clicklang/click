@@ -4727,7 +4727,7 @@ fn condition_mentions_a_memory_load(condition: &ConditionTerm) -> bool {
                 || offset_mentions_a_memory_load(&right.offset)
         }
         crate::kernel::integer_comparison_condition!(_, _) => false,
-        ConditionTerm::BoolApplication(_) | ConditionTerm::BoolLoad(..) => true,
+        ConditionTerm::BoolApplication(_) => true,
         ConditionTerm::BoolIf {
             condition,
             then_condition,
@@ -5373,19 +5373,10 @@ pub(in crate::kernel) fn symbolic_load_value_unrecorded(
             parameter,
         )),
         ProgramType::Void | ProgramType::VoidPointer => None,
-        ProgramType::Bool => {
-            let load = MachineTerm::MemoryLoad(
-                ProgramPoint::at(&(crate::kernel::intern_memory(memory.clone()))),
-                Box::new(pointer.clone()),
-                LoadKind::UInt8,
-            );
-            // The byte rule (Stage 5): the read of a `bool` cell whose byte
-            // is `b` is the `Bool` `b != 0`. Every write of such a cell
-            // stores `v as uint8`, 1 or 0 (rule C1), and no write of another
-            // kind or byte view reaches it, so the byte is 0 or 1 and this is
-            // the value the cell holds.
-            Some(crate::kernel::bool_value(load))
-        }
+        ProgramType::Bool => Some(ProgramValue::of_bool(ConditionTerm::boolean_cell_read(
+            ProgramPoint::at(&crate::kernel::intern_memory_ref(memory)),
+            pointer.clone(),
+        ))),
         ProgramType::Int8 => Some(memory.symbolic_int8_load(pointer)),
         ProgramType::Int16 => Some(memory.symbolic_int16_load(pointer)),
         ProgramType::Int32 => Some(memory.symbolic_int32_load(pointer)),

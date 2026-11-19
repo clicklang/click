@@ -1099,7 +1099,7 @@ impl MutexContext {
     pub(super) fn publish_declared(
         &self,
         mutex: &Address,
-        identity: super::Variable,
+        identity: super::InstanceId,
         definitions: &std::collections::BTreeMap<String, super::CompositeResourceDefinition>,
         assumptions: &PureFactContext,
         storage_bytes: u32,
@@ -4294,7 +4294,7 @@ mod tests {
         .unwrap();
         ResourceFact::own(Resource::Instance(
             ResourceInstance::new(
-                Variable(identity),
+                crate::kernel::InstanceId::from_variable(Variable(identity)),
                 "counter_state".into(),
                 Vec::new().into(),
                 schema,
@@ -4327,7 +4327,7 @@ mod tests {
         )])
         .unwrap();
         let instance = ResourceInstance::new(
-            Variable(902),
+            crate::kernel::InstanceId::from_variable(Variable(902)),
             "counter_state".into(),
             vec![ProgramValue::pointer(address.clone()).into()].into(),
             schema.clone(),

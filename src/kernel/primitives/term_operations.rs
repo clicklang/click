@@ -2656,8 +2656,7 @@ impl ConditionTerm {
             | Self::Float32(_)
             | Self::Float64(_)
             | Self::BoolApplication(_)
-            | Self::BoolIf { .. }
-            | Self::BoolLoad(..) => None,
+            | Self::BoolIf { .. } => None,
         }
     }
 

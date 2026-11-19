@@ -301,7 +301,7 @@ impl SpecValue {
         if matches!(op, ComparisonOperator::Equal | ComparisonOperator::NotEqual)
             && let (Some(left), Some(right)) = (logical(self), logical(right))
         {
-            let root = KernelTerm::boolean_equal([left, right]);
+            let root = KernelTerm::boolean_equal_raw([left, right]);
             return Ok(Some(Proposition::condition_is(
                 StoredConditionTerm::from_root(root).expect("Boolean equality"),
                 op == ComparisonOperator::Equal,

@@ -3536,7 +3536,7 @@ fn local_named_wildcard_members_count_occurrences_not_field_values() {
     let (empty, _) = created.checked_establish(&block, &scope).unwrap();
     let member = |tag, serial| {
         ResourceInstance::new(
-            Variable::allocate_fresh().unwrap(),
+            InstanceId::from_variable(Variable::allocate_fresh().unwrap()),
             "ticket".into(),
             vec![anchor.clone().into(), int32(tag).into()].into(),
             schema.clone(),
@@ -3822,7 +3822,7 @@ fn check_named_authority_import(arity: Option<usize>) {
         }
     }
     let instance = ResourceInstance::new(
-        Variable::allocate_fresh().unwrap(),
+        InstanceId::from_variable(Variable::allocate_fresh().unwrap()),
         "ticket".into(),
         instance_arguments.into(),
         schema,
@@ -4132,7 +4132,7 @@ fn imported_named_exact_counts_refuse_unresolved_neighbor_effects() {
     .unwrap();
     let member = |identity, tag| {
         ResourceInstance::new(
-            Variable(identity),
+            InstanceId::from_variable(Variable(identity)),
             "ticket".into(),
             vec![
                 anchor.clone().into(),

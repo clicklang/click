@@ -10,7 +10,7 @@ fn authority_named_memory_rewrite_preserves_population_ledger() {
     )])
     .unwrap();
     let instance = ResourceInstance::new(
-        Variable(9_850_001),
+        InstanceId::from_variable(Variable(9_850_001)),
         "cell".into(),
         vec![].into(),
         schema.clone(),

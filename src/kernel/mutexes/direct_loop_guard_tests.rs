@@ -45,7 +45,7 @@ fn head(entry: &ExecutionState, identity: u64) -> ExecutionState {
         entry,
         entry,
         &spec(),
-        Variable(identity),
+        InstanceId::from_variable(Variable(identity)),
         &PureFactContext::new(),
     )
     .unwrap();
@@ -72,7 +72,7 @@ fn direct_loop_guard_requires_real_entry_custody() {
             &state,
             &state,
             &spec(),
-            Variable(700),
+            InstanceId::from_variable(Variable(700)),
             &PureFactContext::new()
         )
         .unwrap_err()
@@ -126,7 +126,10 @@ fn direct_loop_guard_checked_open_allows_a_subsequent_loop() {
         .release_current(&address(0), &PureFactContext::new())
         .unwrap();
     let second = head(unlocked.state(), 704);
-    assert_eq!(carrier(&second).identity, Variable(704));
+    assert_eq!(
+        carrier(&second).identity,
+        InstanceId::from_variable(Variable(704))
+    );
 }
 #[test]
 fn direct_loop_guard_rejects_changed_mutex_address() {
@@ -139,7 +142,7 @@ fn direct_loop_guard_rejects_changed_mutex_address() {
             &entry,
             &changed,
             &spec(),
-            Variable(705),
+            InstanceId::from_variable(Variable(705)),
             &PureFactContext::new()
         )
         .is_err()
@@ -150,13 +153,20 @@ fn direct_loop_guard_rejects_changed_mutex_address() {
 fn direct_loop_guard_empty_carrier_allows_a_subsequent_loop() {
     let first = head(&entry(), 707);
     let second = head(&first, 708);
-    assert_eq!(carrier(&second).identity, Variable(708));
+    assert_eq!(
+        carrier(&second).identity,
+        InstanceId::from_variable(Variable(708))
+    );
 }
 
 #[test]
 fn direct_loop_guard_is_typed_and_affine_even_when_empty() {
     let top = head(&entry(), 710);
-    assert!(top.resources.owned_instance(Variable(710)).is_none());
+    assert!(
+        top.resources
+            .owned_instance(InstanceId::from_variable(Variable(710)))
+            .is_none()
+    );
     let owned = ResourceFact::own(Resource::ConditionalMutexGuard(carrier(&top)));
     assert!(
         top.resources
@@ -329,7 +339,7 @@ fn direct_loop_guard_keeps_negated_conditions_as_boolean_terms() {
         locked.state(),
         locked.state(),
         &spec,
-        Variable(715),
+        InstanceId::from_variable(Variable(715)),
         &PureFactContext::new(),
     )
     .unwrap();

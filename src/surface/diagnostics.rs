@@ -932,7 +932,6 @@ pub(super) fn condition_kind(condition: &ConditionTerm) -> &'static str {
         ConditionTerm::BoolApplication(_) => "Bool function application",
         ConditionTerm::BoolIf { .. } => "Bool conditional",
         ConditionTerm::BoolEqual(..) => "Bool equality",
-        ConditionTerm::BoolLoad(..) => "bool read",
     }
 }
 
@@ -3937,7 +3936,7 @@ pub(super) fn describe_resource_version_mismatch(
 /// because a half-spelled field would read like source the reader could search
 /// for.
 fn describe_model_field_version_stop(
-    identity: Variable,
+    identity: InstanceId,
     children: &[String],
     field_index: usize,
     stop: &resource_tracker::Stop,
@@ -8515,9 +8514,6 @@ pub(super) fn describe_condition(condition: &ConditionTerm) -> String {
             describe_condition(left),
             describe_condition(right)
         ),
-        ConditionTerm::BoolLoad(_, pointer) => {
-            describe_load_at(pointer, ParameterBinding::default())
-        }
     }
 }
 

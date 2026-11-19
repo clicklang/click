@@ -40,7 +40,7 @@ impl Gen {
 
     fn projection(&mut self) -> ResourceFieldProjection {
         ResourceFieldProjection {
-            identity: Variable(900_200 + self.pick(2)),
+            identity: InstanceId::from_variable(Variable(900_200 + self.pick(2))),
             children: vec![],
             field_index: 0,
             at_entry: false,

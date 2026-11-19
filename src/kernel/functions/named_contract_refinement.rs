@@ -621,8 +621,8 @@ pub(in crate::kernel) fn prepare_contract_refinement_obligations(
 /// read the same instance identity, so `root.model` on the named side and
 /// `t.model` on the implementation side lower to the same term.
 pub(super) struct RefinementInstanceBinding {
-    target_identity: Variable,
-    implementation_identity: Variable,
+    target_identity: InstanceId,
+    implementation_identity: InstanceId,
     entry: ResourceInstance,
     post: ResourceInstance,
 }
@@ -642,7 +642,7 @@ pub(super) enum RefinementPhase {
 /// One declared instance binder, with its family evaluated at the state that
 /// declares it.
 pub(super) struct DeclaredResourceInstance {
-    identity: Variable,
+    identity: InstanceId,
     family: String,
     schema: ResourceFieldSchema,
     arguments: ResourceArguments,
@@ -777,7 +777,7 @@ pub(super) fn forced_refinement_instance_bindings(
         {
             return Ok(None);
         }
-        let identity = budget.allocate_kernel_variable()?;
+        let identity = InstanceId::from_variable(budget.allocate_kernel_variable()?);
         let instance = |budget: &mut ExecutionBudget| -> ExecutionResult<ResourceInstance> {
             let fields = arbitrary_resource_instance_fields(
                 &target.schema,
@@ -825,7 +825,7 @@ pub(super) fn refinement_bindings_at_post(
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Option<Vec<RefinementInstanceBinding>>> {
     let post_arguments = |interface: &FunctionContractInterface,
-                          identity: Variable,
+                          identity: InstanceId,
                           entry: &ExecutionState,
                           post: &ExecutionState,
                           budget: &mut ExecutionBudget|
@@ -940,7 +940,7 @@ pub(in crate::kernel) fn resource_instance_field_value(
 /// is: a refusal that meets one later has no other way to find out
 /// (`crate::kernel::model_fields`).
 pub(in crate::kernel) struct ModelFieldMintSite<'a> {
-    pub(in crate::kernel) identity: Variable,
+    pub(in crate::kernel) identity: InstanceId,
     pub(in crate::kernel) minted_by: &'a ModelMint,
 }
 
@@ -994,7 +994,7 @@ pub(in crate::kernel) fn fresh_resource_instance_fields(
 /// and the kernel's check of the join arrive at the same fields.
 pub(crate) fn interface_join_instance_fields(
     schema: &ResourceFieldSchema,
-    identity: Variable,
+    identity: InstanceId,
     next_kernel_variable: u64,
 ) -> Option<(ResourceFieldValues, u64)> {
     let mut budget = ExecutionBudget::continuing_from(next_kernel_variable);
@@ -1050,7 +1050,7 @@ pub(super) fn state_with_refinement_instances(
             RefinementPhase::Entry => &binding.entry,
             RefinementPhase::Post => &binding.post,
         };
-        names.insert(declared, instance.identity());
+        names.insert(declared.variable(), instance.identity().variable());
         facts.push(ResourceFact::own(Resource::Instance(instance.clone())));
     }
     state.resource_bindings = Some(std::sync::Arc::new(names));
