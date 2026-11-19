@@ -5898,9 +5898,10 @@ pub(super) fn describe_contract_segment(segment: &ContractSegment) -> String {
             name,
             ..
         } => match surface_base {
-            Some(surface_base) => {
-                describe_field_place(&describe_contract_expression(surface_base), name)
-            }
+            Some(surface_base) => cpp_model::describe_model_segment_field(surface_base, name)
+                .unwrap_or_else(|| {
+                    describe_field_place(&describe_contract_expression(surface_base), name)
+                }),
             None => describe_field_place(&base, name),
         },
         ContractSegmentSurface::ObjectPlace { name, .. } => name.to_string(),
