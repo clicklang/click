@@ -51,9 +51,7 @@ impl AlgebraicResult {
         {
             return None;
         }
-        let ProgramValue::Parameter(value) = root.algebraic_native_value()? else {
-            unreachable!("algebraic constructor reading")
-        };
+        let value = root.algebraic_native_term()?;
         matches!(value.node, AlgebraicTermNode::Constructor { .. }).then_some(value)
     }
     pub(super) fn into_kernel(self) -> KernelTerm {

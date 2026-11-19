@@ -1045,6 +1045,14 @@ mod tests {
         let view = BooleanOperandView::Shared(&root);
         assert!(matches!(view.native(), std::borrow::Cow::Borrowed(_)));
         assert_eq!(view.native_leaf(), Some(&source));
+        let KernelTermNode::LegacyBool(payload) = root.node() else {
+            unreachable!();
+        };
+        assert!(std::ptr::eq(
+            root.boolean_argument_native().unwrap(),
+            payload.value()
+        ));
+        assert!(!root.has_cached_native_argument());
         assert!(view.conditional().is_none());
         assert!(view.comparison().is_none());
     }
