@@ -8350,6 +8350,35 @@ fn two_variable_unsigned_arithmetic_in_conditionals_round_trips_after_rewrite() 
 }
 
 #[test]
+fn variable_divisors_in_conditionals_round_trip_after_rewrite() {
+    use MachineIntegerType as T;
+    for (format, spelling) in [(T::UInt32, "uint32"), (T::UInt64, "uint64")] {
+        let mut fixture = ConditionalRoundTrip::new(format, spelling);
+        fixture.state = fixture.state.with_local(
+            "w",
+            format.value_from_term(MachineTerm::Variable(Variable(999712))),
+        );
+        for operator in ["/", "%"] {
+            let literal = format!("(3 as {spelling})");
+            for divisor in ["w", literal.as_str()] {
+                let equality = fixture.lower(&format!("x == (z {operator} {divisor})"));
+                for reverse in [false, true] {
+                    for (guards, arm) in [
+                        (&["flag", "not flag"][..], "x"),
+                        (&["x < y", "x == y", "y <= x", "y != x"][..], "z"),
+                    ] {
+                        for guard in guards {
+                            let original = fixture.goal(guard, reverse, arm);
+                            fixture.check(&original, &equality, guard, reverse);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn literal_divisors_in_conditionals_round_trip_after_rewrite() {
     use crate::kernel::MachineIntegerType as T;
     for (format, spelling, boundary) in [

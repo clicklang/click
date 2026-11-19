@@ -421,11 +421,12 @@ fn bounded_comparison_operand(
         O::Divide | O::Remainder
             if in_conditional
                 && arguments[0].variable().is_some()
-                && arguments[1]
-                    .literal()
-                    .and_then(|literal| format.constant_from_term(&literal))
-                    .and_then(|constant| constant.to_i128())
-                    .is_some_and(|divisor| !matches!(divisor, 0 | -1)) =>
+                && ((!format.format().is_signed() && arguments[1].variable().is_some())
+                    || arguments[1]
+                        .literal()
+                        .and_then(|literal| format.constant_from_term(&literal))
+                        .and_then(|constant| constant.to_i128())
+                        .is_some_and(|divisor| !matches!(divisor, 0 | -1))) =>
         {
             false
         }
