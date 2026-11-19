@@ -1927,68 +1927,89 @@ fn alpha_integer_node(
                 }
             };
             let initial = alpha_integer_node(initial, bindings, memo, nodes, next_binder)?;
-            let accumulator_index = *next_binder;
-            *next_binder = (*next_binder).checked_add(1)?;
-            let item_index = *next_binder;
-            *next_binder = (*next_binder).checked_add(1)?;
-            let old_accumulator = bindings.integer.insert(*accumulator, accumulator_index);
-            let item_is_integer =
-                matches!(index, crate::kernel::IntegerRangeFoldIndex::Integer { .. });
-            let old_item = if matches!(index, crate::kernel::IntegerRangeFoldIndex::Integer { .. })
-            {
-                bindings.integer.insert(*item, item_index)
-            } else {
-                bindings.bitvector.insert(*item, item_index)
-            };
-            let parent_integer_scope = bindings.integer_scope;
-            let parent_bitvector_scope = bindings.bitvector_scope;
-            let integer_scope = bindings.next_scope_id;
-            let mut next_scope_id = integer_scope.checked_add(1)?;
-            let bitvector_scope = if item_is_integer {
-                parent_bitvector_scope
-            } else {
-                let scope = next_scope_id;
-                next_scope_id = next_scope_id.checked_add(1)?;
-                scope
-            };
-            bindings.next_scope_id = next_scope_id;
-            bindings.integer_scope = integer_scope;
-            bindings.bitvector_scope = bitvector_scope;
-            let body_index = alpha_integer_node(body, bindings, memo, nodes, next_binder);
-            bindings.integer_scope = parent_integer_scope;
-            bindings.bitvector_scope = parent_bitvector_scope;
-            // Restore in reverse insertion order, including an outer binding
-            // shadowed by this body. Endpoints and initial stay in outer scope.
-            if let Some(previous) = old_item {
-                if item_is_integer {
-                    bindings.integer.insert(*item, previous);
-                } else {
-                    bindings.bitvector.insert(*item, previous);
-                }
-            } else if item_is_integer {
-                bindings.integer.remove(item);
-            } else {
-                bindings.bitvector.remove(item);
-            }
-            if let Some(previous) = old_accumulator {
-                bindings.integer.insert(*accumulator, previous);
-            } else {
-                bindings.integer.remove(accumulator);
-            }
-            let body_index = body_index?;
-            AlphaIntegerNode::RangeFold {
-                index: alpha_index,
+            alpha_integer_fold_node(
+                alpha_index,
                 initial,
-                accumulator: accumulator_index,
-                item: item_index,
-                body: body_index,
-            }
+                *accumulator,
+                *item,
+                bindings,
+                next_binder,
+                |bindings, next_binder| {
+                    alpha_integer_node(body, bindings, memo, nodes, next_binder)
+                },
+            )?
         }
     };
     let index = nodes.len();
     nodes.push(node);
     memo.insert(cache_key, index);
     Some(index)
+}
+
+/// Finish a fold key from endpoints and an initial value resolved in outer scope.
+fn alpha_integer_fold_node(
+    index: AlphaIntegerRangeIndex,
+    initial: usize,
+    accumulator: Variable,
+    item: Variable,
+    bindings: &mut AlphaBindings,
+    next_binder: &mut usize,
+    body: impl FnOnce(&mut AlphaBindings, &mut usize) -> Option<usize>,
+) -> Option<AlphaIntegerNode> {
+    let accumulator_index = *next_binder;
+    *next_binder = (*next_binder).checked_add(1)?;
+    let item_index = *next_binder;
+    *next_binder = (*next_binder).checked_add(1)?;
+    let item_is_integer = matches!(&index, AlphaIntegerRangeIndex::Integer(..));
+    let parent_integer_scope = bindings.integer_scope;
+    let parent_bitvector_scope = bindings.bitvector_scope;
+    let integer_scope = bindings.next_scope_id;
+    let mut next_scope_id = integer_scope.checked_add(1)?;
+    let bitvector_scope = if item_is_integer {
+        parent_bitvector_scope
+    } else {
+        let scope = next_scope_id;
+        next_scope_id = next_scope_id.checked_add(1)?;
+        scope
+    };
+    let old_accumulator = bindings.integer.insert(accumulator, accumulator_index);
+    let old_item = if item_is_integer {
+        bindings.integer.insert(item, item_index)
+    } else {
+        bindings.bitvector.insert(item, item_index)
+    };
+    bindings.next_scope_id = next_scope_id;
+    bindings.integer_scope = integer_scope;
+    bindings.bitvector_scope = bitvector_scope;
+    let body_index = body(bindings, next_binder);
+    bindings.integer_scope = parent_integer_scope;
+    bindings.bitvector_scope = parent_bitvector_scope;
+    // Restore in reverse insertion order, including an outer binding
+    // shadowed by this body. Endpoints and initial stay in outer scope.
+    if let Some(previous) = old_item {
+        if item_is_integer {
+            bindings.integer.insert(item, previous);
+        } else {
+            bindings.bitvector.insert(item, previous);
+        }
+    } else if item_is_integer {
+        bindings.integer.remove(&item);
+    } else {
+        bindings.bitvector.remove(&item);
+    }
+    if let Some(previous) = old_accumulator {
+        bindings.integer.insert(accumulator, previous);
+    } else {
+        bindings.integer.remove(&accumulator);
+    }
+    let body_index = body_index?;
+    Some(AlphaIntegerNode::RangeFold {
+        index,
+        initial,
+        accumulator: accumulator_index,
+        item: item_index,
+        body: body_index,
+    })
 }
 
 fn alpha_variable_key<const ALLOW_LOADS: bool>(

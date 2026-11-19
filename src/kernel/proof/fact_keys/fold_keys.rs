@@ -1,6 +1,9 @@
 //! Common/native fold keys share the same scoped child walker and refusal rules.
 use super::*;
-use crate::kernel::{KernelFold, KernelTermExport, KernelType, MachineOperandView};
+use crate::kernel::{
+    KernelFold, KernelFoldIndex, KernelTermExport, KernelType, MachineOperandView,
+    SharedIntegerRangeEndpoint,
+};
 
 pub(super) fn bindings() -> AlphaBindings {
     AlphaBindings {
@@ -65,10 +68,79 @@ pub(super) fn machine_fold_key<const ALLOW_LOADS: bool>(
 }
 
 pub(crate) fn integer_key(fold: &KernelFold) -> Option<IntegerFoldAlphaKey> {
-    let native = fold
-        .integer_compatibility(&mut KernelTermExport::default())
-        .ok()?;
-    integer_fold_alpha_key(&native.into())
+    if fold.result_type() != &KernelType::Integer {
+        return None;
+    }
+    let mut bindings = bindings();
+    let mut next_binder = 0;
+    let mut nodes = Vec::new();
+    let mut memo = HashMap::new();
+    let mut export = KernelTermExport::default();
+    let [start, end, initial, body] = &fold.arguments;
+    alpha_work_checkpoint(&mut bindings, 1)?;
+    let index = match fold.index {
+        KernelFoldIndex::Integer => {
+            let start = export.integer(start).ok()?;
+            let end = export.integer(end).ok()?;
+            AlphaIntegerRangeIndex::Integer(
+                alpha_integer_node(
+                    &start,
+                    &mut bindings,
+                    &mut memo,
+                    &mut nodes,
+                    &mut next_binder,
+                )?,
+                alpha_integer_node(&end, &mut bindings, &mut memo, &mut nodes, &mut next_binder)?,
+            )
+        }
+        KernelFoldIndex::Int32 | KernelFoldIndex::UInt64 => {
+            // Use the same word interpretation and admission rule as the
+            // existing Integer range endpoint wrapper.
+            let start = SharedIntegerRangeEndpoint::from_shared(start.clone())?;
+            let end = SharedIntegerRangeEndpoint::from_shared(end.clone())?;
+            let start = alpha_machine_key::<false>(
+                start.machine_operand().operand_view(),
+                &mut bindings,
+                &mut next_binder,
+            )?;
+            let end = alpha_machine_key::<false>(
+                end.machine_operand().operand_view(),
+                &mut bindings,
+                &mut next_binder,
+            )?;
+            if fold.index == KernelFoldIndex::Int32 {
+                AlphaIntegerRangeIndex::Int32(start, end)
+            } else {
+                AlphaIntegerRangeIndex::UInt64(start, end)
+            }
+        }
+    };
+    let initial = export.integer(initial).ok()?;
+    let body = export.integer(body).ok()?;
+    let initial = alpha_integer_node(
+        &initial,
+        &mut bindings,
+        &mut memo,
+        &mut nodes,
+        &mut next_binder,
+    )?;
+    let node = alpha_integer_fold_node(
+        index,
+        initial,
+        fold.accumulator,
+        fold.item,
+        &mut bindings,
+        &mut next_binder,
+        |bindings, next_binder| {
+            alpha_integer_node(&body, bindings, &mut memo, &mut nodes, next_binder)
+        },
+    )?;
+    let root = nodes.len();
+    nodes.push(node);
+    Some(IntegerFoldAlphaKey {
+        key: AlphaIntegerKey { nodes, root },
+        work_units: bindings.work_units,
+    })
 }
 
 fn machine_key(fold: &KernelFold) -> Option<(AlphaBitvectorKey, usize)> {
@@ -105,7 +177,7 @@ pub(crate) fn alpha_equivalent(left: &KernelFold, right: &KernelFold) -> Option<
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::{IntegerRangeFoldIndex, KernelFoldIndex, KernelTerm, KernelTermImport};
+    use crate::kernel::{IntegerRangeFoldIndex, KernelTerm, KernelTermImport};
 
     fn machine_fold(accumulator: u64, item: u64, body: MachineTerm) -> MachineTerm {
         MachineTerm::RangeFold {
@@ -186,6 +258,15 @@ mod tests {
         let unsigned = fold(KernelFoldIndex::UInt64, MachineIntegerType::UInt64);
         assert_eq!(alpha_equivalent(&signed, &unsigned), Some(false));
         assert_eq!(alpha_equivalent(&signed, &signed), Some(true));
+        for fold in [signed, unsigned] {
+            let reference = fold
+                .integer_compatibility(&mut KernelTermExport::default())
+                .unwrap();
+            assert_eq!(
+                integer_key(&fold),
+                integer_fold_alpha_key(&reference.into())
+            );
+        }
     }
 
     #[test]
@@ -213,6 +294,29 @@ mod tests {
         let b = fold(&later);
         assert_eq!(alpha_equivalent(&a, &a), Some(true));
         assert_eq!(alpha_equivalent(&a, &b), Some(false));
+
+        let to_integer = |machine: KernelFold| {
+            let zero = KernelTerm::integer_literal(0.into());
+            KernelFold::new(
+                KernelFoldIndex::Int32,
+                machine.accumulator,
+                machine.item,
+                [
+                    machine.arguments[3].clone(),
+                    machine.arguments[1].clone(),
+                    zero.clone(),
+                    zero,
+                ],
+            )
+            .unwrap()
+        };
+        let a = to_integer(a);
+        let b = to_integer(b);
+        assert_eq!(alpha_equivalent(&a, &b), Some(false));
+        let reference = a
+            .integer_compatibility(&mut KernelTermExport::default())
+            .unwrap();
+        assert_eq!(integer_key(&a), integer_fold_alpha_key(&reference.into()));
     }
 }
 
