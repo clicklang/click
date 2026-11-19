@@ -1417,7 +1417,7 @@ fn collect_term_reads(term: &Term, reads: &mut Vec<ResourceRead>) {
     match term {
         Term::Condition(condition) => collect_condition_reads(condition, reads),
         Term::Bitvector32(term) => collect_bitvector_reads(term, reads),
-        Term::Integer(term) => collect_integer_term_reads(term, reads),
+        Term::Integer(term) => collect_integer_term_reads(term.native_compat(), reads),
         Term::PointerOffset(offset) => collect_offset_reads(offset, reads),
         Term::Algebraic(term) => {
             term.native_compat()

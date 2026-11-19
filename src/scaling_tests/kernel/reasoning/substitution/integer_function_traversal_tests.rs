@@ -61,8 +61,8 @@ fn public_integer_substitution_keeps_array_ref_states_opaque() {
     };
     let make = |memory: SymbolicMemory| {
         Proposition::Equal(
-            Term::Integer(IntegerTerm::PureFunctionApplication(
-                SharedPureApplication::intern(
+            Term::Integer(
+                IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
                     "observe_array".into(),
                     vec![
                         PureFunctionArgument::Integer(IntegerTerm::var(source).into()),
@@ -72,16 +72,17 @@ fn public_integer_substitution_keeps_array_ref_states_opaque() {
                             element_type: ProgramType::UInt8,
                         },
                     ],
-                ),
-            )),
-            Term::Integer(IntegerTerm::constant_i64(0)),
+                ))
+                .into(),
+            ),
+            Term::Integer(IntegerTerm::constant_i64(0).into()),
         )
     };
     let retained_state = |proposition: Proposition| {
         let Proposition::Equal(Term::Integer(value), _) = proposition else {
             panic!("expected Integer equality")
         };
-        let IntegerTerm::PureFunctionApplication(application) = value else {
+        let IntegerTerm::PureFunctionApplication(application) = value.native_compat() else {
             panic!("expected pure Integer application")
         };
         let [

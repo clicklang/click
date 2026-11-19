@@ -13244,7 +13244,7 @@ mod population_authority_spec_tests {
 pub enum Term {
     Condition(ConditionTerm),
     Bitvector32(MachineTerm),
-    Integer(IntegerTerm),
+    Integer(StoredIntegerTerm),
     PointerOffset(AddressOffset),
     ProgramValue(StoredProgramValue),
     Sequence(SequenceTerm),
@@ -13282,7 +13282,7 @@ impl Term {
     #[cfg(test)]
     pub(crate) fn integer_native(&self) -> Option<&IntegerTerm> {
         match self {
-            Self::Integer(value) => Some(value),
+            Self::Integer(value) => Some(value.native_compat()),
             _ => None,
         }
     }

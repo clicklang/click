@@ -716,7 +716,7 @@ impl<'a> Proof<'a> {
                 } => {
                     let term = |value: &AlgebraicValue| match value {
                         AlgebraicValue::Program(value) => Term::ProgramValue(value.clone().into()),
-                        AlgebraicValue::Integer(value) => Term::Integer(value.clone()),
+                        AlgebraicValue::Integer(value) => Term::Integer(value.clone().into()),
                         AlgebraicValue::Algebraic(value) => Term::Algebraic(value.clone().into()),
                     };
                     Some((

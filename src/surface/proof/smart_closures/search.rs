@@ -5253,8 +5253,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             .filter_map(|(bound, introduced_surface)| {
                 let (variable, pivot) = kernel_upper_bound_split_candidate(&bound)?;
                 let pivot_probe = Proposition::Equal(
-                    Term::Integer(crate::kernel::IntegerTerm::Machine(pivot.clone())),
-                    Term::Integer(crate::kernel::IntegerTerm::Machine(pivot.clone())),
+                    Term::Integer(crate::kernel::IntegerTerm::Machine(pivot.clone()).into()),
+                    Term::Integer(crate::kernel::IntegerTerm::Machine(pivot.clone()).into()),
                 );
                 if crate::kernel::proposition_variables(&pivot_probe).contains(&variable) {
                     return None;

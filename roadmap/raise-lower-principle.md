@@ -612,7 +612,7 @@ sequence below. These rows record planned scope, not completed implementation.
 | 10n | Migrate theorem argument and recorded-state value storage. | Stored arguments and recorded values retain shared operands with unchanged substitution and state selection. | Landed in [PR #3181](https://github.com/clicklang/click/pull/3181); all six pushed commits verified on upstream. Validation and program-point integration evidence below. |
 | 10o | Migrate program-valued resource-field storage. | Program-valued fields retain shared operands while preserving resource identity and substitution. | Landed in [PR #3213](https://github.com/clicklang/click/pull/3213); all pushed commits verified on upstream. Local validation and final 648-check upstream integration passed. |
 | 10p | Migrate remaining expression payloads in sequence/resource descriptors. | Inventory and subdivide independent families before implementation; preserve legitimate opaque descriptor identities. | Complete: 10p1–10p6 landed, with every pushed commit verified upstream. |
-| 10q | Migrate remaining native expression payloads in proposition outputs. | Proposition outputs retain shared operands with unchanged fact identity, raising/lowering and proof admission. | In progress: 10q1–10q3 landed. 10q-A ([#3360](https://github.com/clicklang/click/pull/3360)) migrated program-value outputs. 10q-B migrates algebraic outputs. The remaining producer slices are 10q-C and 10q-D below. |
+| 10q | Migrate remaining native expression payloads in proposition outputs. | Proposition outputs retain shared operands with unchanged fact identity, raising/lowering and proof admission. | In progress: 10q1–10q3 landed. 10q-A ([#3360](https://github.com/clicklang/click/pull/3360)) migrated program-value outputs. 10q-B ([#3370](https://github.com/clicklang/click/pull/3370)) migrated algebraic outputs. 10q-C migrates Integer equations from resource-field joins. 10q-D remains below. |
 | 10r | Remove obsolete machine compatibility caches and reverse bridges. | Remove only after their live readers migrate; account for any retained reader and reason. | Planned; after affected consumers. |
 | 10s | Remove obsolete Boolean, float and algebraic compatibility caches. | Remove only after their live readers migrate; preserve explicit native input/output boundaries. | Planned; after affected consumers. |
 | 10t | Closure audit: account for every remaining native adapter and remove dead APIs. | Inventory every remaining adapter/cache/native expression field with a live consumer and reason, remove dead APIs, and report any unresolved migration gaps. | Planned; final audit. |
@@ -1640,6 +1640,12 @@ facts and guarded scalar obligations reuse the evaluated scrutinee root.
 Reflexivity still checks both operands' definedness before closing the
 equality. Selected native readers for exact identity, indexing, rewrite and
 raising remain explicit for 10r–10t.
+
+10q-C uses `StoredIntegerTerm` for `Term::Integer`. Loop-exit resource
+field equations carry the Integer roots already held by each exit and reuse
+the fresh successor root. Native inputs and selected compatibility readers
+continue to use exact Integer fact identity. Comparison propositions keep
+their existing condition form.
 
 #### Earlier Term reader and rewrite preparation
 

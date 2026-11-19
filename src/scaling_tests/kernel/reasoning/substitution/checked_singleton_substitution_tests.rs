@@ -12,7 +12,10 @@ fn checked_singleton_substitution_scales_with_shared_integer_dags() {
         for _ in 0..depth {
             value = IntegerTerm::add(value.clone(), value.clone());
         }
-        let source = Proposition::Equal(Term::Integer(value), Term::Integer(observed(variable)));
+        let source = Proposition::Equal(
+            Term::Integer(value.into()),
+            Term::Integer(observed(variable).into()),
+        );
         let (result, work) = instrumentation::measure_deterministic_work(|| {
             substitute_machine_constant_in_pure_proposition(&source, variable, 7)
         });

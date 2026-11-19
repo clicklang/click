@@ -3735,9 +3735,13 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
                                 next_binder,
                             )?,
                         ),
-                        Term::Integer(value) => AlphaPredicateArgumentKey::Integer(
-                            alpha_integer_key_with_bindings(value, bindings, next_binder)?,
-                        ),
+                        Term::Integer(value) => {
+                            AlphaPredicateArgumentKey::Integer(alpha_integer_key_with_bindings(
+                                value.native_compat(),
+                                bindings,
+                                next_binder,
+                            )?)
+                        }
                         Term::Algebraic(value) => AlphaPredicateArgumentKey::Algebraic(
                             alpha_algebraic_key_with_bindings::<ALLOW_LOADS>(
                                 value.native_compat(),
