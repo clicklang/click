@@ -4646,6 +4646,48 @@ fn synthesize_surface_resource_argument(
     }
 }
 
+/// A call result already carries its native pointer type. When that type
+/// supplies the range stride, use the saved pointer directly.
+fn synthesize_saved_result_range_base(
+    base: &ContractExpression,
+    range: &MemoryRange,
+) -> Option<ContractExpression> {
+    let ContractExpression::RegionResult(region) = base else {
+        return None;
+    };
+    if range.element_width() == 1 && range.carrier_has_known_bounds() {
+        return None;
+    }
+    let selector = ProgramPointSelector::ProgramPoint(ProgramPointRef {
+        region: region.clone(),
+        kind: ProgramPointKind::Exit,
+    });
+    SYNTHESIS_RECORDED_POINTS.with(|slot| {
+        let points = slot.borrow();
+        let points = points.as_ref()?;
+        points.get(&selector)?;
+        let ProgramValue::Pointer(pointer) = points
+            .region_result_value_at(region, Some(&selector))
+            .ok()?
+        else {
+            return None;
+        };
+        if pointer.address() != range.base()
+            || matches!(
+                pointer.object_class(),
+                Some(crate::kernel::effective_type::CAccessClass::Struct(_))
+            )
+            || pointer.program_type().pointee_type()?.byte_width() != range.element_width()
+        {
+            return None;
+        }
+        Some(ContractExpression::At {
+            selector,
+            expression: Box::new(base.clone()),
+        })
+    })
+}
+
 pub(super) fn synthesize_surface_resource_subject(
     resource: &Resource,
     parameter_binding: ParameterBinding<'_>,
@@ -4724,28 +4766,29 @@ pub(super) fn synthesize_surface_resource_subject(
             bound_variables,
         )?
     };
-    // A range counts its retained element width, which need not be the
-    // pointee width of the name (for example, a struct field's backing).
-    // Spell scalar coordinates explicitly; pointer casts retain provenance.
-    // A character-to-character cast preserves a narrow byte view. For a
-    // range that already names root byte coordinates, the void cast makes
-    // that root explicit regardless of the source pointer's type.
-    let surface_base = if range.element_width() == 1 && range.carrier_has_known_bounds() {
-        synthesize_observation_operand(surface_base, ProgramType::VoidPointer)?
-    } else {
-        surface_base
-    };
-    let scalar_pointer_type = match range.element_width() {
-        1 => Some(ProgramType::UInt8Pointer),
-        2 => Some(ProgramType::UInt16Pointer),
-        4 => Some(ProgramType::Int32Pointer),
-        8 => Some(ProgramType::UInt64Pointer),
-        _ => None,
-    };
-    let surface_base = match scalar_pointer_type {
-        Some(target_type) => synthesize_observation_operand(surface_base, target_type)?,
-        None => surface_base,
-    };
+    let surface_base =
+        if let Some(saved_result) = synthesize_saved_result_range_base(&surface_base, range) {
+            saved_result
+        } else {
+            // A range counts its retained element width, which need not be the
+            // pointee width of the name (for example, a struct field's backing).
+            // Spell scalar coordinates explicitly; pointer casts retain provenance.
+            // A character-to-character cast preserves a narrow byte view. For a
+            // range that already names root byte coordinates, the void cast makes
+            // that root explicit regardless of the source pointer's type.
+            let surface_base = if range.element_width() == 1 && range.carrier_has_known_bounds() {
+                synthesize_observation_operand(surface_base, ProgramType::VoidPointer)?
+            } else {
+                surface_base
+            };
+            match range.element_width() {
+                1 => synthesize_observation_operand(surface_base, ProgramType::UInt8Pointer)?,
+                2 => synthesize_observation_operand(surface_base, ProgramType::UInt16Pointer)?,
+                4 => synthesize_observation_operand(surface_base, ProgramType::Int32Pointer)?,
+                8 => synthesize_observation_operand(surface_base, ProgramType::UInt64Pointer)?,
+                _ => surface_base,
+            }
+        };
     // The bounds are spelled as the terms they are, in either index kind.
     let (range_start, range_end) = range.bound_terms();
     let surface_start =

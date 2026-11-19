@@ -3836,7 +3836,7 @@ fn axiomatic_span_element_references_read_and_write() {
 }}"#
     );
     let write = format!(
-        r#"void probe({UCHAR_SPAN}& s, uint8 v) {{
+        r#"uint8 probe({UCHAR_SPAN}& s, uint8 v) {{
     views std_span_data(s);
     views std_span_size(s);
     owns std_span_data(s)[1];
@@ -3845,9 +3845,19 @@ fn axiomatic_span_element_references_read_and_write() {
     requires separate(memory(std_span_data(s)[1]), memory(std_span_size(s)));
     ensures std_span_data(s)[1] == v;
     ensures result == v;
+}} by {{
+    step();
+    let {{ result: element }} = step();
+    step() {{
+        requires separate(
+            memory(element[0]),
+            memory(std_span_data(s)) * memory(std_span_size(s))
+        ) by {{ solve(); }}
+    }}
+    step_until(function.exit);
+    solve();
 }}"#
-    )
-    .replace("void probe", "uint8 probe");
+    );
     let back = format!(
         r#"uint32 probe({UINT_SPAN}& s) {{
     views std_span_data(s);
