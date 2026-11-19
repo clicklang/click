@@ -1645,13 +1645,15 @@ fn validate_resource_fact_memory_read_authority(
         .collect::<Vec<_>>();
     // A contained resource's formation domains are part of the assumed body
     // while checking its fact declarations. Actual fold/use still owes them.
+    // Set up one root before lowering the body and use it for declared facts.
+    let root = crate::kernel::ExecutionState::new().with_memory(SymbolicMemory::new());
     let (materialized, formation) = crate::surface::proof::probe_open_obligations(|| {
         instantiate_composite_resource_body_resources(
             definition.name(),
             composite_body,
             &substitutions,
             ParameterBinding::new(&validation_parameters, &arguments),
-            SymbolicMemory::new(),
+            &root,
             &PureFactContext::new(),
         )
     });
@@ -1662,10 +1664,9 @@ fn validate_resource_fact_memory_read_authority(
             definition.name()
         ))
     })?;
-    let array_refs = pure_theorem_array_refs(definition.parameters(), &values, &memory);
-    // The definition is checked over one memory: start one path there and
-    // evaluate every fact and read at that point.
-    let at = crate::kernel::ProgramPoint::starting_at(&memory);
+    let state = root.with_materialized_memory_at_current_point(memory);
+    let array_refs = pure_theorem_array_refs(definition.parameters(), &values, state.memory());
+    let at = state.program_point();
     let mut scalar_assumptions = formation
         .recorded
         .into_iter()
