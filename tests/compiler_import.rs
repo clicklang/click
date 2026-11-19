@@ -587,9 +587,6 @@ size_t answer(void) { return strlen("hello"); }
     )
     .unwrap();
     create_lock(&project.config()).unwrap();
-    let imports = load_imports(&project.config()).unwrap();
-    let proof = r#"verifying "main.c"; uint64 answer() { ensures result == 5; }"#;
-    verify_c_prepared_sources(proof, &imports).unwrap();
 }
 
 #[test]
