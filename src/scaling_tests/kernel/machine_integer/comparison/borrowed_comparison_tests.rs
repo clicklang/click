@@ -293,11 +293,21 @@ fn machine_comparison_and_guard_reads_are_bounded_on_hits_and_misses() {
                     let shift =
                         |left, count| KernelTerm::machine_binary_shared(format, op, [left, count]);
                     let width = u64::from(format.format().bits());
+                    let variable_shift = shift(variable.clone(), other.clone());
+                    assert!(
+                        bounded_comparison_operand(format, V::Shared(&variable_shift), false)
+                            .is_none()
+                    );
                     [
                         (
                             shift(variable.clone(), literal(1)),
                             shift(arithmetic.clone(), literal(1)),
-                            shift(variable.clone(), other.clone()),
+                            shift(variable.clone(), arithmetic.clone()),
+                        ),
+                        (
+                            variable_shift,
+                            shift(arithmetic.clone(), other.clone()),
+                            shift(variable.clone(), arithmetic.clone()),
                         ),
                         (
                             shift(variable.clone(), literal(width - 1)),
@@ -308,15 +318,17 @@ fn machine_comparison_and_guard_reads_are_bounded_on_hits_and_misses() {
                 })
                 .collect::<Vec<_>>();
             if format.format().is_signed() {
-                let signed_left_shift = KernelTerm::machine_binary_shared(
-                    format,
-                    O::ShiftLeft,
-                    [variable.clone(), literal(1)],
-                );
-                assert!(
-                    bounded_comparison_operand(format, V::Shared(&signed_left_shift), true)
-                        .is_none()
-                );
+                for count in [literal(1), other.clone()] {
+                    let signed_left_shift = KernelTerm::machine_binary_shared(
+                        format,
+                        O::ShiftLeft,
+                        [variable.clone(), count],
+                    );
+                    assert!(
+                        bounded_comparison_operand(format, V::Shared(&signed_left_shift), true)
+                            .is_none()
+                    );
+                }
             }
             let wrapping_cases = [O::Add, O::Subtract, O::Multiply].map(|op| {
                 let word_encoding = if format == MachineIntegerType::UInt32 {

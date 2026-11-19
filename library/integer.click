@@ -304,6 +304,14 @@ theorem equal_multiply(a: Integer, b: Integer, factor: Integer) {
     ensures a * factor == b * factor by { rewrite(a, b); known(); }
 }
 
+theorem equal_negate(a: Integer, b: Integer) {
+    requires a == b;
+    ensures -a == -b by {
+        rewrite(a, b);
+        known();
+    }
+}
+
 theorem equal_le(a: Integer, b: Integer) {
     requires a == b;
     ensures a <= b by { rewrite(a, b); known(); }
@@ -4605,14 +4613,6 @@ theorem negate_multiply(a: Integer, b: Integer) {
         }
         rewrite(-a * b, b * -a);
         rewrite(a * b, b * a);
-        known();
-    }
-}
-
-theorem equal_negate(a: Integer, b: Integer) {
-    requires a == b;
-    ensures -a == -b by {
-        rewrite(a, b);
         known();
     }
 }
