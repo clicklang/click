@@ -8810,3 +8810,32 @@ fn pure_machine_conditional_operands_round_trip_after_rewrite() {
         }
     }
 }
+
+#[test]
+fn exact_rewrite_keeps_equal_scalar_conditional_arms_through_lowering() {
+    use crate::kernel::proof::PureFactStore;
+    let fixture = ConditionalRoundTrip::new(MachineIntegerType::Int32, "int32");
+    let equality = fixture.lower("to_integer(y) + 1 == to_integer(z) + 1");
+    for written in [
+        "to_integer(if flag { to_int32(to_integer(y) + 1) } else { to_int32(to_integer(z) + 1) }) + 1 <= 100",
+        "(if flag { if to_integer(y) + 1 < 0 { true } else { false } } else { if to_integer(z) + 1 < 0 { true } else { false } }) == true",
+    ] {
+        let original = fixture.lower(written);
+        let proof = PureFactStore::from_ordered(std::slice::from_ref(&equality))
+            .check_equality_rewrite(&original, &equality)
+            .unwrap();
+        let expected = proof.proposition();
+        assert_ne!(expected, &original);
+        let raised =
+            synthesize_surface_proposition(expected, ParameterBinding::default(), &fixture.state)
+                .unwrap();
+        let text = crate::surface::printing::source_click_proposition(&raised);
+        assert!(text.contains("if flag"), "{text}");
+        assert_eq!(
+            relower_written_proposition(&raised, &fixture.state).unwrap(),
+            *expected,
+            "{text}"
+        );
+        assert_eq!(fixture.lower(&text), *expected, "{text}");
+    }
+}

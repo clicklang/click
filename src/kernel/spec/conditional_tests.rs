@@ -68,7 +68,11 @@ fn conditional_arms_keep_shared_identity_and_native_observations() {
         assert_eq!(arguments[1], left);
         assert_eq!(result.observe(), SpecValue::Native(native).observe());
         assert_eq!(KernelTermExport::machine_export_count(), exports);
-        assert_eq!(join(&guard, &result, &result), result);
+        let repeated = join(&guard, &result, &result);
+        let KernelTermNode::MachineIf { arguments } = repeated.shared().unwrap().node() else {
+            panic!("conditional with equal arms")
+        };
+        assert_eq!(&arguments[1..], &[root.clone(), root.clone()]);
     }
 }
 
