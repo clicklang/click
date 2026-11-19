@@ -7217,12 +7217,17 @@ fn execute_named_contract_applications_paths(
             }
             let mut bindings = BTreeMap::new();
             for (parameter, argument) in contract.proof_parameters().iter().zip(arguments) {
-                let Some(identity) = parameter.instance_identity().map(InstanceId::variable) else {
+                let Some(identity) = parameter.instance_identity() else {
                     return Ok(vec![resource_call_failure(
                         "resource proof parameter must be an exclusive instance",
                     )]);
                 };
-                if bindings.insert(identity, *argument).is_some() {
+                // The binding map also carries named mutex-authority binders,
+                // so it is still keyed and valued by `Variable`.
+                if bindings
+                    .insert(identity.variable(), argument.variable())
+                    .is_some()
+                {
                     return Ok(vec![resource_call_failure(
                         "duplicate exclusive resource proof argument",
                     )]);

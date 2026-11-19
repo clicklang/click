@@ -3866,7 +3866,7 @@ impl ExecutionEnvironment {
 
     pub(crate) fn with_selected_call_resource_arguments(
         mut self,
-        arguments: Vec<Variable>,
+        arguments: Vec<InstanceId>,
     ) -> Self {
         self.selected_call_resource_arguments = Some(arguments.into());
         self

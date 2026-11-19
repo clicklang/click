@@ -7275,7 +7275,7 @@ impl VerifiedLoopRules {
 pub struct ExecutionEnvironment {
     // A proof-local rule choice. This is not installed in the project environment.
     pub(crate) selected_call_contract: Option<std::sync::Arc<str>>,
-    pub(crate) selected_call_resource_arguments: Option<std::sync::Arc<[Variable]>>,
+    pub(crate) selected_call_resource_arguments: Option<std::sync::Arc<[InstanceId]>>,
     /// A proof-local binder map for one ordinary C call: the callee named by
     /// the step, and one caller instance per instance binder the callee
     /// declares. Binding is a lookup per entry; nothing is searched for.
