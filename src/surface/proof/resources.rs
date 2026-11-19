@@ -1228,7 +1228,7 @@ pub(super) fn project_initial_composite_resource_cores(
             composite_body,
             &substitutions,
             parameter_binding,
-            state.memory().clone(),
+            &state,
             &assumptions.clone().assume_entry_clause_spans().assume_held_resource_domains(),
     )
         .map_err(|message| {
@@ -1324,7 +1324,7 @@ fn project_selected_instance_arm_cells(
         body,
         &substitutions,
         parameter_binding,
-        state.memory().clone(),
+        &state,
         &assumptions
             .clone()
             .assume_entry_clause_spans()
@@ -2502,7 +2502,7 @@ fn apply_composite_observation_law_with_facts<F: ResourcePureFacts>(
         composite_body,
         &substitutions,
         parameter_binding,
-        state.memory().clone(),
+        state,
         &available_pure_facts
             .assumptions()
             .clone()
@@ -2884,10 +2884,15 @@ pub(in crate::surface) fn instantiate_composite_resource_body_resources(
     composite_body: &CompositeResourceBody,
     substitutions: &BTreeMap<String, ContractExpression>,
     parameter_binding: ParameterBinding<'_>,
-    mut memory: SymbolicMemory,
+    state: &ExecutionState,
     assumptions: &PureFactContext,
 ) -> Result<(SymbolicMemory, ResourceContext), String> {
     let mut resources = ResourceContext::new();
+    let mut clause_base = ExecutionState::new();
+    clause_base.keep_memory_of(state);
+    // Keep the complete pending log for the caller's observation check.
+    // Each clause sees that log as a proof-only view at the same point.
+    let mut memory = state.memory().clone();
     // Every cell exposed by this one body expansion names the value it had
     // in the state before the expansion began.  Lower clauses against the
     // progressively materialized memory so a later clause can still address
@@ -2901,10 +2906,13 @@ pub(in crate::surface) fn instantiate_composite_resource_body_resources(
             instantiate_resource_clause(contained, substitutions).map_err(|message| {
                 format!("could not instantiate composite resource `{name}` body: {message}")
             })?;
+        let clause_state = clause_base
+            .clone()
+            .with_materialized_memory_at_current_point(memory.clone());
         let lowered = lower_resource_clause_at_state_with_assumptions(
             &contained,
             parameter_binding,
-            &ExecutionState::new().with_memory(memory.clone()),
+            &clause_state,
             None,
             assumptions,
         )
@@ -6558,6 +6566,59 @@ mod guarded_unmatched_materialization_tests {
             ExpressionOutcome::Value(_)
         ));
         assert_eq!(entry.observation_point_id(), Some(point));
+    }
+
+    #[test]
+    fn body_instantiation_keeps_a_pending_store_in_the_observation_log() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let file = crate::surface::parser::parse_file_items(
+            "resource initialized_cell(p: int32*) { owns *p; }",
+        )
+        .unwrap();
+        let definition = &file.resource_definitions[0];
+        let pointer = Address::symbolic(crate::kernel::Variable(88_028));
+        let substitutions = resource_value_substitutions(
+            definition,
+            &[AlgebraicValue::Program(ProgramValue::typed_pointer(
+                pointer.clone(),
+                ProgramType::Int32Pointer,
+            ))],
+        )
+        .unwrap();
+        let slot = Address {
+            base: "local:slot".into(),
+            offset: crate::kernel::AddressOffset::Constant(0),
+        };
+        let start = ExecutionState::new()
+            .with_memory(SymbolicMemory::new().with_block(slot.base.clone(), 4));
+        let memory = start
+            .memory()
+            .clone()
+            .store(slot.clone(), ProgramValue::Int32(MachineTerm::constant(7)));
+        let state = start.with_materialized_memory(memory);
+        let point = state.observation_point_id().unwrap();
+        let (memory, _) = instantiate_composite_resource_body_resources(
+            definition.name(),
+            definition.composite_body().unwrap(),
+            &substitutions,
+            ParameterBinding::new(&[], &[]),
+            &state,
+            &PureFactContext::new(),
+        )
+        .unwrap();
+        assert!(matches!(
+            memory.load(&pointer),
+            ExpressionOutcome::Value(ProgramValue::Int32(_))
+        ));
+        let named = state.with_materialized_memory_at_current_point(memory);
+        assert_eq!(named.observation_point_id(), Some(point));
+        assert_eq!(
+            named
+                .program_point()
+                .indexed_local_integer_version(&slot, crate::kernel::LoadKind::Int32)
+                .and_then(|version| version.read_version_id()),
+            Some(point)
+        );
     }
 
     #[test]
