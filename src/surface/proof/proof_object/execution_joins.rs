@@ -823,19 +823,22 @@ impl<'a> Proof<'a> {
         // proof `match` arm's fields, `let` names, call-result binders. Its
         // entries name them as a `have` goal here would, so they are
         // resolved before anything is lowered.
-        let proof_locals = self.proof_local_values();
+        let proof_locals =
+            crate::surface::lowering::ContractSubstitutions::new(&self.state().locals().values);
         let assertions = written_assertions
             .iter()
             .map(|assertion| match assertion {
-                ProofAssertion::Fact(fact) => substitute_click_proposition(fact, &proof_locals)
-                    .map(ProofAssertion::Fact)
-                    .map_err(|message| {
-                        self.step_error(format!(
-                            "could not resolve the names in an `ensuring` fact: {message}"
-                        ))
-                    }),
+                ProofAssertion::Fact(fact) => {
+                    crate::surface::lowering::substitute_click_proposition_in(fact, &proof_locals)
+                        .map(ProofAssertion::Fact)
+                        .map_err(|message| {
+                            self.step_error(format!(
+                                "could not resolve the names in an `ensuring` fact: {message}"
+                            ))
+                        })
+                }
                 ProofAssertion::Resource(resource) => {
-                    crate::surface::verification::substitute_resource_clause_for_summary(
+                    crate::surface::verification::substitute_resource_clause_for_summary_in(
                         resource,
                         &proof_locals,
                     )
