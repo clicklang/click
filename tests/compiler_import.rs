@@ -27,8 +27,10 @@ fn describe_project(description: &Path) -> Result<PathBuf, String> {
     let mut sources = serde_json::Map::new();
     for source in config["sources"].as_array().unwrap() {
         let mut entry = json!({"args": source["args"]});
-        if let Some(projection) = source.get("projection") {
-            entry["projection"] = projection.clone();
+        for field in ["projection", "functions"] {
+            if let Some(value) = source.get(field) {
+                entry[field] = value.clone();
+            }
         }
         sources.insert(source["path"].as_str().unwrap().to_string(), entry);
     }
@@ -665,6 +667,58 @@ fn compiler_import_dependency_closure_projection_is_an_explicit_checked_option()
         error.message().contains("inline assembly"),
         "{}",
         error.message()
+    );
+}
+
+#[test]
+#[ignore = "nightly: 1s focused; locks and checks both dependency cases"]
+fn compiler_import_projects_only_selected_functions_and_their_dependencies() {
+    let project = Project::new();
+    configure_userspace(&project);
+    let mut config: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.config()).unwrap()).unwrap();
+    let set_roots = |config: &mut serde_json::Value, roots: &[&str]| {
+        config["sources"][0]["projection"] = json!("dependency-closure");
+        config["sources"][0]["functions"] = json!(roots);
+        fs::write(project.config(), serde_json::to_vec_pretty(config).unwrap()).unwrap();
+    };
+    let source = "struct slot { int payload; };\n\
+                  static int sibling(struct slot *obj) { return (obj->payload = 1); }\n\
+                  int selected(void) { return 42; }\n";
+    fs::write(project.0.join("main.c"), source).unwrap();
+    let proof = r#"verifying "main.c"; int selected() { ensures result == 42; }"#;
+    set_roots(&mut config, &["selected"]);
+    create_lock(&project.config()).unwrap();
+    let lock: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.0.join("click.project.lock.json")).unwrap())
+            .unwrap();
+    assert_eq!(
+        unit_lock(&lock)["sources"][0]["functions"],
+        json!(["selected"])
+    );
+    let imports = load_imports(&project.config()).unwrap();
+    assert!(!imports[0].source().contains("sibling"));
+    verify_c_prepared_sources(proof, &imports).unwrap();
+
+    set_roots(&mut config, &["sibling"]);
+    let error = load_imports(&project.config()).expect_err("the root list is locked");
+    assert!(error.contains("does not match its description"), "{error}");
+    assert!(error.contains("click import lock"), "{error}");
+    set_roots(&mut config, &["selected"]);
+
+    let caller = source.replace("return 42;", "struct slot value; return sibling(&value);");
+    fs::write(project.0.join("main.c"), caller).unwrap();
+    create_lock(&project.config()).unwrap();
+    let imports = load_imports(&project.config()).unwrap();
+    assert!(imports[0].source().contains("static int sibling"));
+    let error =
+        verify_c_prepared_sources(proof, &imports).expect_err("the called body is required");
+    let diagnostic = error.to_string();
+    assert!(diagnostic.contains("main.c:2"), "{diagnostic}");
+    assert!(
+        diagnostic
+            .contains("assignment expressions currently require a simple scalar variable target"),
+        "{diagnostic}"
     );
 }
 

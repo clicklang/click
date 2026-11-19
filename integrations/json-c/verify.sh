@@ -9,8 +9,14 @@ fi
 integration_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 checkout=$1
 case $2 in
-    version) source_file=json_c_version.c ;;
-    array-list) source_file=arraylist.c ;;
+    version)
+        source_file=json_c_version.c
+        source_options='{}'
+        ;;
+    array-list)
+        source_file=arraylist.c
+        source_options='{"projection": "dependency-closure", "functions": ["array_list_length"]}'
+        ;;
     *) echo "Unknown json-c proof: $2" >&2; exit 2 ;;
 esac
 
@@ -34,7 +40,7 @@ cat > "$work_dir/source/click.project.json" <<JSON
       "compiler": "/usr/bin/gcc",
       "env": {"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
       "args": ["-D_GNU_SOURCE", "-DJSON_C_DLL", "-I.", "-I../build"],
-      "sources": {"$source_file": {}}
+      "sources": {"$source_file": $source_options}
     }
   }
 }
