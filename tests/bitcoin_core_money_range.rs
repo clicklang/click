@@ -3391,6 +3391,15 @@ std::span<std::byte> probe(std::span<std::byte>& s) {
     requires 1u64 <= std_span_size(s);
     ensures std_span_data(result) == std_span_data(s) + 1u64;
     ensures std_span_size(result) == std_span_size(s) - 1u64;
+} by {
+    step() {
+        requires separate(
+            memory((&result as (uint8 *))[0..16]),
+            memory(std_span_data(s)) * memory(std_span_size(s))
+        ) by { solve(); }
+    }
+    step_until(function.exit);
+    solve();
 }
 "#;
     let sidecar = root.join("span.click");
@@ -4085,8 +4094,20 @@ fn axiomatic_static_extent_span_subviews_verify() {
         dependencies: SPAN_DEPENDENCIES,
         harness: "std::span<int> probe(std::span<int, 4>& s) noexcept { return s.first(2); }",
         sidecar: format!(
-            "{} probe({STATIC_INT_SPAN}& s) {{ views std_span_data(s); ensures std_span_data(result) == std_span_data(s); ensures std_span_size(result) == 2u64; }}",
-            "std::span<int>"
+            r#"std::span<int> probe({STATIC_INT_SPAN}& s) {{
+    views std_span_data(s);
+    ensures std_span_data(result) == std_span_data(s);
+    ensures std_span_size(result) == 2u64;
+}} by {{
+    step() {{
+        requires separate(
+            memory((&result as (uint8 *))[0..16]),
+            memory((&s as (int32 *))[0..2])
+        ) by {{ known(); }}
+    }}
+    step_until(function.exit);
+    solve();
+}}"#
         ),
         refusals: vec![],
     }]);
