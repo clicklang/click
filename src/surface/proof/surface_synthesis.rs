@@ -5251,17 +5251,7 @@ fn synthesize_point_read(
             state,
             bound_variables,
         )?;
-        Some(ContractExpression::CUnary {
-            operand: Box::new(address),
-            lowered: ProgramExpression::TypedLoad {
-                pointer: Box::new(ProgramExpression::Value(int32(0))),
-                value_type,
-                volatile: false,
-                pointee_constant: false,
-                access_class: None,
-                source: Default::default(),
-            },
-        })
+        Some(synthesize_memory_load(address, value_type))
     };
     let expression = |state: &ExecutionState| {
         let expression = place(state)?;
@@ -5531,17 +5521,7 @@ fn synthesize_typed_word_read(
             state,
             bound_variables,
         )?;
-        Some(ContractExpression::CUnary {
-            operand: Box::new(address),
-            lowered: ProgramExpression::TypedLoad {
-                pointer: Box::new(ProgramExpression::Value(int32(0))),
-                value_type,
-                volatile: false,
-                pointee_constant: false,
-                access_class: None,
-                source: Default::default(),
-            },
-        })
+        Some(synthesize_memory_load(address, value_type))
     };
     if let Some(load) = scalar_read_in_state(&read, state) {
         return at_state(&load, state);
@@ -7033,22 +7013,34 @@ fn synthesize_typed_load(
     pointer: ContractExpression,
     value_type: ProgramType,
 ) -> ContractExpression {
-    let lowered = |pointer| ProgramExpression::TypedLoad {
+    match pointer {
+        ContractExpression::ProgramExpression(pointer) => {
+            ContractExpression::ProgramExpression(typed_load_expression(pointer, value_type))
+        }
+        operand => synthesize_memory_load(operand, value_type),
+    }
+}
+
+// Lower these reads through the selected memory, even when a program
+// expression could also be interpreted as a by-value aggregate projection.
+fn synthesize_memory_load(
+    operand: ContractExpression,
+    value_type: ProgramType,
+) -> ContractExpression {
+    ContractExpression::CUnary {
+        operand: Box::new(operand),
+        lowered: typed_load_expression(ProgramExpression::Value(int32(0)), value_type),
+    }
+}
+
+fn typed_load_expression(pointer: ProgramExpression, value_type: ProgramType) -> ProgramExpression {
+    ProgramExpression::TypedLoad {
         pointer: Box::new(pointer),
         value_type,
         volatile: false,
         pointee_constant: false,
         access_class: None,
         source: Default::default(),
-    };
-    match pointer {
-        ContractExpression::ProgramExpression(pointer) => {
-            ContractExpression::ProgramExpression(lowered(pointer))
-        }
-        operand => ContractExpression::CUnary {
-            operand: Box::new(operand),
-            lowered: lowered(ProgramExpression::Value(int32(0))),
-        },
     }
 }
 
@@ -7561,17 +7553,7 @@ fn synthesize_pointer_equality_operand(
                 state,
                 bound_variables,
             )?;
-            Some(ContractExpression::CUnary {
-                operand: Box::new(operand),
-                lowered: ProgramExpression::TypedLoad {
-                    pointer: Box::new(ProgramExpression::Value(int32(0))),
-                    value_type: value.program_type(),
-                    volatile: false,
-                    pointee_constant: false,
-                    access_class: None,
-                    source: Default::default(),
-                },
-            })
+            Some(synthesize_memory_load(operand, value.program_type()))
         };
         if crate::kernel::intern_memory_ref(state.memory()).unchanged_bytes_source()
             == source.unchanged_bytes_source()

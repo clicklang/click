@@ -2468,6 +2468,14 @@ fn collect_scoped_leaf_memory_load_keys(
     }
 }
 
+fn collect_float_read_load_keys(pointer: &Address, keys: &mut BTreeSet<(AddressBase, u64)>) {
+    keys.insert((
+        pointer.base.clone(),
+        memory_blind_pointer_fingerprint(pointer),
+    ));
+    collect_pointer_offset_memory_load_keys(&pointer.offset, keys);
+}
+
 fn collect_bitvector_memory_load_keys(term: &MachineTerm, keys: &mut BTreeSet<(AddressBase, u64)>) {
     match term {
         MachineTerm::ThreadHandle(_) => {}
@@ -2486,11 +2494,7 @@ fn collect_bitvector_memory_load_keys(term: &MachineTerm, keys: &mut BTreeSet<(A
             if !matches!(kind, LoadKind::Float32 | LoadKind::Float64) {
                 return;
             }
-            keys.insert((
-                pointer.base.clone(),
-                memory_blind_pointer_fingerprint(pointer),
-            ));
-            collect_pointer_offset_memory_load_keys(&pointer.offset, keys);
+            collect_float_read_load_keys(pointer, keys);
         }
         MachineTerm::IntegerAddress(pointer, _) => {
             collect_pointer_offset_memory_load_keys(&pointer.offset, keys);
@@ -2649,12 +2653,23 @@ fn collect_term_memory_loads(
         Term::Integer(term) => {
             collect_integer_memory_loads(term.native_compat(), current_memory, loads, seen_integers)
         }
-        Term::PointerOffset(offset) => collect_pointer_offset_memory_loads(
-            offset.native_compat(),
-            current_memory,
-            loads,
-            seen_integers,
-        ),
+        Term::PointerOffset(offset) => {
+            if let Some(root) = offset.root() {
+                retained_folds::collect_offset_memory_loads(
+                    root,
+                    current_memory,
+                    loads,
+                    seen_integers,
+                )
+            } else {
+                collect_pointer_offset_memory_loads(
+                    offset.native_compat(),
+                    current_memory,
+                    loads,
+                    seen_integers,
+                )
+            }
+        }
         Term::ProgramValue(value) => {
             if let Some(root) = value.root()
                 && root.is_shared_machine_operand()
@@ -3284,9 +3299,20 @@ fn collect_shared_machine_memory_loads(
             seen_integers,
         );
     };
+    collect_shared_machine_root_memory_loads(root, current_memory, loads, width, seen_integers)
+}
+
+fn collect_shared_machine_root_memory_loads(
+    root: &KernelTerm,
+    current_memory: &SymbolicMemory,
+    loads: &mut Vec<(Address, u32)>,
+    width: Option<u32>,
+    seen_integers: &mut BTreeSet<u64>,
+) -> Result<(), String> {
+    let operand = MachineOperandView::Shared(root);
     // A selected root leaf has no shared arithmetic to summarize. Resolve it
     // directly using the existing width/state/registry rules.
-    if let Some(leaf) = value.operand_view().read_source() {
+    if let Some(leaf) = operand.read_source() {
         return collect_bitvector_memory_loads_with_width(
             &leaf,
             current_memory,
@@ -3295,7 +3321,7 @@ fn collect_shared_machine_memory_loads(
             seen_integers,
         );
     }
-    if value.operand_view().literal().is_some() {
+    if operand.literal().is_some() {
         return Ok(());
     }
     collect_shared_read_memory_loads(root, current_memory, loads, width, seen_integers)?;
