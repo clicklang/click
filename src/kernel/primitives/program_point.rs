@@ -14,8 +14,8 @@ use std::sync::{Arc, Weak};
 use crate::persistent::PersistentMap;
 
 use super::{
-    Address, AddressBase, AddressOffset, LoadKind, MachineIntegerType, MachineTerm,
-    MemoryDerivation, ProgramValue, SharedMemory, SymbolicMemory, intern_memory, intern_memory_ref,
+    Address, AddressBase, AddressOffset, LoadKind, MachineTerm, MemoryDerivation, ProgramValue,
+    SharedMemory, SymbolicMemory, intern_memory, intern_memory_ref,
 };
 
 /// The identity of one point an execution path reached.
@@ -46,6 +46,8 @@ pub(crate) struct StepLog {
     produced: SharedMemory,
     previous: Option<Arc<StepLog>>,
     named_cells_origin: Option<NamedCellsOrigin>,
+    first_base: SharedMemory,
+    contiguous: bool,
 }
 
 /// The exact source of a suffix that only names existing cells. The log
@@ -81,11 +83,22 @@ impl StepLog {
     ) -> Arc<Self> {
         let named_cells_origin =
             names_existing_cells.then(|| NamedCellsOrigin::of(step.base(), previous.as_ref()));
+        let (first_base, contiguous) = previous.as_ref().map_or_else(
+            || (step.base().clone(), true),
+            |prefix| {
+                (
+                    prefix.first_base.clone(),
+                    prefix.contiguous && prefix.produced.arena_id() == step.base().arena_id(),
+                )
+            },
+        );
         Arc::new(Self {
             step,
             produced,
             previous,
             named_cells_origin,
+            first_base,
+            contiguous,
         })
     }
 
@@ -145,13 +158,13 @@ impl Drop for StepLog {
 }
 
 type LocalIntegerVersions = PersistentMap<AddressBase, LocalIntegerCells>;
-type LocalIntegerCells = PersistentMap<i64, (i64, Weak<PointNode>)>;
+type LocalIntegerCells = PersistentMap<i64, LocalIntegerWrite>;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct LocalIntegerWrite {
-    block: AddressBase,
-    start: i64,
     end: i64,
+    version: Weak<PointNode>,
+    store: Arc<MemoryDerivation>,
 }
 
 #[derive(Debug)]
@@ -167,9 +180,7 @@ struct PointNode {
     predecessors: Box<[PathLink]>,
     /// For a branch join, the point where its arms split.
     split: Option<PathLink>,
-    /// The direct integer write at this point, if there was one.
-    local_integer_write: Option<LocalIntegerWrite>,
-    /// Disjoint older integer cells, keyed by object and byte start. The
+    /// Disjoint integer cells, keyed by object and byte start. The
     /// predecessor chain owns the version points.
     local_integer_versions: LocalIntegerVersions,
 }
@@ -257,17 +268,22 @@ impl PathLink {
     /// state whose precondition observed cells) gets a point at the memory
     /// before them, so a walk back can cross them as it crosses any step.
     pub(crate) fn after(&self, memory: SharedMemory, steps: Option<Arc<StepLog>>) -> Self {
+        self.after_with_index(memory, steps, true)
+    }
+
+    fn after_with_index(
+        &self,
+        memory: SharedMemory,
+        steps: Option<Arc<StepLog>>,
+        index_batches: bool,
+    ) -> Self {
         let from = match (&self.0, &steps) {
             (None, Some(log)) => {
-                let oldest =
-                    std::iter::successors(Some(log.as_ref()), |log| log.previous.as_deref())
-                        .last()
-                        .expect("a log holds a step");
-                Self::reached_from(oldest.step.base().clone(), None, Box::new([]), None)
+                Self::reached_from(log.first_base.clone(), None, Box::new([]), None, false)
             }
             _ => self.clone(),
         };
-        Self::reached_from(memory, steps, Box::new([from]), None)
+        Self::reached_from(memory, steps, Box::new([from]), None, index_batches)
     }
 
     /// A new point where two arms that split at `split` rejoin with
@@ -278,6 +294,7 @@ impl PathLink {
             None,
             Box::new([left.clone(), right.clone()]),
             Some(split.clone()),
+            false,
         )
     }
 
@@ -286,23 +303,30 @@ impl PathLink {
         steps: Option<Arc<StepLog>>,
         predecessors: Box<[PathLink]>,
         split: Option<PathLink>,
+        index_batches: bool,
     ) -> Self {
         let predecessors = predecessors
             .into_vec()
             .into_iter()
             .filter(|point| point.0.is_some())
             .collect::<Box<[_]>>();
-        let (local_integer_versions, local_integer_write) =
-            local_integer_versions(&predecessors, steps.as_deref());
         Self(
-            Some(Arc::new(PointNode {
-                id: ProgramPointId::fresh(),
-                memory,
-                steps,
-                predecessors,
-                split: split.filter(|point| point.0.is_some()),
-                local_integer_write,
-                local_integer_versions,
+            Some(Arc::new_cyclic(|version| {
+                let local_integer_versions = local_integer_versions(
+                    &predecessors,
+                    steps.as_deref(),
+                    &memory,
+                    version,
+                    index_batches,
+                );
+                PointNode {
+                    id: ProgramPointId::fresh(),
+                    memory,
+                    steps,
+                    predecessors,
+                    split: split.filter(|point| point.0.is_some()),
+                    local_integer_versions,
+                }
             })),
             IndexedView::Recorded,
         )
@@ -354,63 +378,78 @@ fn indexed_local(block: &AddressBase) -> bool {
         || matches!(block, AddressBase::Concrete(_) if block.is_local_block())
 }
 
-/// Classify just the newly produced transition. Until batches, joins and
-/// other effects have indexed rules, they end this stretch of known versions.
+/// Apply the explicit effects once, when execution seals the point. A read
+/// of a provisional point may index a single effect but never replays a batch.
 fn local_integer_versions(
     predecessors: &[PathLink],
     steps: Option<&StepLog>,
-) -> (LocalIntegerVersions, Option<LocalIntegerWrite>) {
+    memory: &SharedMemory,
+    version: &Weak<PointNode>,
+    index_batches: bool,
+) -> LocalIntegerVersions {
     let ([from @ PathLink(Some(before), _)], Some(step)) = (predecessors, steps) else {
         return Default::default();
     };
-    if step.previous.is_some() || !from.matches_indexed_view(step.step.base()) {
+    if (!index_batches && step.previous.is_some())
+        || !step.contiguous
+        || !from.matches_indexed_view(&step.first_base)
+        || step.produced.arena_id() != memory.arena_id()
+    {
         return Default::default();
     }
-    let continued = || {
-        let mut versions = before.local_integer_versions.clone();
-        if let Some(write) = &before.local_integer_write {
-            let mut cells = versions.get(&write.block).cloned().unwrap_or_default();
-            cells.insert(write.start, (write.end, Arc::downgrade(before)));
-            versions.insert(write.block.clone(), cells);
+    let mut versions = before.local_integer_versions.clone();
+    if step.previous.is_none() {
+        record_local_integer_effect(&mut versions, &step.step, version);
+    } else {
+        let effects =
+            std::iter::successors(Some(step), |step| step.previous.as_deref()).collect::<Vec<_>>();
+        for effect in effects.into_iter().rev() {
+            record_local_integer_effect(&mut versions, &effect.step, version);
         }
-        versions
-    };
-    match step.step.as_ref() {
+    }
+    versions
+}
+
+fn record_local_integer_effect(
+    versions: &mut LocalIntegerVersions,
+    step: &Arc<MemoryDerivation>,
+    version: &Weak<PointNode>,
+) {
+    crate::instrumentation::record_deterministic_work(1);
+    match step.as_ref() {
         MemoryDerivation::Store { pointer, value, .. } if indexed_local(&pointer.base) => {
-            let mut versions = continued();
             let width = i64::from(value.byte_width());
             let AddressOffset::Constant(start) = pointer.offset else {
                 versions.remove(&pointer.base);
-                return (versions, None);
+                return;
             };
             let Some(end) = start
                 .checked_add(width)
                 .filter(|_| start >= 0 && (1..=super::MAX_SCALAR_ACCESS_BYTES).contains(&width))
             else {
                 versions.remove(&pointer.base);
-                return (versions, None);
+                return;
             };
-            if let Some(mut cells) = versions.get(&pointer.base).cloned() {
-                clear_overlapping_cells(&mut cells, start, end);
-                if cells.is_empty() {
-                    versions.remove(&pointer.base);
-                } else {
-                    versions.insert(pointer.base.clone(), cells);
-                }
+            let mut cells = versions.get(&pointer.base).cloned().unwrap_or_default();
+            clear_overlapping_cells(&mut cells, start, end);
+            if integer_store_bits(step).is_some() {
+                cells.insert(
+                    start,
+                    LocalIntegerWrite {
+                        end,
+                        version: version.clone(),
+                        store: step.clone(),
+                    },
+                );
             }
-            let written = (MachineIntegerType::from_program_type(value.program_type()).is_some()
-                && integer_store_bits(step).is_some())
-            .then(|| LocalIntegerWrite {
-                block: pointer.base.clone(),
-                start,
-                end,
-            });
-            (versions, written)
+            if cells.is_empty() {
+                versions.remove(&pointer.base);
+            } else {
+                versions.insert(pointer.base.clone(), cells);
+            }
         }
-        MemoryDerivation::CellsForgotten { .. } | MemoryDerivation::CellObserved { .. } => {
-            (continued(), None)
-        }
-        _ => Default::default(),
+        MemoryDerivation::CellsForgotten { .. } | MemoryDerivation::CellObserved { .. } => {}
+        _ => *versions = LocalIntegerVersions::default(),
     }
 }
 
@@ -418,8 +457,8 @@ fn local_integer_versions(
 /// Every other hit starts inside the write, so a scalar write removes at most
 /// its byte width plus one entry, regardless of the object's size.
 fn clear_overlapping_cells(cells: &mut LocalIntegerCells, start: i64, end: i64) {
-    if let Some((&earlier, (earlier_end, _))) = cells.get_less_than(&start)
-        && *earlier_end > start
+    if let Some((&earlier, write)) = cells.get_less_than(&start)
+        && write.end > start
     {
         cells.remove(&earlier);
     }
@@ -433,8 +472,8 @@ fn clear_overlapping_cells(cells: &mut LocalIntegerCells, start: i64, end: i64) 
     }
 }
 
-fn integer_store_bits(step: &StepLog) -> Option<(LoadKind, &MachineTerm)> {
-    let MemoryDerivation::Store { value, .. } = step.step.as_ref() else {
+fn integer_store_bits(step: &MemoryDerivation) -> Option<(LoadKind, &MachineTerm)> {
+    let MemoryDerivation::Store { value, .. } = step else {
         return None;
     };
     match value.native() {
@@ -488,7 +527,7 @@ pub struct ProgramPoint {
     path: PathLink,
     // A read that has selected its actual version keys on that identity too.
     // Other users are still migrating off the legacy memory key.
-    key_by_path: bool,
+    indexed_write: Option<Arc<MemoryDerivation>>,
 }
 
 impl std::fmt::Debug for ProgramPoint {
@@ -505,7 +544,7 @@ impl std::fmt::Debug for ProgramPoint {
     }
 }
 
-type PendingPointKey = (Option<ProgramPointId>, usize, bool);
+type PendingPointKey = (Option<ProgramPointId>, usize, (u32, u32), bool);
 
 thread_local! {
     /// The point made for each pending step log, so a state asked for its
@@ -522,7 +561,12 @@ thread_local! {
 /// The point after `path` that the steps in `steps` reach, with `memory`.
 fn pending_point(path: &PathLink, steps: &Arc<StepLog>, memory: &SharedMemory) -> PathLink {
     let continues_index = steps.previous.is_none() && path.matches_indexed_view(steps.step.base());
-    let key = (path.id(), Arc::as_ptr(steps) as usize, continues_index);
+    let key = (
+        path.id(),
+        Arc::as_ptr(steps) as usize,
+        memory.arena_id(),
+        continues_index,
+    );
     PENDING_POINTS.with(|points| {
         points
             .borrow_mut()
@@ -530,7 +574,7 @@ fn pending_point(path: &PathLink, steps: &Arc<StepLog>, memory: &SharedMemory) -
             .or_insert_with(|| {
                 (
                     steps.clone(),
-                    path.after(memory.clone(), Some(steps.clone())),
+                    path.after_with_index(memory.clone(), Some(steps.clone()), false),
                 )
             })
             .1
@@ -573,7 +617,7 @@ impl ProgramPoint {
         Self {
             memory: memory.clone(),
             path: PathLink::default(),
-            key_by_path: false,
+            indexed_write: None,
         }
     }
 
@@ -593,7 +637,7 @@ impl ProgramPoint {
         Self {
             memory: shared,
             path,
-            key_by_path: false,
+            indexed_write: None,
         }
     }
 
@@ -613,7 +657,7 @@ impl ProgramPoint {
         Self {
             memory: shared,
             path,
-            key_by_path: false,
+            indexed_write: None,
         }
     }
 
@@ -627,7 +671,7 @@ impl ProgramPoint {
         Self {
             memory,
             path: self.path.clone(),
-            key_by_path: self.key_by_path,
+            indexed_write: self.indexed_write.clone(),
         }
     }
 
@@ -653,7 +697,8 @@ impl ProgramPoint {
     }
 
     pub(crate) fn read_version_id(&self) -> Option<ProgramPointId> {
-        if self.key_by_path { self.id() } else { None }
+        self.indexed_write.as_ref()?;
+        self.id()
     }
 
     pub(crate) fn supports_indexed_local_integer_version(pointer: &Address) -> bool {
@@ -680,37 +725,24 @@ impl ProgramPoint {
             return None;
         };
         let end = start.checked_add(i64::from(kind.byte_width()))?;
-        let version = if node.local_integer_write.as_ref().is_some_and(|write| {
-            write.block == pointer.base && write.start == start && write.end == end
-        }) {
-            node.clone()
-        } else {
-            let (stored_end, version) = node
-                .local_integer_versions
-                .get(&pointer.base)?
-                .get(&start)?;
-            if *stored_end != end {
-                return None;
-            }
-            version.upgrade()?
-        };
-        let (store_kind, _) = integer_store_bits(version.steps.as_deref()?)?;
-        if store_kind != kind {
+        let write = node
+            .local_integer_versions
+            .get(&pointer.base)?
+            .get(&start)?;
+        if write.end != end || integer_store_bits(&write.store)?.0 != kind {
             return None;
         }
+        let version = write.version.upgrade()?;
         Some(Self {
             memory: version.memory.clone(),
             path: PathLink(Some(version), IndexedView::Recorded),
-            key_by_path: true,
+            indexed_write: Some(write.store.clone()),
         })
     }
 
-    /// The recorded value of this indexed read's defining store. The
-    /// equation comes from the authored step, even if its view shares
-    /// storage with another point.
+    /// The recorded value of this indexed read's defining store.
     pub(crate) fn indexed_integer_store_bits(&self) -> Option<&MachineTerm> {
-        self.read_version_id()?;
-        integer_store_bits(self.path.steps()?).map(|(_, bits)| bits)
+        integer_store_bits(self.indexed_write.as_deref()?).map(|(_, bits)| bits)
     }
 
     /// The identities of the points this one was reached from.
@@ -885,6 +917,42 @@ mod tests {
         assert_eq!(unlogged.program_point_id(), sibling.program_point_id());
         assert_eq!(version(&unlogged), None);
         assert_eq!(version(&store_word(&unlogged, left, 2)), None);
+    }
+
+    #[test]
+    fn an_overlapping_write_or_a_log_gap_ends_the_earlier_batch_version() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let first = slot();
+        let second = first.offset_by_bytes(4);
+        let start = ExecutionState::new()
+            .with_memory(SymbolicMemory::new().with_block(first.base.clone(), 8));
+        let store = |place, value| (place, ProgramValue::Int32(MachineTerm::constant(value)));
+        let (address, value) = store(first.clone(), 7);
+        let initial = start.memory().clone().store(address, value);
+        let (address, value) = store(second.clone(), 8);
+        let batch = initial.clone().store(address, value);
+        let kind = LoadKind::Int32;
+        let version = |state: &ExecutionState, place: &Address| {
+            state
+                .program_point()
+                .indexed_local_integer_version(place, kind)
+        };
+        let overlap = start.clone().with_memory(batch.store(
+            first.offset_by_bytes(2),
+            ProgramValue::UInt8(MachineTerm::narrow_constant(MachineIntegerType::UInt8, 0)),
+        ));
+        assert!(version(&overlap, &first).is_none());
+        assert_eq!(
+            version(&overlap, &second)
+                .unwrap()
+                .indexed_integer_store_bits(),
+            Some(&MachineTerm::constant(8))
+        );
+
+        let gap = initial.with_uninitialized_object(Address::symbolic(Variable(38_130)), 4);
+        let (address, value) = store(second, 9);
+        let detached = start.with_memory(gap.store(address, value));
+        assert!(version(&detached, &first).is_none());
     }
 
     #[test]

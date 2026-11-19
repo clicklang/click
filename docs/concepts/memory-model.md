@@ -35,8 +35,12 @@ offset in an automatic object, a lookup by object, byte offset, and width can
 select a compatible write on the current execution path. A disjoint store
 preserves the entry, including a store to a sibling field in the same object.
 An overlapping store ends the previous version. The read retains the write's
-point, and its value equation comes from the recorded store. Other cases still
-use the existing version selection, including across joins and unclassified effects.
+point, and its value equation comes from the recorded store. When execution
+records a batch of effects at one point, the endpoint indexes the surviving
+stores by cell. Earlier disjoint versions remain available. An unclassified
+effect clears the accumulated entries, and a disconnected log cannot carry
+versions. A provisional point does not replay a batch to name a read.
+Joins still use the existing version selection.
 Signed and unsigned 64-bit reads share a version of the same 64 bits.
 Signed and unsigned 128-bit reads retain their distinct load kinds.
 
