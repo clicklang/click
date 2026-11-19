@@ -116,6 +116,51 @@ pub(in crate::kernel) fn declared_uint32_read_representation(
     ))
 }
 
+/// Assemble the logical read of one declared word from complete indexed
+/// byte writes. Its term is the ordinary Click byte expression, with each
+/// byte naming its own version. The access itself has its own obligations.
+pub(in crate::kernel) fn indexed_uint32_byte_read(
+    point: &ProgramPoint,
+    pointer: &Address,
+    byte_order: Option<ByteOrder>,
+) -> Option<(ProgramValue, ExecutionFacts)> {
+    if byte_order != Some(ByteOrder::Little)
+        || pointer.offset != AddressOffset::Constant(0)
+        || point.memory().is_ended_local_address(pointer)
+    {
+        return None;
+    }
+    // This is the original declared storage, not a cast of a byte buffer.
+    let declaration = point.memory().blocks.get(&pointer.base)?;
+    if declaration.declared_scalar_type != Some(ProgramType::UInt32)
+        || declaration.size().as_const() != Some(4)
+    {
+        return None;
+    }
+    let mut facts = ExecutionFacts::new();
+    let mut packed = MachineTerm::constant(0);
+    for byte in 0..4 {
+        crate::instrumentation::record_deterministic_work(1);
+        let address = pointer.offset_by_bytes(byte);
+        let version = point.indexed_integer_version(&address, LoadKind::UInt8)?;
+        let path = super::memory_loads::evaluate_indexed_read(
+            version,
+            address,
+            ProgramType::UInt8,
+            facts,
+            Vec::new(),
+        );
+        let ExpressionOutcome::Value(value) = path.outcome else {
+            unreachable!("indexed byte read");
+        };
+        facts = path.facts;
+        let term = byte_word(&value)?;
+        let shifted = MachineTerm::unsigned_shift_left(term, MachineTerm::constant(8 * byte));
+        packed = MachineTerm::bitwise_or(packed, shifted);
+    }
+    Some((ProgramValue::UInt32(packed), facts))
+}
+
 /// Completes an automatic uint32 object's representation when this character
 /// store supplies its last missing byte. Its declaration, not the requested
 /// load type or the allocation's size, selects the object being initialized.

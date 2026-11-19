@@ -1,6 +1,94 @@
 use super::*;
 
 #[test]
+fn external_displacements_and_heap_indexes_use_only_their_selected_storage() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let parameter = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Variable(Variable(38_151)),
+    };
+    let other_parameter = Address {
+        offset: AddressOffset::Variable(Variable(38_152)),
+        ..parameter.clone()
+    };
+    let heap = Address {
+        base: AddressBase::Heap(38_153),
+        offset: AddressOffset::Constant(0),
+    };
+    let start =
+        ExecutionState::new().with_memory(SymbolicMemory::new().with_block(heap.base.clone(), 8));
+    let store = |state: &ExecutionState, address: &Address, bits| {
+        state.clone().with_memory(state.memory().clone().store(
+            address.clone(),
+            ProgramValue::Int32(MachineTerm::constant(bits)),
+        ))
+    };
+    let p_written = store(&start, &parameter, 1);
+    let h_written = store(&p_written, &heap, 2);
+    let sibling = parameter.offset_by_bytes(4);
+    let mut samples = Vec::new();
+    for count in [4, 64, 1024] {
+        let mut state = h_written.clone();
+        for bits in 0..count {
+            state = store(&state, &sibling, bits);
+        }
+        let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+            let point = state.program_point();
+            for (address, written) in [(&parameter, &p_written), (&heap, &h_written)] {
+                assert_eq!(
+                    point
+                        .indexed_integer_version(address, LoadKind::Int32)
+                        .and_then(|source| source.read_version_id()),
+                    written.program_point_id(),
+                );
+            }
+            assert!(
+                point
+                    .indexed_integer_version(&other_parameter, LoadKind::Int32)
+                    .is_none()
+            );
+        });
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|&work| work == samples[0]),
+        "{samples:?}"
+    );
+
+    let aliased = store(&h_written, &other_parameter, 3);
+    assert!(
+        aliased
+            .program_point()
+            .indexed_integer_version(&parameter, LoadKind::Int32)
+            .is_none()
+    );
+    assert!(
+        aliased
+            .program_point()
+            .indexed_integer_version(&heap, LoadKind::Int32)
+            .is_some()
+    );
+
+    let symbolic_heap = Address {
+        base: heap.base.clone(),
+        offset: parameter.offset.clone(),
+    };
+    let indexed = store(&h_written, &symbolic_heap, 4);
+    let point = indexed.program_point();
+    assert!(
+        point
+            .indexed_integer_version(&heap, LoadKind::Int32)
+            .is_none()
+    );
+    assert_eq!(
+        point
+            .indexed_integer_version(&symbolic_heap, LoadKind::Int32)
+            .and_then(|source| source.read_version_id()),
+        indexed.program_point_id(),
+    );
+}
+
+#[test]
 fn pending_successor_lookup_ignores_recorded_log_length() {
     let mut samples = Vec::new();
     for count in [4, 16, 64, 256] {
@@ -55,10 +143,10 @@ fn sealed_batch_read_lookup_ignores_the_number_of_effects() {
                 let point = sealed.program_point();
                 (
                     point
-                        .indexed_local_integer_version(&first, LoadKind::Int32)
+                        .indexed_integer_version(&first, LoadKind::Int32)
                         .unwrap(),
                     point
-                        .indexed_local_integer_version(&second, LoadKind::Int32)
+                        .indexed_integer_version(&second, LoadKind::Int32)
                         .unwrap(),
                 )
             });
@@ -112,14 +200,14 @@ fn joining_one_changed_cell_uses_shared_index_branches() {
             assert_eq!(
                 joined
                     .program_point()
-                    .indexed_local_integer_version(&slot, LoadKind::Int32)
+                    .indexed_integer_version(&slot, LoadKind::Int32)
                     .and_then(|point| point.read_version_id()),
                 original
             );
             assert!(
                 joined
                     .program_point()
-                    .indexed_local_integer_version(&changed, LoadKind::Int32)
+                    .indexed_integer_version(&changed, LoadKind::Int32)
                     .is_none()
             );
             samples.push((count, work));
@@ -186,7 +274,7 @@ fn sealing_checked_footprints_ignores_cells_in_untouched_objects() {
             for (path, memory) in [(called, &call_memory), (head, &loop_memory)] {
                 assert_eq!(
                     ProgramPoint::of_state(memory, &path)
-                        .indexed_local_integer_version(&slot, LoadKind::Int32)
+                        .indexed_integer_version(&slot, LoadKind::Int32)
                         .and_then(|point| point.read_version_id()),
                     original
                 );
@@ -236,17 +324,17 @@ fn boolean_and_complete_pointer_reads_keep_their_stores_across_sibling_writes() 
         let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
             let point = state.program_point();
             let flag_version = point
-                .indexed_local_typed_version(&flag, ProgramType::Bool)
+                .indexed_typed_version(&flag, ProgramType::Bool)
                 .unwrap();
             assert_eq!(flag_version.read_version_id(), written.program_point_id());
             assert!(
                 point
-                    .indexed_local_integer_version(&flag, LoadKind::UInt8)
+                    .indexed_integer_version(&flag, LoadKind::UInt8)
                     .is_none()
             );
             for (cell, stored) in [(&object, &pointer), (&callback, &function)] {
                 let version = point
-                    .indexed_local_typed_version(cell, stored.program_type())
+                    .indexed_typed_version(cell, stored.program_type())
                     .unwrap();
                 let read = Pointer::from_point_read(version, stored.program_type(), cell);
                 assert_eq!(
@@ -277,7 +365,7 @@ fn boolean_and_complete_pointer_reads_keep_their_stores_across_sibling_writes() 
     assert!(
         partial
             .program_point()
-            .indexed_local_typed_version(&object, ProgramType::Int32Pointer)
+            .indexed_typed_version(&object, ProgramType::Int32Pointer)
             .is_none()
     );
 }

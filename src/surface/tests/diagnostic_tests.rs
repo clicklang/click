@@ -3079,23 +3079,25 @@ fn smart_have_budget_refusal_retains_checked_trace_prefix() {
         let source = format!(
             "verifying \"f.c\"; void f(int32 *cell, int32 value) {{ owns cell[0..1]; requires value < 100; requires defined(value * 2); ensures cell[0] == value; }} by {{ step(); have to_integer(cell[0]) < to_integer(value) by {{ {body} }} step_until(function.exit); solve(); }}"
         );
+        let c = [("f.c", "void f(int32 *cell, int32 value) { *cell = value; }")];
+        let (baseline, work) = with_proof_trace("f", || {
+            crate::instrumentation::collect_tactic_work(|| verify_c_sources(&source, &c))
+        });
+        baseline.expect_err("the comparison cannot be proved with the default allowance");
+        let have_work = work
+            .iter()
+            .find(|sample| sample.tactic.tactic_name == "have")
+            .expect("the outer have is measured")
+            .work;
         with_proof_trace("f", || {
             let error = crate::instrumentation::with_tactic_work_limits(
                 crate::instrumentation::TacticWorkLimits {
-                    simple: 1_000_000,
-                    // Enough for the `have`, whose nested script searches
-                    // and so is charged to the smart budget, to lower its
-                    // read of the stored cell by name before `solve` exhausts
-                    // the budget.
-                    smart: if nested { 160 } else { 128 },
-                    control: if nested { 160 } else { 1_000_000 },
+                    // Exhaust the allowance during the search, after lowering
+                    // and any earlier proof steps in the have body.
+                    smart: have_work.checked_sub(1).expect("the have consumes work"),
+                    ..crate::instrumentation::TacticWorkLimits::default()
                 },
-                || {
-                    verify_c_sources(
-                        &source,
-                        &[("f.c", "void f(int32 *cell, int32 value) { *cell = value; }")],
-                    )
-                },
+                || verify_c_sources(&source, &c),
             )
             .expect_err("the bounded false comparison must fail");
             assert!(

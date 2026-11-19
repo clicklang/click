@@ -7798,9 +7798,11 @@ mod opaque_pointer_frame_tests {
         if !facts.proves_resource_separate(&changed, &kept) {
             return None;
         }
-        let observe = |memory: &SymbolicMemory| {
+        let entry = ExecutionState::new().with_memory(before.clone());
+        let exit = entry.clone().with_memory(after.clone());
+        let observe = |state: &ExecutionState| {
             let paths = crate::kernel::eval::evaluate_logical_memory_load_paths(
-                memory,
+                state.memory(),
                 field.clone(),
                 ProgramType::Int32Pointer,
                 Default::default(),
@@ -7813,16 +7815,19 @@ mod opaque_pointer_frame_tests {
             let ExpressionOutcome::Value(ProgramValue::Pointer(value)) = &path.outcome else {
                 panic!("pointer observation")
             };
+            crate::kernel::eval::typed_reads::record_at(
+                &state.program_point(),
+                field,
+                &ProgramValue::Pointer(value.clone()),
+            );
             value.clone()
         };
-        let before_value = observe(before);
-        let after_value = observe(after);
+        let before_value = observe(&entry);
+        let after_value = observe(&exit);
         let result = Proposition::condition_is(
             ConditionTerm::pointer_equal(after_value.clone(), before_value),
             true,
         );
-        let entry = ExecutionState::new().with_memory(before.clone());
-        let exit = entry.clone().with_memory(after.clone());
         let footprint = crate::kernel::RegionFootprint::transition(
             "selected".into(),
             &entry,

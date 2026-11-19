@@ -109,9 +109,9 @@ pub(in crate::kernel) fn explicit_frame(
         right: Box::new(kept),
     };
     let _reads = ReadScope::enter();
-    let observe = |memory: &SymbolicMemory| {
+    let observe = |state: &ExecutionState| {
         let paths = crate::kernel::eval::evaluate_logical_memory_load_paths(
-            memory,
+            state.memory(),
             address.clone(),
             ty,
             Default::default(),
@@ -124,10 +124,11 @@ pub(in crate::kernel) fn explicit_frame(
         let ExpressionOutcome::Value(value) = &path.outcome else {
             panic!("logical read produces a value");
         };
+        crate::kernel::eval::typed_reads::record_at(&state.program_point(), address, value);
         value.clone()
     };
-    let old = observe(before);
-    let new = observe(after);
+    let old = observe(&entry);
+    let new = observe(&exit);
     let condition = match (new.numeric_value(), old.numeric_value()) {
         (ProgramValue::Parameter(a), ProgramValue::Parameter(b)) => {
             ConditionTerm::AlgebraicEqual(a.clone(), b.clone())
