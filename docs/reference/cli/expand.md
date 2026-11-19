@@ -29,7 +29,7 @@ Replace the following:
   `50000000`.
 - `DURATION`: the whole command's wall-clock crash-containment bound; the
   default is `10m`.
-- `PATH`: a destination for the complete rewritten sidecar or mdtest.
+- `PATH`: a path beside the input for the complete rewritten sidecar or mdtest.
 - `LINE` and `COLUMN`: one-based coordinates selecting a smart tactic. The
   column may be omitted when the line starts exactly one smart tactic.
 - `LABEL`: one function, pure-theorem, or loop-phase claim label whose smart
@@ -183,7 +183,7 @@ selected type instance; expansion preserves the generic declaration.
 | `--claim LABEL` | Expand all smart tactics in one named claim, including one loop phase, instead of selecting a tactic by location. `--claim PATH:LINE[:COLUMN]` names the innermost claim whose clause or proof covers that line of the target. |
 | `--work-limit UNITS` | Set the deterministic work budget of the whole command, generating the expansion and checking it. The default is `50000000`. |
 | `--time-limit DURATION` | Set the wall-clock crash-containment bound of the whole command. The default is `10m`. It stops a hung or CPU-starved run and is not a verdict about the proof; smart search inside the expansion is bounded by its deterministic smart work budget, not by a clock. |
-| `--output PATH` | Write the complete verified rewrite to a different path. |
+| `--output PATH` | Write the complete verified rewrite in the input's directory. |
 | `--in-place` | Atomically replace the input only after verification succeeds. |
 | `-h`, `--help` | Print command help and exit successfully. |
 | `--` | Stop option parsing before the positional target. |
@@ -193,28 +193,15 @@ option is an error.
 
 ## Output location and source context
 
-A sidecar's `verifying "..."` declarations and its adjacent import manifest
-resolve relative to the sidecar's own directory, so the emitted artifact must
-stay verifiable at its output path:
+Write review copies beside the input with `--output`. This preserves the
+relative `verifying` and import paths, so you can verify and profile the copy
+there and copy it over the original after review. The same directory
+requirement applies to Markdown fixtures, which can also use local Click
+imports and project configuration.
 
-- Writing into the source directory (`--output` there or `--in-place`)
-  preserves the artifact byte for byte apart from the rewrite itself.
-- Writing to another directory rebases every relative `verifying` declaration
-  so it selects the same C file from the output location — for example
-  `verifying "identity.c"` becomes `verifying "../source/identity.c"` — and
-  re-verifies the rebased artifact through the output path's own loading
-  rules. The requested path stays unwritten when that verification fails, and
-  a destination whose adjacent import manifest would hijack the artifact is
-  refused.
-- A sidecar with an adjacent import manifest is anchored there: its manifest,
-  roots, and locked artifacts resolve beside the sidecar by filename, so an
-  `--output` that would move or rename it is refused before anything is
-  written. Use `--in-place` for those sidecars.
-- An mdtest expansion writes the whole `.md` file, whose C input fences live
-  in the file itself, so no rebasing applies.
-
-The rebasing never changes C sources or other sidecar text: only `verifying`
-path literals move, so unselected source text is preserved.
+For a prepared import sidecar, use `--in-place`. To keep a separate baseline
+or to benchmark the rewrite in isolation, use a separate checkout with the
+input and its dependencies in their original layout.
 
 ## Output and exit behavior
 
@@ -278,7 +265,7 @@ Expand one claim into a review file:
 
 ```console
 click expand --claim function.contract \
-    --output /tmp/expanded.click path/to/file.click
+    --output path/to/file.expanded.click path/to/file.click
 ```
 
 ## Related commands

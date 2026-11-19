@@ -5,19 +5,18 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use click::cli::{
     self, RunLimits, VerificationInput, containing_directory, looks_like_mdtest, parse_duration,
-    parse_source_line_location, prepare_mdtest_inputs, read_click_project,
-    read_lone_sidecar_inputs, read_mdtest, read_mdtest_project_if_needed, read_verification_inputs,
-    source_refs,
+    parse_source_line_location, prepare_mdtest_inputs, read_lone_sidecar_inputs, read_mdtest,
+    read_mdtest_project_if_needed, source_refs,
 };
 use click::surface::{
     ClickProject, SmartTacticCandidate, SmartTacticSelectionError,
     expand_c_prepared_tactic_source_at, expand_c_tactic_source_at,
     expand_program_prepared_tactic_source_at, expand_project_tactic_source_at,
-    map_verifying_source_paths, project_select_smart_tactic, project_tactic_source_position,
-    tactic_source_position, verify_project_at, verify_sources_at,
+    project_select_smart_tactic, project_tactic_source_position, tactic_source_position,
+    verify_project_at, verify_sources_at,
 };
 
-const USAGE: &str = "usage: click expand [--work-limit <UNITS>] [--time-limit <DURATION>] [--output <PATH> | --in-place] <sidecar.click|mdtest.md>:<line>[:<column>]\n       click expand --claim <LABEL|PATH:LINE[:COLUMN]> [--work-limit <UNITS>] [--time-limit <DURATION>] [--output <PATH> | --in-place] <sidecar.click|mdtest.md>\n\n--claim selects a claim by its label or by a line its clause or proof covers. Expansion is checked before output; a --claim expansion is checked with the implicit closer off, so it is self-contained. With --in-place, the original is atomically replaced only after targeted verification succeeds.\n\nThe whole command, generating the expansion and checking it, has a deterministic budget of --work-limit units (default 50000000), beside every tactic's own work budget. --time-limit (default 10m) is only a wall-clock crash-containment bound for a hung or CPU-starved run, not a verdict about the proof.";
+const USAGE: &str = "usage: click expand [--work-limit <UNITS>] [--time-limit <DURATION>] [--output <PATH> | --in-place] <sidecar.click|mdtest.md>:<line>[:<column>]\n       click expand --claim <LABEL|PATH:LINE[:COLUMN]> [--work-limit <UNITS>] [--time-limit <DURATION>] [--output <PATH> | --in-place] <sidecar.click|mdtest.md>\n\n--claim selects a claim by its label or by a line its clause or proof covers. Expansion is checked before output. Whole-claim expansions are checked with the implicit closer off. With --output, write the rewrite beside the input. With --in-place, atomically replace the input after targeted verification succeeds.\n\nThe whole command, generating the expansion and checking it, has a deterministic budget of --work-limit units (default 50000000), beside every tactic's own work budget. --time-limit (default 10m) is only a wall-clock crash-containment bound for a hung or CPU-starved run, not a verdict about the proof.";
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Arguments {
@@ -47,14 +46,17 @@ pub(crate) fn entry_with(arguments: impl IntoIterator<Item = String>) -> Result<
     }
     let arguments = parse_arguments(raw)?;
     cli::with_run_limits("click expand", arguments.limits, || {
-        let artifact = run_bounded(&arguments)?;
+        let expanded = run_bounded(&arguments)?;
         check_expansion_deadline("writing the verified expansion")?;
-        if arguments.in_place {
-            atomic_replace(&arguments.click_path, artifact.source.as_bytes())
-        } else if let Some(output) = &arguments.output {
-            write_context_preserved(&arguments, output, &artifact)
+        let destination = if arguments.in_place {
+            Some(arguments.click_path.as_path())
         } else {
-            print!("{}", artifact.source);
+            arguments.output.as_deref()
+        };
+        if let Some(destination) = destination {
+            atomic_replace(destination, expanded.as_bytes())
+        } else {
+            print!("{expanded}");
             Ok(())
         }
     })
@@ -140,19 +142,13 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
 
 #[cfg(test)]
 fn run(arguments: &Arguments) -> Result<String, String> {
-    cli::with_run_limits("click expand", arguments.limits, || {
-        run_bounded(arguments).map(|artifact| artifact.source)
-    })
+    cli::with_run_limits("click expand", arguments.limits, || run_bounded(arguments))
 }
 
-/// One verified artifact. `claim` is the proof unit label whose expansion the
-/// output-context check re-verifies.
-struct ExpandedArtifact {
-    source: String,
-    claim: String,
-}
-
-fn run_bounded(arguments: &Arguments) -> Result<ExpandedArtifact, String> {
+fn run_bounded(arguments: &Arguments) -> Result<String, String> {
+    if let Some(output) = &arguments.output {
+        check_output_directory(&arguments.click_path, output)?;
+    }
     if looks_like_mdtest(&arguments.click_path) {
         return run_mdtest(arguments);
     }
@@ -163,6 +159,9 @@ fn run_bounded(arguments: &Arguments) -> Result<ExpandedArtifact, String> {
         )
     })?;
     let (project, inputs) = read_lone_sidecar_inputs(&arguments.click_path, &click_source)?;
+    if let Some(output) = &arguments.output {
+        check_sidecar_output(&arguments.click_path, output, &inputs)?;
+    }
     let (claim, expanded) = generate_expansion(|| {
         expand_selection(
             Some(&project),
@@ -175,187 +174,64 @@ fn run_bounded(arguments: &Arguments) -> Result<ExpandedArtifact, String> {
             },
         )
     })?;
-    let expanded = verified_expansion(
+    verified_expansion(
         Some(&project),
         &click_source,
         expanded,
         &inputs,
         &claim,
         selects_whole_claim(&arguments.selection, &claim),
-    )?;
-    Ok(ExpandedArtifact {
-        source: expanded,
-        claim,
-    })
+    )
 }
 
-/// Prepares the exact bytes that `--output` may write.
-///
-/// A source-bundle sidecar relocated into another directory keeps its
-/// `verifying` declarations' meaning through one consistent rebasing: each
-/// relative declaration is respelled relative to the output directory so it
-/// selects the same file, and the rebased artifact is re-verified through the
-/// output path's own loading rules before anything is written. A prepared
-/// import anchors its manifest, roots, and locked artifacts next to the
-/// sidecar, so a `--output` that moves or renames it cannot preserve that
-/// identity and is rejected before writing. In-place output and mdtest output
-/// keep context unchanged.
-fn write_context_preserved(
-    arguments: &Arguments,
-    output: &Path,
-    artifact: &ExpandedArtifact,
-) -> Result<(), String> {
-    let write_artifact = |content: &str| {
-        fs::write(output, content.as_bytes())
-            .map_err(|error| format!("failed to write `{}`: {error}", output.display()))
-    };
-    if looks_like_mdtest(&arguments.click_path) {
-        return write_artifact(&artifact.source);
-    }
-    let source_dir = containing_directory(&arguments.click_path).to_path_buf();
+fn check_output_directory(input: &Path, output: &Path) -> Result<(), String> {
+    let input_dir = containing_directory(input);
     let output_dir = containing_directory(output);
-    let original_inputs = read_verification_inputs(&arguments.click_path, &artifact.source)?;
-    let same_directory = same_path(&source_dir, output_dir);
-    let same_name = output.file_name() == arguments.click_path.file_name();
-    if original_inputs.is_prepared() {
-        if same_directory && same_name {
-            return write_artifact(&artifact.source);
-        }
-        let what = if same_name { "location" } else { "name" };
+    let canonical_directory = |directory: &Path| {
+        fs::canonicalize(directory).map_err(|error| {
+            format!(
+                "failed to resolve directory `{}`: {error}",
+                directory.display()
+            )
+        })
+    };
+    if canonical_directory(input_dir)? != canonical_directory(output_dir)? {
         return Err(format!(
-            "`--output` would relocate the prepared import sidecar's {what}; its import manifest and locked artifacts are anchored beside the sidecar, so an expansion must be written in place"
-        ));
-    }
-    if same_directory {
-        return write_artifact(&artifact.source);
-    }
-    if !output_dir.is_dir() {
-        return Err(format!(
-            "`--output` directory `{}` does not exist; an relocated sidecar cannot resolve its sources without it",
-            output_dir.display()
-        ));
-    }
-    let rebased = map_verifying_source_paths(&artifact.source, |declared| {
-        rebase_verifying_declaration(&source_dir, output_dir, declared)
-    })
-    .map_err(|error| error.report())?;
-    // The rebased artifact is verified through the rules the requested path
-    // will actually use, including a manifest hijacking the destination name,
-    // before the final bytes are promoted. The staged entry shares the output
-    // directory so `verifying` resolution and project rooting match exactly.
-    let hijacking_manifest = output.with_file_name(format!(
-        "{}.import.json",
-        output
-            .file_name()
-            .and_then(|name| name.to_str())
-            .ok_or_else(|| format!("output path `{}` has no valid filename", output.display()))?
-    ));
-    if fs::symlink_metadata(&hijacking_manifest).is_ok() {
-        return Err(format!(
-            "`--output` destination `{}` would be loaded as a prepared import through its adjacent import manifest; relocating a source-bundle sidecar there is refused",
-            output.display()
-        ));
-    }
-    let staged = temp_entry_for(output);
-    fs::write(&staged, rebased.as_bytes())
-        .map_err(|error| format!("failed to stage `{}`: {error}", staged.display()))?;
-    let verification = (|| -> Result<(), String> {
-        let (verified_project, verified_inputs) = read_lone_sidecar_inputs(&staged, &rebased)?;
-        let original_project = read_click_project(&arguments.click_path, &artifact.source)?;
-        if original_project.c_profile() != verified_project.c_profile() {
-            return Err("`--output` would change the Click project C configuration; place the output in the same project directory".to_string());
-        }
-        verify_expansion(
-            Some(&verified_project),
-            &rebased,
-            &verified_inputs,
-            &artifact.claim,
-            matches!(arguments.selection, Selection::Claim(_)),
-        )
-    })();
-    if let Err(verification) = verification {
-        let _ = fs::remove_file(&staged);
-        return Err(verification);
-    }
-    if let Err(error) = fs::rename(&staged, output) {
-        let _ = fs::remove_file(&staged);
-        return Err(format!(
-            "failed to promote the verified expansion to `{}`: {error}",
+            "`--output` must be in the input's directory `{}`, got `{}`",
+            input_dir.display(),
             output.display()
         ));
     }
     Ok(())
 }
 
-fn temp_entry_for(output: &Path) -> PathBuf {
+fn check_sidecar_output(
+    input: &Path,
+    output: &Path,
+    inputs: &VerificationInput,
+) -> Result<(), String> {
+    if inputs.is_prepared() && output.file_name() != input.file_name() {
+        return Err(
+            "use `--in-place` to write an expansion of a prepared import sidecar".to_string(),
+        );
+    }
     let name = output
         .file_name()
         .and_then(|name| name.to_str())
-        .unwrap_or("expanded.click");
-    output.with_file_name(format!(
-        ".click-expand-{}-{}",
-        TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed),
-        name
-    ))
-}
-
-/// Rebases one relative `verifying` declaration from the source directory to
-/// the output directory, keeping the same selected file. Absolute declarations
-/// need no rebasing.
-fn rebase_verifying_declaration(
-    source_dir: &Path,
-    output_dir: &Path,
-    declared: &str,
-) -> Option<String> {
-    let declared_path = Path::new(declared);
-    if declared_path.is_absolute() {
-        return None;
+        .ok_or_else(|| format!("output path `{}` has no valid filename", output.display()))?;
+    let config = output.with_file_name(format!("{name}.import.json"));
+    match fs::symlink_metadata(&config) {
+        Ok(_) => Err(cli::per_sidecar_config_refusal(&config)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(format!("failed to inspect `{}`: {error}", config.display())),
     }
-    let selected = fs::canonicalize(source_dir.join(declared_path)).ok()?;
-    if !selected.is_file() {
-        return None;
-    }
-    let output_root = fs::canonicalize(output_dir).ok()?;
-    let selected = selected.components().collect::<Vec<_>>();
-    let output = output_root.components().collect::<Vec<_>>();
-    let shared = selected
-        .iter()
-        .zip(output.iter())
-        .take_while(|(left, right)| left == right)
-        .count();
-    let mut rebased = std::path::PathBuf::new();
-    for component in &output[shared..] {
-        if let std::path::Component::Normal(_) = component {
-            rebased.push("..");
-        }
-    }
-    for component in &selected[shared..] {
-        if let std::path::Component::Normal(component) = component {
-            rebased.push(component);
-        }
-    }
-    let rebased = rebased.to_string_lossy().into_owned();
-    (rebased != declared).then_some(rebased)
-}
-
-fn same_path(left: &Path, right: &Path) -> bool {
-    absolute_lexical(left) == absolute_lexical(right)
-}
-
-fn absolute_lexical(path: &Path) -> PathBuf {
-    if path.is_absolute() {
-        return path.to_path_buf();
-    }
-    std::env::current_dir()
-        .map(|current| current.join(path))
-        .unwrap_or_else(|_| path.to_path_buf())
 }
 
 /// Expands a tactic inside an mdtest's ```click block. The location is given
 /// in `.md` file coordinates — the same coordinates `click profile` reports —
 /// and the output is the whole markdown file with the block's body replaced,
 /// so the same redirect workflow as sidecar expansion applies.
-fn run_mdtest(arguments: &Arguments) -> Result<ExpandedArtifact, String> {
+fn run_mdtest(arguments: &Arguments) -> Result<String, String> {
     let markdown = fs::read_to_string(&arguments.click_path).map_err(|error| {
         format!(
             "failed to read `{}`: {error}",
@@ -399,8 +275,7 @@ fn run_mdtest(arguments: &Arguments) -> Result<ExpandedArtifact, String> {
         &claim,
         selects_whole_claim(&arguments.selection, &claim),
     )?;
-    let source = mdtest.replace_click_source(&markdown, &expanded)?;
-    Ok(ExpandedArtifact { source, claim })
+    mdtest.replace_click_source(&markdown, &expanded)
 }
 
 /// How a selection failure names file positions: the input path, and the
@@ -1431,9 +1306,16 @@ int32 f(int32 a, int32 b) {
         assert!(phase.starts_with("initialize by {"), "{phase}");
         assert!(!phase.contains("solve"), "{phase}");
         let line = click_source[..start].lines().count();
-        let by_line = expand(format!("{}:{line}", click_path.display()))
-            .expect("a line of the phase should select it");
-        assert_eq!(by_line, by_label);
+        let output = directory.join("project.expanded.click");
+        entry_with([
+            "--claim".to_string(),
+            format!("{}:{line}", click_path.display()),
+            "--output".to_string(),
+            output.display().to_string(),
+            click_path.display().to_string(),
+        ])
+        .expect("a loop phase selected by line can be written beside the input");
+        assert_eq!(fs::read_to_string(output).unwrap(), by_label);
 
         let insertion = click_source.find("}\n    step();").unwrap();
         let omitted = expand("f.loop(0).preserve".to_string())
@@ -1569,7 +1451,7 @@ int32 identity(int32 x) {
 #[cfg(test)]
 mod output_context_tests {
     use super::*;
-    use click::cli::VerificationInput;
+    use click::cli::read_verification_inputs;
     use click::surface::verify_c_sources;
     use std::env;
 
@@ -1609,41 +1491,55 @@ int32 identity(int32 x) {
     }
 
     #[test]
-    fn output_in_another_directory_rebases_declared_sources_and_verifies_there() {
+    fn output_in_another_directory_is_rejected_before_writing() {
         let (directory, click_path, _) =
             setup_source_bundle(TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed));
-        // An unrelated C file with the same name in the output directory must
-        // not silently become the selected input.
-        fs::write(
-            directory.join("out/identity.c"),
-            "int32 decoy() { return 7; }",
-        )
-        .unwrap();
         let output = directory.join("out/identity.click");
 
-        entry_with([
+        let error = entry_with([
             "--claim".to_string(),
             "identity.ensures_0".to_string(),
             "--output".to_string(),
             output.display().to_string(),
             click_path.display().to_string(),
         ])
-        .expect("expansion into another directory rebases and verifies the artifact");
+        .expect_err("output must stay beside the input");
 
-        let emitted = fs::read_to_string(&output).unwrap();
         assert!(
-            emitted.starts_with("verifying \"../source/identity.c\";\n"),
-            "relocated declarations must select the original source: {emitted}"
+            error.contains("must be in the input's directory"),
+            "{error}"
         );
-        assert_emitted_verifies(&output);
+        assert_eq!(fs::read_dir(directory.join("out")).unwrap().count(), 0);
         fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
-    fn output_in_the_same_directory_keeps_declared_sources_unrebased() {
+    fn markdown_output_in_another_directory_is_rejected() {
+        let input = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("mdtests/termination_ordinary_proof_steps.md");
+        let directory = tempfile::tempdir().unwrap();
+        let output = directory.path().join("expanded.md");
+        let error = entry_with([
+            "--claim".to_string(),
+            "program.termination".to_string(),
+            "--output".to_string(),
+            output.display().to_string(),
+            input.display().to_string(),
+        ])
+        .expect_err("Markdown output must stay beside the input");
+
+        assert!(
+            error.contains("must be in the input's directory"),
+            "{error}"
+        );
+        assert!(!output.exists());
+    }
+
+    #[test]
+    fn output_in_the_same_directory_preserves_declared_sources() {
         let (directory, click_path, _) =
             setup_source_bundle(TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed));
-        let output = directory.join("source/expanded.click");
+        let output = directory.join("source/../source/expanded.click");
 
         entry_with([
             "--claim".to_string(),
@@ -1652,7 +1548,7 @@ int32 identity(int32 x) {
             output.display().to_string(),
             click_path.display().to_string(),
         ])
-        .expect("expansion within the source directory needs no rebasing");
+        .expect("equivalent paths name the same source directory");
 
         let emitted = fs::read_to_string(&output).unwrap();
         assert!(
@@ -1669,6 +1565,7 @@ int32 identity(int32 x) {
 #[cfg(all(test, not(target_os = "macos")))]
 mod prepared_output_tests {
     use super::*;
+    use click::cli::read_verification_inputs;
     use std::env;
 
     fn setup_prepared(sequence: u64) -> PathBuf {
@@ -1730,31 +1627,8 @@ mod prepared_output_tests {
 
     #[test]
     #[ignore = "nightly: 3s in the parallel gate"]
-    fn a_relocated_prepared_import_sidecar_refuses_output_and_writes_nothing() {
+    fn a_prepared_import_sidecar_refuses_a_renamed_output() {
         let directory = setup_prepared(TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed));
-        let output_directory = directory.join("out");
-        fs::create_dir(&output_directory).unwrap();
-        let output = output_directory.join("main.click");
-
-        let error = entry_with([
-            "--claim".to_string(),
-            "from_header.ensures_0".to_string(),
-            "--output".to_string(),
-            output.display().to_string(),
-            directory.join("main.click").display().to_string(),
-        ])
-        .expect_err("a relocated prepared sidecar cannot preserve its context");
-
-        assert!(error.contains("prepared import"), "{error}");
-        assert!(
-            !output.exists(),
-            "a rejected relocation must not write the artifact"
-        );
-        assert!(
-            fs::read_dir(&output_directory).unwrap().count() == 0,
-            "a rejected relocation must not leave staged artifacts"
-        );
-        // A renamed sidecar beside its manifest loses manifest identity too.
         let renamed = directory.join("renamed.click");
         let rename_error = entry_with([
             "--claim".to_string(),
@@ -1763,7 +1637,7 @@ mod prepared_output_tests {
             renamed.display().to_string(),
             directory.join("main.click").display().to_string(),
         ])
-        .expect_err("renaming a prepared sidecar cannot preserve its manifest identity");
+        .expect_err("prepared sidecars use in-place expansion");
         assert!(rename_error.contains("prepared import"), "{rename_error}");
         assert!(
             !renamed.exists(),

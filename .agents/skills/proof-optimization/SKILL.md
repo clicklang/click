@@ -35,8 +35,11 @@ different questions.
 
 - **SMART.** For a completed expensive tactic in a verified proof, try the
   report's [`click expand` command](../../../docs/reference/cli/expand.md) at
-  that site or its enclosing claim. Verify and profile the exact rewritten
-  source with the original limits. If the emitted proof is large, look for a
+  that site or its enclosing claim. Use `--output` to write a candidate beside
+  the input, keeping its relative source and import paths valid. For a prepared
+  import sidecar, run the suggested `--in-place` command in a separate checkout
+  so you can keep the baseline. Verify and profile the exact rewritten source
+  with the original limits. If the emitted proof is large, look for a
   shorter checked argument or explicitly supply the facts the search needed.
   A prompt bounded search miss uses the proof-repair workflow.
 - **CONTROL.** Inspect the nested tactic rows and follow their classes.
