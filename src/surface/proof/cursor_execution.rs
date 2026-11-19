@@ -4,6 +4,13 @@ use crate::kernel::ExecutionFactSource;
 use crate::kernel::abstract_execution_state_for_interface_join_across;
 use std::sync::Arc;
 
+pub(super) struct BranchInterfaceJoinInputs<'a, 'proof> {
+    pub(super) sibling_states: &'a [&'a ExecutionState; 2],
+    pub(super) recorded_states: &'a RecordedStates,
+    pub(super) proof: &'a Proof<'proof>,
+    pub(super) entry_facts: &'a PureFactStore,
+}
+
 /// Checks a branch interface directly against the structural join's
 /// persistent proof facts, without cloning or re-indexing unrelated facts.
 #[allow(clippy::too_many_arguments)]
@@ -14,7 +21,7 @@ pub(super) fn apply_branch_interface_with_proof_facts(
     execution: &mut ExecutionProofState,
     proof_context: &ExecutionProofContext<'_>,
     available_pure_facts: &mut PureFactStore,
-    join_inputs: Option<(&[&ExecutionState; 2], &RecordedStates)>,
+    join_inputs: Option<BranchInterfaceJoinInputs<'_, '_>>,
     // `join_next_kernel_variable` is the counter every sibling arm abstracts
     // from: the highest of the arms' own. The arms' abstractions are compared
     // for equality, so they must count from one shared lower bound rather
@@ -113,7 +120,7 @@ pub(super) fn apply_branch_interface_with_proof_facts(
             }
         }
     }
-    let Some((sibling_join_states, common_recorded_states)) = join_inputs else {
+    let Some(join_inputs) = join_inputs else {
         *available_pure_facts = concrete_facts;
         return Ok(());
     };
@@ -125,7 +132,7 @@ pub(super) fn apply_branch_interface_with_proof_facts(
         .clone();
     let abstraction = abstract_execution_state_for_interface_join_across(
         state,
-        sibling_join_states,
+        join_inputs.sibling_states,
         join_next_kernel_variable,
     );
     let abstraction = abstraction.map_err(|message| {
@@ -133,6 +140,28 @@ pub(super) fn apply_branch_interface_with_proof_facts(
             "`{claim_label}` tactic {tactic_index}: could not abstract `branch` target state: {message}"
         ))
     })?;
+    if let Some(goal) = abstraction.unproved_memory_separation(join_inputs.entry_facts) {
+        let join_entry = join_inputs.proof;
+        let spelling = join_entry
+            .structural_goal_spelling(goal)
+            .as_ref()
+            .map(crate::surface::printing::source_click_proposition);
+        let detail = spelling
+            .as_ref()
+            .map(|source| format!("; prove `{source}` before the branch"))
+            .unwrap_or_default();
+        return Err(join_entry.step_error_with_requirement(
+            format!(
+                "branch memory join requires separation from active loans at the split{detail}"
+            ),
+            None,
+            Some((
+                "branch memory join separation",
+                Box::new(goal.clone()),
+                spelling,
+            )),
+        ));
+    }
     let mut abstract_state = abstraction.state;
     let mut join_kernel_variable_mark = abstraction.next_kernel_variable;
 
@@ -252,7 +281,7 @@ pub(super) fn apply_branch_interface_with_proof_facts(
     }
     abstract_state = abstract_state.with_resource_context(exported_resources.clone());
     let interface_records = execution.presentation.recorded_states.for_branch_interface(
-        common_recorded_states,
+        join_inputs.recorded_states,
         target,
         &abstract_state,
     );

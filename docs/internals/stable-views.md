@@ -227,7 +227,10 @@ before `loop`. A memory-writing loop with active loans needs a usable write
 bound. When several exits join, any memory cell the successor drops or
 abstracts also needs separation from the shared exit loan footprint. Its
 proof belongs at loop entry, where it cannot depend on the joined state's
-fresh values or exit equations.
+fresh values or exit equations. A `branch ensuring` join likewise checks
+the byte spans of cells that differ across its arms against the common loan
+footprint. Establish those separations before the split. A join with active
+memory loans still requires the arms to agree on allocation and block state.
 
 Population member exchanges and opening or closing a private body or an
 authority wrapper check each owned memory range in the selected body against
