@@ -687,6 +687,7 @@ void rb_set_parent_color(struct rb_node* rb, struct rb_node* p, int32 color) {
 #[test]
 #[ignore = "nightly: whole rbtree insert expansion and cold verification exceed the gate budget"]
 fn rbtree_insert_whole_claim_expansion_verifies() {
+    let claim = "__rb_insert.contract";
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let path = root.join("examples/rbtree/rbtree-insert/rbtree_insert.click");
     let source = fs::read_to_string(&path).unwrap();
@@ -696,14 +697,20 @@ fn rbtree_insert_whole_claim_expansion_verifies() {
         "rbtree insert whole-claim expansion",
         "click-rbtree-expansion".to_string(),
         move || {
-            let expanded = click::surface::expand_project_claim_source_by_label(
-                &project,
-                &ProgramInputs::Bundle(source_refs(&c_sources)),
-                "__rb_insert.contract",
-            )?;
+            let inputs = ProgramInputs::Bundle(source_refs(&c_sources));
+            let expanded =
+                click::surface::expand_project_claim_source_by_label(&project, &inputs, claim)
+                    .map_err(|error| error.report())?;
             assert_ne!(expanded, source);
+            assert!(
+                !expanded.contains("transport("),
+                "the expanded insert claim must be free of transport"
+            );
             let rewritten = project.with_entry_source(expanded);
-            click::surface::verify_c_project(&rewritten, &source_refs(&c_sources))
+            click::surface::without_implicit_solve_for_claim(claim, || {
+                click::surface::verify_c_project(&rewritten, &source_refs(&c_sources))
+                    .map_err(|error| error.report())
+            })
         },
     )
     .unwrap()
