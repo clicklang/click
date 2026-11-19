@@ -2591,7 +2591,7 @@ fn append_composite_definition_observable_facts<F: ResourcePureFacts>(
         composite_body,
         substitutions,
         parameter_binding,
-        fact_state.memory(),
+        fact_state,
         propositions,
     )?;
 
@@ -2651,7 +2651,7 @@ fn append_composite_resource_loadable_facts<F: ResourcePureFacts>(
     composite_body: &CompositeResourceBody,
     substitutions: &BTreeMap<String, ContractExpression>,
     parameter_binding: ParameterBinding<'_>,
-    memory: &SymbolicMemory,
+    state: &ExecutionState,
     propositions: &mut F,
 ) -> Result<(), String> {
     for contained in composite_body.contains() {
@@ -2664,7 +2664,7 @@ fn append_composite_resource_loadable_facts<F: ResourcePureFacts>(
         append_resource_clause_loadable_fact_with_store(
             &contained,
             parameter_binding,
-            memory,
+            state,
             propositions,
         )
         .map_err(|error| {
@@ -2682,11 +2682,10 @@ fn append_composite_resource_loadable_facts<F: ResourcePureFacts>(
 fn append_resource_clause_loadable_fact_with_store<F: ResourcePureFacts>(
     resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
-    memory: &SymbolicMemory,
+    state: &ExecutionState,
     propositions: &mut F,
 ) -> Result<(), ClickError> {
-    let state = ExecutionState::new().with_memory(memory.clone());
-    let Some(ranges) = resource_clause_memory_ranges_at_state(resource, parameter_binding, &state)?
+    let Some(ranges) = resource_clause_memory_ranges_at_state(resource, parameter_binding, state)?
     else {
         return Ok(());
     };
@@ -2695,7 +2694,9 @@ fn append_resource_clause_loadable_fact_with_store<F: ResourcePureFacts>(
             propositions.insert(guard);
         }
     }
-    if let Some(proposition) = resource_clause_loadable_prop(resource, parameter_binding, memory)? {
+    if let Some(proposition) =
+        resource_clause_loadable_prop_at_state(resource, parameter_binding, state)?
+    {
         propositions.insert(proposition);
     }
     Ok(())
