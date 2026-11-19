@@ -624,8 +624,8 @@ impl<'a> MachineOperandView<'a> {
                     BooleanOperandView::Shared(&arguments[0]),
                     [Self::Shared(&arguments[1]), Self::Shared(&arguments[2])],
                 )),
-                _ => root
-                    .machine_conversion_leaf()
+                _ => self
+                    .retained_native_input()
                     .and_then(|leaf| Self::Legacy(leaf).conditional_view()),
             },
             Self::Legacy(MachineTerm::If {
@@ -646,13 +646,40 @@ impl<'a> MachineOperandView<'a> {
             .map(|(guard, arms)| (guard.native(), arms))
     }
 
+    /// Borrow an already-native operand embedded in a shared root.
+    fn retained_native_input(self) -> Option<&'a MachineTerm> {
+        let Self::Shared(root) = self else {
+            return None;
+        };
+        let KernelTermNode::Legacy(leaf) = root.node() else {
+            return None;
+        };
+        leaf.machine_operand()
+    }
+
+    pub(crate) fn integer_conversion_destination(self) -> Option<MachineIntegerType> {
+        if let Self::Shared(root) = self
+            && let KernelTermNode::IntegerToMachine { destination, .. } = root.node()
+        {
+            return Some(*destination);
+        }
+        let value = match self {
+            Self::Legacy(value) => value,
+            Self::Shared(_) => self.retained_native_input()?,
+        };
+        match value {
+            MachineTerm::IntegerToMachine { destination, .. } => Some(*destination),
+            _ => None,
+        }
+    }
+
     /// Read kind alone does not require a native address compatibility view.
     pub(crate) fn read_kind(self) -> Option<LoadKind> {
         match self {
             Self::Shared(root) => match root.node() {
                 KernelTermNode::MemoryLoad { kind, .. } => Some(*kind),
                 KernelTermNode::Legacy(_) => {
-                    Self::Legacy(root.machine_conversion_leaf()?).read_kind()
+                    Self::Legacy(self.retained_native_input()?).read_kind()
                 }
                 _ => None,
             },
@@ -664,9 +691,7 @@ impl<'a> MachineOperandView<'a> {
     /// Native compatibility view of a selected read. Shared addresses are adapted
     /// once at the read leaf; surrounding arithmetic is never exported.
     pub(crate) fn read(self) -> Option<(&'a SharedMemory, &'a Address, LoadKind)> {
-        if let Self::Shared(root) = self
-            && let Some(value) = root.machine_conversion_leaf()
-        {
+        if let Some(value) = self.retained_native_input() {
             return Self::Legacy(value).read();
         }
 
@@ -709,17 +734,19 @@ impl<'a> MachineOperandView<'a> {
                 return true;
             }
             if ty.format().bits() == 128
-                && let Some((_, _, kind)) = self.read()
+                && let Some(kind) = self.read_kind()
             {
                 return LoadKind::of_type(ty.program_type()) == Some(kind);
             }
             if let Self::Legacy(value) = self {
                 return ty.accepts_cast_operand(value);
             }
-            if let Self::Shared(term) = self
-                && let Some(value) = term.machine_conversion_leaf()
-            {
+            if let Some(value) = self.retained_native_input() {
                 return ty.accepts_cast_operand(value);
+            }
+            if let Some(destination) = self.integer_conversion_destination() {
+                crate::instrumentation::record_deterministic_work(1);
+                return destination == ty;
             }
             if let Some((MachineCastSpelling::Generic, source, destination, operand)) = self.cast()
             {
@@ -747,9 +774,7 @@ impl<'a> MachineOperandView<'a> {
         MachineIntegerType,
         Self,
     )> {
-        if let Self::Shared(root) = self
-            && let Some(value) = root.machine_conversion_leaf()
-        {
+        if let Some(value) = self.retained_native_input() {
             return Self::Legacy(value).cast();
         }
 
@@ -772,9 +797,7 @@ impl<'a> MachineOperandView<'a> {
     }
 
     pub(crate) fn variable(self) -> Option<&'a Variable> {
-        if let Self::Shared(root) = self
-            && let Some(value) = root.machine_conversion_leaf()
-        {
+        if let Some(value) = self.retained_native_input() {
             return Self::Legacy(value).variable();
         }
 
@@ -789,9 +812,7 @@ impl<'a> MachineOperandView<'a> {
     }
 
     pub(crate) fn binary(self) -> Option<(MachineIntegerType, MachineBinaryOp, [Self; 2])> {
-        if let Self::Shared(root) = self
-            && let Some(value) = root.machine_conversion_leaf()
-        {
+        if let Some(value) = self.retained_native_input() {
             return Self::Legacy(value).binary();
         }
 
@@ -819,9 +840,7 @@ impl<'a> MachineOperandView<'a> {
     }
 
     pub(crate) fn unary(self) -> Option<(MachineIntegerType, MachineUnaryOp, Self)> {
-        if let Self::Shared(root) = self
-            && let Some(value) = root.machine_conversion_leaf()
-        {
+        if let Some(value) = self.retained_native_input() {
             return Self::Legacy(value).unary();
         }
 
@@ -888,9 +907,7 @@ impl<'a> MachineOperandView<'a> {
 
     /// Literal payload only, without descending through an operation.
     pub(crate) fn literal(self) -> Option<MachineTerm> {
-        if let Self::Shared(root) = self
-            && let Some(value) = root.machine_conversion_leaf()
-        {
+        if let Some(value) = self.retained_native_input() {
             return Self::Legacy(value).literal();
         }
 

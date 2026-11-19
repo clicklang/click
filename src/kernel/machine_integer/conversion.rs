@@ -315,21 +315,26 @@ pub(crate) fn cast_operands(observed: &IntegerTerm) -> Vec<IntegerTerm> {
 
 /// The Integer operand `z` and format `T` of an observation
 /// `to_integer(to_T(z))` read at `T` itself. One match on the observation's
-/// root; the conversion's operand is the shared node's cached export.
+/// root selects the destination before a caller requests the native Integer operand.
 pub(crate) fn integer_conversion(
     observed: &IntegerTerm,
 ) -> Option<(crate::kernel::SharedIntegerTerm, MachineIntegerType)> {
     let IntegerTerm::Machine(machine) = observed else {
         return None;
     };
-    let term = match machine.operand_view() {
+    let operand = machine.operand_view();
+    let destination = operand.integer_conversion_destination()?;
+    if destination != machine.ty() {
+        return None;
+    }
+    let term = match operand {
         crate::kernel::MachineOperandView::Shared(term) => term.machine_conversion_leaf()?,
         crate::kernel::MachineOperandView::Legacy(term) => term,
     };
-    let MachineTerm::IntegerToMachine { value, destination } = term else {
-        return None;
+    let MachineTerm::IntegerToMachine { value, .. } = term else {
+        unreachable!("selected Integer conversion");
     };
-    (*destination == machine.ty()).then(|| (value.clone(), *destination))
+    Some((value.clone(), destination))
 }
 
 /// The word through which `observed`, at a format of more than 16 bits,
@@ -730,6 +735,30 @@ fn cast_shared_operand(
 #[cfg(test)]
 mod shared_operand_tests {
     use super::*;
+
+    #[test]
+    fn inspecting_an_integer_conversion_does_not_prepare_a_word() {
+        use crate::kernel::{KernelTerm, KernelType, MachineOperandView, Variable};
+        let _session = crate::kernel::VerificationSession::enter();
+        let operand = KernelTerm::variable(KernelType::Integer, Variable(992_596));
+        let root = KernelTerm::integer_to_machine(MachineIntegerType::Int64, operand).unwrap();
+        let view = MachineOperandView::Shared(&root);
+        assert_eq!(
+            view.integer_conversion_destination(),
+            Some(MachineIntegerType::Int64)
+        );
+        assert!(view.accepts_cast_operand(MachineIntegerType::Int64));
+        assert!(!view.accepts_cast_operand(MachineIntegerType::UInt64));
+        assert!(view.variable().is_none());
+        assert!(view.literal().is_none());
+        assert!(view.read().is_none());
+        assert!(view.cast().is_none());
+        assert!(!root.has_cached_machine_leaf());
+        let observed = IntegerTerm::Machine(view.retain(MachineIntegerType::Int64));
+        let (integer, destination) = integer_conversion(&observed).unwrap();
+        assert_eq!(integer.as_ref(), &IntegerTerm::Variable(Variable(992_596)));
+        assert_eq!(destination, MachineIntegerType::Int64);
+    }
 
     fn legacy_cast_reference(
         observed: &IntegerTerm,
