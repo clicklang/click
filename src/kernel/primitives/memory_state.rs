@@ -48,6 +48,14 @@ fn write_havoc_string(identity: &mut String, tag: &str, value: &str) {
 
 fn write_havoc_block(identity: &mut String, block: AddressBase) {
     match block {
+        AddressBase::SliceLength { slice, instance } => {
+            if let Some(parameter) = slice.parameter() {
+                write_havoc_string(identity, "bslice", parameter);
+            } else if let Some(local) = slice.local() {
+                write_havoc_string(identity, "bslocal", &local.canonical().to_string());
+            }
+            let _ = write!(identity, "{instance:?};");
+        }
         AddressBase::ReferenceCarrier { referent, instance } => {
             identity.push_str("bref;");
             write_havoc_block(
@@ -1351,7 +1359,8 @@ impl LocalEnvironment {
                 .and_then(|entries| entries.last())
                 .map(|(_, binding)| binding.clone())
                 .unwrap_or_else(|| name.clone()),
-            BindingName::ReferenceCarrier(_)
+            BindingName::SliceLength(_)
+            | BindingName::ReferenceCarrier(_)
             | BindingName::Local(_)
             | BindingName::Static(_)
             | BindingName::ContractResult
@@ -1366,7 +1375,8 @@ impl LocalEnvironment {
             BindingName::Local(id) => id.spelling()?,
             BindingName::Static(id) => id.spelling(),
             BindingName::Named(name) => name,
-            BindingName::ReferenceCarrier(_)
+            BindingName::SliceLength(_)
+            | BindingName::ReferenceCarrier(_)
             | BindingName::ContractResult
             | BindingName::ContractException
             | BindingName::Generated(_) => return None,
@@ -2773,12 +2783,10 @@ pub struct CallKeptRanges {
     residual: Option<ResourceContext>,
     identity: std::sync::Arc<KeptRangeSet>,
     premises: Vec<(ConditionTerm, bool)>,
-    /// The definitions, sorted by name, of the residual's composite families
-    /// whose bodies are argument-direct. Their composites are not opened at
-    /// the call: the ranges a question about one address needs are opened
-    /// from the residual's composites whose arguments can spell it
-    /// ([`Self::range_holding`]), and the identity names the composites.
-    direct: Option<std::sync::Arc<Vec<CompositeResourceDefinition>>>,
+    /// Shared definitions, sorted by name. A query first selects a residual
+    /// composite by address, then looks up its definition to open an
+    /// argument-direct body ([`Self::range_holding`]).
+    direct: Option<std::sync::Arc<[CompositeResourceDefinition]>>,
     /// The caller's composition before transferring call inputs. Its flat
     /// owners exclude unchanged composite owners of the same bytes.
     caller_before_transfer: Option<ResourceContext>,
@@ -2921,7 +2929,7 @@ impl CallKeptRanges {
     pub(in crate::kernel) fn new(
         ranges: ResourceContext,
         premises: Vec<(ConditionTerm, bool)>,
-        direct: Option<std::sync::Arc<Vec<CompositeResourceDefinition>>>,
+        direct: Option<std::sync::Arc<[CompositeResourceDefinition]>>,
     ) -> Self {
         let identity = intern_kept_range_set(
             ranges.flat_owned_memory_ranges().clone(),
@@ -3000,9 +3008,13 @@ impl CallKeptRanges {
         let Ok(index) = direct.binary_search_by(|definition| definition.name().cmp(name)) else {
             return Vec::new();
         };
+        let definition = &direct[index];
+        if !definition.has_argument_direct_body() {
+            return Vec::new();
+        }
         crate::kernel::functions::argument_direct_composite_ranges(
             fact,
-            std::slice::from_ref(&direct[index]),
+            std::slice::from_ref(definition),
         )
     }
 
@@ -7873,14 +7885,18 @@ impl SymbolicMemory {
         let ordered = memory
             .cells
             .ordered_store_candidates(&normalized_pointer, bytes, &candidates, assumptions)
+            .map(|cells| (cells, None))
             .or_else(|| {
-                memory.cells.parameter_store_candidates(
-                    &normalized_pointer,
-                    bytes,
-                    &candidates,
-                    &gap_kept,
-                    assumptions,
-                )
+                memory
+                    .cells
+                    .parameter_store_candidates(
+                        &normalized_pointer,
+                        bytes,
+                        &candidates,
+                        &gap_kept,
+                        assumptions,
+                    )
+                    .map(|(cells, runs)| (cells, Some(runs)))
             })
             .or_else(|| {
                 // A pointer value reaches no local whose address is never
@@ -7895,14 +7911,14 @@ impl SymbolicMemory {
                                 &alias.base,
                             )
                         }))
-                .then(|| memory.cells.pointer_reachable_cells())
+                .then(|| (memory.cells.pointer_reachable_cells(), None))
             });
-        let scope = match ordered.as_deref() {
-            Some(selected) => ForgetScope::Ordered {
+        let scope = match ordered.as_ref() {
+            Some((selected, runs)) => ForgetScope::Ordered {
                 candidates: &candidates,
                 selected,
                 cells_kept: &gap_kept,
-                runs: None,
+                runs: runs.as_deref(),
             },
             None => ForgetScope::Candidates {
                 candidates: &candidates,
@@ -7936,6 +7952,10 @@ impl SymbolicMemory {
     pub(in crate::kernel) fn value_parameter_pointer(name: impl Into<BindingName>) -> Address {
         let name = name.into();
         let block = match name {
+            BindingName::SliceLength(length) => AddressBase::SliceLength {
+                slice: length,
+                instance: LocalStorageInstance::ValueParameter,
+            },
             BindingName::ReferenceCarrier(referent) => AddressBase::ReferenceCarrier {
                 referent,
                 instance: LocalStorageInstance::ValueParameter,
@@ -7961,6 +7981,10 @@ impl SymbolicMemory {
     pub(in crate::kernel) fn local_pointer(name: impl Into<BindingName>) -> Address {
         let name = name.into();
         let block = match name {
+            BindingName::SliceLength(length) => AddressBase::SliceLength {
+                slice: length,
+                instance: LocalStorageInstance::Implicit,
+            },
             BindingName::ReferenceCarrier(referent) => AddressBase::ReferenceCarrier {
                 referent,
                 instance: LocalStorageInstance::Implicit,
@@ -7987,6 +8011,10 @@ impl SymbolicMemory {
     ) -> Address {
         let name = name.into();
         let block = match name {
+            BindingName::SliceLength(length) => AddressBase::SliceLength {
+                slice: length,
+                instance: LocalStorageInstance::Lifetime(lifetime),
+            },
             BindingName::ReferenceCarrier(referent) => AddressBase::ReferenceCarrier {
                 referent,
                 instance: LocalStorageInstance::Lifetime(lifetime),
@@ -8013,7 +8041,8 @@ impl SymbolicMemory {
         let block = match name.into() {
             BindingName::Static(binding) => AddressBase::StaticObject { binding },
             BindingName::Named(name) => format!("global:{name}").into(),
-            BindingName::ReferenceCarrier(_)
+            BindingName::SliceLength(_)
+            | BindingName::ReferenceCarrier(_)
             | BindingName::Local(_)
             | BindingName::ContractResult
             | BindingName::ContractException
@@ -8041,7 +8070,8 @@ impl SymbolicMemory {
         let block = match name.into() {
             BindingName::Static(binding) => AddressBase::StaticObject { binding },
             BindingName::Named(name) => format!("static:{function}:{name}").into(),
-            BindingName::ReferenceCarrier(_)
+            BindingName::SliceLength(_)
+            | BindingName::ReferenceCarrier(_)
             | BindingName::Local(_)
             | BindingName::ContractResult
             | BindingName::ContractException
@@ -8068,6 +8098,13 @@ impl SymbolicMemory {
         name: impl Into<BindingName>,
     ) -> Address {
         match name.into() {
+            BindingName::SliceLength(length) => Address {
+                base: AddressBase::SliceLength {
+                    slice: length,
+                    instance: LocalStorageInstance::Frame(frame),
+                },
+                offset: AddressOffset::Constant(0),
+            },
             BindingName::ReferenceCarrier(referent) => Address {
                 base: AddressBase::ReferenceCarrier {
                     referent,
@@ -10269,12 +10306,23 @@ impl ExecutionState {
     /// partition together. Resource recovery has already constructed the new
     /// frame, so there is no old-frame projection to invalidate here.
     pub(in crate::kernel) fn with_call_return(
-        mut self,
+        self,
         callee: &Self,
         resources: ResourceContext,
     ) -> Self {
-        let base = callee.program_point();
-        self.memory = callee.memory.clone();
+        self.with_memory_and_resources_continuing(callee, callee.memory.clone(), resources)
+    }
+
+    /// Continue from the producer's path with the memory and resource
+    /// partition it has already prepared for this outcome.
+    pub(in crate::kernel) fn with_memory_and_resources_continuing(
+        mut self,
+        from: &Self,
+        memory: SymbolicMemory,
+        resources: ResourceContext,
+    ) -> Self {
+        let base = from.program_point();
+        self.memory = memory;
         self.record_memory_continuation(&base);
         self.with_resource_context(resources)
     }
@@ -10622,12 +10670,24 @@ impl ExecutionState {
     /// address-backed cells. Ordinary function frames keep their own local
     /// environment, but inline bodies execute with a separate parameter
     /// environment while retaining the caller's memory.
-    pub(in crate::kernel) fn sync_scalar_locals_from_memory(&mut self, memory: &SymbolicMemory) {
-        let updates = self
-            .locals
-            .bindings
-            .iter()
-            .filter_map(|(name, binding)| {
+    /// The cell delta selects exact local slots. A changed run selects the
+    /// slots indexed under its block without enumerating the run's elements.
+    /// Certified stores also refresh a slot invalidated by a partial write.
+    pub(in crate::kernel) fn sync_changed_scalar_locals(&mut self, before: &SymbolicMemory) {
+        let cells = &self.memory.cells;
+        let mut names = cells
+            .concrete()
+            .diff(before.cells.concrete())
+            .filter_map(|change| self.locals.name_for_slot(change.key()))
+            .collect::<std::collections::BTreeSet<_>>();
+        for (old, new) in cells.run_diff(&before.cells) {
+            let run = old.or(new).expect("changed run");
+            names.extend(self.locals.names_with_slot_in(&run.base().base));
+        }
+        let updates = names
+            .into_iter()
+            .filter_map(|name| {
+                let binding = self.locals.binding(name)?;
                 let (program_type, slot, volatile, pointee_volatile, constant, pointee_constant) =
                     match binding {
                         LocalBinding::Object {
@@ -10662,13 +10722,12 @@ impl ExecutionState {
                 // A store through a pointer to the other signedness of the
                 // object's width wrote the same bits; the local reads them in
                 // its own type (`ProgramType::read_cell`).
-                memory
-                    .known_value(&slot)
-                    .and_then(|value| {
-                        program_type.read_cell(&value).or_else(|| {
-                            (!matches!(binding, LocalBinding::UninitializedObject { .. }))
-                                .then_some(value)
-                        })
+                let value = cells.get(&slot)?;
+                program_type
+                    .read_cell(&value)
+                    .or_else(|| {
+                        (!matches!(binding, LocalBinding::UninitializedObject { .. }))
+                            .then_some(value)
                     })
                     .map(|value| {
                         (
@@ -10908,11 +10967,15 @@ pub(crate) fn withdraw_never_address_taken_locals(taken: &BTreeSet<BindingName>)
     changed
 }
 
-/// The declaration a storage block belongs to. Typed C blocks carry this
-/// directly; non-C legacy blocks retain their original prefix grammar.
+/// The declaration a storage block belongs to. Typed blocks carry this
+/// directly; legacy blocks retain their original prefix grammar.
 fn local_block_object_name(block: &AddressBase) -> Option<BindingName> {
-    if let AddressBase::AutomaticLocal { binding, .. } = block {
-        return Some(binding.clone().into());
+    match block {
+        AddressBase::AutomaticLocal { binding, .. } => return Some(binding.clone().into()),
+        AddressBase::SliceLength { slice, .. } => {
+            return Some(BindingName::SliceLength(slice.clone()));
+        }
+        _ => {}
     }
     let rest = block.strip_prefix("local:")?;
     match rest.split_once(':') {

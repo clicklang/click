@@ -35,4 +35,19 @@ The import selects `array_list_length` as its only function root. This makes
 Click check the original accessor and the list declaration while leaving the
 unrelated allocator body outside the dependency closure.
 
+```sh
+integrations/json-c/verify.sh json-c array-index
+```
+
+The index proofs share an import lock with `array_list_get_idx` as its only
+function root. Two sidecars cover the cases for the `size_t` index.
+
+- [Out of range](array-index-out-of-range.click). When the index is at least
+  the stored length, the function returns `NULL`. The proof views only
+  `arr->length`.
+- [In range](array-index-in-range.click). When the index is less than the
+  stored length, the function returns the pointer in the selected slot.
+  The proof views the length, the backing-array pointer field, and that one
+  slot. Ownership of the object the pointer refers to is unnecessary.
+
 [release]: https://github.com/json-c/json-c/tree/05180c1fa385eb39274cf0a17223da1b82832773

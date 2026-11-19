@@ -203,13 +203,9 @@ The 6 `operation` records are not 6 independent slow walks:
 | Legacy explicit transport checking | 3 | `certified_fact_transport_reaches`, `check_fixed_state_fact_transport_using_facts_inner`, and `apply_pure_transport_using` call atomic derivation. Confirmed search access from the explicit transport route; migrate/retire under T1–T5, not a new independent bug per record. |
 | Definition validation | 2 | `symbolic_segment_covers_index` and `symbolic_segment_covers_range` join the mixed `segment_contains_pointer` record in one declaration-validation concern. There is no ordinary user obligation/expansion boundary established for these checks. |
 
-The four kernel bridges and their 17 callers map to three roadmap groups:
-L1 has loan aliases and loan access; R2 has ownership candidates;
-C1 has call framing.
-These three candidate groups cover four bridges; they are not four measured
-defects. R1 is a separate reachability question. Their source
-traversals remain candidates until complete-operation red curves fix the input
-and grow irrelevant state. See the [operation ledger](../roadmap/smart-tactics.md).
+At this audit baseline, four kernel bridges mapped to three groups: loan
+aliases and access (L1), ownership candidates (R2), and call framing (C1). The
+[operation ledger](../roadmap/smart-tactics.md) tracks the active work.
 
 ## Evidence and ownership
 
@@ -264,10 +260,9 @@ Removing optional call-partition inference exposed `call_frame` through
 opening removed, frames without owned composites now construct their kept set
 directly; that route no longer enters `ProofSearch::call_frame`. Composite
 families still do. Re-probe complete preparation before treating the old
-window's first-failure entry as current. The local signedness fixture still reaches `loan_access`
-through `memory_write_permission_outcome_for_local`. These probe results do not
-justify a whole-preparation guard or a new exception. The temporary probe is
-not retained in the source.
+window's first-failure entry as current. At the audit baseline, the local
+signedness fixture reached `loan_access` through
+`memory_write_permission_outcome_for_local`. The temporary probe was removed.
 
 Call entry-borrow restoration has a separate discovery guard. It restores
 retained entry identities to their residual frame without validating that
@@ -289,13 +284,10 @@ claimed. The explicit proof can use the exact partition rule in `known()`
 or ordinary separation laws. Driver-owned implicit solve remains outside the
 operation guard.
 
-Empty-loan and empty-range decisions now precede the `loan_access` discovery
-entry. Pointee scalar stores generate a separation obligation from retained loan
-backing; the driver solves it with the same `solve` used explicitly. Conjunction
-planning applies existing separation laws and adds four search-only inventory
-records. Local assignments and other legacy callers still reach `loan_access`
-with active loans. The original reproduction therefore does not establish that
-these remaining calls are all expensive; measure and classify each caller.
+The loan-access crossing above is historical. Local assignments and the
+remaining write routes have migrated to retained loan evidence. The legacy
+guard now has only test callers. Re-probe complete preparation for other
+crossings before adding a whole-operation guard.
 
 These guards establish absence of registered discovery on their exercised
 routes, not fresh complete-operation scaling curves or a global fast-proof

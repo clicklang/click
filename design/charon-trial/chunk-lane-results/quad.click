@@ -60,7 +60,7 @@ fn quad::walk(bytes: &[u8]) -> u32 {
                 mark taken;
                 step_until(assignment(chunk, 0)); step(); step();
                 have chunk == bytes + (16u64 - at(taken, iter.v.len()));
-                have chunk_len == 4u64;
+                have chunk.len() == 4u64;
                 mark before;
                 step_until(assignment(_byte, 0));
                 have lanes.lanes[0] == at(before, chunk[0]);

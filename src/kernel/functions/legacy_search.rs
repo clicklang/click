@@ -39,7 +39,7 @@ impl crate::kernel::search::ProofSearch<ProgramFunction> {
             CallKeptRanges::new(
                 ResourceContext::new_with_equalities(assumptions),
                 premises,
-                (!direct.is_empty()).then(|| std::sync::Arc::new(direct)),
+                (!direct.is_empty()).then(|| direct.into()),
             ),
             assumptions,
         )

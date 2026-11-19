@@ -26,7 +26,7 @@ impl adler2::Adler32 {
      // Neither chunk iterator has any bytes available to yield.
      step_until(loop(0));
      have loop(0).iter.v.len() == 0u64;
-     have remainder_chunk_len == 0u64;
+     have remainder_chunk.len() == 0u64;
      step_until(loop(2));
      have loop(2).iter.v.len() == 0u64;
      step_until(assignment(b, 3));

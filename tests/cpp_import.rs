@@ -4189,6 +4189,40 @@ fn contains_local_aggregate_pipeline(statement: &ProgramStatement, local: &str) 
 }
 
 #[test]
+#[ignore = "nightly: two live Clang exports and a prepared proof"]
+fn cpp_function_root_checks_an_unsupported_sibling_only_when_called() {
+    let source = r#"int sibling() noexcept {
+    goto done;
+done:
+    return 42;
+}
+int selected() noexcept { return 42; }
+"#;
+    let project = Project::with_fixture("roots.cpp", "selected", source);
+    let proof = r#"verifying "roots.cpp";
+int32 selected() { ensures result == 42; }
+"#;
+    let sidecar = project.directory.join("roots.click");
+    fs::write(&sidecar, proof).unwrap();
+
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let [root] = import.export().functions.as_slice() else {
+        panic!("expected one selected function");
+    };
+    assert_eq!(root.name, "selected");
+    assert!(import.export().reachable_functions.is_empty());
+    let click_project = read_click_project(&sidecar, proof).unwrap();
+    verify_program_prepared_project(&click_project, &import).unwrap();
+
+    let caller = source.replace("return 42; }", "return sibling(); }");
+    fs::write(project.source(), caller).unwrap();
+    let error = refresh_import(&project.config()).expect_err("a called sibling must be exported");
+    assert!(error.contains("roots.cpp:2:5"), "{error}");
+    assert!(error.contains("unsupported statement"), "{error}");
+}
+
+#[test]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn direct_cpp_call_exports_reachable_definition_and_verifies_modularly_offline() {
     let project = Project::direct_call();

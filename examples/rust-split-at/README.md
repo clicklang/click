@@ -6,7 +6,7 @@ byte values read through each result, for variable split points. The split
 copies metadata only; reads retain the original input's byte views.
 
 The compiler-resolved `SliceSplit` operation evaluates the receiver before the
-midpoint, evaluates the midpoint once, and checks `mid <= bytes_len` at full
+midpoint, evaluates the midpoint once, and checks `mid <= bytes.len()` at full
 `usize` width. Pointer formation additionally requires `mid <= INT32_MAX` in
 the current memory model. Lengths remain 64-bit. Endpoint and empty splits
 are legal; an indexed read still requires a nonempty result.

@@ -133,6 +133,14 @@ no other source. `click import lock` runs the pinned Charon named by the
 and records each crate file's digest so that a changed file is refused by name.
 Verification needs neither Charon nor `CLICK_CHARON`.
 
+The Rust compiler still checks the crate. Click lowers the configured roots
+and their reachable dependencies. An unsupported body in an unrelated
+same-file function can stay outside this slice. A call to that function
+brings its body into the slice and reports the unsupported construct at
+its source location, as checked by
+`charon_function_root_checks_an_unsupported_sibling_only_when_called` in
+`tests/rust_import.rs`.
+
 A C++ unit gives `exceptions` and `rtti` (both default `false`) and `args`, the
 Clang arguments of its build, which Click writes into a compilation database of
 its own at lock time; the standard is C++20 and the target
@@ -290,9 +298,16 @@ assembly are silently deleted to make an import pass.
 The preliminary C++ frontend boundary accepts one C++20 translation unit
 selected by exactly one entry in a JSON compilation database, with one
 selected free function or ordinary method and the uniquely named definitions
-reachable from its supported direct call statements. In the baseline profile,
-exceptions are disabled and every selected or reachable function must declare
-`noexcept`. A second, deliberately smaller profile may retain the compilation
+reachable from its supported direct call statements.
+An unrelated same-file body can use statements outside the supported slice.
+A call from a selected function brings the callee into the exporter, which
+reports unsupported statements at their source location. See
+`cpp_function_root_checks_an_unsupported_sibling_only_when_called` in
+`tests/cpp_import.rs`.
+
+In the baseline profile, exceptions are disabled and every selected or
+reachable function must declare `noexcept`. A second, deliberately smaller
+profile may retain the compilation
 command's enabled exception mode: free functions and ordinary methods may omit
 `noexcept`, but the closed reachable graph must contain only Click's checked
 normal-returning operations. This profile permits borrowed trivial records,

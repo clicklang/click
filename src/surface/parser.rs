@@ -184,6 +184,8 @@ pub(in crate::surface) struct FunctionLocals {
 #[derive(Clone, Default)]
 pub(in crate::surface) struct SourceBindingIndex {
     declarations: BTreeMap<crate::kernel::LocalBindingId, SourceBindingInfo>,
+    rust_slice_locals:
+        BTreeMap<String, std::sync::Arc<BTreeMap<String, crate::kernel::BindingName>>>,
     statics: BTreeMap<crate::kernel::StaticBindingId, SourceBindingInfo>,
     static_files: BTreeSet<Option<String>>,
     owners: BTreeMap<String, BTreeSet<Option<String>>>,
@@ -197,6 +199,7 @@ impl SourceBindingIndex {
             crate::kernel::BindingName::Local(id) => self.declarations.get(id),
             crate::kernel::BindingName::Static(id) => self.statics.get(id),
             crate::kernel::BindingName::Named(_)
+            | crate::kernel::BindingName::SliceLength(_)
             | crate::kernel::BindingName::ContractResult
             | crate::kernel::BindingName::ContractException
             | crate::kernel::BindingName::Generated(_) => None,
@@ -961,9 +964,11 @@ struct Parser {
     /// declaration, so it keeps the C type exactly, `long` apart from
     /// `long long`; a specification type elsewhere names a representation.
     exact_long_rank: bool,
-    /// The slice parameters of the Rust signature being parsed. Each is one
-    /// name in the sidecar and a pointer with a `name_len` length underneath.
+    /// Rust slice parameters of the current signature, which have a pointer
+    /// and a typed length component.
     rust_slice_params: BTreeSet<String>,
+    /// Slice local length bindings by place in the selected Rust function.
+    rust_slice_locals: std::sync::Arc<BTreeMap<String, crate::kernel::BindingName>>,
     /// The element type of each slice parameter read so far, by name: the
     /// latest parameter of that name, which is the current declaration's.
     rust_slice_elements: BinderMap<InterfaceType>,
@@ -1333,9 +1338,17 @@ impl ProgramLayouts {
         // Declarations normally share one owner. Retain the typed owner so a
         // long function/source spelling is copied once, not per temporary.
         let mut last_owner = None;
+        let mut slice_locals = BTreeMap::new();
         let mut record = |binding: &crate::kernel::BindingName,
                           site: Option<&syntax::CSite>,
                           materialized: bool| {
+            if let Some(local) = binding.slice_length_local() {
+                slice_locals.insert(
+                    local.spelling().expect("Rust slice place").to_owned(),
+                    binding.clone(),
+                );
+                return;
+            }
             let Some(id) = binding.local_id() else {
                 return;
             };
@@ -1476,6 +1489,12 @@ impl ProgramLayouts {
                     _ => {}
                 }
             }
+        }
+        if !slice_locals.is_empty() {
+            index.rust_slice_locals.insert(
+                function.source_name().to_owned(),
+                std::sync::Arc::new(slice_locals),
+            );
         }
         // A lowering that places declarations at source statements, as
         // Rust's does a repeated name's, names each by its statement.
@@ -1974,6 +1993,7 @@ impl Parser {
             int64_t_rank: LongRank::Long,
             exact_long_rank: false,
             rust_slice_params: BTreeSet::new(),
+            rust_slice_locals: Default::default(),
             rust_slice_elements: BinderMap::new(),
             rust_vec_params: BTreeMap::new(),
             rust_loop_iterators: Vec::new(),
@@ -2290,15 +2310,18 @@ impl Parser {
                         .to_string();
                     spread.push(argument);
                     spread.push(ContractExpression::ProgramExpression(
-                        ProgramExpression::Variable(format!("{slice}_len").into()),
+                        ProgramExpression::Variable(crate::kernel::BindingName::slice_length(
+                            &slice,
+                        )),
                     ));
                 }
                 ContractExpression::ProgramExpression(ProgramExpression::Variable(
                     crate::kernel::BindingName::Named(slice),
                 )) if self.rust_slice_params.contains(&slice) => {
-                    let length = ContractExpression::ProgramExpression(
-                        ProgramExpression::Variable(format!("{slice}_len").into()),
-                    );
+                    let length =
+                        ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                            crate::kernel::BindingName::slice_length(&slice),
+                        ));
                     spread.push(ContractExpression::ProgramExpression(
                         ProgramExpression::Variable(slice.into()),
                     ));
@@ -4341,9 +4364,7 @@ impl Parser {
                     && self.verifies_rust()
                     && let Some(element) = self.parse_rust_slice_type()?
                 {
-                    // `bytes: &[T]` is a pointer and a `bytes_len` length, as
-                    // in a `fn` signature.
-                    let length = format!("{name}_len");
+                    let length = FunctionParameter::rust_slice_length(&name);
                     if let Some(slices) = &mut self.pending_slice_params {
                         slices.push(name.clone());
                     }
@@ -4352,15 +4373,7 @@ impl Parser {
                     }
                     self.implied_library_modules.insert(SLICE_MODULE);
                     parameters.push(self.parse_parameter_array_suffix(name, element)?.parameter);
-                    parameters.push(FunctionParameter {
-                        click_type: ClickType::Program(InterfaceType::UInt64(LongRank::Long)),
-                        name: length,
-                        struct_name: None,
-                        function_pointer_signature: None,
-                        constant: false,
-                        pointee_constant: false,
-                        reference: false,
-                    });
+                    parameters.push(length);
                 } else {
                     let (click_type, parsed_c_type) = self.parse_click_type()?;
                     if click_type == ClickType::Proposition
@@ -4377,6 +4390,7 @@ impl Parser {
                                 self.parse_abstract_function_pointer_type(parsed_type)?;
                             ParsedParameter {
                                 parameter: FunctionParameter {
+                                    slice_length: None,
                                     click_type: ClickType::Program(interface_type),
                                     name,
                                     struct_name: None,
@@ -4395,6 +4409,7 @@ impl Parser {
                     } else {
                         ParsedParameter {
                             parameter: FunctionParameter {
+                                slice_length: None,
                                 click_type,
                                 name,
                                 struct_name: None,
@@ -5079,6 +5094,14 @@ impl Parser {
             .get(&table_name)
             .map(|locals| locals.loop_iterators.clone())
             .unwrap_or_default();
+        let previous_slice_locals = std::mem::replace(
+            &mut self.rust_slice_locals,
+            self.local_bindings
+                .rust_slice_locals
+                .get(&table_name)
+                .cloned()
+                .unwrap_or_default(),
+        );
         let signature = signature.with_rust_loop_iterators(&loop_iterators);
         let previous_loop_iterators =
             std::mem::replace(&mut self.rust_loop_iterators, loop_iterators);
@@ -5257,6 +5280,7 @@ impl Parser {
                                 ))
                             })?;
                         self.contract_value_parameters.push(FunctionParameter {
+                            slice_length: None,
                             click_type: ClickType::Program(interface_type),
                             name: binding.name.clone(),
                             struct_name: None,
@@ -5704,6 +5728,7 @@ impl Parser {
         self.names.program_object_names = previous_c_object_names;
         self.hosted_stdout = previous_hosted_stdout;
         self.rust_loop_iterators = previous_loop_iterators;
+        self.rust_slice_locals = previous_slice_locals;
         let parameter_struct_casts = std::mem::replace(
             &mut self.names.parameter_struct_casts,
             previous_parameter_struct_casts,
@@ -6288,11 +6313,16 @@ impl Parser {
         Ok(())
     }
 
-    /// A C variable, or the length a slice parameter's `name.len()` denotes.
+    /// A program variable, or the length a slice's `name.len()` denotes.
     #[inline(never)]
     fn c_variable_expression(&mut self, name: String) -> Result<ContractExpression, ClickError> {
         if let Some(expression) = self.take_rust_iterator_method(&name, None)? {
             return Ok(expression);
+        }
+        if let Some(length) = self.take_rust_slice_len(&name) {
+            return Ok(ContractExpression::ProgramExpression(
+                ProgramExpression::Variable(length),
+            ));
         }
         self.refuse_unknown_loop_value(&name)?;
         if let Some(expression) = self.take_rust_vec_method(&name)? {
@@ -6306,9 +6336,8 @@ impl Parser {
                 lowered: ProgramExpression::Value(value.clone()),
             });
         }
-        let name = self.take_rust_slice_len(&name).unwrap_or(name);
         Ok(ContractExpression::ProgramExpression(
-            ProgramExpression::Variable((name).into()),
+            ProgramExpression::Variable(name.into()),
         ))
     }
 
@@ -6339,6 +6368,7 @@ impl Parser {
             if let Some((interface_type, function_pointer_signature)) = callable {
                 let name = self.expect_ident("parameter name")?;
                 parameters.push(FunctionParameter {
+                    slice_length: None,
                     click_type: ClickType::Program(interface_type),
                     name,
                     struct_name: None,
@@ -6408,6 +6438,7 @@ impl Parser {
                     self.parse_function_pointer_declarator(parsed_type.clone())?;
                 ParsedParameter {
                     parameter: FunctionParameter {
+                        slice_length: None,
                         click_type: ClickType::Program(interface_type),
                         name,
                         struct_name: None,
@@ -7280,6 +7311,7 @@ impl Parser {
             };
             return Ok(ParsedParameter {
                 parameter: FunctionParameter {
+                    slice_length: None,
                     click_type: ClickType::Program(interface_type),
                     // The parameter is the pointer that carries the
                     // reference; the written name is the referent.
@@ -7307,6 +7339,7 @@ impl Parser {
             self.expect(Token::RBracket)?;
             return Ok(ParsedParameter {
                 parameter: FunctionParameter {
+                    slice_length: None,
                     click_type: ClickType::Program(InterfaceType::Int32Pointer),
                     name,
                     struct_name: struct_name.clone(),
@@ -7370,6 +7403,7 @@ impl Parser {
         let declared_bytes = length.and_then(|length| length.checked_mul(element_width));
         Ok(ParsedParameter {
             parameter: FunctionParameter {
+                slice_length: None,
                 click_type: ClickType::Program(pointer_type),
                 name,
                 struct_name: None,
@@ -9787,7 +9821,7 @@ impl Parser {
             arguments: vec![
                 expression.clone(),
                 ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                    format!("{parameter}_len").into(),
+                    crate::kernel::BindingName::slice_length(parameter),
                 )),
             ],
         })
@@ -13164,7 +13198,7 @@ impl Parser {
                 && self.rust_slice_params.contains(name)
             {
                 let length = ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                    format!("{name}_len").into(),
+                    crate::kernel::BindingName::slice_length(&name),
                 ));
                 let end_expression = length;
                 let end = contract_expression_as_program_expression(&end_expression)
@@ -13795,7 +13829,8 @@ impl Parser {
             crate::kernel::BindingName::ReferenceCarrier(referent) => {
                 self.binding_struct_name(referent)
             }
-            crate::kernel::BindingName::ContractException => None,
+            crate::kernel::BindingName::ContractException
+            | crate::kernel::BindingName::SliceLength(_) => None,
             crate::kernel::BindingName::Generated(id) => match self.let_operands.types.get(id) {
                 Some(ClickType::CObjectPointer { struct_name, .. }) => Some(struct_name),
                 _ => None,
@@ -13829,6 +13864,7 @@ impl Parser {
         match binding {
             crate::kernel::BindingName::ReferenceCarrier(_) => false,
             crate::kernel::BindingName::ContractException
+            | crate::kernel::BindingName::SliceLength(_)
             | crate::kernel::BindingName::Generated(_) => false,
             crate::kernel::BindingName::ContractResult => {
                 self.names.aggregate_objects.contains_key("result")
@@ -17111,9 +17147,11 @@ impl Parser {
                 })
             }
             Some(Token::Ident(name)) => {
+                if let Some(length) = self.take_rust_slice_len(&name) {
+                    return Ok(CExpression::Variable(length));
+                }
                 self.refuse_unknown_loop_value(&name)?;
-                let name = self.take_rust_slice_len(&name).unwrap_or(name);
-                Ok(CExpression::Variable((name).into()))
+                Ok(CExpression::Variable(name.into()))
             }
             Some(Token::RustInteger(literal)) => literal.program_expression(false).map_err(|message| self.error(message)),
             Some(Token::Number(value)) => Ok(CExpression::Int32Literal(value)),

@@ -864,7 +864,7 @@ impl FunctionContractInterface {
             resource_derived_frame_mixed: false,
             contract_claims: Vec::new(),
             opaque_contract_supported: true,
-            composite_resource_definitions: Vec::new(),
+            composite_resource_definitions: Default::default(),
             composite_definitions_need_entry_cases: false,
             ordinary_abstract_families: Vec::new(),
             predicate_unfoldings: Vec::new(),
@@ -1529,7 +1529,7 @@ impl ProgramFunction {
                     .iter()
                     .any(|clause| clause.guard().is_some())
         });
-        interface.composite_resource_definitions = definitions;
+        interface.composite_resource_definitions = definitions.into();
         let rule =
             super::super::functions::SummaryResourceTransferRule::compile(&self.contract_interface);
         Arc::make_mut(&mut self.contract_interface).resource_transfer_rule = Arc::new(rule);

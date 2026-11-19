@@ -236,7 +236,7 @@ impl Context<'_> {
                             constant,
                         ),
                     ),
-                    program_assign(self.binding(&length), variable(&fields.size)),
+                    program_assign(length, variable(&fields.size)),
                 );
             }
             let some = program_seq(some, fields.advance());

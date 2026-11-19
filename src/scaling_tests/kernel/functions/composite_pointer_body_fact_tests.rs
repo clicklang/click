@@ -409,7 +409,7 @@ fn numeric_resource_facts_do_not_repeat_the_canonical_read_walk() {
             crate::kernel::primitives::CallKeptRanges::new(
                 ResourceContext::new(),
                 vec![],
-                Some(std::sync::Arc::new(vec![definition])),
+                Some([definition].into()),
             ),
             &context,
         );

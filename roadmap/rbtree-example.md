@@ -6,22 +6,52 @@ Soundness: not soundness. This is example delivery. The soundness defects
 found along the way are fixed and listed in the package table (rows 31, 41
 and 59).
 
-Renamed from `recursive-structure-models.md` on 2026-09-13 and collapsed
-from its 1600-line journal to the state, the decisions, and the remaining
-work. The models, the two syntax extensions (loop binders `owns name:
-res(args);`, keyword-free `decreases name;`), decision D7's single
-publication point, and packages A1 through A28, T1 through T8, S1, B1
-through B3, C1, C1b, C2, C2b, C2c, and C4's replacement half are landed.
-What remains is finishing the specific example: the verbatim `__rb_insert`,
-the traversals, erase, the augmented callbacks, and attaching the sidecars
-to the pinned source. That work is numbered as
-[chunks 1 to 24](#remaining-work-chunks-1-to-24), one pull request each. The
-full history is in git: `git log --follow roadmap/rbtree-example.md`.
+The launch scope covers the unchanged pinned upstream implementation and
+its public inline helpers. Click's recursive models track the exact nodes and
+their in-order sequence through rotations and link changes. The
+[acceptance criteria](#acceptance-criteria) define the full claim.
 
-P1: required for MVR. Linux rbtree does not store keys, so its generic
-correctness property is preservation of node identity and in-order order
-while links and colors change; a contract that consumes one well-formed
-tree and produces another cannot state that without an abstract model.
+The [rbtree examples](../examples/rbtree/) document the delivered sidecars. The
+[implementation chunks](#remaining-work-chunks-1-to-24) record the work by
+dependency.
+
+## Focused verification on current master
+
+A fresh debug CLI built from `d3dbacbb7` ran verification for the selected sidecars
+individually with default limits. The table records the first failure in
+each sidecar or the number of selected proofs that verified.
+
+| Sidecar | Result |
+| --- | --- |
+| [Size metadata](../examples/rbtree/rbtree-augmented/rbtree_size_metadata.click) | `split_sized_tree`, line 82. `fold body child has no source name`. |
+| [Augmented child link](../examples/rbtree/rbtree-augmented/rbtree_size_change_child.click) | 1 proof verified. |
+| [Augmented parent rotation](../examples/rbtree/rbtree-augmented/rbtree_size_rotate_set_parents.click) | 2 proofs verified. |
+| [Far-subtree insertion](../examples/rbtree/rbtree-augmented/rbtree_size_insert_context_double_far_rotation.click) | Public wrapper, line 535. The call's write footprint lacks a byte bound while the callback-table view is live. |
+| [Mirrored double-rotation insertion](../examples/rbtree/rbtree-augmented/rbtree_size_insert_mirrored_context_double_rotation.click) | Public wrapper, line 470. Same call-boundary refusal. |
+| [General erase splice](../examples/rbtree/rbtree-erase/rbtree_erase_augmented.click) | `__rb_erase_augmented.contract`, line 552. `solve()` exhausts its smart budget on the initial descent-loop model equality. |
+| [General erase wrapper](../examples/rbtree/rbtree-erase/rbtree_erase_general_wrapper.click) | `rb_erase`, line 59. The proof cannot read the assigned value of local `rebalance` at its current frontier. |
+| [Root-cell diagnostic regression](../mdtests/rb_produces_through_the_root_cell.md) | 1 proof verified. |
+
+The metadata trace holds both `rb_at` children returned by the two recursive
+calls. The written fold supplies them as `left_structure` and
+`right_structure`. Body-fact reconstruction stops when the selected child
+identity has no registered source spelling. The next reduction is a fold
+with an explicitly named child returned by a call.
+
+Both insertion wrappers view `augment->rotate` and transfer ownership of a
+recursive tree to `__rb_insert_augmented`. The per-range call checker added in
+[#3419](https://github.com/clicklang/click/pull/3419) refuses the unnamed part
+of that write footprint while the view is live. This case needs an explicit
+separation argument at the boundary of the transferred resource.
+
+The erase splice goal is `plug(erase_context(c.model), t.model) == rl`. A proof
+repair can start by separating the top-context identity from the equation
+for the selected child's model. The report renders parts of the model as
+`<unnamed ...>`. The run stops before the historical pointer-field
+reproduction.
+
+Directory verification, expansion/replay audits, and the whole pinned-source
+acceptance check are outside this rerun.
 
 ## State, 2026-10-09: handoff
 

@@ -3678,6 +3678,7 @@ impl PureFactContext {
                             AddressBase::Heap(_)
                                 | AddressBase::StaticObject { .. }
                                 | AddressBase::AutomaticLocal { .. }
+                                | AddressBase::SliceLength { .. }
                                 | AddressBase::ReferenceCarrier { .. }
                                 | AddressBase::Temporary(_)
                                 | AddressBase::StringLiteral { .. }
