@@ -4433,9 +4433,8 @@ global named alone still denotes its pointer slot.
 Surface Click also has documented low-level memory reads for addresses that do
 not have a recoverable C source place:
 
-- `load<int32>(pointer)`, `load<uint8>(pointer)`, and `load<uint16>(pointer)`
-- `load<uint32>(pointer)`, `load<int64>(pointer)`, and `load<uint64>(pointer)`
-- `load<int32*>(pointer)`, `load<uint8*>(pointer)`, and `load<uint16*>(pointer)`
+- `load<T>(pointer)` reads the object at `pointer` as `T`, a scalar, data
+  pointer, or function pointer ([Typed loads](grammar.md#typed-loads))
 - `byte_offset(pointer, bytes)`
 
 Typed loads select memory from the surrounding clause independently of the
