@@ -1588,6 +1588,10 @@ available when one of these holds:
   all four bytes are recorded initialized. These checks use the goal's
   memory state and decline if its lifetime or initialization needs further
   evidence.
+- It is a separation of memory ranges on two distinct automatic objects,
+  or between an automatic object and storage incoming to the function.
+  The check uses the exact block identities in the goal. Forming the
+  ranges still carries the ordinary range obligations.
 - It follows by exact Boolean unit propagation. Admitting `A or B` and
   `not A` makes `B` available; admitting `A implies B` and `A` makes `B`
   available. Either admission order works, and consequences propagate through

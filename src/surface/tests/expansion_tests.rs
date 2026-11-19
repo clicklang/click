@@ -1,6 +1,28 @@
 use super::*;
 
 #[test]
+#[ignore = "nightly: expands and cold-verifies two automatic-storage separation proofs"]
+fn automatic_object_separation_expands_without_normalize() {
+    for (fixture, label) in [
+        ("direct_local_write_separation", "set_local.contract"),
+        (
+            "modeled_pthread_shared_local_nested_reader",
+            "run.ensures_0",
+        ),
+    ] {
+        let (source, sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+        let sources = crate::cli::source_refs(&sources);
+        let expanded = expand_c_claim_source_by_label(&source, &sources, label)
+            .unwrap_or_else(|error| panic!("{}", error.report()));
+        assert!(!expanded.contains("normalize()"), "{expanded}");
+        without_implicit_solve_for_claim(label, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+    }
+}
+
+#[test]
 #[ignore = "nightly: expands and cold-verifies a uint64 loop back edge"]
 fn uint64_loop_successor_bound_expands_without_normalize() {
     let (source, c_sources) =
