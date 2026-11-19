@@ -330,6 +330,8 @@ struct FunctionResourceTransfer {
     /// consumed capability when reconstructing the caller successor.
     borrowed_inputs: Vec<CheckedResourceFact>,
     consumed_inputs: Vec<CheckedResourceFact>,
+    /// Entry clauses whose checked expansion has no owned members.
+    empty_owned_clause_positions: BTreeSet<usize>,
     /// Checked callee-side borrowed ownership paired with an equivalent
     /// caller-side spelling selected by the exclusive reservation planner.
     /// This is output-sized call-boundary pairing, not a search through
@@ -6825,8 +6827,17 @@ fn prepare_verified_function_call<'a>(
     // Reassemble the transition in source order from its role partitions.
     // This keeps the effect projection tied to the checked role-bearing
     // inputs rather than to a normalized context that erased source metadata.
-    let mut checked_transition_inputs = transfer.borrowed_inputs.clone();
-    checked_transition_inputs.extend(transfer.consumed_inputs.clone());
+    let mut checked_transition_inputs = transfer
+        .borrowed_inputs
+        .iter()
+        .chain(&transfer.consumed_inputs)
+        .filter(|input| {
+            !transfer
+                .empty_owned_clause_positions
+                .contains(&input.clause_position)
+        })
+        .cloned()
+        .collect::<Vec<_>>();
     checked_transition_inputs.sort_by_key(|checked| checked.clause_position);
     let projection = match project_contract_memory_effects(
         &footprint_state,
@@ -11755,6 +11766,7 @@ fn prepare_contract_resource_transfer_unexplained(
             helper_call: None,
             borrowed_inputs: Vec::new(),
             consumed_inputs: Vec::new(),
+            empty_owned_clause_positions: BTreeSet::new(),
             canonical_borrowed_owners: Vec::new(),
             consumed_cell_returns: ConsumedCellReturns::default(),
             allocation_creator: checked_allocation_creator(caller_state, callee_state),
@@ -12924,6 +12936,10 @@ fn prepare_contract_resource_transfer_unexplained(
         helper_call,
         borrowed_inputs,
         consumed_inputs,
+        empty_owned_clause_positions: definitionally_empty_owned
+            .iter()
+            .map(|requirement| requirement.clause_position)
+            .collect(),
         canonical_borrowed_owners,
         consumed_cell_returns,
         allocation_creator: checked_allocation_creator(caller_state, callee_state),
