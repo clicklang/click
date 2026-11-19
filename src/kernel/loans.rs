@@ -6383,6 +6383,15 @@ impl LoanLedger {
         if matches!(footprint, Resource::Emp) || memory_range_is_empty(range) {
             return None;
         }
+        // A slice length occupies its own automatic cell. When the retained
+        // footprint names one memory range, the block identities can settle
+        // separation without asking the proof to name the metadata's address.
+        if matches!(range.base().base, AddressBase::SliceLength { .. })
+            && let Resource::Memory(protected) = &footprint
+            && range.base().blocks_proven_distinct(protected.base())
+        {
+            return None;
+        }
         Some(super::Proposition::ResourceSeparate {
             left: Box::new(Resource::Memory(range.clone())),
             right: Box::new(footprint),

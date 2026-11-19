@@ -5149,6 +5149,7 @@ pub(in crate::surface) fn describe_pointer(
             | AddressBase::ContractException
             | AddressBase::AggregateReturn { .. }
             | AddressBase::AutomaticLocal { .. }
+            | AddressBase::SliceLength { .. }
             | AddressBase::ReferenceCarrier { .. }
             | AddressBase::StaticObject { .. }
     ) {
@@ -5783,6 +5784,7 @@ pub(super) fn describe_program_value(
                     | AddressBase::AggregateReturn { .. }
                     | AddressBase::StringLiteral { .. }
                     | AddressBase::AutomaticLocal { .. }
+                    | AddressBase::SliceLength { .. }
                     | AddressBase::ReferenceCarrier { .. }
                     | AddressBase::StaticObject { .. }
             ) =>

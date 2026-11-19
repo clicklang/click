@@ -56,23 +56,18 @@ pub(super) fn specialize_call(
     let body = definition
         .body()
         .ok_or_else(|| format!("function `{}` has no body to specialize", definition.name()))?;
-    reduce_head(&ContractExpression::Apply {
-        function: Box::new(ContractExpression::Lambda {
-            parameters: definition
-                .parameters()
-                .iter()
-                .map(|parameter| {
-                    (
-                        parameter.name().into(),
-                        parameter.click_type_with_object_class(),
-                    )
-                })
-                .collect(),
-            result: definition.return_type().clone(),
-            body: Box::new(body.clone()),
+    apply_lambda(
+        definition.parameters().iter().map(|parameter| {
+            (
+                parameter.binding_name(),
+                parameter.click_type_with_object_class(),
+            )
         }),
-        arguments: arguments.to_vec(),
-    })
+        definition.return_type(),
+        body,
+        arguments,
+    )
+    .map(Some)
 }
 
 pub(super) fn signature(
@@ -316,57 +311,73 @@ pub(super) fn reduce_head(
                 }
                 return Ok(None);
             };
-            if parameters.len() != arguments.len() {
-                return Err(format!(
-                    "lambda expects {} arguments, got {}",
-                    parameters.len(),
-                    arguments.len()
-                ));
-            }
-            // These are lexical slots, not generative authority. Re-elaborating
-            // the same application must preserve its contract identity. Exclude
-            // all referenced slots, including nested binders, to avoid capture.
-            let mut used = BTreeSet::<lowering::LexicalBinding>::new();
-            lowering::collect_contract_expression_referenced_bindings(body, &mut used);
-            for argument in arguments {
-                lowering::collect_contract_expression_referenced_bindings(argument, &mut used);
-            }
-            let mut next = 0;
-            let mut fresh = || loop {
-                let id = crate::kernel::GeneratedBinderId::from_spelling(next);
-                next += 1;
-                if used.insert(lowering::LexicalBinding(id.binding_name())) {
-                    break SurfaceBinder::Generated(id);
-                }
-            };
-            let bindings = parameters
-                .iter()
-                .map(|(name, ty)| (name.clone(), fresh(), ty.clone()))
-                .collect::<Vec<_>>();
-            let result_name = fresh();
-            let replacements = bindings
-                .iter()
-                .map(|(old, new, _)| (old.clone(), new.reference()))
-                .collect::<BTreeMap<_, _>>();
-            let body = lowering::substitute_contract_expression(body, &replacements)?;
-            let mut applied = ContractExpression::Let {
-                name: result_name.clone(),
-                click_type: Some(result.clone()),
-                value: Box::new(body),
-                body: Box::new(result_name.reference()),
-            };
-            for ((_, name, ty), argument) in bindings.into_iter().zip(arguments).rev() {
-                applied = ContractExpression::Let {
-                    name,
-                    click_type: Some(ty),
-                    value: Box::new(argument.clone()),
-                    body: Box::new(applied),
-                };
-            }
-            Ok(Some(applied))
+            apply_lambda(
+                parameters
+                    .iter()
+                    .map(|(name, ty)| (name.kernel_name(), ty.clone())),
+                result,
+                body,
+                arguments,
+            )
+            .map(Some)
         }
         _ => Ok(None),
     }
+}
+
+fn apply_lambda(
+    parameters: impl ExactSizeIterator<Item = (crate::kernel::BindingName, ClickType)>,
+    result: &ClickType,
+    body: &ContractExpression,
+    arguments: &[ContractExpression],
+) -> Result<ContractExpression, String> {
+    if parameters.len() != arguments.len() {
+        return Err(format!(
+            "lambda expects {} arguments, got {}",
+            parameters.len(),
+            arguments.len()
+        ));
+    }
+    // These are lexical slots, not generative authority. Re-elaborating
+    // the same application must preserve its contract identity. Exclude
+    // all referenced slots, including nested binders, to avoid capture.
+    let mut used = BTreeSet::<lowering::LexicalBinding>::new();
+    lowering::collect_contract_expression_referenced_bindings(body, &mut used);
+    for argument in arguments {
+        lowering::collect_contract_expression_referenced_bindings(argument, &mut used);
+    }
+    let mut next = 0;
+    let mut fresh = || loop {
+        let id = crate::kernel::GeneratedBinderId::from_spelling(next);
+        next += 1;
+        if used.insert(lowering::LexicalBinding(id.binding_name())) {
+            break SurfaceBinder::Generated(id);
+        }
+    };
+    let bindings = parameters
+        .map(|(name, ty)| (name, fresh(), ty))
+        .collect::<Vec<_>>();
+    let result_name = fresh();
+    let replacements = bindings
+        .iter()
+        .map(|(old, new, _)| (old.clone(), new.reference()))
+        .collect::<BTreeMap<_, _>>();
+    let body = lowering::substitute_contract_expression(body, &replacements)?;
+    let mut applied = ContractExpression::Let {
+        name: result_name.clone(),
+        click_type: Some(result.clone()),
+        value: Box::new(body),
+        body: Box::new(result_name.reference()),
+    };
+    for ((_, name, ty), argument) in bindings.into_iter().zip(arguments).rev() {
+        applied = ContractExpression::Let {
+            name,
+            click_type: Some(ty),
+            value: Box::new(argument.clone()),
+            body: Box::new(applied),
+        };
+    }
+    Ok(applied)
 }
 
 #[cfg(test)]

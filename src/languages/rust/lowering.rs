@@ -702,14 +702,6 @@ fn lower_function(
     let mut shared_scalar_slices = BTreeMap::new();
     let mut arrays = BTreeMap::new();
     let mut references = BTreeMap::new();
-    let parameter_names: BTreeSet<_> = f
-        .parameters
-        .iter()
-        .map(|p| {
-            crate::instrumentation::record_deterministic_work(1);
-            p.name.as_str()
-        })
-        .collect();
     for p in &f.parameters {
         crate::instrumentation::record_deterministic_work(1);
         if matches!(p.value_type, Type::Array { .. }) {
@@ -733,19 +725,14 @@ fn lower_function(
             continue;
         }
         if let Type::ByteSlice { mutable } = &p.value_type {
-            let length = format!("{}_len", p.name);
-            if parameter_names.contains(length.as_str()) || !locals.insert(length.clone()) {
-                return Err(format!(
-                    "Rust slice length parameter `{length}` collides with a parameter"
-                ));
-            }
+            let length = BindingName::slice_length(&p.name);
             slices.insert(p.name.clone(), (length.clone(), !mutable));
             parameters.push(
                 ImportedParameter::new(InterfaceType::UInt8Pointer, p.name.clone(), None)
                     .with_pointee_constant(!mutable)
                     .with_slice_length_parameter(1),
             );
-            parameters.push(ImportedParameter::new(
+            parameters.push(ImportedParameter::from_binding(
                 InterfaceType::UInt64(LongRank::Long),
                 length.clone(),
                 None,
@@ -762,12 +749,7 @@ fn lower_function(
             if !element.is_integer() {
                 return Err("scalar slice parameters require integer elements".into());
             }
-            let length = format!("{}_len", p.name);
-            if parameter_names.contains(length.as_str()) || !locals.insert(length.clone()) {
-                return Err(format!(
-                    "Rust slice length parameter `{length}` collides with a parameter"
-                ));
-            }
+            let length = BindingName::slice_length(&p.name);
             let pointer = scalar_type(&Type::Reference {
                 mutable: *mutable,
                 pointee: element.clone(),
@@ -781,7 +763,7 @@ fn lower_function(
                     .with_pointee_constant(!mutable)
                     .with_slice_length_parameter(1),
             );
-            parameters.push(ImportedParameter::new(
+            parameters.push(ImportedParameter::from_binding(
                 InterfaceType::UInt64(LongRank::Long),
                 length.clone(),
                 None,
@@ -948,6 +930,11 @@ fn lower_function(
         import_identity: identity.map(std::sync::Arc::from),
         mir_point: None,
         mir_nodes: BTreeMap::new(),
+        slice_local_owner: LocalFunctionId::new(
+            Some(export.logical_source.clone()),
+            f.name.clone(),
+        ),
+        next_slice_local: 0,
         next_result_step: std::cell::Cell::new(next_result_step),
         loop_iterators: Vec::new(),
         locals,
@@ -1020,7 +1007,7 @@ struct Context<'a> {
     /// The count of each enumerated slice iterator and the index of each yielded Option.
     enumerate_fields: BTreeMap<String, BindingName>,
     shared_array_options: BTreeMap<String, shared_arrays::SliceIteratorOptionStorage>,
-    shared_scalar_slices: BTreeMap<String, (String, ProgramType)>,
+    shared_scalar_slices: BTreeMap<String, (BindingName, ProgramType)>,
     mir_chunk_iterators: BTreeMap<String, crate::languages::interface::ChunkIteratorFields>,
     chunk_options: BTreeMap<String, chunks::ChunkOptionFields>,
     local_arrays: BTreeSet<String>,
@@ -1032,7 +1019,7 @@ struct Context<'a> {
     /// these live in their object's memory, so a write through the borrow
     /// is the value later reads see.
     memory_values: BTreeMap<String, ProgramType>,
-    slices: BTreeMap<String, (String, bool)>,
+    slices: BTreeMap<String, (BindingName, bool)>,
     arrays: BTreeMap<String, (u64, ProgramType, bool)>,
     references: BTreeMap<String, bool>,
     source: &'a str,
@@ -1042,6 +1029,8 @@ struct Context<'a> {
     import_identity: Option<std::sync::Arc<str>>,
     mir_point: Option<super::borrow_frontiers::MirPoint>,
     mir_nodes: BTreeMap<usize, usize>,
+    slice_local_owner: LocalFunctionId,
+    next_slice_local: u32,
     next_result_step: std::cell::Cell<u32>,
     /// The iterator each loop advances, by loop index in preorder.
     loop_iterators: Vec<Option<crate::languages::interface::RustLoopIterator>>,
@@ -1130,6 +1119,17 @@ impl Context<'_> {
         }
         statement
     }
+    fn declare_slice_length(&mut self, place: &str) -> Result<BindingName, String> {
+        let ordinal = self.next_slice_local;
+        self.next_slice_local = ordinal.checked_add(1).ok_or("too many Rust slice locals")?;
+        Ok(BindingName::local_slice_length(LocalBindingId::new(
+            self.slice_local_owner.clone(),
+            false,
+            ordinal,
+            Some(place.to_owned()),
+        )))
+    }
+
     fn body(&mut self, body: &[S]) -> Result<ProgramStatement, String> {
         let mut result = program_skip();
         for s in body {
@@ -1164,10 +1164,7 @@ impl Context<'_> {
                 }
                 if let Type::ByteSlice { mutable } = &place.value_type {
                     let (pointer, length_value) = self.slice_parts(initializer)?;
-                    let length = format!("{}_len", place.name);
-                    if !self.locals.insert(length.clone()) {
-                        return Err("slice local length collision".into());
-                    }
+                    let length = self.declare_slice_length(&place.name)?;
                     self.slices
                         .insert(place.name.clone(), (length.clone(), !mutable));
                     return Ok(program_seq(
@@ -1180,7 +1177,7 @@ impl Context<'_> {
                             !mutable,
                         ),
                         program_seq(
-                            program_declare(self.binding(&length), ProgramType::UInt64),
+                            program_declare(length.clone(), ProgramType::UInt64),
                             program_seq(
                                 program_assign(
                                     self.binding(&place.name),
@@ -1191,7 +1188,7 @@ impl Context<'_> {
                                         !mutable,
                                     ),
                                 ),
-                                program_assign(self.binding(&length), length_value),
+                                program_assign(length, length_value),
                             ),
                         ),
                     ));
@@ -1435,12 +1432,10 @@ impl Context<'_> {
                 return Err("split_at results must be shared byte slices".into());
             }
             let length_name = if declare {
-                let length_name = format!("{}_len", place.name);
-                if !self.locals.insert(place.name.clone())
-                    || !self.locals.insert(length_name.clone())
-                {
+                if !self.locals.insert(place.name.clone()) {
                     return Err("duplicate split_at local identity".into());
                 }
+                let length_name = self.declare_slice_length(&place.name)?;
                 self.slices
                     .insert(place.name.clone(), (length_name.clone(), true));
                 result = program_seq(
@@ -1454,7 +1449,7 @@ impl Context<'_> {
                             false,
                             true,
                         ),
-                        program_declare(self.binding(&length_name), ProgramType::UInt64),
+                        program_declare(length_name.clone(), ProgramType::UInt64),
                     ),
                 );
                 length_name
@@ -1472,7 +1467,7 @@ impl Context<'_> {
                         self.binding(&place.name),
                         reference_view(pointer, ProgramType::UInt8Pointer, false, true),
                     ),
-                    program_assign(self.binding(&length_name), length),
+                    program_assign(length_name, length),
                 ),
             );
         }
@@ -1633,7 +1628,7 @@ impl Context<'_> {
             }
             return Ok(program_seq(
                 program_assign(self.binding(name), pointer),
-                program_assign(self.binding(&length), source_length),
+                program_assign(length, source_length),
             ));
         }
         if self.local_arrays.contains(name) {
@@ -1650,7 +1645,7 @@ impl Context<'_> {
                         self.binding(name),
                         reference_view(pointer, ProgramType::UInt8Pointer, false, constant),
                     ),
-                    program_assign(self.binding(&length), length_value),
+                    program_assign(length, length_value),
                 ),
             ));
         }
@@ -2319,7 +2314,7 @@ impl Context<'_> {
             .ok_or("unknown Rust slice reference")?;
         Ok((
             crate::kernel::program_expression::variable(self.binding(name)),
-            crate::kernel::program_expression::variable(self.binding(length)),
+            crate::kernel::program_expression::variable(length.clone()),
         ))
     }
     fn array_source_is_constant(&self, e: &E) -> Result<bool, String> {
@@ -2369,7 +2364,7 @@ impl Context<'_> {
                 let (length, element) = self.shared_scalar_slices[name].clone();
                 Ok((
                     crate::kernel::program_expression::variable(self.binding(name)),
-                    crate::kernel::program_expression::variable(self.binding(&length)),
+                    crate::kernel::program_expression::variable(length),
                     element,
                 ))
             }

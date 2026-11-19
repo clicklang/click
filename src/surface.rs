@@ -1883,6 +1883,7 @@ impl Eq for RustSignatureSpelling {}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FunctionParameter {
+    slice_length: Option<crate::kernel::BindingName>,
     click_type: ClickType,
     name: String,
     struct_name: Option<String>,
@@ -3500,6 +3501,20 @@ impl<'a> ContractEnvironment<'a> {
     /// Ordinal lookup is checked against the exact prepared declaration: another
     /// function's parameter with the same spelling never acquires this value.
     fn parameter_value(self, binding: &crate::kernel::BindingName) -> Option<&'a ProgramValue> {
+        if let Some(slice) = binding.slice_length_of() {
+            if let Some(index) = self.parameters.index {
+                let position = index.slice_length_position(slice)?;
+                if self.parameters.parameters.get(position)?.binding_name() != binding {
+                    return None;
+                }
+                let ProgramExpression::Value(value) = self.parameters.arguments.get(position)?
+                else {
+                    return None;
+                };
+                return Some(value);
+            }
+            return self.values.get(binding.source_name());
+        }
         if let Some(referent) = binding.reference_referent() {
             if let Some(index) = self.parameters.index {
                 let position = index.position(referent.source_name())?;
@@ -3538,11 +3553,11 @@ impl<'a> ContractEnvironment<'a> {
         Some(value)
     }
 }
-/// Ordinary parameters are written by their source identifier in the current
-/// function scope. A reference's pointer has no lexical identifier: its Surface
-/// expression retains the structural carrier and prints as `&x`.
+/// Ordinary parameters use their source identifier in the current scope.
+/// A reference carrier or slice length retains its typed binding so it raises
+/// as `&x` or `x.len()`.
 fn surface_parameter_binding(binding: &crate::kernel::BindingName) -> crate::kernel::BindingName {
-    if binding.reference_referent().is_some() {
+    if binding.reference_referent().is_some() || binding.slice_length_of().is_some() {
         binding.clone()
     } else {
         binding.source_name().into()
@@ -7786,23 +7801,37 @@ impl ParameterNaming {
     }
 }
 
-/// A function's parameter positions by name, built once for its entry.
+/// A function's parameter positions, built once for its entry.
 pub(crate) struct ParameterIndex {
     positions: BTreeMap<String, usize>,
+    slice_lengths: BTreeMap<String, usize>,
     len: usize,
 }
 
 impl ParameterIndex {
     pub(crate) fn new(parameters: &[crate::languages::interface::ImportedParameter]) -> Self {
         crate::instrumentation::record_deterministic_work(parameters.len());
+        let mut slice_lengths = BTreeMap::new();
+        let positions = parameters
+            .iter()
+            .enumerate()
+            .map(|(position, parameter)| {
+                if let Some(slice) = parameter.binding_name().slice_length_of() {
+                    slice_lengths.insert(slice.to_owned(), position);
+                }
+                (parameter.name().to_owned(), position)
+            })
+            .collect();
         Self {
-            positions: parameters
-                .iter()
-                .enumerate()
-                .map(|(position, parameter)| (parameter.name().to_string(), position))
-                .collect(),
+            positions,
+            slice_lengths,
             len: parameters.len(),
         }
+    }
+
+    fn slice_length_position(&self, slice: &str) -> Option<usize> {
+        crate::instrumentation::record_deterministic_work(1);
+        self.slice_lengths.get(slice).copied()
     }
 
     pub(crate) fn position(&self, name: &str) -> Option<usize> {
@@ -9867,8 +9896,24 @@ impl FunctionSignature {
 }
 
 impl FunctionParameter {
+    fn rust_slice_length(slice: &str) -> Self {
+        let binding = crate::kernel::BindingName::slice_length(slice);
+        Self {
+            name: binding.source_name().to_owned(),
+            slice_length: Some(binding),
+            click_type: ClickType::Program(InterfaceType::UInt64(LongRank::Long)),
+            struct_name: None,
+            function_pointer_signature: None,
+            constant: false,
+            pointee_constant: false,
+            reference: false,
+        }
+    }
+
     pub fn binding_name(&self) -> crate::kernel::BindingName {
-        if self.reference {
+        if let Some(binding) = &self.slice_length {
+            binding.clone()
+        } else if self.reference {
             crate::kernel::BindingName::reference_carrier(self.name.as_str())
         } else {
             self.name.clone().into()

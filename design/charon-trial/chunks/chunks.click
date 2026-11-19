@@ -19,7 +19,7 @@ fn walk(bytes: &[u8]) -> usize {
     loop {
         decreases iter.v.len();
         views bytes[0..bytes.len()];
-        invariant tail_len == bytes.len() % 4u64;
+        invariant tail.len() == bytes.len() % 4u64;
         invariant iter.chunk_size == 4u64;
         invariant iter.v.len() <= bytes.len() - bytes.len() % 4u64;
         invariant iter.v == bytes + (bytes.len() - bytes.len() % 4u64 - iter.v.len());
@@ -66,9 +66,8 @@ fn tail_byte(bytes: &[u8]) -> u8 {
 } by {
     have bytes.len() % 4u64 == 3u64;
     have bytes.len() - bytes.len() % 4u64 == 4u64;
-    step_until(assignment(tail_len, 0));
-    step();
-    have tail_len == 3u64;
+    step_until(assignment(tail, 0)); step(); step();
+    have tail.len() == 3u64;
     have tail == bytes + 4u64;
     step_until(function.exit);
     solve();

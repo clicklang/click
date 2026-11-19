@@ -2711,8 +2711,9 @@ impl EqualityGraph {
             // unrelated opaque pointer members of the same equality class.
             let mut next = members.get_greater_than(&AddressBase::Temporary(u64::MAX));
             while let Some((
-                member
-                @ (AddressBase::AutomaticLocal { .. } | AddressBase::ReferenceCarrier { .. }),
+                member @ (AddressBase::AutomaticLocal { .. }
+                | AddressBase::ReferenceCarrier { .. }
+                | AddressBase::SliceLength { .. }),
                 delta,
             )) = next
             {
@@ -3096,6 +3097,7 @@ impl EqualityGraphState {
                 | AddressBase::StringLiteral { .. }
                 | AddressBase::StaticObject { .. }
                 | AddressBase::AutomaticLocal { .. }
+                | AddressBase::SliceLength { .. }
                 | AddressBase::ReferenceCarrier { .. }
         ) || matches!(block, AddressBase::Concrete(name) if name != "null")
     }

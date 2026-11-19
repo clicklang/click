@@ -1594,7 +1594,9 @@ fn program_function_contract_entry_facts(
                 return Err("slice entry argument is not a pointer value".into());
             };
             let length_parameter = &parameters[index + length_index];
-            let length_value = entry_state.locals.get_native(length_parameter.name());
+            let length_value = entry_state
+                .locals
+                .get_native(length_parameter.binding_name());
             let Some(ProgramValue::UInt64(length)) =
                 length_value.as_deref().map(ProgramValue::numeric_value)
             else {
