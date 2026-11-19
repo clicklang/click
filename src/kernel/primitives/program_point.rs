@@ -223,6 +223,18 @@ impl PathLink {
         }
     }
 
+    /// Bind the memory view being constructed for an entry root. There are
+    /// no preceding execution versions to carry into this view.
+    pub(super) fn with_entry_view(mut self, view: &SharedMemory) -> Self {
+        assert!(
+            self.0
+                .as_ref()
+                .is_some_and(|point| { point.predecessors.is_empty() && point.steps.is_none() })
+        );
+        self.1 = IndexedView::Materialized(view.arena_id());
+        self
+    }
+
     pub(super) fn with_materialized_view(
         mut self,
         source: &SharedMemory,
@@ -950,6 +962,38 @@ mod tests {
             ),
         );
         assert_eq!(version(&unlogged), None);
+    }
+
+    #[test]
+    fn entry_memory_views_share_one_root_before_the_first_execution_store() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let entry = ExecutionState::new().begin_function_entry_memory();
+        let root = entry.program_point_id().unwrap();
+        let slot = slot();
+        let declared = entry
+            .clone()
+            .with_function_entry_memory(entry.memory().clone().with_block(slot.base.clone(), 4));
+        let initialized = declared.clone().with_function_entry_memory(
+            declared
+                .memory()
+                .clone()
+                .store(slot.clone(), ProgramValue::Int32(MachineTerm::constant(7))),
+        );
+        for view in [&declared, &initialized] {
+            assert_eq!(view.observation_point_id(), Some(root));
+            assert!(view.path_link().steps().is_none());
+            assert!(view.path_link().predecessors().is_empty());
+        }
+        let executed = stored(&initialized, 9);
+        assert_eq!(executed.path_link().predecessor_ids(), vec![root]);
+        assert_ne!(executed.program_point_id(), Some(root));
+        assert_eq!(
+            executed
+                .program_point()
+                .indexed_local_integer_version(&slot, LoadKind::Int32)
+                .and_then(|point| point.read_version_id()),
+            executed.program_point_id(),
+        );
     }
 
     /// The arena's stored instance carries no path's steps.
