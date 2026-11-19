@@ -1534,7 +1534,7 @@ mod tests {
         let mut context = PureTheoremContext {
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
-            memory: SymbolicMemory::new(),
+            point: crate::kernel::ProgramPoint::starting_at(&SymbolicMemory::new()),
             values: ProgramValueBindings::new(),
             integer_values: PersistentBinderMap::default(),
             array_refs: BTreeMap::new(),

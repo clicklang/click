@@ -474,6 +474,20 @@ impl ProgramPoint {
         Self::at(&intern_memory(memory.clone()))
     }
 
+    /// The first point of a new path, standing at `memory`: a place no other
+    /// point leads to, such as the memory a pure theorem quantifies over. Unlike
+    /// [`ProgramPoint::of_memory`], the point has a place on a path, so reads
+    /// there can be followed back along it.
+    pub(crate) fn starting_at(memory: &SymbolicMemory) -> Self {
+        let shared = intern_memory_ref(memory);
+        let path = PathLink::default().after(shared.clone(), memory.pending_steps.clone());
+        Self {
+            memory: shared,
+            path,
+            key_by_path: false,
+        }
+    }
+
     /// The point a state stands at on its path.
     #[cfg_attr(not(test), allow(dead_code))]
     /// The point a state with `memory` stands at, `path` being the last
@@ -680,6 +694,19 @@ mod tests {
         };
         assert!(start.predecessors().is_empty());
         assert_eq!(start.memory(), Some(&intern_memory(SymbolicMemory::new())));
+    }
+
+    /// A point that starts a path has an identity even when no step reached
+    /// its memory.
+    #[test]
+    fn a_starting_point_has_a_place_on_a_path() {
+        let point = ProgramPoint::starting_at(&SymbolicMemory::new());
+        assert!(point.id().is_some());
+        assert!(
+            ProgramPoint::of_memory(&SymbolicMemory::new())
+                .id()
+                .is_none()
+        );
     }
 
     /// A join records where its arms split.

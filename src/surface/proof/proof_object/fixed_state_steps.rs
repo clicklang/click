@@ -750,7 +750,7 @@ impl<'a> Proof<'a> {
         // The checker receives exactly the named premises, not the ambient
         // context. Its work is therefore independent of unrelated facts, and
         // it cannot silently search for an omitted theorem requirement.
-        let state = ExecutionState::new().with_memory(context.theorem_context.memory.clone());
+        let state = ExecutionState::at_point(&context.theorem_context.point);
         let recorded_states = RecordedStates::new();
         let mut integer_values = context.theorem_context.integer_values.clone();
         for name in application
@@ -1868,7 +1868,7 @@ impl<'a> Proof<'a> {
                     .map(|value| (name.clone(), value))
             })
             .collect();
-        let state = ExecutionState::new().with_memory(context.theorem_context.memory.clone());
+        let state = ExecutionState::at_point(&context.theorem_context.point);
         let value = evaluate_fixed_state_expression_through_kernel_with_algebraic_values(
             checked_witness.value(),
             self.facts().assumptions(),
@@ -2032,7 +2032,7 @@ impl<'a> Proof<'a> {
                     .map(|value| (name.clone(), value.clone()))
             })
             .collect();
-        let state = ExecutionState::new().with_memory(context.theorem_context.memory.clone());
+        let state = ExecutionState::at_point(&context.theorem_context.point);
         let algebraic_values = names
             .iter()
             .filter_map(|name| {
@@ -2118,7 +2118,7 @@ impl<'a> Proof<'a> {
                     .map(|value| (name.clone(), value.clone()))
             })
             .collect();
-        let state = ExecutionState::new().with_memory(context.theorem_context.memory.clone());
+        let state = ExecutionState::at_point(&context.theorem_context.point);
         let states = crate::surface::proof::fixed_state_proofs::FixedStateLowering::new(
             ContractEnvironment::new(&values, &arrays),
             &state,
@@ -2234,7 +2234,7 @@ impl<'a> Proof<'a> {
                         .map(|value| (name.clone(), value))
                 })
                 .collect();
-            let state = ExecutionState::new().with_memory(context.theorem_context.memory.clone());
+            let state = ExecutionState::at_point(&context.theorem_context.point);
             evaluate_fixed_state_expression_through_kernel_with_algebraic_values(
                 &argument,
                 self.facts().assumptions(),

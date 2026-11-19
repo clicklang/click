@@ -664,7 +664,7 @@ mod certificate_tests {
             theorem.name(),
             surface_goal,
             ContractEnvironment::new(&context.values, &context.array_refs),
-            &context.memory,
+            context.point.memory(),
             spec_definitions,
         )
         .expect("goal should lower");
