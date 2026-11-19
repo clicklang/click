@@ -10960,8 +10960,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // splits it and reaches this half again without end.
         if std::env::var_os("CLICK_DBG_SO").is_some() {
             let spelled = spell_signed_goal(goal, premise_pairs);
-            let opened = spelled.clone().and_then(|s| search_input.driver().open_have(s).ok()).map(|scope| scope.goal().cloned());
-            eprintln!("DBG check_typed\n  goal={goal:?}\n  input_goal={:?}\n  surface_goal={:?}\n  spelled={spelled:?}\n  opened={opened:?}", search_input.goal(), search_input.surface_goal());
+            eprintln!("DBG check_typed\n  goal={goal:?}\n  input_goal={:?}\n  surface_goal={:?}\n  spelled={spelled:?}", search_input.goal(), search_input.surface_goal());
         }
         if search_input.surface_goal().is_none()
             && crate::kernel::proof::arithmetic_special::signed_definedness_query(goal).is_some()
@@ -10969,6 +10968,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             && let Ok(scope) = search_input.driver().open_have(spelled)
             && scope.goal() == Some(goal)
         {
+            if std::env::var_os("CLICK_DBG_SO").is_some() {
+                eprintln!("DBG opened matching have\n  goal={:?}", scope.goal());
+            }
             let selected = premise_pairs
                 .iter()
                 .map(|(_, p)| p.clone())
