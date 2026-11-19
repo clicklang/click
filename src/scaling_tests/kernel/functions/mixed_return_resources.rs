@@ -681,6 +681,7 @@ fn selected_scalar_transfers_scale_with_the_return_delta() {
                 clause_position: None,
                 section_index: Some(index),
                 selected_mutex_source: None,
+                mutex_storage: None,
             })
             .collect();
         plan.transferred_ownership_sources = input_occurrences

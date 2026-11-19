@@ -3211,6 +3211,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
                 _ => StableViewPlanError::MissingResource(requirement.fact.clone()),
             })?;
             use_plan = use_plan.with_required_type(identity.protected.clone());
+            use_plan.mutex_storage = requirement.mutex_storage.clone();
             if let Some(selected) = &requirement.selected_mutex_source {
                 use_plan = use_plan.with_selected_alias(selected.0);
             }

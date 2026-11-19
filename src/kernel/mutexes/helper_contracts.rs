@@ -30,6 +30,7 @@ pub(in crate::kernel) struct HelperCall {
     pub(in crate::kernel) contract: HelperContract,
     pub(in crate::kernel) source: ResourceFact,
     pub(in crate::kernel) required: ResourceFact,
+    pub(in crate::kernel) mutex_storage: Option<std::sync::Arc<crate::kernel::MemoryRange>>,
     pub(in crate::kernel) guard: Option<ResourceFact>,
 }
 
