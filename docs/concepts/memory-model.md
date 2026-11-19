@@ -40,7 +40,17 @@ records a batch of effects at one point, the endpoint indexes the surviving
 stores by cell. Earlier disjoint versions remain available. An unclassified
 effect clears the accumulated entries, and a disconnected log cannot carry
 versions. A provisional point does not replay a batch to name a read.
-Joins still use the existing version selection.
+At a branch join, the index keeps a version when every arm carries the same
+recorded write. A second write of an equal value still has its own version.
+The join compares the changed branches of the persistent index. A checked call
+or loop footprint names the objects that can be written. The index drops
+entries for those objects and keeps entries for other, structurally disjoint
+objects. A footprint that may alias any automatic object clears the index.
+
+The arbitrary-iteration memory view is installed at a loop-head point.
+Replacing a modified local there retires its prior indexed version. A new
+indexed write comes from an execution store. The point after the loop keeps
+the indexed versions common to every checked exit.
 Signed and unsigned 64-bit reads share a version of the same 64 bits.
 Signed and unsigned 128-bit reads retain their distinct load kinds.
 

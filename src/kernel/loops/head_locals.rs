@@ -53,15 +53,13 @@ impl<'a> LoopHeadLocals<'a> {
         Ok(Self { entry, values })
     }
 
-    /// Compatibility adapter for the existing memory representation. It still
-    /// records stores; this is not the logical execution of a loop iteration.
-    /// Keep that mechanism here, separate from choosing the loop-head values,
-    /// until memory can construct the abstract local cells directly.
-    pub(super) fn install(self) -> ExecutionState {
+    /// Prepare the changed local bindings and their memory for the single
+    /// loop-head transition.
+    pub(super) fn prepare(self) -> ExecutionState {
         let mut state = self.entry.clone();
         for local in self.values {
             if let Some(slot) = local.slot {
-                state.set_memory(state.memory.clone().store(slot, local.value.clone()));
+                state.replace_loop_head_local_cell(slot, local.value.clone());
             }
             state
                 .locals
@@ -97,7 +95,8 @@ mod tests {
         )
         .unwrap();
         assert_eq!(entry, before);
-        let head = description.install();
+        let mut head = description.prepare();
+        head.set_loop_head_memory(head.memory.clone());
         assert_eq!(entry, before);
         assert_ne!(head.locals.get("changed"), entry.locals.get("changed"));
         assert_ne!(head.locals.get("logical"), entry.locals.get("logical"));

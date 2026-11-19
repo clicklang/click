@@ -14,8 +14,8 @@ use std::sync::{Arc, Weak};
 use crate::persistent::PersistentMap;
 
 use super::{
-    Address, AddressBase, AddressOffset, LoadKind, MachineTerm, MemoryDerivation, ProgramValue,
-    SharedMemory, SymbolicMemory, intern_memory, intern_memory_ref,
+    Address, AddressBase, AddressOffset, LoadKind, MachineTerm, MemoryDerivation, MemoryRange,
+    ProgramValue, SharedMemory, SymbolicMemory, intern_memory, intern_memory_ref,
 };
 
 /// The identity of one point an execution path reached.
@@ -157,14 +157,52 @@ impl Drop for StepLog {
     }
 }
 
-type LocalIntegerVersions = PersistentMap<AddressBase, LocalIntegerCells>;
+type LocalIntegerVersions = PersistentMap<AddressBase, LocalIntegerBlock>;
 type LocalIntegerCells = PersistentMap<i64, LocalIntegerWrite>;
+
+#[derive(Clone, Debug)]
+struct LocalIntegerIndex {
+    /// A wholesale barrier ends the shared index lineage.
+    generation: ProgramPointId,
+    blocks: LocalIntegerVersions,
+}
+
+impl LocalIntegerIndex {
+    fn empty(generation: ProgramPointId) -> Self {
+        Self {
+            generation,
+            blocks: LocalIntegerVersions::default(),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+struct LocalIntegerBlock {
+    /// A whole-object removal can discard an arbitrarily large map. A later
+    /// write creates a new lineage so the join need not diff those maps.
+    generation: ProgramPointId,
+    cells: LocalIntegerCells,
+}
+
+impl PartialEq for LocalIntegerBlock {
+    fn eq(&self, other: &Self) -> bool {
+        self.generation == other.generation && self.cells.shares_root_with(&other.cells)
+    }
+}
 
 #[derive(Clone, Debug)]
 struct LocalIntegerWrite {
     end: i64,
     version: Weak<PointNode>,
     store: Arc<MemoryDerivation>,
+}
+
+impl PartialEq for LocalIntegerWrite {
+    fn eq(&self, other: &Self) -> bool {
+        self.end == other.end
+            && Weak::ptr_eq(&self.version, &other.version)
+            && Arc::ptr_eq(&self.store, &other.store)
+    }
 }
 
 #[derive(Debug)]
@@ -182,7 +220,7 @@ struct PointNode {
     split: Option<PathLink>,
     /// Disjoint integer cells, keyed by object and byte start. The
     /// predecessor chain owns the version points.
-    local_integer_versions: LocalIntegerVersions,
+    local_integer_index: LocalIntegerIndex,
 }
 
 impl Drop for PointNode {
@@ -211,6 +249,13 @@ impl Drop for PointNode {
 /// equal when they hold the same things, wherever each was reached.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct PathLink(Option<Arc<PointNode>>, IndexedView);
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PointTransition {
+    Execution,
+    Provisional,
+    LoopHead,
+}
 
 /// Which view may use the execution point's versions. Proof-local views may
 /// differ between copies of a path, so this is held on the link, not the node.
@@ -268,33 +313,69 @@ impl PathLink {
     /// state whose precondition observed cells) gets a point at the memory
     /// before them, so a walk back can cross them as it crosses any step.
     pub(crate) fn after(&self, memory: SharedMemory, steps: Option<Arc<StepLog>>) -> Self {
-        self.after_with_index(memory, steps, true)
+        self.after_with_index(memory, steps, PointTransition::Execution)
+    }
+
+    pub(super) fn after_loop_head(
+        &self,
+        memory: SharedMemory,
+        steps: Option<Arc<StepLog>>,
+    ) -> Self {
+        self.after_with_index(memory, steps, PointTransition::LoopHead)
     }
 
     fn after_with_index(
         &self,
         memory: SharedMemory,
         steps: Option<Arc<StepLog>>,
-        index_batches: bool,
+        transition: PointTransition,
     ) -> Self {
         let from = match (&self.0, &steps) {
-            (None, Some(log)) => {
-                Self::reached_from(log.first_base.clone(), None, Box::new([]), None, false)
-            }
+            (None, Some(log)) => Self::reached_from(
+                log.first_base.clone(),
+                None,
+                Box::new([]),
+                None,
+                PointTransition::Provisional,
+            ),
             _ => self.clone(),
         };
-        Self::reached_from(memory, steps, Box::new([from]), None, index_batches)
+        Self::reached_from(memory, steps, Box::new([from]), None, transition)
     }
 
     /// A new point where two arms that split at `split` rejoin with
     /// `memory`.
-    pub(crate) fn joining(left: &Self, right: &Self, split: &Self, memory: SharedMemory) -> Self {
-        Self::reached_from(
-            memory,
-            None,
-            Box::new([left.clone(), right.clone()]),
-            Some(split.clone()),
-            false,
+    pub(crate) fn joining(
+        left: ProgramPoint,
+        right: ProgramPoint,
+        split: &Self,
+        memory: SharedMemory,
+    ) -> Self {
+        Self::joining_points(&[left, right], Some(split), memory)
+    }
+
+    pub(super) fn joining_points(
+        points: &[ProgramPoint],
+        split: Option<&Self>,
+        memory: SharedMemory,
+    ) -> Self {
+        let predecessors = points
+            .iter()
+            .map(|point| point.path.clone())
+            .collect::<Box<[_]>>();
+        let id = ProgramPointId::fresh();
+        let local_integer_index =
+            join_local_integer_indexes(points).unwrap_or_else(|| LocalIntegerIndex::empty(id));
+        Self(
+            Some(Arc::new(PointNode {
+                id,
+                memory,
+                steps: None,
+                predecessors,
+                split: split.filter(|point| point.0.is_some()).cloned(),
+                local_integer_index,
+            })),
+            IndexedView::Recorded,
         )
     }
 
@@ -303,7 +384,7 @@ impl PathLink {
         steps: Option<Arc<StepLog>>,
         predecessors: Box<[PathLink]>,
         split: Option<PathLink>,
-        index_batches: bool,
+        transition: PointTransition,
     ) -> Self {
         let predecessors = predecessors
             .into_vec()
@@ -312,20 +393,22 @@ impl PathLink {
             .collect::<Box<[_]>>();
         Self(
             Some(Arc::new_cyclic(|version| {
-                let local_integer_versions = local_integer_versions(
+                let id = ProgramPointId::fresh();
+                let local_integer_index = local_integer_index(
                     &predecessors,
                     steps.as_deref(),
                     &memory,
                     version,
-                    index_batches,
+                    id,
+                    transition,
                 );
                 PointNode {
-                    id: ProgramPointId::fresh(),
+                    id,
                     memory,
                     steps,
                     predecessors,
                     split: split.filter(|point| point.0.is_some()),
-                    local_integer_versions,
+                    local_integer_index,
                 }
             })),
             IndexedView::Recorded,
@@ -378,62 +461,125 @@ fn indexed_local(block: &AddressBase) -> bool {
         || matches!(block, AddressBase::Concrete(_) if block.is_local_block())
 }
 
+/// Intersect the versions carried by each checked incoming point. Diff each
+/// arm against the first arm, so an earlier removal is not revisited for
+/// every later arm.
+fn join_local_integer_indexes(points: &[ProgramPoint]) -> Option<LocalIntegerIndex> {
+    fn index(point: &ProgramPoint) -> Option<&LocalIntegerIndex> {
+        let node = point.path.0.as_ref()?;
+        point
+            .path
+            .matches_indexed_view(&point.memory)
+            .then_some(&node.local_integer_index)
+    }
+
+    let (first, rest) = points.split_first()?;
+    let base = index(first)?;
+    let mut result = base.clone();
+    for point in rest {
+        let other = index(point)?;
+        if other.generation != base.generation {
+            return None;
+        }
+        for (key, left, right) in base.blocks.diff(&other.blocks) {
+            let (Some(left), Some(right), Some(mut kept)) =
+                (left, right, result.blocks.get(key).cloned())
+            else {
+                result.blocks.remove(key);
+                continue;
+            };
+            if left.generation != right.generation {
+                result.blocks.remove(key);
+                continue;
+            }
+            for (start, _, _) in left.cells.diff(&right.cells) {
+                kept.cells.remove(start);
+            }
+            if kept.cells.is_empty() {
+                result.blocks.remove(key);
+            } else {
+                result.blocks.insert(key.clone(), kept);
+            }
+        }
+    }
+    Some(result)
+}
+
 /// Apply the explicit effects once, when execution seals the point. A read
 /// of a provisional point may index a single effect but never replays a batch.
-fn local_integer_versions(
+fn local_integer_index(
     predecessors: &[PathLink],
     steps: Option<&StepLog>,
     memory: &SharedMemory,
     version: &Weak<PointNode>,
-    index_batches: bool,
-) -> LocalIntegerVersions {
-    let ([from @ PathLink(Some(before), _)], Some(step)) = (predecessors, steps) else {
-        return Default::default();
+    id: ProgramPointId,
+    transition: PointTransition,
+) -> LocalIntegerIndex {
+    let [from @ PathLink(Some(before), _)] = predecessors else {
+        return LocalIntegerIndex::empty(id);
     };
-    if (!index_batches && step.previous.is_some())
+    let Some(step) = steps else {
+        return if from.matches_indexed_view(memory) {
+            before.local_integer_index.clone()
+        } else {
+            LocalIntegerIndex::empty(id)
+        };
+    };
+    if (transition == PointTransition::Provisional && step.previous.is_some())
         || !step.contiguous
         || !from.matches_indexed_view(&step.first_base)
         || step.produced.arena_id() != memory.arena_id()
     {
-        return Default::default();
+        return LocalIntegerIndex::empty(id);
     }
-    let mut versions = before.local_integer_versions.clone();
+    let mut index = before.local_integer_index.clone();
+    let record_writes = transition != PointTransition::LoopHead;
     if step.previous.is_none() {
-        record_local_integer_effect(&mut versions, &step.step, version);
+        record_local_integer_effect(&mut index, &step.step, version, id, record_writes);
     } else {
         let effects =
             std::iter::successors(Some(step), |step| step.previous.as_deref()).collect::<Vec<_>>();
         for effect in effects.into_iter().rev() {
-            record_local_integer_effect(&mut versions, &effect.step, version);
+            record_local_integer_effect(&mut index, &effect.step, version, id, record_writes);
         }
     }
-    versions
+    index
 }
 
 fn record_local_integer_effect(
-    versions: &mut LocalIntegerVersions,
+    index: &mut LocalIntegerIndex,
     step: &Arc<MemoryDerivation>,
     version: &Weak<PointNode>,
+    id: ProgramPointId,
+    record_writes: bool,
 ) {
     crate::instrumentation::record_deterministic_work(1);
     match step.as_ref() {
         MemoryDerivation::Store { pointer, value, .. } if indexed_local(&pointer.base) => {
             let width = i64::from(value.byte_width());
             let AddressOffset::Constant(start) = pointer.offset else {
-                versions.remove(&pointer.base);
+                index.blocks.remove(&pointer.base);
                 return;
             };
             let Some(end) = start
                 .checked_add(width)
                 .filter(|_| start >= 0 && (1..=super::MAX_SCALAR_ACCESS_BYTES).contains(&width))
             else {
-                versions.remove(&pointer.base);
+                index.blocks.remove(&pointer.base);
                 return;
             };
-            let mut cells = versions.get(&pointer.base).cloned().unwrap_or_default();
-            clear_overlapping_cells(&mut cells, start, end);
-            if integer_store_bits(step).is_some() {
-                cells.insert(
+            let mut block =
+                index
+                    .blocks
+                    .get(&pointer.base)
+                    .cloned()
+                    .unwrap_or_else(|| LocalIntegerBlock {
+                        generation: id,
+                        cells: LocalIntegerCells::default(),
+                    });
+            clear_overlapping_cells(&mut block.cells, start, end);
+            if record_writes && integer_store_bits(step).is_some() {
+                block.cells.insert(
                     start,
                     LocalIntegerWrite {
                         end,
@@ -442,14 +588,51 @@ fn record_local_integer_effect(
                     },
                 );
             }
-            if cells.is_empty() {
-                versions.remove(&pointer.base);
+            if block.cells.is_empty() {
+                index.blocks.remove(&pointer.base);
             } else {
-                versions.insert(pointer.base.clone(), cells);
+                index.blocks.insert(pointer.base.clone(), block);
             }
         }
         MemoryDerivation::CellsForgotten { .. } | MemoryDerivation::CellObserved { .. } => {}
-        _ => *versions = LocalIntegerVersions::default(),
+        MemoryDerivation::CallHavoc { mutable_ranges, .. }
+        | MemoryDerivation::LoopHavoc {
+            mutable_ranges: Some(mutable_ranges),
+            ..
+        } => {
+            retain_outside_named_write_objects(index, mutable_ranges, id);
+        }
+        MemoryDerivation::LocalLifetimeEnded { block, .. } if indexed_local(block) => {
+            index.blocks.remove(block);
+        }
+        _ => *index = LocalIntegerIndex::empty(id),
+    }
+}
+
+/// These object identities are structurally distinct from every indexed
+/// automatic object except that exact object. A checked range in such an
+/// object can conservatively retire its whole bucket without visiting cells.
+fn retain_outside_named_write_objects(
+    index: &mut LocalIntegerIndex,
+    ranges: &[MemoryRange],
+    id: ProgramPointId,
+) {
+    for range in ranges {
+        crate::instrumentation::record_deterministic_work(1);
+        let block = &range.base().base;
+        match block {
+            AddressBase::AutomaticLocal { .. }
+            | AddressBase::Concrete(_)
+            | AddressBase::StaticObject { .. }
+            | AddressBase::Temporary(_)
+            | AddressBase::Heap(_) => {
+                index.blocks.remove(block);
+            }
+            _ => {
+                *index = LocalIntegerIndex::empty(id);
+                return;
+            }
+        }
     }
 }
 
@@ -574,7 +757,11 @@ fn pending_point(path: &PathLink, steps: &Arc<StepLog>, memory: &SharedMemory) -
             .or_insert_with(|| {
                 (
                     steps.clone(),
-                    path.after_with_index(memory.clone(), Some(steps.clone()), false),
+                    path.after_with_index(
+                        memory.clone(),
+                        Some(steps.clone()),
+                        PointTransition::Provisional,
+                    ),
                 )
             })
             .1
@@ -726,8 +913,10 @@ impl ProgramPoint {
         };
         let end = start.checked_add(i64::from(kind.byte_width()))?;
         let write = node
-            .local_integer_versions
+            .local_integer_index
+            .blocks
             .get(&pointer.base)?
+            .cells
             .get(&start)?;
         if write.end != end || integer_store_bits(&write.store)?.0 != kind {
             return None;
@@ -917,6 +1106,121 @@ mod tests {
         assert_eq!(unlogged.program_point_id(), sibling.program_point_id());
         assert_eq!(version(&unlogged), None);
         assert_eq!(version(&store_word(&unlogged, left, 2)), None);
+    }
+
+    #[test]
+    fn a_join_keeps_the_shared_store_and_declines_a_same_value_rewrite() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let slot = slot();
+        let other = slot.offset_by_bytes(4);
+        let start = ExecutionState::new()
+            .with_memory(SymbolicMemory::new().with_block(slot.base.clone(), 8));
+        let split = stored(&start, 7);
+        let write_sibling = |value| {
+            split.clone().with_memory(split.memory().clone().store(
+                other.clone(),
+                ProgramValue::Int32(MachineTerm::constant(value)),
+            ))
+        };
+        let left = write_sibling(2);
+        let right = write_sibling(3);
+        let mut joined = left.clone();
+        joined.join_program_points(&left, &right, split.path_link());
+        let version = |state: &ExecutionState, pointer: &Address| {
+            state
+                .program_point()
+                .indexed_local_integer_version(pointer, LoadKind::Int32)
+                .and_then(|point| point.read_version_id())
+        };
+        assert_eq!(version(&joined, &slot), split.program_point_id());
+        let walked =
+            crate::kernel::resource_tracker::cell_version_on_path(joined.path_link(), &slot, 4);
+        assert_eq!(
+            walked.and_then(|point| point.id()),
+            split.program_point_id()
+        );
+        assert_eq!(version(&joined, &other), None);
+
+        let rewritten = stored(&left, 7);
+        assert_eq!(rewritten.memory(), left.memory());
+        joined.join_program_points(&left, &rewritten, split.path_link());
+        assert_eq!(version(&joined, &slot), None);
+    }
+
+    #[test]
+    fn checked_call_and_loop_footprints_keep_the_other_object_version() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let slot = slot();
+        let other = Address {
+            base: "local:other".into(),
+            offset: AddressOffset::Constant(0),
+        };
+        let start = ExecutionState::new().with_memory(
+            SymbolicMemory::new()
+                .with_block(slot.base.clone(), 4)
+                .with_block(other.base.clone(), 4),
+        );
+        let written = stored(&start, 7);
+        let written = written.clone().with_memory(
+            written
+                .memory()
+                .clone()
+                .store(other.clone(), ProgramValue::Int32(MachineTerm::constant(2))),
+        );
+        let version = |state: &ExecutionState, pointer: &Address| {
+            state
+                .program_point()
+                .indexed_local_integer_version(pointer, LoadKind::Int32)
+                .and_then(|point| point.read_version_id())
+        };
+        let expected = version(&written, &slot);
+        assert!(expected.is_some());
+        let range = MemoryRange::new(other.clone(), 0.into(), 1.into());
+        let called =
+            written
+                .clone()
+                .with_memory(written.memory().clone().with_storage_memory_havoc(
+                    Variable(38_131),
+                    std::slice::from_ref(&range),
+                    &PureFactContext::new(),
+                ));
+        assert_eq!(version(&called, &slot), expected);
+        assert_eq!(version(&called, &other), None);
+        let unknown =
+            called
+                .clone()
+                .with_memory(called.memory().clone().with_storage_memory_havoc(
+                    Variable(38_132),
+                    &[MemoryRange::unnamed_footprint()],
+                    &PureFactContext::new(),
+                ));
+        assert_eq!(version(&unknown, &slot), None);
+
+        let mut head = written.clone();
+        head.replace_loop_head_local_cell(
+            other.clone(),
+            ProgramValue::Int32(MachineTerm::constant(3)),
+        );
+        let memory = head
+            .memory()
+            .clone()
+            .with_loop_memory_havoc_preserving_loans(
+                Variable(38_133),
+                &std::collections::BTreeSet::new(),
+                Some(&[range]),
+                None,
+            );
+        head.set_loop_head_memory(memory);
+        assert_ne!(head.program_point_id(), written.program_point_id());
+        assert_eq!(version(&head, &slot), expected);
+        assert_eq!(version(&head, &other), None);
+        let mut exit = head.clone();
+        exit.join_loop_exit_program_points(&[&head]);
+        assert_ne!(exit.program_point_id(), head.program_point_id());
+        assert_eq!(version(&exit, &slot), expected);
+        let rewritten = stored(&head, 7);
+        exit.join_loop_exit_program_points(&[&head, &rewritten]);
+        assert_eq!(version(&exit, &slot), None);
     }
 
     #[test]

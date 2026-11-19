@@ -2431,7 +2431,7 @@ fn join_loop_exits(
     let unchanged = || vec![LoopExitRestatement::default(); exits.len()];
     let invariant_state_unchanged = states[1..].iter().all(|other| **other == exit_state);
     let mut join_requirements = Vec::new();
-    let (exit_state, restatements, mismatch) = if invariant_state_unchanged {
+    let (mut exit_state, restatements, mismatch) = if invariant_state_unchanged {
         (exit_state, unchanged(), None)
     } else {
         let facts = exits
@@ -2458,6 +2458,9 @@ fn join_loop_exits(
             Err(mismatch) => (exit_state, unchanged(), Some(mismatch)),
         }
     };
+    if mismatch.is_none() {
+        exit_state.join_loop_exit_program_points(&states);
+    }
     let (facts, mut obligations, loan_evidence) = join_loop_exit_paths(
         exits
             .into_iter()
@@ -8796,8 +8799,8 @@ pub(super) fn havoc_loop_modified_locals(
         names.extend(escaped.iter().cloned());
     }
     let locals = head_locals::LoopHeadLocals::new(state, names, variables, budget)?;
-    let mut state = locals.install();
-    if may_write_memory {
+    let mut state = locals.prepare();
+    let memory = if may_write_memory {
         // Keep only scalar stack local cells (constructed above); every other
         // concrete cell could have been
         // overwritten by the loop body through a pointer. Address-escaped
@@ -8806,7 +8809,7 @@ pub(super) fn havoc_loop_modified_locals(
         // Cells under an active stable-view loan are stable across the loop
         // by the loan itself; erasing them would only lose loan-supported
         // framing, never authority.
-        let havoced_memory = state
+        state
             .memory
             .clone()
             .with_loop_memory_havoc_preserving_locals(
@@ -8815,9 +8818,11 @@ pub(super) fn havoc_loop_modified_locals(
                 mutable_ranges,
                 state.loan_ledger(),
                 kept_by_function,
-            );
-        state.set_memory(havoced_memory);
-    }
+            )
+    } else {
+        state.memory.clone()
+    };
+    state.set_loop_head_memory(memory);
     Ok(state)
 }
 
