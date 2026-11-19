@@ -331,7 +331,7 @@ struct FunctionResourceTransfer {
     borrowed_inputs: Vec<CheckedResourceFact>,
     consumed_inputs: Vec<CheckedResourceFact>,
     /// Entry clauses whose checked expansion has no owned members.
-    empty_owned_clause_positions: BTreeSet<usize>,
+    empty_owned_input_indices: BTreeSet<usize>,
     /// Checked callee-side borrowed ownership paired with an equivalent
     /// caller-side spelling selected by the exclusive reservation planner.
     /// This is output-sized call-boundary pairing, not a search through
@@ -6832,9 +6832,9 @@ fn prepare_verified_function_call<'a>(
         .iter()
         .chain(&transfer.consumed_inputs)
         .filter(|input| {
-            !transfer
-                .empty_owned_clause_positions
-                .contains(&input.clause_position)
+            !input
+                .section_index
+                .is_some_and(|index| transfer.empty_owned_input_indices.contains(&index))
         })
         .cloned()
         .collect::<Vec<_>>();
@@ -11766,7 +11766,7 @@ fn prepare_contract_resource_transfer_unexplained(
             helper_call: None,
             borrowed_inputs: Vec::new(),
             consumed_inputs: Vec::new(),
-            empty_owned_clause_positions: BTreeSet::new(),
+            empty_owned_input_indices: BTreeSet::new(),
             canonical_borrowed_owners: Vec::new(),
             consumed_cell_returns: ConsumedCellReturns::default(),
             allocation_creator: checked_allocation_creator(caller_state, callee_state),
@@ -12936,9 +12936,9 @@ fn prepare_contract_resource_transfer_unexplained(
         helper_call,
         borrowed_inputs,
         consumed_inputs,
-        empty_owned_clause_positions: definitionally_empty_owned
+        empty_owned_input_indices: definitionally_empty_owned
             .iter()
-            .map(|requirement| requirement.clause_position)
+            .filter_map(|requirement| requirement.section_index)
             .collect(),
         canonical_borrowed_owners,
         consumed_cell_returns,
