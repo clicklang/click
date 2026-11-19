@@ -352,9 +352,9 @@ impl SpecValue {
             .transpose()?
             .or_else(|| program_value_comparison_proposition(&left, op, &right));
         // Lowering is structural: when the native constructor decides a
-        // comparison of two machine words of one format, such as
-        // `address(p) + 3u64 == address(p) + 3u64`, keep the comparison;
-        // checking decides it.
+        // comparison of two identical or literal machine words of one
+        // format, such as `address(p) + 3u64 == address(p) + 3u64`, keep
+        // the comparison; checking decides it.
         if let Some(Proposition::ConditionIs(condition, _)) = &proposition
             && matches!(condition.native_compat(), ConditionTerm::Constant(_))
             && let Some(retained) = retained_word_comparison(&left, op, &right)
@@ -382,7 +382,13 @@ fn retained_word_comparison(
         })
     };
     let ((format, left), (right_format, right)) = (word(left)?, word(right)?);
-    if format != right_format {
+    // Identical or literal words only; a comparison the type range decides
+    // keeps its established decision.
+    if format != right_format
+        || !(left == right
+            || (format.constant_from_term(&left).is_some()
+                && format.constant_from_term(&right).is_some()))
+    {
         return None;
     }
     let relation = match op {

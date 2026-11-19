@@ -8452,3 +8452,48 @@ fn recorded_volatile_read_slots_retain_the_producer_value() {
         Some(&root)
     );
 }
+
+/// Lowering keeps a comparison of two identical or literal machine words,
+/// `address(p) + 3u64 == address(p) + 3u64`, rather than deciding it;
+/// checking decides it. A comparison its operands' type range decides,
+/// `0u64 <= w`, keeps its established decision.
+#[test]
+fn identical_word_comparisons_keep_their_comparison_through_lowering() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let pointer = crate::kernel::Pointer::new(
+        Address::symbolic(Variable(999_962)),
+        ProgramType::Int32Pointer,
+    );
+    let state = ExecutionState::new()
+        .with_local("p", ProgramValue::Pointer(pointer))
+        .with_local(
+            "w",
+            ProgramValue::UInt64(MachineTerm::Variable(Variable(999_961))),
+        );
+    let lower = |text: &str| {
+        let file = parser::parse(&format!(
+            "theorem probe() {{ requires {text}; ensures true; }}"
+        ))
+        .unwrap();
+        let Requirement::Proposition(written) = &file.theorem_definitions()[0].requires()[0] else {
+            panic!("requirement")
+        };
+        relower_written_proposition(written, &state).unwrap()
+    };
+    let Proposition::ConditionIs(condition, true) = lower("address(p) + 3u64 == address(p) + 3u64")
+    else {
+        panic!("a held comparison")
+    };
+    assert!(
+        matches!(condition.native_compat(), ConditionTerm::Compare { .. }),
+        "{condition:?}"
+    );
+    assert_eq!(condition.native_compat().reflexive_value(), Some(true));
+    let Proposition::ConditionIs(range, true) = lower("0u64 <= w") else {
+        panic!("a held comparison")
+    };
+    assert!(
+        matches!(range.native_compat(), ConditionTerm::Constant(true)),
+        "{range:?}"
+    );
+}

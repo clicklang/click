@@ -531,8 +531,8 @@ pub(crate) fn condition_for_operand_views(
 }
 
 /// [`condition_for_operand_views`]. Under logical lowering (`structural`)
-/// a comparison of two atoms the native constructor would decide, because
-/// they are the same atom or literal arithmetic, keeps its comparison:
+/// a comparison of two atoms the native constructor would decide because
+/// they are the same atom or both literals keeps its comparison:
 /// lowering `address(p) + 3u64 == address(p) + 3u64` or `(0 + 1) == 2`
 /// does not compute its truth; checking does.
 fn condition_for_operand_views_in(
@@ -634,9 +634,15 @@ fn condition_for_operand_views_in(
     if let [V::Legacy(left), V::Legacy(right)] = operands {
         let condition =
             ConditionTerm::machine_compare(format, relation, left.clone(), right.clone());
+        // Only identical or literal operands: a comparison the operands'
+        // type range decides, such as `0u64 <= k`, keeps its established
+        // decision.
         if structural
             && matches!(condition, ConditionTerm::Constant(_))
             && matches!(format.format().bits(), 32 | 64)
+            && (left == right
+                || (format.constant_from_term(left).is_some()
+                    && format.constant_from_term(right).is_some()))
         {
             return retained_compare(format, relation, left.clone(), right.clone());
         }
