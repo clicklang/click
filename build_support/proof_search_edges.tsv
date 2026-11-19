@@ -819,3 +819,6 @@ src/surface/proof/smart_closures/signed_intervals.rs	search	ProofSearch::apply_s
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_direct_logical_leaf	try_conditional_bound_using	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_direct_logical_closure	try_direct_logical_leaf	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_direct_structural_closure_inner_impl	try_direct_logical_leaf	1
+src/surface/proof/smart_closures/signed_intervals.rs	search	ProofSearch::try_signed_countdown_using	driver	8
+src/surface/proof/smart_closures/signed_intervals.rs	search	ProofSearch::ordinary_integer_fact	try_signed_countdown_using	1
+src/surface/proof/driver/scopes.rs	driver	ProofDriver::try_signed_countdown_using	try_signed_countdown_using	1

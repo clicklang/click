@@ -99,6 +99,23 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
         Ok(Some(next))
     }
 
+    /// Construct the selected countdown bound in its owned have body.
+    pub(in crate::surface::proof) fn try_signed_countdown_using(
+        &self,
+        premises: &[ClickProposition],
+    ) -> Result<Option<ProofScope<'a>>, ClickError> {
+        let Some(body) = crate::kernel::search::ProofSearch::try_signed_countdown_using(
+            &self.proof.body,
+            premises,
+        )?
+        else {
+            return Ok(None);
+        };
+        let mut next = self.proof.clone();
+        next.body = body;
+        Ok(Some(next))
+    }
+
     /// Run only the ordinary Integer emitter in a selected have body.
     pub(in crate::surface::proof) fn try_integer_composition_using(
         &self,

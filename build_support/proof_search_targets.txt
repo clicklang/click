@@ -235,6 +235,7 @@ try_recorded_footprint_preservation
 publish_selected_fact
 try_signed_interval_using
 ordinary_integer_fact
+try_signed_countdown_using
 apply_signed_interval_composition
 
 apply_specialized_composition
