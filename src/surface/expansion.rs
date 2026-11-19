@@ -5599,10 +5599,7 @@ fn parse_source_with_program_layouts_context(
     sources: &ProgramSourceContext<'_>,
 ) -> Result<ClickFile, ClickError> {
     let layouts = parse_c_layouts(click_source, sources)?;
-    parser::parse_with_layouts_and_aggregate_objects(
-        &sources.with_library_contracts(click_source),
-        layouts,
-    )
+    parser::parse_with_interface_catalog(click_source, layouts, sources.library_contracts())
 }
 
 fn offset_at_position(source: &str, line: usize, column: usize) -> Result<usize, ClickError> {

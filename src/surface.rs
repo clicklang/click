@@ -428,11 +428,14 @@ pub const SURFACE_CLICK_FORMS: &[&str] = &[
 ];
 
 /// The `click::` path of a Click library module identity:
-/// `library/c/string.click` is `click::c::string`.
+/// `library/c/string.interface.click` is `click::c::string`.
 fn library_module_path(identity: &str) -> String {
     let relative = identity
         .strip_prefix("library/")
-        .and_then(|path| path.strip_suffix(".click"))
+        .and_then(|path| {
+            path.strip_suffix(".interface.click")
+                .or_else(|| path.strip_suffix(".click"))
+        })
         .unwrap_or(identity);
     format!("click::{}", relative.replace('/', "::"))
 }
@@ -701,12 +704,12 @@ const CLICK_LIBRARY_MODULES: &[(&str, &str)] = &[
         include_str!("../library/bytes.click"),
     ),
     (
-        "library/c/builtins.click",
-        include_str!("../library/c/builtins.click"),
+        "library/c/builtins.interface.click",
+        include_str!("../library/c/builtins.interface.click"),
     ),
     (
-        "library/c/string.click",
-        include_str!("../library/c/string.click"),
+        "library/c/string.interface.click",
+        include_str!("../library/c/string.interface.click"),
     ),
     (
         "library/integer.click",

@@ -46,18 +46,29 @@ fn generic_rust_clause_proofs_stay_on_the_generic_function() {
         "{error}"
     );
 
-    // A handwritten extern still cannot carry a proof.
+    // An imported interface contract cannot carry a program proof.
     let path = root.join("design/charon-trial/extern-functions/ffi.click");
-    let original = fs::read_to_string(&path).unwrap();
+    let mut source = load_audit_source(&path).unwrap();
+    let project = source.project.as_ref().unwrap();
+    let original = fs::read_to_string(path.with_file_name("ffi.interface.click")).unwrap();
     let invalid = original.replacen(
         "ensures 0 <= result and result <= 100;",
         "ensures 0 <= result and result <= 100 by { normalize(); }",
         1,
     );
     assert_ne!(invalid, original);
-    let source = load_audit_source_from_text(&path, invalid).unwrap();
+    source.project = Some(ClickProject::new(
+        project.entry(),
+        project.modules().iter().map(|module| {
+            if module.identity() == "ffi.interface.click" {
+                click::surface::ClickModuleSource::new(module.identity(), &invalid, [])
+            } else {
+                module.clone()
+            }
+        }),
+    ));
     let error = match start_session(&source) {
-        Ok(_) => panic!("a handwritten extern cannot carry a proof"),
+        Ok(_) => panic!("an interface contract cannot carry a program proof"),
         Err(error) => error,
     };
     assert!(

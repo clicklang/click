@@ -160,19 +160,20 @@ const SPAN_ELEMENTS: &[SpanElement] = &[
 
 /// The Click library file that states the `std::span<T>` and
 /// `std::span<T, N>` contracts, as template methods a sidecar writes.
-pub(crate) const SPAN_LIBRARY: &str = include_str!("../../../library/cpp/span.click");
+pub(crate) const SPAN_LIBRARY: &str = include_str!("../../../library/cpp/span.interface.click");
 
 /// The Click library file that states the `std::array<T, N>` contracts.
-pub(crate) const ARRAY_LIBRARY: &str = include_str!("../../../library/cpp/array.click");
+pub(crate) const ARRAY_LIBRARY: &str = include_str!("../../../library/cpp/array.interface.click");
 
 /// The Click library file that states `std::as_writable_bytes`, a function
 /// template written `std::as_writable_bytes<T, N>` by its element and
 /// extent.
 pub(crate) const AS_WRITABLE_BYTES_LIBRARY: &str =
-    include_str!("../../../library/cpp/as_writable_bytes.click");
+    include_str!("../../../library/cpp/as_writable_bytes.interface.click");
 
 /// Logical descriptor contracts, currently selected for dynamic `std::span<int>`.
-const SPAN_STATE_CONTRACTS: &str = include_str!("../../../library/cpp/span_state_contracts.click");
+const SPAN_STATE_CONTRACTS: &str =
+    include_str!("../../../library/cpp/span_state_contracts.interface.click");
 
 /// The exact standard signatures that the Click library maps to templates: each instance's qualified name and canonical signature as Clang
 /// spells them, the library template's path, and its file. An axiom
@@ -411,9 +412,7 @@ pub(super) fn contracts(
     }
     if export.uses_ios_failure_factory() {
         models.insert(IOS_FAILURE_FACTORY.to_string());
-        libraries.push(
-            "extern std::ios_base::failure __click_cpp_decl_ios_failure() { ensures true; }\n",
-        );
+        libraries.push("std::ios_base::failure __click_cpp_decl_ios_failure() { ensures true; }\n");
     }
     Ok((libraries.concat(), models))
 }

@@ -6,6 +6,13 @@ function. This page states how every library interface is designed, in C, C++
 and Rust, and how to add one. Follow it whenever Click gains support for
 another standard-library or core function or type.
 
+A `*.interface.click` file supplies callable contracts without selecting
+program bodies. Its function heads are declarations and its contracts are
+reported as assumptions when a caller depends on them. Predicates, resources
+and pure functions work as in other Click modules. Any helper theorems still
+have to be proved. A verification sidecar selects program source with
+`verifying` and can import an interface with `import "name.interface.click";`.
+
 ## Principles
 
 1. **Click defines the interface; the implementation is never used.** A
@@ -21,7 +28,7 @@ another standard-library or core function or type.
 3. **Library types use the mechanisms user types use.** A library type's
    ownership and its functions' contracts are written the way a crate or a C
    program would write its own type's: the same resources and the same
-   `extern` contracts. A user's `MyBox<T>` and Rust's `Box<T>` are handled
+   interface contracts. A user's `MyBox<T>` and Rust's `Box<T>` are handled
    alike, so neither the kernel nor a front end knows either one by name.
 4. **Language primitives are lowered; library code is called.** A front end
    lowers the language's own primitives directly: C pointers and arrays, Rust
@@ -50,9 +57,9 @@ another standard-library or core function or type.
 
 ## Adding an interface
 
-1. Write the contract, and the type's ownership resource if it owns memory, in
-   the library file for its language: `library/c/`, `library/cpp/` or
-   `library/rust/`. State observable effects only (principle 2).
+1. Write the contract in a `*.interface.click` file under `library/c/`,
+   `library/cpp/` or `library/rust/` and include the type's ownership
+   resource if it owns memory. State observable effects only (principle 2).
 2. Map the call to it in the front end's name table:
    `src/languages/cpp/standard_library.rs` or
    `src/languages/rust/standard_library.rs`, or the C front end's
@@ -79,9 +86,9 @@ noted, and a new interface must not copy one.
 | Rust | `Option::take` is rewritten into the move its implementation makes | `src/languages/rust/charon/option_take.rs` | One generic `Option::take<T>` contract |
 | Rust | `?` checks the library's own `Try` and `FromResidual` impls, then rewrites them into the `match` they define | `src/languages/rust/charon/option_try.rs`, `src/languages/rust/charon/result_try.rs` | Contracts of `branch` and `from_residual` |
 | Rust | `Range`, `slice::Iter`, `ChunksExact` and `Enumerate` are importer statements (`RangeNext`, `ChunkNext`, ...) over the iterators' fields | `src/languages/rust/charon/`, `src/languages/rust/lowering/` | Contracts of each iterator's `next` |
-| C++ | `std::span` and `std::array` contracts read their objects' layout | `library/cpp/span.click`, `library/cpp/array.click` | Contracts over each object's logical state ([C++ standard library](../reference/cli/import.md#c-standard-library)) |
+| C++ | `std::span` and `std::array` contracts read their objects' layout | `library/cpp/span.interface.click`, `library/cpp/array.interface.click` | Contracts over each object's logical state ([C++ standard library](../reference/cli/import.md#c-standard-library)) |
 | C | The allocator family is built into the C front end and the kernel | `src/languages/c/` | Justified: allocation is part of C's memory model, not a library call |
-| C | Literal formats in `snprintf`, `printf` and `fprintf` select a fixed-arity contract | `src/languages/c/formatted_output.rs`, `library/c/stream_output.click.in` | Justified while formats are checked by the C front end. The stream transition is an ordinary Click contract. |
+| C | Literal formats in `snprintf`, `printf` and `fprintf` select a fixed-arity contract | `src/languages/c/formatted_output.rs`, `library/c/stream_output.interface.click.in` | Justified while formats are checked by the C front end. The stream transition is an ordinary Click contract. |
 | C | The thread runtime is a selected specification in Rust code | `src/languages/c/thread_runtime.rs` | Justified: it models the runtime, not one function |
 
 A gap is a missing feature in an interface that follows the principles:

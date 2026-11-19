@@ -68,7 +68,7 @@ profile (LP64, C++20, Clang 19.1.7), in
 Library `Assume` assertions and the selected standard-library constructors are
 explicit, pinned assumptions, not verified implementations.
 `std::as_writable_bytes` uses an explicit library contract
-(`library/cpp/as_writable_bytes.click`).
+(`library/cpp/as_writable_bytes.interface.click`).
 
 The `SpanPopBack` contract, for descriptor pointer `p` and length `N`, from
 `src/span.h:75`, with libstdc++ `span` SHA-256

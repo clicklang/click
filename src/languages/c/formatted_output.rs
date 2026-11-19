@@ -1,6 +1,6 @@
 //! Literal-format calls in the C `printf` family. A checked format fixes
 //! the call's argument types and selects a fixed-arity `extern` contract.
-//! Stream writes use the template in `library/c/stream_output.click.in`.
+//! Stream writes use the template in `library/c/stream_output.interface.click.in`.
 //! The `snprintf` contract renders conversions with `click::c::stdio`.
 
 use std::fmt::Write as _;
@@ -212,7 +212,7 @@ pub(crate) fn describe_function(name: &str) -> Option<String> {
 
 fn stream_contract(name: &str, bytes: &[u8]) -> String {
     let message = crate::source::click_byte_string(bytes);
-    include_str!("../../../library/c/stream_output.click.in")
+    include_str!("../../../library/c/stream_output.interface.click.in")
         .replace("@function@", name)
         .replace("@length@", &bytes.len().to_string())
         .replace("@message@", &message)

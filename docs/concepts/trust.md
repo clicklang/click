@@ -226,14 +226,14 @@ proved. Each family is an assumption in the same sense:
 | Family | Reported as | What is assumed | Where it is stated |
 | --- | --- | --- | --- |
 | Your `extern` contracts | `extern` | Each `extern` block a sidecar declares | Your sidecars |
-| C library | `C library` | `memcpy`, `memcmp`, `memset` and `strlen` meet their contracts | `library/c/string.click` |
+| C library | `C library` | `memcpy`, `memcmp`, `memset` and `strlen` meet their contracts | `library/c/string.interface.click` |
 | Allocator | `allocator` | `malloc`, `calloc`, `realloc` and `free` behave as the kernel's allocation model: a fresh block or null, released once | Built in, as a language primitive: the C front end and the kernel (`allocation` resource), documented in [heap allocation](../reference/language/c.md#heap-allocation) |
 | Formatted output | `snprintf` | One contract per `snprintf` format a program uses, written from the format ([formatted output](../reference/language/c.md#formatted-output)) | `src/languages/c/formatted_output.rs` |
-| Formatted stream output | `printf` | The literal request is recorded on the hosted stdout stream, with a full byte count on success or a negative error result | `library/c/stream_output.click.in` |
-| Formatted stream output | `fprintf` | The same transition on the stream identified by the `FILE *` argument | `library/c/stream_output.click.in` |
-| C++ standard library | `C++ std` | The catalog contract of each `std::span`, `std::array` and `std::as_writable_bytes` function an import calls, and the explicitly pinned opaque exception constructor in the `ios_failure` profile | `library/cpp/span.click` (`std::span<T>` and static-extent `std::span<T, N>`), `library/cpp/span_state.click` (logical descriptor state), `library/cpp/span_state_contracts.click` (logical copy construction and `empty()` for dynamic `std::span<int>`), `library/cpp/array.click` (`std::array<T, N>`, its `const` and mutable overloads), and `library/cpp/as_writable_bytes.click` (`std::as_writable_bytes<T, N>`), Click templates written out at each called element type and extent; `src/languages/cpp/standard_library.rs` keeps the name table and the opaque exception factory contract |
-| Rust core library | `Rust core` | The contract of each core method an import calls: integer methods (`u32::min`), `Vec`, slice, and `Option`/`Result` unwrapping ([core library methods](../reference/rust.md#core-library-methods)), with the 7 `axiom`s above | `library/rust/core.click` (`Vec`, `slice::swap<T>`, `Option`/`Result` unwrapping contracts, generic `extern fn` blocks written out at each called type, with only a name table in `src/languages/rust/standard_library.rs`) and `library/rust/integers.click` (one `extern fn` per integer method and type, stating its result with the specification function of the same path in `library/rust/<type>.click`; only the called methods' lines are appended) |
-| Verifier primitive | `primitive` | `__click_constant_p_unknown`, the value of `__builtin_constant_p`, is 0 or 1 ([verifier primitives](../reference/language/index.md#verifier-primitives)): it stands for a compiler decision, not a library function | `library/c/builtins.click` |
+| Formatted stream output | `printf` | The literal request is recorded on the hosted stdout stream, with a full byte count on success or a negative error result | `library/c/stream_output.interface.click.in` |
+| Formatted stream output | `fprintf` | The same transition on the stream identified by the `FILE *` argument | `library/c/stream_output.interface.click.in` |
+| C++ standard library | `C++ std` | The catalog contract of each `std::span`, `std::array` and `std::as_writable_bytes` function an import calls, and the explicitly pinned opaque exception constructor in the `ios_failure` profile | `library/cpp/span.interface.click` (`std::span<T>` and static-extent `std::span<T, N>`), `library/cpp/span_state.click` (logical descriptor state), `library/cpp/span_state_contracts.interface.click` (logical copy construction and `empty()` for dynamic `std::span<int>`), `library/cpp/array.interface.click` (`std::array<T, N>`, its `const` and mutable overloads), and `library/cpp/as_writable_bytes.interface.click` (`std::as_writable_bytes<T, N>`), Click templates written out at each called element type and extent; `src/languages/cpp/standard_library.rs` keeps the name table and the opaque exception factory contract |
+| Rust core library | `Rust core` | The contract of each core method an import calls: integer methods (`u32::min`), `Vec`, slice, and `Option`/`Result` unwrapping ([core library methods](../reference/rust.md#core-library-methods)), with the 7 `axiom`s above | `library/rust/core.interface.click` (`Vec`, `slice::swap<T>`, `Option`/`Result` unwrapping contracts, generic contracts written out at each called type, with only a name table in `src/languages/rust/standard_library.rs`) and `library/rust/integers.interface.click` (one contract per integer method and type, stating its result with the specification function of the same path in `library/rust/<type>.click`; only the called methods' lines are appended) |
+| Verifier primitive | `primitive` | `__click_constant_p_unknown`, the value of `__builtin_constant_p`, is 0 or 1 ([verifier primitives](../reference/language/index.md#verifier-primitives)): it stands for a compiler decision, not a library function | `library/c/builtins.interface.click` |
 | Thread runtime | `runtime` | The selected `modeled-pthread` specification: create/join, shared mutex calls and one-shot atomic publication obey it | `src/languages/c/thread_runtime.rs` |
 
 The hosted C target supplies a stable, nonnull standard output handle when
@@ -266,8 +266,8 @@ tags above, after one `assumptions: every function -> runtime: ...` line when
 the sidecar selects a thread runtime
 ([`click verify`](../reference/cli/verify.md#output-and-exit-behavior)).
 The gate checks that this table names every family the report can print,
-every `extern` the C library declares, and each `library/cpp/` and
-`library/rust/core.click` file in its family's row; the contracts of those
+every program contract the C library declares, and each `library/cpp/` and
+`library/rust/core.interface.click` file in its family's row; the contracts of those
 files are listed one by one in the
 [library reference](../reference/library/index.md#c-standard-library-interfaces).
 
@@ -275,10 +275,10 @@ files are listed one by one in the
 
 Some trust comes from the sidecar itself:
 
-- An `extern` contract describes a function Click does not verify. Its
-  requirements and guarantees are trusted, as every
-  [library interface](#library-interfaces) is, and `click verify` reports it with
-  them.
+- A function contract in an interface file is an assumption about the
+  implementation. Click checks its requirements at calls and reports the
+  contract with the other [interfaces](#library-interfaces) the proof uses.
+  An inline `extern` contract has the same trust semantics during migration.
 - A `diverges` contract drops the claim that the function returns, so the
   result is partial correctness.
 - Requirements are knowns about callers. A claim about a function says

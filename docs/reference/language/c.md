@@ -2416,15 +2416,16 @@ borrowed through verified helper calls, and composed in an outer pipeline.
 
 ## External function contracts
 
-A sidecar can describe a C function whose implementation is outside the
-verified source set with an `extern` block:
+A `*.interface.click` file can describe a C function whose implementation is
+outside the verified source set. For example,
+[`external_identity.interface.click`](https://github.com/clicklang/click/blob/master/mdtests/external_identity.interface.click)
+requires a nonnegative argument and promises to return it. The calling sidecar
+imports the interface:
 
 <!-- verified-example: mdtests/external_function_contract_call.md -->
 ```click
-extern int32 external_identity(int32 x) {
-    requires x >= 0;
-    ensures result == x;
-}
+import "external_identity.interface.click";
+verifying "caller.c";
 ```
 
 The declaration may use the ordinary `requires`, `ensures`, resource, and
@@ -2432,19 +2433,18 @@ The declaration may use the ordinary `requires`, `ensures`, resource, and
 proof script. Calls apply the declaration as an explicit opaque assumption;
 Click does not execute a synthesized body or treat the declaration as proof
 that an implementation was verified. A caller still has to establish every
-declared precondition.
+declared precondition. Existing inline `extern` blocks in sidecars still
+describe the same assumption during the migration.
 
 An external allocator can describe storage returned through a supported data
-pointer or pointer-array type. For example:
+pointer or pointer-array type. For example,
+[`external_alloc.interface.click`](https://github.com/clicklang/click/blob/master/mdtests/external_alloc.interface.click)
+supplies allocation authority and ownership of the returned bytes:
 
 <!-- verified-example: mdtests/external_allocator_contract.md -->
 ```click
-extern uint8* external_alloc(int32 bytes) {
-    requires 0 < bytes;
-    ensures result != 0;
-    produces allocation(result, bytes);
-    produces result[0..bytes];
-}
+import "external_alloc.interface.click";
+verifying "external_allocator_contract.c";
 ```
 
 The allocation authority's base is pointer-type independent; the owned range

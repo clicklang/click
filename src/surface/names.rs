@@ -296,7 +296,7 @@ const QUALIFIED_MODULES: &[&str] = &[
     "library/nat.click",
     "library/list.click",
     "library/bytes.click",
-    "library/c/string.click",
+    "library/c/string.interface.click",
     "library/permutation.click",
     "library/integer.click",
     "library/c/stdio.click",
@@ -408,12 +408,17 @@ fn module_identity_of_file(file: &str) -> Option<&'static str> {
 }
 
 /// The `library/` identity of a module path such as `["c", "string"]`.
-fn module_identity(segments: &[&str]) -> Option<&'static str> {
-    let identity = format!("library/{}.click", segments.join("/"));
+pub(super) fn module_identity(segments: &[&str]) -> Option<&'static str> {
+    let identity = format!("library/{}", segments.join("/"));
     super::CLICK_LIBRARY_MODULES
         .iter()
         .map(|(module, _)| *module)
-        .find(|module| *module == identity)
+        .find(|module| {
+            module
+                .strip_suffix(".interface.click")
+                .or_else(|| module.strip_suffix(".click"))
+                == Some(identity.as_str())
+        })
 }
 
 /// Rewrites each qualified library name to the declaration it names, and
@@ -525,7 +530,10 @@ pub(super) fn resolve_library_paths(
 fn short_module_name(identity: &str) -> &str {
     identity
         .strip_prefix("library/")
-        .and_then(|path| path.strip_suffix(".click"))
+        .and_then(|path| {
+            path.strip_suffix(".interface.click")
+                .or_else(|| path.strip_suffix(".click"))
+        })
         .and_then(|path| path.rsplit('/').next())
         .unwrap_or(identity)
 }

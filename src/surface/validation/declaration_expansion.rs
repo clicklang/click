@@ -313,7 +313,7 @@ const IMPLICIT_LIBRARY_MODULES: &[&str] = &[
     "library/list.click",
     "library/option.click",
     "library/result.click",
-    "library/c/builtins.click",
+    "library/c/builtins.interface.click",
 ];
 
 /// The `library/` identities of the implicit Click library modules.

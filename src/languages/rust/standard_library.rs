@@ -1,10 +1,10 @@
 //! The contracts Click supplies for the Rust core methods an import calls.
-//! They are knowns, as an `extern fn` contract is. The `Vec`, slice,
+//! They are knowns, as an `fn` contract is. The `Vec`, slice,
 //! slice-iterator, `ChunksExact`, `Option::unwrap` and `Result::unwrap`
-//! methods are generic `extern fn` blocks in `library/rust/core.click`,
+//! methods are generic `fn` blocks in `library/rust/core.interface.click`,
 //! written out at each instance as a sidecar's generic functions are. The
-//! integer methods are one-line `extern fn` contracts in
-//! `library/rust/integers.click`, `u32::min`, each stating its result with
+//! integer methods are one-line `fn` contracts in
+//! `library/rust/integers.interface.click`, `u32::min`, each stating its result with
 //! the library's specification function of the same path. This file keeps
 //! only the name tables.
 use super::schema::RustExport;
@@ -18,8 +18,8 @@ pub(super) const SLICE_SWAP: &str = "slice::swap";
 pub(super) const VEC: &str = "Vec::";
 
 /// The Click library file that states the core methods it models as
-/// generic `extern fn` blocks over their type parameters.
-const CORE_LIBRARY: &str = include_str!("../../../library/rust/core.click");
+/// generic `fn` blocks over their type parameters.
+const CORE_LIBRARY: &str = include_str!("../../../library/rust/core.interface.click");
 
 /// The core methods the Click library states as generic functions: the path
 /// of each library generic function and its file. A core method whose
@@ -42,8 +42,8 @@ const LIBRARY_FUNCTIONS: &[(&[&str], &str)] = &[
 ];
 
 /// The Click library file that states the integer core methods, one
-/// single-line `extern fn` per method and type, `u32::min`.
-const INTEGER_LIBRARY: &str = include_str!("../../../library/rust/integers.click");
+/// single-line `fn` per method and type, `u32::min`.
+const INTEGER_LIBRARY: &str = include_str!("../../../library/rust/integers.interface.click");
 
 /// The integer types whose core methods [`INTEGER_LIBRARY`] states.
 const INTEGER_TYPES: &[&str] = &[
@@ -67,7 +67,7 @@ const INTEGER_METHODS: &[&str] = &[
 ];
 
 /// The library contract of the integer core method whose importer name is
-/// `name`, `u32::min`: its `extern fn` line in [`INTEGER_LIBRARY`]. Only
+/// `name`, `u32::min`: its `fn` line in [`INTEGER_LIBRARY`]. Only
 /// the methods an import calls are appended, since a contract at a type
 /// the import never names, `Option<i8>`, would not resolve.
 fn integer_contract(name: &str) -> Option<&'static str> {
@@ -77,7 +77,7 @@ fn integer_contract(name: &str) -> Option<&'static str> {
             .find(|method| super::names::qualified_name([*ty, **method]) == name)
             .map(|method| (*ty, *method))
     })?;
-    let head = format!("extern fn {ty}::{method}(");
+    let head = format!("fn {ty}::{method}(");
     INTEGER_LIBRARY.lines().find(|line| line.starts_with(&head))
 }
 
@@ -121,7 +121,7 @@ pub(super) const RESULT_UNWRAP_OR: &str = "click::rust::result::unwrap_or";
 /// panics on at `None`.
 pub(super) const OPTION_UNWRAP: &str = "option::unwrap";
 
-/// The `extern fn` contracts of the core methods `export` calls, with the
+/// The `fn` contracts of the core methods `export` calls, with the
 /// name of each function they declare: the Click library files stating the
 /// library's generic functions an import's core methods are instances of,
 /// and the library line of each integer method an import calls.
@@ -235,7 +235,7 @@ mod tests {
         }
         let declared = INTEGER_LIBRARY
             .lines()
-            .filter(|line| line.starts_with("extern "))
+            .filter(|line| line.starts_with("fn "))
             .collect::<BTreeSet<_>>();
         assert_eq!(declared, expected);
     }
@@ -279,7 +279,7 @@ mod tests {
         let (source, models) = contracts(&export);
         assert_eq!(
             source,
-            "\nextern fn u32::checked_add(a: u32, b: u32) -> Option<u32> { \
+            "\nfn u32::checked_add(a: u32, b: u32) -> Option<u32> { \
              ensures result == click::rust::u32::checked_add(a, b); }\n"
         );
         assert_eq!(

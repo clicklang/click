@@ -1,7 +1,7 @@
 import click::cpp::span_state::{span_state};
 
 // The catalog currently selects these contracts for dynamic std::span<int>.
-template<class T> extern std::span<T>::span(const std::span<T>& source) {
+template<class T> std::span<T>::span(const std::span<T>& source) {
     owns input: span_state(&source as (uint8*));
     produces copy: span_state(this as (uint8*));
     ensures input.data == old(input.data);
@@ -10,7 +10,7 @@ template<class T> extern std::span<T>::span(const std::span<T>& source) {
     ensures copy.count == input.count;
 }
 
-template<class T> extern bool std::span<T>::empty() const {
+template<class T> bool std::span<T>::empty() const {
     owns state: span_state(this as (uint8*));
     ensures state.data == old(state.data);
     ensures state.count == old(state.count);

@@ -265,18 +265,6 @@ impl<'a> ProgramSourceContext<'a> {
         }
     }
 
-    /// `click_source` followed by [`Self::library_contracts`]. Appending
-    /// keeps every position in the sidecar unchanged.
-    pub(in crate::surface) fn with_library_contracts<'s>(
-        &self,
-        click_source: &'s str,
-    ) -> std::borrow::Cow<'s, str> {
-        match self.library_contracts() {
-            "" => std::borrow::Cow::Borrowed(click_source),
-            contracts => std::borrow::Cow::Owned(format!("{click_source}\n{contracts}")),
-        }
-    }
-
     pub(in crate::surface) fn program(
         import: impl Into<PreparedProgram>,
     ) -> Result<Self, ClickError> {
@@ -726,10 +714,8 @@ pub(in crate::surface) fn verify_click_theorem_context(
     theorem_name: &str,
 ) -> Result<Vec<VerifiedPureTheorem>, ClickError> {
     let layouts = parse_c_layouts(click_source, sources)?;
-    let file = parser::parse_with_layouts_and_aggregate_objects(
-        &sources.with_library_contracts(click_source),
-        layouts,
-    )?;
+    let file =
+        parser::parse_with_interface_catalog(click_source, layouts, sources.library_contracts())?;
     verify_click_file_theorem_context(file, sources, theorem_name)
 }
 
@@ -882,10 +868,7 @@ fn parse_click_file_with_program_sources(
         ));
     }
     let layouts = parse_c_layouts(click_source, sources)?;
-    parser::parse_with_layouts_and_aggregate_objects(
-        &sources.with_library_contracts(click_source),
-        layouts,
-    )
+    parser::parse_with_interface_catalog(click_source, layouts, sources.library_contracts())
 }
 
 /// Adds every user-defined tactic to the run as the contract of a procedure
@@ -2201,9 +2184,10 @@ fn verify_program_in_context(
         let resource_struct_layouts = layouts.struct_layouts.clone();
         let file = match resolved_file {
             Some(file) => file,
-            None => parser::parse_with_layouts_and_aggregate_objects(
-                &c_sources.with_library_contracts(click_source),
+            None => parser::parse_with_interface_catalog(
+                click_source,
                 layouts,
+                c_sources.library_contracts(),
             )?,
         };
         modules::reject_theorem_justification_cycles(&file)?;
@@ -3539,10 +3523,8 @@ fn external_dependencies_context(
     sources: &ProgramSourceContext<'_>,
 ) -> Result<BTreeMap<String, Vec<String>>, ClickError> {
     let layouts = parse_c_layouts(click_source, sources)?;
-    let file = parser::parse_with_layouts_and_aggregate_objects(
-        &sources.with_library_contracts(click_source),
-        layouts,
-    )?;
+    let file =
+        parser::parse_with_interface_catalog(click_source, layouts, sources.library_contracts())?;
     external_dependencies_file(&file, sources)
 }
 
@@ -3589,7 +3571,7 @@ pub enum ModelFamily {
     CppStd,
     /// A Rust core-method contract.
     RustCore,
-    /// The contract of a verifier primitive in `library/c/builtins.click`:
+    /// The contract of a verifier primitive in `library/c/builtins.interface.click`:
     /// the value of `__builtin_constant_p`.
     Primitive,
 }
