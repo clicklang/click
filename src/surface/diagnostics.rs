@@ -1416,6 +1416,7 @@ fn local_naming_entries(
             !name
                 .local_id()
                 .is_some_and(crate::kernel::LocalBindingId::is_temporary)
+                && has_surface_chunk_binding(name)
                 && !name.named().is_some_and(|name| name.starts_with("__rust_"))
         })
         .filter_map(|(name, value)| {

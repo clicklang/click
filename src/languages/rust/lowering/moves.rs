@@ -1829,7 +1829,7 @@ mod tests {
                 shared_array_options: BTreeMap::new(),
                 shared_scalar_slices: BTreeMap::new(),
                 mir_chunk_iterators: BTreeMap::new(),
-                chunk_options: BTreeSet::new(),
+                chunk_options: BTreeMap::new(),
                 local_arrays: BTreeSet::new(),
                 arrays: BTreeMap::new(),
                 owned_locals: BTreeSet::new(),

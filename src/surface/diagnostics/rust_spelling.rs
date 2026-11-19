@@ -353,12 +353,12 @@ pub(crate) fn rust_binding_spelling(name: &crate::kernel::BindingName) -> Option
     })
 }
 
-/// An iterator's MIR copies have typed storage but only the loop's own
-/// storage can be named through `iter`. Raise other copies structurally.
+/// Only the loop's iterator fields have selectors. Raise the values held
+/// by iterator copies and the private Option fields structurally.
 pub(crate) fn has_surface_chunk_binding(name: &crate::kernel::BindingName) -> bool {
     !name
         .local_id()
-        .is_some_and(crate::kernel::LocalBindingId::is_chunk_iterator_field)
+        .is_some_and(crate::kernel::LocalBindingId::is_chunk_storage_field)
         || with_rust_loop_spelling(|loops| loops.chunk_fields.contains(name))
 }
 

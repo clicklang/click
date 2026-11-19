@@ -933,7 +933,7 @@ fn lower_function(
         shared_array_options: BTreeMap::new(),
         shared_scalar_slices,
         mir_chunk_iterators: BTreeMap::new(),
-        chunk_options: BTreeSet::new(),
+        chunk_options: BTreeMap::new(),
         local_arrays: BTreeSet::new(),
         owned_locals: BTreeSet::new(),
         addressable_locals: BTreeSet::new(),
@@ -1022,7 +1022,7 @@ struct Context<'a> {
     shared_array_options: BTreeMap<String, ProgramType>,
     shared_scalar_slices: BTreeMap<String, (String, ProgramType)>,
     mir_chunk_iterators: BTreeMap<String, crate::languages::interface::ChunkIteratorFields>,
-    chunk_options: BTreeSet<String>,
+    chunk_options: BTreeMap<String, chunks::ChunkOptionFields>,
     local_arrays: BTreeSet<String>,
     owned_locals: BTreeSet<String>,
     /// Integer and `bool` locals, which a borrow takes the address of.
@@ -2282,15 +2282,9 @@ impl Context<'_> {
 
     fn slice_parts(&mut self, e: &E) -> Result<(ProgramExpression, ProgramExpression), String> {
         if let E::ChunkOptionSlice { option } = e {
-            if !self.chunk_options.contains(option) {
-                return Err("unknown chunk Option".into());
-            }
-            return Ok((
-                crate::kernel::program_expression::variable(
-                    self.binding(&format!("{option}_pointer")),
-                ),
-                crate::kernel::program_expression::variable(self.binding(&format!("{option}_len"))),
-            ));
+            use crate::kernel::program_expression::variable;
+            let fields = self.chunk_option(option)?;
+            return Ok((variable(&fields.pointer), variable(&fields.length)));
         }
         if let E::Borrow {
             place,
@@ -2566,14 +2560,9 @@ impl Context<'_> {
                 Err("enumerated Option index requires checked preparation".into())
             }
             E::ChunkHasNext { iterator } => self.chunk_has_next(iterator),
-            E::ChunkOptionTag { option } => {
-                if !self.chunk_options.contains(option) {
-                    return Err("unknown chunk Option".into());
-                }
-                Ok(crate::kernel::program_expression::variable(
-                    self.binding(&format!("{option}_some")),
-                ))
-            }
+            E::ChunkOptionTag { option } => Ok(crate::kernel::program_expression::variable(
+                &self.chunk_option(option)?.tag,
+            )),
             E::VariantIs { value, variant } => Ok(ProgramExpression::EnumIs {
                 value: Box::new(self.expr(value)?),
                 variant: variant.clone(),

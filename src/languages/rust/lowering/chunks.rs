@@ -30,19 +30,24 @@ impl ChunkIteratorFields {
     }
 }
 
-/// The locals of the `Option<&[u8]>` a chunk iterator's `next` returns:
-/// whether it is `Some`, and the chunk it holds.
-const CHUNK_OPTION_FIELDS: [(&str, ProgramType, bool); 3] = [
-    ("some", ProgramType::Int32, false),
-    ("pointer", ProgramType::UInt8Pointer, true),
-    ("len", ProgramType::UInt64, false),
-];
+/// The tag and payload storage of `Option<&[u8]>` returned by `next`.
+pub(super) struct ChunkOptionFields {
+    pub(super) tag: BindingName,
+    pub(super) pointer: BindingName,
+    pub(super) length: BindingName,
+}
 
 impl Context<'_> {
     pub(super) fn chunk_iterator(&self, name: &str) -> Result<&ChunkIteratorFields, String> {
         self.mir_chunk_iterators
             .get(name)
             .ok_or_else(|| "unknown Rust chunk iterator".into())
+    }
+
+    pub(super) fn chunk_option(&self, name: &str) -> Result<&ChunkOptionFields, String> {
+        self.chunk_options
+            .get(name)
+            .ok_or_else(|| "unknown chunk Option".into())
     }
 
     pub(super) fn chunk_storage(
@@ -90,32 +95,39 @@ impl Context<'_> {
             return Ok(result);
         }
 
-        self.chunk_options.insert(name.into());
+        let [tag, pointer, length] =
+            LocalBindingId::chunk_option_fields(owner, ordinal).map(BindingName::from);
         let mut result = program_skip();
-        for (suffix, ty, constant) in CHUNK_OPTION_FIELDS {
-            let field = format!("{name}_{suffix}");
-            if !self.locals.insert(field.clone()) {
-                return Err("chunk field identity collision".into());
-            }
+        for binding in [&tag, &pointer, &length] {
+            let ty = binding.program_type().expect("chunk Option field type");
             result = program_seq(
                 result,
                 program_declare_with_all_qualifiers(
-                    self.binding(&field),
+                    binding.clone(),
                     ty,
                     false,
                     false,
                     false,
-                    constant,
+                    ty.is_pointer(),
                 ),
             );
         }
-        Ok(program_seq(
+        result = program_seq(
             result,
             program_assign(
-                self.binding(&format!("{name}_some")),
+                tag.clone(),
                 crate::kernel::program_expression::int32_literal(0),
             ),
-        ))
+        );
+        self.chunk_options.insert(
+            name.into(),
+            ChunkOptionFields {
+                tag,
+                pointer,
+                length,
+            },
+        );
+        Ok(result)
     }
 
     /// `slice.chunks_exact(size)`, as `core` builds it: it panics on a zero
@@ -231,20 +243,12 @@ impl Context<'_> {
                 None => program_if(fields.has_next(), some, program_skip()),
             });
         };
-        if !self.chunk_options.contains(option) {
-            return Err("unknown chunk Option".into());
-        }
+        let option = self.chunk_option(option)?;
         let fields = self.chunk_iterator(iterator)?;
-        let mut some = program_assign(self.binding(&format!("{option}_some")), int32_literal(1));
+        let mut some = program_assign(option.tag.clone(), int32_literal(1));
         for statement in [
-            program_assign(
-                self.binding(&format!("{option}_pointer")),
-                variable(&fields.remaining),
-            ),
-            program_assign(
-                self.binding(&format!("{option}_len")),
-                variable(&fields.size),
-            ),
+            program_assign(option.pointer.clone(), variable(&fields.remaining)),
+            program_assign(option.length.clone(), variable(&fields.size)),
             fields.advance(),
         ] {
             some = program_seq(some, statement);
@@ -252,17 +256,15 @@ impl Context<'_> {
         Ok(program_if(
             fields.has_next(),
             some,
-            program_assign(self.binding(&format!("{option}_some")), int32_literal(0)),
+            program_assign(option.tag.clone(), int32_literal(0)),
         ))
     }
 
     pub(super) fn chunk_slice_checks(&self, value: &E) -> Result<ProgramStatement, String> {
         match value {
-            E::ChunkOptionSlice { option } if self.chunk_options.contains(option) => {
+            E::ChunkOptionSlice { option } => {
                 Ok(program_assert(crate::kernel::program_expression::equal(
-                    crate::kernel::program_expression::variable(
-                        self.binding(&format!("{option}_some")),
-                    ),
+                    variable(&self.chunk_option(option)?.tag),
                     crate::kernel::program_expression::int32_literal(1),
                 )))
             }
@@ -302,5 +304,128 @@ mod tests {
         });
         mir.locals.extend(colliding);
         super::super::lower(&export).unwrap();
+    }
+
+    #[test]
+    #[ignore = "nightly: replay both chunk Option outcomes"]
+    fn chunk_option_fields_expand_and_replay() {
+        use crate::languages::rust::schema::{MirStatement as S, MirTerminator};
+        use crate::surface::{
+            ProgramVerificationSession, expand_program_prepared_claim_source_by_label,
+            without_implicit_solve_for_claim,
+        };
+
+        let mut export = crate::languages::rust::charon::decode(
+            include_bytes!("../../../../design/charon-trial/chunks/.click/chunks/chunks.rs.ullbc"),
+            "chunks.rs",
+            include_bytes!("../../../../design/charon-trial/chunks/chunks.rs"),
+        )
+        .unwrap();
+        let mir = export
+            .functions
+            .iter_mut()
+            .find(|f| f.name == "next_len")
+            .unwrap()
+            .mir
+            .as_mut()
+            .unwrap();
+
+        // The ordinary importer binds the payload directly. Keep the Option
+        // through the match here to exercise its lowering and tag check.
+        let option = "chunk_option".to_string();
+        let header = mir
+            .blocks
+            .iter()
+            .position(|block| {
+                matches!(
+                    block.terminator,
+                    MirTerminator::If {
+                        condition: E::ChunkHasNext { .. },
+                        ..
+                    }
+                )
+            })
+            .unwrap();
+        let MirTerminator::If {
+            condition,
+            then_target,
+            else_target,
+        } = mir.blocks[header].terminator.clone()
+        else {
+            unreachable!()
+        };
+        let E::ChunkHasNext { iterator } = condition else {
+            unreachable!()
+        };
+        mir.blocks[header].statements.push(S::ChunkNext {
+            iterator,
+            option: Some(option.clone()),
+            payload: None,
+            taken: None,
+        });
+        mir.blocks[header].terminator = MirTerminator::If {
+            condition: E::ChunkOptionTag {
+                option: option.clone(),
+            },
+            then_target,
+            else_target,
+        };
+        for (target, yields) in [(then_target, true), (else_target, false)] {
+            let statements = &mut mir.blocks[target].statements;
+            let position = statements
+                .iter()
+                .position(|statement| matches!(statement, S::ChunkNext { .. }))
+                .unwrap();
+            let S::ChunkNext { payload, taken, .. } = statements.remove(position) else {
+                unreachable!()
+            };
+            assert_eq!(taken, Some(yields));
+            if let Some(name) = payload {
+                statements.insert(
+                    position,
+                    S::Assign {
+                        target: E::Local { name },
+                        value: E::ChunkOptionSlice {
+                            option: option.clone(),
+                        },
+                    },
+                );
+            } else {
+                assert!(!yields);
+            }
+        }
+        let span = mir.locals[0].span.clone();
+        mir.locals.push(Place {
+            name: option.clone(),
+            value_type: Type::ChunkOption,
+            span: span.clone(),
+        });
+        mir.locals
+            .extend(["some", "pointer", "len"].map(|field| Place {
+                name: format!("{option}_{field}"),
+                value_type: Type::Usize,
+                span: span.clone(),
+            }));
+        let prepared = crate::languages::rust::import::prepared_for_test(export).unwrap();
+
+        for (length, result) in [(3u64, 0), (4, 4)] {
+            let sidecar = format!(
+                "verifying \"chunks.rs\"; fn next_len(bytes: &[u8]) -> usize {{ requires bytes.len() == {length}u64; ensures result == {result}u64; }} by {{ step_until(function.exit); solve(); }}"
+            );
+            let claim = "next_len.contract";
+            let expanded =
+                expand_program_prepared_claim_source_by_label(&sidecar, &prepared, claim).unwrap();
+            assert_ne!(expanded, sidecar);
+            assert!(
+                !expanded.contains("chunk_option") && !expanded.contains("<chunk option "),
+                "{expanded}"
+            );
+            without_implicit_solve_for_claim(claim, || {
+                ProgramVerificationSession::new_program_prepared(&expanded, &prepared)
+                    .map(|_| ())
+                    .map_err(|error| error.to_string())
+            })
+            .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+        }
     }
 }
