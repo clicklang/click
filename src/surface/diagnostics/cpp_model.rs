@@ -147,14 +147,25 @@ pub(super) fn describe_model_field_at(
 /// when that chain is a bound accessor's path: a written proof names the
 /// standard type's model, and the parse rewrites it back to the same path.
 pub(super) fn describe_model_accessor(expression: &ContractExpression) -> Option<String> {
+    describe_model_path(expression, None)
+}
+
+/// A resource segment stores its final field separately from its base.
+pub(super) fn describe_model_segment_field(
+    base: &ContractExpression,
+    field: &str,
+) -> Option<String> {
+    describe_model_path(base, Some(field))
+}
+
+fn describe_model_path(mut root: &ContractExpression, final_field: Option<&str>) -> Option<String> {
     MODEL_ACCESSORS.with(|bound| {
         let bound = bound.borrow();
         let bound = bound.as_ref()?;
         if bound.is_empty() {
             return None;
         }
-        let mut path = Vec::new();
-        let mut root = expression;
+        let mut path: Vec<_> = final_field.into_iter().collect();
         while let ContractExpression::Field { base, field, .. } = root {
             path.push(field.as_str());
             root = base;
