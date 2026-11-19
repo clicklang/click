@@ -230,6 +230,16 @@ pub(crate) struct AliasCandidates {
 }
 
 impl AliasCandidates {
+    /// Every block, for a transition with no finite address footprint.
+    pub(super) fn every_block() -> Self {
+        Self {
+            intervals: vec![BlockInterval {
+                start: None,
+                end: Upper::Unbounded,
+            }],
+        }
+    }
+
     /// Every block that is not [`AddressBase::proven_distinct`] from
     /// `block`, as a few key ranges (a superset; see the module comment).
     pub(crate) fn of_block(block: &AddressBase) -> Self {

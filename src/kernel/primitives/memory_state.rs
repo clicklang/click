@@ -1095,6 +1095,44 @@ mod forget_cached_values_tests {
         );
     }
 
+    #[test]
+    fn indexed_loop_havoc_matches_the_whole_cache_rule() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let registries = capture_block_registries();
+        set_never_address_taken_locals(BTreeSet::from(["private".into()]));
+        let state = ExecutionState::new()
+            .with_local("private", int32(1))
+            .with_local("addressable", int32(2));
+        let private = state.locals.slot("private").unwrap().clone();
+        let addressable = state.locals.slot("addressable").unwrap().clone();
+        let (memory, written) = zeroed_heap_with_cell();
+        let memory = memory
+            .with_block(private.base.clone(), 4)
+            .store(private.clone(), int32(1))
+            .with_block(addressable.base.clone(), 4)
+            .store(addressable.clone(), int32(2));
+        let variable = Variable(944_103);
+        let whole = memory.clone().with_loop_memory_havoc_preserving_loans(
+            variable,
+            &BTreeSet::from([private.base.clone(), addressable.base.clone()]),
+            None,
+            None,
+        );
+        let indexed = memory.clone().with_loop_memory_havoc_preserving_locals(
+            variable,
+            &state.locals,
+            None,
+            None,
+            None,
+        );
+        restore_block_registries(&registries);
+        assert_eq!(indexed, whole);
+        assert_eq!(indexed.known_value(&private), Some(int32(1)));
+        assert_eq!(indexed.known_value(&addressable), Some(int32(2)));
+        assert_eq!(indexed.known_value(&written), None);
+        assert_eq!(memory.known_value(&written), Some(int32(9)));
+    }
+
     /// A zero reading answers for the bytes no cell covers, so the loop
     /// head that forgets a cell written over the zeros forgets the reading
     /// too: otherwise the load after the loop reads zero, not the value.
@@ -3414,6 +3452,14 @@ impl BlockMembership for BTreeSet<AddressBase> {
     }
 }
 
+impl BlockMembership for LocalEnvironment {
+    fn contains_block(&self, block: &AddressBase) -> bool {
+        self.names_with_slot_in(block)
+            .into_iter()
+            .any(|name| matches!(self.bindings.get(name), Some(LocalBinding::Object { .. })))
+    }
+}
+
 /// Whether a havoc that preserves loans keeps the cell at this address: the
 /// one rule, asked by the loop head and by the interface join.
 ///
@@ -4849,22 +4895,71 @@ impl SymbolicMemory {
         mutable_ranges: Option<&[MemoryRange]>,
         ledger: Option<&crate::kernel::loans::LoanLedger>,
     ) -> Self {
-        self.with_loop_memory_havoc_preserving_frame(
+        self.loop_memory_havoc(
             variable,
             preserved_blocks,
             mutable_ranges,
             ledger,
             None,
+            ForgetScope::Everywhere,
         )
     }
 
+    pub(in crate::kernel) fn with_loop_memory_havoc_preserving_locals(
+        self,
+        variable: Variable,
+        locals: &LocalEnvironment,
+        mutable_ranges: Option<&[MemoryRange]>,
+        ledger: Option<&crate::kernel::loans::LoanLedger>,
+        kept_by_function: Option<CallKeptRanges>,
+    ) -> Self {
+        // The loop head has already abstracted every directly assigned
+        // scalar. A cached scalar whose address the C source never takes
+        // cannot be changed by the remaining, indirect writes.
+        let candidates = AliasCandidates::every_block();
+        let selected = self.cells.pointer_reachable_cells();
+        self.loop_memory_havoc(
+            variable,
+            locals,
+            mutable_ranges,
+            ledger,
+            kept_by_function,
+            ForgetScope::Ordered {
+                candidates: &candidates,
+                selected: &selected,
+                runs: None,
+                cells_kept: &[],
+            },
+        )
+    }
+
+    #[cfg(test)]
     pub(in crate::kernel) fn with_loop_memory_havoc_preserving_frame(
+        self,
+        variable: Variable,
+        preserved_blocks: &dyn BlockMembership,
+        mutable_ranges: Option<&[MemoryRange]>,
+        ledger: Option<&crate::kernel::loans::LoanLedger>,
+        kept_by_function: Option<CallKeptRanges>,
+    ) -> Self {
+        self.loop_memory_havoc(
+            variable,
+            preserved_blocks,
+            mutable_ranges,
+            ledger,
+            kept_by_function,
+            ForgetScope::Everywhere,
+        )
+    }
+
+    fn loop_memory_havoc(
         mut self,
         variable: Variable,
         preserved_blocks: &dyn BlockMembership,
         mutable_ranges: Option<&[MemoryRange]>,
         ledger: Option<&crate::kernel::loans::LoanLedger>,
         kept_by_function: Option<CallKeptRanges>,
+        scope: ForgetScope<'_>,
     ) -> Self {
         // A loop body that may write memory can clobber, through some
         // pointer, any value it can reach. Drop cached values (cells and
@@ -4876,7 +4971,7 @@ impl SymbolicMemory {
         // initialize more, so every automatic value that goes stays
         // initialized at the head and after the loop.
         let base = Some(intern_derivation_base(&mut self));
-        self.forget_loan_unprotected_values(preserved_blocks, ledger, &[]);
+        self.forget_loan_unprotected_values(scope, preserved_blocks, ledger, &[]);
         // The body may also have written bytes no value was cached for, and
         // a zero reading answers for exactly those.
         match mutable_ranges {
@@ -4913,9 +5008,8 @@ impl SymbolicMemory {
     /// Forgets every cached value nothing protects from a write through an
     /// arbitrary reachable pointer: the one rule of the loop head and of the
     /// interface join ([`loan_preserving_havoc_keeps_cell`]), asked of cells
-    /// and typed union views alike. Whole-map by design, unlike the
-    /// per-access rules that visit only `AliasCandidates`: the work is the
-    /// values dropped plus the ones something keeps.
+    /// and typed union views alike. The loop head skips private scalar
+    /// cells when its caller has already abstracted direct assignments.
     ///
     /// `agreeing` are the arms of a join, and empty at a loop head. A cell
     /// every arm caches with the same value is a reading each arm's memory
@@ -4925,6 +5019,7 @@ impl SymbolicMemory {
     /// The work is unchanged: one lookup per arm for each value visited.
     fn forget_loan_unprotected_values(
         &mut self,
+        scope: ForgetScope<'_>,
         preserved_blocks: &dyn BlockMembership,
         ledger: Option<&crate::kernel::loans::LoanLedger>,
         agreeing: &[&SymbolicMemory],
@@ -4935,7 +5030,7 @@ impl SymbolicMemory {
             .map(|memory| union_overlay_widths(memory))
             .collect::<Vec<_>>();
         self.forget_cached_values(
-            ForgetScope::Everywhere,
+            scope,
             |pointer, value| {
                 // A view is asked by its own width; a cell by the widest
                 // overlay at its address as well, so the loan question
@@ -5263,7 +5358,12 @@ impl SymbolicMemory {
                 ),
             )
         } else {
-            self.forget_loan_unprotected_values(preserved_blocks, ledger, sibling_memories);
+            self.forget_loan_unprotected_values(
+                ForgetScope::Everywhere,
+                preserved_blocks,
+                ledger,
+                sibling_memories,
+            );
             None
         };
         // A zero reading is kept only where every arm has it, but an arm can

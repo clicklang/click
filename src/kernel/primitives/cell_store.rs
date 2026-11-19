@@ -2512,6 +2512,17 @@ impl CellStore {
     }
 
     pub(crate) fn insert_retained(&mut self, pointer: Address, value: StoredMemoryValue) {
+        let hidden_local = super::block_is_never_address_taken_local(&pointer.base);
+        self.insert_cached_cell(pointer, value);
+        // Keep the reachable projection up to date as private scalar stores
+        // accumulate. A later loop, or several forks of this state, must
+        // not each pay to discover that these writes are unreachable.
+        if hidden_local {
+            self.caught_up_pointer_reachable();
+        }
+    }
+
+    fn insert_cached_cell(&mut self, pointer: Address, value: StoredMemoryValue) {
         if let Some(logical) = self.logical.get_mut() {
             logical.insert(pointer.clone(), value.clone());
         }

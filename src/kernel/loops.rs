@@ -6219,10 +6219,8 @@ pub(super) fn prepare_loop_top_state(
                 .collect::<Vec<_>>()
         })
         .collect::<Vec<_>>();
-    for (pointer, value) in entry_state
-        .memory()
-        .cells
-        .concrete()
+    let reachable_cells = entry_state.memory().cells.caught_up_pointer_reachable();
+    for (pointer, value) in reachable_cells
         .iter()
         .map(|(pointer, value)| (pointer.clone(), value.clone()))
         .chain(slots_asked_one_by_one)
@@ -8805,22 +8803,15 @@ pub(super) fn havoc_loop_modified_locals(
         // overwritten by the loop body through a pointer. Address-escaped
         // locals were havoced above, so their preserved cells now hold fresh
         // symbolic values rather than stale ones.
-        let preserved_blocks: BTreeSet<AddressBase> = state
-            .locals
-            .bindings
-            .keys()
-            .filter(|name| state.locals.get(*name).is_some())
-            .filter_map(|name| state.locals.slot(name).map(|slot| slot.base.clone()))
-            .collect();
         // Cells under an active stable-view loan are stable across the loop
         // by the loan itself; erasing them would only lose loan-supported
         // framing, never authority.
         let havoced_memory = state
             .memory
             .clone()
-            .with_loop_memory_havoc_preserving_frame(
+            .with_loop_memory_havoc_preserving_locals(
                 variables.next_in(budget)?,
-                &preserved_blocks,
+                &state.locals,
                 mutable_ranges,
                 state.loan_ledger(),
                 kept_by_function,
@@ -9141,15 +9132,17 @@ pub(super) fn address_escaped_scalar_locals(
             escaped.insert(name.clone());
         }
     };
-    for name in state.locals.bindings.keys() {
-        if let Some(value) = state.locals.get(name)
-            && let Some(pointer) = value.pointer()
-            && let Some(name) = state.locals.name_for_slot(pointer.address())
-        {
-            escaped.insert(name.clone());
+    for (block, _) in state.locals.pointer_objects_by_block.iter() {
+        for (_, pointer) in state.locals.pointer_objects_in_block(block) {
+            if let Some(name) = state.locals.name_for_slot(pointer.address()) {
+                escaped.insert(name.clone());
+            }
         }
     }
-    for value in state.memory.cells.concrete().values() {
+    // A private scalar slot is only read through its local binding, whose
+    // pointer value was checked above. Memory can supply another pointer
+    // only from storage C can address.
+    for value in state.memory.cells.caught_up_pointer_reachable().values() {
         record_pointer(value.native(), &mut escaped);
     }
     // A run's slots hold values of its element type, so only a run of
