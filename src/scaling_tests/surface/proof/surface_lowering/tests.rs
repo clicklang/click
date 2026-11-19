@@ -22,7 +22,7 @@ fn retained_pure_citations_use_singletons_without_scanning_related_or_unrelated_
     let context = super::super::pure_theorems::PureTheoremContext {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
-        memory,
+        point: crate::kernel::ProgramPoint::starting_at(&memory),
         values,
         integer_values: Default::default(),
         array_refs: BTreeMap::new(),
