@@ -7,8 +7,7 @@ use super::*;
 #[test]
 fn a_loop_exit_join_visits_only_changed_bindings_and_cells() {
     let _session = crate::kernel::VerificationSession::enter();
-    let left_only = Address::symbolic(Variable(927_010));
-    let right_only = Address::symbolic(Variable(927_011));
+    let right_only = SymbolicMemory::global_pointer("exit-only");
     let work = [4u32, 16, 64, 256].map(|size| {
         let mut shared = ExecutionState::new()
             .with_local("counter", int32(0))
@@ -23,14 +22,8 @@ fn a_loop_exit_join_visits_only_changed_bindings_and_cells() {
             memory = memory.store(pointer, int32(index));
         }
         let shared = shared.with_memory(memory.clone());
-        let left = shared
-            .clone()
-            .with_local("counter", int32(1))
-            .with_memory(memory.clone().store(left_only.clone(), int32(11)));
-        let mut right = shared
-            .clone()
-            .with_local("counter", int32(2))
-            .with_memory(memory.clone().store(right_only.clone(), int32(12)));
+        let left = shared.clone().with_local("counter", int32(1));
+        let mut right = shared.clone().with_local("counter", int32(2));
         assert!(right.locals.forget_initialization("maybe_initialized"));
         let head = LoopHead {
             top: shared.clone(),
@@ -70,11 +63,46 @@ fn a_loop_exit_join_visits_only_changed_bindings_and_cells() {
         assert!(requirements.is_empty());
         assert_eq!(restatements.len(), 2);
         assert!(restatements.iter().all(|exit| exit.equations.len() == 1));
-        work
+
+        // A later exit may hold a cache entry the successor never had.
+        // Measure candidate selection without interning a reconstructed
+        // memory for the residual witness comparison.
+        let exits = [
+            joined.clone(),
+            joined
+                .clone()
+                .with_memory(memory.store(right_only.clone(), int32(12))),
+        ];
+        let mut successor = joined;
+        let (cells, cell_work) = crate::instrumentation::measure_deterministic_work(|| {
+            abstract_loop_exit_memory(
+                &mut successor,
+                &exits,
+                &BTreeSet::new(),
+                true,
+                &[],
+                &PureFactContext::new(),
+                &[],
+                &mut [
+                    LoopExitRestatement::default(),
+                    LoopExitRestatement::default(),
+                ],
+                &mut requirements,
+                &mut KernelVariableGenerator::fresh_for_execution(BTreeSet::new()),
+                &mut ExecutionBudget::default(),
+            )
+            .unwrap()
+        });
+        assert_eq!(cells, BTreeSet::from([right_only.clone()]));
+        assert!(successor.memory().known_value(&right_only).is_none());
+        assert!(requirements.is_empty());
+        (work, cell_work)
     });
     assert!(
-        work[0] > 0 && work.iter().all(|units| *units <= work[0] + 64),
-        "loop exit join work at 4/16/64/256 shared bindings and cells: {work:?}"
+        work.iter().all(|&(join, cells)| {
+            join > 0 && cells > 0 && join <= work[0].0 + 64 && cells <= work[0].1 + 16
+        }),
+        "(exit join, cell selection) work at 4/16/64/256 shared bindings and cells: {work:?}"
     );
 }
 
