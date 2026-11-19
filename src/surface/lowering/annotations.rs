@@ -9656,6 +9656,23 @@ impl AnnotationLowerer<'_> {
         expression: &ProgramExpression,
         environment: &SpecElaborationContext,
     ) -> Result<SpecExpression, String> {
+        // Construction binds the return object's address at entry. Its storage
+        // can be named before the result value is in scope.
+        if !environment.contract_result_in_scope
+            && let ProgramExpression::AddressOf(target) = expression
+            && matches!(target.as_ref(), ProgramExpression::Variable(name)
+                if name == &crate::kernel::CONTRACT_RESULT)
+            && let Some(destination) = self
+                .entry_state
+                .locals()
+                .aggregate_object_pointer(crate::kernel::CONTRACT_RESULT)
+        {
+            return Ok(SpecExpression::Value(ProgramValue::typed_pointer(
+                destination.clone(),
+                ProgramType::UInt8Pointer,
+            )));
+        }
+
         if let ProgramExpression::AddressOf(target)
         | ProgramExpression::CheckedObjectAddress(target) = expression
             && matches!(
