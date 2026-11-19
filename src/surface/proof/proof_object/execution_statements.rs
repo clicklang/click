@@ -875,12 +875,10 @@ impl<'a> Proof<'a> {
             .cloned()
             .ok_or_else(|| self.step_error("execution-frontier proof lost its semantic state"))?;
         // Every statement step executes in the whole proof context.
-        let fact_context = Some(self.facts().assumptions());
         let mut checked = check_statement_step_with_policy(
             &mut execution,
             context,
             self.facts(),
-            fact_context,
             prerequisite_policy,
         )?;
         // A fact the statement introduces (a callee's `ensures`, a store's

@@ -8,6 +8,7 @@ use crate::kernel::{Proposition, PureFactContext};
 #[derive(Clone, Default)]
 pub(crate) struct PureFactList {
     facts: PureFactStore,
+    statement_view: bool,
 }
 
 impl std::fmt::Debug for PureFactList {
@@ -45,6 +46,7 @@ impl PureFactList {
     pub(crate) fn from_source(source: &(impl PropositionSource + ?Sized)) -> Self {
         Self {
             facts: source.ordered_fact_store(),
+            statement_view: false,
         }
     }
     pub(crate) fn from_store(source: &PureFactStore) -> Self {
@@ -53,21 +55,28 @@ impl PureFactList {
     pub(crate) fn store(&self) -> &PureFactStore {
         &self.facts
     }
-    pub(crate) fn for_statement(
-        facts: Vec<Proposition>,
-        context: Option<PureFactContext>,
-        reservations: &PureFactStore,
-    ) -> Self {
-        Self::from_produced_store(PureFactStore::from_statement_facts(
-            &facts,
-            context,
-            Some(reservations),
-        ))
+    pub(crate) fn for_statement(facts: Vec<Proposition>, base: &PureFactStore) -> Self {
+        Self {
+            facts: base.statement_view(facts),
+            statement_view: true,
+        }
+    }
+    pub(crate) fn into_store(self) -> PureFactStore {
+        self.facts
+    }
+    /// A checked statement already holds a fork of the incoming graph,
+    /// including the outcome's facts. Other callers may supply a separate
+    /// context for prerequisite checking.
+    pub(crate) fn is_statement_view(&self) -> bool {
+        self.statement_view
     }
     // Keep occurrence order when source provenance addresses producer positions.
     // `from_store` intentionally offers a unique-fact presentation instead.
     pub(crate) fn from_produced_store(store: PureFactStore) -> Self {
-        Self { facts: store }
+        Self {
+            facts: store,
+            statement_view: false,
+        }
     }
     pub(crate) fn context(&self) -> PureFactContext {
         self.facts.assumptions().clone()
@@ -133,6 +142,21 @@ impl PureFactList {
     }
     pub(crate) fn retain(&mut self, keep: impl FnMut(&Proposition) -> bool) {
         self.facts = self.facts.retaining(keep);
+    }
+    /// Common facts from distinct outcomes extend the graph at the fork.
+    pub(crate) fn retain_from(&mut self, base: &Self, mut keep: impl FnMut(&Proposition) -> bool) {
+        if self.statement_view {
+            let selected = self
+                .iter()
+                .filter(|fact| keep(fact))
+                .cloned()
+                .collect::<Vec<_>>();
+            if selected.len() != self.len() {
+                self.facts = base.facts.statement_view(selected);
+            }
+        } else {
+            self.retain(keep);
+        }
     }
 }
 impl PropositionSource for PureFactList {
@@ -221,13 +245,10 @@ mod tests {
     fn statement_store_retains_producer_context_and_extends_without_surface_indexes() {
         let original = Proposition::condition_is(condition(410), true);
         let added = Proposition::condition_is(condition(411), true);
-        let context = PureFactContext::new().assume_proposition(original.clone());
-        let mut view = PureFactList::for_statement(
-            vec![original.clone()],
-            Some(context.clone()),
-            &PureFactStore::default(),
-        );
-        assert!(view.context().shares_fact_storage_with(&context));
+        let base = PureFactStore::from_ordered(std::slice::from_ref(&original));
+        let context = base.assumptions();
+        let mut view = PureFactList::for_statement(vec![original.clone()], &base);
+        assert!(view.context().shares_fact_storage_with(context));
         view.push(added.clone());
         assert!(view.facts.contains_presented(&added));
         assert_eq!(

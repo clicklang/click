@@ -1049,6 +1049,20 @@ impl PureFactStore {
         Self::from_statement_facts(&selected, None, Some(self))
     }
 
+    /// Show only the statement's explicit premises while using the incoming
+    /// proof's reasoning indexes. Branch conflicts and exact written citations
+    /// still consult the selected presentation.
+    pub(crate) fn statement_view(&self, facts: Vec<Proposition>) -> Self {
+        let mut view = Self {
+            presentation: FactPresentation::default(),
+            ..self.clone()
+        };
+        for fact in facts {
+            view = view.with_list_fact(fact);
+        }
+        view
+    }
+
     pub(crate) fn from_statement_facts(
         facts: &[Proposition],
         context: Option<PureFactContext>,
@@ -2015,38 +2029,30 @@ impl PureFactStore {
         instances
     }
 
-    /// Adds one statement's selected successor context while retaining the
-    /// old ambient order by shared prefix. The statement delta is explicit,
-    /// so insertion work is proportional only to that delta and index height.
     #[cfg(test)]
     pub(crate) fn with_statement_facts(&self, facts: Vec<Proposition>) -> Self {
-        self.with_statement_facts_retaining_prefix(facts, &ExecutionFacts::new())
+        let view = self.statement_view(facts);
+        self.publish_statement_view(view, &ExecutionFacts::new())
     }
 
-    /// Publish a statement batch. Its order indexes share canonical stored
-    /// propositions, including the checked case prefix. The prefix parameter
-    /// also distinguishes local suffix work in the test instrumentation.
-    pub(crate) fn with_statement_facts_retaining_prefix(
+    /// Commit the selected fork's semantic indexes and prioritize its
+    /// statement-local presentation in the encompassing proof.
+    pub(crate) fn publish_statement_view(
         &self,
-        mut facts: Vec<Proposition>,
+        mut successor: Self,
         _prefix: &ExecutionFacts,
     ) -> Self {
+        let mut facts = successor
+            .occurrences()
+            .map(crate::kernel::clone_proposition_iteratively)
+            .collect::<Vec<_>>();
         let ordered = self.ordered.clone();
         let parent = self.statement_batches.clone();
-        let mut successor = self.clone();
-        let mut introduced = Vec::new();
-        for fact in &facts {
-            // A fact the context holds introduces nothing; skipping it spares
-            // a copy of every index for each fact the step restates.
-            if successor.top_level_exact.contains(fact) {
-                continue;
-            }
-            let before = successor.fact_count();
-            successor = successor.with_fact(fact.clone());
-            if successor.fact_count() != before {
-                introduced.push(fact.clone());
-            }
-        }
+        let mut introduced = facts
+            .iter()
+            .filter(|fact| !self.top_level_exact.contains(*fact))
+            .cloned()
+            .collect::<Vec<_>>();
         for instance in successor.known_constructor_instances(&introduced) {
             let before = successor.fact_count();
             successor = successor.with_fact(instance.clone());
@@ -5402,7 +5408,8 @@ mod statement_publication_delta_tests {
             let fresh = fact(size);
             let mut selected = prefix_facts.clone();
             selected.push(fresh.clone());
-            let successor = root.with_statement_facts_retaining_prefix(selected.clone(), &prefix);
+            let successor =
+                root.publish_statement_view(root.statement_view(selected.clone()), &prefix);
             for proposition in &prefix_facts {
                 assert!(Arc::ptr_eq(
                     root.top_level_exact.get(proposition).unwrap(),
@@ -5412,7 +5419,8 @@ mod statement_publication_delta_tests {
             assert_eq!(successor.to_vec(), selected);
             assert_eq!(successor.introduced_since(&root), Some(vec![fresh]));
             selected.swap(0, 1);
-            let reordered = root.with_statement_facts_retaining_prefix(selected.clone(), &prefix);
+            let reordered =
+                root.publish_statement_view(root.statement_view(selected.clone()), &prefix);
             for proposition in &prefix_facts {
                 assert!(Arc::ptr_eq(
                     root.top_level_exact.get(proposition).unwrap(),
