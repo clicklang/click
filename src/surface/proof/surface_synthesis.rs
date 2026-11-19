@@ -5831,7 +5831,8 @@ fn synthesize_surface_bitvector(
                 // own element type (`int8` through a plain `char *`), and the
                 // printed `*` drops a typed load's type.
                 let byte_view = *kind == crate::kernel::LoadKind::UInt8
-                    && value_type != Some(ProgramType::UInt8);
+                    && value_type != Some(ProgramType::UInt8)
+                    && std::env::var_os("CLICK_DBG_NORAISE").is_none();
                 let value_type = if *kind == crate::kernel::LoadKind::UInt8 {
                     Some(ProgramType::UInt8)
                 } else if typed_word {

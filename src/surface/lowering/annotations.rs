@@ -10562,6 +10562,11 @@ impl AnnotationLowerer<'_> {
             | ProgramExpression::CheckedObjectAddress(target) => match target.as_ref() {
                 ProgramExpression::TypedLoad { value_type, .. } => Some(*value_type),
                 ProgramExpression::Variable(name) => self.c_variable_type(name),
+                ProgramExpression::Index(base, _) | ProgramExpression::Load(base)
+                    if std::env::var_os("CLICK_DBG_SHARED").is_some() =>
+                {
+                    self.program_expression_array_element_type(base, environment)
+                }
                 _ => None,
             },
             ProgramExpression::Cast { target_type, .. } => target_type.pointee_type(),

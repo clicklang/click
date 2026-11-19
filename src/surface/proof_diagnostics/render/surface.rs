@@ -1879,6 +1879,7 @@ impl Printer<'_> {
                         address.text
                     ))
                 } else if self.source_mode()
+                    && std::env::var_os("CLICK_DBG_NODIAG").is_none()
                     && Self::declared_element_differs(naming, pointer, kind)
                 {
                     // A read whose type is not the named pointer's own
