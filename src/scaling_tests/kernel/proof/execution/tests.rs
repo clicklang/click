@@ -1231,6 +1231,80 @@ fn an_interface_owned_export_normalizes_only_its_neighbors() {
 }
 
 #[test]
+fn an_interface_view_check_ignores_unrelated_owned_ranges() {
+    use crate::kernel::primitives::take_whole_normalization_facts;
+    use crate::kernel::{MemorySegment, program_expression::int32_literal};
+
+    let mut samples = Vec::new();
+    for count in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer = ProgramExpression::Value(ProgramValue::typed_pointer(
+            Address {
+                base: AddressBase::ExternalArgument,
+                offset: AddressOffset::Constant(0),
+            },
+            ProgramType::Int32Pointer,
+        ));
+        let segment = |start, end| {
+            MemorySegment::new(pointer.clone(), int32_literal(start), int32_literal(end))
+        };
+        let facts = PureFactStore::default();
+        let state = ExecutionState::new();
+        let evaluate = |spec: ResourceSpec| {
+            evaluate_interface_resource_spec(&spec, &state, &facts).expect("the range lowers")
+        };
+        let held = evaluate(ResourceSpec::owned_memory(segment(0, 2)));
+        let view = evaluate(ResourceSpec::viewed_memory(segment(2, 3)));
+        let frame = (0..count).map(|index| {
+            evaluate(ResourceSpec::owned_memory(segment(
+                4 + 2 * index,
+                5 + 2 * index,
+            )))
+        });
+        let resources = ResourceContext::new_with_equalities(facts.assumptions())
+            .unchecked_with_facts([held, view].into_iter().chain(frame));
+        let parent = ExecutionProofCore::at_entry(
+            state.clone().with_resource_context(resources.clone()),
+            ExecutionFrontier::default(),
+        );
+        // An exact held view, a subrange of an owner, and an unheld gap.
+        for (start, end, exists) in [(2, 3, true), (1, 2, true), (3, 4, false)] {
+            take_whole_normalization_facts();
+            let spec = ResourceSpec::viewed_memory(segment(start, end));
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                interface_join_resources(
+                    &parent,
+                    [&parent, &parent],
+                    [&facts, &facts],
+                    &[spec],
+                    &state,
+                    &facts,
+                )
+            });
+            assert_eq!(take_whole_normalization_facts(), 0);
+            if exists {
+                let successor = result
+                    .expect("the view is already available")
+                    .expected_resources;
+                assert!(successor.shares_storage_with(&resources));
+            } else {
+                assert_eq!(
+                    result.err(),
+                    Some("an interface resource is not owned by one concrete arm")
+                );
+            }
+            samples.push(work);
+        }
+    }
+    for (index, work) in samples.iter().enumerate() {
+        assert!(
+            *work <= samples[index % 3] + 32,
+            "view checking visited the disjoint frame: {samples:?}"
+        );
+    }
+}
+
+#[test]
 fn a_checked_interface_join_does_not_reconstruct_a_calls_havoc() {
     let mut samples = Vec::new();
     for count in [4u32, 8, 16, 32] {
