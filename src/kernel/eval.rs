@@ -103,6 +103,7 @@ pub(crate) use memory_loads::recorded_load_access_width;
 pub(crate) use memory_loads::registered_load_bytes_for_variable;
 pub(crate) use memory_loads::registered_load_for_variable;
 pub(crate) use memory_loads::registered_load_origin_for_variable;
+pub(in crate::kernel) use memory_loads::scalar_read_origin_for_cell;
 pub(in crate::kernel) use memory_loads::select_graph_scalar_reads;
 pub(in crate::kernel) use memory_loads::symbolic_load_value_unrecorded;
 pub(in crate::kernel) use memory_loads::term_mentions_a_memory_load;
