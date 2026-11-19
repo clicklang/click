@@ -3976,15 +3976,44 @@ pub(crate) fn canonical_form_of_load(
     canonical_scalar_read(&MachineTerm::memory_read(memory, pointer, kind))
 }
 
-/// Resource cells retain structural descriptors for integers and pointers.
+/// Name a resource cell using the ordinary typed version when the source
+/// recorded its store. The retained memory remains the source for cell kinds
+/// and addresses whose producers do not yet supply an indexed version.
 pub(crate) fn canonical_cell_load(
-    memory: SharedMemory,
-    pointer: Address,
+    source: &ProgramPoint,
+    pointer: &Address,
     ty: ProgramType,
 ) -> MachineTerm {
+    if let Some(read) = indexed_resource_scalar_read(source, pointer, ty) {
+        let MachineTerm::MemoryLoad(version, _, kind) = &read else {
+            unreachable!("indexed resource read")
+        };
+        read_observations::record_at(
+            version,
+            pointer,
+            *kind,
+            source.shared_memory(),
+            ty.byte_width(),
+        );
+        return read;
+    }
     let kind = LoadKind::of_type(ty).expect("scalar cell read kind");
-    let read = MachineTerm::memory_read(memory, pointer, kind);
-    canonical_scalar_read(&read)
+    canonical_form_of_load(source.shared_memory().clone(), pointer.clone(), kind)
+}
+
+pub(in crate::kernel) fn indexed_resource_scalar_read(
+    source: &ProgramPoint,
+    pointer: &Address,
+    ty: ProgramType,
+) -> Option<MachineTerm> {
+    MachineIntegerType::from_program_type(ty)?;
+    let kind = LoadKind::of_type(ty)?;
+    let point = source.indexed_integer_version(pointer, kind)?;
+    Some(MachineTerm::MemoryLoad(
+        point,
+        Box::new(pointer.clone()),
+        kind,
+    ))
 }
 
 /// The test-only audit of the creation-time invariant (see

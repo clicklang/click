@@ -6715,11 +6715,23 @@ impl SymbolicMemory {
         program_type: ProgramType,
         source: SharedMemory,
     ) -> Self {
+        self.materialize_cell_at(pointer, program_type, &ProgramPoint::at(&source))
+    }
+
+    pub(crate) fn materialize_cell_at(
+        self,
+        pointer: Address,
+        program_type: ProgramType,
+        source: &ProgramPoint,
+    ) -> Self {
         let value = if let ProgramType::Parameter(parameter) = program_type {
-            AlgebraicTermNode::parameter_load(source, pointer.clone(), parameter)
+            AlgebraicTermNode::parameter_load(
+                source.shared_memory().clone(),
+                pointer.clone(),
+                parameter,
+            )
         } else {
-            let load =
-                crate::kernel::eval::canonical_cell_load(source, pointer.clone(), program_type);
+            let load = crate::kernel::eval::canonical_cell_load(source, &pointer, program_type);
             crate::kernel::cell_run_value(program_type, load)
         };
         self.materialize_named_cell(pointer, value)

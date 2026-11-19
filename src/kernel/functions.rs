@@ -4145,16 +4145,16 @@ fn execute_verified_function_applications_with_suspension(
         // An undecided continuity relation remains symbolic in this one call
         // successor; it is not an execution-path split.
         post_state.resources = return_resources.clone();
-        let produced = match produced_memory_initialization(
+        match initialize_produced_memory(
             &entry_resource_state,
             &output_resource_state,
             interface,
-            post_state.memory.clone(),
+            &mut post_state,
             &effective_assumptions,
             &mut facts,
             budget,
         )? {
-            Ok(memory) => memory,
+            Ok(()) => {}
             Err(error) => {
                 paths.push(FunctionPath::new(
                     FunctionOutcome::RuntimeError(error),
@@ -4163,8 +4163,7 @@ fn execute_verified_function_applications_with_suspension(
                 ));
                 continue;
             }
-        };
-        post_state.set_memory_directly(produced);
+        }
         let authority_release_retires = {
             match authority_release_retires_control(
                 &entry_contract_state,
@@ -12951,15 +12950,17 @@ fn prepare_contract_resource_transfer_unexplained(
 /// claims nothing, so the caller holds them unwritten, as it holds fresh
 /// `malloc` storage: a read needs a store or `defined` evidence first. Only
 /// produced memory clauses are evaluated again.
-fn produced_memory_initialization(
+fn initialize_produced_memory(
     entry_state: &ExecutionState,
-    post_state: &ExecutionState,
+    output_resource_state: &ExecutionState,
     interface: &FunctionContractInterface,
-    mut memory: SymbolicMemory,
+    post_state: &mut ExecutionState,
     assumptions: &PureFactContext,
     facts: &mut ExecutionFacts,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<SymbolicMemory, RuntimeError>> {
+) -> ExecutionResult<Result<(), RuntimeError>> {
+    let mut memory = post_state.memory().clone();
+    let mut word_outputs = Vec::new();
     for resource in interface.resource_ensures() {
         let Some(segment) = resource.term().memory_segment() else {
             continue;
@@ -12970,7 +12971,7 @@ fn produced_memory_initialization(
         if let Some(guard) = resource.guard() {
             match evaluate_guarded_contract_condition_with_loop_entry(
                 guard,
-                post_state,
+                output_resource_state,
                 Some(entry_state),
                 assumptions,
                 budget,
@@ -12987,7 +12988,7 @@ fn produced_memory_initialization(
         }
         let fact = match evaluate_function_resource_spec_with_entry(
             entry_state,
-            post_state,
+            output_resource_state,
             resource,
             assumptions,
             budget,
@@ -13043,19 +13044,24 @@ fn produced_memory_initialization(
         // equation. Ordinary scalar reads keep their retained roots and do
         // no extra byte-view work. Initialization is supplied above by the
         // checked output clause, never by the numeric equation.
-        if byte_span == 4
-            && range.element_width() == 1
-            && segment.value_runs().is_none()
-            && let Some(equation) = crate::kernel::eval::declared_uint32_read_representation(
-                &memory,
-                &start,
-                budget.program_byte_order(),
-            )
-        {
-            facts.push(ExecutionPureFact::certified(equation));
+        if byte_span == 4 && range.element_width() == 1 && segment.value_runs().is_none() {
+            word_outputs.push(start);
         }
     }
-    Ok(Ok(memory))
+    post_state.set_memory_directly(memory);
+    if !word_outputs.is_empty() {
+        let point = post_state.program_point();
+        for address in word_outputs {
+            if let Some(equation) = crate::kernel::eval::declared_uint32_read_representation(
+                &point,
+                &address,
+                budget.program_byte_order(),
+            ) {
+                facts.push(ExecutionPureFact::certified(equation));
+            }
+        }
+    }
+    Ok(Ok(()))
 }
 
 /// Evaluates the first `count` returned resources of a contract as one

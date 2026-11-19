@@ -1248,16 +1248,16 @@ fn a_materialized_pointer_cell_is_named_by_the_load_it_holds() {
     };
     let entry = SymbolicMemory::new().with_block("fields", 16);
     let loaded = crate::kernel::eval::canonical_cell_load(
-        intern_memory(entry.clone()),
-        field.clone(),
+        &crate::kernel::ProgramPoint::of_memory(&entry),
+        &field,
         ProgramType::Int32Pointer,
     );
     let read = Address::loaded(&loaded).expect("the cell's structural read");
     let pointer_at = |value: Address| ProgramValue::typed_pointer(value, ProgramType::Int32Pointer);
     let name_at = |memory: SymbolicMemory, cell: &Address| {
         crate::kernel::eval::canonical_cell_load(
-            intern_memory(memory),
-            cell.clone(),
+            &crate::kernel::ProgramPoint::of_memory(&memory),
+            cell,
             ProgramType::Int32Pointer,
         )
     };

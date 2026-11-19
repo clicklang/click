@@ -538,8 +538,8 @@ impl CellRun {
                     self.element_type.byte_width(),
                 );
                 let load = crate::kernel::eval::canonical_cell_load(
-                    self.source.clone(),
-                    pointer.clone(),
+                    &super::ProgramPoint::at(&self.source),
+                    &pointer,
                     self.element_type,
                 );
                 cell_run_value(self.element_type, load)
@@ -553,8 +553,8 @@ impl CellRun {
                     self.element_type.byte_width(),
                 );
                 let load = crate::kernel::eval::canonical_cell_load(
-                    self.source.clone(),
-                    source_pointer.clone(),
+                    &super::ProgramPoint::at(&self.source),
+                    &source_pointer,
                     self.element_type,
                 );
                 cell_run_value(self.element_type, load)
