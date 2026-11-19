@@ -236,9 +236,9 @@ excluding prose and Rust test strings, leaves:
 | Corpus | Files | Sites |
 | --- | ---: | ---: |
 | `mdtests/` | 1 | 1 |
-| `examples/` | 11 | 78 |
+| `examples/` | 11 | 70 |
 | `library/` | 0 | 0 |
-| Total | 12 | 79 |
+| Total | 12 | 71 |
 
 Positive fixtures also supply exact input text to expansion and mutation tests.
 Migrate those inputs together with their tests and keep the smart proof inputs.
