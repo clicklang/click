@@ -287,6 +287,7 @@ fn integer_store_bits(step: &StepLog) -> Option<(LoadKind, &MachineTerm)> {
         return None;
     };
     match value.native() {
+        ProgramValue::Int8(bits) => Some((LoadKind::Int8, bits)),
         ProgramValue::UInt8(bits) => Some((LoadKind::UInt8, bits)),
         ProgramValue::Int16(bits) => Some((LoadKind::Int16, bits)),
         ProgramValue::UInt16(bits) => Some((LoadKind::UInt16, bits)),
