@@ -3228,7 +3228,10 @@ impl<'a> Proof<'a> {
         })
     }
 
-    fn structural_goal_spelling(&self, goal: &Proposition) -> Option<ClickProposition> {
+    pub(in crate::surface::proof) fn structural_goal_spelling(
+        &self,
+        goal: &Proposition,
+    ) -> Option<ClickProposition> {
         let candidate = self.structural_proposition_candidate(goal)?;
         // This compares presentation, not proof authority: rewriting already
         // produced the successor. A spelling must retain its exact term.

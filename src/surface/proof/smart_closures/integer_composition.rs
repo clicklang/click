@@ -1435,15 +1435,18 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 .listed_premise_available(&kernel, &[], false)
             {
                 domain_proofs.push(have(domain.clone(), vec![ProofStep::Known]));
-            } else if query
-                .bounds()
-                .iter()
-                .all(|bound| prepared.facts().listed_premise_available(bound, &[], false))
+            } else if let Proposition::And(left, right) = &kernel
+                && query
+                    .bounds()
+                    .iter()
+                    .all(|bound| prepared.facts().listed_premise_available(bound, &[], false))
             {
+                let conjuncts = [left, right]
+                    .map(|bound| prepared.structural_goal_spelling(bound).map(Arc::new));
                 domain_proofs.push(have(
                     domain.clone(),
                     vec![ProofStep::Both {
-                        conjuncts: [None, None],
+                        conjuncts,
                         left_proof: Box::new(ProofCertificate::from_validated_steps(vec![
                             ProofStep::Known,
                         ])),

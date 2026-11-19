@@ -3895,11 +3895,11 @@ int32 arena_pipeline(
         requires 0 <= 0 by normalize();
         requires r1.end <= s0.capacity by known();
         requires defined(r1.start + 0) and (to_integer(r1.start) + to_integer(0)) < to_integer(r1.end) by {
-            all positional {
-                left => {
+            all {
+                defined(r1.start + 0) => {
                     normalize();
                 }
-                right => {
+                (to_integer(r1.start) + to_integer(0)) < to_integer(r1.end) => {
                     solve() using { to_integer(r1.start) < to_integer(r1.end); };
                 }
             }
@@ -4095,11 +4095,11 @@ int32 arena_pipeline(
         requires 0 <= 0 by normalize();
         requires r2.end <= s0.capacity by known();
         requires defined(r2.start + 0) and (to_integer(r2.start) + to_integer(0)) < to_integer(r2.end) by {
-            all positional {
-                left => {
+            all {
+                defined(r2.start + 0) => {
                     normalize();
                 }
-                right => {
+                (to_integer(r2.start) + to_integer(0)) < to_integer(r2.end) => {
                     solve() using { to_integer(r2.start) < to_integer(r2.end); };
                 }
             }

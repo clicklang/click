@@ -1,9 +1,9 @@
-# a fold's `by` body with `all positional` checks after the C runs
+# a fold's `by` body with `all` checks after the C runs
 
 This is the expansion of
 `mdtests/unfold_names_a_witness_for_a_fold_body_fact.md`: the implicit
-closer proved the fold's open body fact with `all positional`. Checked again as
-written, each arm of the `all positional` is checked as its own script.
+closer proved the fold's open body fact with `all`. Checked again as
+written, each arm of `all` is checked as its own script.
 
 ```c filename=fold_by_with_both_rechecks_after_execute.c
 struct holder {
@@ -33,11 +33,11 @@ void bump(struct holder* h) {
     step();
     step();
     fold(holder_of(h)) by {
-        all positional {
-            left => {
+        all {
+            h->target == p => {
                 known();
             }
-            right => {
+            h->count < 200 or p == 0 => {
                 have h->count < 200 by {
                     solve() using { at(function.entry, h->count < 100); };
                 }
