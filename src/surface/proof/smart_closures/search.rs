@@ -10559,9 +10559,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             })
         {
             let split = (|| {
-                if std::env::var_os("CLICK_DBG_SO").is_some() {
-                    eprintln!("DBG split goal={:?}\n  surface_goal={:?}", search_input.goal(), search_input.surface_goal());
-                }
                 let (proof, split, ids) = search_input.split_focused_both().ok()?;
                 let marker = proof.conjunction_checkpoint(ids).ok()?;
                 let left = crate::kernel::search::ProofSearch::try_restricted_solve_closure(
@@ -10953,21 +10950,17 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // Fixed-state obligations can lack a source presentation. Retain a
         // spelled have first; its ordinary child proof has a source goal and
         // follows the same selected-premise path as an authored proof.
-        if std::env::var_os("CLICK_DBG_SO").is_some() {
-            eprintln!("DBG check_typed goal={goal:?}\n  input_goal={:?}\n  surface_goal={:?}\n  spelled={:?}", search_input.goal(), search_input.surface_goal(), spell_signed_goal(goal, premise_pairs));
-        }
-        // The spelling must lower to this goal itself. `defined(p->f + 1)`
+        //
+        // The spelled `have` must state this goal itself. `defined(p->f + 1)`
         // also states that its read is defined, so for the overflow half of
-        // that conjunction it names the whole conjunction, whose search
+        // that conjunction it opens the whole conjunction, whose search
         // splits it and reaches this half again without end.
         if search_input.surface_goal().is_none()
             && crate::kernel::proof::arithmetic_special::signed_definedness_query(goal).is_some()
             && let Some(spelled) = spell_signed_goal(goal, premise_pairs)
-            && search_input
-                .lower_surface_proposition(&spelled, "spelled signed goal")
-                .is_ok_and(|lowered| &lowered == goal)
+            && let Ok(scope) = search_input.driver().open_have(spelled)
+            && scope.goal() == Some(goal)
         {
-            let scope = search_input.driver().open_have(spelled).ok()?;
             let selected = premise_pairs
                 .iter()
                 .map(|(_, p)| p.clone())
