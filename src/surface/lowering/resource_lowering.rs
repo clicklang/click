@@ -1529,13 +1529,10 @@ pub(in crate::surface) fn requirement_propositions_sharing_lowering_state(
         for index in std::mem::take(&mut pending) {
             let requirement = &requires[index];
             let result = match requirement {
-                Requirement::LoadableSegment { .. } => loadable_requirement_props(
-                    requirement,
-                    parameter_binding,
-                    state.memory(),
-                    &assumptions,
-                )
-                .map(Some),
+                Requirement::LoadableSegment { .. } => {
+                    loadable_requirement_props(requirement, parameter_binding, state, &assumptions)
+                        .map(Some)
+                }
                 Requirement::Proposition(proposition) => lowering_state
                     .0
                     .get_or_init(|| {
@@ -3107,13 +3104,13 @@ fn lower_resource_segment_with_values(
 fn loadable_requirement_props(
     requirement: &Requirement,
     parameter_binding: ParameterBinding<'_>,
-    memory: &SymbolicMemory,
+    state: &ExecutionState,
     assumptions: &PureFactContext,
 ) -> Result<Vec<Proposition>, ClickError> {
+    let memory = state.memory();
     if let Requirement::LoadableSegment { segment } = requirement
         && segment.state == ContractSegmentState::Current
     {
-        let state = ExecutionState::new().with_memory(memory.clone());
         let values = parameter_values(parameter_binding)?;
         // A requirement names the footprint and its formation conditions.
         // Collect these debts once; callers owe them and function entry
@@ -3131,7 +3128,7 @@ fn loadable_requirement_props(
                     ),
                 )
                 .with_parameters(parameter_binding),
-                &state,
+                state,
                 None,
                 contract_segment_element_width(parameter_binding.parameters, segment),
                 assumptions,
@@ -3160,18 +3157,6 @@ fn loadable_requirement_props(
     }];
     propositions.extend(guards);
     Ok(propositions)
-}
-
-pub(in crate::surface) fn resource_clause_loadable_prop(
-    resource: &ResourceClause,
-    parameter_binding: ParameterBinding<'_>,
-    memory: &SymbolicMemory,
-) -> Result<Option<Proposition>, ClickError> {
-    resource_clause_loadable_prop_at_state(
-        resource,
-        parameter_binding,
-        &ExecutionState::new().with_memory(memory.clone()),
-    )
 }
 
 pub(in crate::surface) fn resource_clause_loadable_prop_at_state(
