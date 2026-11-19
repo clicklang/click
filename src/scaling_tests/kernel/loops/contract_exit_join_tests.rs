@@ -5,6 +5,56 @@
 use super::*;
 
 #[test]
+fn loop_exit_scalar_restatement_keeps_recorded_memory_effects() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let held = int32(MachineTerm::Variable(Variable(927_020)));
+    let fresh = int32(MachineTerm::Variable(Variable(927_021)));
+    let guard = |value| {
+        program_value_comparison_proposition(value, ComparisonOperator::Equal, &int32(3)).unwrap()
+    };
+    let range = MemoryRange::new_with_element_width(
+        Address::symbolic(Variable(927_022)),
+        MachineTerm::constant(0),
+        MachineTerm::Variable(Variable(927_020)),
+        4,
+    );
+    let slot = SymbolicMemory::local_pointer("counter");
+    let work = [4u32, 16, 64, 256].map(|size| {
+        let mut before = SymbolicMemory::new().with_block(slot.base.clone(), 4);
+        for index in 0..size {
+            before = before.with_block(format!("untouched{index}").as_str(), 4);
+        }
+        let after = before.clone().store(slot.clone(), held.clone());
+        let effect = Proposition::MemoryEffectSummary {
+            before,
+            after,
+            mutable_ranges: vec![range.clone()],
+        };
+        let original = Proposition::And(Box::new(effect.clone()), Box::new(guard(&held)));
+        let facts = [
+            ExecutionPureFact::new(effect.clone()),
+            ExecutionPureFact::new(original.clone()),
+        ]
+        .into_iter()
+        .collect();
+        let mut restatement = LoopExitRestatement::default();
+        restatement.pin(&fresh, &held);
+        let (exit, work) = crate::instrumentation::measure_deterministic_work(|| {
+            restatement.restate(facts, vec![], empty_checked_loan_evidence_sequence())
+        });
+        assert!(exit.stated.contains_proposition(&original));
+        let nested = Proposition::And(Box::new(effect.clone()), Box::new(guard(&fresh)));
+        assert_eq!(exit.disjunct, [effect, nested]);
+        assert!(exit.successor_equations.is_empty());
+        work
+    });
+    assert!(
+        work.iter().all(|units| *units == work[0]),
+        "loop exit restatement work with 4/16/64/256 untouched blocks: {work:?}"
+    );
+}
+
+#[test]
 fn a_loop_exit_join_visits_only_changed_bindings_and_cells() {
     let _session = crate::kernel::VerificationSession::enter();
     let right_only = SymbolicMemory::global_pointer("exit-only");
