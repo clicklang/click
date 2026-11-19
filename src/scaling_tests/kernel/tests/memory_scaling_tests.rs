@@ -1099,6 +1099,7 @@ fn a_store_beside_fields_of_one_heap_object_is_linear_in_the_cached_cells() {
 /// work: an earlier call is never re-examined. The sizes use disjoint
 /// variables, so no state or memo is shared between them.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.7s in the parallel gate"]
 fn consecutive_reallocating_calls_cost_the_same_each() {
     const CALLS: [usize; 4] = [16, 64, 256, 1024];
@@ -1536,6 +1537,7 @@ fn a_call_records_kept_members_without_visiting_unrelated_residual_resources() {
 /// Recording the immutable flat-owner set is independent of the members
 /// sharing the parameters' address block, including uncached members.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: multi-size residual ownership construction"]
 fn a_call_records_aliasing_kept_members_without_enumerating_them() {
     let mut produced = Vec::new();
@@ -1610,6 +1612,7 @@ fn a_call_rechecks_cached_members_after_ownership_withdrawal_or_width_change() {
 /// instance's own facts, the premises that relate its fields to its cells: the
 /// work is linear in the instance's body and nothing else.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn a_call_kept_instance_range_is_placed_in_work_linear_in_its_body() {
     const REGION: u64 = 4_000_000;
@@ -1804,6 +1807,7 @@ fn wide_range_membership_ignores_unrelated_index_bounds() {
 /// walk across the call asks the same question about the same kept range,
 /// and the repeats cost a keyed lookup, however many facts the proof holds.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn a_kept_range_base_equality_is_proved_once_per_fact_set() {
     const KEPT: u64 = 6_000_000;

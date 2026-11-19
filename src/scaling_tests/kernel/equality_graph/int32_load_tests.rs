@@ -5,6 +5,7 @@
 use super::*;
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.5s in the parallel gate"]
 fn int32_load_late_merge_and_fork_work_scales_with_affected_applications() {
     for size in [16u64, 64, 256, 1024] {
@@ -54,6 +55,7 @@ fn int32_load_late_merge_and_fork_work_scales_with_affected_applications() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn int32_load_nested_registration_and_late_closure_are_iterative_and_scale() {
     for size in [16u64, 64, 256, 1024] {

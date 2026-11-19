@@ -1278,6 +1278,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: 0.6s in the parallel gate"]
     fn truncating_machine_division_exhausts_signed_and_unsigned_bytes() {
         for signed in [false, true] {

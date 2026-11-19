@@ -244,6 +244,7 @@ fn caller(target: &mut i32) -> i32 { owns *target; requires *target == 1; ensure
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: Rust array-repeat expansion"]
 fn array_repeat_evaluates_its_operand_once_including_zero_elements() {
     for length in [0, 3] {

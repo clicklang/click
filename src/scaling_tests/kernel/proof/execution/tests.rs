@@ -899,6 +899,7 @@ fn branch_fact_availability_is_exact_and_independent_of_ambient_history() {
 // Interface re-lowering must use the checked arm's address aliases without
 // acquiring read authority, leaking an arm fact, or scanning its history.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn interface_aliased_wide_read_preserves_scope_history_and_scales() {
     use crate::kernel::{ConditionTerm, Pointer, SpecPoint};

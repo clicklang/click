@@ -5703,6 +5703,7 @@ mod tests {
 
     /// Completed null-check cases retain join records, not recursive frames.
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: 1.1s in the parallel gate"]
     fn terminal_proof_if_cases_do_not_charge_recursive_depth() {
         for count in [1, 4, 12] {

@@ -6,6 +6,7 @@ fn project() -> Project {
     p
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 43 s, over the gate's per-test budget (2026-10-06)"]
 fn charon_chunk_proof_preserves_source_and_checks_obligations() {
     assert_eq!(

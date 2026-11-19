@@ -60,6 +60,7 @@ fn charon_loop_early_exits_verify() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: Rust labeled loop escape proof expansion"]
 fn charon_labeled_loop_escape_expands_and_replays() {
     let p = Project::from_fixture("design/charon-trial/early-exits");

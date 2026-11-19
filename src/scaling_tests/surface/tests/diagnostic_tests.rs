@@ -2,9 +2,11 @@
 // input sizes. Included into its `scaling_tests` module; see "Scaling
 // tests" in `docs/internals/testing.md`.
 
+#[cfg(not(feature = "fast-gate"))]
 use super::*;
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: growing generated loop-bundle expansion and checked work"]
 fn wide_loop_invariant_bundle_expansion_work_scales_with_members() {
     let mut samples = Vec::new();
@@ -50,6 +52,7 @@ fn wide_loop_invariant_bundle_expansion_work_scales_with_members() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: arena free loop closure work regression"]
 fn expanded_arena_loop_reuses_published_invariant_facts() {
     use crate::instrumentation::{VerificationEvent, collect};

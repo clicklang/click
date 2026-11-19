@@ -2,9 +2,11 @@
 // input sizes. Included into its `scaling_tests` module; see "Scaling
 // tests" in `docs/internals/testing.md`.
 
+#[cfg(not(feature = "fast-gate"))]
 use super::*;
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn symbolic_footprint_selection_does_not_scan_same_base_ranges() {
     let base = Address::symbolic(Variable(920_000));
@@ -70,6 +72,7 @@ fn symbolic_footprint_selection_does_not_scan_same_base_ranges() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn symbolic_byte_read_consumer_refuses_ambiguous_suppliers_without_search() {
     let base = Address::symbolic(Variable(960_000));

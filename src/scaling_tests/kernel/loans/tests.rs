@@ -747,6 +747,7 @@ fn dependency_updates_scale_with_changed_scope_entries() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.2s in the parallel gate"]
 fn disjoint_memory_view_clustering_has_linear_overlap_work() {
     let assumptions = PureFactContext::new();
@@ -783,6 +784,7 @@ fn disjoint_memory_view_clustering_has_linear_overlap_work() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn overlapping_memory_view_clustering_handles_chains_and_equal_starts() {
     let assumptions = PureFactContext::new();
@@ -903,6 +905,7 @@ fn overlapping_memory_view_clustering_handles_chains_and_equal_starts() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn loan_certificate_recheck_scales_with_explicit_transition_delta() {
     let assumptions = PureFactContext::new();
@@ -1052,6 +1055,7 @@ fn offset_alias_overlap_uses_exact_bytes_and_ignores_unrelated_facts() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.2s in the parallel gate"]
 fn joint_fragment_reservation_does_not_scan_ambient_memory_with_scalar_equalities() {
     let facts = PureFactContext::new().assume_condition(

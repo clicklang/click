@@ -4121,6 +4121,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: 2s in the parallel gate"]
     fn charon_loop_array_copy_requires_fresh_initialized_storage() {
         let export = loop_array_copy_export();
@@ -4358,6 +4359,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: original chunk-iterator whole-sidecar proof measured at 16.9 s"]
     fn charon_chunks_original_sidecar_verifies() {
         let export = decode(
@@ -4400,6 +4402,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: assignment-operator whole-sidecar proof measured at 13 s"]
     fn charon_assignment_operator_source_bodies_verify() {
         let export = decode(OPERATOR_ARTIFACT, "operators.rs", OPERATOR_SOURCE).unwrap();
@@ -4497,6 +4500,7 @@ mod tests {
         include_str!("../../../design/charon-trial/array-iteration/iteration.click");
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: 1.7s in the parallel gate"]
     fn charon_shared_array_iteration_keeps_typed_state_and_both_next_edges() {
         let export = decode(ITERATION_ARTIFACT, "iteration.rs", ITERATION_SOURCE).unwrap();
@@ -4541,6 +4545,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: 0.7s in the parallel gate"]
     fn charon_shared_iteration_rejects_forged_declarations_signatures_and_paths() {
         for mutation in 0..8 {
@@ -4997,6 +5002,7 @@ mod tests {
     const CHUNK_SOURCE: &[u8] = include_bytes!("../../../design/charon-trial/chunks/chunks.rs");
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: 0.5s in the parallel gate"]
     fn charon_chunk_models_check_resolved_identity_and_signature() {
         for mutation in 0..7 {
@@ -5067,6 +5073,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: 5 s, it verifies the whole sidecar (2026-11-11)"]
     fn charon_chunk_missing_initialization_fails_and_a_duplicate_move_copies_a_value() {
         // Under the library model an iterator is a value. One never
@@ -5439,6 +5446,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: 0.6s in the parallel gate"]
     fn charon_array_index_bounds_remain_checked_after_normalization() {
         const CLAIM: &str =
@@ -5537,6 +5545,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: 0.7s in the parallel gate"]
     fn charon_borrowed_loop_rejects_missing_guard_cleanup() {
         let mut export = decode(

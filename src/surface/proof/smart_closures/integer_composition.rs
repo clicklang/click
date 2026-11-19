@@ -1632,6 +1632,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: shared-plan construction takes 0.6s in parallel"]
     fn integer_composition_shared_plan_constructs_each_node_once() {
         let (_, _, steps) = shared_plan(2, 0, false);
@@ -1682,6 +1683,7 @@ mod tests {
         };
     }
     composition_case!(
+        #[cfg(not(feature = "fast-gate"))]
         #[ignore = "nightly: complete arithmetic migration expansion and replay"]
         integer_migration_strict_premise,
         "x: Integer, y: Integer",
@@ -1689,6 +1691,7 @@ mod tests {
         "2 * x + 2 <= 2 * y"
     );
     composition_case!(
+        #[cfg(not(feature = "fast-gate"))]
         #[ignore = "nightly: complete arithmetic migration expansion and replay"]
         integer_migration_strict_goal,
         "x: Integer, y: Integer",
@@ -1696,6 +1699,7 @@ mod tests {
         "x < y"
     );
     composition_case!(
+        #[cfg(not(feature = "fast-gate"))]
         #[ignore = "nightly: complete arithmetic migration expansion and replay"]
         integer_migration_negative_premise,
         "x: Integer",
@@ -1703,6 +1707,7 @@ mod tests {
         "4 <= x"
     );
     composition_case!(
+        #[cfg(not(feature = "fast-gate"))]
         #[ignore = "nightly: complete arithmetic migration expansion and replay"]
         integer_migration_strict_disequality,
         "x: Integer, y: Integer",
@@ -1710,6 +1715,7 @@ mod tests {
         "x < y"
     );
     composition_case!(
+        #[cfg(not(feature = "fast-gate"))]
         #[ignore = "nightly: complete arithmetic migration expansion and replay"]
         integer_migration_refutation_chain,
         "a: Integer, b: Integer, c: Integer, d: Integer, e: Integer",
@@ -1717,6 +1723,7 @@ mod tests {
         "a <= e"
     );
     composition_case!(
+        #[cfg(not(feature = "fast-gate"))]
         #[ignore = "nightly: complete arithmetic migration expansion and replay"]
         integer_migration_rounding,
         "x: Integer",
@@ -1724,6 +1731,7 @@ mod tests {
         "x <= 2"
     );
     composition_case!(
+        #[cfg(not(feature = "fast-gate"))]
         #[ignore = "nightly: complete arithmetic migration expansion and replay"]
         integer_migration_native_bridge,
         "x: uint64",
@@ -1731,6 +1739,7 @@ mod tests {
         "2 * to_integer(x) <= 10"
     );
     composition_case!(
+        #[cfg(not(feature = "fast-gate"))]
         #[ignore = "nightly: complete arithmetic migration expansion and replay"]
         integer_migration_intrinsic_range,
         "x: int64",
@@ -1738,6 +1747,7 @@ mod tests {
         "-9223372036854775808 <= to_integer(x)"
     );
     composition_case!(
+        #[cfg(not(feature = "fast-gate"))]
         #[ignore = "nightly: complete arithmetic migration expansion and replay"]
         integer_migration_intrinsic_quotient,
         "x: uint64",
@@ -1745,6 +1755,7 @@ mod tests {
         "4 * to_integer(x / 4u64) <= to_integer(x)"
     );
     composition_case!(
+        #[cfg(not(feature = "fast-gate"))]
         #[ignore = "nightly: complete arithmetic migration expansion and replay"]
         integer_migration_excluded_endpoint,
         "x: uint64",
@@ -1752,6 +1763,7 @@ mod tests {
         "0u64 < x"
     );
     composition_case!(
+        #[cfg(not(feature = "fast-gate"))]
         #[ignore = "nightly: minimal scaled-bound expansion and replay took 2.1s in parallel"]
         integer_composition_single_scaled_bound,
         "x: Integer",
@@ -1759,6 +1771,7 @@ mod tests {
         "2 * x <= 6"
     );
     composition_case!(
+        #[cfg(not(feature = "fast-gate"))]
         #[ignore = "nightly: ordinary expansion and replay take 0.6s in parallel"]
         integer_composition_scaled_sum,
         "x: Integer, y: Integer",
@@ -1766,6 +1779,7 @@ mod tests {
         "2 * x + 3 * y <= 18"
     );
     composition_case!(
+        #[cfg(not(feature = "fast-gate"))]
         #[ignore = "nightly: ordinary expansion and replay take 0.6–0.8s in parallel"]
         integer_composition_three_bounds,
         "x: Integer, y: Integer, z: Integer",
@@ -1773,6 +1787,7 @@ mod tests {
         "2 * x + 3 * y + z <= 23"
     );
     composition_case!(
+        #[cfg(not(feature = "fast-gate"))]
         #[ignore = "nightly: ordinary expansion and replay take 0.6–0.8s in parallel"]
         integer_composition_equality_direction,
         "x: Integer, y: Integer",
@@ -1780,6 +1795,7 @@ mod tests {
         "x <= 6"
     );
     composition_case!(
+        #[cfg(not(feature = "fast-gate"))]
         #[ignore = "nightly: ordinary expansion and replay take 0.6–0.8s in parallel"]
         integer_composition_antisymmetry,
         "x: Integer, y: Integer",
@@ -1787,6 +1803,7 @@ mod tests {
         "x == y"
     );
     composition_case!(
+        #[cfg(not(feature = "fast-gate"))]
         #[ignore = "nightly: ordinary expansion and replay take 0.6–0.8s in parallel"]
         integer_composition_negative_equality_scale,
         "x: Integer, y: Integer",
@@ -1794,6 +1811,7 @@ mod tests {
         "-2 * x + 2 * y == -2"
     );
     composition_case!(
+        #[cfg(not(feature = "fast-gate"))]
         #[ignore = "nightly: ordinary expansion and replay take 0.6–0.8s in parallel"]
         integer_composition_equality_sum,
         "x: Integer, y: Integer",
@@ -1802,6 +1820,7 @@ mod tests {
     );
 
     composition_case!(
+        #[cfg(not(feature = "fast-gate"))]
         #[ignore = "nightly: ordinary expansion and replay"]
         integer_composition_greater_equal_spelling,
         "x: Integer",
@@ -1810,6 +1829,7 @@ mod tests {
     );
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: wide default expansion and replay"]
     fn integer_composition_wide_constant_keeps_integer_context_after_expansion() {
         let source = "theorem composition(z: Integer) { requires 0 <= z; requires z <= 4000; ensures z <= 18446744073709551615 by { solve(); } }";
@@ -1819,6 +1839,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: two composed branches and replay"]
     fn integer_composition_closes_its_focused_conjunction_branch() {
         let source = "theorem composition(x: Integer) { requires x <= 3; ensures 2 * x <= 6 and 3 * x <= 9 by { all { 2 * x <= 6 => { solve() using { x <= 3; }; } 3 * x <= 9 => { solve() using { x <= 3; }; } } } }";
@@ -1828,6 +1849,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: ordinary expansion and replay take 0.6–0.8s in parallel"]
     fn integer_composition_unrestricted_solve_uses_the_same_ordinary_emitter() {
         let source = "theorem composition(x: Integer, y: Integer) { requires x <= 3; requires y <= 4; ensures 2 * x + 3 * y <= 18 by { solve(); } }";
@@ -1839,6 +1861,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: ordinary expansion and replay take 0.6–0.8s in parallel"]
     fn integer_composition_preserves_original_alias_and_nonlinear_operand_spellings() {
         for source in [

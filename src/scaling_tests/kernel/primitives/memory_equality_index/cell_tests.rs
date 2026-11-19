@@ -3,6 +3,7 @@
 // tests" in `docs/internals/testing.md`.
 
 use super::*;
+#[cfg(not(feature = "fast-gate"))]
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
 #[test]
@@ -88,6 +89,7 @@ fn checked_attachment_is_flat_beside_unrelated_equality_history() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn checked_composition_attaches_only_new_resource_occurrences() {
     let mut samples = Vec::new();
@@ -126,6 +128,7 @@ fn checked_composition_attaches_only_new_resource_occurrences() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn forks_before_publication_keep_indexed_candidates_without_input_rescans() {
     let mut samples = Vec::new();
@@ -198,6 +201,7 @@ fn forks_before_publication_keep_indexed_candidates_without_input_rescans() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.0s in the parallel gate"]
 fn normalization_keeps_fork_pairing_without_deferred_input_scans() {
     let mut samples = Vec::new();
@@ -284,6 +288,7 @@ fn normalization_keeps_fork_pairing_without_deferred_input_scans() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn first_memory_occurrence_on_a_sibling_uses_closed_equality_state() {
     let mut samples = Vec::new();
@@ -340,6 +345,7 @@ fn first_memory_occurrence_on_a_sibling_uses_closed_equality_state() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.1s in the parallel gate"]
 fn whole_cell_write_merges_and_queries_do_not_scan_other_payloads() {
     let mut samples = Vec::new();
@@ -401,6 +407,7 @@ fn whole_cell_write_merges_and_queries_do_not_scan_other_payloads() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn late_offset_cell_hits_scale_with_affected_entries() {
     let mut samples = Vec::new();
@@ -458,6 +465,7 @@ fn late_offset_cell_hits_scale_with_affected_entries() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2s in the parallel gate"]
 fn cell_publication_and_forks_do_not_repeat_input_registration() {
     for size in [16u64, 64, 256, 1024] {
@@ -511,6 +519,7 @@ fn cell_publication_and_forks_do_not_repeat_input_registration() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn scratch_queries_do_not_force_input_registration_at_the_next_boundary() {
     let mut samples = Vec::new();
@@ -590,6 +599,7 @@ fn cell_footprint_merges_and_queries_do_not_scan_other_sizes() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.7s in the parallel gate"]
 fn interval_selection_is_indexed_beside_same_class_non_suppliers() {
     let base = Address::symbolic(Variable(895_030));
@@ -706,6 +716,7 @@ fn write_permission_does_not_enumerate_covering_views() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.0s in the parallel gate"]
 fn symbolic_write_permission_does_not_search_views() {
     let base = Address::symbolic(Variable(961_000));
@@ -759,6 +770,7 @@ fn symbolic_write_permission_does_not_search_views() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn symbolic_partition_read_start_is_indexed_without_searching_other_ranges() {
     let base = Address::symbolic(Variable(899_000));
@@ -811,6 +823,7 @@ fn symbolic_partition_read_start_is_indexed_without_searching_other_ranges() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn indexed_memory_support_and_fragment_consumption_ignore_unrelated_spans() {
     let p = Address::symbolic(Variable(975_000));
@@ -936,6 +949,7 @@ fn explicit_memory_fragment_composition_scales_with_selected_input() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.1s in the parallel gate"]
 fn direct_memory_support_does_not_enumerate_overlapping_views() {
     let p = Address::symbolic(Variable(976_000));
@@ -981,6 +995,7 @@ fn direct_memory_support_does_not_enumerate_overlapping_views() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.5s in the parallel gate"]
 fn symbolic_fragment_support_follows_indexed_endpoint_successors() {
     let p = Address::symbolic(Variable(977_000));
@@ -1062,6 +1077,7 @@ fn symbolic_fragment_support_follows_indexed_endpoint_successors() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.9s in the parallel gate"]
 fn ordered_symbolic_subrange_selects_its_retained_residual_without_scanning() {
     let p = Address::symbolic(Variable(978_000));
@@ -1221,6 +1237,7 @@ fn composition_object_evidence_ignores_unrelated_admitted_sources() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.5s in the parallel gate"]
 fn composition_provenance_admission_follows_sibling_deltas_not_the_shared_frame() {
     let pointer = |id: u64| Address::symbolic(Variable(901_000 + id));
@@ -1296,6 +1313,7 @@ fn composition_provenance_admission_follows_sibling_deltas_not_the_shared_frame(
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn captured_interior_pointer_reads_keep_owned_bounds_and_opaque_base_identity() {
     let _session = crate::kernel::VerificationSession::enter();
@@ -1403,6 +1421,7 @@ fn captured_interior_pointer_reads_keep_owned_bounds_and_opaque_base_identity() 
 // owners in the same external address space. Equality selects that occurrence;
 // the existing owner, width and signed bounds still authorize the access.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.9s in the parallel gate"]
 fn captured_interior_address_selects_its_base_beside_same_block_owners() {
     let _session = crate::kernel::VerificationSession::enter();

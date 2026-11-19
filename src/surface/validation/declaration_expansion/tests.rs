@@ -249,6 +249,7 @@ fn check_isolated_program(value: i32, expected: i32) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn standard_library_initialization_is_constant_across_verification_sizes() {
     // Count initialization, not elapsed time: repeated fixture threads must

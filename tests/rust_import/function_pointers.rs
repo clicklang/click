@@ -36,6 +36,7 @@ fn callable_signature_mismatch_displays_both_signatures() {
 // forwards its own `f` to `apply`, and `caller` and `forward` pass `twice`,
 // whose own contract meets that contract. Each piece is needed.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.3s in the parallel gate"]
 fn charon_calls_through_a_function_pointer_meet_its_named_contract() {
     let p = function_pointer_project();

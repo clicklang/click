@@ -4,6 +4,7 @@ use super::*;
 // thread so this test isolates proof execution. The proof and all kernel
 // state are constructed and executed on the two-megabyte thread.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: deep focused execution on a constrained stack"]
 fn focused_execute_handles_deep_branches_on_a_two_megabyte_stack() {
     for depth in [4, 32, 112, 256] {

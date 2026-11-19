@@ -13,9 +13,11 @@ use click::kernel::{
     prove_symbolic_program_function_execution,
 };
 use click::languages::cpp::{
-    CppBinaryOperator, CppCallArgument, CppCleanup, CppExceptionBehavior, CppExpression,
-    CppFunctionKind, CppInitializer, CppProjection, CppStatement, CppType, lower_import,
+    CppBinaryOperator, CppExceptionBehavior, CppExpression, CppInitializer, CppStatement, CppType,
+    lower_import,
 };
+#[cfg(not(feature = "fast-gate"))]
+use click::languages::cpp::{CppCallArgument, CppCleanup, CppFunctionKind, CppProjection};
 use click::surface::{
     ProgramVerificationSession, VerifiedClaim, expand_project_claim_source_by_label,
     expand_project_tactic_source_at, project_smart_tactic_source_sites,
@@ -44,6 +46,7 @@ uint64 probe() { ensures result == 7u64; }
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 // Const scalar construction and constexpr storage must survive offline importing and alias reads.
 fn readonly_scalar_initialization_keeps_cpp_object_identity() {
@@ -51,6 +54,7 @@ fn readonly_scalar_initialization_keeps_cpp_object_identity() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: readonly scalar expanded and retained proof rechecks"]
 fn readonly_scalar_initialization_expands_and_retains_offline() {
     check_readonly_scalar_initialization(true);
@@ -143,6 +147,7 @@ int32 probe() { ensures result == 11; }
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.7s in the parallel gate"]
 // A by-value descriptor copy owns only its fields, and still aliases its backing allocation.
 fn trivial_record_parameter_copy_keeps_caller_fields_and_shared_backing() {
@@ -150,6 +155,7 @@ fn trivial_record_parameter_copy_keeps_caller_fields_and_shared_backing() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: expanded and retained by-value record proof rechecks"]
 fn trivial_record_parameter_copy_expands_and_retains_offline() {
     check_trivial_record_parameter_copy(true);
@@ -216,6 +222,7 @@ uint64 probe(const struct View& source) {
 "#;
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: opaque by-value parameter proof, replay, and refusal controls"]
 fn opaque_record_copy_constructs_the_actual_by_value_parameter() {
     let (project, import) = opaque_record_copy_fixture(
@@ -273,6 +280,7 @@ extern uint64 take_count(struct View parameter) {{
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: verified callee and opaque record copy proof replay"]
 fn opaque_by_value_parameter_keeps_its_contract_resource_in_the_body() {
     let (project, import) = opaque_record_copy_fixture(
@@ -431,6 +439,7 @@ fn check_trivial_record_parameter_copy(tools: bool) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.1s in the parallel gate"]
 fn trivial_record_return_preserves_nested_descriptor_values_offline() {
     let project = Project::with_fixture(
@@ -528,6 +537,7 @@ struct View copy(const struct View& input) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn projected_trivial_record_return_verifies_without_copying_siblings() {
     let project = Project::with_fixture(
@@ -570,6 +580,7 @@ fn record_return_refuses_nontrivial_copy_move_and_prvalue_construction() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.0s in the parallel gate"]
 fn constructor_destination_preserves_pointer_to_its_own_field_offline() {
     let project = Project::with_fixture(
@@ -663,6 +674,7 @@ const int32& probe(const struct Node& input) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.5s in the parallel gate"]
 fn record_copy_keeps_self_pointer_value_without_rebasing_it() {
     let project = Project::with_fixture(
@@ -869,9 +881,10 @@ const GUARD_BEFORE_SECOND_MDTEST: &str =
 #[path = "support/cpp_description.rs"]
 mod cpp_description;
 use cpp_description::{
-    load_import, lock_description, lock_section, lock_source_mut, refresh_import, unit_digest,
-    unit_entry_mut,
+    load_import, lock_description, lock_section, lock_source_mut, refresh_import,
 };
+#[cfg(not(feature = "fast-gate"))]
+use cpp_description::{unit_digest, unit_entry_mut};
 
 struct Project {
     directory: PathBuf,
@@ -1282,6 +1295,7 @@ impl Drop for Project {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.0s in the parallel gate"]
 fn literal_false_do_wrappers_execute_once_offline() {
     for condition in ["false", "0"] {
@@ -1389,6 +1403,7 @@ int32 probe(int32& value) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn expression_observers_preserve_symbolic_field_reads_offline() {
     let project = Project::with_fixture(
@@ -1471,6 +1486,7 @@ uint64 probe(const struct Count& count) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.1s in the parallel gate"]
 fn expression_observers_normalize_nested_arguments_and_widened_results() {
     let project = Project::with_fixture(
@@ -1509,6 +1525,7 @@ int64 relay(int32 value) { requires value == 0; ensures result == 1i64; }
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn expression_observers_preserve_short_circuit_read_permissions() {
     for condition in ["false", "true"] {
@@ -1546,6 +1563,7 @@ bool probe(const struct Count& count) {{ ensures result == result; }}
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.0s in the parallel gate"]
 fn expression_observers_form_checked_reference_results() {
     let project = Project::with_fixture(
@@ -1638,6 +1656,7 @@ fn declared_macro_definitions_keep_expansion_locations_and_locks_offline() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn reference_result_claim_and_solve_expansion_preserve_address_and_value_spelling() {
     let project = Project::with_fixture(
@@ -1684,6 +1703,7 @@ int32& probe(int32& value) { views value; ensures &result == &value; ensures res
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.9s in the parallel gate"]
 fn reference_aliases_preserve_resolved_types_and_const_qualification_offline() {
     for (native_type, sidecar_type) in [("int&", "int32&"), ("const int&", "const int32&")] {
@@ -1719,6 +1739,7 @@ fn reference_aliases_preserve_resolved_types_and_const_qualification_offline() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.3s in the parallel gate"]
 fn runtime_constant_evaluation_keeps_manifest_branch_selection_distinct_offline() {
     for (cpp, expected) in [
@@ -1842,6 +1863,7 @@ fn unreachable_builtin_requires_an_unreachable_execution_path_offline() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.7s in the parallel gate"]
 fn logical_negation_checks_full_width_truth_and_observer_results_offline() {
     for (cpp, helper, parameters, requires) in [
@@ -2168,6 +2190,7 @@ fn unit_arguments_are_locked_and_change_the_identity() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn included_header_definition_is_selected_locked_and_validated() {
     let project = Project::header_function();
@@ -2329,6 +2352,7 @@ fn scalar_int32_profile_verifies_a_typed_throw_and_keeps_its_lock_identity() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn scalar_int32_profile_propagates_a_modular_throw_past_a_normal_call_continuation() {
     let project = Project::with_fixture(
@@ -2400,6 +2424,7 @@ fn scalar_int32_profile_propagates_a_modular_throw_past_a_normal_call_continuati
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn scalar_int32_profile_catches_a_modular_throw_with_a_typed_payload() {
     let project = Project::with_fixture(
@@ -2545,6 +2570,7 @@ fn scalar_int32_profile_catches_a_modular_throw_with_a_typed_payload() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn scalar_int32_profile_joins_a_caught_throw_inside_conditional_cleanup() {
     let project = Project::with_fixture(
@@ -2659,6 +2685,7 @@ fn scalar_int32_profile_joins_a_caught_throw_inside_conditional_cleanup() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: live C++ place-table import and proof rechecks, 5s"]
 fn graph_place_indices_preserve_reference_calls_with_growing_unrelated_places() {
     for size in [4usize, 16, 64] {
@@ -2714,6 +2741,7 @@ int32 many({parameters}, int32& value) {{ owns value; requires value == 7; ensur
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.5s in the parallel gate"]
 fn catch_binding_names_do_not_escape_the_handler_scope() {
     let cpp = "int helper(bool fail) { if (fail) { throw 7; } return 7; }
@@ -2813,6 +2841,7 @@ fn scalar_int32_profile_rejects_unsupported_handler_shapes() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.1s in the parallel gate"]
 fn scalar_int32_profile_unwinds_one_guard_on_both_paths() {
     let mdtest = parse_mdtest(
@@ -2966,6 +2995,7 @@ fn scalar_int32_profile_emits_function_scope_cleanup_edges_for_escaping_throws()
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn scalar_int32_profile_rejects_hostile_cleanup_proofs() {
     let mdtest = parse_mdtest(
@@ -3269,6 +3299,7 @@ fn signed_int64_predicate_retains_alias_and_verifies_offline() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn signed_int64_predicate_admits_inequality_and_rejects_unsupported_siblings() {
     let inequality = Project::int64_predicate();
@@ -3751,6 +3782,7 @@ fn locked_cpp_function_verifies_through_the_shared_sidecar_path_offline() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn locked_cpp_branch_and_early_return_verify_through_the_shared_sidecar_path() {
     let project = Project::branch_return();
@@ -3854,6 +3886,7 @@ fn locked_cpp_branch_and_early_return_verify_through_the_shared_sidecar_path() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn const_reference_preserves_qualification_and_may_alias_a_mutable_reference() {
     let project = Project::const_reference_alias();
@@ -4189,6 +4222,7 @@ fn contains_local_aggregate_pipeline(statement: &ProgramStatement, local: &str) 
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: two live Clang exports and a prepared proof"]
 fn cpp_function_root_checks_an_unsupported_sibling_only_when_called() {
     let source = r#"int sibling() noexcept {
@@ -4223,6 +4257,7 @@ int32 selected() { ensures result == 42; }
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn direct_cpp_call_exports_reachable_definition_and_verifies_modularly_offline() {
     let project = Project::direct_call();
@@ -4303,6 +4338,7 @@ fn direct_cpp_call_exports_reachable_definition_and_verifies_modularly_offline()
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.0s in the parallel gate"]
 fn scalar_local_captures_a_direct_call_result_and_verifies_offline() {
     let project = Project::scalar_local();
@@ -4423,6 +4459,7 @@ fn scalar_local_captures_a_direct_call_result_and_verifies_offline() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn mutable_pointer_dereference_and_reference_address_verify_offline() {
     let project = Project::pointer();
@@ -4562,6 +4599,7 @@ fn mutable_pointer_dereference_and_reference_address_verify_offline() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn record_reference_member_loads_and_stores_verify_offline() {
     let project = Project::struct_member();
@@ -4665,6 +4703,7 @@ fn record_reference_member_loads_and_stores_verify_offline() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn brace_initialized_local_aggregate_verifies_offline() {
     let project = Project::local_aggregate();
@@ -4766,6 +4805,7 @@ fn brace_initialized_local_aggregate_verifies_offline() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.0s in the parallel gate"]
 fn explicit_constructor_local_verifies_as_a_modular_call() {
     let project = Project::constructor_local();
@@ -4913,6 +4953,7 @@ fn explicit_constructor_local_verifies_as_a_modular_call() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2s in the parallel gate"]
 fn terminal_return_captures_value_before_checked_destructor_cleanup() {
     let project = Project::terminal_destructor();
@@ -5073,6 +5114,7 @@ fn terminal_return_captures_value_before_checked_destructor_cleanup() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: C++ early void return proof and replay"]
 fn cpp_void_early_return_skips_following_statements() {
     let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -5094,6 +5136,7 @@ fn cpp_void_early_return_skips_following_statements() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: C++ void return with checked cleanup on both paths"]
 fn cpp_void_early_return_runs_destructors() {
     let cpp = EARLY_RETURN_DESTRUCTOR_SOURCE
@@ -5137,6 +5180,7 @@ fn cpp_void_early_return_runs_destructors() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn every_return_after_construction_runs_the_checked_destructor() {
     let project = Project::early_return_destructor();
@@ -5237,6 +5281,7 @@ fn every_return_after_construction_runs_the_checked_destructor() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn modular_caller_observes_captured_result_and_restored_entry_value() {
     assert!(
@@ -5322,6 +5367,7 @@ fn modular_caller_observes_captured_result_and_restored_entry_value() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn two_constructed_objects_are_destroyed_in_reverse_order_on_every_return() {
     let project = Project::reverse_destructor_order();
@@ -5426,6 +5472,7 @@ fn two_constructed_objects_are_destroyed_in_reverse_order_on_every_return() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn nested_scope_destroys_its_object_on_return_and_fallthrough() {
     let project = Project::nested_scope_destructor();
@@ -5525,6 +5572,7 @@ fn nested_scope_destroys_its_object_on_return_and_fallthrough() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 8s in the parallel gate"]
 fn sibling_scopes_reuse_a_local_name_with_independent_cleanup() {
     let project = Project::sibling_scope_destructors();
@@ -5653,6 +5701,7 @@ fn sibling_scopes_reuse_a_local_name_with_independent_cleanup() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 8s in the parallel gate"]
 fn third_sibling_scope_preserves_independent_cleanup_and_frames() {
     let growing = Project::sibling_scope_destructors();
@@ -5678,6 +5727,7 @@ fn third_sibling_scope_preserves_independent_cleanup_and_frames() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn overlapping_scope_destroys_inner_before_outer_on_every_exit() {
     let project = Project::overlapping_scope_destructors();
@@ -5812,6 +5862,7 @@ fn overlapping_scope_rejects_shadowing_and_a_second_inner_lifetime() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn conditional_construction_cleans_up_only_the_constructed_arm() {
     let project = Project::conditional_construction();
@@ -6084,6 +6135,7 @@ fn cpp_local_aggregate_rejects_partial_default_copy_nested_and_second_objects() 
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn cpp_native_pointer_offsets_preserve_index_width_and_range_authority() {
     for (cpp_type, click_type, index, expression, expected) in [
@@ -6123,6 +6175,7 @@ int32 read(int32* data, {click_type} index) {{
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.4s in the parallel gate"]
 fn cpp_native_size_t_last_load_checks_nonempty_and_actual_backing_bounds() {
     let project = Project::with_fixture(
@@ -6243,6 +6296,7 @@ fn cpp_pointer_slice_rejects_differences_and_multilevel_pointers() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn cpp_record_slice_rejects_unresolved_methods_bitfields_and_inheritance() {
     let project = Project::struct_member();
@@ -6299,6 +6353,7 @@ int32 stage_restore(struct First& first, struct Second& second) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.5s in the parallel gate"]
 fn cpp_profile_expansion_and_audit_session_share_the_locked_input() {
     let project = Project::new();
@@ -6682,6 +6737,7 @@ fn cpp_fixed_byte_enum_explicit_cast_preserves_all_representation_bits_offline()
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.5s in the parallel gate"]
 fn cpp_fixed_byte_enum_converted_call_results_verify_offline() {
     let project = Project::with_fixture(
@@ -6700,6 +6756,7 @@ fn cpp_fixed_byte_enum_converted_call_results_verify_offline() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 // Equal backing widths cannot erase distinct enum declarations in a converted
 // call result. Only the retained explicit numeric conversion crosses them.
@@ -6872,6 +6929,7 @@ fn cpp_unsigned_byte_arithmetic_preserves_integer_promotions_offline() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.9s in the parallel gate"]
 // Adjacent byte fields retain one-byte layout and separate authority; a write
 // cannot borrow its neighbor's view or alter the preserved padded word.
@@ -7323,6 +7381,7 @@ fn exporter_path_is_not_needed_by_offline_load() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn ordinary_value_methods_import_with_const_receiver_and_mixed_width_fields() {
     let source = include_str!("fixtures/cpp-verification/value-methods/value_methods.cpp");
@@ -7388,6 +7447,7 @@ fn ordinary_value_methods_import_with_const_receiver_and_mixed_width_fields() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.5s in the parallel gate"]
 fn value_methods_reject_false_claims_missing_authority_and_overflow() {
     let source = include_str!("fixtures/cpp-verification/value-methods/value_methods.cpp");
@@ -7604,6 +7664,7 @@ fn check_sidecar_tactic_with_tools(
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.5s in the parallel gate"]
 fn signed_scalar_arithmetic_verifies_through_the_shared_kernel_and_modular_calls() {
     for (selector, source) in [
@@ -7633,6 +7694,7 @@ fn signed_scalar_arithmetic_verifies_through_the_shared_kernel_and_modular_calls
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn signed_division_correction_covers_rounding_directions_and_boundary_cases() {
     let project =
@@ -7664,6 +7726,7 @@ fn signed_division_correction_covers_rounding_directions_and_boundary_cases() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.5s in the parallel gate"]
 fn signed_scalar_arithmetic_rejects_undefined_operations_and_false_claims() {
     for (selector, parameters, preconditions, claim, expected) in [
@@ -7747,6 +7810,7 @@ fn signed_scalar_arithmetic_rejects_undefined_operations_and_false_claims() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2s in the parallel gate"]
 fn signed_scalar_casts_preserve_cpp20_boolean_and_narrowing_semantics() {
     for (selector, cpp_source, parameters, preconditions, result_type, expected) in [
@@ -7824,6 +7888,7 @@ int64 relay(int64 n, int64 d, int32& untouched) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.4s in the parallel gate"]
 fn subtraction_method_self_aliasing_is_defined_without_bounds_and_frames_caller_memory() {
     let project = Project::with_fixture(
@@ -7903,6 +7968,7 @@ const UNSIGNED_ARITHMETIC_SOURCE: &str =
     include_str!("fixtures/cpp-verification/unsigned-arithmetic/arithmetic.cpp");
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 6s in the parallel gate"]
 fn unsigned_scalar_operations_wrap_and_preserve_conversion_semantics() {
     for (name, params, requires, result_type, expected) in [
@@ -8017,6 +8083,7 @@ fn unsigned_scalar_operations_wrap_and_preserve_conversion_semantics() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn unsigned_modular_calls_frame_unrelated_memory_and_reject_false_wrap_claims() {
     let project = Project::with_fixture("unsigned.cpp", "relay", UNSIGNED_ARITHMETIC_SOURCE);
@@ -8121,6 +8188,7 @@ fn unsigned_positive_divisor_contract_expands_and_reverifies() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn unsigned_fee_fast_path_expressions_cover_large_products_and_rounding() {
     // Exact fast-path expressions from EvaluateFee; return the unsigned
@@ -8163,6 +8231,7 @@ fn mixed_unsigned_return_preserves_signed_intermediate_overflow() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.5s in the parallel gate"]
 fn compiler_constant_calls_preserve_runtime_constant_evaluation_context() {
     // A constexpr function can distinguish constant evaluation from a runtime
@@ -8186,6 +8255,7 @@ const TEMPLATE_INSTANCE_SOURCE: &str =
     include_str!("fixtures/cpp-verification/template-instances/instances.cpp");
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn concrete_template_instances_have_distinct_identities_and_modular_contracts() {
     let project = Project::with_fixture("instances.cpp", "both", TEMPLATE_INSTANCE_SOURCE);
@@ -8247,6 +8317,7 @@ int32 both(int32 a, int32 b, int32* untouched) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.5s in the parallel gate"]
 fn concrete_scalar_type_template_instances_preserve_width_and_signedness() {
     let project = Project::with_fixture("instances.cpp", "widths", TEMPLATE_INSTANCE_SOURCE);
@@ -8269,6 +8340,7 @@ uint64 widths(int32 a, uint64 b) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.0s in the parallel gate"]
 fn concrete_member_template_instances_preserve_receiver_authority() {
     let project = Project::with_fixture("instances.cpp", "member", TEMPLATE_INSTANCE_SOURCE);
@@ -8299,6 +8371,7 @@ int64 member(const struct Value& value) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.5s in the parallel gate"]
 fn constexpr_discards_only_the_compiler_selected_arm() {
     let project = Project::with_fixture("instances.cpp", "accepted", TEMPLATE_INSTANCE_SOURCE);
@@ -8340,6 +8413,7 @@ uint64 exact_types(uint64 a, uint64 b) { ensures result == integer::uint64_wrapp
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn constexpr_conditions_use_constant_context_and_allow_absent_else() {
     for (selected, params, expected) in [
@@ -8377,6 +8451,7 @@ int32 get_flag() { ensures result == 1; }
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn integral_template_values_preserve_exact_type_sign_and_full_width() {
     let project = Project::with_fixture(
@@ -8419,6 +8494,7 @@ fn integral_template_values_preserve_exact_type_sign_and_full_width() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn integral_class_extents_and_unsigned_fields_use_native_typed_cells() {
     let project = Project::with_fixture(
@@ -8522,6 +8598,7 @@ fn unsupported_template_arguments_and_dependent_selection_fail_explicitly() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn instantiated_fee_fast_paths_preserve_both_rounding_expressions() {
     for (fee, at_size, size) in [
@@ -8579,6 +8656,7 @@ int both(const Box<SizeTag, true>& left, const Box<WeightTag, true>& right) noex
 "#;
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn class_template_instances_preserve_nominal_identity_and_verify_offline() {
     let mut alias_identity = None;
@@ -8700,6 +8778,7 @@ fn generic_class_templates_refuse_bodies_that_differ_by_type() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.9s in the parallel gate"]
 fn class_template_instances_use_resolved_storage_types_and_constructor_names() {
     let source = r#"
@@ -8771,6 +8850,7 @@ fn class_template_instances_use_resolved_storage_types_and_constructor_names() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn class_template_instances_reject_cross_instance_bindings_even_with_equal_layouts() {
     use sha2::{Digest, Sha256};
@@ -8892,6 +8972,7 @@ int read(const Envelope& state) noexcept { return state.untouched; }
 "#;
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn single_base_layouts_preserve_nominal_subobjects_and_verify_offline() {
     let project = Project::with_fixture("bases.cpp", "read", BASE_LAYOUT_SOURCE);
@@ -9074,6 +9155,7 @@ void change(Envelope& state, int next) noexcept { SetHelper(state.right, next); 
 "#;
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn inherited_field_paths_preserve_base_authority_and_verify_offline() {
     for (selected, contract) in [
@@ -9108,6 +9190,7 @@ fn inherited_field_paths_preserve_base_authority_and_verify_offline() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn inherited_method_and_reference_calls_verify_offline_with_sibling_frames() {
     for (selected, sidecar) in [
@@ -9214,6 +9297,7 @@ fn inherited_calls_reject_forged_nominal_paths_and_const_roots() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.5s in the parallel gate"]
 fn inherited_calls_reject_missing_authority_and_false_frames() {
     let project = Project::with_fixture("inherited.cpp", "call", INHERITED_SOURCE);
@@ -9245,6 +9329,7 @@ const SIGNED_CONVERSION_SOURCE: &str =
     include_str!("fixtures/cpp-verification/signed-conversion/conversion.cpp");
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 7s in the parallel gate"]
 fn cpp20_unsigned_to_signed64_preserves_all_bits_at_boundaries() {
     for value in [
@@ -9287,6 +9372,7 @@ fn cpp20_unsigned_to_signed64_preserves_all_bits_at_boundaries() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn cpp20_signed_unsigned_round_trips_verify_without_input_bounds() {
     for (selected, value_type) in [
@@ -9304,6 +9390,7 @@ fn cpp20_signed_unsigned_round_trips_verify_without_input_bounds() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.5s in the parallel gate"]
 fn cpp20_modular_conversion_contract_preserves_bits_and_frames_memory() {
     let project = Project::with_fixture("conversion.cpp", "relay", SIGNED_CONVERSION_SOURCE);
@@ -9338,6 +9425,7 @@ fn cpp20_conversion_keeps_following_signed_overflow_obligations() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn cpp20_fee_fast_paths_preserve_the_signed_return_conversion() {
     for (fee, at_size, size) in [
@@ -9373,6 +9461,7 @@ fn cpp20_fee_fast_paths_preserve_the_signed_return_conversion() {
 const RETURN_CALL_SOURCE: &str = include_str!("fixtures/cpp-verification/return-call/relay.cpp");
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn direct_return_calls_verify_modular_contracts_and_frame_memory() {
     let project = Project::with_fixture("relay.cpp", "relay", RETURN_CALL_SOURCE);
@@ -9420,6 +9509,7 @@ int32 relay(int32 value, int32* untouched) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn direct_return_calls_preserve_each_scalar_type_and_branch_result() {
     for (selected, helper, value_type) in [
@@ -9475,6 +9565,7 @@ int32 relay(int32 value) { ensures result == value; }
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn direct_return_calls_preserve_fee_method_template_wrappers() {
     for (selected, instance, expected) in [
@@ -9533,18 +9624,21 @@ fn direct_return_calls_reject_unsupported_expression_positions_and_recursive_gra
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 7s in the parallel gate"]
 fn direct_return_calls_capture_typed_results_before_destructors() {
     check_return_cleanup_cases("int32");
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 6s in the parallel gate"]
 fn direct_return_calls_capture_boolean_results_before_destructors() {
     check_return_cleanup_cases("bool");
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn direct_return_calls_capture_wide_results_before_destructors() {
     check_return_cleanup_cases("int64");
@@ -9675,6 +9769,7 @@ fn direct_return_calls_keep_guarded_try_returns_unsupported_and_emit_uncaught_cl
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn direct_return_calls_propagate_object_free_exception_contracts() {
     let project = Project::with_fixture(
@@ -9702,6 +9797,7 @@ int32 relay(bool should_throw) throws int32 { ensures result == 5; exceptional e
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: exceptional payload namespaces, propagation, expansion, and hostile claim"]
 fn exceptional_payload_is_separate_from_cpp_source_names() {
     let project = Project::with_fixture(
@@ -9747,6 +9843,7 @@ int32 relay(int32 __click_exception, int32 value) throws int32 {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn nested_return_calls_verify_scalar_types_and_fresh_captures() {
     let cpp = include_str!("fixtures/cpp-verification/return-call/nested.cpp");
@@ -9809,6 +9906,7 @@ int32 collision(int32 __click_cpp_nested_value_0, int32 __click_cpp_nested_value
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: imported runtime default and explicit override with proof replay"]
 fn runtime_default_arguments_evaluate_the_helper_only_when_omitted() {
     let cpp = r#"#include "defaults.h"
@@ -9918,6 +10016,7 @@ fn nested_return_calls_reject_unspecified_order_conversions_and_cycles() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn nested_return_calls_propagate_inner_exceptions_without_evaluating_outer_call() {
     let cpp = "int inner(bool fail) { if (fail) { throw 7; } return 5; } int outer(int value) { return value; } int relay(bool fail) { return outer(inner(fail)); }";
@@ -9944,6 +10043,7 @@ int32 relay(bool fail) throws int32 {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.9s in the parallel gate"]
 fn nested_return_calls_use_distinct_capture_types_across_branches() {
     let project = Project::with_fixture(
@@ -9966,6 +10066,7 @@ int64 choose(bool first, int32 value) { requires value == 7; ensures result == 7
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn nested_temporary_ids_scale_with_calls_and_source_collisions() {
     let mut previous = None;
@@ -10004,6 +10105,7 @@ const MULTIPLE_ARGUMENTS_SOURCE: &str =
     include_str!("fixtures/cpp-verification/return-call/multiple-arguments.cpp");
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn nested_calls_with_stable_siblings_preserve_each_argument_position_and_casts() {
     for (selected, outer, slot) in [
@@ -10053,6 +10155,7 @@ fn nested_calls_with_stable_siblings_preserve_each_argument_position_and_casts()
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn nested_calls_with_stable_siblings_preserve_fee_rounding_pattern() {
     for (fee, round_down, expected) in [
@@ -10108,6 +10211,7 @@ fn nested_calls_reject_sibling_memory_reads_effects_arithmetic_and_other_calls()
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn nested_calls_with_stable_siblings_propagate_inner_exceptions() {
     let cpp = "int inner(bool fail) { if (fail) { throw 7; } return 5; } int outer(int left, int value, bool flag) { return value; } int relay(bool fail, int left) { return outer(left, inner(fail), fail); }";
@@ -10128,6 +10232,7 @@ int32 relay(bool fail, int32 left) throws int32 { ensures result == 5; exception
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn nested_argument_lowering_scales_with_arity() {
     let mut previous = None;
@@ -10166,6 +10271,7 @@ fn nested_argument_lowering_scales_with_arity() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.9s in the parallel gate"]
 fn stable_siblings_remain_valid_when_the_nested_call_writes_memory() {
     let project = Project::with_fixture(
@@ -10228,6 +10334,7 @@ fn stable_constant_siblings_reject_noninline_external_linkage_and_mutable_global
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.9s in the parallel gate"]
 fn scalar_local_siblings_survive_nested_memory_effects() {
     let project =
@@ -10246,6 +10353,7 @@ int32 local_sibling(int32* slot, int32 value) { owns slot[0..1]; ensures slot[0]
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn nested_stable_siblings_preserve_concrete_boolean_template_rounding_wrappers() {
     for (selected, down, fee, expected) in [
@@ -10280,6 +10388,7 @@ const STATIC_HELPERS_SOURCE: &str =
     include_str!("fixtures/cpp-verification/return-call/static-helpers.cpp");
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.6s in the parallel gate"]
 fn static_helpers_preserve_scalar_types_class_identity_and_no_receiver() {
     for (member, value_type) in [
@@ -10313,6 +10422,7 @@ fn static_helpers_preserve_scalar_types_class_identity_and_no_receiver() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn static_helpers_support_modular_nested_and_initializer_calls() {
     for selected in ["static_chain", "static_local"] {
@@ -10340,6 +10450,7 @@ int32 {selected}(int32 value) {{ ensures result == value; }}
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2s in the parallel gate"]
 fn static_helpers_preserve_nested_fee_rounding_template_shape() {
     for (selected, down, fee, expected) in [
@@ -10412,6 +10523,7 @@ fn static_helpers_reject_object_dispatch_reference_parameters_and_recursion() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn static_helpers_propagate_scalar_exceptions_through_nested_calls() {
     let cpp = "struct H { static int inner(bool fail) { if (fail) { throw 7; } return 5; } static int outer(int value) { return value; } static int relay(bool fail) { return outer(inner(fail)); } };";
@@ -10432,6 +10544,7 @@ static int32 H::relay(bool fail) throws int32 { ensures result == 5; exceptional
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn static_helpers_called_from_value_methods_preserve_field_authority() {
     let project = Project::with_fixture("static.cpp", "FeeValue::Evaluate", STATIC_HELPERS_SOURCE);
@@ -10480,6 +10593,7 @@ const NORMALIZED_EVALUATION_SOURCE: &str =
     include_str!("fixtures/cpp-verification/return-call/normalized-evaluation.cpp");
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.6s in the parallel gate"]
 fn normalized_scalar_calls_agree_across_returns_initializers_and_discarded_results() {
     for (selected, contract) in [
@@ -10517,6 +10631,7 @@ fn normalized_scalar_calls_agree_across_returns_initializers_and_discarded_resul
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2s in the parallel gate"]
 fn normalized_initializer_calls_preserve_scalar_types_and_static_helpers() {
     for (selected, helper, value_type, storage) in [
@@ -10537,6 +10652,7 @@ fn normalized_initializer_calls_preserve_scalar_types_and_static_helpers() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn normalized_initializer_calls_capture_before_normal_cleanup() {
     let project = Project::with_fixture(
@@ -10605,6 +10721,7 @@ fn normalized_call_order_rejections_are_independent_of_source_context() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn normalized_initializer_calls_propagate_inner_exceptions() {
     let cpp = "int inner(bool fail) { if (fail) { throw 7; } return 5; } int outer(int value) { return value; } int relay(bool fail) { int captured = outer(inner(fail)); return captured; }";
@@ -10625,6 +10742,7 @@ int32 relay(bool fail) throws int32 { ensures result == 5; exceptional ensures e
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.6s in the parallel gate"]
 fn normalized_initializer_and_return_work_scales_with_argument_arity() {
     let mut overhead = None;
@@ -10672,6 +10790,7 @@ fn normalized_initializer_and_return_work_scales_with_argument_arity() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn lifetime_returns_destroy_only_the_objects_constructed_on_that_path() {
     let cpp =
@@ -10717,6 +10836,7 @@ fn lifetime_returns_destroy_only_the_objects_constructed_on_that_path() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn lifetime_return_before_any_construction_has_no_cleanup() {
     let cpp =
@@ -10754,6 +10874,7 @@ fn lifetime_return_before_any_construction_has_no_cleanup() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.8s in the parallel gate"]
 fn resolved_declaration_identities_bind_overloads_scopes_and_equal_width_types() {
     let project = Project::with_fixture(
@@ -10886,6 +11007,7 @@ fn anonymous_namespace_helper_is_named_by_its_path() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.5s in the parallel gate"]
 fn bounded_constant_forests_scale_without_expanding_dependency_chains() {
     for size in [4usize, 16, 64, 256] {
@@ -10929,6 +11051,7 @@ fn bounded_constant_forests_scale_without_expanding_dependency_chains() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2s in the parallel gate"]
 fn record_inventories_and_function_lowering_share_indexes_across_sizes() {
     for size in [2usize, 8, 32, 128] {
@@ -11035,6 +11158,7 @@ fn exporter_bounds_record_and_function_discovery_independently() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn distinct_record_layouts_keep_field_widths_offsets_and_ownership() {
     let project = Project::with_fixture(
@@ -11085,18 +11209,21 @@ fn distinct_record_layouts_keep_field_widths_offsets_and_ownership() {
 const GROWING_GUARD_SOURCE: &str = "struct Guard { int value; explicit Guard(int initial) noexcept : value(initial) {} ~Guard() noexcept { value = 0; } };\n";
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 7s in the parallel gate"]
 fn growing_lifetime_inventories_keep_prefix_returns_and_reverse_cleanup() {
     check_growing_lifetime_inventory("top");
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 6s in the parallel gate"]
 fn growing_sibling_lifetime_inventories_keep_prefix_returns_and_reverse_cleanup() {
     check_growing_lifetime_inventory("siblings");
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 7s in the parallel gate"]
 fn growing_block_lifetime_inventories_keep_prefix_returns_and_reverse_cleanup() {
     check_growing_lifetime_inventory("block");
@@ -11180,6 +11307,7 @@ int32 many(bool early, int32 value) { ensures result == value; }
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.6s in the parallel gate"]
 fn exporter_enforces_named_lifetime_budgets_and_keeps_outputs_atomic() {
     for (kind, boundary) in [("locals", 1024usize), ("scopes", 256)] {
@@ -11217,6 +11345,7 @@ fn exporter_enforces_named_lifetime_budgets_and_keeps_outputs_atomic() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.2s in the parallel gate"]
 fn shared_scalar_interpretation_keeps_execution_and_proof_signatures_aligned() {
     for (cpp, signature, precondition, expected) in [
@@ -11265,6 +11394,7 @@ fn shared_scalar_interpretation_keeps_execution_and_proof_signatures_aligned() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.3s in the parallel gate"]
 fn compiler_assumptions_require_proof_and_keep_normal_cleanup() {
     let cpp = "struct Guard { int value; explicit Guard(int n) noexcept : value(n) {} ~Guard() noexcept { value = 0; } };\nint guarded(int n) noexcept { Guard guard(n); __builtin_assume(n > 0); return n; }";
@@ -11304,6 +11434,7 @@ Guard::~Guard() { owns this->value; ensures this->value == 0; }
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.5s in the parallel gate"]
 fn compiler_assumptions_cover_total_predicates_and_scale_with_statements() {
     for size in [4usize, 16, 64, 256] {
@@ -11355,6 +11486,7 @@ fn compiler_assumptions_reject_unevaluated_effects_and_partial_or_memory_conditi
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.5s in the parallel gate"]
 fn user_named_assume_calls_are_not_compiler_assumptions() {
     let cpp = "void Assume(bool condition) noexcept { int ignored = 0; }\nint guarded(int n) noexcept { Assume(n > 0); return n; }";
@@ -11376,6 +11508,7 @@ fn user_named_assume_calls_are_not_compiler_assumptions() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn compiler_assumptions_preserve_conditional_execution_and_constant_reachability() {
     for (cpp, requires) in [
@@ -11403,6 +11536,7 @@ fn compiler_assumptions_preserve_conditional_execution_and_constant_reachability
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 6s in the parallel gate"]
 fn isolated_nested_calls_state_field_siblings_in_every_scalar_context() {
     let cpp = include_str!("fixtures/cpp-verification/return-call/field-siblings.cpp");
@@ -11444,12 +11578,14 @@ fn isolated_nested_calls_state_field_siblings_in_every_scalar_context() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn field_siblings_preserve_fee_template_rounding_and_static_helper_shape() {
     check_field_sibling_rounding("Down");
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn field_siblings_preserve_upward_fee_template_rounding_and_static_helper_shape() {
     check_field_sibling_rounding("Up");
@@ -11545,6 +11681,7 @@ fn isolated_field_siblings_reject_hidden_aliases_and_other_memory_reads() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.9s in the parallel gate"]
 fn field_sibling_normalization_work_scales_with_argument_arity() {
     for size in [2usize, 8, 32, 128] {
@@ -11580,6 +11717,7 @@ const WIDE_INTERMEDIATES_SOURCE: &str =
     include_str!("fixtures/cpp-verification/wide-intermediates/intermediates.cpp");
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn wide_intermediates_preserve_high_bits_casts_and_signed_products() {
     for (name, result_type, params, contract) in [
@@ -11693,6 +11831,7 @@ fn wide_intermediates_refuse_unimplemented_source_operations() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn wide_intermediates_compiler_constants_keep_full_payloads() {
     for (name, result_type, expected, payload) in [
@@ -11767,6 +11906,7 @@ const WIDE_CONTRACTS_SOURCE: &str =
     include_str!("fixtures/cpp-verification/wide-contracts/contracts.cpp");
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn wide_contracts_observe_full_width_inputs_and_results_offline() {
     for (name, ty, params, contract) in [
@@ -11843,6 +11983,7 @@ fn wide_contracts_observe_full_width_inputs_and_results_offline() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn wide_contracts_compose_modular_calls_and_frame_narrow_memory() {
     let project = Project::with_fixture("wide.cpp", "relay", WIDE_CONTRACTS_SOURCE);
@@ -11860,6 +12001,7 @@ int128 relay(int128 value, int32& untouched) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn wide_contracts_reject_high_bit_false_claims() {
     for (name, ty, value) in [
@@ -11924,6 +12066,7 @@ fn wide_contracts_refuse_signedness_and_width_mismatches() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn wide_contracts_nested_calls_compose_observer_chains() {
     let project = Project::with_fixture("wide.cpp", "nested", WIDE_CONTRACTS_SOURCE);
@@ -11960,6 +12103,7 @@ int128 nested(int128 value) { ensures to_integer(result) == to_integer(result); 
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.6s in the parallel gate"]
 fn wide_contracts_parameter_preparation_scales_with_the_signature() {
     let mut samples = Vec::new();
@@ -11999,6 +12143,7 @@ const WIDE_DIVISION_SOURCE: &str =
 const WIDE_SIGNED_DOMAIN: &str = "requires to_integer(b) != 0; requires to_integer(a) != -170141183460469231731687303715884105728 or to_integer(b) != -1;";
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn wide_division_symbolic_contracts_verify_expand_and_audit_offline() {
     for (name, ty, helper, domain) in [
@@ -12067,6 +12212,7 @@ fn wide_division_symbolic_contracts_verify_expand_and_audit_offline() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn wide_division_full_width_constant_results_keep_all_bits() {
     for (name, ty, expected) in [
@@ -12088,6 +12234,7 @@ fn wide_division_full_width_constant_results_keep_all_bits() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn wide_division_modular_calls_frame_narrow_memory() {
     let project = Project::with_fixture("wide.cpp", "signed_relay", WIDE_DIVISION_SOURCE);
@@ -12111,6 +12258,7 @@ int128 signed_relay(int128 a, int128 b, int32* untouched) {{
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.9s in the parallel gate"]
 fn wide_division_preserves_clang_promotions_and_concrete_modulo_casts() {
     for (name, signed) in [("mixed_quotient", false), ("narrow_divisor", true)] {
@@ -12157,6 +12305,7 @@ fn wide_division_preserves_clang_promotions_and_concrete_modulo_casts() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn wide_division_native_undefined_behavior_cannot_be_hidden_by_trivial_posts() {
     for (name, ty, domain, diagnostic) in [
@@ -12203,6 +12352,7 @@ const WIDE_COMPARISONS_SOURCE: &str =
     include_str!("fixtures/cpp-verification/wide-comparisons/comparisons.cpp");
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 6s in the parallel gate"]
 fn wide_comparisons_symbolic_results_verify_expand_and_audit_offline() {
     for (prefix, ty) in [("signed", "int128"), ("unsigned", "uint128")] {
@@ -12238,6 +12388,7 @@ fn wide_comparisons_symbolic_results_verify_expand_and_audit_offline() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2s in the parallel gate"]
 fn wide_comparisons_constants_preserve_high_bits_signedness_and_promotions() {
     for (name, expected) in [
@@ -12269,6 +12420,7 @@ fn wide_comparisons_constants_preserve_high_bits_signedness_and_promotions() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.0s in the parallel gate"]
 fn wide_comparisons_control_branches_and_frame_modular_call_memory() {
     let project = Project::with_fixture("wide.cpp", "choose", WIDE_COMPARISONS_SOURCE);
@@ -12316,6 +12468,7 @@ fn wide_comparisons_do_not_erase_operand_division_guards() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn wide_comparisons_recognize_complementary_contract_premises() {
     for (name, inverse) in [
@@ -12340,6 +12493,7 @@ fn wide_comparisons_recognize_complementary_contract_premises() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.7s in the parallel gate"]
 fn not_equal_source_supports_the_existing_narrow_scalar_widths() {
     for (cpp, ty) in [
@@ -12367,6 +12521,7 @@ fn cast_identity_proof(original: &str, lo: &str, hi: &str) -> String {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn wide_narrowing_preserves_symbolic_values_only_with_checked_destination_bounds() {
     for (name, source, result, lo, hi) in [
@@ -12408,6 +12563,7 @@ fn wide_narrowing_preserves_symbolic_values_only_with_checked_destination_bounds
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.9s in the parallel gate"]
 fn wide_narrowing_quotient_and_remainder_keep_native_definedness_and_range_bounds() {
     for (name, result, op, lo, hi) in [
@@ -12445,6 +12601,7 @@ fn wide_narrowing_quotient_and_remainder_keep_native_definedness_and_range_bound
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.0s in the parallel gate"]
 fn wide_narrowing_still_wraps_outside_the_destination_range() {
     for (name, ty, expected) in [
@@ -12475,6 +12632,7 @@ fn wide_narrowing_still_wraps_outside_the_destination_range() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn wide_narrowing_modular_contract_preserves_framed_narrow_memory() {
     let project = Project::with_fixture("narrow.cpp", "relay", WIDE_NARROWING_SOURCE);
@@ -12505,6 +12663,7 @@ const SCALAR_BRACES_SOURCE: &str =
     include_str!("fixtures/cpp-verification/scalar-braces/braces.cpp");
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn scalar_brace_initialization_preserves_resolved_conversions_offline() {
     for (name, ty, params, post) in [
@@ -12563,6 +12722,7 @@ fn scalar_braces_do_not_convert_narrowing_or_unsupported_initializers_into_casts
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn scalar_braces_compose_verified_fee_products_and_frame_memory() {
     let project = Project::with_fixture("braces.cpp", "relay", SCALAR_BRACES_SOURCE);
@@ -12595,6 +12755,7 @@ int128 relay(int64 a, int32 b, int32& untouched) {{
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn scalar_braces_keep_argument_and_assumption_effect_restrictions() {
     let project = Project::with_fixture("braces.cpp", "argument", SCALAR_BRACES_SOURCE);
@@ -12657,6 +12818,7 @@ fn library_assertion_fixture(header: &str, cpp: &str) -> Project {
 const LIBRARY_ASSERTION_HEADER: &str = "namespace library { inline bool check(bool value) noexcept { if (!value) __builtin_trap(); return value; } }\n#define Gate(value) library::check(value)\n";
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.3s in the parallel gate"]
 fn assumed_library_assertions_require_proof_and_preserve_cleanup() {
     let cpp = "#include \"gate.h\"\nstruct Guard { int value; explicit Guard(int n) noexcept : value(n) {} ~Guard() noexcept { value = 0; } };\nint guarded(int n) noexcept { Guard guard(n); Gate(n > 0); return n; }";
@@ -12771,6 +12933,7 @@ fn assumed_library_assertions_reject_unpinned_and_effectful_boundaries() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn evaluated_library_assertions_read_fields_with_normal_authority() {
     let cpp = "#include \"gate.h\"\nstruct Box { int size; }; int guarded(const Box& box, int n) noexcept { Gate(box.size > 0 && n >= 0); return n; }";
@@ -12818,6 +12981,7 @@ fn library_field_conditions_keep_builtin_and_effect_boundaries() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.0s in the parallel gate"]
 fn evaluated_field_assertions_scale_with_selected_statements() {
     let mut samples = Vec::new();
@@ -12845,6 +13009,7 @@ fn evaluated_field_assertions_scale_with_selected_statements() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn branch_likelihood_attributes_preserve_both_outcomes() {
     let cpp = "int choose(bool positive) noexcept { if (positive) [[likely]] { return 7; } else [[unlikely]] { return -3; } }";
@@ -12921,6 +13086,7 @@ fn assumed_library_assertion_inventory_and_pins_are_checked_before_export() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn assumed_library_assertions_bind_offline_artifacts_to_config_authority() {
     use sha2::{Digest, Sha256};
@@ -12973,6 +13139,7 @@ fn assumed_library_assertions_bind_offline_artifacts_to_config_authority() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.3s in the parallel gate"]
 fn assumed_library_assertions_scale_with_explicit_statement_count() {
     for size in [4usize, 16, 64, 256] {
@@ -13001,6 +13168,7 @@ fn assumed_library_assertions_scale_with_explicit_statement_count() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn assumed_library_assertions_compose_with_modular_callers_and_memory_framing() {
     let cpp = "#include \"gate.h\"\nint checked(int n) noexcept { library::check(n > 0); return n; }\nint guarded(int& memory, int n) noexcept { return checked(n); }";
@@ -13199,6 +13367,7 @@ fn consteval_library_metadata_rejects_runtime_calls_conversions_and_cleanup() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.2s in the parallel gate"]
 fn consteval_library_metadata_preserves_normal_cleanup_and_modular_framing() {
     let cpp = "#include \"gate.h\"\nstruct Guard { int value; explicit Guard(int n) noexcept : value(n) {} ~Guard() noexcept { value = 0; } };\nint checked(int n) noexcept { Gate(n > 0); return n; }\nint guarded(int& memory, int n) noexcept { Guard guard(n); return checked(n); }";
@@ -13215,6 +13384,7 @@ int32 guarded(int32& memory, int32 n) { owns memory; requires memory == 7; requi
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.9s in the parallel gate"]
 fn consteval_library_metadata_offline_checker_rejects_forged_origin_and_kind() {
     use sha2::{Digest, Sha256};
@@ -13250,6 +13420,7 @@ fn consteval_library_metadata_offline_checker_rejects_forged_origin_and_kind() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.1s in the parallel gate"]
 fn consteval_library_metadata_scales_with_explicit_statement_count() {
     for size in [4usize, 16, 64, 256] {
@@ -13305,6 +13476,7 @@ fn literal_library_fixture(text: &str, header: &str, cpp: &str) -> Project {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.9s in the parallel gate"]
 fn literal_library_metadata_proves_conditions_and_retains_both_assumptions() {
     use click::languages::cpp::{CppLibraryMetadata, CppLiteralMetadataBinding};
@@ -13446,6 +13618,7 @@ fn literal_library_metadata_requires_explicit_constructor_authority() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.2s in the parallel gate"]
 fn literal_library_metadata_offline_checker_rejects_forged_constructor_and_literal() {
     use sha2::{Digest, Sha256};
@@ -13495,6 +13668,7 @@ fn literal_library_metadata_offline_checker_rejects_forged_constructor_and_liter
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.2s in the parallel gate"]
 fn literal_library_metadata_scales_with_explicit_statement_count() {
     for size in [4usize, 16, 64, 256] {
@@ -13520,6 +13694,7 @@ fn literal_library_metadata_scales_with_explicit_statement_count() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.3s in the parallel gate"]
 fn literal_library_metadata_preserves_cleanup_and_modular_memory_framing() {
     let cpp = r#"#include "gate.h"
@@ -13580,6 +13755,7 @@ fn literal_library_metadata_cannot_bypass_selected_source_constructor_verificati
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.5s in the parallel gate"]
 fn wide_division_operand_bounds_certify_native_narrowing() {
     for (name, ty, op, pure, lo, hi) in [
@@ -13658,6 +13834,7 @@ fn wide_division_operand_bounds_certify_native_narrowing() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.0s in the parallel gate"]
 fn positive_integer_divisor_bounds_discharge_native_wide_guards() {
     for name in ["signed_quotient", "signed_remainder"] {
@@ -13697,6 +13874,7 @@ int128 {name}(int128 a, int128 b) {{
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2s in the parallel gate"]
 fn wide_narrowing_integer_ranges_reflect_into_native_correction_bounds() {
     for (name, ty, suffix) in [
@@ -13907,30 +14085,35 @@ ensures round_down == false implies (to_integer(result) + -1) * to_integer(d) < 
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 6s in the parallel gate"]
 fn fee_rounding_pattern_has_checked_native_correction_bounds() {
     check_fee_rounding_pattern("rounded", false);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn fee_rounding_pattern_modular_caller_has_exact_rounding_values() {
     check_fee_rounding_pattern("caller", false);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 6s in the parallel gate"]
 fn fee_rounding_pattern_rejects_false_rounding_and_missing_guards() {
     check_fee_rounding_pattern("rounded", true);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 6s in the parallel gate"]
 fn fee_rounding_pattern_caller_rejects_false_rounding_and_missing_guards() {
     check_fee_rounding_pattern("caller", true);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.6s in the parallel gate"]
 fn symbolic_wide_field_branch_paths_keep_their_selector_width() {
     let cpp = include_str!("fixtures/cpp-verification/branch-paths/wide-field.cpp");
@@ -13966,6 +14149,7 @@ int32 choose(const struct Box& box) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn class_records_preserve_private_and_protected_field_layout_and_authority() {
     let source = include_str!("fixtures/cpp-verification/class-record/class_record.cpp");
@@ -14013,6 +14197,7 @@ fn class_records_preserve_private_and_protected_field_layout_and_authority() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn class_record_proofs_reject_missing_authority_false_frames_and_readonly_writes() {
     let source = include_str!("fixtures/cpp-verification/class-record/class_record.cpp");
@@ -14146,6 +14331,7 @@ fn header_record_project(selected: &str) -> Project {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.7s in the parallel gate"]
 fn locked_header_records_preserve_declaration_sources_and_verify_offline() {
     for (selected, sidecar) in [
@@ -14221,6 +14407,7 @@ fn header_records_require_explicit_dependencies_and_reject_stale_header_bytes() 
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn header_record_artifacts_reject_forged_declaration_and_executable_sources() {
     use sha2::{Digest, Sha256};
@@ -14271,6 +14458,7 @@ fn nested_record_project(selected: &str) -> Project {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.5s in the parallel gate"]
 fn nested_record_declarations_preserve_layout_identity_and_offline_field_frames() {
     use click::languages::cpp::CppType;
@@ -14342,6 +14530,7 @@ fn nested_record_declarations_preserve_layout_identity_and_offline_field_frames(
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.5s in the parallel gate"]
 fn nested_record_contracts_reject_missing_authority_false_frames_and_readonly_writes() {
     let sidecar = include_str!("fixtures/cpp-verification/nested-record/set_stamp.click");
@@ -14532,6 +14721,7 @@ fn nested_record_exporter_counts_pending_declarations_in_the_inventory_budget() 
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn nested_source_fields_read_write_and_update_with_exact_authority_offline() {
     for (selected, sidecar) in [
@@ -14591,6 +14781,7 @@ fn nested_source_fields_read_write_and_update_with_exact_authority_offline() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.0s in the parallel gate"]
 fn nested_source_field_contracts_reject_missing_and_sibling_authority_false_frames_and_views() {
     for (selected, sidecar, mutants) in [
@@ -14740,6 +14931,7 @@ fn nested_source_fields_keep_cpp_access_checks() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.6s in the parallel gate"]
 fn nested_pointer_fields_keep_const_object_and_pointee_authority_separate() {
     let source = "struct Child { int* pointer; }; struct Outer { Child child; int stamp; }; int read(const Outer& state, int* value) noexcept { return *state.child.pointer; } void write(const Outer& state, int* value, int next) noexcept { *state.child.pointer = next; }";
@@ -14771,6 +14963,7 @@ fn nested_pointer_fields_keep_const_object_and_pointee_authority_separate() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn projected_record_calls_and_reference_arguments_verify_offline() {
     for (selected, sidecar, expected) in [
@@ -14839,6 +15032,7 @@ fn projected_record_calls_and_reference_arguments_verify_offline() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn projected_call_artifacts_check_target_identity_and_root_constness() {
     use sha2::{Digest, Sha256};
@@ -14909,6 +15103,7 @@ fn projected_call_artifacts_check_target_identity_and_root_constness() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.5s in the parallel gate"]
 fn projected_call_contracts_require_leaf_authority_and_preserve_sibling_frames() {
     for (selected, sidecar, mutants) in [
@@ -14985,6 +15180,7 @@ fn projected_calls_keep_cpp_constness_and_source_profile_boundaries() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn projected_calls_require_certified_callee_contracts_and_true_results() {
     for (selected, sidecar) in [
@@ -15034,6 +15230,7 @@ int observe(const State& state) noexcept {
 "#;
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2s in the parallel gate"]
 fn condition_calls_evaluate_once_before_branch_and_verify_offline() {
     let project = Project::with_fixture("condition.cpp", "choose", CONDITION_CALL_SOURCE);
@@ -15059,6 +15256,7 @@ fn condition_calls_evaluate_once_before_branch_and_verify_offline() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2s in the parallel gate"]
 fn condition_calls_preserve_inherited_receiver_and_sibling_frames() {
     let project = Project::with_fixture("condition.cpp", "observe", CONDITION_CALL_SOURCE);
@@ -15152,6 +15350,7 @@ fn condition_calls_refuse_unsupported_unary_plus() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.1s in the parallel gate"]
 fn expression_observers_admit_composed_boolean_conditions() {
     for condition in [
@@ -15182,6 +15381,7 @@ int32 choose() {{ ensures result == 1; }}
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn condition_calls_propagate_scalar_exception_contracts() {
     let project = Project::with_fixture(
@@ -15228,6 +15428,7 @@ int choose(int* slot, bool fail) { Guard guard(slot); if (predicate(fail)) { *sl
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn condition_calls_share_fresh_captures_with_nested_arguments_and_returns() {
     let project = Project::with_fixture(
@@ -15258,6 +15459,7 @@ int choose(int value) noexcept {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn condition_calls_preserve_the_enclosing_catch_scope() {
     let project = Project::with_fixture(
@@ -15371,6 +15573,7 @@ inline bool predicate(const Base& state) noexcept { return state.Empty(); }
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn locked_header_graph_conditions_verify_offline_with_inherited_frames() {
     let project = header_graph_project("choose");
@@ -15426,6 +15629,7 @@ fn locked_header_graph_conditions_verify_offline_with_inherited_frames() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.3s in the parallel gate"]
 fn locked_header_graph_mutators_verify_offline_and_require_leaf_authority() {
     let project = header_graph_project("change");
@@ -15576,6 +15780,7 @@ fn locked_header_graph_validates_reachable_bodies_and_refuses_recursion() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn locked_header_graph_preserves_scalar_exception_contracts_offline() {
     let mut project = Project::with_fixture(
@@ -15751,6 +15956,7 @@ int64 relay(int64 value) { ensures result == value; }
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn converted_call_initializers_preserve_modulo_narrowing_and_reject_false_fit() {
     let project = Project::with_fixture(
@@ -15778,6 +15984,7 @@ int32 relay(uint64 value) { requires value == 18446744073709551615u64; ensures r
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.9s in the parallel gate"]
 fn converted_call_initializers_keep_implicit_and_boolean_conversion_order() {
     for (body, expected, kinds) in [
@@ -15828,6 +16035,7 @@ int64 relay(int32 value) {{ requires value == 7; ensures result == {expected}; }
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.2s in the parallel gate"]
 fn converted_call_initializers_evaluate_mutators_once_and_frame_siblings() {
     let project = Project::with_fixture(
@@ -15933,6 +16141,7 @@ fn converted_call_initializers_emit_active_guard_cleanup_before_rethrow() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn converted_call_initializers_preserve_scalar_exception_contracts_offline() {
     let project = Project::with_fixture(
@@ -15990,6 +16199,7 @@ int64 relay(int32 value) { requires value == 7; ensures result == 8i64; }
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.5s in the parallel gate"]
 fn converted_call_initializers_preserve_boolean_results() {
     let project = Project::with_fixture(
@@ -16029,6 +16239,7 @@ int64 relay(int32 value) { ensures result == value; }
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2s in the parallel gate"]
 fn converted_return_calls_preserve_modulo_boolean_and_ordered_chains() {
     for (cpp_type, proof_type, result_type, body, requirement, expected) in [
@@ -16157,6 +16368,7 @@ int64 relay(int64 value) { ensures result == value; }
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn converted_return_calls_capture_converted_results_before_destructors() {
     let project = Project::with_fixture(
@@ -16210,6 +16422,7 @@ int32 relay(int32& value) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.2s in the parallel gate"]
 fn converted_return_calls_evaluate_mutators_once_and_preserve_sibling_authority() {
     let project = Project::with_fixture(
@@ -16234,6 +16447,7 @@ int32 relay(struct Box& box) { owns box.value; views box.sibling; requires box.v
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn converted_return_calls_preserve_scalar_exceptions_offline() {
     let project = Project::with_fixture(
@@ -16317,6 +16531,7 @@ using Amount = long; inline Amount echo(Amount value) noexcept { return value; }
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn converted_return_expression_observers_verify_composed_values() {
     for (body, result) in [
@@ -16414,6 +16629,7 @@ int64 relay(int32 value) { requires value == 7; ensures result == 8i64; }
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn execution_theorem_proof_retains_struct_argument_field_metadata() {
     let project = Project::with_fixture(
@@ -16653,17 +16869,20 @@ fn check_converted_wide_call_results(initializer: bool) {
     }
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn converted_wide_return_calls_preserve_values_with_checked_destination_bounds() {
     check_converted_wide_call_results(false);
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn converted_wide_call_initializers_preserve_values_with_checked_destination_bounds() {
     check_converted_wide_call_results(true);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.9s in the parallel gate"]
 fn converted_wide_boolean_calls_observe_high_bits() {
     for (point, answer) in [("0", "false"), ("18446744073709551616", "true")] {
@@ -16774,6 +16993,7 @@ int32* run(int32* data) { ensures result == data; }
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.4s in the parallel gate"]
 fn cpp_native_reference_results_preserve_aliases_and_require_backing_authority_offline() {
     let project = Project::with_fixture(
@@ -16865,6 +17085,7 @@ int32& run(int32& value) { ensures &result == &value; }
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn cpp_reference_results_bind_live_pointer_referents_without_loading() {
     let project = Project::with_fixture(
@@ -16898,6 +17119,7 @@ int32& run(int32* data) { views data[0..1]; ensures &result == data; }
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn cpp_reference_locals_preserve_aliases_and_modular_call_results_offline() {
     let project = Project::with_fixture(
@@ -16930,6 +17152,7 @@ int32& run(int32& value) { owns value; ensures &result == &value; ensures result
 /// A proof names a reference local as it names a reference parameter: the
 /// name is the referent, and `&name` is its address.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn cpp_reference_locals_read_as_their_referents_in_a_proof_offline() {
     let project = Project::with_fixture(
@@ -17042,6 +17265,7 @@ fn cpp_struct_reference_reads_print_as_fields_in_a_c_operation_offline() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.2s for C++ import, expansion, and cold replay"]
 fn cpp_expansion_names_the_capture_by_its_call_result() {
     let project = Project::with_fixture(
@@ -17158,6 +17382,7 @@ fn cpp_expansion_writes_a_branch_over_a_struct_reference_by_its_field_offline() 
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn cpp_const_reference_locals_bind_pointer_storage_without_loading_offline() {
     let project = Project::with_fixture(
@@ -17182,6 +17407,7 @@ const int32& run(int32* data) { views data[0..2]; ensures &result == data + 1; e
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s for unknown-pointer fresh, expanded and retained checks"]
 fn cpp_unknown_pointer_formation_requires_bounds_before_any_dereference() {
     let project = Project::with_fixture(
@@ -17240,6 +17466,7 @@ int32& run(int32* data) { views data[0..1]; ensures true; }
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.9s in the parallel gate"]
 fn cpp_const_reference_results_preserve_native_qualification_offline() {
     let project = Project::with_fixture(
@@ -17270,6 +17497,7 @@ const int32& run(const int32& value) { ensures &result == &value; }
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.0s in the parallel gate"]
 fn cpp_bounded_native_descriptor_last_reference_verifies_offline() {
     let project = Project::with_fixture(
@@ -17297,6 +17525,7 @@ int32& run(const struct View& view) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.0s in the parallel gate"]
 fn direct_subscript_methods_select_and_preserve_reference_authority_offline() {
     let cpp = "struct Cell { int* data; int& operator[](unsigned long index) noexcept { return *data; } }; int& probe(Cell& cell, unsigned long index) noexcept { return cell[index]; }";
@@ -17367,12 +17596,14 @@ int32& Cell::operator[](uint64 index) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.1s in the parallel gate"]
 fn cpp_external_backing_reference_survives_descriptor_destruction_offline() {
     check_cpp_descriptor_backing_lifetime(false);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.4s in the parallel gate"]
 fn cpp_external_backing_reference_remains_writable_after_descriptor_destruction_offline() {
     check_cpp_descriptor_backing_lifetime(true);
@@ -17452,6 +17683,7 @@ int32 write(int32* data, int32 input) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.5s in the parallel gate"]
 fn cpp_literal_null_pointer_values_verify_without_storage_authority_offline() {
     for expression in [
@@ -17526,6 +17758,7 @@ fn cpp_null_pointer_conversions_keep_effectful_operands_and_other_types_outside_
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn cpp_reference_into_destroyed_local_backing_cannot_be_read_offline() {
     let cpp = "struct Cell { int value; int state; explicit Cell(int input) noexcept : value(input), state(1) {} ~Cell() noexcept { state = 0; } int& get() noexcept { return value; } }; int& run(int input) noexcept { Cell cell(input); return cell.get(); }";
@@ -17573,6 +17806,7 @@ int32& run(int32 input) { ensures result == input; }
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.9s in the parallel gate"]
 fn cpp_field_reference_results_preserve_addresses_and_backing_authority_offline() {
     let cpp = "struct Cell { int value; int& get() noexcept { return value; } }; int write(Cell& cell, int input) noexcept { int& element = cell.get(); element = input; return element; }";
@@ -17610,6 +17844,7 @@ int32 write(struct Cell& cell, int32 input) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn cpp_const_field_reference_results_retain_qualification_offline() {
     let cpp = "struct Cell { int value; const int& get() const noexcept { return value; } }; const int& run(const Cell& cell) noexcept { return cell.get(); }";
@@ -17658,6 +17893,7 @@ int32* run(int32* input) { ensures result == input; }
 // The child constructor is a modular call into the parent's field storage.
 // Its generic proof cannot assume that the child's allocation ends there.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.1s in the parallel gate"]
 fn embedded_member_constructor_preserves_parent_fields_and_backing_offline() {
     use sha2::{Digest, Sha256};
@@ -17771,6 +18007,7 @@ uint64 probe(int32* backing, uint64 count) {
 // Construction at a nonzero offset must retain the child's own field address
 // through both constructor summaries, without rebasing or copying the child.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.0s in the parallel gate"]
 fn embedded_constructor_preserves_self_pointer_identity_offline() {
     let project = Project::with_fixture(
@@ -17829,6 +18066,7 @@ int32 probe(int32 input) {
 // Locked, instantiated header constructors retain ordinary checked calls,
 // including an observer initializer before nested member construction.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.6s in the parallel gate"]
 fn locked_header_constructors_verify_observer_initializers_offline() {
     let mut project = Project::with_fixture(
@@ -17904,12 +18142,14 @@ uint64 probe(int32* backing, uint64 count) {
 // Native result contracts use the same hidden storage through two factories;
 // no parameter, slot clause or constructor inlining appears in the sidecar.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.1s in the parallel gate"]
 fn construction_return_descriptor_factories_verify_offline() {
     check_construction_return_descriptor_factories(false);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.6s ordinary, expanded and retained in the parallel gate"]
 fn construction_return_descriptor_factories_expand_and_retain_offline() {
     check_construction_return_descriptor_factories(true);
@@ -18067,12 +18307,14 @@ fn construction_return_refuses_address_and_memory_sensitive_constructors_offline
 // Assignment must read the old descriptor before updating it, and ending the
 // trivial RHS temporary must preserve references into caller-held backing.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.5s in the parallel gate"]
 fn construction_assignment_materializes_rhs_and_preserves_backing_offline() {
     check_construction_assignment(false);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.5s construction assignment expansion and retained verification"]
 fn construction_assignment_expands_and_retains_offline() {
     check_construction_assignment(true);
@@ -18163,6 +18405,7 @@ uint64 probe(struct View& view, uint64 n) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.3s in the parallel gate"]
 // A saved reference remains readable under a backing view after the RHS
 // descriptor temporary retires; pointer copying grants no new authority.
@@ -18230,6 +18473,7 @@ int32& probe(struct View& view, uint64 n) {
 // A symbolic last-element reference survives descriptor assignment and both
 // temporary and local retirement; the original backing view is still required.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.9s symbolic saved-reference assignment and missing-view refusal"]
 fn construction_assignment_saved_reference_offset_read_offline() {
     let project = Project::with_fixture(
@@ -18313,6 +18557,7 @@ int32& probe(struct View& view, int32 n) {
 // Returned constructor arguments use the existing observer effect restriction,
 // rather than selecting an arbitrary order for mutating argument expressions.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.0s in the parallel gate"]
 fn returned_constructor_composed_observers_verify_and_reject_writes_offline() {
     let project = Project::with_fixture(
@@ -18431,6 +18676,7 @@ fn locked_unsigned_header_constants_verify_and_reject_forged_values_offline() {
 // An observer RHS is evaluated once before assigning a scalar parameter or
 // referent, and still cannot obtain a mutating contract or invent read authority.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn scalar_assignment_observers_verify_and_reject_writes_offline() {
     let project = Project::with_fixture(
@@ -18460,6 +18706,7 @@ fn scalar_assignment_observers_verify_and_reject_writes_offline() {
 
 // Native object pointers retain their element type, stride and authority.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.2s in the parallel gate"]
 fn cpp_native_word_and_byte_pointer_stores_verify_offline() {
     for (source_type, contract_type, literal) in [
@@ -18488,6 +18735,7 @@ fn cpp_native_word_and_byte_pointer_stores_verify_offline() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn cpp_native_scalar_addresses_initialize_automatic_storage_offline() {
     for (source_type, contract_type) in [("unsigned int", "uint32"), ("unsigned char", "uint8")] {
@@ -18506,6 +18754,7 @@ fn cpp_native_scalar_addresses_initialize_automatic_storage_offline() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn cpp_native_byte_field_address_uses_one_byte_storage_offline() {
     let project = Project::with_fixture(
@@ -18591,6 +18840,7 @@ fn cpp_native_pointer_artifacts_reject_pointee_substitution_offline() {
 // Scalar allocation ownership can enter and return from a modular write.
 // Ownership alone must not let a call read an uninitialized local.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn cpp_native_scalar_modular_write_uses_allocation_ownership_offline() {
     let project = Project::with_fixture(
@@ -18804,6 +19054,7 @@ fn cpp_byte_reinterpretation_profile_refuses_nonbyte_and_reverse_casts() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.5s in the parallel gate"]
 // Preserve the former refusal's original C++ source: its native pointer local
 // now borrows the reference without acquiring write authority.
@@ -18856,6 +19107,7 @@ int caller(int x) {
 // A pointer call may be a returned call, a local's initializer, or a
 // statement whose result is discarded.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.1s in the parallel gate"]
 fn calls_through_a_cpp_function_pointer_meet_its_named_contract() {
     let returned = "return f(x);";
@@ -18891,6 +19143,7 @@ fn calls_through_a_cpp_function_pointer_meet_its_named_contract() {
 // contract, through an explicit refinement theorem. Both the theorem and
 // the matching callback contract are required.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn a_cpp_function_pointer_call_needs_its_contract_and_its_refinement() {
     let project = Project::with_fixture("callback.cpp", "caller", FUNCTION_POINTER_SOURCE);
@@ -18988,6 +19241,7 @@ int caller(int x) {
 // contract follows the pointer: each function that calls through it or
 // passes it on requires it, and `caller` shows `twice` meets it.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.4s in the parallel gate"]
 fn stored_and_forwarded_cpp_function_pointers_keep_their_contract() {
     let project = Project::with_fixture("callback.cpp", "caller", STORED_FUNCTION_POINTER_SOURCE);
@@ -19080,6 +19334,7 @@ fn cpp_function_pointer_shapes_outside_the_profile_are_refused() {
 // address has its function's type, a pointer call goes through a
 // function-pointer variable, and an ordinary call names a function.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn forged_cpp_function_pointer_artifacts_are_refused() {
     use sha2::{Digest, Sha256};
@@ -19180,6 +19435,7 @@ int caller(int x) {
 // function, and a caller passing it must show it meets the contract the
 // callee requires of the pointer.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.5s in the parallel gate"]
 fn cpp_lambdas_passed_for_a_function_pointer_meet_its_named_contract() {
     let project = Project::with_fixture("callback.cpp", "caller", LAMBDA_SOURCE);
@@ -19231,6 +19487,7 @@ fn cpp_lambdas_passed_for_a_function_pointer_meet_its_named_contract() {
 
 // Lambdas are numbered in source order within their enclosing function.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.9s in the parallel gate"]
 fn cpp_lambdas_are_numbered_in_their_enclosing_function() {
     let project = Project::with_fixture("callback.cpp", "pair", LAMBDA_SOURCE);
@@ -19396,6 +19653,7 @@ int total(const Shape& shape, int scale) noexcept { return shape.area(scale); }
 // and a call graph whose dispatch edges, from a virtual method to each
 // override, close no cycle.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn virtual_dispatch_refuses_construction_recursion_and_other_class_shapes() {
     for (edits, expected) in [
@@ -19540,6 +19798,7 @@ int total(const Shape& shape, int scale) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: C++ object-state obligation expansion and cold replay"]
 fn bound_class_object_call_obligations_expand_and_cold_replay() {
     for name in [
@@ -19668,6 +19927,7 @@ int total(const Shape& shape, int scale) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: C++ imports and whole-claim retained/cold certificate checks"]
 fn class_bool_member_whole_certificate_preserves_every_return_case() {
     let source = include_str!("fixtures/cpp-verification/class-record/class_record.cpp");
@@ -20144,6 +20404,7 @@ fn linked_cpp_sources_refuse_an_unproved_callee_and_differing_definitions() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: native-interface unwritten reference entry and caller checks"]
 fn cpp_native_interface_reference_binding_does_not_initialize_storage_offline() {
     let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -20177,6 +20438,7 @@ fn cpp_native_interface_reference_binding_does_not_initialize_storage_offline() 
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: native-interface record-copy input initialization and caller authority"]
 fn cpp_native_interface_record_copy_checks_every_source_field_offline() {
     let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -20205,6 +20467,7 @@ fn cpp_native_interface_record_copy_checks_every_source_field_offline() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: C++ by-value record witness proof and replay"]
 fn cpp_by_value_record_carries_a_contract_value() {
     let project = Project::with_fixture(
@@ -20290,6 +20553,7 @@ int probe(Sink& sink, int input) noexcept {
 "#;
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: nonthrowing record prvalue arguments and template stream"]
 fn record_prvalue_arguments_construct_forward_and_end_at_the_full_expression() {
     let project =
@@ -20408,6 +20672,7 @@ int32 probe(struct Sink& sink, int32 input) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: record temporary argument source admission controls"]
 fn record_temporary_arguments_refuse_storage_observation_unwinding_and_copy_returns() {
     for (name, source, diagnostic) in [
@@ -20448,6 +20713,7 @@ fn record_temporary_arguments_refuse_storage_observation_unwinding_and_copy_retu
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: nominal record function-template arguments"]
 fn record_function_template_arguments_preserve_nominal_identity_offline() {
     let source = "namespace left { struct Stream { int value; }; } struct left_Stream { int value; }; template<class T> int read(T& stream) noexcept { return stream.value; } int probe(left::Stream& a, left_Stream& b) noexcept { int first = read(a); int second = read(b); return first + second; }";
@@ -20479,6 +20745,7 @@ int32 probe(struct Stream& a, struct left_Stream& b) {
 // Frozen project imports must advance with the exporter just as mdtests do.
 // The release installation test independently checks the basic example.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: regenerate committed C++ project imports with the pinned exporter"]
 fn committed_cpp_project_imports_match_the_pinned_exporter() {
     fn copy_tree(from: &Path, to: &Path) {
@@ -20550,6 +20817,7 @@ fn committed_cpp_project_imports_match_the_pinned_exporter() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: exceptional memory proof expansion and replay"]
 fn scalar_exception_returns_changed_memory_and_borrowed_authority() {
     let project = Project::with_fixture(
@@ -20599,6 +20867,7 @@ void caller(int32* value, bool fail) throws int32 {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: borrowed authority cannot be consumed on a throwing exit"]
 fn scalar_exception_refuses_lost_borrowed_authority() {
     let project = Project::with_fixture(
@@ -20634,6 +20903,7 @@ void abandon(int32* value) throws int32 {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: user-defined opaque exception construction and replay"]
 fn typed_aggregate_exceptions_check_initializers_and_return_memory() {
     let project = Project::with_fixture(
@@ -20742,6 +21012,7 @@ void relay(int32* counter, int32 code, bool fail, struct Other* marker) throws e
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: empty user exception tags and initializer read authority"]
 fn typed_empty_exception_tags_and_checked_payload_reads() {
     for (file, selected, cpp, source) in [
@@ -20790,6 +21061,7 @@ void from_reference(const int32& value) throws ReadError { views value; ensures 
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: user exception source and artifact admission controls"]
 fn typed_exceptions_refuse_unmodeled_construction_and_corrupt_fields() {
     for cpp in [
@@ -20923,22 +21195,26 @@ const {proof}* choose({proof}* p) {{ ensures result == p; }}
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: const int pointer composition, full expansion and retained replay"]
 fn cpp_const_pointer_int_composition() {
     check_native_const_pointer_composition("int", "int32");
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: const unsigned pointer composition, full expansion and retained replay"]
 fn cpp_const_pointer_unsigned_composition() {
     check_native_const_pointer_composition("unsigned int", "uint32");
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: const byte pointer composition, full expansion and retained replay"]
 fn cpp_const_pointer_byte_composition() {
     check_native_const_pointer_composition("unsigned char", "uint8");
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: const-qualified callback parameters and results"]
 fn cpp_const_pointer_callbacks_preserve_qualified_signatures() {
     let project = Project::with_fixture(
@@ -20980,6 +21256,7 @@ const int32* probe(const int32* p) { ensures result == p; } by { apply(identity_
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: native const pointer views do not freeze mutable aliases"]
 fn cpp_const_pointer_alias_reads_after_mutable_store_and_null_returns() {
     // The original direct const-pointer read, previously an admission refusal.
@@ -21021,6 +21298,7 @@ fn cpp_const_pointer_alias_reads_after_mutable_store_and_null_returns() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: const pointer source and artifact controls"]
 fn cpp_const_pointer_refuses_removal_stores_and_forged_qualification() {
     for cpp in [
@@ -21089,6 +21367,7 @@ fn cpp_const_pointer_refuses_removal_stores_and_forged_qualification() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: const pointer constructor and getter composition"]
 fn cpp_const_pointer_constructed_view_getter_composes() {
     let project = Project::with_fixture(
@@ -21148,6 +21427,7 @@ fn check_noexcept_replay_all(
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: checked scalar noexcept calls, guarded throws and replay"]
 fn cpp_noexcept_scalar_boundaries_require_no_escaping_exception() {
     let project = Project::with_fixture(
@@ -21198,6 +21478,7 @@ int32 probe(int32 x, bool fail) { requires fail == false; ensures result == x; }
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: typed noexcept(true/false), guarded opaque exits and replay"]
 fn cpp_noexcept_typed_conditions_are_checked_at_the_boundary() {
     let project = Project::with_fixture(
@@ -21260,6 +21541,7 @@ int32 probe(int32 x, bool fail) throws Error { requires fail == false; ensures r
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: noexcept constructors/getters in opaque exception profiles"]
 fn cpp_noexcept_constructors_and_getters_compose_with_throwing_profiles() {
     for profile in ["typed", "ios_failure"] {
@@ -21289,6 +21571,7 @@ int32 probe(int32 x) { ensures result == x; }
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: unconditional noexcept throws must fail verification"]
 fn cpp_noexcept_does_not_trust_the_source_promise() {
     for (profile, cpp, payload) in [
@@ -21325,6 +21608,7 @@ fn cpp_noexcept_does_not_trust_the_source_promise() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: noexcept catches internal scalar exceptions"]
 fn cpp_noexcept_scalar_catches_can_finish_normally() {
     // Retain both frontiers: a throw at the end of the try body and a
@@ -21358,12 +21642,14 @@ int32 probe(bool fail) {{ ensures fail == false or result == 7; ensures fail == 
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: noexcept scalar cleanup, body proof and replay"]
 fn cpp_noexcept_scalar_cleanup_remains_checked_on_normal_paths() {
     check_noexcept_cleanup("scalar_int32", "", "7");
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: noexcept typed cleanup, body proof, replay and unwind refusals"]
 fn cpp_noexcept_typed_cleanup_remains_checked_on_normal_paths() {
     check_noexcept_cleanup("typed", "struct Error {};", "Error{}");
@@ -21424,6 +21710,7 @@ fn check_noexcept_cleanup(profile: &str, declaration: &str, thrown: &str) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: record reference local field spelling and complete replay"]
 fn cpp_record_reference_locals_name_fields_and_addresses() {
     let project = Project::with_fixture(
@@ -21463,6 +21750,7 @@ int32 probe(const Widget& widget) { views widget.value; ensures result == widget
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: mutable record reference aliases and const observations"]
 fn cpp_record_reference_locals_keep_aliases_and_mutation_authority() {
     let project = Project::with_fixture(
@@ -21511,6 +21799,7 @@ int32 probe(Widget& widget, int32 value) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: references to local record storage and nested record subobjects"]
 fn cpp_record_reference_locals_bind_objects_and_nested_members() {
     for (cpp, source) in [
@@ -21541,6 +21830,7 @@ int32 probe(Outer& outer, int32 value) { owns outer.child.value; ensures outer.c
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: record pointer reference binding and invalid-storage rejection"]
 fn cpp_record_reference_locals_check_pointer_backing() {
     let project = Project::with_fixture(
@@ -21633,6 +21923,7 @@ int probe(const Widget& widget, const Other& other) noexcept { const Widget& ref
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: aliases grant no memory authority and never resurrect retired record storage"]
 fn cpp_record_reference_locals_keep_storage_lifetimes_separate() {
     let alias = Project::with_fixture(
@@ -21681,6 +21972,7 @@ int32 probe() { ensures result == 0; }
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: returned member write with sibling view and complete replay"]
 fn cpp_returned_member_pointer_write_retains_its_source_domain() {
     let project = Project::with_fixture(
@@ -21748,6 +22040,7 @@ int32 probe(Outer& outer, int32 value) { owns outer.child.value; views outer.fir
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: record reference result identity, mutation, and full replay"]
 fn cpp_record_reference_results_preserve_aliases_and_mutation() {
     let project = Project::with_fixture(
@@ -21792,6 +22085,7 @@ Widget& probe(Widget& widget) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: const record result fields and local call bindings"]
 fn cpp_record_reference_results_keep_const_fields_and_identity() {
     let project = Project::with_fixture(
@@ -21826,6 +22120,7 @@ int32 probe(const Widget& widget) { views widget.value; ensures result == widget
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: record reference result subobject identity and member authority"]
 fn cpp_record_reference_results_keep_nested_subobjects() {
     let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -21855,6 +22150,7 @@ fn cpp_record_reference_results_keep_nested_subobjects() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: direct access through a returned record reference and proof replay"]
 fn cpp_record_reference_results_read_and_write_direct_fields() {
     let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -21920,6 +22216,7 @@ fn cpp_record_reference_results_read_and_write_direct_fields() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: compound field assignment through returned references and proof replay"]
 fn cpp_record_reference_results_compound_field_updates() {
     let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -22021,6 +22318,7 @@ fn check_record_reference_claim_replay(
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: pointer-backed record results and invalid storage rejection"]
 fn cpp_record_reference_results_check_pointer_backing() {
     let project = Project::with_fixture(
@@ -22119,6 +22417,7 @@ int probe(const Widget& widget, const Other& other) noexcept { const Widget& ref
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: returned record aliases grant no authority and preserve backing lifetimes"]
 fn cpp_record_reference_results_keep_backing_lifetimes_separate() {
     for (cpp, source) in [

@@ -822,6 +822,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: 2.6s in the parallel gate"]
     fn metadata_covers_every_recursive_variant_before_profile_selection() {
         let function = corpus();
@@ -848,6 +849,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: 2s in the parallel gate"]
     fn metadata_rejects_missing_identities_in_nested_payloads() {
         fn identity_paths(value: &Value, prefix: &str, result: &mut Vec<String>) {

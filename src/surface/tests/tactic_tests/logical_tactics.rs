@@ -1,6 +1,7 @@
 use super::*;
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: composite native arithmetic proofs and missing-definedness controls"]
 fn solve_composite_machine_equalities_require_defined_operations() {
     let fixture = crate::cli::parse_mdtest(
@@ -3146,6 +3147,7 @@ fn pure_machine_witness_instantiates_supported_c_binders() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: mixed-type witness expansion, alpha-renaming, and cold replay"]
 fn positional_witnesses_preserve_mixed_types_and_cold_replay() {
     for proof in [
@@ -3320,6 +3322,7 @@ fn pure_machine_witness_rejects_different_widths_and_signedness() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.0s in the parallel gate"]
 fn pure_witness_captures_declaration_aliases_and_reverifies_expansion() {
     for (ty, annotation) in [

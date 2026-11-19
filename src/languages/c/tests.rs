@@ -13574,6 +13574,7 @@ fn struct_wide_array_layout_and_size_overflow() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn struct_wide_array_proof_expands_and_reverifies() {
     let c = "struct words { char tag; unsigned long data[3]; }; unsigned long set(struct words *p, unsigned long value) { p->data[1] = value; return p->data[2]; }";
@@ -13875,6 +13876,7 @@ fn c_const_pointer_fields_alias_proof_expands_and_reverifies() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.5s in the parallel gate"]
 fn c_const_pointer_fields_store_proof_expands_and_reverifies() {
     let c = "struct holder { const int *value; }; const int *set(struct holder *h, const int *p) { h->value = p; return h->value; }";
@@ -14192,6 +14194,7 @@ fn c_gnu_word_mode_preserves_signedness_and_lp64_layout() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: GNU typedef attribute rejection cases"]
 fn c_gnu_word_mode_rejects_other_modes_and_noninteger_objects() {
     for source in [
@@ -14231,6 +14234,7 @@ fn c_unused_builtin_va_list_prototypes_do_not_block_ordinary_bodies() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: declaration-only compiler type rejection cases"]
 fn c_builtin_va_list_cannot_supply_layout_values_or_call_authority() {
     let aliases = "typedef __builtin_va_list A; typedef A B;";

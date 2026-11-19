@@ -1,6 +1,7 @@
 use super::*;
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn rust_default_is_native_charon() {
     let p = Project::new(SOURCE);
@@ -28,6 +29,7 @@ fn rust_default_conditional_solve_expansion_reverifies() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.2s in the parallel gate"]
 fn rust_import_pure_theorem_claim_labels_expand_and_reverify() {
     use click::surface::{ClickModuleSource, ClickProject};

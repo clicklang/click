@@ -58,6 +58,7 @@ fn pending_status_resolution_scales_with_explicit_intervening_work() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2s in the parallel gate"]
 fn thread_recovery_work_depends_on_one_child_not_the_outstanding_registry() {
     let (worker, termination) = worker();
@@ -103,6 +104,7 @@ fn thread_recovery_work_depends_on_one_child_not_the_outstanding_registry() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn joining_one_of_many_shared_readers_touches_only_its_share_branch() {
     let function = program_function(

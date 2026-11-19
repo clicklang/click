@@ -103,6 +103,7 @@ fn pointer_rewrite_integer_reads_preserves_state_kind_and_scales() {
 /// loaded value's legacy storage-relative offset. Exercise cold reads
 /// with growing unrelated states and premises, plus ordinary indexing.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn pointer_read_rewrite_preserves_value_state_and_scales() {
     let mut samples = Vec::new();
@@ -225,6 +226,7 @@ fn pointer_read_rewrite_preserves_value_state_and_scales() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn native_equality_rewrite_preserves_wide_order_and_truth_value() {
     let x = MachineTerm::Variable(Variable(193_020));
@@ -315,6 +317,7 @@ fn native_equality_rewrite_preserves_wide_order_and_truth_value() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.9s in the parallel gate"]
 fn native_integer_bound_rewrite_is_dag_linear_and_budget_checked() {
     let x = MachineTerm::Variable(Variable(193_028));
@@ -422,6 +425,7 @@ fn integer_equality_rewrite_scales_with_selected_dag_not_ambient_facts() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.5s in the parallel gate"]
 fn cited_read_rewrite_requires_unchanged_cells_and_its_named_premise() {
     let _session = crate::kernel::VerificationSession::enter();
@@ -481,6 +485,7 @@ fn cited_read_rewrite_requires_unchanged_cells_and_its_named_premise() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.5s in the parallel gate"]
 fn same_block_pointer_view_rewrite_preserves_span_and_selected_work() {
     let _session = crate::kernel::VerificationSession::enter();
@@ -691,6 +696,7 @@ fn pointer_rewrite_enters_scalar_calls_and_preserves_scope_and_states() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.5s in the parallel gate"]
 fn checked_rewrite_does_not_scan_or_rebuild_ambient_facts() {
     let x = MachineTerm::Variable(Variable(921));

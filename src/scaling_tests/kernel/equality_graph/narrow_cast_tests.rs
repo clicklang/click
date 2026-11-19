@@ -84,18 +84,21 @@ fn narrow_cast_words_intern_in_work_linear_in_the_casts_16() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.4s in a four-worker test selection"]
 fn narrow_cast_words_intern_in_work_linear_in_the_casts_64() {
     assert_narrow_cast_work(64);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 6.1s in a four-worker test selection"]
 fn narrow_cast_words_intern_in_work_linear_in_the_casts_256() {
     assert_narrow_cast_work(256);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 6.1s in a four-worker test selection"]
 fn narrow_cast_words_intern_in_work_linear_in_the_casts_512() {
     assert_narrow_cast_work(512);

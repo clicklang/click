@@ -60,6 +60,7 @@ const OBJECT_SIDECAR: &str =
 // object and `items(self) -> List<T>` a `List<i32>` one. A struct packed as
 // an instance's object has its implementation's definitions as the fields.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn charon_generic_trait_objects_carry_state_at_each_instance() {
     let p = Project::from_fixture("design/charon-trial/generic-trait-objects");
@@ -345,6 +346,7 @@ fn charon_references_to_type_parameter_values_are_verified_once() {
 // Both native use_refs bodies retain the original two field-reference calls.
 // This is a search refusal, so bound deterministic work rather than wall time.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: true and false claims after field-reference calls"]
 fn rust_field_reference_false_postconditions_fail_promptly() {
     for (directory, sidecar, owner) in [

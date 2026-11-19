@@ -5,6 +5,7 @@
 use super::*;
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.7s in the parallel gate"]
 fn fact_lookup_does_not_scan_unrelated_facts() {
     let mut costs = Vec::new();

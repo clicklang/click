@@ -871,6 +871,7 @@ fn straight_line_assignments_cost_the_same_at_every_position() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: compares four complete source proofs"]
 fn successful_steps_do_not_read_the_held_resource_list_for_diagnostics() {
     use crate::surface::proof::take_step_diagnostic_resource_reads;
@@ -1164,6 +1165,7 @@ fn sequential_loop_clauses_cost_the_same_at_every_position() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: checks three complete writing loops at four sizes"]
 fn writing_loop_havoc_ignores_untouched_scalar_slots() {
     let costs = [4, 16, 64, 128].map(|count| {
@@ -1226,6 +1228,7 @@ fn writing_loop_havoc_ignores_untouched_scalar_slots() {
 /// neighbours: restoring the entry's blocks at each loop head once rebuilt
 /// the block table, and comparing it walked every block declared so far.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.2s in the parallel gate"]
 fn sequential_loops_build_the_same_context_entries_each() {
     let counts = || {
@@ -1457,6 +1460,7 @@ fn a_have_ignores_unrelated_parameters() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: reduced full-proof setup took 2.8s; larger fixture hit the 30s gate limit"]
 fn saved_iterated_base_ignores_aliases_states_and_unrelated_resources() {
     let (source, sources) =
@@ -1555,6 +1559,7 @@ fn named_unfold_beside_views_scales_with_the_opened_delta() {
 /// other same-shaped owners. Parameter/lowering cost is shared by the control;
 /// this regression isolates owner selection, also measured directly in the kernel.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: same-shape observation scaling and parameter control"]
 fn observing_one_composite_ignores_same_shape_owners() {
     let mut curves = Vec::new();
@@ -1616,6 +1621,7 @@ fn observing_one_composite_ignores_same_shape_owners() {
 /// One held owner and a fixed proof: unused function parameters must not add
 /// work to each observation. Keep the selected parameter's spelling fixed.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: observation parameter scaling"]
 fn observing_one_owner_ignores_unused_parameters() {
     let mut curves = Vec::new();
@@ -1661,6 +1667,7 @@ fn observing_one_owner_ignores_unused_parameters() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: have opening composition scaling"]
 fn have_opening_does_not_copy_ambient_compositions() {
     let (source, sources) = super::expansion_tests::mdtest_sources(
@@ -1707,6 +1714,7 @@ fn have_opening_does_not_copy_ambient_compositions() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: explicit pointer separation beside aliases"]
 fn explicit_pointer_separation_ignores_ambient_aliases() {
     let (source, sources) = super::expansion_tests::mdtest_sources(
@@ -1760,6 +1768,7 @@ fn explicit_pointer_separation_ignores_ambient_aliases() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: active loan alias scaling"]
 fn one_write_with_a_loan_does_not_walk_unrelated_aliases() {
     let mut curves = Vec::new();
@@ -1808,6 +1817,7 @@ fn one_write_with_a_loan_does_not_walk_unrelated_aliases() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: call composition retention at three alias counts and two borrow shapes"]
 fn retaining_call_compositions_ignores_unused_aliases() {
     for borrowed in [2, 4] {
@@ -1858,6 +1868,7 @@ fn retaining_call_compositions_ignores_unused_aliases() {
 /// Unfolding retains the opaque predicate as well as its body. Loop entry
 /// must retain that context too, rather than delete the atom and rebuild it.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: sequential unfolded loops at three sizes"]
 fn unfolded_loop_predicates_retain_the_fact_context() {
     fn unfolded_loops(n: usize) -> (String, String) {
@@ -1886,6 +1897,7 @@ fn unfolded_loop_predicates_retain_the_fact_context() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: memory observation parameter and ownership scaling"]
 fn observing_one_memory_range_ignores_unrelated_parameters_and_owners() {
     for owners in [false, true] {
@@ -1938,6 +1950,7 @@ fn observing_one_memory_range_ignores_unrelated_parameters_and_owners() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: saved memory observation parameter, alias, ownership and state scaling"]
 fn observing_saved_memory_ignores_aliases_states_and_unrelated_owners() {
     for owned in [false, true] {

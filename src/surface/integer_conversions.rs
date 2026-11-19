@@ -153,6 +153,7 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: signed quotient/remainder interval expansion and replay"]
     fn division_intervals_expand_without_normalization() {
         let lib = include_str!("../../library/integer.click");
@@ -260,6 +261,7 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: multiply-order sign/orientation expansion and replay"]
     fn multiplication_order_expands_without_normalization() {
         for (sign, goals) in [
@@ -304,6 +306,7 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: expansion and replay across interval sign quadrants"]
     fn product_bounds_expand_to_explicit_library_applications() {
         check_product_bound_refusals();
@@ -1279,6 +1282,7 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: 0.9s in the parallel gate"]
     fn uint64_integer_bridges_recheck_guards_full_width_and_expansion() {
         for (name, guard, goal) in [
@@ -1435,6 +1439,7 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: 0.8s in the parallel gate"]
     fn uint64_integer_bridges_verify_actual_c_operations_and_modular_calls() {
         for (name, guard, goal, op) in [
@@ -1566,6 +1571,7 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
         }
     }
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: 0.8s in the parallel gate"]
     fn rounded_integer_library_derivations_expand_and_reverify() {
         let fixture = include_str!("../../mdtests/integer_rounded_product_bounds.md");
@@ -1658,6 +1664,7 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: 1.0s in the parallel gate"]
     fn multiply_order_and_fee_bounds_expand_and_reject_missing_evidence() {
         let fixture = include_str!("../../mdtests/integer_multiply_order.md");
@@ -1768,6 +1775,7 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: 1.7s in the parallel gate"]
     fn strict_scaled_quotient_bounds_expand_and_reject_missing_guards() {
         let fixture = include_str!("../../mdtests/integer_quotient_strict_bound.md");
@@ -1974,6 +1982,7 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: observation/cast/shift/mask/conditional expansion and replay"]
     fn machine_observation_bridges_expand_without_normalize() {
         fn check_replay(source: &str) -> Result<(), String> {
@@ -2081,6 +2090,7 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: foundational machine bridge library proofs replay without solving"]
     fn machine_bridge_library_proofs_have_no_normalization_or_search() {
         let names = [
@@ -2121,6 +2131,7 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: derived algebra and quotient library proofs replay without solving"]
     fn integer_algebra_library_proofs_have_no_normalization_or_search() {
         for name in [

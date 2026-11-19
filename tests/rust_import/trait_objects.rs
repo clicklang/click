@@ -9,6 +9,7 @@ fn trait_objects_project() -> Project {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 14s in the parallel gate"]
 fn rust_trait_implementations_use_an_imported_object_model() {
     use click::surface::{
@@ -71,6 +72,7 @@ fn rust_trait_implementations_use_an_imported_object_model() {
 // struct's definitions, keeps its other fields across a shared call, and
 // after a mutable call knows only what the interface says of the new state.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 13s in the parallel gate"]
 fn charon_trait_object_functions_are_defined_per_implementation() {
     let p = trait_objects_project();

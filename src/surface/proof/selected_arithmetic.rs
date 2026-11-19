@@ -1018,6 +1018,7 @@ mod search;
 
 #[cfg(test)]
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: definition refutation expansion and strict replay"]
 fn definition_refutation_expands_with_branch_equations() {
     use crate::surface::{
