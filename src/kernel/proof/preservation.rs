@@ -109,6 +109,18 @@ fn read_type(result: &Proposition) -> Option<ReadType> {
             Some(ReadType::Pointer(a.program_type()))
         }
         condition_source_0 @ Proposition::ConditionIs(_, true)
+            if let Some((ConditionTerm::IntegerEqual(a, b), _)) =
+                condition_source_0.condition_native()
+                && let (IntegerTerm::Machine(a), IntegerTerm::Machine(b)) = (&**a, &**b)
+                && a.ty() == b.ty()
+                && matches!(
+                    a.ty(),
+                    MachineIntegerType::Int128 | MachineIntegerType::UInt128
+                ) =>
+        {
+            Some(ReadType::Integer(a.ty()))
+        }
+        condition_source_0 @ Proposition::ConditionIs(_, true)
             if let Some((
                 ConditionTerm::Compare {
                     format,
@@ -351,7 +363,9 @@ fn integer_bits(value: ProgramValue) -> Option<MachineTerm> {
         | ProgramValue::Int32(t)
         | ProgramValue::UInt32(t)
         | ProgramValue::Int64(t)
-        | ProgramValue::UInt64(t) => Some(t),
+        | ProgramValue::UInt64(t)
+        | ProgramValue::Int128(t)
+        | ProgramValue::UInt128(t) => Some(t),
         _ => None,
     }
 }
@@ -382,7 +396,10 @@ fn integer_equality(
                 ],
             )
         }
-        _ => return None,
+        MachineIntegerType::Int128 | MachineIntegerType::UInt128 => ConditionTerm::integer_equal(
+            IntegerTerm::from_machine(format, left)?,
+            IntegerTerm::from_machine(format, right)?,
+        ),
     })
 }
 
@@ -980,6 +997,18 @@ mod tests {
 
     #[test]
     fn preserve_uses_the_indexed_integer_version_of_each_selected_endpoint() {
+        for (kind, format) in [
+            (LoadKind::Int128, MachineIntegerType::Int128),
+            (LoadKind::UInt128, MachineIntegerType::UInt128),
+        ] {
+            let value = format
+                .constant_value(
+                    crate::kernel::MachineIntegerConstant::from_bits(format.format(), 1u128 << 127)
+                        .unwrap(),
+                )
+                .unwrap();
+            check_indexed_preservation(kind, format, 16, value);
+        }
         check_indexed_preservation(
             LoadKind::Bits64,
             MachineIntegerType::Int64,
@@ -1095,20 +1124,23 @@ mod tests {
         };
         let comparison_type = ReadType::Integer(comparison);
         let operand = |bits| MachineTerm::machine_integer_cast(format, comparison, bits);
-        let condition = if bytes == 8 {
-            ConditionTerm::Compare {
+        let condition = match bytes {
+            16 => ConditionTerm::integer_equal(
+                IntegerTerm::from_machine(format, after_read.clone()).unwrap(),
+                IntegerTerm::from_machine(format, before_read.clone()).unwrap(),
+            ),
+            8 => ConditionTerm::Compare {
                 format: comparison,
                 relation: CompareRelation::Equal,
                 left: Box::new(after_read.clone()),
                 right: Box::new(before_read.clone()),
-            }
-        } else {
-            ConditionTerm::machine_compare(
+            },
+            _ => ConditionTerm::machine_compare(
                 comparison,
                 CompareRelation::Equal,
                 operand(after_read.clone()),
                 operand(before_read.clone()),
-            )
+            ),
         };
         let expected = Proposition::condition_is(condition, true);
         let observed = observation_type(comparison_type, bytes, &expected).unwrap();

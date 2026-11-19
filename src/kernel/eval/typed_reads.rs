@@ -67,6 +67,8 @@ pub(super) fn record(memory: &SymbolicMemory, address: &Address, value: &Program
         ProgramValue::UInt8(_) => ReadType::Integer(MachineIntegerType::UInt8),
         ProgramValue::Int64(_) => ReadType::Integer(MachineIntegerType::Int64),
         ProgramValue::UInt64(_) => ReadType::Integer(MachineIntegerType::UInt64),
+        ProgramValue::Int128(_) => ReadType::Integer(MachineIntegerType::Int128),
+        ProgramValue::UInt128(_) => ReadType::Integer(MachineIntegerType::UInt128),
         _ => return,
     };
     crate::instrumentation::record_deterministic_work(1);
@@ -79,7 +81,9 @@ pub(super) fn record(memory: &SymbolicMemory, address: &Address, value: &Program
         | ProgramValue::Int32(MachineTerm::MemoryLoad(point, _, LoadKind::Int32))
         | ProgramValue::UInt32(MachineTerm::MemoryLoad(point, _, LoadKind::UInt32))
         | ProgramValue::Int64(MachineTerm::MemoryLoad(point, _, LoadKind::Bits64))
-        | ProgramValue::UInt64(MachineTerm::MemoryLoad(point, _, LoadKind::Bits64)) => {
+        | ProgramValue::UInt64(MachineTerm::MemoryLoad(point, _, LoadKind::Bits64))
+        | ProgramValue::Int128(MachineTerm::MemoryLoad(point, _, LoadKind::Int128))
+        | ProgramValue::UInt128(MachineTerm::MemoryLoad(point, _, LoadKind::UInt128)) => {
             point.read_version_id()
         }
         _ => None,
@@ -128,7 +132,9 @@ pub(in crate::kernel) fn get_at(
             | MachineIntegerType::Int32
             | MachineIntegerType::UInt32
             | MachineIntegerType::Int64
-            | MachineIntegerType::UInt64),
+            | MachineIntegerType::UInt64
+            | MachineIntegerType::Int128
+            | MachineIntegerType::UInt128),
         ) => {
             let load_kind = LoadKind::of_type(format.program_type()).expect("indexed integer read");
             point

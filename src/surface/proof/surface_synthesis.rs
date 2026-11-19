@@ -5507,6 +5507,8 @@ fn synthesize_surface_bitvector(
                     crate::kernel::LoadKind::Int32 => ProgramType::Int32,
                     crate::kernel::LoadKind::UInt32 => ProgramType::UInt32,
                     crate::kernel::LoadKind::Bits64 => ProgramType::Int64,
+                    crate::kernel::LoadKind::Int128 => ProgramType::Int128,
+                    crate::kernel::LoadKind::UInt128 => ProgramType::UInt128,
                     _ => return None,
                 };
                 return synthesize_indexed_integer_read(
