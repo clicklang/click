@@ -4040,6 +4040,12 @@ inside a `have` proof with a concrete program state. It performs indexed
 permission lookups, without looking for a covering range or following
 history. The held resources do not change.
 
+For a fixed-size linked-pointer view, `solve()` can emit this observation
+directly when the range already names held storage. When the base is a
+pointer read from an initializer, expansion cites its equality with the
+file-qualified object, rewrites the view to that object, and observes the
+exact held range.
+
 A saved range selects the pointer value at a recorded point; its bounds are
 evaluated in the surrounding state. `observe(at(point, p)[lo..hi])` establishes
 current `viewable(memory(at(point, p)[lo..hi]))`. `observe(old(p)[lo..hi])` uses
