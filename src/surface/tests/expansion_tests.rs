@@ -2365,6 +2365,24 @@ pub(super) fn mdtest_sources(relative: &str) -> (String, Vec<(String, String)>) 
         .click_source
         .clone()
         .unwrap_or_else(|| panic!("`{relative}` should contain Click source"));
+    // A fixture may share declarations through a file import, which the
+    // single-source entry points these tests use do not resolve: inline it.
+    let directory = path.parent().unwrap();
+    let click_source = click_source
+        .lines()
+        .map(|line| {
+            match line
+                .trim()
+                .strip_prefix("import \"")
+                .and_then(|rest| rest.strip_suffix("\";"))
+            {
+                Some(imported) => std::fs::read_to_string(directory.join(imported))
+                    .unwrap_or_else(|error| panic!("failed to read `{imported}`: {error}")),
+                None => line.to_string(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
     (click_source, mdtest.c_sources.clone())
 }
 
