@@ -1778,12 +1778,10 @@ found in or directly under the directory, so their `README.md` files are not
 mistaken for mdtests. Project targets select sidecars exactly as `click verify`
 does.
 
-The defaults report smart tactics at 2 seconds, simple tactics at
-500 milliseconds, and control-tactic containers at 2 seconds. A 10-minute
-per-project time limit contains crashes and hangs; it is not a verdict about
-the proof. Override them with `--smart-threshold`,
-`--simple-threshold`, `--control-threshold`, and `--time-limit`;
-`--threshold` is shorthand for setting all three class thresholds equally.
+See the [profile reference](../reference/cli/profile.md#options-and-defaults)
+for the per-class reporting thresholds and the crash-containment limit.
+These settings control what the profile reports and when it stops.
+Verification verdicts use deterministic work budgets.
 
 The verifier emits each tactic's class as a structured event. The report uses
 that class to prescribe the next action:

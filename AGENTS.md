@@ -102,6 +102,8 @@ function or type; the rules are in
 
 ## Use proof friction to improve the tool
 
+When verification is slow, use the [`proof-optimization` skill](.agents/skills/proof-optimization/SKILL.md).
+
 When a proof fails, use the [`proof-repair` skill](.agents/skills/proof-repair/SKILL.md).
 Follow the [proof repair procedure](docs/concepts/tracing.md): record the goal
 that was not proved, write the argument as a chain of `have` goals, and refine
