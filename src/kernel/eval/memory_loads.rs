@@ -322,7 +322,7 @@ pub(in crate::kernel) fn evaluate_indexed_read(
             unreachable!("indexed Boolean store");
         };
         let stored = ConditionTerm::truth_of_bool_word(stored);
-        let read = ConditionTerm::BoolLoad(version, Box::new(pointer.clone()));
+        let read = ConditionTerm::boolean_cell_read(version, pointer.clone());
         facts.push(ExecutionPureFact {
             logical_read_equation: true,
             ..ExecutionPureFact::certified(Proposition::condition_is(
@@ -435,9 +435,9 @@ fn exact_logical_read_value(
     let point = point.for_exact_read();
     record_load_access_width(point.memory(), pointer, value_type.byte_width());
     let value = if value_type == ProgramType::Bool {
-        ProgramValue::of_bool(ConditionTerm::BoolLoad(
+        ProgramValue::of_bool(ConditionTerm::boolean_cell_read(
             point.clone(),
-            Box::new(pointer.clone()),
+            pointer.clone(),
         ))
     } else {
         let bits = MachineTerm::MemoryLoad(
@@ -2995,7 +2995,19 @@ fn comparison_form_uncached(proposition: &Proposition) -> Option<Proposition> {
 /// A Boolean read gets the logical value of its recorded store. For an
 /// exact read, the selected point's index can supply that store directly.
 fn read_over_write_boolean(condition: &ConditionTerm) -> Option<ConditionTerm> {
-    let ConditionTerm::BoolLoad(point, pointer) = condition else {
+    let ConditionTerm::Compare {
+        format: MachineIntegerType::UInt8,
+        relation: CompareRelation::Equal,
+        left,
+        right,
+    } = condition.bool_negation_operand()?
+    else {
+        return None;
+    };
+    if right.bool_constant_value() != Some(false) {
+        return None;
+    }
+    let MachineTerm::MemoryLoad(point, pointer, LoadKind::UInt8) = left.as_ref() else {
         return None;
     };
     let version;

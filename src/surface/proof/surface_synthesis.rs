@@ -2284,6 +2284,19 @@ fn synthesize_boolean_cell_read(
     else {
         return None;
     };
+    if point.read_version_id().is_some() {
+        if point.memory().has_boolean_cell_type(address) {
+            return synthesize_point_read(
+                point,
+                address,
+                ProgramType::Bool,
+                parameter_binding,
+                state,
+                bound_variables,
+            );
+        }
+        return None;
+    }
     if !point.memory().has_boolean_cell_type(address) {
         return None;
     }
@@ -2347,16 +2360,6 @@ fn synthesize_surface_bool(
         synthesize_surface_bool(condition, parameter_binding, state, bound_variables)
     };
     match condition {
-        ConditionTerm::BoolLoad(point, address) if point.read_version_id().is_some() => {
-            synthesize_point_read(
-                point,
-                address,
-                ProgramType::Bool,
-                parameter_binding,
-                state,
-                bound_variables,
-            )
-        }
         ConditionTerm::Constant(value) => Some(bool_literal(*value)),
         ConditionTerm::Variable(variable) => {
             if let Some(name) = folds::binder_name(false, *variable)
