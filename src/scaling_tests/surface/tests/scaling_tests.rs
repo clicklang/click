@@ -9570,6 +9570,74 @@ fn branch_interface_fact_publication_extends_one_indexed_context() {
 }
 
 #[test]
+fn branch_checking_ignores_unused_parameters_and_premises() {
+    for grow_parameters in [false, true] {
+        let mut samples = Vec::new();
+        for size in [4, 16, 64] {
+            let (parameters, premises) = if grow_parameters {
+                (
+                    (0..size).map(|i| format!(", int32 unused{i}")).collect(),
+                    String::new(),
+                )
+            } else {
+                (
+                    String::new(),
+                    (1..=size)
+                        .map(|i| format!("requires x != -{i};\n"))
+                        .collect(),
+                )
+            };
+            let program = format!(
+                "int32 bounded(int32 x{parameters}) {{
+                    int32 y;
+                    if (x >= 0) {{ y = x; }} else {{ y = 0; }}
+                    return y + 1;
+                }}"
+            );
+            let proof = format!(
+                r#"verifying "branch.c";
+                int32 bounded(int32 x{parameters}) {{
+                    requires x < 2147483647;
+                    {premises}
+                    ensures result > 0 by {{
+                        step();
+                        branch ensuring {{
+                            fact y >= 0;
+                            fact y < 2147483647;
+                        }} {{
+                            true => {{ step(); }}
+                            false => {{ step(); }}
+                        }}
+                        step();
+                        solve();
+                    }}
+                }}"#
+            );
+            let (result, sample) =
+                scaling_sample(size, || verify_c_sources(&proof, &[("branch.c", &program)]));
+            result.unwrap_or_else(|error| panic!("{}", error.message()));
+            let operation = if grow_parameters {
+                "operation `branch interface fact lowering`"
+            } else {
+                "operation `C condition theorem construction`"
+            };
+            let work = sample.named_work[operation];
+            assert!(work > 0, "{operation} should run");
+            samples.push((size, work));
+        }
+        assert!(
+            samples.iter().all(|(_, work)| *work == samples[0].1),
+            "branch checking work grew with extra {}: {samples:?}",
+            if grow_parameters {
+                "parameters"
+            } else {
+                "premises"
+            },
+        );
+    }
+}
+
+#[test]
 fn mixed_width_owned_entry_work_is_independent_of_segment_length() {
     let program = "void entry(unsigned long *word, unsigned char *bytes) {}";
     verify_c_sources("theorem warm() { ensures true by normalize(); }", &[]).unwrap();

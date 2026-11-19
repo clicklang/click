@@ -432,7 +432,7 @@ pub(in crate::surface::proof) fn certified_condition_transitions(
                     }
                 }
             }
-            match implication_body(path.theorem().proposition()) {
+            match path.theorem().execution_conclusion() {
                 Proposition::ProgramConditionEvaluates {
                     outcome: ConditionOutcome::Value(is_true),
                     ..

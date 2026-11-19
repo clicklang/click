@@ -5,11 +5,88 @@ impl Theorem {
     pub(in crate::kernel) fn new(proposition: Proposition) -> Self {
         Self {
             proposition: std::sync::Arc::new(proposition),
+            deferred_premises: None,
+        }
+    }
+
+    /// Issue an execution theorem with its ambient context as shared
+    /// evidence. The caller has established the path under that exact context.
+    pub(in crate::kernel) fn with_ambient_premises(
+        proposition: Proposition,
+        assumptions: &PureFactContext,
+    ) -> Self {
+        Self {
+            proposition: std::sync::Arc::new(proposition),
+            deferred_premises: Some(std::sync::Arc::new(DeferredTheoremPremises {
+                propositions: assumptions.prop_facts.clone(),
+                conditions: assumptions.condition_facts.clone(),
+                standalone: OnceLock::new(),
+            })),
         }
     }
 
     pub fn proposition(&self) -> &Proposition {
-        self.proposition.as_ref()
+        match &self.deferred_premises {
+            None => &self.proposition,
+            Some(retained) => retained.standalone.get_or_init(|| {
+                crate::kernel::reasoning::path_facts::wrap_ambient_proof_facts(
+                    self.proposition.as_ref().clone(),
+                    &retained.propositions,
+                    &retained.conditions,
+                )
+            }),
+        }
+    }
+
+    /// Inspect the execution judgment, with its proof premises discharged by
+    /// the caller's existing evidence checks. This returns syntax only.
+    pub(crate) fn execution_conclusion(&self) -> &Proposition {
+        let mut conclusion = self.proposition.as_ref();
+        while let Proposition::Implies(_, body) = conclusion {
+            conclusion = body;
+        }
+        conclusion
+    }
+}
+
+impl std::fmt::Debug for Theorem {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("Theorem")
+            .field("proposition", &self.proposition())
+            .finish()
+    }
+}
+
+impl PartialEq for Theorem {
+    fn eq(&self, other: &Self) -> bool {
+        // Both pieces are immutable and created together. Cloning a theorem
+        // retains its proof, including the exact ambient premises.
+        std::sync::Arc::ptr_eq(&self.proposition, &other.proposition)
+            || self.proposition() == other.proposition()
+    }
+}
+
+impl Eq for Theorem {}
+
+impl std::hash::Hash for Theorem {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.proposition().hash(state);
+    }
+}
+
+impl Ord for Theorem {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        if std::sync::Arc::ptr_eq(&self.proposition, &other.proposition) {
+            return std::cmp::Ordering::Equal;
+        }
+        self.proposition().cmp(other.proposition())
+    }
+}
+
+impl PartialOrd for Theorem {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
     }
 }
 

@@ -4791,21 +4791,26 @@ pub fn prove_symbolic_program_condition_evaluation(
             )),
         }
     }
+    let _timing =
+        crate::instrumentation::OperationTiming::new("", "", "C condition theorem construction");
     let paths = outcomes
         .into_iter()
         .map(|(outcome, facts, obligations)| {
+            crate::instrumentation::record_deterministic_work(1);
             let facts = public_execution_pure_facts(&facts);
             let proposition = Proposition::ProgramConditionEvaluates {
                 state: Box::new(state.clone()),
                 condition: condition.clone(),
                 outcome: outcome.clone(),
             };
-            let theorem = Theorem::new(wrap_proof_facts(
-                proposition,
+            let theorem = Theorem::with_ambient_premises(
+                crate::kernel::reasoning::path_facts::wrap_local_proof_facts(
+                    proposition,
+                    &facts,
+                    &obligations,
+                ),
                 &assumptions,
-                &facts,
-                &obligations,
-            ));
+            );
             SymbolicConditionEvaluationPath {
                 outcome,
                 facts,
@@ -5694,11 +5699,7 @@ pub fn prove_checked_program_function_execution_with_environment(
 }
 
 pub(in crate::kernel) fn proof_evidence_conclusion(theorem: &Theorem) -> &Proposition {
-    let mut conclusion = theorem.proposition();
-    while let Proposition::Implies(_, body) = conclusion {
-        conclusion = body;
-    }
-    conclusion
+    theorem.execution_conclusion()
 }
 
 pub(in crate::kernel) fn proof_evidence_assumptions(
