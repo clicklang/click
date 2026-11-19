@@ -430,8 +430,14 @@ pub(super) fn parse_with_interface_catalog(
     library_contracts: &str,
 ) -> Result<ClickFile, ClickError> {
     let contracts = layouts.take_interface_catalog(library_contracts);
-    Parser::with_program_layouts_and_catalog(source, layouts, None, contracts.as_deref())?
-        .parse_file()
+    Parser::with_program_layouts_and_catalog(
+        source,
+        layouts,
+        None,
+        contracts.as_deref(),
+        &ObjectModels::default(),
+    )?
+    .parse_file()
 }
 
 impl ProgramLayouts {
@@ -530,6 +536,55 @@ pub(in crate::surface) enum ImportedCallee<'a> {
     Contract(&'a ContractDefinition),
 }
 
+/// Object models contributed by a Click module. Their contracts retain the
+/// source scope used to parse references when inherited by an implementation.
+#[derive(Default)]
+pub(super) struct ObjectModels {
+    cpp: BTreeMap<String, cpp_class_objects::ObjectClass>,
+    rust: BTreeMap<String, rust_trait_objects::ObjectTrait>,
+    scopes: BTreeMap<String, std::sync::Arc<names::ReferenceScope>>,
+}
+
+impl ObjectModels {
+    fn resource_instances(&self, imported: &Self) -> BTreeMap<String, BTreeSet<Vec<String>>> {
+        let instances = self
+            .cpp
+            .values()
+            .chain(imported.cpp.values())
+            .filter_map(cpp_class_objects::ObjectClass::resource_instance)
+            .chain(
+                self.rust
+                    .values()
+                    .chain(imported.rust.values())
+                    .filter_map(rust_trait_objects::ObjectTrait::resource_instance),
+            );
+        let mut families = BTreeMap::<String, BTreeSet<Vec<String>>>::new();
+        for (family, arguments) in instances {
+            families
+                .entry(family.to_string())
+                .or_default()
+                .insert(arguments.to_vec());
+        }
+        families
+    }
+
+    pub(super) fn import(&mut self, models: &Self) {
+        for (name, model) in &models.cpp {
+            self.cpp
+                .entry(name.clone())
+                .and_modify(|existing| existing.import_methods(model))
+                .or_insert_with(|| model.clone());
+        }
+        for (name, model) in &models.rust {
+            self.rust
+                .entry(name.clone())
+                .and_modify(|existing| existing.import_methods(model))
+                .or_insert_with(|| model.clone());
+        }
+        self.scopes.extend(models.scopes.clone());
+    }
+}
+
 pub(super) fn parse_file_items_for_module(
     source: &str,
     identity: &str,
@@ -544,12 +599,14 @@ pub(super) fn parse_file_items_for_module(
     imported_integer_parameters: &BTreeMap<String, Vec<usize>>,
     layouts: ProgramLayouts,
     catalog: Option<&str>,
-) -> Result<ClickFile, ClickError> {
+    imported_models: &ObjectModels,
+) -> Result<(ClickFile, ObjectModels), ClickError> {
     let mut parser = Parser::with_program_layouts_and_catalog(
         source,
         layouts,
         Some(&crate::source::SourceContainer::new(identity, line_offset)),
         catalog,
+        imported_models,
     )?;
     parser.symbols.import_declarations(imported_declarations)?;
     let imported_tactics = parser
@@ -654,7 +711,15 @@ pub(super) fn parse_file_items_for_module(
             );
         }
     }
-    parser.parse_file_items(imported_callees)
+    let file = parser.parse_file_items(imported_callees)?;
+    let mut models = parser.object_models;
+    if !models.cpp.is_empty() || !models.rust.is_empty() {
+        models.scopes.insert(
+            identity.to_string(),
+            parser.symbols.into_reference_scope().into(),
+        );
+    }
+    Ok((file, models))
 }
 
 /// Whether `name` is the leading word of a built-in tactic or proof form, which
@@ -1048,6 +1113,7 @@ struct Parser {
     /// The importer names of the methods of C++ classes whose objects carry
     /// state: an override of one is stated on its own memory.
     cpp_object_methods: cpp_class_objects::ObjectMethods,
+    object_models: ObjectModels,
     /// See [`ProgramLayouts::record_spellings`].
     record_spellings: BTreeMap<String, String>,
     /// See [`ProgramLayouts::c_typedefs`].
@@ -1683,6 +1749,7 @@ impl Parser {
             &BTreeMap::new(),
             None,
             None,
+            &ObjectModels::default(),
         )
     }
 
@@ -1693,7 +1760,13 @@ impl Parser {
         layouts: ProgramLayouts,
         container: Option<&crate::source::SourceContainer>,
     ) -> Result<Self, ClickError> {
-        Self::with_program_layouts_and_catalog(source, layouts, container, None)
+        Self::with_program_layouts_and_catalog(
+            source,
+            layouts,
+            container,
+            None,
+            &ObjectModels::default(),
+        )
     }
 
     fn with_program_layouts_and_catalog(
@@ -1701,6 +1774,7 @@ impl Parser {
         layouts: ProgramLayouts,
         container: Option<&crate::source::SourceContainer>,
         catalog: Option<&str>,
+        imported_models: &ObjectModels,
     ) -> Result<Self, ClickError> {
         let mut parser = Self::new_with_layouts_and_aggregate_objects(
             source,
@@ -1714,6 +1788,7 @@ impl Parser {
             &layouts.record_spellings,
             catalog,
             layouts.language,
+            imported_models,
         )
         .map_err(|error| error.with_kind(ClickErrorKind::Syntax))?;
         parser.local_bindings = layouts.local_bindings;
@@ -1791,6 +1866,7 @@ impl Parser {
                 positions,
                 written,
                 rust_generic_resources::rust_concrete,
+                &parser.object_models.resource_instances(imported_models),
             )?;
             // A reference parameter's type grants the authority a safe
             // caller holds over its referent.
@@ -1817,11 +1893,14 @@ impl Parser {
                     std::mem::take(&mut parser.tokens),
                     std::mem::take(&mut parser.positions),
                 );
-                let (tokens, positions, methods) = cpp_class_objects::rewrite_class_objects(
-                    tokens,
-                    positions,
-                    &layouts.record_spellings,
-                )?;
+                let (tokens, positions, methods, models) =
+                    cpp_class_objects::rewrite_class_objects(
+                        tokens,
+                        positions,
+                        &layouts.record_spellings,
+                        &imported_models.cpp,
+                    )?;
+                parser.object_models.cpp = models;
                 parser.matching_parentheses = validate_parenthesis_nesting(&tokens, &positions)?;
                 parser.tokens = tokens;
                 parser.positions = positions;
@@ -1875,6 +1954,7 @@ impl Parser {
                 positions,
                 written,
                 rust_generic_resources::cpp_concrete,
+                &parser.object_models.resource_instances(imported_models),
             )?;
             parser.matching_parentheses = validate_parenthesis_nesting(&tokens, &positions)?;
             parser.tokens = tokens;
@@ -1900,6 +1980,7 @@ impl Parser {
         record_spellings: &BTreeMap<String, String>,
         catalog: Option<&str>,
         import_language: Option<SourceLanguage>,
+        imported_models: &ObjectModels,
     ) -> Result<Self, ClickError> {
         let (mut tokens, mut positions) = tokenize(source, container)?;
         if let Some(catalog) = catalog {
@@ -1921,12 +2002,13 @@ impl Parser {
             tokens,
             positions,
             path_modules: path_library_modules,
-            symbols,
+            mut symbols,
         } = names::resolve_library_paths(
             tokens,
             positions,
             container.map(|container| &*container.filename),
         )?;
+        symbols.import_reference_scopes(&imported_models.scopes);
         // A cited theorem the file does not declare is a library theorem,
         // named by its qualified identity. A library module cites every
         // library theorem that way, its own included.
@@ -1988,25 +2070,38 @@ impl Parser {
         // A Rust sidecar's trait object state is rewritten into contracts
         // over abstract resources before anything is parsed.
         // Its generic crate traits are written out at each instance first.
-        let (tokens, positions, rust_object_traits) = if language == SourceLanguage::Rust {
-            let (tokens, positions) = rust_generic_traits::expand_generic_traits(
+        let (tokens, positions, rust_object_traits, rust_models) =
+            if language == SourceLanguage::Rust {
+                let (tokens, positions) = rust_generic_traits::expand_generic_traits(
+                    tokens,
+                    positions,
+                    rust_trait_instances,
+                )?;
+                rust_trait_objects::rewrite_trait_objects(
+                    tokens,
+                    positions,
+                    rust_trait_instances,
+                    &imported_models.rust,
+                )?
+            } else {
+                (tokens, positions, BTreeSet::new(), BTreeMap::new())
+            };
+        // So is a C++ sidecar's class object state.
+        let (tokens, positions, cpp_object_methods, cpp_models) = if language == SourceLanguage::Cpp
+        {
+            let (tokens, positions) = cpp_syntax::rewrite_function_references(tokens, positions);
+            cpp_class_objects::rewrite_class_objects(
                 tokens,
                 positions,
-                rust_trait_instances,
-            )?;
-            rust_trait_objects::rewrite_trait_objects(tokens, positions, rust_trait_instances)?
-        } else {
-            (tokens, positions, BTreeSet::new())
-        };
-        // So is a C++ sidecar's class object state.
-        let (tokens, positions, cpp_object_methods) = if language == SourceLanguage::Cpp {
-            let (tokens, positions) = cpp_syntax::rewrite_function_references(tokens, positions);
-            cpp_class_objects::rewrite_class_objects(tokens, positions, record_spellings)?
+                record_spellings,
+                &imported_models.cpp,
+            )?
         } else {
             (
                 tokens,
                 positions,
                 cpp_class_objects::ObjectMethods::default(),
+                BTreeMap::new(),
             )
         };
         let matching_parentheses = validate_parenthesis_nesting(&tokens, &positions)?;
@@ -2016,6 +2111,11 @@ impl Parser {
             string_literal_owners: Default::default(),
             rust_object_traits,
             cpp_object_methods,
+            object_models: ObjectModels {
+                cpp: cpp_models,
+                rust: rust_models,
+                scopes: BTreeMap::new(),
+            },
             record_spellings: BTreeMap::new(),
             c_typedefs: BTreeMap::new(),
             source_aliases: BTreeMap::new(),
@@ -2604,7 +2704,8 @@ impl Parser {
                 // no contract, which verification refuses.
                 let class = crate::languages::cpp::names::cpp_display_name(&implementation)
                     .and_then(|path| Some(path.rsplit_once("::")?.0.to_string()));
-                if !self.cpp_object_methods.on_memory.contains(&implementation)
+                if !verifying_sources.is_empty()
+                    && !self.cpp_object_methods.on_memory.contains(&implementation)
                     && !class.is_some_and(|class| self.cpp_object_methods.defining.contains(&class))
                 {
                     let overridden = if self.cpp_object_methods.on_memory.contains(&interface) {

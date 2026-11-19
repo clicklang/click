@@ -27,7 +27,8 @@ use super::*;
 pub(super) type Spanned = (Token, SourcePosition);
 
 /// A crate trait whose object carries state.
-struct ObjectTrait {
+#[derive(Clone)]
+pub(super) struct ObjectTrait {
     /// The resource that is the object, and the type arguments a use names
     /// it at: a generic trait's block and instances name the generic
     /// block's resource at their arguments, `Bag::object<T>` and
@@ -42,7 +43,18 @@ struct ObjectTrait {
     methods: BTreeMap<String, Interface>,
 }
 
+impl ObjectTrait {
+    pub(super) fn resource_instance(&self) -> Option<(&str, &[String])> {
+        (!self.arguments.is_empty()).then_some((self.family.as_str(), self.arguments.as_slice()))
+    }
+
+    pub(super) fn import_methods(&mut self, other: &Self) {
+        self.methods.extend(other.methods.clone());
+    }
+}
+
 /// A trait method's interface, as its `fn` in the `trait` block writes it.
+#[derive(Clone)]
 struct Interface {
     parameters: Vec<String>,
     clauses: Vec<Vec<Spanned>>,
@@ -93,21 +105,50 @@ pub(super) fn rewrite_trait_objects(
     tokens: Vec<Token>,
     positions: Vec<SourcePosition>,
     instances: &BTreeMap<String, BTreeSet<Vec<String>>>,
-) -> Result<(Vec<Token>, Vec<SourcePosition>, BTreeSet<String>), ClickError> {
+    imported: &BTreeMap<String, ObjectTrait>,
+) -> Result<
+    (
+        Vec<Token>,
+        Vec<SourcePosition>,
+        BTreeSet<String>,
+        BTreeMap<String, ObjectTrait>,
+    ),
+    ClickError,
+> {
     let source: Vec<Spanned> = tokens.into_iter().zip(positions).collect();
-    let traits = object_traits(&source)?;
+    let mut traits = imported.clone();
+    let mut local = BTreeSet::new();
+    let mut contributed = BTreeSet::new();
+    for (name, object) in object_traits(&source)? {
+        if !object.functions.is_empty() {
+            local.insert(name.clone());
+            contributed.insert(name.clone());
+            traits.insert(name, object);
+        } else if let Some(parent) = traits.get_mut(&name) {
+            contributed.insert(name);
+            parent.methods.extend(object.methods);
+        }
+    }
     if traits.is_empty() {
         let (tokens, positions) = source.into_iter().unzip();
-        return Ok((tokens, positions, BTreeSet::new()));
+        return Ok((tokens, positions, BTreeSet::new(), BTreeMap::new()));
     }
     let mut output = Vec::with_capacity(source.len());
     let mut index = 0;
     while index < source.len() {
-        index = rewrite_item(&source, index, &traits, instances, &mut output)?;
+        index = rewrite_item(&source, index, &traits, &local, instances, &mut output)?;
     }
     let names = traits.keys().cloned().collect();
     let (tokens, positions) = output.into_iter().unzip();
-    Ok((tokens, positions, names))
+    Ok((
+        tokens,
+        positions,
+        names,
+        traits
+            .into_iter()
+            .filter(|(name, _)| contributed.contains(name))
+            .collect(),
+    ))
 }
 
 pub(super) fn is_ident(token: Option<&Spanned>, word: &str) -> bool {
@@ -577,33 +618,31 @@ fn object_traits(source: &[Spanned]) -> Result<BTreeMap<String, ObjectTrait>, Cl
                 }
                 item += 1;
             }
-            if !functions.is_empty() {
-                // A generic block declares its object resource at its own
-                // parameters; an instance's block names it at its types.
-                let (base, arguments) = crate::languages::rust::names::split_type_arguments(&name);
-                let generic = !arguments.is_empty()
-                    && arguments.iter().all(|argument| {
-                        !super::rust_generic_traits::INSTANCE_SCALARS.contains(&argument.as_str())
-                    });
-                traits.insert(
-                    name.clone(),
-                    ObjectTrait {
-                        family: if generic {
-                            generic_object_family(&base)
-                        } else {
-                            object_family(&name)
-                        },
-                        arguments: if generic {
-                            arguments.clone()
-                        } else {
-                            Vec::new()
-                        },
-                        declares: Some(if generic { arguments } else { Vec::new() }),
-                        functions,
-                        methods,
+            // A generic block declares its object resource at its own
+            // parameters; an instance's block names it at its types.
+            let (base, arguments) = crate::languages::rust::names::split_type_arguments(&name);
+            let generic = !arguments.is_empty()
+                && arguments.iter().all(|argument| {
+                    !super::rust_generic_traits::INSTANCE_SCALARS.contains(&argument.as_str())
+                });
+            traits.insert(
+                name.clone(),
+                ObjectTrait {
+                    family: if generic {
+                        generic_object_family(&base)
+                    } else {
+                        object_family(&name)
                     },
-                );
-            }
+                    arguments: if generic {
+                        arguments.clone()
+                    } else {
+                        Vec::new()
+                    },
+                    declares: Some(if generic { arguments } else { Vec::new() }),
+                    functions,
+                    methods,
+                },
+            );
             index = close + 1;
             depth = 0;
             continue;
@@ -614,7 +653,7 @@ fn object_traits(source: &[Spanned]) -> Result<BTreeMap<String, ObjectTrait>, Cl
     // block's resource at its types.
     let generic_bases = traits
         .iter()
-        .filter(|(_, object)| !object.arguments.is_empty())
+        .filter(|(_, object)| !object.functions.is_empty() && !object.arguments.is_empty())
         .map(|(name, _)| crate::languages::rust::names::split_type_arguments(name).0)
         .collect::<BTreeSet<_>>();
     for (name, object) in &mut traits {
@@ -657,6 +696,7 @@ fn rewrite_item(
     source: &[Spanned],
     index: usize,
     traits: &BTreeMap<String, ObjectTrait>,
+    local: &BTreeSet<String>,
     instances: &BTreeMap<String, BTreeSet<Vec<String>>>,
     output: &mut Vec<Spanned>,
 ) -> Result<usize, ClickError> {
@@ -666,7 +706,9 @@ fn rewrite_item(
         && let Some(object) = traits.get(&path_name(&segments))
     {
         let close = matching(source, open).expect("checked when the traits were found");
-        output.extend(object_declaration(object, &source[index].1));
+        if local.contains(&path_name(&segments)) {
+            output.extend(object_declaration(object, &source[index].1));
+        }
         output.extend(source[index..=open].iter().cloned());
         let mut item = open + 1;
         while item < close {

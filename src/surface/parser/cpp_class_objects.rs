@@ -34,7 +34,8 @@ use super::rust_trait_objects::{
 use super::*;
 
 /// A class whose object carries state.
-struct ObjectClass {
+#[derive(Clone)]
+pub(super) struct ObjectClass {
     family: String,
     /// The type arguments a use names the family at, `Holder__object<int>`:
     /// none for a class that is not a template's.
@@ -45,6 +46,16 @@ struct ObjectClass {
     declares: Option<Vec<String>>,
     functions: Vec<(String, Vec<Spanned>)>,
     methods: BTreeMap<String, Interface>,
+}
+
+impl ObjectClass {
+    pub(super) fn resource_instance(&self) -> Option<(&str, &[String])> {
+        (!self.arguments.is_empty()).then_some((self.family.as_str(), self.arguments.as_slice()))
+    }
+
+    pub(super) fn import_methods(&mut self, other: &Self) {
+        self.methods.extend(other.methods.clone());
+    }
 }
 
 /// An object class method's interface, as its sidecar contract writes it.
@@ -241,12 +252,21 @@ pub(super) fn rewrite_class_objects(
     tokens: Vec<Token>,
     positions: Vec<SourcePosition>,
     records: &BTreeMap<String, String>,
-) -> Result<(Vec<Token>, Vec<SourcePosition>, ObjectMethods), ClickError> {
+    imported: &BTreeMap<String, ObjectClass>,
+) -> Result<
+    (
+        Vec<Token>,
+        Vec<SourcePosition>,
+        ObjectMethods,
+        BTreeMap<String, ObjectClass>,
+    ),
+    ClickError,
+> {
     let source: Vec<Spanned> = tokens.into_iter().zip(positions).collect();
-    let (mut objects, defining) = classes(&source, records)?;
+    let (mut objects, defining, local) = classes(&source, records, imported)?;
     if objects.is_empty() {
         let (tokens, positions) = source.into_iter().unzip();
-        return Ok((tokens, positions, ObjectMethods::default()));
+        return Ok((tokens, positions, ObjectMethods::default(), BTreeMap::new()));
     }
     let found = heads(&source);
     // A reference to the object class, or to a defining class another
@@ -263,10 +283,12 @@ pub(super) fn rewrite_class_objects(
     for class in &derived_from {
         references.insert(class.clone(), defining[class].root.clone());
     }
+    let mut contributed = local.clone();
     for head in &found {
         if let Some(class) = &head.class
             && let Some(object) = objects.get_mut(class)
         {
+            contributed.insert(class.clone());
             object.methods.insert(
                 head.method.clone(),
                 Interface {
@@ -458,8 +480,8 @@ pub(super) fn rewrite_class_objects(
                 .cloned()
                 .collect::<BTreeSet<_>>();
             for class in std::iter::once(&class).chain(&instances) {
-                if let Some(object) = objects.get(class) {
-                    output.extend(object_declaration(object, position));
+                if local.contains(class) {
+                    output.extend(object_declaration(&objects[class], position));
                 } else if let Some(definer) = defining.get(class)
                     && !definer.generic
                 {
@@ -535,6 +557,10 @@ pub(super) fn rewrite_class_objects(
                 .collect(),
             object_parameters,
         },
+        objects
+            .into_iter()
+            .filter(|(name, _)| contributed.contains(name))
+            .collect(),
     ))
 }
 
@@ -545,10 +571,12 @@ pub(super) fn rewrite_class_objects(
 fn classes(
     source: &[Spanned],
     records: &BTreeMap<String, String>,
+    imported: &BTreeMap<String, ObjectClass>,
 ) -> Result<
     (
         BTreeMap<String, ObjectClass>,
         BTreeMap<String, DefiningClass>,
+        BTreeSet<String>,
     ),
     ClickError,
 > {
@@ -756,7 +784,8 @@ fn classes(
         .map(|(class, _)| class.clone())
         .collect::<BTreeSet<_>>();
     written.extend(instances);
-    let mut objects = BTreeMap::new();
+    let mut objects = imported.clone();
+    let mut local = BTreeSet::new();
     // Each defining class's base and own definitions, before its root is known.
     let mut bases = BTreeMap::new();
     for (class, block) in written {
@@ -767,6 +796,7 @@ fn classes(
         ) {
             (None, false, true) if block.held.is_empty() => {
                 let arguments = spelled_arguments(&class);
+                local.insert(class.clone());
                 objects.insert(
                     class.clone(),
                     ObjectClass {
@@ -884,7 +914,7 @@ fn classes(
         }
         pending = deferred;
     }
-    Ok((objects, defining))
+    Ok((objects, defining, local))
 }
 
 /// A base's definition read on a derived class's memory: each `this->f`

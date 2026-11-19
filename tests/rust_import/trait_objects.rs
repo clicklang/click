@@ -8,6 +8,61 @@ fn trait_objects_project() -> Project {
     p
 }
 
+#[test]
+#[ignore = "nightly: 14s in the parallel gate"]
+fn rust_trait_implementations_use_an_imported_object_model() {
+    use click::surface::{
+        ClickModuleSource, ClickProject, ProgramInputs, verify_project_functions,
+    };
+
+    let p = trait_objects_project();
+    let prepared = p.prepared().unwrap();
+    let start = SIDECAR.find("trait trait_objects::Shape {").unwrap();
+    let end = start + SIDECAR[start..].find("\n}").unwrap() + "\n}".len();
+    let (head, body) = SIDECAR[start..end].split_once('\n').unwrap();
+    let (model, methods) = body.split_once('\n').unwrap();
+    let model = format!("{head}\n{model}\n}}");
+    let interface = format!("import \"model.interface.click\";\n{head}\n{methods}");
+    let sidecar = format!(
+        "import \"shape.interface.click\";\n{}{}",
+        &SIDECAR[..start],
+        &SIDECAR[end..],
+    );
+    let verify = |sidecar: &str| {
+        let project = ClickProject::new(
+            "borrow.click",
+            [
+                ClickModuleSource::new(
+                    "borrow.click",
+                    sidecar,
+                    ["shape.interface.click".to_string()],
+                ),
+                ClickModuleSource::new(
+                    "shape.interface.click",
+                    interface.as_str(),
+                    ["model.interface.click".to_string()],
+                ),
+                ClickModuleSource::new("model.interface.click", model.as_str(), []),
+            ],
+        );
+        verify_project_functions(
+            &project,
+            &ProgramInputs::program(&prepared),
+            [
+                "__rust_q_T36___rust_q_I13_trait_objects_I6_Circle_R35___rust_q_I13_trait_objects_I5_Shape_I4_area".to_string(),
+                "__rust_q_T36___rust_q_I13_trait_objects_I6_Square_R35___rust_q_I13_trait_objects_I5_Shape_I3_set".to_string(),
+                "__rust_q_I13_trait_objects_I7_dynamic".to_string(),
+            ],
+        )
+    };
+    verify(&sidecar).unwrap_or_else(|error| panic!("{}", error.report()));
+
+    let invalid = sidecar.replace("self.radius + self.radius", "self.radius");
+    let error = verify(&invalid).expect_err("the implementation must prove the imported guarantee");
+    let report = click::languages::rust::names::display_rust_names(&error.report()).into_owned();
+    assert!(report.contains("::area.interface_ensures_0"), "{report}");
+}
+
 // A trait's `function`s are its object's state. An interface reads them of
 // the object a `&self`, bound-parameter, or `&dyn` reference holds, shared or
 // mutable; each implementation defines them from its own fields and is

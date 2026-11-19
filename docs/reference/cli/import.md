@@ -1892,19 +1892,13 @@ virtual method with a definition remain unsupported
 
 A polymorphic class's object may carry state, as a Rust trait's does
 ([Rust reference](../rust.md#trait-object-state)). A `class` block declares
-model functions of the object, and each direct subclass passed as one
-defines them on its own memory:
+model functions of the object. An interface file can provide that block
+with the base method contracts. Each direct subclass defines the functions
+on its own memory in the sidecar:
 
 <!-- verified-example: mdtests/cpp_class_object_state.md -->
 ```click
-class Shape {
-    function size(this) -> int32;
-}
-extern int Shape::area(int scale) const {
-    requires 0 <= scale and scale <= 100;
-    requires 0 <= size(this) and size(this) <= 100;
-    ensures result == size(this) + scale;
-}
+import "interfaces/cpp_class_object_state.interface.click";
 class Square : Shape {
     function size(this) -> int32 { this->side }
 }
@@ -1951,12 +1945,7 @@ through a generic `class` block, as a Rust generic trait does
 
 <!-- verified-example: mdtests/cpp_class_template_object_state.md -->
 ```click
-template<class T> class Holder<T> {
-    function held(this) -> T;
-}
-template<class T> extern void Holder<T>::put(T x) {
-    ensures held(this) == x;
-}
+import "interfaces/cpp_class_template_object_state.interface.click";
 template<class T> class Wrap<T> : Holder<T> {
     function held(this) -> T { this->value }
 }
@@ -1966,9 +1955,9 @@ template<class T> void Wrap<T>::put(T x) {
 
 The object is the generic resource `Holder__object<T>`, and each instance
 the import has, `Holder<int>`, holds it at its type arguments,
-`Holder__object<int>`. A pure virtual method of the template is written
-`template<class T> extern ...`, and each instance's interface is that
-contract at its types. `Wrap<T>`'s overrides are verified once, with `T`
+`Holder__object<int>`. A pure virtual method can be declared with
+`template<class T>` in the interface file. Each instance uses the contract
+at its types. `Wrap<T>`'s overrides are verified once, with `T`
 abstract, against the interface read through its definitions, the
 `contract` named for each with `_iface` stated once for every type too; an
 override that does not keep it is refused there

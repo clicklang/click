@@ -848,7 +848,11 @@ it, so the caller still knows `size(x)` after the call, and an `ensures`
 reads it as it was at entry. A mutable one may change it: an `ensures`
 reads the new state, `size(self) == half + half`, and `old(size(self))` the
 state at entry, and the caller knows only what the `ensures` say. No proof
-folds or unfolds the object: it has no body.
+folds or unfolds the object: it has no body. A trait's model declarations
+and required method contracts can live in an imported `.interface.click`
+file. The sidecar's
+`impl` blocks define the model functions and verify the methods against
+those contracts.
 
 Each `impl` of such a trait defines every function from its type's
 fields, `function size(self) -> i32 { self.side }`; an `impl` that omits
