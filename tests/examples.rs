@@ -146,6 +146,10 @@ fn canonical_charon_examples_verify_locked_inputs() {
 /// measurement that put each one here.
 const NIGHTLY: &[(&str, &str)] = &[
     (
+        "arena",
+        "full allocator and client proofs took 109 s in the four-core debug gate (2026-11-18)",
+    ),
+    (
         "rbtree/rbtree-insert",
         "verifies in about 118 s on 20 cores, most of the gate's budget alone (2026-10-06)",
     ),
@@ -169,7 +173,6 @@ const NIGHTLY: &[(&str, &str)] = &[
 /// `DEFAULT_EXAMPLE_COST`. A stale entry only unbalances the shards: every
 /// example still runs in exactly one.
 const EXAMPLE_COSTS: &[(&str, u32)] = &[
-    ("arena", 80),
     ("rbtree/rbtree-model", 53),
     ("owned-vector", 26),
     ("bounded-pool", 22),
@@ -232,7 +235,10 @@ fn example_shards_cover_each_example_once_and_balance_the_costly_ones() {
         assert!(most - least <= 80, "{load:?}");
         if total == 2 {
             assert_ne!(
-                shards[names.iter().position(|name| name == "arena").unwrap()],
+                shards[names
+                    .iter()
+                    .position(|name| name == "owned-vector")
+                    .unwrap()],
                 shards[names
                     .iter()
                     .position(|name| name == "rbtree/rbtree-model")
