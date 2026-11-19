@@ -12,7 +12,16 @@ impl SpecValue {
         else_value: &Self,
         retain: bool,
     ) -> ExecutionResult<Option<Self>> {
-        if then_value == else_value {
+        let preserve_equal_arms = retain
+            && matches!(
+                then_value.program_type(),
+                ProgramType::Bool
+                    | ProgramType::Int32
+                    | ProgramType::UInt32
+                    | ProgramType::Int64
+                    | ProgramType::UInt64
+            );
+        if !preserve_equal_arms && then_value == else_value {
             return Ok(Some(if retain {
                 then_value
                     .clone()
@@ -42,15 +51,18 @@ impl SpecValue {
             let Some((condition, expected)) = proposition_as_single_condition(proposition)
                 .or_else(|| compound_spec_value_condition(proposition))
             else {
-                return Ok(None);
+                return Ok(
+                    (then_value == else_value).then(|| then_value.clone().retain_boolean_result())
+                );
             };
             let (left, right) = if expected {
                 (left, right)
             } else {
                 (right, left)
             };
+            // Exact rewrites can make the arms equal while retaining the if.
             return Ok(Some(
-                KernelTerm::boolean_if([
+                KernelTerm::boolean_if_preserving_equal_arms([
                     KernelTermImport::default().condition(&condition),
                     left,
                     right,
@@ -82,7 +94,7 @@ impl SpecValue {
             let Some((condition, expected)) = proposition_as_single_condition(proposition)
                 .or_else(|| compound_spec_value_condition(proposition))
             else {
-                return Ok(None);
+                return Ok((then_value == else_value).then(|| then_value.clone()));
             };
             let left = KernelTerm::retained_machine_operand(format, left);
             let right = KernelTerm::retained_machine_operand(format, right);
@@ -94,7 +106,11 @@ impl SpecValue {
             let result = match condition {
                 ConditionTerm::Constant(true) => left,
                 ConditionTerm::Constant(false) => right,
-                _ if crate::kernel::shared_machine_syntax_equal(&left, &right) => left,
+                _ if !preserve_equal_arms
+                    && crate::kernel::shared_machine_syntax_equal(&left, &right) =>
+                {
+                    left
+                }
                 condition => KernelTerm::machine_if_shared(
                     format,
                     [

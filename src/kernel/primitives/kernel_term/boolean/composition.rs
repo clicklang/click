@@ -2,12 +2,20 @@
 use super::*;
 
 impl KernelTerm {
-    pub(crate) fn boolean_if([guard, yes, no]: [Self; 3]) -> Self {
+    pub(crate) fn boolean_if(arguments: [Self; 3]) -> Self {
+        Self::boolean_if_in(arguments, false)
+    }
+
+    pub(in crate::kernel) fn boolean_if_preserving_equal_arms(arguments: [Self; 3]) -> Self {
+        Self::boolean_if_in(arguments, true)
+    }
+
+    fn boolean_if_in([guard, yes, no]: [Self; 3], preserve_equal_arms: bool) -> Self {
         let view = BooleanOperandView::Shared;
         match view(&guard).constant() {
             Some(true) => yes,
             Some(false) => no,
-            None if view(&yes).syntax_equal(view(&no)) => yes,
+            None if !preserve_equal_arms && view(&yes).syntax_equal(view(&no)) => yes,
             None if view(&yes).constant() == Some(true) && view(&no).constant() == Some(false) => {
                 guard
             }

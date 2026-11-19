@@ -514,6 +514,9 @@ checking selects the arm. The
 reader inspects only the operator and its immediate leaves. Negated Boolean
 variables use the same guard with swapped arms. This preserves the comparison
 family without exporting arithmetic DAGs or using ambient facts to select an arm.
+A Boolean or 32/64-bit machine conditional can retain identical arms after an
+exact rewrite. Logical lowering keeps that conditional when its guard is
+representable and symbolic. Checking can then use the common value.
 Other result families retain their existing selected-arm behavior; literal Boolean
 and closed 32-bit equality guards keep their normal forms.
 

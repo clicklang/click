@@ -64,15 +64,27 @@ fn identical_conditional_arms_normalize_without_revisiting_shared_suffixes() {
     let samples = [16usize, 64, 256].map(|size| {
         let _session = VerificationSession::enter();
         let format = MachineIntegerType::Int32;
-        let guard =
-            KernelTermImport::default().condition(&ConditionTerm::Variable(Variable(998202)));
-        let base = KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(998203));
-        let mut root = base.clone();
-        for _ in 0..size {
-            root = KernelTerm::machine_if_shared(format, [guard.clone(), root.clone(), root]);
-        }
+        let guard = ConditionTerm::Variable(Variable(998202));
+        let base =
+            KernelTerm::variable(KernelType::Program(format.program_type()), Variable(998203));
+        let mut value = SpecValue::Shared(base.clone());
+        let exports = KernelTermExport::machine_export_count();
+        let (_, lowering_work) = crate::instrumentation::measure_deterministic_work(|| {
+            for _ in 0..size {
+                value = join(&guard, &value, &value);
+                assert!(matches!(
+                    value.shared().unwrap().node(),
+                    KernelTermNode::MachineIf { .. }
+                ));
+            }
+        });
+        assert!(
+            lowering_work < size * 100,
+            "size={size}, work={lowering_work}"
+        );
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
         let condition = ConditionTerm::integer_equal(
-            SpecValue::Shared(root).observe().unwrap(),
+            value.observe().unwrap(),
             SpecValue::Shared(base).observe().unwrap(),
         );
         let exports = KernelTermExport::machine_export_count();
