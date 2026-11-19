@@ -10559,9 +10559,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             })
         {
             let split = (|| {
-                if std::env::var_os("CLICK_DBG_SO").is_some() {
-                    eprintln!("DBG split\n  goal={:?}\n  surface_goal={:?}", search_input.goal(), search_input.surface_goal());
-                }
                 let (proof, split, ids) = search_input.split_focused_both().ok()?;
                 let marker = proof.conjunction_checkpoint(ids).ok()?;
                 let left = crate::kernel::search::ProofSearch::try_restricted_solve_closure(
@@ -10958,19 +10955,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // also states that its read is defined, so for the overflow half of
         // that conjunction it opens the whole conjunction, whose search
         // splits it and reaches this half again without end.
-        if std::env::var_os("CLICK_DBG_SO").is_some() {
-            let spelled = spell_signed_goal(goal, premise_pairs);
-            eprintln!("DBG check_typed\n  goal={goal:?}\n  input_goal={:?}\n  surface_goal={:?}\n  spelled={spelled:?}", search_input.goal(), search_input.surface_goal());
-        }
         if search_input.surface_goal().is_none()
             && crate::kernel::proof::arithmetic_special::signed_definedness_query(goal).is_some()
             && let Some(spelled) = spell_signed_goal(goal, premise_pairs)
             && let Ok(scope) = search_input.driver().open_have(spelled)
             && scope.goal() == Some(goal)
         {
-            if std::env::var_os("CLICK_DBG_SO").is_some() {
-                eprintln!("DBG opened matching have\n  goal={:?}", scope.goal());
-            }
             let selected = premise_pairs
                 .iter()
                 .map(|(_, p)| p.clone())
@@ -11307,8 +11297,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 })
                 .collect::<Option<Vec<_>>>()?;
             let Some(surface_goal) = base.surface_goal() else {
+                // As above: only a spelled `have` stating this goal itself.
                 let spelled = spell_signed_goal(goal, &pairs)?;
                 let scope = base.driver().open_have(spelled).ok()?;
+                if scope.goal() != base.goal() {
+                    return None;
+                }
                 let closed = scope.driver().try_restricted_solve_closure(listed)?;
                 return closed
                     .join()
