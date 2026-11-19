@@ -1206,17 +1206,22 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     let equal = compare(value.clone(), true, zero());
                     let mut body = Vec::new();
                     if *reverse {
-                        let factor = literal(&BigInt::from(-1));
+                        let source_value = expression(&source.form, &atoms);
+                        // Keep the sign change additive. The law's conclusion
+                        // has unary negation of Integer zero, which the literal
+                        // spelling `-0` would lower to a constant.
+                        let integer_zero =
+                            super::super::surface_synthesis::integer_typed_expression(zero());
                         let fact = compare(
-                            multiply(expression(&source.form, &atoms), factor.clone()),
+                            ContractExpression::Negate(Box::new(source_value.clone())),
                             true,
-                            multiply(zero(), factor.clone()),
+                            ContractExpression::Negate(Box::new(integer_zero)),
                         );
                         body.push(have(
                             fact.clone(),
                             vec![application(
-                                "equal_multiply",
-                                vec![expression(&source.form, &atoms), zero(), factor],
+                                "equal_negate",
+                                vec![source_value, zero()],
                                 vec![source.claim.clone()],
                             )],
                         ));
