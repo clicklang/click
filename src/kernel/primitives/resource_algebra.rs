@@ -8390,100 +8390,6 @@ impl ResourceContext {
         }
     }
 
-    /// Normalizes only the resource buckets affected by `seeds`.
-    ///
-    /// Exact token/composite resources use their full resource key, so other
-    /// arguments in the same declared family are not visited. SymbolicMemory uses its
-    /// block bucket because splitting and recombining one exported range may
-    /// touch adjacent residual ranges in that block.
-    pub(crate) fn normalized_around_facts(
-        mut self,
-        seeds: &[ResourceFact],
-        assumptions: &PureFactContext,
-    ) -> Self {
-        let supported = self.supported_projection_pairs();
-        let expansions = self.cached_support_expansions();
-        let mut exact_resources = BTreeSet::new();
-        let mut memory_blocks = BTreeSet::new();
-        for fact in seeds {
-            match fact.resource() {
-                Resource::Memory(range) => {
-                    memory_blocks.insert(range.base().base.clone());
-                }
-                resource => {
-                    exact_resources.insert(resource.clone());
-                }
-            }
-        }
-        let mut buckets = Vec::new();
-        for resource in exact_resources {
-            if let Some(entries) = self.storage.index.by_resource.get(&resource) {
-                buckets.push(entries.clone());
-            }
-        }
-        for block in memory_blocks {
-            if let Some(entries) = self.storage.index.memory_by_block.get(&block) {
-                buckets.push(entries.clone());
-            }
-        }
-        for entries in buckets {
-            // Proof-relevant witnesses, like loan-bound views, keep their
-            // native occurrences instead of being folded into equal facts.
-            if let Some(entry) = entries.iter().next()
-                && self.protects_structural_resource(self.fact(*entry).resource())
-            {
-                continue;
-            }
-
-            let original = entries
-                .iter()
-                .map(|entry| self.fact(*entry).clone())
-                .collect::<Vec<_>>();
-            let mut reusable_occurrences = original
-                .iter()
-                .zip(entries.iter())
-                .filter(|(fact, _)| fact.is_own())
-                .fold(
-                    BTreeMap::<ResourceFact, Vec<ResourceOccurrenceId>>::new(),
-                    |mut occurrences, (fact, entry)| {
-                        occurrences
-                            .entry(fact.clone())
-                            .or_default()
-                            .push(self.occurrence(*entry));
-                        occurrences
-                    },
-                );
-            let normalized = ResourceContext::new()
-                .unchecked_with_facts(original.iter().cloned())
-                .normalized(assumptions)
-                .iter()
-                .cloned()
-                .collect::<Vec<_>>();
-            if original == normalized {
-                continue;
-            }
-            for entry in entries.iter() {
-                // Removing an owner also removes its supported projections,
-                // which can already be members of this selected bucket.
-                if self.storage.facts.contains_key(entry) {
-                    self.remove_entry(*entry);
-                }
-            }
-            for fact in normalized {
-                let occurrence = fact
-                    .is_own()
-                    .then(|| reusable_occurrences.get_mut(&fact))
-                    .flatten()
-                    .and_then(Vec::pop);
-                self.insert_fact_with_support_occurrence_and_metadata_at(
-                    fact, None, None, None, occurrence,
-                );
-            }
-        }
-        self.restore_supported_projection_pairs(supported)
-            .restore_cached_support_expansions(expansions)
-    }
-
     pub(crate) fn without_exact_representation(mut self, fact: &ResourceFact) -> Option<Self> {
         let entry = *self.storage.index.exact.get(fact)?.iter().next()?;
         self.remove_entry(entry);
@@ -8716,7 +8622,7 @@ impl ResourceContext {
     /// Coalesce only the written neighbors reached by this insertion. Every
     /// successful iteration consumes one changed occurrence; unrelated facts,
     /// aliases, projections, and loan dependencies retain their identities.
-    fn normalized_delta(
+    pub(in crate::kernel) fn normalized_delta(
         mut self,
         inserted: Vec<(ResourceFact, ResourceOccurrenceId)>,
         assumptions: &PureFactContext,
