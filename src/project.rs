@@ -100,7 +100,7 @@ struct SourceJson {
     /// A C++ source's translation unit, when the logical source is a header
     /// it includes; by default the source itself.
     translation_unit: Option<String>,
-    /// The functions a C++ source exports.
+    /// The functions a C++ source exports or a projected C source selects.
     #[serde(default)]
     functions: Vec<String>,
     /// The class templates of a C++ source verified once for every type
@@ -118,7 +118,6 @@ struct SourceJson {
 impl SourceJson {
     fn has_cpp_fields(&self) -> bool {
         self.translation_unit.is_some()
-            || !self.functions.is_empty()
             || !self.templates.is_empty()
             || !self.dependencies.is_empty()
             || !self.library_assertions.is_empty()
@@ -315,6 +314,7 @@ impl Project {
                     args: unit.spec.args.iter().chain(&source.args).cloned().collect(),
                     artifact: format!("{ARTIFACT_DIRECTORY}/{name}/{path}.i"),
                     projection: source.projection.clone(),
+                    functions: source.functions.clone(),
                 })
                 .collect(),
         })
@@ -680,8 +680,18 @@ fn validate_unit(name: &str, unit: &UnitJson) -> Result<(), String> {
             }
             if unit.sources.values().any(SourceJson::has_cpp_fields) {
                 return Err(format!(
-                    "C unit `{name}` sources take only `args` and `projection`"
+                    "C unit `{name}` sources take only `args`, `projection`, and `functions`"
                 ));
+            }
+            for (path, source) in &unit.sources {
+                if !source.functions.is_empty()
+                    && source.projection.as_deref()
+                        != Some(crate::languages::c::projection::DEPENDENCY_CLOSURE)
+                {
+                    return Err(format!(
+                        "C unit `{name}` source `{path}`: `functions` requires `projection: dependency-closure`"
+                    ));
+                }
             }
         }
         "c++" => {
@@ -718,6 +728,7 @@ fn validate_unit(name: &str, unit: &UnitJson) -> Result<(), String> {
                 || unit.sources.values().any(|source| {
                     !source.args.is_empty()
                         || source.projection.is_some()
+                        || !source.functions.is_empty()
                         || source.has_cpp_fields()
                 })
             {
@@ -813,7 +824,7 @@ mod tests {
             (
                 r#"{"c": {"language": "c", "compiler": "/usr/bin/gcc",
                     "sources": {"a.c": {"functions": ["f"]}}}}"#,
-                "take only `args` and `projection`",
+                "`functions` requires `projection: dependency-closure`",
             ),
             (
                 r#"{"rs": {"language": "rust", "compiler": "/usr/bin/gcc",
