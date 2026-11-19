@@ -2,6 +2,110 @@
 use super::*;
 
 #[test]
+fn cached_read_definedness_checks_only_the_selected_typed_cell() {
+    let _session = VerificationSession::enter();
+    let selected = Address {
+        base: AddressBase::Concrete("local:definedness-read".into()),
+        offset: AddressOffset::Constant(0),
+    };
+    let unrelated = Address {
+        base: AddressBase::Concrete("local:other-definedness-read".into()),
+        offset: AddressOffset::Constant(0),
+    };
+    let int32 = |value| ProgramValue::Int32(MachineTerm::constant(value));
+    let before = SymbolicMemory::new()
+        .with_block(selected.base.clone(), 4096)
+        .with_block(unrelated.base.clone(), 4096);
+    let defined =
+        |memory: &SymbolicMemory, pointer: Address, value_type| Proposition::MemoryReadDefined {
+            at: None,
+            memory: memory.clone(),
+            pointer,
+            value_type,
+        };
+    let before_store = defined(&before, selected.clone(), ProgramType::Int32);
+    assert!(!computes_leaf(&before_store));
+    assert!(!computes_leaf(&Proposition::Not(Box::new(before_store))));
+
+    let work = [(4, 4), (64, 4), (256, 4), (4, 64), (4, 256)].map(|(related, other)| {
+        let seeded = before.clone().with_seeded_cells(
+            selected.clone(),
+            4,
+            ProgramType::Int32,
+            0,
+            related,
+            crate::kernel::intern_memory_ref(&before),
+        );
+        let seeded_read = defined(
+            &seeded,
+            selected.offset_by_bytes((related - 1) * 4),
+            ProgramType::Int32,
+        );
+        let mut memory = before.clone();
+        for slot in 1..=related {
+            memory = memory.store(selected.offset_by_bytes(slot * 4), int32(slot));
+            memory = memory.store(selected.clone(), int32(slot));
+        }
+        for slot in 0..other {
+            memory = memory.store(unrelated.offset_by_bytes(slot * 4), int32(slot));
+        }
+        let typed = defined(&memory, selected.clone(), ProgramType::Int32);
+        let wrong_type = defined(&memory, selected.clone(), ProgramType::Int64);
+        let (results, work) = crate::instrumentation::measure_deterministic_work(|| {
+            [
+                computes_leaf(&typed),
+                computes_leaf(&wrong_type),
+                computes_leaf(&seeded_read),
+            ]
+        });
+        assert_eq!(results, [true, false, true]);
+        let retired = memory.without_local_block(&selected.base);
+        assert!(!computes_leaf(&defined(
+            &retired,
+            selected.clone(),
+            ProgramType::Int32
+        )));
+        work
+    });
+    assert!(
+        work[0] > 0 && work.iter().all(|sample| *sample == work[0]),
+        "{work:?}"
+    );
+}
+
+#[test]
+fn declared_word_definedness_requires_its_complete_initialized_representation() {
+    let _session = VerificationSession::enter();
+    let pointer = Address {
+        base: AddressBase::Concrete("local:initialized-word".into()),
+        offset: AddressOffset::Constant(0),
+    };
+    let memory = SymbolicMemory::new().with_declared_scalar_block(
+        pointer.base.clone(),
+        4,
+        ProgramType::UInt32,
+    );
+    let valid_at = |memory, pointer, value_type| {
+        computes_leaf(&Proposition::MemoryReadDefined {
+            at: None,
+            memory,
+            pointer,
+            value_type,
+        })
+    };
+    let partial = memory.clone().with_initialized_object(&pointer, 3);
+    let full = memory.with_initialized_object(&pointer, 4);
+    assert!(!valid_at(partial, pointer.clone(), ProgramType::UInt32));
+    assert!(!valid_at(full.clone(), pointer.clone(), ProgramType::Int32));
+    assert!(!valid_at(
+        full.clone(),
+        pointer.offset_by_bytes(1),
+        ProgramType::UInt32
+    ));
+    assert!(valid_at(full, pointer, ProgramType::UInt32));
+}
+
+#[test]
 fn computation_refusal_is_independent_of_memory_history() {
     let mut costs = Vec::new();
     for size in [4, 16, 64, 256] {

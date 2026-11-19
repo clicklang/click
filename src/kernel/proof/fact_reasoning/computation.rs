@@ -35,6 +35,14 @@ pub(crate) fn computes_leaf(goal: &Proposition) -> bool {
                 right.native_compat().clone().into(),
             ))
         }
+        Proposition::MemoryReadDefined {
+            memory,
+            pointer,
+            value_type,
+            ..
+        } => memory
+            .indexed_read_is_defined(pointer, *value_type)
+            .then_some(true),
         Proposition::Equal(left, right)
             if matches!(
                 left,

@@ -1577,6 +1577,12 @@ available when one of these holds:
 
 - It is a fact, or a leaf conjunct of a fact. An implication or quantified
   goal must be such a fact up to renaming of its bound variables.
+- It is a typed read-definedness goal whose memory state holds a compatible
+  cell or one unambiguous live slot of the requested type at the exact
+  address. It also accepts the whole read of a declared local `uint32` when
+  all four bytes are recorded initialized. These checks use the goal's
+  memory state and decline if its lifetime or initialization needs further
+  evidence.
 - It follows by exact Boolean unit propagation. Admitting `A or B` and
   `not A` makes `B` available; admitting `A implies B` and `A` makes `B`
   available. Either admission order works, and consequences propagate through

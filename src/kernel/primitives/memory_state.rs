@@ -6872,6 +6872,42 @@ impl SymbolicMemory {
         self.cells.get(pointer)
     }
 
+    /// Check the exact typed cell or a fully initialized declared word
+    /// without evaluating a load, resolving aliases, or walking history.
+    pub(in crate::kernel) fn indexed_read_is_defined(
+        &self,
+        pointer: &Address,
+        value_type: ProgramType,
+    ) -> bool {
+        crate::instrumentation::record_deterministic_work(1);
+        if !self.heap.deallocated_allocations.is_empty()
+            || self.heap.uninitialized_allocations.len() != 0
+            || !self.heap.zeroed_prefix_allocations.is_empty()
+            || self.is_ended_local_address(pointer)
+        {
+            return false;
+        }
+        if let Some(value) = self.cells.explicitly_stored_value(pointer) {
+            return value_type.accepts(value) || value_type.read_cell(value).is_some();
+        }
+        match self.cells.exact_run_slot_type(pointer) {
+            Ok(Some(stored_type)) => stored_type == value_type,
+            Err(()) => false,
+            // The whole representation of a declared uint32 is valid once
+            // all its bytes are initialized, including after character writes.
+            Ok(None) => {
+                value_type == ProgramType::UInt32
+                    && pointer.base.is_local_block()
+                    && pointer.offset == AddressOffset::Constant(0)
+                    && self.blocks.get(&pointer.base).is_some_and(|block| {
+                        block.declared_scalar_type == Some(value_type)
+                            && block.size().as_const() == Some(value_type.byte_width())
+                    })
+                    && self.has_initialized_bytes_at(pointer, value_type.byte_width())
+            }
+        }
+    }
+
     /// The integer terms held by the concrete cells this memory changed
     /// since `earlier`, or by every concrete cell when there is no earlier
     /// memory: what a recorded point newly names in memory. The walk visits

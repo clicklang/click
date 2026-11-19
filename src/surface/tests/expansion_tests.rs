@@ -1,6 +1,38 @@
 use super::*;
 
 #[test]
+#[ignore = "nightly: expands and cold-verifies read definedness in two C proofs"]
+fn read_definedness_expands_without_normalize() {
+    for (fixture, label, reads) in [
+        (
+            "a_bare_open_proves_several_closing_facts",
+            "read_payload.contract",
+            &["c->refs", "c->payload"][..],
+        ),
+        (
+            "integer_uint32_from_le_bytes_initialization",
+            "decode.contract",
+            &["(&obj)[0]"][..],
+        ),
+    ] {
+        let (source, sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+        let sources = crate::cli::source_refs(&sources);
+        let expanded = expand_c_claim_source_by_label(&source, &sources, label).unwrap();
+        for read in reads {
+            let goal = format!("have defined({read}) by {{");
+            let (_, steps) = expanded
+                .split_once(&goal)
+                .unwrap_or_else(|| panic!("{goal}\n{expanded}"));
+            assert!(!steps.trim_start().starts_with("normalize()"), "{expanded}");
+        }
+        without_implicit_solve_for_claim(label, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+    }
+}
+
+#[test]
 #[ignore = "nightly: named-root alias proof, expansion, and cold replay"]
 fn named_root_preserves_aliased_pointer_fields_without_transport() {
     let (source, c_sources) =
