@@ -4256,22 +4256,19 @@ fn interface_join_resources(
     let mut arm_residuals = Vec::with_capacity(2);
     for (index, (arm, facts)) in arms.iter().zip(arm_facts).enumerate() {
         let mut remaining = arm.state.resources().clone();
-        // Views are non-consuming. Check them while their owned support
-        // is still present, then consume the owned interface facts in
-        // their source order so consuming a parent cannot erase a view
-        // that the same interface has already established.
+        // Check observations against the held context while the owned
+        // support is present. The same indexed view judgment is used by
+        // Surface and for views already established by the common frame.
         for required in arm_interface_resources[index]
             .iter()
             .filter(|fact| fact.is_view())
         {
-            if remaining
-                .clone()
-                .without_facts(std::slice::from_ref(required), facts.assumptions())
-                .is_none()
-            {
+            if !remaining.satisfies_fact(required, facts.assumptions()) {
                 return Err("an interface resource is not owned by one concrete arm");
             }
         }
+        // Consume owned exports in source order: giving up one may also
+        // remove the retained observations it supported.
         for required in arm_interface_resources[index]
             .iter()
             .filter(|fact| fact.is_own())
