@@ -6720,7 +6720,7 @@ pub struct FunctionContractInterface {
     pub(crate) resource_derived_frame_mixed: bool,
     pub(crate) contract_claims: Vec<FunctionContractClaim>,
     pub(crate) opaque_contract_supported: bool,
-    pub(crate) composite_resource_definitions: Vec<CompositeResourceDefinition>,
+    pub(crate) composite_resource_definitions: Arc<[CompositeResourceDefinition]>,
     /// Shape summary built with the registered definitions. Substitution
     /// changes operands without changing guard presence or recursion.
     pub(crate) composite_definitions_need_entry_cases: bool,
