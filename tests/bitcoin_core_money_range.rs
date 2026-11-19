@@ -1626,7 +1626,7 @@ fn pinned_byte_template_metadata_and_span_authority_are_checked() {
         assert!(verify_program_prepared_project(&project, &import).is_err());
     }
     let (root, import) = pinned_span_fixture_with_exact_dependencies(
-        "writable-byte-span-reference",
+        "writable-byte-span-reference-authority",
         "#include <span.h>\nstd::span<std::byte> probe(const std::span<int>& span) noexcept { return std::as_writable_bytes(span); }\n",
         &[
             "sysroot/usr/include/c++/12/cstddef",
@@ -4812,8 +4812,9 @@ fn pinned_writable_byte_span_output_requires_live_backing_offline() {
     let source = fs::read_to_string(fixture.join("span-dead.click")).unwrap();
     // Copying descriptor metadata out is valid even when its backing expires.
     // Observing its size cannot manufacture permission for a subsequent write.
+    // The observer imports neither the fill call nor its descriptor copy.
     let observer = harness.replace("fill(dst);\n    return 0;", "return dst.size();");
-    let fill_start = source.find("void fill(").unwrap();
+    let fill_start = source.find("extern std::span<std::byte>::span(").unwrap();
     let fill_end = source.find("void expire(").unwrap();
     let observer_source = source
         .replace(&source[fill_start..fill_end], "")
@@ -4865,7 +4866,7 @@ fn pinned_writable_byte_span_output_requires_live_backing_offline() {
 }
 
 // libstdc++ stores the dynamic extent in a nested record. Its copied
-// parameter precondition must have the same explicit spelling in every mode.
+// parameter precondition must verify in the source and expanded proofs.
 #[test]
 #[ignore = "nightly: pinned C++ nested span parameter precondition"]
 fn pinned_span_nested_parameter_precondition_expands_offline() {
