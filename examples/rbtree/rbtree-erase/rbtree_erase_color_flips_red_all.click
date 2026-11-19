@@ -698,7 +698,14 @@ struct rb_root* root, int32 color) {
                 rewrite(old->__rb_parent_color, (address(new) | color)); known();
             }
             mark words;
-            let { after: after } = step(__rb_change_child, { before: d });
+            have ctx_node_is(d.model, parent) == 1;
+            let { links: incoming, frame: outer_frame } = detach_erase_links(old, parent, root, { before: d });
+            let { updated: linked } = step(__rb_change_child, { links: incoming });
+            have linked.model == outer_frame.model;
+            have linked.sibling_ptr == outer_frame.sibling_ptr;
+            have linked.tag == outer_frame.tag;
+            have linked.above == outer_frame.above;
+            let { updated: after } = attach_erase_links(new, parent, root, { links: linked, frame: outer_frame });
             step_until(function.exit);
         },
         Context::Left(id, above, pc, sibling, up) => {
@@ -740,7 +747,14 @@ struct rb_root* root, int32 color) {
                 rewrite(old->__rb_parent_color, (address(new) | color)); known();
             }
             mark words;
-            let { after: after } = step(__rb_change_child, { before: d });
+            have ctx_node_is(d.model, parent) == 1;
+            let { links: incoming, frame: outer_frame } = detach_erase_links(old, parent, root, { before: d });
+            let { updated: linked } = step(__rb_change_child, { links: incoming });
+            have linked.model == outer_frame.model;
+            have linked.sibling_ptr == outer_frame.sibling_ptr;
+            have linked.tag == outer_frame.tag;
+            have linked.above == outer_frame.above;
+            let { updated: after } = attach_erase_links(new, parent, root, { links: linked, frame: outer_frame });
             step_until(function.exit);
         },
         Context::Right(id, above, pc, sibling, up) => {
@@ -782,7 +796,14 @@ struct rb_root* root, int32 color) {
                 rewrite(old->__rb_parent_color, (address(new) | color)); known();
             }
             mark words;
-            let { after: after } = step(__rb_change_child, { before: d });
+            have ctx_node_is(d.model, parent) == 1;
+            let { links: incoming, frame: outer_frame } = detach_erase_links(old, parent, root, { before: d });
+            let { updated: linked } = step(__rb_change_child, { links: incoming });
+            have linked.model == outer_frame.model;
+            have linked.sibling_ptr == outer_frame.sibling_ptr;
+            have linked.tag == outer_frame.tag;
+            have linked.above == outer_frame.above;
+            let { updated: after } = attach_erase_links(new, parent, root, { links: linked, frame: outer_frame });
             step_until(function.exit);
         },
     }
@@ -908,15 +929,6 @@ void rb_set_parent_color(struct rb_node* rb, struct rb_node* p, int32 color) {
     have rb->__rb_parent_color == (address(p) | color) by known();
     have ((rb->__rb_parent_color & ~3) as (struct rb_node *)) == p by known();
     step();
-}
-
-void rb_set_parent(struct rb_node* rb, struct rb_node* p) {
-    owns rb->__rb_parent_color;
-    ensures rb->__rb_parent_color == ((old(rb->__rb_parent_color) & 1) | address(p));
-    ensures aligned(p, 8) implies ((rb->__rb_parent_color & ~3) as (struct rb_node *)) == p;
-} by {
-    if aligned(p, 8) { step_until(function.exit); }
-    else { step_until(function.exit); }
 }
 
 theorem erase_color_not_black(c: Color) {

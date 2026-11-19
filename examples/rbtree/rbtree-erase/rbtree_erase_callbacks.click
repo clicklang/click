@@ -15,9 +15,7 @@ contract void EraseCopy(struct rb_node* node, struct rb_node* successor) {
 }
 
 resource erase_callbacks(augment: const struct rb_augment_callbacks*) {
-    views augment->propagate;
-    views augment->copy;
-    views augment->rotate;
+    views *augment;
     fact ErasePropagate(augment->propagate);
     fact EraseCopy(augment->copy);
     fact AugmentRotate(augment->rotate);
@@ -46,3 +44,13 @@ theorem dummy_rotate_contract() {
     ensures AugmentRotate(&dummy_rotate) by { unfold(AugmentRotate(&dummy_rotate)); solve(); }
 }
 
+
+// Shared by the unlink and color-repair proofs.
+void rb_set_parent(struct rb_node* rb, struct rb_node* p) {
+    owns rb->__rb_parent_color;
+    ensures rb->__rb_parent_color == ((old(rb->__rb_parent_color) & 1) | address(p));
+    ensures aligned(p, 8) implies ((rb->__rb_parent_color & ~3) as (struct rb_node *)) == p;
+} by {
+    if aligned(p, 8) { step_until(function.exit); }
+    else { step_until(function.exit); }
+}

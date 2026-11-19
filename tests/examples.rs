@@ -965,10 +965,6 @@ fn general_erase_refuses_mutation(before: &str, after: &str, refusal: &str) {
     assert!(error.contains(refusal), "unexpected refusal: {error}");
 }
 
-fn erase_source_refuses_mutation(sidecar: &str, file: &str, before: &str, after: &str) {
-    erase_source_refuses_replacement(sidecar, file, before, after, 1);
-}
-
 /// `solve` at this `arena` site once deadlocked: the equality graph held its
 /// lock while canonicalizing a cell read, and canonicalization consulted the
 /// same graph's read generation. It must now answer promptly. The original
@@ -1375,36 +1371,43 @@ fn rbtree_erase_deep_black_leaf_requires_right_parent_update() {
     );
 }
 
+fn change_child_refuses_link_mutation(before: &str, after: &str, link: &str) {
+    let error =
+        erase_source_replacement_error("rbtree_change_child.click", "rbtree.h", before, after, 1);
+    assert!(
+        error.contains("`known` requires the current goal")
+            && error.contains(&format!("`have` failed for `{link} == new`")),
+        "unexpected refusal: {error}"
+    );
+}
+
 #[test]
 #[ignore = "nightly: 2.3s in the parallel gate"]
 fn rbtree_change_child_requires_left_link() {
-    erase_source_refuses_mutation(
-        "rbtree_change_child.click",
-        "rbtree.h",
+    change_child_refuses_link_mutation(
         "            WRITE_ONCE(parent->rb_left, new);",
         "            WRITE_ONCE(parent->rb_left, old);",
+        "parent->rb_left",
     );
 }
 
 #[test]
 #[ignore = "nightly: 2.5s in the parallel gate"]
 fn rbtree_change_child_requires_right_link() {
-    erase_source_refuses_mutation(
-        "rbtree_change_child.click",
-        "rbtree.h",
+    change_child_refuses_link_mutation(
         "            WRITE_ONCE(parent->rb_right, new);",
         "            WRITE_ONCE(parent->rb_right, old);",
+        "parent->rb_right",
     );
 }
 
 #[test]
 #[ignore = "nightly: 2.2s in the parallel gate"]
 fn rbtree_change_child_requires_root_link() {
-    erase_source_refuses_mutation(
-        "rbtree_change_child.click",
-        "rbtree.h",
+    change_child_refuses_link_mutation(
         "        WRITE_ONCE(root->rb_node, new);",
         "        WRITE_ONCE(root->rb_node, old);",
+        "root->rb_node",
     );
 }
 

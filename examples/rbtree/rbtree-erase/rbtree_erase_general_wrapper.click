@@ -39,6 +39,7 @@ void rb_erase(struct rb_node* node, struct rb_root* root) {
     fold(erase_callbacks(&dummy_callbacks));
     step(); // Declare rebalance.
     let { out: out } = step(__rb_erase_augmented, { tree: tree, up: up });
+    step(); // Store the returned rebalance pointer.
     match out.model {
         EraseOutcome::Balanced(t) => {
             have erase_out_rb(EraseOutcome::Balanced(t)) == 1 by { rewrite(EraseOutcome::Balanced(t), out.model); known(); }
