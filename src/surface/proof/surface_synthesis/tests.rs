@@ -4155,7 +4155,18 @@ fn local_read_test_address(name: &str) -> Address {
     }
 }
 
-fn local_test_read_operand(term: &MachineTerm, value_type: ProgramType) -> &MachineTerm {
+fn local_test_read_operand(claim: &Proposition, value_type: ProgramType) -> &MachineTerm {
+    let term = match claim.condition_native() {
+        Some((ConditionTerm::Compare { left, .. }, true)) => left,
+        Some((ConditionTerm::IntegerLessEqual(left, _), true)) => {
+            let crate::kernel::IntegerTerm::Machine(observation) = &**left else {
+                panic!("expected an exact Integer observation: {left:?}");
+            };
+            assert_eq!(observation.ty().program_type(), value_type);
+            observation.value()
+        }
+        _ => panic!("read comparison: {claim:?}"),
+    };
     if let Some((source, operand)) = term.narrow_widening32_operand()
         && source.program_type() == value_type
     {
@@ -4191,6 +4202,18 @@ fn local_read_test_store(
         ProgramType::UInt32 => ProgramValue::UInt32(MachineTerm::uint32_constant(bits)),
         ProgramType::Int64 => ProgramValue::Int64(MachineTerm::int64_constant(i64::from(bits))),
         ProgramType::UInt64 => ProgramValue::UInt64(MachineTerm::uint64_constant(u64::from(bits))),
+        ProgramType::Int128 | ProgramType::UInt128 => {
+            let format = MachineIntegerType::from_program_type(value_type).unwrap();
+            format
+                .constant_value(
+                    crate::kernel::MachineIntegerConstant::from_bits(
+                        format.format(),
+                        u128::from(bits),
+                    )
+                    .unwrap(),
+                )
+                .unwrap()
+        }
         _ => unreachable!("indexed local test type"),
     };
     state
@@ -4236,6 +4259,8 @@ fn ordinary_indexed_integer_reads_select_the_write_on_their_own_path() {
     check_local_read_versions(ProgramType::UInt32, ProgramType::Int32);
     check_local_read_versions(ProgramType::Int64, ProgramType::Int32);
     check_local_read_versions(ProgramType::UInt64, ProgramType::UInt32);
+    check_local_read_versions(ProgramType::Int128, ProgramType::UInt128);
+    check_local_read_versions(ProgramType::UInt128, ProgramType::Int128);
 }
 
 fn check_local_read_versions(value_type: ProgramType, disjoint_type: ProgramType) {
@@ -4249,6 +4274,8 @@ fn check_local_read_versions(value_type: ProgramType, disjoint_type: ProgramType
         ProgramType::UInt32 => ProgramType::UInt32Pointer,
         ProgramType::Int64 => ProgramType::Int64Pointer,
         ProgramType::UInt64 => ProgramType::UInt64Pointer,
+        ProgramType::Int128 => ProgramType::Int128Pointer,
+        ProgramType::UInt128 => ProgramType::UInt128Pointer,
         _ => unreachable!("indexed local test type"),
     };
     let slot = local_read_test_address("slot");
@@ -4287,12 +4314,9 @@ fn check_local_read_versions(value_type: ProgramType, disjoint_type: ProgramType
         (&right, &right_write, &left, &selectors[1]),
     ] {
         let lowered = relower_written_proposition(&claim, reader).unwrap();
-        let Some((ConditionTerm::Compare { left, .. }, true)) = lowered.condition_native() else {
-            panic!("read comparison");
-        };
-        let read = local_test_read_operand(left, value_type);
+        let read = local_test_read_operand(&lowered, value_type);
         let MachineTerm::MemoryLoad(point, _, kind) = read else {
-            panic!("ordinary {value_type:?} read: {left:?}");
+            panic!("ordinary {value_type:?} read: {read:?}");
         };
         assert_eq!(*kind, load_kind);
         assert_eq!(point.id(), write.program_point_id());
@@ -4365,6 +4389,8 @@ fn ordinary_indexed_integer_read_work_is_bounded_as_path_grows() {
     check_local_read_work(ProgramType::UInt32, ProgramType::Int32);
     check_local_read_work(ProgramType::Int64, ProgramType::Int32);
     check_local_read_work(ProgramType::UInt64, ProgramType::UInt32);
+    check_local_read_work(ProgramType::Int128, ProgramType::UInt128);
+    check_local_read_work(ProgramType::UInt128, ProgramType::Int128);
 }
 
 fn check_local_read_work(value_type: ProgramType, disjoint_type: ProgramType) {
@@ -4378,6 +4404,8 @@ fn check_local_read_work(value_type: ProgramType, disjoint_type: ProgramType) {
         ProgramType::UInt32 => ProgramType::UInt32Pointer,
         ProgramType::Int64 => ProgramType::Int64Pointer,
         ProgramType::UInt64 => ProgramType::UInt64Pointer,
+        ProgramType::Int128 => ProgramType::Int128Pointer,
+        ProgramType::UInt128 => ProgramType::UInt128Pointer,
         _ => unreachable!("indexed local test type"),
     };
     let slot = local_read_test_address("slot");
@@ -4409,11 +4437,8 @@ fn check_local_read_work(value_type: ProgramType, disjoint_type: ProgramType) {
                     relower_written_proposition(&claim, &reader).unwrap()
                 })
             });
-        let Some((ConditionTerm::Compare { left, .. }, true)) = lowered.condition_native() else {
-            panic!("read comparison");
-        };
         assert!(
-            matches!(local_test_read_operand(left, value_type), MachineTerm::MemoryLoad(point, _, _)
+            matches!(local_test_read_operand(&lowered, value_type), MachineTerm::MemoryLoad(point, _, _)
             if point.id() == write.program_point_id())
         );
         work.push((proof_work, map_work));

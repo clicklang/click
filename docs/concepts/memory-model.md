@@ -30,13 +30,14 @@ These names describe different things:
   The kernel represents points with `ProgramPoint`. A read's address, type,
   and version point determine its identity.
 
-For an ordinary 8-, 16-, 32-, or 64-bit integer read at the start of an automatic
-object, a lookup keyed by the object can select a compatible write on
-the current execution path. Writes to other independently identified automatic
+For an ordinary 8-, 16-, 32-, 64-, or 128-bit integer read at the start of an
+automatic object, a lookup keyed by the object can select a compatible write
+on the current execution path. Writes to other independently identified automatic
 objects preserve this index entry. The read retains the write's point, and its
 value equation comes from the recorded store. Other cases still use the
 existing version selection, including across joins and unclassified effects.
 Signed and unsigned 64-bit reads share a version of the same 64 bits.
+Signed and unsigned 128-bit reads retain their distinct load kinds.
 
 A pending log of recorded transitions reaches a successor point even when
 its final memory contents equal its predecessor's. Repeatedly requesting that

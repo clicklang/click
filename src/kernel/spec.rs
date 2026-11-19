@@ -7876,6 +7876,8 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                             | ProgramType::UInt32
                             | ProgramType::Int64
                             | ProgramType::UInt64
+                            | ProgramType::Int128
+                            | ProgramType::UInt128
                     )
                     && ProgramPoint::supports_indexed_local_integer_version(&pointer)
                 {
