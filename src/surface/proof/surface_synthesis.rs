@@ -2895,6 +2895,63 @@ fn synthesize_surface_atomic_proposition(
             right: pointer(right, parameter_binding, state, bound_variables)?,
         });
     }
+    if let ConditionTerm::Compare {
+        format,
+        relation,
+        left,
+        right,
+    } = condition.native_compat()
+        && matches!(format.format().bits(), 32 | 64)
+        && let Some(operator) = match relation {
+            CompareRelation::LessThan => Some(ComparisonOperator::LessThan),
+            CompareRelation::LessEqual => Some(ComparisonOperator::LessEqual),
+            CompareRelation::Equal => Some(ComparisonOperator::Equal),
+            _ => None,
+        }
+    {
+        let converted = |term: &MachineTerm, observed| matches!(term, MachineTerm::IntegerToMachine { destination, .. } if *destination == observed);
+        let conditional = |term: &MachineTerm, observed| {
+            matches!(term, MachineTerm::If { then_term, else_term, .. }
+                if converted(then_term, observed) || converted(else_term, observed))
+        };
+        let operands = [left.as_ref(), right.as_ref()];
+        // An unsigned 64-bit equality is filed at Int64. Its observation
+        // still needs the unsigned type carried by the conversion.
+        let observed = if *format == MachineIntegerType::Int64
+            && *relation == CompareRelation::Equal
+            && operands
+                .iter()
+                .any(|term| conditional(term, MachineIntegerType::UInt64))
+        {
+            MachineIntegerType::UInt64
+        } else {
+            *format
+        };
+        if operands.iter().any(|term| conditional(term, observed))
+            && operands.iter().copied().all(|operand| {
+                conditional(operand, observed)
+                    || converted(operand, observed)
+                    || matches!(operand, MachineTerm::Variable(_))
+                    || observed.constant_from_term(operand).is_some()
+            })
+        {
+            // The Integer observation spelling produces this native comparison.
+            // A direct word comparison over these conditional arms keeps an
+            // Integer comparison instead.
+            let observe = |word: &MachineTerm| {
+                crate::kernel::IntegerTerm::from_machine(observed, word.clone()).map(Into::into)
+            };
+            return integer_observation_comparison(
+                &observe(left)?,
+                operator,
+                &observe(right)?,
+                *value,
+                parameter_binding,
+                state,
+                bound_variables,
+            );
+        }
+    }
     if let Some(comparison) = synthesize_unsigned_comparison(
         condition.native_compat(),
         parameter_binding,

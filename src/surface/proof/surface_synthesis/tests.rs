@@ -8839,3 +8839,43 @@ fn exact_rewrite_keeps_equal_scalar_conditional_arms_through_lowering() {
         assert_eq!(fixture.lower(&text), *expected, "{text}");
     }
 }
+
+#[test]
+fn comparisons_of_conditionals_with_integer_conversions_round_trip_after_rewrite() {
+    use MachineIntegerType as T;
+    for (format, spelling) in [
+        (T::Int32, "int32"),
+        (T::UInt32, "uint32"),
+        (T::Int64, "int64"),
+        (T::UInt64, "uint64"),
+    ] {
+        let fixture = ConditionalRoundTrip::new(format, spelling);
+        let equality = fixture.lower("to_integer(y) + 1 == to_integer(z) + 1");
+        let conditional = format!(
+            "to_integer(if flag {{ to_{spelling}(to_integer(y) + 1) }} else {{ to_{spelling}(to_integer(z) + 1) }})"
+        );
+        let mut comparisons = vec![(format!("{conditional} <= 100"), false)];
+        if format == T::Int32 {
+            comparisons.push((format!("100 < {conditional}"), true));
+            comparisons.push((format!("{conditional} == to_integer(x)"), false));
+            comparisons.push((
+                format!("{conditional} == to_integer(to_int32(to_integer(x) + 1))"),
+                false,
+            ));
+        }
+        if format == T::UInt64 {
+            comparisons.push((format!("{conditional} == 18446744073709551615"), false));
+        }
+        for (written, reverse) in comparisons {
+            let original = fixture.lower(&written);
+            assert!(
+                matches!(
+                    original.condition_native(),
+                    Some((ConditionTerm::Compare { .. }, true))
+                ),
+                "{written}: {original:?}"
+            );
+            fixture.check(&original, &equality, "flag", reverse);
+        }
+    }
+}
