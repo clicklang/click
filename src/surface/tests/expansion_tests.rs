@@ -9748,30 +9748,49 @@ fn smart_solve_transcribes_a_three_edge_signed_order_path() {
                 solve();
             }
         }
-    "#;
-    let verified = verify_click_theorems(click_source);
-    verified.expect("the checked order-path Proof should verify");
-    let offset = click_source.find("solve();").unwrap();
-    let line = click_source[..offset]
-        .bytes()
-        .filter(|byte| *byte == b'\n')
-        .count()
-        + 1;
-    let column = offset
-        - click_source[..offset]
-            .rfind('\n')
-            .map(|offset| offset + 1)
-            .unwrap_or(0)
-        + 1;
 
-    let expanded = expand_c_tactic_source_at(click_source, &[], line, column)
-        .expect("the retained three-edge order path should expand");
-    assert!(
-        (expanded.contains("click::integer::") || expanded.contains("normalize")),
-        "{expanded}"
-    );
-    assert!(!expanded.contains("solve();"), "{expanded}");
-    verify_click_theorems(&expanded).expect("the transcribed order path should check");
+        theorem order_chain_across_constants(a: int32, b: int32, c: int32, d: int32, e: int32) {
+            requires a <= b;
+            requires b <= 1;
+            requires 2 <= c;
+            requires c <= d;
+            requires d <= e;
+            ensures a < e by solve();
+        }
+    "#;
+    let (strict_source, strict_program) =
+        mdtest_sources("mdtests/condition_chain_premises_are_found_in_any_order.md");
+    let (mixed_source, mixed_program) =
+        mdtest_sources("mdtests/order_chains_of_three_facts_close.md");
+    let strict_program = crate::cli::source_refs(&strict_program);
+    let mixed_program = crate::cli::source_refs(&mixed_program);
+    for (source, program, claim) in [
+        (click_source, &[][..], "three_edge_order_chain.ensures_0"),
+        (
+            click_source,
+            &[][..],
+            "order_chain_across_constants.ensures_0",
+        ),
+        (
+            strict_source.as_str(),
+            &strict_program[..],
+            "reversed_chain.ensures_0",
+        ),
+        (
+            mixed_source.as_str(),
+            &mixed_program[..],
+            "signed_by_solve.ensures_0",
+        ),
+    ] {
+        let expanded = expand_c_claim_source_by_label(source, program, claim)
+            .unwrap_or_else(|error| panic!("{claim}: {}", error.report()));
+        assert!(expanded.contains("apply(click::integer::"), "{expanded}");
+        assert!(!expanded.contains("normalize()"), "{expanded}");
+        without_implicit_solve_for_claim(claim, || {
+            verify_c_sources(&expanded, program).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{claim}: {error}\n{expanded}"));
+    }
 }
 
 #[test]

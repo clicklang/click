@@ -5329,182 +5329,6 @@ theorem int32_nonnegative_predecessor_upper_bound(value: int32, bound: int32) {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `integer::int32_less_equal_less_than_transitive`
-
-```click
-theorem int32_less_equal_less_than_transitive(first: int32, middle: int32, last: int32) {
-    requires first <= middle;
-    requires middle < last;
-
-    ensures first < last by {
-        have to_integer((first as int32)) < to_integer((last as int32)) by {
-            have ((-1 * to_integer((middle as int32))) + to_integer((first as int32))) <= 0 by {
-                have to_integer((first as int32)) <= to_integer((middle as int32)) by {
-                    normalize() using {
-                        first <= middle;
-                    };
-                }
-                have ((-1 * to_integer((middle as int32))) + to_integer((first as int32))) == (to_integer((first as int32)) - to_integer((middle as int32))) by {
-                    normalize();
-                }
-                apply(integer::le_difference(to_integer((first as int32)), to_integer((middle as int32)), ((-1 * to_integer((middle as int32))) + to_integer((first as int32))))) using {
-                    to_integer((first as int32)) <= to_integer((middle as int32));
-                    ((-1 * to_integer((middle as int32))) + to_integer((first as int32))) ==
-                        (to_integer((first as int32)) - to_integer((middle as int32)));
-                };
-            }
-            have (to_integer((middle as int32)) + (-1 * to_integer((last as int32))) + 1) <= 0 by {
-                have to_integer((middle as int32)) < to_integer((last as int32)) by {
-                    normalize() using {
-                        middle < last;
-                    };
-                }
-                have (to_integer((middle as int32)) + 1) <= to_integer((last as int32)) by {
-                    apply(integer::lt_step_le(to_integer((middle as int32)), to_integer((last as int32)))) using {
-                        to_integer((middle as int32)) < to_integer((last as int32));
-                    };
-                }
-                have (to_integer((middle as int32)) + (-1 * to_integer((last as int32))) + 1) == ((to_integer((middle as int32)) + 1) - to_integer((last as int32))) by {
-                    normalize();
-                }
-                apply(integer::le_difference((to_integer((middle as int32)) + 1), to_integer((last as int32)), (to_integer((middle as int32)) + (-1 * to_integer((last as int32))) + 1))) using {
-                    (to_integer((middle as int32)) + 1) <= to_integer((last as int32));
-                    (to_integer((middle as int32)) + (-1 * to_integer((last as int32))) + 1) ==
-                        ((to_integer((middle as int32)) + 1) - to_integer((last as int32)));
-                };
-            }
-            have (to_integer((first as int32)) + (-1 * to_integer((last as int32))) + 1) <= 0 by {
-                have ((-1 * to_integer((middle as int32))) + to_integer((first as int32)) + (to_integer((middle as int32)) + (-1 * to_integer((last as int32))) + 1)) <= (0 + 0) by {
-                    apply(integer::add_le(((-1 * to_integer((middle as int32))) + to_integer((first as int32))), 0, (to_integer((middle as int32)) + (-1 * to_integer((last as int32))) + 1), 0)) using {
-                        ((-1 * to_integer((middle as int32))) + to_integer((first as int32))) <= 0;
-                        (to_integer((middle as int32)) + (-1 * to_integer((last as int32))) + 1) <= 0;
-                    };
-                }
-                have (to_integer((first as int32)) + (-1 * to_integer((last as int32))) + 1) == ((-1 * to_integer((middle as int32))) + to_integer((first as int32)) + (to_integer((middle as int32)) + (-1 * to_integer((last as int32))) + 1)) by {
-                    normalize();
-                }
-                have (let integer_value: Integer = 0; integer_value) == (0 + 0) by {
-                    normalize();
-                }
-                apply(integer::le_substitute(((-1 * to_integer((middle as int32))) + to_integer((first as int32)) + (to_integer((middle as int32)) + (-1 * to_integer((last as int32))) + 1)), (0 + 0), (to_integer((first as int32)) + (-1 * to_integer((last as int32))) + 1), 0)) using {
-                    ((-1 * to_integer((middle as int32))) + to_integer((first as int32)) +
-                        (to_integer((middle as int32)) + (-1 * to_integer((last as int32))) + 1)) <= (0
-                        + 0);
-                    (to_integer((first as int32)) + (-1 * to_integer((last as int32))) + 1) == ((-1 *
-                        to_integer((middle as int32))) + to_integer((first as int32)) +
-                        (to_integer((middle as int32)) + (-1 * to_integer((last as int32))) + 1));
-                    (let integer_value: Integer = 0; integer_value) == (0 + 0);
-                };
-            }
-            have (to_integer((first as int32)) + (-1 * to_integer((last as int32))) + 1) == ((to_integer((first as int32)) + 1) - to_integer((last as int32))) by {
-                normalize();
-            }
-            apply(integer::difference_le((to_integer((first as int32)) + 1), to_integer((last as int32)), (to_integer((first as int32)) + (-1 * to_integer((last as int32))) + 1))) using {
-                (to_integer((first as int32)) + (-1 * to_integer((last as int32))) + 1) <= 0;
-                (to_integer((first as int32)) + (-1 * to_integer((last as int32))) + 1) ==
-                    ((to_integer((first as int32)) + 1) - to_integer((last as int32)));
-            };
-            apply(integer::step_le_lt(to_integer((first as int32)), to_integer((last as int32)))) using {
-                (to_integer((first as int32)) + 1) <= to_integer((last as int32));
-            };
-        }
-        normalize() using {
-            to_integer((first as int32)) < to_integer((last as int32));
-        };
-    }
-}
-```
-
-**Meaning:** Given its listed requirements, proves `first < last`.
-
-**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
-
-### `integer::int32_less_equal_transitive`
-
-```click
-theorem int32_less_equal_transitive(first: int32, middle: int32, last: int32) {
-    requires first <= middle;
-    requires middle <= last;
-
-    ensures first <= last by {
-        have to_integer((first as int32)) <= to_integer((last as int32)) by {
-            have ((-1 * to_integer((middle as int32))) + to_integer((first as int32))) <= 0 by {
-                have to_integer((first as int32)) <= to_integer((middle as int32)) by {
-                    normalize() using {
-                        first <= middle;
-                    };
-                }
-                have ((-1 * to_integer((middle as int32))) + to_integer((first as int32))) == (to_integer((first as int32)) - to_integer((middle as int32))) by {
-                    normalize();
-                }
-                apply(integer::le_difference(to_integer((first as int32)), to_integer((middle as int32)), ((-1 * to_integer((middle as int32))) + to_integer((first as int32))))) using {
-                    to_integer((first as int32)) <= to_integer((middle as int32));
-                    ((-1 * to_integer((middle as int32))) + to_integer((first as int32))) ==
-                        (to_integer((first as int32)) - to_integer((middle as int32)));
-                };
-            }
-            have (to_integer((middle as int32)) + (-1 * to_integer((last as int32)))) <= 0 by {
-                have to_integer((middle as int32)) <= to_integer((last as int32)) by {
-                    normalize() using {
-                        middle <= last;
-                    };
-                }
-                have (to_integer((middle as int32)) + (-1 * to_integer((last as int32)))) == (to_integer((middle as int32)) - to_integer((last as int32))) by {
-                    normalize();
-                }
-                apply(integer::le_difference(to_integer((middle as int32)), to_integer((last as int32)), (to_integer((middle as int32)) + (-1 * to_integer((last as int32)))))) using {
-                    to_integer((middle as int32)) <= to_integer((last as int32));
-                    (to_integer((middle as int32)) + (-1 * to_integer((last as int32)))) ==
-                        (to_integer((middle as int32)) - to_integer((last as int32)));
-                };
-            }
-            have (to_integer((first as int32)) + (-1 * to_integer((last as int32)))) <= 0 by {
-                have ((-1 * to_integer((middle as int32))) + to_integer((first as int32)) + (to_integer((middle as int32)) + (-1 * to_integer((last as int32))))) <= (0 + 0) by {
-                    apply(integer::add_le(((-1 * to_integer((middle as int32))) + to_integer((first as int32))), 0, (to_integer((middle as int32)) + (-1 * to_integer((last as int32)))), 0)) using {
-                        ((-1 * to_integer((middle as int32))) + to_integer((first as int32))) <= 0;
-                        (to_integer((middle as int32)) + (-1 * to_integer((last as int32)))) <= 0;
-                    };
-                }
-                have (to_integer((first as int32)) + (-1 * to_integer((last as int32)))) == ((-1 * to_integer((middle as int32))) + to_integer((first as int32)) + (to_integer((middle as int32)) + (-1 * to_integer((last as int32))))) by {
-                    normalize();
-                }
-                have (let integer_value: Integer = 0; integer_value) == (0 + 0) by {
-                    normalize();
-                }
-                apply(integer::le_substitute(((-1 * to_integer((middle as int32))) + to_integer((first as int32)) + (to_integer((middle as int32)) + (-1 * to_integer((last as int32))))), (0 + 0), (to_integer((first as int32)) + (-1 * to_integer((last as int32)))), 0)) using {
-                    ((-1 * to_integer((middle as int32))) + to_integer((first as int32)) +
-                        (to_integer((middle as int32)) + (-1 * to_integer((last as int32))))) <= (0 +
-                        0);
-                    (to_integer((first as int32)) + (-1 * to_integer((last as int32)))) == ((-1 *
-                        to_integer((middle as int32))) + to_integer((first as int32)) +
-                        (to_integer((middle as int32)) + (-1 * to_integer((last as int32)))));
-                    (let integer_value: Integer = 0; integer_value) == (0 + 0);
-                };
-            }
-            have (to_integer((first as int32)) + (-1 * to_integer((last as int32)))) == (to_integer((first as int32)) - to_integer((last as int32))) by {
-                normalize();
-            }
-            apply(integer::difference_le(to_integer((first as int32)), to_integer((last as int32)), (to_integer((first as int32)) + (-1 * to_integer((last as int32)))))) using {
-                (to_integer((first as int32)) + (-1 * to_integer((last as int32)))) <= 0;
-                (to_integer((first as int32)) + (-1 * to_integer((last as int32)))) ==
-                    (to_integer((first as int32)) - to_integer((last as int32)));
-            };
-        }
-        normalize() using {
-            to_integer((first as int32)) <= to_integer((last as int32));
-        };
-    }
-}
-```
-
-**Meaning:** Given its listed requirements, proves `first <= last`.
-
-**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
-
 ### `integer::int32_less_equal_and_not_less_than_implies_equal`
 
 ```click
@@ -6765,6 +6589,67 @@ theorem add_right_order(a: Integer, b: Integer, c: Integer) {
     }
 }
 ```
+
+### `integer::int32_less_equal_less_than_transitive`
+
+```click
+theorem int32_less_equal_less_than_transitive(first: int32, middle: int32, last: int32) {
+    requires first <= middle;
+    requires middle < last;
+
+    ensures first < last by {
+        have (to_integer(first) + 1) <= (to_integer(middle) + 1) by {
+            apply(integer::add_right_order(to_integer(first), to_integer(middle), 1)) using {
+                to_integer(first) <= to_integer(middle);
+            };
+        }
+        have (to_integer(middle) + 1) <= to_integer(last) by {
+            apply(integer::lt_step_le(to_integer(middle), to_integer(last))) using {
+                to_integer(middle) < to_integer(last);
+            };
+        }
+        have (to_integer(first) + 1) <= to_integer(last) by {
+            apply(integer::le_transitive(to_integer(first) + 1, to_integer(middle) + 1, to_integer(last))) using {
+                (to_integer(first) + 1) <= (to_integer(middle) + 1);
+                (to_integer(middle) + 1) <= to_integer(last);
+            };
+        }
+        apply(integer::step_le_lt(to_integer(first), to_integer(last))) using {
+            (to_integer(first) + 1) <= to_integer(last);
+        };
+        known();
+    }
+}
+```
+
+**Meaning:** Given its listed requirements, proves `first < last`.
+
+**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
+### `integer::int32_less_equal_transitive`
+
+```click
+theorem int32_less_equal_transitive(first: int32, middle: int32, last: int32) {
+    requires first <= middle;
+    requires middle <= last;
+
+    ensures first <= last by {
+        apply(integer::le_transitive(to_integer(first), to_integer(middle), to_integer(last))) using {
+            to_integer(first) <= to_integer(middle);
+            to_integer(middle) <= to_integer(last);
+        };
+        known();
+    }
+}
+```
+
+**Meaning:** Given its listed requirements, proves `first <= last`.
+
+**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
 ### `integer::subtract_right_order`
 
