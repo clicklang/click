@@ -73,3 +73,11 @@ theorem separate_adjacent_ranges<T, I>(p: T*, lo: I, mid: I, hi: I) {
     requires mid <= hi;
     ensures separate(memory(p[lo..mid]), memory(p[mid..hi]));
 }
+
+
+// Two adjacent intervals on one carrier cover their whole interval.
+theorem contains_joined_ranges<T, I>(p: T*, lo: I, mid: I, hi: I) {
+    requires lo <= mid;
+    requires mid <= hi;
+    ensures contains(memory(p[lo..mid]) * memory(p[mid..hi]), memory(p[lo..hi]));
+}

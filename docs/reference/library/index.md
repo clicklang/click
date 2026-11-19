@@ -11514,6 +11514,19 @@ paths; both premises are explicit.
 **Verified use:** `mdtests/viewable_restrict_memory.md` and
 `mdtests/viewable_restrict_resources.md`.
 
+### `separation::contains_joined_ranges`
+
+Two ordered adjacent ranges on the same pointer cover their combined interval.
+This theorem describes the ranges and grants no memory permission.
+
+```click
+theorem contains_joined_ranges<T, I>(p: T*, lo: I, mid: I, hi: I) {
+    requires lo <= mid;
+    requires mid <= hi;
+    ensures contains(memory(p[lo..mid]) * memory(p[mid..hi]), memory(p[lo..hi]));
+}
+```
+
 ### Separating conjunction laws
 
 `A * B` is a resource descriptor for separating conjunction; `separation::emp`
