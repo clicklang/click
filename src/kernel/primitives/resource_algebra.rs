@@ -4486,17 +4486,15 @@ impl ResourceContext {
         required: &ResourceFact,
         assumptions: &PureFactContext,
     ) -> Option<ResourceOccurrenceId> {
-        let mut exact = self
-            .storage
-            .index
-            .exact
-            .get(required)
-            .into_iter()
-            .flat_map(|entries| entries.iter())
-            .map(|entry| self.occurrence(*entry))
-            .filter(|occurrence| self.view_occurrence_is_principal(*occurrence));
-        if let Some(occurrence) = exact.next() {
-            return exact.next().is_none().then_some(occurrence);
+        crate::instrumentation::record_deterministic_work(1);
+        if let Some(entries) = self.storage.index.exact.get(required)
+            && entries.len() == 1
+            && let Some(entry) = entries.iter().next()
+        {
+            let occurrence = self.occurrence(*entry);
+            if self.view_occurrence_is_principal(occurrence) {
+                return Some(occurrence);
+            }
         }
         let candidates = self.view_occurrences_for_fact(required, assumptions);
         let mut principals = candidates
@@ -14259,6 +14257,35 @@ fn symbolic_struct_coverage_uses_exact_element_indices() {
         &required(distant, 8u32.into()),
         &first
     ));
+}
+
+#[cfg(test)]
+#[test]
+fn exact_principal_input_view_ignores_covering_views() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let assumptions = PureFactContext::new();
+    let pointer = Address {
+        base: "local:input-view".into(),
+        offset: AddressOffset::Constant(0),
+    };
+    let required =
+        ResourceFact::view_memory(MemoryRange::new(pointer.clone(), 0u32.into(), 1u32.into()));
+    for count in [0u32, 16, 64, 256] {
+        let mut facts = ResourceContext::new().unchecked_with_fact(required.clone());
+        let exact = facts.indexed_view_witness(&required, &assumptions).unwrap();
+        for end in 2..count + 2 {
+            facts = facts.unchecked_with_fact(ResourceFact::view_memory(MemoryRange::new(
+                pointer.clone(),
+                0u32.into(),
+                end.into(),
+            )));
+        }
+        let (selected, work) = crate::instrumentation::measure_deterministic_work(|| {
+            facts.principal_input_view_occurrence(&required, &assumptions)
+        });
+        assert_eq!(selected, Some(exact));
+        assert_eq!(work, 1, "covering views: {count}");
+    }
 }
 
 #[cfg(test)]
