@@ -8982,3 +8982,42 @@ fn comparisons_of_conditionals_with_integer_conversions_round_trip_after_rewrite
         }
     }
 }
+
+#[test]
+fn reflexive_boolean_comparisons_round_trip_after_exact_rewrite() {
+    use crate::kernel::proof::PureFactStore;
+    let fixture = ConditionalRoundTrip::new(MachineIntegerType::Int32, "int32");
+    let equality = fixture.lower("to_integer(y) + 1 == to_integer(z) + 1");
+    let facts = PureFactStore::from_ordered(std::slice::from_ref(&equality));
+    let left = "(if to_integer(y) + 1 < 0 { true } else { false })";
+    let right = "(if to_integer(z) + 1 < 0 { true } else { false })";
+    for (operator, truth) in [("==", true), ("!=", false)] {
+        let original = fixture.lower(&format!("{left} {operator} {right}"));
+        let proof = facts.check_equality_rewrite(&original, &equality).unwrap();
+        let expected = proof.proposition();
+        let Some((condition @ ConditionTerm::BoolEqual(left, right), polarity)) =
+            expected.condition_native()
+        else {
+            panic!("expected a Boolean comparison, got {expected:?}");
+        };
+        assert_eq!(left, right);
+        assert_eq!(*polarity, truth);
+        assert_eq!(PureFactContext::new().decide(condition), Some(true));
+        let direct = fixture.lower(&format!("flag {operator} flag"));
+        assert!(matches!(
+            direct.condition_native(),
+            Some((ConditionTerm::BoolEqual(left, right), polarity))
+                if left == right && *polarity == truth
+        ));
+        let raised =
+            synthesize_surface_proposition(expected, ParameterBinding::default(), &fixture.state)
+                .unwrap();
+        let text = crate::surface::printing::source_click_proposition(&raised);
+        assert_eq!(
+            relower_written_proposition(&raised, &fixture.state).unwrap(),
+            *expected,
+            "{text}"
+        );
+        assert_eq!(fixture.lower(&text), *expected, "{text}");
+    }
+}

@@ -9145,6 +9145,15 @@ fn evaluate_spec_if_paths_in(
         let retained_comparison = !budget.machine_result_production_disabled
             && match &condition_path.proposition {
                 Proposition::ConditionIs(condition, _)
+                    if matches!(
+                        condition.root().map(KernelTerm::node),
+                        Some(KernelTermNode::BoolEqual { .. })
+                    ) =>
+                {
+                    true
+                }
+
+                Proposition::ConditionIs(condition, _)
                     if crate::kernel::machine_integer::comparison::is_bounded_machine_comparison(
                         condition.native_compat(),
                     ) =>
