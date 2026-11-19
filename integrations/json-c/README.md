@@ -29,15 +29,16 @@ system headers. This was tested with GCC 14.2 and CMake 3.31.
 integrations/json-c/verify.sh json-c array-list
 ```
 
-The [array length proof](array-list.click) is a pending claim. Click's
-modeled `string.h` sets the same `_STRING_H` guard as glibc, so GCC skips
-json-c's fallback `strings.h` include in `arraylist.c`. Preprocessing now
-finishes. Click then stops on the function-type declaration
-`typedef void(array_list_free_fn)(void *data);` at `arraylist.h:29`.
+The [array length proof](array-list.click) is a pending claim. Preprocessing
+finishes, and Click accepts the function-type typedef used for the list's
+callback. The parser reaches an assignment inside an `if` condition in
+`array_list_new2` at `arraylist.c:56`. That assignment writes to `arr->array`.
+Click currently restricts assignment expressions to simple variables.
 
-Once that translation unit imports, `array_list_length` tests reading a field
-from the actual list struct. `array_list_get_idx` is the next useful claim.
-It can check that out-of-range indices return null and in-range indices
-return the stored pointer.
+The array-length sidecar selects `array_list_length`, but the importer parses
+the allocator too. The next step is to let the C dependency-closure importer
+start from a named function. The target proof for `array_list_get_idx` is that
+an out-of-range index returns null and an in-range index returns the stored
+pointer.
 
 [release]: https://github.com/json-c/json-c/tree/05180c1fa385eb39274cf0a17223da1b82832773
