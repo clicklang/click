@@ -2165,9 +2165,25 @@ pub(in crate::surface) fn lower_branch_interface_fact(
     current_state: &ExecutionState,
     branch_join_target: &ProgramPointRef,
     retained_states: &RecordedStates,
-    arguments: &[ProgramExpression],
+    parameter_binding: ParameterBinding<'_>,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<SpecProposition, ClickError> {
+    let _timing = crate::instrumentation::OperationTiming::new(
+        parsed_function.name(),
+        "",
+        "branch interface fact lowering",
+    );
+    let mut names = BTreeSet::new();
+    crate::surface::lowering::collect_click_proposition_referenced_names(proposition, &mut names);
+    let parameters = match parameter_binding.index {
+        Some(index) => names
+            .iter()
+            .inspect(|_| crate::instrumentation::record_deterministic_work(1))
+            .filter_map(|name| index.position(name))
+            .map(|position| &parameter_binding.parameters[position])
+            .collect::<Vec<_>>(),
+        None => parameter_binding.parameters.iter().collect(),
+    };
     let mut lowerer = AnnotationLowerer {
         capture_referenced_names: None,
         source_bindings: None,
@@ -2182,18 +2198,13 @@ pub(in crate::surface) fn lower_branch_interface_fact(
         } else {
             parsed_function.return_type().to_kernel_type()
         },
-        entry_values: parameter_values(ParameterBinding::new(
-            parsed_function.parameters(),
-            arguments,
-        ))?,
-        aggregate_parameters: parsed_function
-            .parameters()
+        entry_values: parameter_values_named(parameter_binding, &names)?,
+        aggregate_parameters: parameters
             .iter()
             .filter(|p| p.is_struct_value())
             .map(|p| p.name().to_string())
             .collect(),
-        program_parameter_types: parsed_function
-            .parameters()
+        program_parameter_types: parameters
             .iter()
             .map(|parameter| {
                 (
@@ -2203,8 +2214,7 @@ pub(in crate::surface) fn lower_branch_interface_fact(
             })
             .collect(),
         local_type_state: Some(current_state),
-        pointer_element_types: parsed_function
-            .parameters()
+        pointer_element_types: parameters
             .iter()
             .filter_map(|parameter| {
                 Some((
@@ -2214,7 +2224,7 @@ pub(in crate::surface) fn lower_branch_interface_fact(
             })
             .collect(),
         parameter_pointer_element_widths: parameter_pointer_element_widths(
-            parsed_function.parameters(),
+            parameters.iter().copied(),
         ),
         quantified_values: BinderMap::new(),
         algebraic_variables: BinderMap::new(),

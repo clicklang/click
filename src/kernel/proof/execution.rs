@@ -5438,8 +5438,12 @@ fn interface_resources_guard_heap_frees(
 fn common_non_memory_effect_facts(
     arm_effect_facts: [&(impl ExecutionFactSource + ?Sized); 2],
 ) -> crate::kernel::ExecutionFacts {
+    // The inputs are the two arm deltas. Index the right delta once and
+    // retain the left's ordering and exact producer evidence.
+    let right = arm_effect_facts[1].persistent_facts();
     arm_effect_facts[0]
         .fact_iter()
+        .inspect(|_| crate::instrumentation::record_deterministic_work(1))
         .filter(|fact| {
             fact.is_certified()
                 && !matches!(
@@ -5448,7 +5452,7 @@ fn common_non_memory_effect_facts(
                         | Proposition::MemoryEffectSummary { .. }
                         | Proposition::HeapAllocationFreed { .. }
                 )
-                && arm_effect_facts[1].fact_iter().any(|other| other == *fact)
+                && right.contains(fact)
         })
         .cloned()
         .collect()
@@ -6022,10 +6026,7 @@ impl CheckedBranchSplit {
             .paths()
             .iter()
             .filter_map(|path| {
-                let mut conclusion = path.theorem().proposition();
-                while let Proposition::Implies(_, body) = conclusion {
-                    conclusion = body;
-                }
+                let conclusion = path.theorem().execution_conclusion();
                 let Proposition::ProgramConditionEvaluates {
                     state: proved_state,
                     condition: proved_condition,
@@ -6525,11 +6526,7 @@ impl<S> DerefMut for ProofExecutionState<S> {
 }
 
 fn checked_evidence_conclusion(theorem: &Theorem) -> &Proposition {
-    let mut conclusion = theorem.proposition();
-    while let Proposition::Implies(_, body) = conclusion {
-        conclusion = body;
-    }
-    conclusion
+    theorem.execution_conclusion()
 }
 
 fn statement_call_havoc_views(theorem: &Theorem) -> Vec<crate::kernel::SharedMemory> {

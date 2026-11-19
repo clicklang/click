@@ -14251,9 +14251,19 @@ pub(crate) fn propositions_equal_iteratively(left: &Proposition, right: &Proposi
 }
 
 /// An abstract proven proposition produced by kernel axioms.
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[derive(Clone)]
 pub struct Theorem {
     pub(super) proposition: std::sync::Arc<Proposition>,
+    // Condition evaluation shares its ambient premises until a consumer
+    // asks for the standalone proposition. The syntax above already holds
+    // the path-local premises and obligations in their original order.
+    deferred_premises: Option<std::sync::Arc<DeferredTheoremPremises>>,
+}
+
+struct DeferredTheoremPremises {
+    propositions: super::fact_collections::FactSet<Proposition>,
+    conditions: super::fact_collections::FactMap<ConditionTerm, bool>,
+    standalone: OnceLock<Proposition>,
 }
 
 /// Kernel-issued authority for a closed pure theorem that may be used during

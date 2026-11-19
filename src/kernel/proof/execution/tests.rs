@@ -3321,3 +3321,70 @@ fn branch_interface_comparisons_retain_exact_shared_source_authority() {
         }
     }
 }
+
+#[test]
+fn common_arm_effects_read_only_the_two_deltas() {
+    use crate::kernel::execution_facts::take_fact_reads;
+
+    let fact = |number| Proposition::Predicate {
+        name: format!("arm_effect_{number}"),
+        arguments: vec![],
+    };
+    let retained = ExecutionPureFact::certified(fact(0));
+    for size in [4, 16, 64, 256] {
+        let left: ExecutionFacts = std::iter::once(retained.clone())
+            .chain((1..=size).map(|number| ExecutionPureFact::certified(fact(number))))
+            .collect();
+        let right: ExecutionFacts = (1..=size)
+            .map(|number| ExecutionPureFact::new(fact(number)))
+            .chain(std::iter::once(retained.clone()))
+            .collect();
+        take_fact_reads();
+        let (common, work) = crate::instrumentation::measure_deterministic_work(|| {
+            common_non_memory_effect_facts([&left, &right])
+        });
+        let reads = take_fact_reads();
+        assert_eq!(common.to_vec(), vec![retained.clone()]);
+        assert_eq!(work, size + 1);
+        assert!(
+            reads <= 2 * (size + 1),
+            "read {reads} facts for {size} effects"
+        );
+    }
+}
+
+#[test]
+fn retained_condition_theorem_preserves_the_standalone_premises() {
+    let ambient = PureFactContext::new()
+        .assume_condition(crate::kernel::ConditionTerm::Constant(true), true)
+        .assume_proposition(Proposition::Predicate {
+            name: "ambient".into(),
+            arguments: vec![],
+        });
+    let state = ExecutionState::new();
+    let condition = ProgramExpression::Value(crate::kernel::int32(1));
+    let evaluation = crate::kernel::prove_symbolic_program_condition_evaluation(
+        state.clone(),
+        condition.clone(),
+        ambient.clone(),
+    );
+    let [path] = evaluation.paths() else {
+        panic!("constant condition must have one path");
+    };
+    let conclusion = Proposition::ProgramConditionEvaluates {
+        state: Box::new(state),
+        condition,
+        outcome: ConditionOutcome::Value(true),
+    };
+    assert_eq!(path.theorem().execution_conclusion(), &conclusion);
+    let premises = crate::kernel::reasoning::path_facts::wrap_proof_facts(
+        conclusion,
+        &ambient,
+        path.facts(),
+        path.obligations(),
+    );
+    let standalone = Theorem::new(premises.clone());
+    assert_eq!(path.theorem().proposition(), &premises);
+    assert_eq!(path.theorem(), &standalone);
+    assert_eq!(path.theorem().cmp(&standalone), std::cmp::Ordering::Equal);
+}
