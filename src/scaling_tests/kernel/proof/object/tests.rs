@@ -903,3 +903,84 @@ fn known_compound_comparison_work_is_linear_in_selected_clauses() {
         "{costs:?}"
     );
 }
+
+#[test]
+fn automatic_object_separation_ignores_ambient_address_facts() {
+    use crate::kernel::{
+        Address, AddressBase, AddressOffset, ConditionTerm, LocalBindingId, LocalFunctionId,
+        LocalStorageInstance, MemoryRange, Resource, Variable,
+    };
+
+    let _session = crate::kernel::VerificationSession::enter();
+    let function = LocalFunctionId::new(Some("separation.c".into()), "f".into());
+    let local = |index| Address {
+        base: AddressBase::AutomaticLocal {
+            binding: LocalBindingId::new(function.clone(), false, index, None),
+            instance: LocalStorageInstance::Implicit,
+        },
+        offset: AddressOffset::Constant(0),
+    };
+    let selected = local(0);
+    let incoming = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
+    };
+    let alias = Address::symbolic(Variable(1));
+    let resource = |pointer| {
+        Box::new(Resource::Memory(MemoryRange::new_with_element_width(
+            pointer,
+            MachineTerm::constant(0),
+            MachineTerm::constant(1),
+            4,
+        )))
+    };
+    let separate = |left, right| Proposition::ResourceSeparate {
+        left: resource(left),
+        right: resource(right),
+    };
+    let goals = [
+        (separate(selected.clone(), incoming.clone()), true),
+        (separate(incoming, selected.clone()), true),
+        (separate(local(1), selected.clone()), true),
+        (
+            separate(selected.clone(), selected.offset_by_bytes(1)),
+            false,
+        ),
+        (separate(selected.clone(), alias.clone()), false),
+    ];
+    let samples = [4u64, 16, 64, 256].map(|size| {
+        let mut facts = vec![Proposition::condition_is(
+            ConditionTerm::address_equal(selected.clone(), alias.clone()),
+            true,
+        )];
+        for i in 0..size {
+            facts.push(Proposition::condition_is(
+                ConditionTerm::address_equal(alias.clone(), Address::symbolic(Variable(10 + i))),
+                true,
+            ));
+            facts.push(Proposition::Predicate {
+                name: format!("unrelated_{i}"),
+                arguments: vec![],
+            });
+        }
+        let facts = PureFactStore::from_ordered(&facts);
+        let proofs = goals
+            .each_ref()
+            .map(|(goal, _)| known_computation_proof(goal.clone(), facts.clone()));
+        let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+            for (proof, (_, expected)) in proofs.iter().zip(&goals) {
+                assert_eq!(
+                    proof
+                        .apply_known(PropositionKnownContext::Materialized)
+                        .is_ok_and(|closed| closed.is_complete()),
+                    *expected
+                );
+            }
+        });
+        work
+    });
+    assert!(
+        samples[0] > 0 && samples.iter().all(|work| *work <= samples[0] + 32),
+        "{samples:?}"
+    );
+}
