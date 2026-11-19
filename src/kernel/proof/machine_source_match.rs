@@ -14,7 +14,7 @@ enum Shape {
     Match(AlgebraicTerm, Vec<(String, Vec<AlgebraicValue>, usize)>),
     If(ConditionTerm, [usize; 2]),
     Native(MachineTerm),
-    Application(SharedPureApplication),
+    Application(std::sync::Arc<PureApplicationIdentity>),
     Binary(MachineIntegerType, MachineBinaryOp, [usize; 2]),
     Unary(MachineIntegerType, MachineUnaryOp, usize),
     Cast(
@@ -154,17 +154,13 @@ impl<'a> MachineSourceMatcher<'a> {
                     destination,
                     operand,
                 } => Shape::Cast(*encoding, *source, *destination, self.nodes[&operand.id()]),
-                KernelTermNode::Legacy(_)
-                | KernelTermNode::Call { .. }
-                | KernelTermNode::BoolCast { .. } => {
+                KernelTermNode::Call { .. } => Shape::Application(term.machine_call_identity()?),
+                KernelTermNode::Legacy(_) | KernelTermNode::BoolCast { .. } => {
                     let value = term
                         .machine_conversion_leaf()
                         .expect("retained native machine leaf");
                     if let MachineTerm::ClickFunctionApplication { name, arguments } = value {
-                        Shape::Application(SharedPureApplication::intern(
-                            name.clone(),
-                            arguments.clone(),
-                        ))
+                        Shape::Application(SharedPureApplication::identity_for(name, arguments))
                     } else {
                         Shape::Native(value.clone())
                     }
@@ -188,6 +184,45 @@ impl<'a> MachineSourceMatcher<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn machine_call_source_matches_typed_arguments_without_caching_a_native_call() {
+        let _session = VerificationSession::enter();
+        let format = MachineIntegerType::Int32;
+        let var = Variable(1_006_610);
+        let name = "checked_machine_source";
+        let native = MachineTerm::ClickFunctionApplication {
+            name: name.into(),
+            arguments: vec![PureFunctionArgument::Value(ProgramValue::Int32(
+                MachineTerm::Variable(var),
+            ))],
+        };
+        let call = |argument_type, variable| {
+            KernelTerm::checked_call(
+                KernelType::Program(format.program_type()),
+                name.into(),
+                vec![KernelTerm::variable(
+                    KernelType::Program(argument_type),
+                    variable,
+                )],
+            )
+        };
+        let matched = call(ProgramType::Int32, var);
+        let other_variable = call(ProgramType::Int32, Variable(var.0 + 1));
+        let other_type = call(ProgramType::UInt32, var);
+        let mut matcher = MachineSourceMatcher::new(MachineOperandView::Legacy(&native));
+        let exports = KernelTermExport::machine_export_count();
+        for (root, expected) in [
+            (&matched, true),
+            (&other_variable, false),
+            (&other_type, false),
+        ] {
+            assert!(!root.has_cached_machine_leaf());
+            assert_eq!(matcher.matches(format, root), Some(expected));
+            assert!(!root.has_cached_machine_leaf());
+        }
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
 
     #[test]
     fn boolean_cast_sources_keep_native_argument_equality() {
