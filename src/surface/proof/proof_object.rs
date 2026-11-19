@@ -3208,24 +3208,32 @@ impl<'a> Proof<'a> {
                 let _points = synthesis::SynthesisRecordedPointsScope::enter(
                     context.fixed_state.recorded_states,
                 );
-                synthesis::synthesize_surface_proposition_at_entry_and_post(
-                    goal,
-                    context.parameter_binding,
-                    context.fixed_state.pre_state,
-                    context.fixed_state.state,
-                )
+                let (bound_variable_names, binder_names) = self.binder_variable_names();
+                synthesis::with_proof_binder_names(std::sync::Arc::new(binder_names), || {
+                    synthesis::synthesize_surface_proposition_at_entry_post_with_bound_variable_names(
+                        goal,
+                        context.parameter_binding,
+                        context.fixed_state.pre_state,
+                        context.fixed_state.state,
+                        &bound_variable_names,
+                    )
+                })
             }
             ProofContext::Execution(_) => {
                 let view = self.premise_fixed_state_view()?;
                 let _points = synthesis::SynthesisRecordedPointsScope::enter(
                     view.fixed_state.recorded_states,
                 );
-                synthesis::synthesize_surface_proposition_at_entry_and_post(
-                    goal,
-                    view.parameter_binding,
-                    view.fixed_state.pre_state,
-                    view.fixed_state.state,
-                )
+                let (bound_variable_names, binder_names) = self.binder_variable_names();
+                synthesis::with_proof_binder_names(std::sync::Arc::new(binder_names), || {
+                    synthesis::synthesize_surface_proposition_at_entry_post_with_bound_variable_names(
+                        goal,
+                        view.parameter_binding,
+                        view.fixed_state.pre_state,
+                        view.fixed_state.state,
+                        &bound_variable_names,
+                    )
+                })
             }
         })
     }
