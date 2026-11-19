@@ -10201,6 +10201,17 @@ pub(crate) fn intern_derivation_base(memory: &mut SymbolicMemory) -> SharedMemor
 pub(crate) fn record_memory_derivation(result: &mut SymbolicMemory, derivation: MemoryDerivation) {
     let variable_base = derivation.base().clone();
     let derivation = Arc::new(derivation);
+    let names_existing_cells = match derivation.as_ref() {
+        MemoryDerivation::CellObserved { .. } => true,
+        MemoryDerivation::CellsSeeded { base, run } => {
+            matches!(run.value_mode(), cell_store::RunValueMode::Load)
+                && (run.element_width() == run.value_width()
+                    || (run.element_width() > run.value_width()
+                        && run.element_type() != ProgramType::Bool))
+                && base.read_identity() == run.source().read_identity()
+        }
+        _ => false,
+    };
     // The log this value carries from the path that made it; the step is
     // added once the result's arena identity is known.
     let inherited = result.pending_steps.take();
@@ -10217,30 +10228,22 @@ pub(crate) fn record_memory_derivation(result: &mut SymbolicMemory, derivation: 
             inherited,
             derivation.clone(),
             produced,
+            names_existing_cells,
         ));
         return;
     }
     // Interning borrows the arena, so it has to finish before the write.
     let read_identity = match derivation.as_ref() {
         MemoryDerivation::CellsForgotten { base }
-        | MemoryDerivation::CellObserved { base }
         | MemoryDerivation::BlockDeclared { base, .. }
         | MemoryDerivation::ObjectInitializationRecorded { base, .. } => {
             // Declaration/initialization metadata writes no values. Keep the
             // bytes' identity; type, lifetime and access use this state.
             Some(base.read_identity())
         }
-        MemoryDerivation::CellsSeeded { base, run }
-            if matches!(run.value_mode(), cell_store::RunValueMode::Load)
-                && (run.element_width() == run.value_width()
-                    || (run.element_width() > run.value_width()
-                        && run.element_type() != ProgramType::Bool))
-                && base.read_identity() == run.source().read_identity() =>
-        {
-            // Copying the same bytes already in the base is materialization,
-            // including sibling runs copied from an equivalent earlier source.
-            Some(base.read_identity())
-        }
+        // Naming the same bytes includes runs copied from an equivalent
+        // earlier source, even if their cache entries differ.
+        _ if names_existing_cells => Some(variable_base.read_identity()),
         _ => None,
     };
     // A state this call interns is one no query has seen yet, so filling
@@ -10255,6 +10258,7 @@ pub(crate) fn record_memory_derivation(result: &mut SymbolicMemory, derivation: 
         inherited,
         derivation.clone(),
         derived.clone(),
+        names_existing_cells,
     ));
     C_MEMORY_ARENA.with(|arena| {
         let mut arena = arena.borrow_mut();

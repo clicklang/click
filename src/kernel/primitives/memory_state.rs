@@ -10169,16 +10169,25 @@ impl ExecutionState {
         self
     }
 
-    /// Use a view that only names cells at this state's observation
-    /// point. Settle the source's pending steps first, then discard the naming
-    /// entries from the new view's path log.
+    /// Install a proof-only view at the current point. Settle genuine source
+    /// steps first. Keep the path's versions available through a certified
+    /// naming suffix without turning those cache entries into execution steps.
     pub(crate) fn with_materialized_memory_at_current_point(
         mut self,
         mut memory: SymbolicMemory,
     ) -> Self {
+        let source = super::intern_memory_ref(&self.memory);
+        let view = super::intern_memory_ref(&memory);
+        let verified = super::program_point::StepLog::materializes_from(
+            &source,
+            self.memory.pending_steps.as_ref(),
+            &view,
+            memory.pending_steps.as_ref(),
+        );
         if self.memory.pending_steps.is_some() {
             self.point = self.program_point().path_link().clone();
         }
+        self.point = self.point.with_materialized_view(&source, &view, verified);
         memory.pending_steps = None;
         self.with_materialized_memory(memory)
     }
