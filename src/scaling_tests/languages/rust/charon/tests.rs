@@ -292,15 +292,24 @@ fn charon_array_field_layout_and_verification_work_are_independent_of_length() {
 fn charon_chunk_metadata_work_is_independent_of_input_length() {
     let export = decode(CHUNK_ARTIFACT, "chunks.rs", CHUNK_SOURCE).unwrap();
     let prepared = super::super::super::import::prepared_for_test(export).unwrap();
+    let claim = |length: u64| {
+        format!(
+            "verifying \"chunks.rs\"; fn tail(bytes: &[u8], size: usize) -> usize {{ requires bytes.len() == {length}u64; requires size == 4u64; ensures result == {}u64; }} by {{ step_until(function.exit); solve(); }}",
+            length % 4
+        )
+    };
+    // The first verification in a process also pays one-time, process-wide
+    // setup whatever its input length. Run it once unmeasured, so each sample
+    // measures only what depends on the claim.
+    {
+        let _session = crate::kernel::VerificationSession::enter();
+        ProgramVerificationSession::new_program_prepared(&claim(8), &prepared).unwrap();
+    }
     let mut samples = Vec::new();
     for length in [0u64, 8, 1024, 1_000_000] {
         let _session = crate::kernel::VerificationSession::enter();
-        let claim = format!(
-            "verifying \"chunks.rs\"; fn tail(bytes: &[u8], size: usize) -> usize {{ requires bytes.len() == {length}u64; requires size == 4u64; ensures result == {}u64; }} by {{ step_until(function.exit); solve(); }}",
-            length % 4
-        );
         let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
-            ProgramVerificationSession::new_program_prepared(&claim, &prepared)
+            ProgramVerificationSession::new_program_prepared(&claim(length), &prepared)
         });
         verified.unwrap();
         samples.push(work);
