@@ -96,12 +96,12 @@ pub(crate) fn check_nat_integer_law(name: &str, proposition: &Proposition) -> Op
             right.as_ref() == z && guard == Some(&nonnegative(z.clone()))
         }
         ("click::nat::to_nat_to_integer", Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right))) => {
-            guard.is_none() && observed_nat(converted_integer(left)?) == Some(right)
+            guard.is_none() && observed_nat(converted_integer(left.native_compat())?) == Some(right.native_compat())
         }
         ("click::nat::to_nat_zero", Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right))) => {
-            guard.is_none() && converted_integer(left) == Some(&IntegerTerm::constant_i64(0))
-                && right.algebraic_type == left.algebraic_type
-                && matches!(&right.node, AlgebraicTermNode::Constructor { variant, fields } if variant == "Zero" && fields.is_empty())
+            guard.is_none() && converted_integer(left.native_compat()) == Some(&IntegerTerm::constant_i64(0))
+                && right.native_compat().algebraic_type == left.native_compat().algebraic_type
+                && matches!(&right.native_compat().node, AlgebraicTermNode::Constructor { variant, fields } if variant == "Zero" && fields.is_empty())
         }
         _ => false,
     };
@@ -173,7 +173,7 @@ mod tests {
         Proposition::condition_is(ConditionTerm::IntegerEqual(a.into(), b.into()), true)
     }
     fn algebraic_eq(a: AlgebraicTerm, b: AlgebraicTerm) -> Proposition {
-        Proposition::Equal(Term::Algebraic(a), Term::Algebraic(b))
+        Proposition::Equal(Term::Algebraic(a.into()), Term::Algebraic(b.into()))
     }
     // Independent denotation: a Nat is counted structurally; converting a
     // negative Integer chooses Zero only to make the out-of-domain model total.
@@ -233,7 +233,7 @@ mod tests {
                 eval_integer(a) >= eval_integer(b)
             }
             Proposition::Equal(Term::Algebraic(a), Term::Algebraic(b)) => {
-                eval_nat(a) == eval_nat(b)
+                eval_nat(a.native_compat()) == eval_nat(b.native_compat())
             }
             _ => panic!("unexpected model proposition"),
         }

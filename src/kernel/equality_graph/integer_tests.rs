@@ -19,7 +19,10 @@ fn eq(a: I, b: I) -> Proposition {
     Proposition::condition_is(ConditionTerm::integer_equal(a, b), true)
 }
 fn alias(a: &AlgebraicTerm, b: &AlgebraicTerm) -> Proposition {
-    Proposition::Equal(Term::Algebraic(a.clone()), Term::Algebraic(b.clone()))
+    Proposition::Equal(
+        Term::Algebraic(a.clone().into()),
+        Term::Algebraic(b.clone().into()),
+    )
 }
 
 #[test]

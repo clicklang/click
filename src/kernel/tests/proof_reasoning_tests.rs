@@ -156,16 +156,22 @@ fn checked_algebraic_constructor_rules_are_sound() {
     let field_equality =
         Proposition::condition_is(ConditionTerm::equal(left.clone(), right.clone()), true);
     let constructor_equality = Proposition::Equal(
-        Term::Algebraic(maybe_constructor(
-            &algebraic_type,
-            "Some",
-            vec![ProgramValue::Int32(left.clone())],
-        )),
-        Term::Algebraic(maybe_constructor(
-            &algebraic_type,
-            "Some",
-            vec![ProgramValue::Int32(right.clone())],
-        )),
+        Term::Algebraic(
+            maybe_constructor(
+                &algebraic_type,
+                "Some",
+                vec![ProgramValue::Int32(left.clone())],
+            )
+            .into(),
+        ),
+        Term::Algebraic(
+            maybe_constructor(
+                &algebraic_type,
+                "Some",
+                vec![ProgramValue::Int32(right.clone())],
+            )
+            .into(),
+        ),
     );
 
     let injectivity_context =
@@ -186,16 +192,12 @@ fn checked_algebraic_constructor_rules_are_sound() {
     assert!(congruence.check(&congruence_context));
 
     let malformed = Proposition::Equal(
-        Term::Algebraic(maybe_constructor(
-            &algebraic_type,
-            "Some",
-            vec![ProgramValue::UInt32(left)],
-        )),
-        Term::Algebraic(maybe_constructor(
-            &algebraic_type,
-            "Some",
-            vec![ProgramValue::UInt32(right)],
-        )),
+        Term::Algebraic(
+            maybe_constructor(&algebraic_type, "Some", vec![ProgramValue::UInt32(left)]).into(),
+        ),
+        Term::Algebraic(
+            maybe_constructor(&algebraic_type, "Some", vec![ProgramValue::UInt32(right)]).into(),
+        ),
     );
     assert!(
         crate::kernel::search::ProofSearch::derive_solve_proposition(
@@ -215,19 +217,22 @@ fn algebraic_equality_lookup_for_constructor_disequality_is_goal_local() {
         node: AlgebraicTermNode::Variable(Variable(89_020)),
     };
     let source = Proposition::Equal(
-        Term::Algebraic(model.clone()),
-        Term::Algebraic(maybe_constructor(&algebraic_type, "Some", vec![int32(7)])),
+        Term::Algebraic(model.clone().into()),
+        Term::Algebraic(maybe_constructor(&algebraic_type, "Some", vec![int32(7)]).into()),
     );
     let unrelated = Proposition::Equal(
-        Term::Algebraic(AlgebraicTerm {
-            algebraic_type: algebraic_type.clone(),
-            node: AlgebraicTermNode::Variable(Variable(89_021)),
-        }),
-        Term::Algebraic(maybe_constructor(&algebraic_type, "None", vec![])),
+        Term::Algebraic(
+            AlgebraicTerm {
+                algebraic_type: algebraic_type.clone(),
+                node: AlgebraicTermNode::Variable(Variable(89_021)),
+            }
+            .into(),
+        ),
+        Term::Algebraic(maybe_constructor(&algebraic_type, "None", vec![]).into()),
     );
     let goal = Proposition::Not(Box::new(Proposition::Equal(
-        Term::Algebraic(model),
-        Term::Algebraic(maybe_constructor(&algebraic_type, "None", vec![])),
+        Term::Algebraic(model.into()),
+        Term::Algebraic(maybe_constructor(&algebraic_type, "None", vec![]).into()),
     )));
     let assumptions = PureFactContext::new().assume_proposition(source.clone());
     let derivation =
@@ -238,11 +243,14 @@ fn algebraic_equality_lookup_for_constructor_disequality_is_goal_local() {
     let facts = crate::kernel::proof::PureFactStore::from_ordered(&[source.clone(), unrelated]);
     assert_eq!(facts.algebraic_equalities_mentioning(&goal), vec![source]);
     let unmatched = Proposition::Not(Box::new(Proposition::Equal(
-        Term::Algebraic(AlgebraicTerm {
-            algebraic_type: algebraic_type.clone(),
-            node: AlgebraicTermNode::Variable(Variable(89_022)),
-        }),
-        Term::Algebraic(maybe_constructor(&algebraic_type, "None", vec![])),
+        Term::Algebraic(
+            AlgebraicTerm {
+                algebraic_type: algebraic_type.clone(),
+                node: AlgebraicTermNode::Variable(Variable(89_022)),
+            }
+            .into(),
+        ),
+        Term::Algebraic(maybe_constructor(&algebraic_type, "None", vec![]).into()),
     )));
     assert!(facts.algebraic_equalities_mentioning(&unmatched).is_empty());
 }
@@ -292,8 +300,8 @@ fn algebraic_equality_lookup_descends_constructor_fields() {
         },
     };
     let source = Proposition::Equal(
-        Term::Algebraic(function.clone()),
-        Term::Algebraic(middle.clone()),
+        Term::Algebraic(function.clone().into()),
+        Term::Algebraic(middle.clone().into()),
     );
     let constructor = |field: AlgebraicTerm| AlgebraicTerm {
         algebraic_type: algebraic_type.clone(),
@@ -303,18 +311,24 @@ fn algebraic_equality_lookup_descends_constructor_fields() {
         },
     };
     let goal = Proposition::Equal(
-        Term::Algebraic(constructor(function)),
-        Term::Algebraic(constructor(middle)),
+        Term::Algebraic(constructor(function).into()),
+        Term::Algebraic(constructor(middle).into()),
     );
     let unrelated = Proposition::Equal(
-        Term::Algebraic(AlgebraicTerm {
-            algebraic_type: algebraic_type.clone(),
-            node: AlgebraicTermNode::Variable(Variable(89_032)),
-        }),
-        Term::Algebraic(AlgebraicTerm {
-            algebraic_type: algebraic_type.clone(),
-            node: AlgebraicTermNode::Variable(Variable(89_033)),
-        }),
+        Term::Algebraic(
+            AlgebraicTerm {
+                algebraic_type: algebraic_type.clone(),
+                node: AlgebraicTermNode::Variable(Variable(89_032)),
+            }
+            .into(),
+        ),
+        Term::Algebraic(
+            AlgebraicTerm {
+                algebraic_type: algebraic_type.clone(),
+                node: AlgebraicTermNode::Variable(Variable(89_033)),
+            }
+            .into(),
+        ),
     );
     let facts = crate::kernel::proof::PureFactStore::from_ordered(&[source.clone(), unrelated]);
     assert_eq!(facts.algebraic_equalities_mentioning(&goal), vec![source]);
@@ -357,7 +371,10 @@ fn algebraic_symbolic_reflexivity_checks_well_formed_terms() {
         },
     };
     let equality = |a: &AlgebraicTerm, b: &AlgebraicTerm| {
-        Proposition::Equal(Term::Algebraic(a.clone()), Term::Algebraic(b.clone()))
+        Proposition::Equal(
+            Term::Algebraic(a.clone().into()),
+            Term::Algebraic(b.clone().into()),
+        )
     };
     let context = PureFactContext::new();
     for term in [&call, &matched] {
@@ -415,7 +432,7 @@ fn algebraic_conditions_decide_from_condition_facts_and_keep_checked_polarity() 
         node: AlgebraicTermNode::Variable(Variable(89_101)),
     };
     let condition = ConditionTerm::AlgebraicEqual(Box::new(left.clone()), Box::new(right.clone()));
-    let equality = Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right));
+    let equality = Proposition::Equal(Term::Algebraic(left.into()), Term::Algebraic(right.into()));
     assert_eq!(PureFactContext::new().decide(&condition), None);
     for expected in [true, false] {
         let premise = if expected {
@@ -520,8 +537,8 @@ fn algebraic_condition_substitution_visits_scalar_fields() {
 fn distinct_algebraic_constructors_make_the_context_inconsistent() {
     let algebraic_type = maybe_int32_type();
     let conflict = Proposition::Equal(
-        Term::Algebraic(maybe_constructor(&algebraic_type, "None", vec![])),
-        Term::Algebraic(maybe_constructor(&algebraic_type, "Some", vec![int32(7)])),
+        Term::Algebraic(maybe_constructor(&algebraic_type, "None", vec![]).into()),
+        Term::Algebraic(maybe_constructor(&algebraic_type, "Some", vec![int32(7)]).into()),
     );
     assert!(
         PureFactContext::new()
@@ -7872,7 +7889,10 @@ fn model_fact_restriction_keeps_only_selected_graph_support() {
         node: AlgebraicTermNode::Variable(Variable(id)),
     };
     let (a, b) = (model(97900), model(97901));
-    let equality = Proposition::Equal(Term::Algebraic(a.clone()), Term::Algebraic(b.clone()));
+    let equality = Proposition::Equal(
+        Term::Algebraic(a.clone().into()),
+        Term::Algebraic(b.clone().into()),
+    );
     let condition = ConditionTerm::AlgebraicEqual(Box::new(a), Box::new(b));
     let both = PureFactContext::new()
         .assume_proposition(equality.clone())

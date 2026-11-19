@@ -2301,8 +2301,8 @@ fn capture_avoiding_algebraic_quantifier_body(
     replacement: &AlgebraicTerm,
 ) -> (Variable, Proposition) {
     let replacement_probe = Proposition::Equal(
-        Term::Algebraic(replacement.clone()),
-        Term::Algebraic(replacement.clone()),
+        Term::Algebraic(replacement.clone().into()),
+        Term::Algebraic(replacement.clone().into()),
     );
     let replacement_variables = crate::kernel::proposition_variables(&replacement_probe);
     if !replacement_variables.contains(&binder) {
@@ -2599,7 +2599,7 @@ fn collect_term_bound_variables(term: &Term, variables: &mut BTreeSet<Variable>)
             collect_program_value_bound_variables(value.native_compat(), variables);
         }
         Term::Sequence(sequence) => collect_sequence_bound_variables(sequence, variables),
-        Term::Algebraic(term) => collect_algebraic_bound_variables(term, variables),
+        Term::Algebraic(term) => collect_algebraic_bound_variables(term.native_compat(), variables),
         Term::ExecutionState(state) => collect_execution_state_bound_variables(state, variables),
         Term::Memory(memory) => collect_memory_bound_variables(memory, variables),
     }
@@ -3740,94 +3740,99 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_term(
         Term::Sequence(sequence) => Term::Sequence(substitute_bitvector_variable_in_sequence(
             sequence, from, to,
         )),
-        Term::Algebraic(term) => Term::Algebraic(AlgebraicTerm {
-            algebraic_type: term.algebraic_type.clone(),
-            node: match &term.node {
-                AlgebraicTermNode::Variable(variable) => AlgebraicTermNode::Variable(*variable),
-                AlgebraicTermNode::MemoryLoad {
-                    point: memory,
-                    pointer,
-                } => {
-                    match substitute_bitvector_variable_in_algebraic_value(
-                        &AlgebraicTermNode::memory_load_carrier_value(
-                            memory.shared_memory(),
-                            pointer,
-                        ),
-                        from,
-                        to,
-                    ) {
-                        AlgebraicValue::Program(value) => {
-                            AlgebraicTermNode::memory_load_from_carrier(&value)
-                                .unwrap_or_else(|| term.node.clone())
+        Term::Algebraic(term) => Term::Algebraic(
+            AlgebraicTerm {
+                algebraic_type: term.native_compat().algebraic_type.clone(),
+                node: match &term.native_compat().node {
+                    AlgebraicTermNode::Variable(variable) => AlgebraicTermNode::Variable(*variable),
+                    AlgebraicTermNode::MemoryLoad {
+                        point: memory,
+                        pointer,
+                    } => {
+                        match substitute_bitvector_variable_in_algebraic_value(
+                            &AlgebraicTermNode::memory_load_carrier_value(
+                                memory.shared_memory(),
+                                pointer,
+                            ),
+                            from,
+                            to,
+                        ) {
+                            AlgebraicValue::Program(value) => {
+                                AlgebraicTermNode::memory_load_from_carrier(&value)
+                                    .unwrap_or_else(|| term.native_compat().node.clone())
+                            }
+                            _ => term.native_compat().node.clone(),
                         }
-                        _ => term.node.clone(),
                     }
-                }
-                AlgebraicTermNode::Constructor { variant, fields } => {
-                    AlgebraicTermNode::Constructor {
-                        variant: variant.clone(),
-                        fields: fields
-                            .iter()
-                            .map(|field| {
-                                substitute_bitvector_variable_in_algebraic_value(field, from, to)
-                            })
-                            .collect(),
-                    }
-                }
-                AlgebraicTermNode::Match { scrutinee, arms } => AlgebraicTermNode::Match {
-                    scrutinee: Box::new(substitute_bitvector_variable_in_algebraic_term(
-                        scrutinee, from, to,
-                    )),
-                    arms: arms
-                        .iter()
-                        .map(|arm| AlgebraicResultMatchArm {
-                            binding_names: arm.binding_names.clone(),
-                            variant: arm.variant.clone(),
-                            bindings: arm
-                                .bindings
+                    AlgebraicTermNode::Constructor { variant, fields } => {
+                        AlgebraicTermNode::Constructor {
+                            variant: variant.clone(),
+                            fields: fields
                                 .iter()
-                                .map(|binding| {
+                                .map(|field| {
                                     substitute_bitvector_variable_in_algebraic_value(
-                                        binding, from, to,
+                                        field, from, to,
                                     )
                                 })
                                 .collect(),
-                            body: substitute_bitvector_variable_in_algebraic_term(
-                                &arm.body, from, to,
-                            ),
-                        })
-                        .collect(),
-                },
-                AlgebraicTermNode::PureFunctionApplication { name, arguments } => {
-                    AlgebraicTermNode::PureFunctionApplication {
-                        name: name.clone(),
-                        arguments: arguments
+                        }
+                    }
+                    AlgebraicTermNode::Match { scrutinee, arms } => AlgebraicTermNode::Match {
+                        scrutinee: Box::new(substitute_bitvector_variable_in_algebraic_term(
+                            scrutinee, from, to,
+                        )),
+                        arms: arms
                             .iter()
-                            .map(|argument| {
-                                substitute_bitvector_variable_in_pure_function_argument(
-                                    argument, from, to,
-                                )
+                            .map(|arm| AlgebraicResultMatchArm {
+                                binding_names: arm.binding_names.clone(),
+                                variant: arm.variant.clone(),
+                                bindings: arm
+                                    .bindings
+                                    .iter()
+                                    .map(|binding| {
+                                        substitute_bitvector_variable_in_algebraic_value(
+                                            binding, from, to,
+                                        )
+                                    })
+                                    .collect(),
+                                body: substitute_bitvector_variable_in_algebraic_term(
+                                    &arm.body, from, to,
+                                ),
                             })
                             .collect(),
+                    },
+                    AlgebraicTermNode::PureFunctionApplication { name, arguments } => {
+                        AlgebraicTermNode::PureFunctionApplication {
+                            name: name.clone(),
+                            arguments: arguments
+                                .iter()
+                                .map(|argument| {
+                                    substitute_bitvector_variable_in_pure_function_argument(
+                                        argument, from, to,
+                                    )
+                                })
+                                .collect(),
+                        }
                     }
-                }
-                AlgebraicTermNode::If {
-                    condition,
-                    then_term,
-                    else_term,
-                } => AlgebraicTermNode::If {
-                    condition: Box::new(substitute_bitvector_variable_in_condition(
-                        condition, from, to,
-                    )),
-                    then_term: Box::new(substitute_bitvector_variable_in_algebraic_term(
-                        then_term, from, to,
-                    )),
-                    else_term: Box::new(substitute_bitvector_variable_in_algebraic_term(
-                        else_term, from, to,
-                    )),
+                    AlgebraicTermNode::If {
+                        condition,
+                        then_term,
+                        else_term,
+                    } => AlgebraicTermNode::If {
+                        condition: Box::new(substitute_bitvector_variable_in_condition(
+                            condition, from, to,
+                        )),
+                        then_term: Box::new(substitute_bitvector_variable_in_algebraic_term(
+                            then_term, from, to,
+                        )),
+                        else_term: Box::new(substitute_bitvector_variable_in_algebraic_term(
+                            else_term, from, to,
+                        )),
+                    },
                 },
-            },
-        }),
+            }
+            .into(),
+        ),
         Term::Memory(memory) => {
             Term::Memory(substitute_bitvector_variable_in_memory(memory, from, to))
         }
@@ -4844,11 +4849,11 @@ fn substitute_bitvector_variable_in_algebraic_term(
     to: &MachineTerm,
 ) -> AlgebraicTerm {
     let Term::Algebraic(term) =
-        substitute_bitvector_variable_in_term(&Term::Algebraic(term.clone()), from, to)
+        substitute_bitvector_variable_in_term(&Term::Algebraic(term.clone().into()), from, to)
     else {
         unreachable!()
     };
-    term
+    term.into_native_compat()
 }
 
 pub(in crate::kernel) fn substitute_bitvector_variable_in_program_expression(
@@ -6843,10 +6848,17 @@ fn substitute_pointer_variable_in_term(term: &Term, from: Variable, to: &Address
         Term::Sequence(sequence) => {
             Term::Sequence(substitute_pointer_variable_in_sequence(sequence, from, to))
         }
-        Term::Algebraic(term) => Term::Algebraic(AlgebraicTerm {
-            algebraic_type: term.algebraic_type.clone(),
-            node: substitute_pointer_variable_in_algebraic_term_node(term, from, to),
-        }),
+        Term::Algebraic(term) => Term::Algebraic(
+            AlgebraicTerm {
+                algebraic_type: term.native_compat().algebraic_type.clone(),
+                node: substitute_pointer_variable_in_algebraic_term_node(
+                    term.native_compat(),
+                    from,
+                    to,
+                ),
+            }
+            .into(),
+        ),
         Term::Memory(memory) => {
             Term::Memory(substitute_pointer_variable_in_memory(memory, from, to))
         }
@@ -9140,8 +9152,8 @@ mod integer_mixed_quantifier_tests {
                     Term::Integer(IntegerTerm::constant_i64(3)),
                 )),
                 Box::new(Proposition::Equal(
-                    Term::Algebraic(algebraic.clone()),
-                    Term::Algebraic(algebraic.clone()),
+                    Term::Algebraic(algebraic.clone().into()),
+                    Term::Algebraic(algebraic.clone().into()),
                 )),
             )),
         };
@@ -9164,8 +9176,8 @@ mod integer_mixed_quantifier_tests {
                     Term::Integer(IntegerTerm::constant_i64(3))
                 )),
                 Box::new(Proposition::Equal(
-                    Term::Algebraic(algebraic.clone()),
-                    Term::Algebraic(algebraic)
+                    Term::Algebraic((algebraic.clone()).into()),
+                    Term::Algebraic((algebraic).into())
                 )),
             )
         );

@@ -4484,10 +4484,13 @@ fn failing_solve_derivation_ignores_unrelated_algebraic_disjunctions() {
         )]))),
     };
     let term = |node| {
-        Term::Algebraic(AlgebraicTerm {
-            algebraic_type: color.clone(),
-            node,
-        })
+        Term::Algebraic(
+            AlgebraicTerm {
+                algebraic_type: color.clone(),
+                node,
+            }
+            .into(),
+        )
     };
     let is = |variable: u64, variant: &str| {
         Proposition::Equal(

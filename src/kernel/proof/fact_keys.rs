@@ -3684,8 +3684,16 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
         }
         Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) => {
             AlphaPropositionKey::EqualAlgebraic(
-                alpha_algebraic_key_with_bindings::<ALLOW_LOADS>(left, bindings, next_binder)?,
-                alpha_algebraic_key_with_bindings::<ALLOW_LOADS>(right, bindings, next_binder)?,
+                alpha_algebraic_key_with_bindings::<ALLOW_LOADS>(
+                    left.native_compat(),
+                    bindings,
+                    next_binder,
+                )?,
+                alpha_algebraic_key_with_bindings::<ALLOW_LOADS>(
+                    right.native_compat(),
+                    bindings,
+                    next_binder,
+                )?,
             )
         }
         Proposition::ConditionIs(condition, value) => AlphaPropositionKey::Condition(
@@ -3732,7 +3740,7 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
                         ),
                         Term::Algebraic(value) => AlphaPredicateArgumentKey::Algebraic(
                             alpha_algebraic_key_with_bindings::<ALLOW_LOADS>(
-                                value,
+                                value.native_compat(),
                                 bindings,
                                 next_binder,
                             )?,

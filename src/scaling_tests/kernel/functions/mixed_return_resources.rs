@@ -2079,18 +2079,18 @@ fn matched_return_constructor_hits_and_opaque_misses_do_not_walk_model_aliases()
                 };
                 facts = facts
                     .assume_proposition(Proposition::Equal(
-                        Term::Algebraic(model.clone()),
-                        Term::Algebraic(alias.clone()),
+                        Term::Algebraic(model.clone().into()),
+                        Term::Algebraic(alias.clone().into()),
                     ))
                     .assume_proposition(Proposition::Not(Box::new(Proposition::Equal(
-                        Term::Algebraic(alias),
-                        Term::Algebraic(empty.clone()),
+                        Term::Algebraic(alias.into()),
+                        Term::Algebraic(empty.clone().into()),
                     ))));
             }
             if known {
                 facts = facts.assume_proposition(Proposition::Equal(
-                    Term::Algebraic(model.clone()),
-                    Term::Algebraic(constructor(Address::symbolic(Variable(8_884_000)))),
+                    Term::Algebraic(model.clone().into()),
+                    Term::Algebraic(constructor(Address::symbolic(Variable(8_884_000))).into()),
                 ));
             }
             let (head, definition) = matched(model, 8_884_001);

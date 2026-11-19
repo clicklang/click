@@ -2967,8 +2967,8 @@ impl LoopExitRestatement {
                     .or_insert_with(|| fresh.clone());
                 if representative != fresh {
                     self.equations.push(Proposition::Equal(
-                        Term::Algebraic(fresh.clone()),
-                        Term::Algebraic(representative.clone()),
+                        Term::Algebraic(fresh.clone().into()),
+                        Term::Algebraic(representative.clone().into()),
                     ));
                 }
                 return;
@@ -3437,7 +3437,7 @@ fn resource_value_term(value: &AlgebraicValue) -> Term {
     match value {
         AlgebraicValue::Integer(term) => Term::Integer(term.clone()),
         AlgebraicValue::Program(value) => Term::ProgramValue(value.clone().into()),
-        AlgebraicValue::Algebraic(term) => Term::Algebraic(term.clone()),
+        AlgebraicValue::Algebraic(term) => Term::Algebraic(term.clone().into()),
     }
 }
 

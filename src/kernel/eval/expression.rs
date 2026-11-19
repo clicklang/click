@@ -2545,9 +2545,13 @@ pub(in crate::kernel) fn known_enum_constructor(
         .fact_iter()
         .find_map(|fact| match fact.proposition() {
             Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right))
-                if left == term && matches!(right.node, AlgebraicTermNode::Constructor { .. }) =>
+                if left.native_compat() == term
+                    && matches!(
+                        right.native_compat().node,
+                        AlgebraicTermNode::Constructor { .. }
+                    ) =>
             {
-                Some(right.clone())
+                Some(right.native_compat().clone())
             }
             _ => None,
         })
@@ -2614,8 +2618,8 @@ pub(in crate::kernel) fn enum_variant_paths(
                     &mut case_facts,
                     assumptions,
                     Proposition::Equal(
-                        Term::Algebraic(term.clone()),
-                        Term::Algebraic(constructor.clone()),
+                        Term::Algebraic(term.clone().into()),
+                        Term::Algebraic(constructor.clone().into()),
                     ),
                 )
                 .is_none()

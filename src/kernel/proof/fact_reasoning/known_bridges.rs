@@ -287,7 +287,8 @@ pub(crate) fn known_bridge_leaf(
             )
         }
         Proposition::Equal(Term::Algebraic(a), Term::Algebraic(b)) => {
-            algebraic_arm(a, b, available) || algebraic_arm(b, a, available)
+            algebraic_arm(a.native_compat(), b.native_compat(), available)
+                || algebraic_arm(b.native_compat(), a.native_compat(), available)
         }
         condition_source_0 @ Proposition::ConditionIs(_, true)
             if let Some((ConditionTerm::AlgebraicEqual(a, b), _)) =

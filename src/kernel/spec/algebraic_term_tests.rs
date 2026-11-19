@@ -29,6 +29,29 @@ fn maybe_type() -> AlgebraicType {
 }
 
 #[test]
+fn algebraic_case_paths_recognize_a_retained_legacy_constructor() {
+    let value = AlgebraicResult::Shared(KernelTerm::native_observation_leaf(
+        PureFunctionArgument::Algebraic(AlgebraicTerm {
+            algebraic_type: maybe_type(),
+            node: AlgebraicTermNode::Constructor {
+                variant: "None".into(),
+                fields: Vec::new(),
+            },
+        }),
+    ));
+    let mut execution = ExecutionBudget::new();
+    let cases =
+        algebraic_case_paths_in(&value, &mut SpecEvaluation::logical(&mut execution)).unwrap();
+    let [case] = cases.as_slice() else {
+        panic!("known constructor case")
+    };
+    assert_eq!(case.variant, "None");
+    assert!(case.fields.is_empty());
+    assert_eq!(case.facts.len(), 0);
+    assert!(case.obligations.is_empty());
+}
+
+#[test]
 fn algebraic_integer_match_reconnects_symbolic_and_concrete_fields() {
     let variants: std::sync::Arc<[AlgebraicVariantType]> = vec![AlgebraicVariantType {
         name: "Box".into(),
@@ -1106,8 +1129,8 @@ fn signed_match_is_fact_stable_and_retains_guarded_definedness() {
     assert!(!original.obligations.is_empty());
     for payload in [None, Some(int32(7)), Some(int32(i32::MIN as u32))] {
         let context = PureFactContext::new().assume_proposition(Proposition::Equal(
-            Term::Algebraic(maybe_variable(variable)),
-            Term::Algebraic(maybe_constructor(payload)),
+            Term::Algebraic(maybe_variable(variable).into()),
+            Term::Algebraic(maybe_constructor(payload).into()),
         ));
         let path = lower(&context);
         assert_eq!(
@@ -1126,8 +1149,21 @@ fn signed_match_is_fact_stable_and_retains_guarded_definedness() {
         let Proposition::Implies(guard, _) = body.as_ref() else {
             panic!("arm obligation must be conditional")
         };
+        let Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) = guard.as_ref()
+        else {
+            panic!("expected a constructor equation")
+        };
+        let expected = maybe_variable(variable);
+        assert_eq!(
+            left.root(),
+            Some(&KernelTermImport::default().algebraic(&expected))
+        );
         assert!(
-            matches!(guard.as_ref(), Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) if left == &maybe_variable(variable) && matches!(&right.node, AlgebraicTermNode::Constructor { variant, .. } if variant == "Some"))
+            matches!(right.root().unwrap().node(), KernelTermNode::Constructor(constructor) if constructor.variant == "Some")
+        );
+        assert_eq!(left.native_compat(), &expected);
+        assert!(
+            matches!(&right.native_compat().node, AlgebraicTermNode::Constructor { variant, .. } if variant == "Some")
         );
     }
 }

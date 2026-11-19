@@ -2605,9 +2605,12 @@ fn collect_term_memory_loads(
         Term::Sequence(sequence) => {
             collect_sequence_memory_loads(sequence, current_memory, loads, seen_integers)
         }
-        Term::Algebraic(term) => {
-            collect_algebraic_memory_loads(term, current_memory, loads, seen_integers)
-        }
+        Term::Algebraic(term) => collect_algebraic_memory_loads(
+            term.native_compat(),
+            current_memory,
+            loads,
+            seen_integers,
+        ),
         Term::Memory(_) | Term::ExecutionState(_) => Ok(()),
     }
 }
@@ -3475,7 +3478,8 @@ fn decided_algebraic_if(proposition: &Proposition) -> Option<(ConditionTerm, boo
     let Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) = proposition else {
         return None;
     };
-    let (conditional, constructor) = match (&left.node, &right.node) {
+    let (conditional, constructor) = match (&left.native_compat().node, &right.native_compat().node)
+    {
         (AlgebraicTermNode::If { .. }, AlgebraicTermNode::Constructor { .. }) => (left, right),
         (AlgebraicTermNode::Constructor { .. }, AlgebraicTermNode::If { .. }) => (right, left),
         _ => return None,
@@ -3487,7 +3491,10 @@ fn decided_algebraic_if(proposition: &Proposition) -> Option<(ConditionTerm, boo
             else_term,
         },
         AlgebraicTermNode::Constructor { variant, .. },
-    ) = (&conditional.node, &constructor.node)
+    ) = (
+        &conditional.native_compat().node,
+        &constructor.native_compat().node,
+    )
     else {
         return None;
     };
@@ -3503,8 +3510,8 @@ fn decided_algebraic_if(proposition: &Proposition) -> Option<(ConditionTerm, boo
         condition.as_ref().clone(),
         value,
         Proposition::Equal(
-            Term::Algebraic(selected.as_ref().clone()),
-            Term::Algebraic(constructor.clone()),
+            Term::Algebraic(selected.as_ref().clone().into()),
+            Term::Algebraic(constructor.clone().into()),
         ),
     ))
 }
@@ -3519,7 +3526,7 @@ pub(crate) fn algebraic_constructor_field_equalities(
     let Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) = proposition else {
         return None;
     };
-    if left.algebraic_type != right.algebraic_type {
+    if left.native_compat().algebraic_type != right.native_compat().algebraic_type {
         return None;
     }
     let (
@@ -3531,15 +3538,15 @@ pub(crate) fn algebraic_constructor_field_equalities(
             variant: right_variant,
             ..
         },
-    ) = (&left.node, &right.node)
+    ) = (&left.native_compat().node, &right.native_compat().node)
     else {
         return None;
     };
     if left_variant != right_variant {
         return None;
     }
-    let left_fields = left.checked_constructor_fields()?;
-    let right_fields = right.checked_constructor_fields()?;
+    let left_fields = left.native_compat().checked_constructor_fields()?;
+    let right_fields = right.native_compat().checked_constructor_fields()?;
     left_fields
         .iter()
         .zip(right_fields)
@@ -3549,8 +3556,8 @@ pub(crate) fn algebraic_constructor_field_equalities(
             }
             (AlgebraicValue::Algebraic(left), AlgebraicValue::Algebraic(right)) => {
                 Some(Proposition::Equal(
-                    Term::Algebraic(left.clone()),
-                    Term::Algebraic(right.clone()),
+                    Term::Algebraic(left.clone().into()),
+                    Term::Algebraic(right.clone().into()),
                 ))
             }
             _ => None,
@@ -3562,14 +3569,14 @@ fn is_algebraic_constructor_conflict(proposition: &Proposition) -> bool {
     let Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) = proposition else {
         return false;
     };
-    if left.algebraic_type != right.algebraic_type
-        || left.checked_constructor_fields().is_none()
-        || right.checked_constructor_fields().is_none()
+    if left.native_compat().algebraic_type != right.native_compat().algebraic_type
+        || left.native_compat().checked_constructor_fields().is_none()
+        || right.native_compat().checked_constructor_fields().is_none()
     {
         return false;
     }
     matches!(
-        (&left.node, &right.node),
+        (&left.native_compat().node, &right.native_compat().node),
         (
             AlgebraicTermNode::Constructor { variant: left, .. },
             AlgebraicTermNode::Constructor { variant: right, .. }
@@ -4026,7 +4033,9 @@ impl PureFactContext {
 
     fn adjust_algebraic_graph_equality(&mut self, proposition: &Proposition) {
         let (left, right) = match proposition {
-            Proposition::Equal(Term::Algebraic(a), Term::Algebraic(b)) => (a, b),
+            Proposition::Equal(Term::Algebraic(a), Term::Algebraic(b)) => {
+                (a.native_compat(), b.native_compat())
+            }
             condition_source_0 @ Proposition::ConditionIs(_, true)
                 if let Some((ConditionTerm::AlgebraicEqual(a, b), _)) =
                     condition_source_0.condition_native() =>
@@ -5686,18 +5695,19 @@ impl PureFactContext {
         let Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) = proposition else {
             return;
         };
-        let (variable, constructor) = match (&left.node, &right.node) {
-            (AlgebraicTermNode::Variable(variable), AlgebraicTermNode::Constructor { .. }) => {
-                (*variable, right)
-            }
-            (AlgebraicTermNode::Constructor { .. }, AlgebraicTermNode::Variable(variable)) => {
-                (*variable, left)
-            }
-            _ => return,
-        };
-        if left.algebraic_type != right.algebraic_type
-            || !left.is_well_formed()
-            || !right.is_well_formed()
+        let (variable, constructor) =
+            match (&left.native_compat().node, &right.native_compat().node) {
+                (AlgebraicTermNode::Variable(variable), AlgebraicTermNode::Constructor { .. }) => {
+                    (*variable, right)
+                }
+                (AlgebraicTermNode::Constructor { .. }, AlgebraicTermNode::Variable(variable)) => {
+                    (*variable, left)
+                }
+                _ => return,
+            };
+        if left.native_compat().algebraic_type != right.native_compat().algebraic_type
+            || !left.native_compat().is_well_formed()
+            || !right.native_compat().is_well_formed()
         {
             return;
         }
@@ -5706,7 +5716,8 @@ impl PureFactContext {
             .get(&variable)
             .cloned()
             .unwrap_or_default();
-        let entries = entries.with_inserted(proposition.clone(), constructor.clone());
+        let entries =
+            entries.with_inserted(proposition.clone(), constructor.native_compat().clone());
         self.algebraic_variable_constructors = if entries.is_empty() {
             self.algebraic_variable_constructors.without_key(&variable)
         } else {
@@ -5733,25 +5744,30 @@ impl PureFactContext {
             else {
                 return None;
             };
-            if left.algebraic_type != right.algebraic_type
-                || !left.is_well_formed()
-                || !right.is_well_formed()
+            if left.native_compat().algebraic_type != right.native_compat().algebraic_type
+                || !left.native_compat().is_well_formed()
+                || !right.native_compat().is_well_formed()
             {
                 return None;
             }
-            let (variable, constructor) = match (&left.node, &right.node) {
-                (AlgebraicTermNode::Variable(variable), AlgebraicTermNode::Constructor { .. }) => {
-                    (*variable, right)
-                }
-                (AlgebraicTermNode::Constructor { .. }, AlgebraicTermNode::Variable(variable)) => {
-                    (*variable, left)
-                }
-                _ => return None,
-            };
+            let (variable, constructor) =
+                match (&left.native_compat().node, &right.native_compat().node) {
+                    (
+                        AlgebraicTermNode::Variable(variable),
+                        AlgebraicTermNode::Constructor { .. },
+                    ) => (*variable, right),
+                    (
+                        AlgebraicTermNode::Constructor { .. },
+                        AlgebraicTermNode::Variable(variable),
+                    ) => (*variable, left),
+                    _ => return None,
+                };
             if bound.contains(&variable) {
                 return None;
             }
-            let AlgebraicTermNode::Constructor { variant, fields } = &constructor.node else {
+            let AlgebraicTermNode::Constructor { variant, fields } =
+                &constructor.native_compat().node
+            else {
                 return None;
             };
             Some((variable, variant.clone(), fields.len()))
@@ -5883,8 +5899,8 @@ impl PureFactContext {
                 record_consulted_premises(
                     self,
                     &Proposition::Equal(
-                        Term::Algebraic(value.clone()),
-                        Term::Algebraic(constructor.clone()),
+                        Term::Algebraic(value.clone().into()),
+                        Term::Algebraic(constructor.clone().into()),
                     ),
                 );
                 Some(constructor)
@@ -7285,9 +7301,9 @@ impl PureFactContext {
                         && left.bounds() == right.bounds()
                         && self.pointers_known_equal(left.address(), right.address()))
             }
-            Proposition::Equal(Term::Algebraic(a), Term::Algebraic(b)) => {
-                self.equality_graph.are_algebraic_equal(a, b)
-            }
+            Proposition::Equal(Term::Algebraic(a), Term::Algebraic(b)) => self
+                .equality_graph
+                .are_algebraic_equal(a.native_compat(), b.native_compat()),
             Proposition::Predicate { .. } => {
                 self.equality_graph.knows_pointer_predicate(proposition)
             }
@@ -7405,8 +7421,8 @@ impl PureFactContext {
             let decided = match &condition {
                 ConditionTerm::AlgebraicEqual(left, right) if value => {
                     decided_algebraic_if(&Proposition::Equal(
-                        Term::Algebraic(left.as_ref().clone()),
-                        Term::Algebraic(right.as_ref().clone()),
+                        Term::Algebraic(left.as_ref().clone().into()),
+                        Term::Algebraic(right.as_ref().clone().into()),
                     ))
                 }
                 _ => None,

@@ -212,7 +212,10 @@ mod tests {
                 "is false",
             ),
             (
-                Proposition::Equal(Term::Algebraic(model.clone()), Term::Algebraic(model)),
+                Proposition::Equal(
+                    Term::Algebraic(model.clone().into()),
+                    Term::Algebraic(model.into()),
+                ),
                 ":Tree",
             ),
             (

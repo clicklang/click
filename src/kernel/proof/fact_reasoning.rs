@@ -11,12 +11,18 @@ use crate::kernel::*;
 
 pub(crate) fn normalizes_context_free(goal: &Proposition) -> bool {
     if let Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) = goal {
-        let reduced_left = super::term_rewrite::TermRewrite::normalize_algebraic(left);
-        let reduced_right = super::term_rewrite::TermRewrite::normalize_algebraic(right);
+        let reduced_left =
+            super::term_rewrite::TermRewrite::normalize_algebraic(left.native_compat());
+        let reduced_right =
+            super::term_rewrite::TermRewrite::normalize_algebraic(right.native_compat());
         if reduced_left.is_some() || reduced_right.is_some() {
             return normalizes_context_free_reduced(&Proposition::Equal(
-                Term::Algebraic(reduced_left.unwrap_or_else(|| left.clone())),
-                Term::Algebraic(reduced_right.unwrap_or_else(|| right.clone())),
+                Term::Algebraic(reduced_left.map(Into::into).unwrap_or_else(|| left.clone())),
+                Term::Algebraic(
+                    reduced_right
+                        .map(Into::into)
+                        .unwrap_or_else(|| right.clone()),
+                ),
             ));
         }
     }
@@ -1076,8 +1082,8 @@ fn polarity_forms_by(
     for (condition, value) in conditions {
         if let ConditionTerm::AlgebraicEqual(left, right) = &condition {
             let equality = Proposition::Equal(
-                Term::Algebraic(*left.clone()),
-                Term::Algebraic(*right.clone()),
+                Term::Algebraic((*left.clone()).into()),
+                Term::Algebraic((*right.clone()).into()),
             );
             forms.push(if value {
                 equality

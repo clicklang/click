@@ -18587,8 +18587,8 @@ fn instance_arm_refutation_facts(
             continue;
         };
         let negation = Proposition::Not(Box::new(Proposition::Equal(
-            Term::Algebraic(model.clone()),
-            Term::Algebraic(excluded.clone()),
+            Term::Algebraic(model.clone().into()),
+            Term::Algebraic(excluded.clone().into()),
         )));
         if required_obligation_is_exactly_discharged(assumptions, &negation) {
             continue;
@@ -18610,8 +18610,8 @@ fn instance_arm_refutation_facts(
             }
         }
         published.push(Proposition::Equal(
-            Term::Algebraic(model.clone()),
-            Term::Algebraic(selected.clone()),
+            Term::Algebraic(model.clone().into()),
+            Term::Algebraic(selected.clone().into()),
         ));
     }
     published
