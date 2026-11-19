@@ -1204,6 +1204,8 @@ pub(crate) struct CheckedResourceFact {
     /// Caller-selected exact named authority for a mutex-use loan. The
     /// planner must consume this source, never select by address instead.
     pub(crate) selected_mutex_source: Option<std::sync::Arc<(Variable, ResourceFact)>>,
+    /// Byte extent formed from the evaluated mutex pointer at clause entry.
+    pub(crate) mutex_storage: Option<Arc<MemoryRange>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -3368,7 +3370,7 @@ fn execute_verified_function_applications_with_suspension(
                 caller_state.memory(),
             )
         };
-        let write_requirements = if !has_exact_write_ranges {
+        let mut write_requirements = if !has_exact_write_ranges {
             // An unresolved projection can widen an effect to bytes the
             // callee cannot write. Keep its conservative admission check.
             if let Some(diagnostic) = entry_state.loan_ledger().and_then(|ledger| {
@@ -3445,37 +3447,47 @@ fn execute_verified_function_applications_with_suspension(
                 mutex_storage_effects.push(range);
             }
         }
-        // A protocol summary retains the storage coordinates from the
-        // selected authority. Until those coordinates have a checked
-        // caller-side spelling, keep the conservative guard for this effect.
-        if let Some(diagnostic) = mutex_storage_effects.iter().find_map(|range| {
-            transfer
-                .stable_view_plan
-                .as_ref()
-                .and_then(|plan| {
-                    plan.ledger.memory_access_refusal(
-                        range,
-                        &effective_assumptions,
-                        LoanRefusalOperation::MemoryAccess,
-                    )
-                })
-                .or_else(|| {
-                    entry_state.loan_ledger().and_then(|ledger| {
-                        ledger.memory_access_refusal(
-                            range,
-                            &effective_assumptions,
-                            LoanRefusalOperation::MemoryAccess,
-                        )
-                    })
-                })
-        }) {
-            paths.push(FunctionPath::new(
-                FunctionOutcome::RuntimeError(RuntimeError::LoanRefusal(Box::new(diagnostic))),
-                facts,
-                obligations,
+        let checked_mutex_ranges = transfer
+            .stable_view_plan
+            .iter()
+            .flat_map(|plan| &plan.mutex_uses)
+            .map(|usage| usage.mutex_storage.as_deref())
+            .chain(
+                transfer
+                    .helper_call
+                    .iter()
+                    .map(|helper| helper.mutex_storage.as_deref()),
+            )
+            .collect::<Option<Vec<_>>>();
+        let mutex_ledger = transfer
+            .stable_view_plan
+            .as_ref()
+            .map(|plan| &plan.ledger)
+            .or_else(|| entry_state.loan_ledger());
+        let first_mutex_ordinal =
+            interface.contract_requires().len() + transfer.memory_effects.len();
+        let mutex_requirement_count = if let Some(ranges) = checked_mutex_ranges {
+            let ranges = ranges
+                .into_iter()
+                .cloned()
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect::<Vec<_>>();
+            write_requirements.extend(verified_call_loan_requirements(
+                mutex_ledger,
+                &ranges,
+                call_site,
+                first_mutex_ordinal,
+                "verified call mutex storage write separation",
+            ));
+            ranges.len()
+        } else {
+            paths.push(resource_call_failure(
+                "mutex write has no checked storage extent",
             ));
             continue;
-        }
+        };
+        let first_retirement_ordinal = first_mutex_ordinal + mutex_requirement_count;
         let copy_initialization = if let Some(effect) = application.representation_copy
             && !transfer.memory_effects.is_empty()
         {
@@ -4860,7 +4872,7 @@ fn execute_verified_function_applications_with_suspension(
                 entry_state.loan_ledger(),
                 &retired_allocations,
                 call_site,
-                interface.contract_requires().len() + transfer.memory_effects.len(),
+                first_retirement_ordinal,
                 "suspended worker allocation retirement separation",
             ));
             worker_effects.extend(retired_allocations);
@@ -5149,7 +5161,7 @@ fn execute_verified_function_applications_with_suspension(
             entry_state.loan_ledger(),
             &retired_allocations,
             call_site,
-            interface.contract_requires().len() + transfer.memory_effects.len(),
+            first_retirement_ordinal,
             "verified call allocation retirement separation",
         ));
         paths.push(FunctionPath {
@@ -12071,6 +12083,7 @@ fn prepare_contract_resource_transfer_unexplained(
             };
             let source = selected.1.clone();
             let required = checked.fact.clone();
+            let mutex_storage = checked.mutex_storage.clone();
             if let Err(error) = super::mutexes::helper_contracts::check_call_access(
                 caller_state,
                 &source,
@@ -12101,6 +12114,7 @@ fn prepare_contract_resource_transfer_unexplained(
                 contract,
                 source,
                 required,
+                mutex_storage,
                 guard,
             }))
         } else {
@@ -12224,6 +12238,7 @@ fn prepare_contract_resource_transfer_unexplained(
                     clause_position: requirement.clause_position,
                     section_index: requirement.section_index,
                     selected_mutex_source: None,
+                    mutex_storage: None,
                 };
                 if !implicit_read_views.contains(&piece) {
                     implicit_read_views.push(piece);
@@ -17694,6 +17709,7 @@ fn evaluate_resource_clauses_in_section(
         selected_instance_resource_load_values(state, definitions, assumptions)
     };
     let mut evaluated: Vec<Option<ResourceFact>> = vec![None; resources.len()];
+    let mut mutex_storage = vec![None; resources.len()];
     let mut active = vec![true; resources.len()];
     let mut supplied: Vec<ResourceFact> = Vec::new();
     // Each successful clause extends a shared persistent prefix. Rebuilding
@@ -17720,6 +17736,7 @@ fn evaluate_resource_clauses_in_section(
             &evaluation_state,
             resource,
             &selected_load_values,
+            &mut mutex_storage[index],
             assumptions,
             budget,
         )?;
@@ -17778,6 +17795,7 @@ fn evaluate_resource_clauses_in_section(
             &evaluation_state,
             &resources[index],
             &selected_load_values,
+            &mut mutex_storage[index],
             assumptions,
             budget,
         )?;
@@ -17875,6 +17893,7 @@ fn evaluate_resource_clauses_in_section(
                 clause_position: resources[index].clause_position(),
                 section_index: Some(index),
                 selected_mutex_source: None,
+                mutex_storage: mutex_storage[index].take(),
             })
         })
         .collect()))
@@ -17997,6 +18016,7 @@ fn evaluate_resource_clause_with_dependencies(
     state: &ExecutionState,
     resource: &ResourceSpec,
     selected_load_values: &BTreeMap<(Address, ProgramType), ProgramValue>,
+    mutex_storage: &mut Option<Arc<MemoryRange>>,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<(Result<ResourceFact, RuntimeError>, Vec<ResourceFact>)> {
@@ -18008,6 +18028,7 @@ fn evaluate_resource_clause_with_dependencies(
             state,
             resource,
             selected_load_values,
+            mutex_storage,
             assumptions,
             budget,
         )
@@ -19445,6 +19466,7 @@ pub(super) fn evaluate_function_resource_spec_with_entry(
         state,
         resource,
         &BTreeMap::new(),
+        &mut None,
         assumptions,
         budget,
     )
@@ -19455,6 +19477,7 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
     state: &ExecutionState,
     resource: &ResourceSpec,
     selected_load_values: &BTreeMap<(Address, ProgramType), ProgramValue>,
+    mutex_storage: &mut Option<Arc<MemoryRange>>,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<ResourceFact, RuntimeError>> {
@@ -19631,6 +19654,11 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
                 identity.protected = Some(description);
                 fact = ResourceFact::own(Resource::MutexUse(identity));
             }
+            *mutex_storage = Some(Arc::new(super::mutexes::storage_write_range(
+                &pointer,
+                crate::languages::c::thread_runtime::ModeledPthreadBinding::builtin()
+                    .mutex_storage_bytes,
+            )));
             Ok(Ok(fact))
         }
         ResourceTerm::Publication {
@@ -19704,6 +19732,7 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
                 state,
                 &inner,
                 selected_load_values,
+                mutex_storage,
                 assumptions,
                 budget,
             )? {

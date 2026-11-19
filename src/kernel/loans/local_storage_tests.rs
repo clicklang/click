@@ -16,6 +16,7 @@ fn view(index: usize, end: u32) -> CheckedResourceFact {
         clause_position: None,
         section_index: None,
         selected_mutex_source: None,
+        mutex_storage: None,
     }
 }
 

@@ -582,13 +582,7 @@ fn execute_modeled_pthread_mutex_paths(
                 &path.facts,
                 &path.obligations,
             );
-            let explicit_storage_check = mutex.address().base.is_local_block();
-            let footprint = MemoryRange::new_with_element_width(
-                mutex.address().clone(),
-                0u32.into(),
-                binding.mutex_storage_bytes.into(),
-                1,
-            );
+            let footprint = super::mutexes::storage_write_range(mutex, binding.mutex_storage_bytes);
             let storage_refusal = (initializing && !state.preserves_mutex_protocols)
                 .then(|| {
                     super::mutexes::initialization_storage_refusal(
@@ -599,23 +593,7 @@ fn execute_modeled_pthread_mutex_paths(
                         &current,
                     )
                 })
-                .flatten()
-                .or_else(|| {
-                    // External mutex coordinates can lack a caller-side
-                    // spelling for a byte-range prerequisite.
-                    (!explicit_storage_check && (!initializing || !state.preserves_mutex_protocols))
-                        .then(|| {
-                            state.loan_ledger().and_then(|ledger| {
-                                ledger.memory_access_refusal(
-                                    &footprint,
-                                    &current,
-                                    super::LoanRefusalOperation::MemoryAccess,
-                                )
-                            })
-                        })
-                        .flatten()
-                        .map(|refusal| RuntimeError::LoanRefusal(Box::new(refusal)))
-                });
+                .flatten();
             let transition = if let Some(error) = storage_refusal {
                 Err(error)
             } else if initializing {
@@ -850,7 +828,6 @@ fn execute_modeled_pthread_mutex_paths(
                     // Only this checked path bypasses its ordinary-write reservation.
                     if let Some(requirement) = state
                         .loan_ledger()
-                        .filter(|_| explicit_storage_check)
                         .and_then(|ledger| ledger.memory_access_requirement(&footprint))
                     {
                         path.obligations.push(
