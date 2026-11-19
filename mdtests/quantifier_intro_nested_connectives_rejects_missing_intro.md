@@ -21,11 +21,11 @@ theorem nested_universal_body(n: int32) {
         intro();
         have 0 <= k;
         have k < n;
-        all positional {
-            left => {
+        all {
+            0 <= k => {
                 known();
             }
-            right => {
+            (k < n or k == n) => {
                 have k < n by known();
                 known();
             }

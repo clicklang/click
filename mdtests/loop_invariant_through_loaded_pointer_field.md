@@ -73,7 +73,7 @@ int32 probe_contract(struct job *j) {
 
         initialize by {
             have j->lo <= i and i <= j->hi by {
-                all positional { left => { normalize(); } right => { known(); } }
+                all { j->lo <= i => { normalize(); } i <= j->hi => { known(); } }
             }
             have forall (k: int32) { j->lo <= k and k < i implies j->p[k] == j->v } by {
                 intro();

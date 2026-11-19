@@ -32,11 +32,11 @@ int32 loop_entry_guard_intro_required(int32 p[3]) {
 
         initialize by {
             have i >= 0 and i <= 3 by {
-                all positional {
-                    left => {
+                all {
+                    i >= 0 => {
                         normalize();
                     }
-                    right => {
+                    i <= 3 => {
                         normalize();
                     }
                 }

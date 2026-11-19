@@ -1384,6 +1384,9 @@ fn unparseable_expansion_error_for_file(
     parse_error: ClickError,
     file: Option<&ClickFile>,
 ) -> ClickError {
+    if replacement.contains(super::printing::UNRAISED_CONJUNCT) {
+        return ClickError::new("the expansion could not raise a checked `all` arm label");
+    }
     if !UNRAISABLE_POINTER_FORMS
         .iter()
         .any(|form| replacement.contains(form))
@@ -4863,23 +4866,16 @@ fn proof_tactic_entries(
                         entries,
                     )?;
                 }
-                // A structural `both` numbers as one claim-level tactic; the
+                // An `all` block counts as one claim-level tactic; the
                 // tactics in its arms are addressed by arm and written
                 // position below it, as the script runner reports them.
                 let arms = match item.tactic {
-                    FlatTactic::Written(ProofTactic::Both(both)) if !smart => Some(
-                        tokens
-                            .labeled_arms(&item.tokens, ["left", "right"])?
-                            .into_iter()
-                            .zip([both.left_tactics.as_slice(), both.right_tactics.as_slice()])
-                            .collect::<Vec<_>>(),
-                    ),
                     FlatTactic::Written(ProofTactic::All(all)) if !smart => Some(
                         tokens
                             .cases_arms(&item.tokens)?
                             .into_iter()
                             .zip(all.arms.iter().map(|arm| arm.tactics.as_slice()))
-                            .collect(),
+                            .collect::<Vec<_>>(),
                     ),
                     _ => None,
                 };
@@ -5161,12 +5157,6 @@ fn smart_container_alias_entries(
                     arms.into_iter()
                         .zip(all.arms.iter().map(|arm| arm.tactics.as_slice())),
                 );
-            }
-        }
-        ProofTactic::Both(both) => {
-            if let Ok([left, right]) = tokens.labeled_arms(&tactic_tokens, ["left", "right"]) {
-                blocks.push((left, &both.left_tactics));
-                blocks.push((right, &both.right_tactics));
             }
         }
         _ => {}
@@ -5646,16 +5636,13 @@ fn offset_at_position(source: &str, line: usize, column: usize) -> Result<usize,
 }
 
 /// The written arm blocks, as `(open, close)` token pairs, of a proof `if`,
-/// `cases`, or `both` tactic; `None` for any other tactic.
+/// `cases`, or `all` tactic; `None` for any other tactic.
 fn structured_tactic_arm_blocks(
     tokens: &ProofTokens<'_>,
     range: Range<usize>,
 ) -> Result<Option<Vec<(usize, usize)>>, ClickError> {
     Ok(match tokens[range.start].text.as_str() {
         "if" => Some(tokens.two_arms(&range, "if")?.to_vec()),
-        "all" if tokens[range.start + 1].text == "positional" => {
-            Some(tokens.labeled_arms(&range, ["left", "right"])?.to_vec())
-        }
         "cases" | "all" => Some(tokens.cases_arms(&range)?),
         _ => None,
     })
@@ -5796,11 +5783,6 @@ fn collect_tactic_block_spans<'t>(
                 for ((open, close), arm) in blocks.into_iter().zip(&all.arms) {
                     collect_tactic_block_spans(tokens, open, close, &arm.tactics, spans)?;
                 }
-            }
-            ProofTactic::Both(both) => {
-                let [left, right] = tokens.labeled_arms(&token_range, ["left", "right"])?;
-                collect_tactic_block_spans(tokens, left.0, left.1, &both.left_tactics, spans)?;
-                collect_tactic_block_spans(tokens, right.0, right.1, &both.right_tactics, spans)?;
             }
             ProofTactic::Cases(proof_cases) => {
                 let blocks = tokens.cases_arms(&token_range)?;

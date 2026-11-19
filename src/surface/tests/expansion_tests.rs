@@ -3436,27 +3436,13 @@ theorem fixed_integer_witness(value: int32) {
         z == 0 and to_integer(value + 1) == to_integer(value + 1)
     } by {
         witness(0);
-        all positional {
-            left => {
-                all positional {
-                    left => {
-                        known();
-                    }
-                    right => {
-                        known();
-                    }
-                }
-            }
-            right => {
-                all positional {
-                    left => {
-                        normalize();
-                    }
-                    right => {
-                        normalize();
-                    }
-                }
-            }
+        all {
+          to_integer(value) + 1 <= 2147483647 => { known(); }
+          to_integer(value) + 1 >= -2147483648 => { known(); }
+          to_integer(value) + 1 <= 2147483647 => { known(); }
+          to_integer(value) + 1 >= -2147483648 => { known(); }
+          (0 : Integer) == 0 => { normalize(); }
+          to_integer(value + 1) == to_integer(value + 1) => { normalize(); }
         }
     }
 }
@@ -3466,10 +3452,7 @@ theorem fixed_integer_witness(value: int32) {
     let fixed_expanded =
         expand_c_claim_source_by_label(fixed_witness, &[], "fixed_integer_witness.witness_fixed")
             .expect("fixed Integer witness should expand");
-    assert!(
-        fixed_expanded.contains("all positional {"),
-        "{fixed_expanded}"
-    );
+    assert!(fixed_expanded.contains("all {"), "{fixed_expanded}");
     verify_c_sources(&fixed_expanded, &[]).expect("expanded fixed Integer witness should recheck");
 
     let missing_definedness = r#"
@@ -21364,11 +21347,11 @@ fn arithmetic_in_each_both_arm_is_selected_at_its_location() {
  requires 0 <= a;
  requires 0 <= b;
  ensures 0 <= a and 0 <= b by {
-  all positional {
-      left => {
+  all {
+      0 <= a => {
        solve() using { 0 <= a; };
       }
-      right => {
+      0 <= b => {
        solve() using { 0 <= b; };
       }
   }
@@ -22467,14 +22450,14 @@ fn structural_invariant_bundles_expand_as_ordered_member_haves() {
             requires a == b;
             requires b == 0;
             ensures a == 0 and (a == 0 implies a + 1 == 1) by {
-                all positional {
-                    left => {
+                all {
+                    a == 0 => {
                         have a == 0 by {
                             rewrite(a, b); rewrite(b, 0); normalize();
                         }
                         known();
                     }
-                    right => {
+                    (a == 0 implies a + 1 == 1) => {
                         intro();
                         have a == 0 by { known(); }
                         have a + 1 == 1 by { rewrite(a, 0); normalize(); }
@@ -22507,7 +22490,7 @@ fn structural_invariant_bundles_expand_as_ordered_member_haves() {
             requires a == b;
             requires b == 0;
             ensures a == 0 and (a == 0 implies a + 1 == 1)
-            {} all positional {{ left => {{ known(); }} right => {{ intro(); known(); }} }}
+            {} all {{ a == 0 => {{ known(); }} (a == 0 implies a + 1 == 1) => {{ intro(); known(); }} }}
             }}
         }}
     "#,
@@ -24387,9 +24370,9 @@ fn conjunction_expansion_raises_lowered_definedness_bounds() {
 theorem increment_domain(x: int32) {
     requires defined(x + 1);
     ensures checked: defined(x + 1) by {
-        all positional {
-            left => { solve(); }
-            right => { solve(); }
+        all {
+            to_integer(x) + 1 <= 2147483647 => { solve(); }
+            to_integer(x) + 1 >= -2147483648 => { solve(); }
         }
     }
 }
@@ -24397,7 +24380,6 @@ theorem increment_domain(x: int32) {
     let expanded = expand_c_claim_source_by_label(source, &[], "increment_domain.checked")
         .expect("the definedness bounds should expand");
     assert!(expanded.contains("all {"), "{expanded}");
-    assert!(!expanded.contains("all positional"), "{expanded}");
     assert!(expanded.contains("2147483647"), "{expanded}");
     assert!(expanded.contains("-2147483648"), "{expanded}");
     crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &[]))

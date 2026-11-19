@@ -147,12 +147,6 @@ impl ProofSourceIndex {
                     .map(|arms| arms.to_vec())
                     .unwrap_or_default();
             }
-            "all" if self.tokens[range.start + 1].text == "positional" => {
-                result.arms = parsed
-                    .labeled_arms(&self.tokens, range, ["left", "right"])
-                    .map(|arms| arms.to_vec())
-                    .unwrap_or_default();
-            }
             "cases" | "match" | "all" => result.arms = parsed.child_blocks(range),
             kind @ ("branch" | "outcomes") => {
                 let labels = match kind {

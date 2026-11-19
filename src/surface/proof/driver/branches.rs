@@ -8,12 +8,8 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         tactic: &ProofTactic,
     ) -> Result<Proof<'a>, ClickError> {
         let driver_proof = self.proof;
-        // The `both` sits at this proof's own site, the claim's source tactic
-        // its driver attributed, so each arm tactic is addressed inside it
-        // (`tactic 3 > left arm tactic 1`) exactly as a `both` written in a
-        // block addresses its arms. Re-addressing it as the first tactic of
-        // a block would drop the claim-level position and leave the arms
-        // without a source path.
+        // Keep the conjunction at its claim-level source site so each
+        // nested arm receives the same address as a tactic written there.
         driver_proof
             .driver()
             .try_addressed_linear_script(

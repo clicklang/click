@@ -49,7 +49,7 @@ fn check_integer_rewrite_of_nested_native_bounds(ty: &str, suffix: &str) {
         requires y <= 20;
         ensures x <= 10{suffix} and x <= 20{suffix} by {{
             rewrite(to_integer(x), y);
-            all positional {{ left => {{ known(); }} right => {{ known(); }} }}
+            all {{ y <= 10 => {{ known(); }} y <= 20 => {{ known(); }} }}
         }}
     }}"#
     );
@@ -94,11 +94,11 @@ theorem prefix_bound(n: uint64) {
  ensures 0 <= to_integer(n - n % 4u64) and to_integer(n - n % 4u64) <= 22204 by {
   rewrite(to_integer(n - n % 4u64), to_integer(n) - truncating_remainder(to_integer(n), 4));
   unfold(prefix(to_integer(n)));
-  all positional {
-      left => {
+  all {
+      0 <= to_integer(n) - truncating_remainder(to_integer(n), 4) => {
        solve() using { 0 <= prefix(to_integer(n)); prefix(to_integer(n)) == to_integer(n) - truncating_remainder(to_integer(n), 4); };
       }
-      right => {
+      to_integer(n) - truncating_remainder(to_integer(n), 4) <= 22204 => {
        known();
       }
   }
@@ -229,37 +229,23 @@ fn both_and_proves_exact_conjuncts_and_rejects_incomplete_arms() {
     let source = r#"
         theorem pair(x: int32) {
             ensures x == x and (x <= x and x >= x) by {
-                all positional {
-                    left => { normalize(); }
-                    right => {
-                        all positional { left => { normalize(); } right => { normalize(); } }
+                all {
+                    x == x => { normalize(); }
+                    (x <= x and x >= x) => {
+                        all { x <= x => { normalize(); } x >= x => { normalize(); } }
                     }
                 }
             }
         }
     "#;
     verify_c_sources(source, &[]).expect("nested exact conjunction proofs");
-    let right_first = r#"
-        theorem pair(x: int32) {
-            ensures (x == 0 implies x == 0) and ((x == 1 implies x == 1) and x == x) by {
-                all positional {
-                    right => {
-                        all positional { right => { normalize(); } left => { intro(); known(); } }
-                    }
-                    left => { intro(); known(); }
-                }
-            }
-        }
-    "#;
-    verify_c_sources(right_first, &[]).expect("nested right-first conjunction proofs");
     for bad in [
-        source.replacen("left => { normalize(); }", "left => { }", 1),
+        source.replacen("x == x => { normalize(); }", "x == x => { }", 1),
         source.replace("x >= x", "x > x"),
-        source.replacen("right => { normalize(); }", "", 1),
-        source.replacen("right =>", "left =>", 1),
-        right_first.replace("left =>", "right =>"),
+        source.replacen("x >= x => { normalize(); }", "", 1),
+        source.replacen("x == x =>", "x <= x =>", 1),
         source.replace(
-            "all positional { left => { normalize(); } right => { normalize(); } }",
+            "all { x <= x => { normalize(); } x >= x => { normalize(); } }",
             "all { normalize(); } and { normalize(); }",
         ),
     ] {
@@ -267,7 +253,7 @@ fn both_and_proves_exact_conjuncts_and_rejects_incomplete_arms() {
     }
     let leaking = r#"theorem leak(x: int32) {
         ensures (x == 0 implies x == 0) and x == 0 by {
-            all positional { left => { intro(); known(); } right => { known(); } }
+            all { (x == 0 implies x == 0) => { intro(); known(); } x == 0 => { known(); } }
         }
     }"#;
     assert!(
@@ -282,7 +268,7 @@ fn both_and_outcome_expands_and_rechecks() {
     let c = "int32 identity(int32 x) { return x; }";
     let source = r#"verifying "identity.c";
         int32 identity(int32 x) { ensures result == x and result <= x; } by {
-            step(); all positional { right => { solve(); } left => { known(); } }
+            step(); all { result == x => { known(); } result <= x => { solve(); } }
         }
     "#;
     let sources = [("identity.c", c)];
@@ -1503,6 +1489,7 @@ fn named_conjunct_proofs_check_shape_and_order() {
         }
     "#;
     verify_click_theorems(source).unwrap();
+    assert!(verify_click_theorems(&source.replace("all {", "all positional {")).is_err());
     for (changed, reason) in [
         (
             source.replace("x <= x => { normalize(); }", ""),

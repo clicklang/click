@@ -469,8 +469,7 @@ fn parser_bounds_non_parenthesized_surface_nesting_before_ast_construction() {
 
     let mut proof_body = String::from("normalize();");
     for _ in 0..=parser::STRUCTURAL_NESTING_LIMIT {
-        proof_body =
-            format!("all positional {{ left => {{ {proof_body} }} right => {{ normalize(); }} }}");
+        proof_body = format!("have 0 == 0 by {{ {proof_body} }} normalize();");
     }
     let proof_error = parser::parse_file_items(&format!(
         "theorem too_deep_proof() {{ ensures 0 == 0 by {{ {proof_body} }} }}"
@@ -657,12 +656,10 @@ fn surface_depths_survive_consumption(
     drop(printed_sequence);
     drop(sequence_file);
 
-    let mut proof_goal = String::from("0 == 0");
+    let proof_goal = "0 == 0";
     let mut proof_body = String::from("normalize();");
     for _ in 0..structural_depth - 2 {
-        proof_goal.push_str(" and 0 == 0");
-        proof_body =
-            format!("all positional {{ left => {{ {proof_body} }} right => {{ normalize(); }} }}");
+        proof_body = format!("have 0 == 0 by {{ {proof_body} }} normalize();");
     }
     let proof_source =
         format!("theorem at_limit_proof() {{ ensures {proof_goal} by {{ {proof_body} }} }}");
@@ -673,7 +670,7 @@ fn surface_depths_survive_consumption(
         panic!("the supported proof boundary should remain a script");
     };
     let printed_proof = super::super::printing::format_partial_tactic_sequence(tactics);
-    assert!(printed_proof.contains("all positional"));
+    assert!(printed_proof.contains("have 0 == 0 by"));
     drop(printed_proof);
     drop(proof_file);
 
@@ -2248,7 +2245,7 @@ theorem reflexive_pair() {
     let explicit = r#"
 theorem reflexive_pair() {
     ensures 1 == 1 and 2 == 2 by {
-        all positional { left => { normalize(); } right => { normalize(); } }
+        all { 1 == 1 => { normalize(); } 2 == 2 => { normalize(); } }
     }
 }
 "#;

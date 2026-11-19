@@ -1277,9 +1277,7 @@ are local to that arm. An absent, extra, out-of-order, or unfinished arm
 fails. An ordinary conjunction can still be closed by `solve()`.
 
 Expansion writes a flat list using the retained child goals or by raising
-their kernel propositions from the names in scope. Some existing proof
-certificates still use `all positional { left => { ... } right => { ... } }`.
-The positional arms select the lowered goal's immediate children.
+their kernel propositions from the names in scope.
 
 **Checked examples:** [Conjunction goals](https://github.com/clicklang/click/blob/master/mdtests/proof_both_and.md)
 

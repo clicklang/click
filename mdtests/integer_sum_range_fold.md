@@ -198,13 +198,12 @@ int32 sum(int32 a[], int32 n) {
             }
             have defined((total + a[i])) by {
                 have defined(total + a[i]);
-                all positional {
-                    left => {
+                all {
+                    defined(load_int32((a + i))) => {
                         known();
                     }
-                    right => {
-                        known();
-                    }
+                    to_integer(total) + to_integer(a[i]) <= 2147483647 => { known(); }
+                    to_integer(total) + to_integer(a[i]) >= -2147483648 => { known(); }
                 }
             }
             have to_integer((total + a[i])) == (to_integer(total) + to_integer(a[i]));

@@ -10439,7 +10439,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         {
             let split = (|| {
                 let (proof, split, ids) = search_input.split_focused_both().ok()?;
-                let marker = proof.checkpoint();
+                let marker = proof.conjunction_checkpoint(ids).ok()?;
                 let left = crate::kernel::search::ProofSearch::try_restricted_solve_closure(
                     &(proof.focus_branch(ids[0]).ok()?),
                     surfaces,

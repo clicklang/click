@@ -291,7 +291,6 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "owns",
     "predicate",
     "prop",
-    "positional",
     "preserve",
     "produces",
     "read",

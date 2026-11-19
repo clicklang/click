@@ -809,8 +809,8 @@ impl ProofStep {
     }
 
     /// Flatten a consecutive conjunction split using the surface goals
-    /// carried by its leaves. If a lowered split has no written child goal,
-    /// its certificate keeps the explicit positional form.
+    /// carried by its leaves. Unspelled children can replay internally but
+    /// cannot be printed as a source certificate.
     fn named_conjunction_tactic(&self) -> Option<ProofAll> {
         let mut pending = vec![(None, std::slice::from_ref(self))];
         let mut leaves = Vec::new();

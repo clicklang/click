@@ -10208,10 +10208,6 @@ impl Parser {
         let name = self.expect_ident("tactic")?;
         match name.as_str() {
             "let" => self.parse_let_proof_tactic(),
-            "all" if self.peek_ident() == Some("positional") => {
-                self.position += 1;
-                self.parse_both_proof_tactic()
-            }
             "all" => self.parse_all_proof_tactic(),
             "if" => self.parse_if_proof_tactic(),
             _ => self.parse_other_proof_tactic(name),
@@ -10607,89 +10603,75 @@ impl Parser {
 
     #[inline(never)]
     fn parse_all_proof_tactic(&mut self) -> Result<ProofTactic, ClickError> {
-        self.expect(Token::LBrace)?;
+        // Descend into arm-leading conjunctions on an explicit stack. Each
+        // deferred arm has its own lexical scope and may have a script tail.
+        let mut parents = Vec::new();
         let mut arms = Vec::new();
-        while self.peek() != Some(&Token::RBrace) {
-            let proposition = self.parse_proposition()?;
-            self.expect(Token::FatArrow)?;
-            let tactics = self.parse_possibly_empty_tactic_block()?;
-            arms.push(ProofAllArm {
-                proposition,
-                tactics,
-            });
+        self.expect(Token::LBrace)?;
+        loop {
+            if self.peek() == Some(&Token::RBrace) {
+                self.expect(Token::RBrace)?;
+                if arms.len() < 2 {
+                    return Err(self.error("`all` needs at least two conjunct proofs"));
+                }
+                self.skip_redundant_semicolon();
+                let nested = ProofTactic::All(ProofAll { arms });
+                let Some((outer, proposition, open, start, scope, names, values)) = parents.pop()
+                else {
+                    return Ok(nested);
+                };
+                self.proof_nesting -= 1;
+                arms = outer;
+                let mut tactics = vec![nested];
+                let mut starts = vec![start];
+                while self.peek() != Some(&Token::RBrace) {
+                    let position = self.position;
+                    tactics.push(self.parse_proof_tactic()?);
+                    starts.push(self.positions[position].clone());
+                }
+                self.record_proof_block(open, starts);
+                self.expect(Token::RBrace)?;
+                self.names.end(scope);
+                self.names.replace(NameKind::ProofBinder, names);
+                self.loop_proof_value_names = values;
+                arms.push(ProofAllArm {
+                    proposition,
+                    tactics,
+                });
+            } else {
+                let proposition = self.parse_proposition()?;
+                self.expect(Token::FatArrow)?;
+                if matches!(self.tokens.get(self.position..self.position + 2),
+                    Some([Token::LBrace, Token::Ident(name)]) if name == "all")
+                {
+                    if self.proof_nesting > STRUCTURAL_NESTING_LIMIT {
+                        return Err(self.error(format!(
+                            "structural proof nesting exceeds Click's supported depth of {STRUCTURAL_NESTING_LIMIT}"
+                        )));
+                    }
+                    parents.push((
+                        std::mem::take(&mut arms),
+                        proposition,
+                        self.positions[self.position].clone(),
+                        self.positions[self.position + 1].clone(),
+                        self.names.scope(),
+                        self.names.take(NameKind::ProofBinder),
+                        self.loop_proof_value_names.clone(),
+                    ));
+                    self.proof_nesting += 1;
+                    self.position += 2;
+                    self.expect(Token::LBrace)?;
+                    continue;
+                }
+                let tactics = self.parse_possibly_empty_tactic_block()?;
+                arms.push(ProofAllArm {
+                    proposition,
+                    tactics,
+                });
+            }
             if self.peek() == Some(&Token::Comma) {
                 self.position += 1;
             }
-        }
-        self.expect(Token::RBrace)?;
-        if arms.len() < 2 {
-            return Err(self.error("`all` needs at least two conjunct proofs"));
-        }
-        self.skip_redundant_semicolon();
-        Ok(ProofTactic::All(ProofAll { arms }))
-    }
-
-    #[inline(never)]
-    fn parse_both_proof_tactic(&mut self) -> Result<ProofTactic, ClickError> {
-        // The first-written blocks that hold only a nested `both`,
-        // outermost first. Keep this descent iterative for deep proofs.
-        let mut nested_blocks = Vec::new();
-        let mut first_is_left;
-        let mut first_tactics = loop {
-            let nested_both = nested_blocks.len();
-            if nested_both > 0 && self.proof_nesting + nested_both >= STRUCTURAL_NESTING_LIMIT {
-                return Err(self.error(format!(
-                    "structural proof nesting exceeds Click's supported depth of {STRUCTURAL_NESTING_LIMIT}"
-                )));
-            }
-            self.expect(Token::LBrace)?;
-            first_is_left = match self.peek_ident() {
-                Some("left") => true,
-                Some("right") => false,
-                _ => return Err(self.error("`all positional` expects a `left` or `right` arm")),
-            };
-            self.position += 1;
-            self.expect(Token::FatArrow)?;
-            self.expect(Token::LBrace)?;
-            if self.peek_ident() == Some("all")
-                && self.tokens.get(self.position + 1).is_some_and(
-                    |token| matches!(token, Token::Ident(name) if name == "positional"),
-                )
-            {
-                nested_blocks.push((
-                    first_is_left,
-                    self.positions[self.position - 1].clone(),
-                    self.positions[self.position].clone(),
-                ));
-                self.position += 2;
-            } else {
-                break self.parse_tactics_until_rbrace()?;
-            }
-        };
-        self.expect(Token::RBrace)?;
-
-        loop {
-            self.expect_ident_spelling(if first_is_left { "right" } else { "left" })?;
-            self.expect(Token::FatArrow)?;
-            let second_tactics = self.parse_possibly_empty_tactic_block()?;
-            self.expect(Token::RBrace)?;
-            self.skip_redundant_semicolon();
-            let (left_tactics, right_tactics) = if first_is_left {
-                (first_tactics, second_tactics)
-            } else {
-                (second_tactics, first_tactics)
-            };
-            let current = ProofTactic::Both(ProofBoth {
-                left_tactics,
-                right_tactics,
-            });
-            let Some((parent_first_is_left, open, start)) = nested_blocks.pop() else {
-                return Ok(current);
-            };
-            self.record_proof_block(open, vec![start]);
-            self.expect(Token::RBrace)?;
-            first_is_left = parent_first_is_left;
-            first_tactics = vec![current];
         }
     }
 
@@ -17869,9 +17851,7 @@ fn validate_parenthesis_nesting(
                 let preceding = index.checked_sub(1).and_then(|i| tokens.get(i));
                 // An `all` container groups its arms. Only their
                 // bodies contribute to proof nesting.
-                let all_container = matches!(preceding, Some(Token::Ident(name)) if name == "all")
-                    || matches!(index.checked_sub(2).and_then(|i| tokens.get(i..index)),
-                        Some([Token::Ident(tactic), Token::Ident(mode)]) if tactic == "all" && mode == "positional");
+                let all_container = matches!(preceding, Some(Token::Ident(name)) if name == "all");
                 // Proof `if` else blocks are read by the iterative spine
                 // parser. They retain a scope, but no recursive parser frame.
                 let recursive_proof = proof
