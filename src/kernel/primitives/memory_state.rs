@@ -10455,9 +10455,45 @@ impl ExecutionState {
         split: &super::program_point::PathLink,
     ) {
         self.point = super::program_point::PathLink::joining(
-            &left.point,
-            &right.point,
+            left.program_point(),
+            right.program_point(),
             split,
+            super::intern_memory_ref(&self.memory),
+        );
+    }
+
+    /// Apply a loop-head local replacement and its normal resource
+    /// invalidation. Publish the accumulated effects once at the head.
+    pub(in crate::kernel) fn replace_loop_head_local_cell(
+        &mut self,
+        slot: Address,
+        value: ProgramValue,
+    ) {
+        let memory = self.memory.clone().store(slot, value);
+        self.replace_memory(memory, false);
+    }
+
+    /// Install the checked arbitrary-iteration memory as one point. Its
+    /// abstract local replacements can discard old versions but are not
+    /// execution stores supplying new indexed values.
+    pub(in crate::kernel) fn set_loop_head_memory(&mut self, memory: SymbolicMemory) {
+        self.replace_memory(memory, false);
+        let steps = self.memory.pending_steps.take();
+        self.point = self
+            .point
+            .after_loop_head(super::intern_memory_ref(&self.memory), steps);
+    }
+
+    /// The loop successor carries only read versions shared by its exits.
+    pub(in crate::kernel) fn join_loop_exit_program_points(&mut self, exits: &[&Self]) {
+        let points = exits
+            .iter()
+            .map(|state| state.program_point())
+            .collect::<Vec<_>>();
+        self.memory.pending_steps = None;
+        self.point = super::program_point::PathLink::joining_points(
+            &points,
+            None,
             super::intern_memory_ref(&self.memory),
         );
     }
