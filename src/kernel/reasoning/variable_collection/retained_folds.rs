@@ -323,37 +323,6 @@ pub(super) fn common_variables(
                     &mut SeenTerms::default(),
                 );
             }
-            KernelTermNode::BoolRead(read) => {
-                let (point, address) = read.parts();
-                let memory = point.shared_memory();
-                match mode {
-                    FoldVariableRead::ExpressionFree => {
-                        collect_shared_memory_bitvector_variables(memory, &mut leaf_variables);
-                        super::retained_pointers::collect_address_variables_with_summaries(
-                            address,
-                            mode,
-                            &mut leaf_variables,
-                            summaries,
-                        );
-                        if collecting_connection_variables() {
-                            collect_stored_load_connection_variables(
-                                memory,
-                                address.exact_cell_key(),
-                                &mut leaf_variables,
-                            );
-                        }
-                    }
-                    FoldVariableRead::MachineCapture => {
-                        super::retained_pointers::collect_address_variables_with_summaries(
-                            address,
-                            mode,
-                            &mut leaf_variables,
-                            summaries,
-                        )
-                    }
-                    _ => {}
-                }
-            }
             KernelTermNode::PointerEqual(pair) => {
                 for value in pair.arguments() {
                     for address in value.addresses() {
@@ -702,11 +671,8 @@ mod tests {
                     ProgramValue::Bool(MachineTerm::Variable(unrelated)),
                 ),
         );
-        let native = ConditionTerm::BoolLoad(ProgramPoint::at(&memory), Box::new(address));
+        let native = ConditionTerm::boolean_cell_read(ProgramPoint::at(&memory), address);
         let root = KernelTermImport::default().condition(&native);
-        let KernelTermNode::BoolRead(read) = root.node() else {
-            panic!("retained Boolean read");
-        };
         for (connections, frame) in [(false, false), (true, false), (true, true), (true, false)] {
             let expected = condition_variables_in_scope(
                 BooleanOperandView::Native(&native),
@@ -726,9 +692,6 @@ mod tests {
                 assert!(!actual.contains(&unrelated));
             }
         }
-        let (_, work) =
-            crate::instrumentation::measure_deterministic_work(|| read.parts().1.exact_cell_key());
-        assert_eq!(work, 0, "the connection query prepared the exact address");
     }
 
     #[test]
@@ -1280,11 +1243,11 @@ mod tests {
                 IntegerTerm::Variable(Variable(999561)).into(),
                 IntegerTerm::Variable(Variable(999562)).into(),
             )),
-            else_condition: Box::new(ConditionTerm::BoolLoad(
+            else_condition: Box::new(ConditionTerm::boolean_cell_read(
                 crate::kernel::ProgramPoint::at(&crate::kernel::intern_memory(
                     SymbolicMemory::new(),
                 )),
-                Box::new(Address::symbolic(Variable(999563))),
+                Address::symbolic(Variable(999563)),
             )),
         });
         let application = SharedPureApplication::intern(
@@ -1326,7 +1289,7 @@ mod tests {
             IntegerTerm::Variable(Variable(970_002)).into(),
         );
         for source in [
-            ConditionTerm::BoolLoad(
+            ConditionTerm::boolean_cell_read(
                 crate::kernel::ProgramPoint::at(&crate::kernel::intern_memory(
                     crate::kernel::SymbolicMemory::new()
                         .with_block("bool-dependencies", 4)
@@ -1335,13 +1298,13 @@ mod tests {
                             ProgramValue::Int32(MachineTerm::Variable(Variable(970_030))),
                         ),
                 )),
-                Box::new(Address {
+                Address {
                     base: AddressBase::Symbolic(Variable(970_031)),
                     offset: AddressOffset::scaled_int32_node(
                         MachineTerm::Variable(Variable(970_032)),
                         4,
                     ),
-                }),
+                },
             ),
             ConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,

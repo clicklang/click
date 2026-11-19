@@ -1585,15 +1585,6 @@ fn collect_condition_reads(condition: &ConditionTerm, reads: &mut Vec<ResourceRe
                 collect_condition_reads(child, reads);
             }
         }
-        // A `bool` cell is one byte.
-        ConditionTerm::BoolLoad(memory, pointer) => push_read(
-            reads,
-            OwnedResource::Cell {
-                pointer: pointer.as_ref().clone(),
-                bytes: 1,
-            },
-            memory.clone(),
-        ),
     }
 }
 

@@ -2247,7 +2247,6 @@ fn hash_memory_blind_condition<H: std::hash::Hasher>(condition: &ConditionTerm, 
             hash_memory_blind_condition(left, hasher);
             hash_memory_blind_condition(right, hasher);
         }
-        ConditionTerm::BoolLoad(_, pointer) => hash_memory_blind_pointer(pointer, hasher),
     }
 }
 
@@ -2431,13 +2430,6 @@ fn collect_condition_memory_load_keys(
         ConditionTerm::BoolEqual(left, right) => {
             collect_condition_memory_load_keys(left, keys);
             collect_condition_memory_load_keys(right, keys);
-        }
-        ConditionTerm::BoolLoad(_, pointer) => {
-            keys.insert((
-                pointer.base.clone(),
-                memory_blind_pointer_fingerprint(pointer),
-            ));
-            collect_pointer_offset_memory_load_keys(&pointer.offset, keys);
         }
     }
 }
@@ -2792,18 +2784,6 @@ fn collect_condition_memory_loads(
         ConditionTerm::BoolEqual(left, right) => {
             collect_condition_memory_loads(left, current_memory, loads, seen_integers)?;
             collect_condition_memory_loads(right, current_memory, loads, seen_integers)
-        }
-        // A `bool` cell is one byte.
-        ConditionTerm::BoolLoad(memory, pointer) => {
-            if MemoryStateIdentity::of(memory.memory()) == MemoryStateIdentity::of(current_memory) {
-                loads.push((pointer.as_ref().clone(), 1));
-            }
-            collect_pointer_offset_memory_loads(
-                &pointer.offset,
-                current_memory,
-                loads,
-                seen_integers,
-            )
         }
     }
 }

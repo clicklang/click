@@ -412,8 +412,7 @@ impl ConditionTerm {
             | crate::kernel::integer_comparison_condition!(_, _)
             | Self::BoolApplication(_)
             | Self::BoolIf { .. }
-            | Self::BoolEqual(..)
-            | Self::BoolLoad(..) => None,
+            | Self::BoolEqual(..) => None,
         }
     }
 }

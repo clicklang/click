@@ -224,9 +224,9 @@ fn a_bool_read_is_one_value_per_cell() {
     let _session = VerificationSession::enter();
     let memory = crate::kernel::intern_memory(SymbolicMemory::new());
     let read = || {
-        ConditionTerm::BoolLoad(
+        ConditionTerm::boolean_cell_read(
             crate::kernel::ProgramPoint::at(&memory),
-            Box::new(Address::symbolic(Variable(70))),
+            Address::symbolic(Variable(70)),
         )
     };
     let context = PureFactContext::new()

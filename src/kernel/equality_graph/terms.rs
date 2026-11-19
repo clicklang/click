@@ -342,7 +342,6 @@ enum Node {
     BoolVariable(Variable),
     BoolFunction(crate::kernel::SharedPureApplication, usize),
     BoolIf,
-    BoolRead((u32, u32)),
     /// The head of rule C1's cast `b as F` (Stage 5), applied to `b`'s
     /// class.
     BoolCast(crate::kernel::MachineIntegerType),

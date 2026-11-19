@@ -816,24 +816,24 @@ the widths a rule supports; it asks the module
 The last seven rows are the logic of Click `Bool` (Stage 5 of
 `design/machine-integers.md`, decision of 2026-10-26), which is the
 condition sort: a `Bool` term is a `ConditionTerm`. Besides the literals
-(`Constant`), binders (`Variable`) and comparisons it has four value forms
-(`src/kernel/primitives/bool_sort.rs`): `BoolApplication`, `BoolIf`,
-`BoolEqual` and `BoolLoad`, a one-byte `bool` cell's read. Soundness: L-If
+(`Constant`), binders (`Variable`) and comparisons it has three value forms
+(`src/kernel/primitives/bool_sort.rs`): `BoolApplication`, `BoolIf` and
+`BoolEqual`. Soundness: L-If
 and L-Eq are the two-valued meaning of `if` and of logical equality, and
 L-Unfold is the defining equation of a total pure function, whose
 termination is checked where it is declared. In the e-graph a `Bool`
 value is a class (a literal per value, annotated with its truth; a
 binder's class; a call of a function head on its argument classes; a call
 of the conditional's head on its three classes; the condition node
-`BoolEq`, true when its operands meet; a read head applied to an address
-class), so each subterm is interned once and a merge moves truth in
+`BoolEq`, true when its operands meet), so each subterm is interned once and a merge moves truth in
 constant work. A binder's facts are kept by binder (`bool_binder_truth`)
 until a `Bool` value interns it, so the answer does not depend on which
 fact was filed first. The specification lowers `-> Bool` applications to
 `BoolApplication`, `Bool` binders to `Variable`, `Bool` conditionals to
-`BoolIf` and `Bool` equalities to `BoolEqual`; no front end builds
-`BoolLoad` yet (a `bool` cell's read is `byte != 0` over the byte load, so
-the load resolutions every other cell read uses apply to it). Every `Bool`
+`BoolIf` and `Bool` equalities to `BoolEqual`. A `bool` cell read uses
+`ConditionTerm::boolean_cell_read` and shares the byte load's resolution
+rules. Surface spells an explicitly typed Boolean cell read as `load<Bool>(p)`.
+Every `Bool`
 value, in a specification and in C, C++ and Rust alike, travels in a
 `ProgramValue::Bool` as its cast to `uint8`, `BoolCast { to: UInt8, value }`, the
 byte a `bool` cell holds, and its truth is `value`

@@ -2261,6 +2261,67 @@ fn synthesize_load_defining_equation(
         })
 }
 
+/// The canonical Boolean cell read is an unsigned byte tested against zero.
+/// Use its Boolean load spelling when the read's memory identifies a Boolean
+/// object. The same comparison over arbitrary bytes keeps its comparison
+/// spelling, since it can be valid where a typed Boolean access is refused.
+fn synthesize_boolean_cell_read(
+    zero_test: crate::kernel::BooleanOperandView<'_>,
+    parameter_binding: ParameterBinding<'_>,
+    state: &ExecutionState,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
+) -> Option<ContractExpression> {
+    let (MachineIntegerType::UInt8, CompareRelation::Equal, [left, right]) =
+        zero_test.comparison()?
+    else {
+        return None;
+    };
+    if right.literal()?.bool_constant_value() != Some(false) {
+        return None;
+    }
+    let read = left.read_source()?;
+    let MachineTerm::MemoryLoad(point, address, crate::kernel::LoadKind::UInt8) = read.as_ref()
+    else {
+        return None;
+    };
+    if !point.memory().has_boolean_cell_type(address) {
+        return None;
+    }
+    // A Boolean cell's byte test names the memory selected by Boolean
+    // evaluation. The integer read selector may choose a different version.
+    let selects_read = |state: &ExecutionState| {
+        &crate::kernel::intern_memory_ref(state.memory()) == point.shared_memory()
+    };
+    let expression = |state: &ExecutionState| {
+        Some(synthesize_typed_load(
+            synthesize_surface_pointer_expression(
+                address,
+                parameter_binding,
+                state,
+                bound_variables,
+            )?,
+            ProgramType::Bool,
+        ))
+    };
+    if selects_read(state) {
+        return expression(state);
+    }
+    if let Some(entry) = SYNTHESIS_ENTRY_STATE.with(|slot| slot.borrow().clone())
+        && selects_read(&entry)
+    {
+        return Some(ContractExpression::Old(Box::new(expression(&entry)?)));
+    }
+    SYNTHESIS_RECORDED_POINTS.with(|slot| {
+        let slot = slot.borrow();
+        let (selector, recorded) = slot.as_ref()?.point_reading_memory(point.shared_memory())?;
+        selects_read(recorded).then_some(())?;
+        Some(ContractExpression::At {
+            selector: selector.clone(),
+            expression: Box::new(expression(recorded)?),
+        })
+    })
+}
+
 // Large leaf temporaries must not occupy every recursive connective frame.
 #[inline(never)]
 /// Spell a logical Bool by its structure, including Bool operands of calls.
@@ -2272,6 +2333,16 @@ fn synthesize_surface_bool(
 ) -> Option<ContractExpression> {
     let _frame = SurfaceSynthesisFrame::enter("bool")?;
     crate::instrumentation::record_deterministic_work(1);
+    if let Some(zero_test) = condition.bool_negation_operand()
+        && let Some(read) = synthesize_boolean_cell_read(
+            crate::kernel::BooleanOperandView::Native(zero_test),
+            parameter_binding,
+            state,
+            bound_variables,
+        )
+    {
+        return Some(read);
+    }
     let operand = |condition: &ConditionTerm| {
         synthesize_surface_bool(condition, parameter_binding, state, bound_variables)
     };
@@ -2371,6 +2442,20 @@ fn synthesize_surface_atomic_proposition(
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<ClickProposition> {
+    if let Proposition::ConditionIs(condition, zero) = proposition
+        && let Some(read) = synthesize_boolean_cell_read(
+            condition.operand_view(),
+            parameter_binding,
+            state,
+            bound_variables,
+        )
+    {
+        return Some(ClickProposition::Comparison {
+            left: read,
+            operator: ComparisonOperator::Equal,
+            right: bool_literal(!*zero),
+        });
+    }
     // A `bool` local's truth, C's test `w != 0` at `uint8` of its carrier:
     // the claim on the local, `w` or `not w`, which is what a claim on it
     // lowers to. Compared with an integer, as `w != 0`, it would not lower.
@@ -3685,6 +3770,20 @@ pub(super) fn raise_kernel_term(
         "function-call"
     };
     let _frame = SurfaceSynthesisFrame::enter(category)?;
+    if let Node::BoolIf {
+        arguments: [zero_test, if_true, if_false],
+    } = term.node()
+        && matches!(if_true.node(), Node::BoolLiteral(false))
+        && matches!(if_false.node(), Node::BoolLiteral(true))
+        && let Some(read) = synthesize_boolean_cell_read(
+            crate::kernel::BooleanOperandView::Shared(zero_test),
+            parameter_binding,
+            state,
+            bound_variables,
+        )
+    {
+        return Some(read);
+    }
     // The general renderer has large temporaries for unrelated Surface forms.
     // Keep them out of each recursive integer-operation frame, so the existing
     // depth budget can refuse a shared DAG before the thread stack runs out.
@@ -4279,12 +4378,6 @@ fn raise_kernel_term_dispatch(
             *format,
             *operation,
             arguments,
-            parameter_binding,
-            state,
-            bound_variables,
-        )?,
-        Node::BoolRead(_) => synthesize_surface_bool(
-            term.boolean_read_native()?,
             parameter_binding,
             state,
             bound_variables,

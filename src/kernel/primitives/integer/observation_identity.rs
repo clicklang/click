@@ -218,18 +218,6 @@ pub(in crate::kernel::primitives) fn normalize(root: &KernelTerm) -> KernelTerm 
                         crate::kernel::SharedAddress::new(address.node().base.observation(), normalize_offset(&address.node().offset)),
                     )))
                 }
-                KernelTermNode::BoolRead(read) => {
-                    let (_, address) = read.parts();
-                    KernelTerm::intern(
-                        KernelType::Bool,
-                        KernelTermNode::BoolRead(read.observe(
-                            crate::kernel::SharedAddress::new(
-                                address.node().base.observation(),
-                                normalize_offset(&address.node().offset),
-                            ),
-                        )),
-                    )
-                }
                 KernelTermNode::PointerEqual(pair) => KernelTerm::intern(
                     KernelType::Bool,
                     KernelTermNode::PointerEqual(pair.observe(

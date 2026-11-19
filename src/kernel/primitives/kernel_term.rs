@@ -5,7 +5,7 @@ use super::*;
 use crate::kernel::MachineCastSpelling;
 mod boolean;
 pub(crate) use boolean::BooleanOperandView;
-pub use boolean::{KernelBooleanRead, KernelPointerEquality};
+pub use boolean::KernelPointerEquality;
 // Scoped payloads shared by evaluation, checking, and Surface synthesis.
 mod folds;
 pub use folds::KernelFold;
@@ -70,7 +70,6 @@ pub enum KernelTermNode {
         arguments: [KernelTerm; 3],
     },
     BoolLiteral(bool),
-    BoolRead(KernelBooleanRead),
     AlgebraicRead(KernelMemoryRead),
     FloatRead(KernelMemoryRead),
     FloatCompare {
@@ -424,7 +423,6 @@ impl NodeKey {
             | KernelTermNode::AddressOffsetEqual { .. }
             | KernelTermNode::AddressEqual { .. }
             | KernelTermNode::PointerEqual(_)
-            | KernelTermNode::BoolRead(_)
             | KernelTermNode::AlgebraicRead(_)
             | KernelTermNode::FloatRead(_) => true,
             KernelTermNode::Legacy(value) | KernelTermNode::LegacyBool(value) => {

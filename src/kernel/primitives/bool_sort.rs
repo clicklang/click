@@ -1,10 +1,8 @@
 //! Click `Bool`, the logical sort (`design/machine-integers.md`, Stage 5).
 //!
 //! A `Bool` term is a [`ConditionTerm`]. `Constant` and `Variable` are its
-//! literals and binders, and every comparison is a `Bool` value. Four forms
-//! are values that are not comparisons: [`ConditionTerm::BoolApplication`],
-//! [`ConditionTerm::BoolIf`], [`ConditionTerm::BoolEqual`] and
-//! [`ConditionTerm::BoolLoad`]. This module holds their constructors, the
+//! literals and binders, and every comparison is a `Bool` value. This module
+//! holds the constructors for logical applications, conditionals and equality, the
 //! structural helpers every traversal uses for them, and the statements of
 //! the logic rules:
 //!
@@ -27,7 +25,7 @@
 //! termination is checked where it is declared. No rule here reads an
 //! integer value of a `Bool`: the sort has none.
 
-use super::{Address, ConditionTerm, Proposition, PureFunctionArgument, SharedMemory};
+use super::{ConditionTerm, Proposition, PureFunctionArgument};
 use crate::kernel::SharedPureApplication;
 
 impl ConditionTerm {
@@ -36,10 +34,7 @@ impl ConditionTerm {
     pub(crate) fn is_bool_value_form(&self) -> bool {
         matches!(
             self,
-            Self::BoolApplication(_)
-                | Self::BoolIf { .. }
-                | Self::BoolEqual(..)
-                | Self::BoolLoad(..)
+            Self::BoolApplication(_) | Self::BoolIf { .. } | Self::BoolEqual(..)
         )
     }
 
@@ -152,15 +147,13 @@ impl ConditionTerm {
     }
 
     /// A `Bool` value form rebuilt with `child` applied to each child
-    /// condition, `argument` to each argument of an application, and `read`
-    /// to a read's state and pointer; `None` for every other condition.
+    /// condition and `argument` to each argument of an application.
     /// The constructors are the plain nodes, not the folding ones, so a
     /// substitution changes only what it rewrites.
     pub(crate) fn map_bool_value_form(
         &self,
         mut child: impl FnMut(&ConditionTerm) -> ConditionTerm,
         mut argument: impl FnMut(&PureFunctionArgument) -> PureFunctionArgument,
-        read: impl FnOnce(&SharedMemory, &Address) -> (SharedMemory, Address),
     ) -> Option<ConditionTerm> {
         Some(match self {
             Self::BoolApplication(application) => {
@@ -180,10 +173,6 @@ impl ConditionTerm {
             },
             Self::BoolEqual(left, right) => {
                 Self::BoolEqual(Box::new(child(left)), Box::new(child(right)))
-            }
-            Self::BoolLoad(memory, pointer) => {
-                let (memory, pointer) = read(memory.shared_memory(), pointer);
-                Self::BoolLoad(crate::kernel::ProgramPoint::at(&memory), Box::new(pointer))
             }
             _ => return None,
         })
@@ -244,6 +233,15 @@ impl crate::kernel::MachineTerm {
 }
 
 impl ConditionTerm {
+    /// The Boolean value of an already selected one-byte cell read.
+    pub fn boolean_cell_read(point: super::ProgramPoint, address: super::Address) -> Self {
+        Self::nonzero_bool_word(&super::MachineTerm::MemoryLoad(
+            point,
+            Box::new(address),
+            super::LoadKind::UInt8,
+        ))
+    }
+
     /// The `Bool` a `ProgramValue::Bool` carrier holds. The carrier is 8 bits: a
     /// `Bool` travels as its cast `b as uint8` (rule C1), whose operand is
     /// `b`, or as the `uint8` constant 0 or 1, whose truth it is. Any other

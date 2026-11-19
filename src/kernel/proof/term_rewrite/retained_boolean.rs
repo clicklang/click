@@ -316,12 +316,12 @@ mod tests {
                 expected_root.condition_storage_key()
             );
         }
-        let read = KernelTermImport::default().condition(&ConditionTerm::BoolLoad(
+        let read = KernelTermImport::default().condition(&ConditionTerm::boolean_cell_read(
             ProgramPoint::at(&intern_memory(SymbolicMemory::new())),
-            Box::new(Address::symbolic(Variable(992122))),
+            Address::symbolic(Variable(992122)),
         ));
         let mut rewrite = TermRewrite::empty();
-        assert!(rewrite.shared_boolean_operand(&read).is_none());
+        assert_eq!(rewrite.shared_boolean_operand(&read), Some(read.clone()));
         assert!(rewrite.refusal_status().is_none());
         assert!(!root.has_cached_native_argument());
         assert!(!read.has_cached_native_argument());

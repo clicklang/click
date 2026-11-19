@@ -142,20 +142,6 @@ pub(super) fn collect_common_memory_loads(
             KernelTermNode::AddressOffsetEqual { arguments } => {
                 push_offset_memory_loads(arguments.iter(), &mut pending)?;
             }
-            KernelTermNode::BoolRead(read) => {
-                let (memory, address) = read.parts();
-                if MemoryStateIdentity::of(memory.memory())
-                    == MemoryStateIdentity::of(current_memory)
-                {
-                    let ConditionTerm::BoolLoad(_, pointer) =
-                        term.boolean_read_native().expect("Boolean read")
-                    else {
-                        unreachable!();
-                    };
-                    loads.push((pointer.as_ref().clone(), 1));
-                }
-                push_offset_memory_loads(std::iter::once(&address.node().offset), &mut pending)?;
-            }
             KernelTermNode::PointerEqual(pair) => {
                 push_offset_memory_loads(
                     pair.arguments()
@@ -491,20 +477,20 @@ mod boolean_read_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let current = SymbolicMemory::new().with_block("bool-index", 4);
         let memory = crate::kernel::intern_memory(current.clone());
-        let source = ConditionTerm::BoolLoad(
-            crate::kernel::ProgramPoint::at(&memory.clone()),
-            Box::new(Address {
-                base: AddressBase::Symbolic(Variable(999360)),
-                offset: AddressOffset::scaled_int32_node(
-                    MachineTerm::MemoryLoad(
-                        ProgramPoint::at(&memory),
-                        Box::new(SymbolicMemory::global_pointer("bool-index")),
-                        LoadKind::Int32,
-                    ),
-                    4,
+        let address = Address {
+            base: AddressBase::Symbolic(Variable(999360)),
+            offset: AddressOffset::scaled_int32_node(
+                MachineTerm::MemoryLoad(
+                    ProgramPoint::at(&memory),
+                    Box::new(SymbolicMemory::global_pointer("bool-index")),
+                    LoadKind::Int32,
                 ),
-            }),
-        );
+                4,
+            ),
+        };
+        let byte =
+            crate::kernel::eval::scalar_read_for_exact_cell(&memory, &address, LoadKind::UInt8, 1);
+        let source = ConditionTerm::nonzero_bool_word(&byte);
         let root = crate::kernel::KernelTermImport::default().condition(&source);
         let mut expected = Vec::new();
         let mut actual = Vec::new();
