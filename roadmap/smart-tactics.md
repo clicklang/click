@@ -578,8 +578,9 @@ scalar cells stay in the persistent map without being visited. For selected
 addressable cells the head checks scalar slot membership by block, along
 with the existing loan check. Stores to private scalar slots advance the
 projection so forks of a warm frame do not each walk the same cells.
-`writing_loop_havoc_ignores_untouched_scalar_slots` varies the initialized
-slots at 4/16/64/128 and measures a later fixed loop. Addressable memory,
+The gate's `loop_head_havoc_ignores_private_scalar_slots` varies initialized
+slots at 4/16/64/128. The nightly source test measures a later fixed loop at
+the same sizes. Addressable memory,
 first-loop annotation, identity reservation, and differing loop exits have
 separate costs.
 

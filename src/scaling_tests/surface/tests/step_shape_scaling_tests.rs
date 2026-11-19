@@ -1164,6 +1164,7 @@ fn sequential_loop_clauses_cost_the_same_at_every_position() {
 }
 
 #[test]
+#[ignore = "nightly: checks three complete writing loops at four sizes"]
 fn writing_loop_havoc_ignores_untouched_scalar_slots() {
     let costs = [4, 16, 64, 128].map(|count| {
         let run = run(
