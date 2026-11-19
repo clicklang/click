@@ -6,8 +6,6 @@ atomic_derivation_premises
 available_rewrite_equality
 available_surface_fact
 available_surface_fact_raw
-call_frame
-call_kept_ownership
 carried_machine_facts
 check_typed_atomic_solve_candidate
 composition_context

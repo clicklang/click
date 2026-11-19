@@ -1031,20 +1031,17 @@ fn new_operation_search_edges_are_rejected_even_through_aliases_and_macros() {
 fn frozen_proof_search_inventory_rejects_deleted_or_duplicated_references() {
     let path = "src/kernel/publication.rs";
     for (source, accepted) in [
-        ("fn release_store() { call_kept_ownership(); }", true),
-        ("fn release_store() {}", false),
         (
-            "fn release_store() { call_kept_ownership(); call_kept_ownership(); }",
+            "fn initialize(c: C) { c.try_compose_with_facts_delaying_normalization(); }",
+            true,
+        ),
+        ("fn initialize() {}", false),
+        (
+            "fn initialize(c: C) { c.try_compose_with_facts_delaying_normalization(); c.try_compose_with_facts_delaying_normalization(); }",
             false,
         ),
     ] {
-        // Keep the file's independently frozen ownership caller present so
-        // this mutation isolates the release_store discovery edge.
-        let source = format!(
-            "fn initialize(c:C) {{ c.try_compose_with_facts_delaying_normalization(); }}
-             {source}"
-        );
-        let file = syn::parse_file(&source).unwrap();
+        let file = syn::parse_file(source).unwrap();
         assert_eq!(
             proof_search_boundary::check(path, &file).is_ok(),
             accepted,
@@ -1091,7 +1088,6 @@ fn extracted_legacy_search_retains_the_existing_operation_guards() {
     for path in [
         "src/kernel/loans/legacy_search.rs",
         "src/kernel/primitives/resource_algebra/legacy_search.rs",
-        "src/kernel/functions/legacy_search.rs",
     ] {
         let source = std::fs::read_to_string(root.join(path)).unwrap();
         boundary::check_source(path, &source).unwrap();

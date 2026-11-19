@@ -57,7 +57,6 @@ impl Boundary<'_> {
             "ownership_overlap" => "memory_ranges_proven_overlapping_with_separation",
             "owned_anchor_distinctness" => "pointers_distinct_by_owned_anchors",
             "composition_context" => "compositions_only",
-            "call_frame" => "call_kept_ownership",
             _ => return name,
         }
         .into()

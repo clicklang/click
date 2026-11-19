@@ -2267,35 +2267,11 @@ impl PureFactContext {
         {
             return Some(range);
         }
-        let mut candidates = Vec::new();
-        for base in additive_base_spellings(pointer) {
-            crate::instrumentation::record_deterministic_work(1);
-            let mut anchors = vec![base.clone()];
-            // An opaque read is not an invitation to resolve memory history
-            // just to look for a supplier. Its explicit keys still work.
-            let opaque = matches!(&base.base, AddressBase::LoadedPointer(_))
-                || matches!(&base.base, AddressBase::Symbolic(variable)
-                    if crate::kernel::is_load_variable(variable));
-            if !opaque {
-                anchors.push(self.equality_graph.storage_address(&base));
-                if let Some(coordinate) = self.equality_graph.canonical_pointer(&base)
-                    && let Some(offset) = coordinate.offset.to_offset_term()
-                {
-                    anchors.push(Address {
-                        base: coordinate.representative,
-                        offset,
-                    });
-                }
-            }
-            if let Some(alias) = self.equality_graph.unique_exact_pointer_alias(&base) {
-                anchors.push(alias.clone());
-            }
-            for anchor in anchors {
-                if let Some(range) = ranges.unique_memory_member_with_base(&anchor, include_views) {
-                    candidates.push(range);
-                }
-            }
-        }
+        let candidates = self
+            .kept_frame_address_keys(pointer)
+            .into_iter()
+            .filter_map(|key| ranges.unique_memory_member_with_base(&key, include_views))
+            .collect::<Vec<_>>();
         if candidates.is_empty() {
             return None;
         }
@@ -2304,6 +2280,34 @@ impl PureFactContext {
         candidates
             .into_iter()
             .find(|range| context.kept_range_holds_access(range, pointer, bytes))
+    }
+
+    /// Bounded raw keys for kept frame queries, including the storage and
+    /// class representatives when the address does not name an opaque read.
+    pub(in crate::kernel) fn kept_frame_address_keys(&self, pointer: &Address) -> Vec<Address> {
+        let mut keys = Vec::new();
+        for base in additive_base_spellings(pointer) {
+            crate::instrumentation::record_deterministic_work(1);
+            keys.push(base.clone());
+            let opaque = matches!(&base.base, AddressBase::LoadedPointer(_))
+                || matches!(&base.base, AddressBase::Symbolic(variable)
+                    if crate::kernel::is_load_variable(variable));
+            if !opaque {
+                keys.push(self.equality_graph.storage_address(&base));
+                if let Some(coordinate) = self.equality_graph.canonical_pointer(&base)
+                    && let Some(offset) = coordinate.offset.to_offset_term()
+                {
+                    keys.push(Address {
+                        base: coordinate.representative,
+                        offset,
+                    });
+                }
+            }
+            if let Some(alias) = self.equality_graph.unique_exact_pointer_alias(&base) {
+                keys.push(alias.clone());
+            }
+        }
+        keys
     }
 
     /// Whether every byte of an access of `bytes` at `pointer` lies in the

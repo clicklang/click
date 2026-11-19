@@ -1565,10 +1565,11 @@ fn prepare_closing_path(
     let mut assumptions = assumptions_with_propositions(&assumptions, &post_resource_facts);
     // The exit memory came from the exit state, so the post state stands
     // after the exit state's point, with the entry's locals.
-    let mut post_state = entry_state
-        .clone()
-        .with_memory_continuing(raw_exit_state, exit_memory);
-    post_state = post_state.with_resource_context(post_resources.clone());
+    let mut post_state = entry_state.clone().with_memory_and_resources_continuing(
+        raw_exit_state,
+        exit_memory,
+        post_resources.clone(),
+    );
     post_state.observed_population_families = raw_exit_state.observed_population_families.clone();
     // Population counts live in the creation ledger, and observed families
     // beside it. Both must describe the checked exit, not the reconstructed
@@ -2575,10 +2576,11 @@ impl<'a> FunctionEnsureGoalContext<'a> {
         };
         // The exit memory came from the return state, so the post state
         // stands after the return state's point, with the entry's locals.
-        let mut post_state = entry_state
-            .clone()
-            .with_memory_continuing(return_state, exit_memory);
-        post_state = post_state.with_resource_context(resources);
+        let mut post_state = entry_state.clone().with_memory_and_resources_continuing(
+            return_state,
+            exit_memory,
+            resources,
+        );
         post_state.observed_population_families = return_state.observed_population_families.clone();
         // Preserve checked body consumption evidence when reconstructing the exit.
         post_state.population_effects = return_state.population_effects.clone();

@@ -122,16 +122,13 @@ fn a_call_keeps_argument_direct_composites_in_work_independent_of_their_number()
         });
         let memory = SymbolicMemory::new();
         let assumptions = PureFactContext::new();
-        let state = ExecutionState::new()
-            .with_memory(memory.clone())
-            .with_resource_context(residual.clone());
         let written = MemoryRange::new(
             object(size + 1),
             MachineTerm::constant(0),
             MachineTerm::constant(1),
         );
         let (after, work) = crate::instrumentation::measure_deterministic_work(|| {
-            let kept = call_kept_ownership(&residual, &[boxed_definition()], &state, &assumptions);
+            let kept = call_kept_ownership(&residual, &[boxed_definition()].into(), &assumptions);
             memory.with_call_memory_havoc(Variable(782_900), &[written], &assumptions, Some(&kept))
         });
         recording.push(work);
@@ -148,6 +145,62 @@ fn a_call_keeps_argument_direct_composites_in_work_independent_of_their_number()
             "{name} kept memory grows with the held composites: {work:?}"
         );
     }
+}
+
+#[test]
+fn kept_call_reads_do_not_scan_same_block_owners_or_aliases() {
+    let samples = [4u64, 16, 64, 256].map(|size| {
+        let _session = VerificationSession::enter();
+        let argument = |index| Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(784_000 + index)), 4),
+        };
+        let residual = (0..size).fold(ResourceContext::new(), |residual, index| {
+            residual.unchecked_with_fact(ResourceFact::own_composite(
+                "boxed".into(),
+                vec![ProgramValue::pointer(argument(index))],
+            ))
+        });
+        let missing = argument(1_000);
+        let hit = argument(0);
+        let assumptions = (0..size).fold(PureFactContext::new(), |facts, index| {
+            facts.assume_condition(
+                ConditionTerm::address_equal(
+                    hit.clone(),
+                    Address::symbolic(Variable(786_000 + index)),
+                ),
+                true,
+            )
+        });
+        let written = MemoryRange::new(
+            argument(1_001),
+            MachineTerm::constant(0),
+            MachineTerm::constant(1),
+        );
+        let kept = call_kept_ownership(&residual, &[boxed_definition()].into(), &assumptions);
+        let after = SymbolicMemory::new().with_call_memory_havoc(
+            Variable(787_000),
+            &[written],
+            &assumptions,
+            Some(&kept),
+        );
+        let frame = CallKeptRanges::recorded_on(&after).expect("folded owner frame");
+        let (held, hit_work) = crate::instrumentation::measure_deterministic_work(|| {
+            frame.holds_access(&hit, 4, &assumptions)
+        });
+        let (absent, miss_work) = crate::instrumentation::measure_deterministic_work(|| {
+            frame.holds_access(&missing, 4, &assumptions)
+        });
+        assert!(held && !absent, "{size} owners: hit={held}, miss={absent}");
+        (hit_work, miss_work)
+    });
+    eprintln!("kept call read work (hit, miss): {samples:?}");
+    assert!(
+        samples
+            .iter()
+            .all(|(hit, miss)| *hit <= samples[0].0 + 8 && *miss <= samples[0].1 + 8),
+        "kept call read work grew with the frame: {samples:?}"
+    );
 }
 
 /// The callee borrowed a flat cell. Unchanged caller composites cannot own
@@ -183,7 +236,7 @@ fn a_transferred_flat_cell_does_not_open_unrelated_kept_composites() {
             .with_memory(memory.clone())
             .with_resource_context(original);
         let (after, work) = crate::instrumentation::measure_deterministic_work(|| {
-            let kept = call_kept_ownership(&residual, &[boxed_definition()], &state, &assumptions)
+            let kept = call_kept_ownership(&residual, &[boxed_definition()].into(), &assumptions)
                 .with_caller_before_transfer(state.resources());
             memory.with_call_memory_havoc(Variable(783_900), &[written], &assumptions, Some(&kept))
         });
@@ -231,15 +284,13 @@ fn call_frame_preparation_ignores_unrelated_retained_instances() {
             )))
         });
         let assumptions = PureFactContext::new();
-        let state = ExecutionState::new().with_resource_context(residual.clone());
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             let _fast = crate::kernel::search::FastOperationScope::enter(
                 "call frame retaining opaque instances",
             );
             call_kept_ownership(
                 &residual,
-                &[boxed_definition().with_instance_schema(Some(schema.clone()))],
-                &state,
+                &[boxed_definition().with_instance_schema(Some(schema.clone()))].into(),
                 &assumptions,
             )
         });
@@ -312,14 +363,11 @@ fn call_frame_preparation_must_not_open_unrelated_composites() {
                 memory = memory.store(object(1_000 + index), int32(1));
             }
             let assumptions = PureFactContext::new();
-            let state = ExecutionState::new()
-                .with_memory(memory.clone())
-                .with_resource_context(residual.clone());
             // The callee's effect and the observed retained cell are fixed at
             // all sizes. Every added wrapper is unrelated to either one.
             let written = MemoryRange::new(object(2_000), 0u32.into(), 1u32.into());
             let (kept, work) = crate::instrumentation::measure_deterministic_work(|| {
-                call_kept_ownership(&residual, &definitions, &state, &assumptions)
+                call_kept_ownership(&residual, &definitions.into(), &assumptions)
             });
             let opened = kept.opened_resources_for_test().facts().len();
             let after = memory.with_call_memory_havoc(
@@ -332,7 +380,10 @@ fn call_frame_preparation_must_not_open_unrelated_composites() {
                 opened, 0,
                 "opaque composites contribute no discovered ranges"
             );
-            assert!(CallKeptRanges::recorded_on(&after).is_none());
+            assert!(!CallKeptRanges::recorded_on(&after).is_some_and(|frame| {
+                frame.holds_access(&object(0), 4, &assumptions)
+                    || frame.holds_access(&object(1_000), 4, &assumptions)
+            }));
             work
         });
         eprintln!("memory_bound={memory_bound}, sizes=[4,16,64], call framing work={samples:?}");

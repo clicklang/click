@@ -32,10 +32,7 @@ fn a_call_keeps_an_argument_direct_composites_memory_without_opening_it() {
     ));
     let memory = SymbolicMemory::new().store(object(1), int32(5));
     let assumptions = PureFactContext::new();
-    let state = ExecutionState::new()
-        .with_memory(memory.clone())
-        .with_resource_context(residual.clone());
-    let kept = call_kept_ownership(&residual, &[boxed], &state, &assumptions);
+    let kept = call_kept_ownership(&residual, &[boxed].into(), &assumptions);
     assert!(
         kept.opened_resources_for_test().is_empty(),
         "an argument-direct composite is not opened at the call"
@@ -84,10 +81,7 @@ fn caller_flat_exclusions_keep_new_composites_fragments_and_views() {
     let assumptions = PureFactContext::new();
     let memory = SymbolicMemory::new();
     let record = |original: &ResourceContext, residual: &ResourceContext| {
-        let state = ExecutionState::new()
-            .with_memory(memory.clone())
-            .with_resource_context(original.clone());
-        let kept = call_kept_ownership(residual, &[boxed_definition()], &state, &assumptions)
+        let kept = call_kept_ownership(residual, &[boxed_definition()].into(), &assumptions)
             .with_caller_before_transfer(original);
         let after = memory.clone().with_call_memory_havoc(
             Variable(783_910),
@@ -252,10 +246,7 @@ fn retained_membership_does_not_preserve_the_shared_body_across_a_call() {
             ConditionTerm::equal(MachineTerm::Variable(old_name), MachineTerm::constant(0)),
             true,
         );
-        let state = ExecutionState::new()
-            .with_memory(before.clone())
-            .with_resource_context(residual.clone());
-        let kept = call_kept_ownership(&residual, &[population, wrapper], &state, &assumptions);
+        let kept = call_kept_ownership(&residual, &[population, wrapper].into(), &assumptions);
         let after = before.clone().with_call_memory_havoc(
             Variable(780_101 + wrapper_kind),
             &[range(&shared), range(&private)],
@@ -284,7 +275,8 @@ fn retained_membership_does_not_preserve_the_shared_body_across_a_call() {
         let recorded = CallKeptRanges::recorded_on(&after);
         if wrapper_kind != 0 {
             assert!(
-                recorded.is_none(),
+                !recorded.is_some_and(|frame| frame.holds_access(&private, 4, &assumptions)
+                    || frame.holds_access(&shared, 4, &assumptions)),
                 "nested composites and field-bearing instances stay opaque"
             );
         } else {

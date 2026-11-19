@@ -1982,7 +1982,7 @@ impl MutexLedger {
         state: &ExecutionState,
         mutex: &Address,
         definition: &super::CompositeResourceDefinition,
-        definitions: &[super::CompositeResourceDefinition],
+        definitions: &Arc<[super::CompositeResourceDefinition]>,
         assumptions: &PureFactContext,
         budget: &mut super::ExecutionBudget,
     ) -> Result<(ExecutionState, Vec<super::MemoryRange>), MutexTransitionError> {
@@ -2020,7 +2020,6 @@ impl MutexLedger {
                     super::functions::call_kept_ownership(
                         &state.resources,
                         definitions,
-                        state,
                         assumptions,
                     )
                 });
@@ -4372,7 +4371,7 @@ mod tests {
                 &state,
                 &address,
                 &definition,
-                std::slice::from_ref(&definition),
+                &[definition.clone()].into(),
                 &assumptions,
                 &mut budget,
             )
@@ -4422,7 +4421,7 @@ mod tests {
             released.state(),
             &address,
             &definition,
-            std::slice::from_ref(&definition),
+            &[definition.clone()].into(),
             &assumptions,
             &mut budget,
         )

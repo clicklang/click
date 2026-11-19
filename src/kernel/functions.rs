@@ -3534,15 +3534,9 @@ fn execute_verified_function_applications_with_suspension(
                 .caller_resources_after_requirements
                 .clone()
                 .unchecked_with_facts(escrowed_owners(&transfer).iter().cloned());
-            let kept = CallKeptOwnership::new(
-                caller_frame.clone(),
-                CallKeptRanges::new(
-                    ResourceContext::new_with_equalities(&effective_assumptions),
-                    vec![],
-                    (!caller_frame.owned_composite_facts().is_empty()
-                        && !interface.composite_resource_definitions.is_empty())
-                    .then(|| interface.composite_resource_definitions.clone()),
-                ),
+            let kept = call_kept_ownership(
+                &caller_frame,
+                &interface.composite_resource_definitions,
                 &effective_assumptions,
             )
             .with_caller_before_transfer(caller_state.resources());
@@ -8115,45 +8109,21 @@ pub(super) fn assumed_mutex_input_reservations(
     super::mutexes::MutexInputReservations::from_ranges_and_guards(ranges, guard_ranges)
 }
 
-/// What a caller keeps unchanged across a call whose resource transfer left it
-/// `residual`: the residual itself, whose flat owners and views the havoc finds
-/// through its base index, and the owned memory of folded composites,
-/// opened one body layer at `state` exactly as
-/// `unfold` opens it, with composites in that body expanded.
-///
-/// Only exactly held bytes count. An iterated fact in an opened body is
-/// skipped rather than counted at its span, field-bearing instances stay
-/// opaque, and viewed composite bodies are not opened. Hidden instance memory
-/// requires explicit unfolding or preservation. Composite opening is paid
-/// once per call, one unit per visited composite and its body, except
-/// for a family whose bodies are argument-direct: its composites are not
-/// visited, and the kept memory answers for them per queried address
-/// (`CallKeptRanges::range_holding`).
-/// Counted membership never owns its population-wide body independently:
-/// another transferred member may authorize the callee to change that body.
+/// Retain the checked residual and share the definition table. An access
+/// chooses a folded owner by address before its argument-direct body opens.
 pub(super) fn call_kept_ownership(
     residual: &ResourceContext,
-    definitions: &[CompositeResourceDefinition],
-    state: &ExecutionState,
+    definitions: &Arc<[CompositeResourceDefinition]>,
     assumptions: &PureFactContext,
 ) -> CallKeptOwnership {
-    // Flat ownership is already indexed; opaque instances add no ranges.
-    // The persistent composite index answers emptiness without visiting shapes.
-    if residual.owned_composite_facts().is_empty() {
-        return CallKeptOwnership::new(
-            residual.clone(),
-            CallKeptRanges::new(
-                ResourceContext::new_with_equalities(assumptions),
-                vec![],
-                None,
-            ),
-            assumptions,
-        );
-    }
-    crate::kernel::search::ProofSearch::<ProgramFunction>::call_frame(
-        residual,
-        definitions,
-        state,
+    CallKeptOwnership::new(
+        residual.clone(),
+        CallKeptRanges::new(
+            ResourceContext::new_with_equalities(assumptions),
+            vec![],
+            (!residual.owned_composite_facts().is_empty() && !definitions.is_empty())
+                .then(|| definitions.clone()),
+        ),
         assumptions,
     )
 }
@@ -16766,8 +16736,11 @@ pub(super) fn function_return_resources_definitionally_established(
     };
     let post_resource_facts = post_resources.observable_facts_assuming_valid(assumptions);
     let assumptions = assumptions_with_propositions(assumptions, &post_resource_facts);
-    let mut post_state = callee_state.with_memory_continuing(&claim_return_state, exit_memory);
-    post_state.resources = post_resources;
+    let mut post_state = callee_state.with_memory_and_resources_continuing(
+        &claim_return_state,
+        exit_memory,
+        post_resources,
+    );
     post_state.population_access = return_state.population_access.clone();
     post_state.observed_population_families = return_state.observed_population_families.clone();
     // Preserve checked body consumption evidence when reconstructing the exit.
@@ -22571,5 +22544,3 @@ mod storage_summary_footprint_tests;
 
 #[cfg(test)]
 mod iterated_operand_storage_tests;
-
-mod legacy_search;
