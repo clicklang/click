@@ -18,8 +18,8 @@ use return_backing::PermittedDescriptions;
 use super::functions::CheckedResourceFact;
 use super::primitives::{
     Address, AddressBase, MemorySplitOrigins, OwnedMemberKey, ResourceMemoryIntervalNode,
-    memory_interval_ancestors, memory_interval_nodes, memory_range_is_proven_empty,
-    memory_ranges_proven_overlapping,
+    memory_interval_ancestors, memory_interval_nodes, memory_range_covers,
+    memory_range_is_proven_empty, memory_ranges_proven_overlapping,
 };
 use super::{
     ExecutionState, MachineTerm, MemoryRange, Proposition, PureFactContext, Resource,
@@ -1884,6 +1884,7 @@ impl CompositeLoanBacking {
 struct LocalViewBacking {
     memory: super::SymbolicMemory,
     viewed: ResourceFact,
+    block: AddressBase,
 }
 
 impl LocalViewBacking {
@@ -1910,16 +1911,64 @@ impl LocalViewBacking {
             bytes,
             1,
         );
-        if !ResourceContext::new_with_equalities(assumptions)
-            .unchecked_with_fact(ResourceFact::own_memory(entire))
-            .satisfies_fact(viewed, assumptions)
+        if !memory_range_is_proven_empty(range, assumptions)
+            && ((range.typed_carrier
+                && !assumptions.access_provenance_matches_range(
+                    range.access_provenance(),
+                    range,
+                    &entire,
+                ))
+                || !memory_range_covers(&entire, range, assumptions))
         {
             return None;
         }
         Some(Self {
             memory: memory.clone(),
             viewed: viewed.clone(),
+            block: range.base().base.clone(),
         })
+    }
+
+    fn check_admission(
+        &self,
+        ledger: &LoanLedger,
+        assumptions: &PureFactContext,
+    ) -> Result<(), StableViewPlanError> {
+        #[cfg(test)]
+        let _fast = crate::kernel::search::FastOperationScope::enter("local loan admission");
+        crate::instrumentation::record_deterministic_work(1);
+        let range = self.viewed.memory_range().expect("checked local view");
+        let Some(goal) = ledger.memory_access_requirement(range) else {
+            return Ok(());
+        };
+        let data = &ledger.storage.data;
+        let origin = Address {
+            base: self.block.clone(),
+            offset: super::AddressOffset::Constant(0),
+        };
+        let has_possible_symbolic_overlap = data.automatic_storage_loans.contains_key(&self.block)
+            && !data.unindexed_memory.is_empty();
+        if !has_possible_symbolic_overlap
+            && !assumptions
+                .equality_graph
+                .admitted
+                .pointer_alias_endpoints_by_object
+                .contains_key(&origin)
+        {
+            match ledger.first_active_memory_overlap(range) {
+                Ok(None) => return Ok(()),
+                Ok(Some(_)) => return Err(LoanRefusal::ActiveDependency.into()),
+                Err(LoanRefusal::UnsupportedPartition) => {}
+                Err(error) => return Err(error.into()),
+            }
+        }
+        if assumptions.proves_exact(&goal) {
+            Ok(())
+        } else {
+            Err(StableViewPlanError::UnestablishedLocalSeparation(Box::new(
+                goal,
+            )))
+        }
     }
 }
 
@@ -2785,6 +2834,7 @@ fn bound_view_covers_requirement(
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum StableViewPlanError {
     UnestablishedOwnedBoundary(Box<Proposition>),
+    UnestablishedLocalSeparation(Box<Proposition>),
     InvalidRequirement,
     MissingResource(ResourceFact),
     ConflictingRequirement(ResourceFact),
@@ -2820,7 +2870,7 @@ impl StableViewPlanError {
         operation: LoanRefusalOperation,
     ) -> Option<LoanRefusalDiagnostic> {
         match self {
-            Self::UnestablishedOwnedBoundary(_) => None,
+            Self::UnestablishedOwnedBoundary(_) | Self::UnestablishedLocalSeparation(_) => None,
             Self::Loan(refusal) => Some(refusal.diagnostic(operation)),
             Self::MissingResource(resource) => {
                 Some(LoanRefusal::MissingBacking.diagnostic_with_subject(
@@ -4114,10 +4164,6 @@ impl StableViewTransferPlan {
             }
             let backing = LocalViewBacking::check(memory, &requirement.fact, assumptions)
                 .ok_or_else(|| StableViewPlanError::MissingResource(requirement.fact.clone()))?;
-            let range = requirement
-                .fact
-                .memory_range()
-                .expect("checked memory view");
             let (resources, occurrence) = self
                 .callee_resources
                 .clone()
@@ -4133,8 +4179,7 @@ impl StableViewTransferPlan {
                     // Only the first worker opens the local root. The parent
                     // keeps its close right and a share, without receiving an
                     // owned or viewed resource fact.
-                    self.ledger
-                        .permits_memory_access_with_assumptions(range, assumptions)?;
+                    backing.check_admission(&self.ledger, assumptions)?;
                     let opening = self.ledger.open_borrowed_root(
                         self.caller,
                         support,
@@ -4208,8 +4253,7 @@ impl StableViewTransferPlan {
             }
             // An ordinary local loan closes with its call. New local
             // authority cannot bypass an existing loan.
-            self.parent_ledger
-                .permits_memory_access_with_assumptions(range, assumptions)?;
+            backing.check_admission(&self.parent_ledger, assumptions)?;
             let opening = self.ledger.open_borrowed_root(
                 self.callee,
                 support,

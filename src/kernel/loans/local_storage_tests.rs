@@ -147,3 +147,43 @@ fn automatic_storage_retirement_uses_the_retained_backing_identity() {
 mod scaling_tests {
     include!("../../scaling_tests/kernel/loans/local_storage_tests.rs");
 }
+
+#[test]
+fn local_loan_admission_distinguishes_overlap_from_missing_separation() {
+    let requirement = view(0, 1);
+    let range = requirement.fact.memory_range().unwrap();
+    let memory = SymbolicMemory::new().with_block(range.base().base.clone(), 4);
+    let backing = LocalViewBacking::check(&memory, &requirement.fact, &PureFactContext::new())
+        .expect("one live local cell");
+    let ledger = LoanLedger::new();
+    let lender = ledger.fresh_participant().unwrap();
+    let borrower = ledger.fresh_participant().unwrap();
+    let opening = lend_memory(&ledger, lender, borrower, range.clone());
+    let overlapping = ledger.apply(&opening.transition).unwrap();
+    assert_eq!(
+        backing.check_admission(&overlapping, &PureFactContext::new()),
+        Err(StableViewPlanError::Loan(LoanRefusal::ActiveDependency)),
+    );
+
+    let other = Address::symbolic(Variable(99_100));
+    let known_alias = PureFactContext::new().assume_condition(
+        crate::kernel::ConditionTerm::address_equal(range.base().clone(), other.clone()),
+        true,
+    );
+    let unrelated = MemoryRange::new(
+        Address::symbolic(Variable(99_101)),
+        0u32.into(),
+        1u32.into(),
+    );
+    let opening = lend_memory(&ledger, lender, borrower, unrelated);
+    let unrelated = ledger.apply(&opening.transition).unwrap();
+    let requirement = unrelated.memory_access_requirement(range).unwrap();
+    assert_eq!(
+        backing.check_admission(&unrelated, &known_alias),
+        Err(StableViewPlanError::UnestablishedLocalSeparation(Box::new(
+            requirement.clone(),
+        ))),
+    );
+    let stated = known_alias.assume_proposition(requirement);
+    assert!(backing.check_admission(&unrelated, &stated).is_ok());
+}

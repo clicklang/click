@@ -170,7 +170,10 @@ range must fit inside the live allocation. Checked entry storage includes
 fresh by-value aggregate parameter copies as well as the caller's original
 locals. The loan grants a callee share and a caller close right, but escrows
 no owned fact; closing it restores implicit access without adding an ownership
-resource. Read-only storage retains intrinsic read authority and is neither
+resource. Opening a root checks the retained allocation and byte range
+against indexed live loans. Ambiguous coordinates require a separation
+proof at call entry. Worker reborrows use the selected existing binding.
+Read-only storage retains intrinsic read authority and is neither
 lent nor recovered. So does a view of a composite whose checked one-level
 expansion is only string-literal bytes and whose body facts those bytes
 decide (`string_literal_composite_holds` in `src/kernel/functions.rs`), such
