@@ -3000,7 +3000,7 @@ impl MemoryRange {
         let (lower, upper) = (lower?, upper?);
         let mut mentioned = BTreeSet::new();
         for term in [
-            Term::PointerOffset(base.offset.clone().into()),
+            Term::PointerOffset(StoredPointerOffset::from_written(&base.offset)),
             Term::Bitvector32(lower.clone().into()),
             Term::Bitvector32(upper.clone().into()),
         ] {

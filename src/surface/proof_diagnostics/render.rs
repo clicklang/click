@@ -2883,6 +2883,29 @@ mod tests {
     }
 
     #[test]
+    fn retained_contract_offset_diagnostic_preserves_shape_and_width() {
+        use crate::kernel::{AddressOffset, MachineTerm, Term};
+        let _session = crate::kernel::VerificationSession::enter();
+        let offset = AddressOffset::Add(
+            Box::new(AddressOffset::scaled_int64_node(
+                MachineTerm::uint64_constant(3),
+                8,
+                true,
+            )),
+            Box::new(AddressOffset::Constant(-2)),
+        );
+        let claim = Proposition::Equal(
+            Term::PointerOffset(offset.into()),
+            Term::PointerOffset(AddressOffset::Constant(22).into()),
+        );
+        let source = surface::source(&claim, &mut MemoryStateLabels::ambient());
+        assert!(source.contains(" * 8 + -2"), "{source}");
+        let typed = render_internal_proposition_labeled(&claim, &mut MemoryStateLabels::ambient());
+        assert!(typed.contains("uint64("), "{typed}");
+        assert!(typed.contains("*8 bytes+-2)"), "{typed}");
+    }
+
+    #[test]
     fn shared_printer_distinguishes_successive_model_field_values() {
         let _session = crate::kernel::VerificationSession::enter();
         let identity = Variable(988000);
