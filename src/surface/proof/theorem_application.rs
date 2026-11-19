@@ -1484,10 +1484,9 @@ pub(in crate::surface::proof) fn theorem_application_bound_array_memories(
         .collect()
 }
 
-/// Preserve a caller's physical pointer width through the expression that is
-/// substituted for a theorem parameter.  Only pointer-preserving C forms are
-/// followed; an opaque expression remains unsupported rather than receiving a
-/// nominal carrier width.
+/// Read the element width of the expression substituted for a theorem
+/// parameter. A scalar pointer cast supplies its target width even when it
+/// preserves the source object's provenance.
 fn pointer_element_width_for_argument(
     argument: &ContractExpression,
     known: &BTreeMap<String, u32>,
@@ -1497,6 +1496,10 @@ fn pointer_element_width_for_argument(
             known.get(name).copied()
         }
         ContractExpression::ProgramExpression(expression)
+        | ContractExpression::CUnary {
+            lowered: expression,
+            ..
+        }
         | ContractExpression::QualifiedC {
             lowered: expression,
             ..
@@ -1529,6 +1532,11 @@ fn pointer_element_width_for_program_expression(
             pointer_element_width_for_program_expression(left, known)
                 .or_else(|| pointer_element_width_for_program_expression(right, known))
         }
+        ProgramExpression::Cast {
+            target_type,
+            pointee_struct: None,
+            ..
+        } if let Some(pointee) = target_type.pointee_type() => Some(pointee.byte_width()),
         ProgramExpression::Subtract(left, _)
         | ProgramExpression::PointerOffsetBytes { pointer: left, .. }
         | ProgramExpression::Subobject { pointer: left, .. }
