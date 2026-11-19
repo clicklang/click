@@ -6705,7 +6705,7 @@ impl AnnotationLowerer<'_> {
                 point: environment.current_point.clone(),
                 pointer: Box::new(pointer),
                 value_type: self
-                    .program_expression_array_element_type(pointer_expression, environment)
+                    .dereferenced_value_type(pointer_expression, environment)
                     .unwrap_or(ProgramType::Int32),
                 exact: false,
             }),
@@ -10029,7 +10029,7 @@ impl AnnotationLowerer<'_> {
                 point: environment.current_point.clone(),
                 pointer: Box::new(self.lower_program_expression_to_spec(pointer, environment)?),
                 value_type: self
-                    .program_expression_array_element_type(pointer, environment)
+                    .dereferenced_value_type(pointer, environment)
                     .unwrap_or(ProgramType::Int32),
                 exact: false,
             }),
@@ -10524,6 +10524,23 @@ impl AnnotationLowerer<'_> {
         }
     }
 
+    /// The type `*pointer` reads. `&p[i]` and `&*p` point at `p`'s element,
+    /// so `*&p[i]` reads what `p[i]` reads, not an `int32`.
+    fn dereferenced_value_type(
+        &self,
+        pointer: &ProgramExpression,
+        environment: &SpecElaborationContext,
+    ) -> Option<ProgramType> {
+        if let ProgramExpression::AddressOf(target)
+        | ProgramExpression::CheckedObjectAddress(target) = pointer
+            && let ProgramExpression::Index(base, _) | ProgramExpression::Load(base) =
+                target.as_ref()
+        {
+            return self.program_expression_array_element_type(base, environment);
+        }
+        self.program_expression_array_element_type(pointer, environment)
+    }
+
     fn program_expression_array_element_type(
         &self,
         expression: &ProgramExpression,
@@ -10545,11 +10562,6 @@ impl AnnotationLowerer<'_> {
             | ProgramExpression::CheckedObjectAddress(target) => match target.as_ref() {
                 ProgramExpression::TypedLoad { value_type, .. } => Some(*value_type),
                 ProgramExpression::Variable(name) => self.c_variable_type(name),
-                // `&p[i]` and `&*p` point at `p`'s element: `*&p[i]` reads
-                // what `p[i]` reads, not an `int32`.
-                ProgramExpression::Index(base, _) | ProgramExpression::Load(base) => {
-                    self.program_expression_array_element_type(base, environment)
-                }
                 _ => None,
             },
             ProgramExpression::Cast { target_type, .. } => target_type.pointee_type(),
