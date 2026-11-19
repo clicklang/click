@@ -1,15 +1,15 @@
 # Exact conjunction subproofs
 
 Each arm inherits the parent assumptions and has its own proof scope.
-Nested conjunctions can use a flat list, and universal arms keep their binders.
+Nested conjunctions can use a flat list in any order. Universal arms keep their binders.
 
 ```click
 theorem reflexive_pair(x: int32) {
     ensures x == x and (x <= x and x >= x) by {
         all {
+            x >= x => { normalize(); }
             x == x => { normalize(); }
             x <= x => { normalize(); }
-            x >= x => { normalize(); }
         }
     }
 }

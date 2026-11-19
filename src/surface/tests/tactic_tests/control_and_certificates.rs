@@ -1476,13 +1476,13 @@ test_batches! {
 }
 
 #[test]
-fn named_conjunct_proofs_check_shape_and_order() {
+fn named_conjunct_proofs_match_labels_in_either_order() {
     let source = r#"
         theorem conjunction(x: int32) {
             ensures (x == x and x <= x) and x == x by {
                 all {
-                    x == x => { normalize(); }
                     x <= x => { normalize(); }
+                    x == x => { normalize(); }
                     x == x => { normalize(); }
                 }
             }
@@ -1490,21 +1490,36 @@ fn named_conjunct_proofs_check_shape_and_order() {
     "#;
     verify_click_theorems(source).unwrap();
     assert!(verify_click_theorems(&source.replace("all {", "all positional {")).is_err());
+
+    let grouped = r#"
+        theorem grouped() {
+            ensures (forall (i: int32) { i == i }) and (2 == 2 and 3 == 3) by {
+                all {
+                    (2 == 2 and 3 == 3) => {
+                        all { 3 == 3 => { normalize(); } 2 == 2 => { normalize(); } }
+                    }
+                    forall (j: int32) { j == j } => { intro(); normalize(); }
+                }
+            }
+        }
+    "#;
+    let expanded = expand_c_claim_source_by_label(grouped, &[], "grouped.ensures_0").unwrap();
+    crate::surface::proof::without_implicit_solve(|| verify_click_theorems(&expanded)).unwrap();
     for (changed, reason) in [
         (
             source.replace("x <= x => { normalize(); }", ""),
-            "must name its conjunct in goal order",
+            "is missing an arm for this conjunct",
         ),
         (
             source.replace("x <= x => { normalize(); }", "x < x => { normalize(); }"),
-            "must name its conjunct in goal order",
+            "is missing an arm for this conjunct",
         ),
         (
             source.replace(
                 "x <= x => { normalize(); }",
                 "x <= x => { normalize(); } x <= x => { normalize(); }",
             ),
-            "must name its conjunct in goal order",
+            "has no corresponding conjunct",
         ),
         (source.replace("all {", "both {"), "`both` is retired"),
     ] {

@@ -1267,14 +1267,14 @@ complete rewritten surface proof through the ordinary entry point.
 
 **Form:** `all { P => { ... } Q => { ... } }`
 
-Write one arm per conjunct in goal order. For `P and (Q and R)`, a
+Write one labeled arm per conjunct in any order. For `P and (Q and R)`, a
 single block may contain three arms. Repeated conjuncts take separate arms.
+Identically labeled arms are used in written order.
 An arm can also name a whole conjunct that is itself a conjunction, for
 example when its proof changes the goal before splitting it.
 
 Each proof starts with the parent assumptions. Facts established in one arm
-are local to that arm. An absent, extra, out-of-order, or unfinished arm
-fails. An ordinary conjunction can still be closed by `solve()`.
+are local to that arm. An absent, extra, or unfinished arm fails. An ordinary conjunction can still be closed by `solve()`.
 
 Expansion writes a flat list using the retained child goals or by raising
 their kernel propositions from the names in scope.
