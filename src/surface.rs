@@ -525,19 +525,25 @@ pub(crate) fn rust_iterator_method(
                 .clone()
                 .ok_or("missing count binding for enumerated iterator")?,
         ),
-        (K::Range, "start") => variable("start"),
-        (K::Range, "end") => variable("end"),
-        (K::RangeInclusive, "start()") => variable("start"),
-        (K::RangeInclusive, "end()") => variable("end"),
-        (K::RangeInclusive, "is_empty()") => {
-            return proposition_bool_value(ClickProposition::Comparison {
-                left: ContractExpression::ProgramExpression(variable("start")),
-                operator: ComparisonOperator::GreaterThan,
-                right: ContractExpression::ProgramExpression(variable("end")),
-            });
-        }
-        (K::Range, "len()") => {
-            ProgramExpression::Subtract(Box::new(variable("end")), Box::new(variable("start")))
+        (K::Range, "start" | "end" | "len()")
+        | (K::RangeInclusive, "start()" | "end()" | "is_empty()") => {
+            let [start, end] = iterator
+                .range_bounds
+                .clone()
+                .ok_or("missing range bounds")?
+                .map(ProgramExpression::Variable);
+            match accessor {
+                "start" | "start()" => start,
+                "end" | "end()" => end,
+                "len()" => ProgramExpression::Subtract(Box::new(end), Box::new(start)),
+                _ => {
+                    return proposition_bool_value(ClickProposition::Comparison {
+                        left: ContractExpression::ProgramExpression(start),
+                        operator: ComparisonOperator::GreaterThan,
+                        right: ContractExpression::ProgramExpression(end),
+                    });
+                }
+            }
         }
         // A slice field reads as a slice parameter does: `iter.v` is its
         // data and `iter.v.len()` its length.

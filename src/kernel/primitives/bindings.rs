@@ -88,6 +88,8 @@ enum LocalBindingKind {
     SliceIteratorLength,
     ChunkIterator(ChunkIteratorField),
     IteratorOption(IteratorOptionField),
+    RangeStart,
+    RangeEnd,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -277,6 +279,11 @@ impl LocalBindingId {
         })
     }
 
+    pub(crate) fn range_bounds(owner: LocalFunctionId, ordinal: u32, ty: ProgramType) -> [Self; 2] {
+        [LocalBindingKind::RangeStart, LocalBindingKind::RangeEnd]
+            .map(|kind| Self::iterator_field(&owner, ordinal, kind, ty))
+    }
+
     pub(crate) fn is_iterator_field(&self) -> bool {
         matches!(
             self.0.kind,
@@ -284,6 +291,8 @@ impl LocalBindingId {
                 | LocalBindingKind::SliceIteratorPointer
                 | LocalBindingKind::SliceIteratorLength
                 | LocalBindingKind::ChunkIterator(_)
+                | LocalBindingKind::RangeStart
+                | LocalBindingKind::RangeEnd
         )
     }
 
@@ -411,6 +420,8 @@ impl Hash for LocalBindingId {
             LocalBindingKind::IteratorOption(field) => {
                 (&self.0.owner, 10u8, self.0.ordinal, field).hash(state)
             }
+            LocalBindingKind::RangeStart => (&self.0.owner, 11u8, self.0.ordinal).hash(state),
+            LocalBindingKind::RangeEnd => (&self.0.owner, 12u8, self.0.ordinal).hash(state),
         }
     }
 }
@@ -444,6 +455,20 @@ impl std::fmt::Display for CanonicalLocalBinding<'_> {
         }
         if id.0.kind == LocalBindingKind::LoopEscape {
             return f.write_str("<loop escape>");
+        }
+        let range_bound = match id.0.kind {
+            LocalBindingKind::RangeStart => Some("start"),
+            LocalBindingKind::RangeEnd => Some("end"),
+            _ => None,
+        };
+        if let Some(bound) = range_bound {
+            return write!(
+                f,
+                "<range {bound} of {:?}::{}.local({})>",
+                id.source(),
+                id.function(),
+                id.ordinal()
+            );
         }
         let slice_field = match id.0.kind {
             LocalBindingKind::EnumerateCount => return f.write_str("<enumeration count>"),
