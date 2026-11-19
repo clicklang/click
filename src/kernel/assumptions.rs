@@ -2862,9 +2862,18 @@ fn collect_memory_read_descriptor(
         .as_ref()
         .map(|read| read.origin.as_ref().unwrap_or(read.point.shared_memory()))
         .unwrap_or(point.shared_memory());
-    let width = observation.as_ref().map(|read| read.bytes).or(width);
     if MemoryStateIdentity::of(memory.memory()) == MemoryStateIdentity::of(current_memory) {
-        let width = width
+        // A point-named read can have a typed access width even when it did
+        // not go through legacy comparison selection. In particular, a
+        // byte read can occur inside a four-byte comparison carrier.
+        let width = observation
+            .as_ref()
+            .map(|read| read.bytes)
+            .or_else(|| {
+                point.read_version_id()?;
+                crate::kernel::eval::observed_scalar_read_width(point, pointer, kind)
+            })
+            .or(width)
             .ok_or_else(|| "current memory load has no statically known byte width".to_string())?;
         loads.push((pointer.clone(), width));
     }

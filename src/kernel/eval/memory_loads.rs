@@ -3366,6 +3366,15 @@ pub(crate) fn is_selected_scalar_read(
     read_observations::selected(point, pointer, kind)
 }
 
+/// The access width registered by a typed producer for this exact descriptor.
+pub(in crate::kernel) fn observed_scalar_read_width(
+    point: &ProgramPoint,
+    pointer: &Address,
+    kind: LoadKind,
+) -> Option<u32> {
+    read_observations::existing_at(point, pointer, kind).and_then(read_observations::bytes)
+}
+
 /// Existing observation metadata is evidence of an access width too. Merely
 /// inspecting a retained read must not replace it with the unknown-width default.
 fn existing_read_access_width(
