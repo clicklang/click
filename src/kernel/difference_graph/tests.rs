@@ -725,6 +725,37 @@ fn a_disequality_at_a_range_end_tightens_it() {
     assert_eq!(pinned.decide(&lt(&x, &y)), None);
 }
 
+#[test]
+fn tightening_bounds_skips_exclusion_runs_in_each_fork() {
+    let x = variable(0);
+    let mut samples = Vec::new();
+    for size in [4, 16, 64, 256] {
+        let mut parent = DifferenceGraph::new();
+        for value in -size..=size {
+            parent.assume_condition(&ConditionTerm::equal(x.clone(), constant(value)), false);
+        }
+        let mut below = parent.clone();
+        let (_, below_work) = graph_work(|| below.assume_condition(&lt(&x, &constant(0)), true));
+        assert_eq!(below.decide(&le(&x, &constant(-size - 1))), Some(true));
+
+        let mut above = parent.clone();
+        let (_, above_work) = graph_work(|| above.assume_condition(&le(&constant(0), &x), true));
+        assert_eq!(above.decide(&le(&constant(size + 1), &x)), Some(true));
+        assert_eq!(above.decide(&lt(&x, &constant(0))), Some(false));
+        assert_eq!(parent.decide(&lt(&x, &constant(0))), None);
+        samples.push((below_work, above_work));
+
+        let mut exhausted = below.clone();
+        exhausted.assume_condition(&le(&constant(-size), &x), true);
+        assert!(exhausted.is_contradictory());
+        assert!(!below.is_contradictory());
+    }
+    assert!(
+        samples.iter().all(|work| *work == samples[0]),
+        "tightening grew with the length of the excluded run: {samples:?}"
+    );
+}
+
 /// A compound term a fact mentions gets a node of its own; its operands'
 /// bounds still bound it. Here `y - x` is named by `0 <= (y - x) - 1`
 /// before the question, and `x < y`, `0 <= x` keep `(y - x) - 1` from
