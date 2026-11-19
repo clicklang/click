@@ -4393,6 +4393,72 @@ fn ordinary_indexed_integer_read_work_is_bounded_as_path_grows() {
     check_local_read_work(ProgramType::UInt128, ProgramType::Int128);
 }
 
+#[test]
+fn ordinary_fixed_offset_read_keeps_its_version_across_sibling_stores() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let left = local_read_test_address("pair");
+    let right = Address {
+        offset: AddressOffset::Constant(4),
+        ..left.clone()
+    };
+    let ty = ProgramType::Int32;
+    let entry = ExecutionState::new()
+        .with_memory(SymbolicMemory::new().with_block("local:pair", 8))
+        .with_local(
+            "p",
+            ProgramValue::typed_pointer(right.clone(), ProgramType::Int32Pointer),
+        );
+    let written = local_read_test_store(&entry, &right, ty, 7);
+    let selector = ProgramPointSelector::Mark("written".into());
+    let mut points = RecordedStates::new();
+    points.insert(selector.clone(), written.clone());
+    let _points = SynthesisRecordedPointsScope::enter(&points);
+    let claim = local_read_test_claim(ty);
+
+    let mut work = Vec::new();
+    for count in [4, 64, 1024] {
+        let mut reader = written.clone();
+        for value in 0..count {
+            reader = local_read_test_store(&reader, &left, ty, value);
+        }
+        let ((lowered, map_work), proof_work) =
+            crate::instrumentation::measure_deterministic_work(|| {
+                crate::persistent::measure_persistent_work(|| {
+                    relower_written_proposition(&claim, &reader).unwrap()
+                })
+            });
+        let read = local_test_read_operand(&lowered, ty);
+        let MachineTerm::MemoryLoad(point, address, crate::kernel::LoadKind::Int32) = read else {
+            panic!("expected a typed read: {read:?}");
+        };
+        assert_eq!(address.as_ref(), &right);
+        assert_eq!(point.read_version_id(), written.program_point_id());
+        work.push((proof_work, map_work));
+
+        let root =
+            crate::kernel::KernelTermImport::default().machine(MachineIntegerType::Int32, read);
+        let raised =
+            raise_kernel_term(&root, ParameterBinding::default(), &entry, &BTreeMap::new())
+                .expect("a recorded fixed-offset read has a spelling");
+        assert!(matches!(&raised, ContractExpression::At { selector: at, .. } if at == &selector));
+        let mut replay = claim.clone();
+        let ClickProposition::Comparison { left, .. } = &mut replay else {
+            unreachable!("test comparison")
+        };
+        *left = raised;
+        assert_eq!(
+            relower_written_proposition_with_states(&replay, &entry, &entry, &points),
+            Ok(lowered)
+        );
+    }
+    let (proof_work, map_work) = work[0];
+    assert!(
+        work.iter()
+            .all(|&(proof, map)| proof <= proof_work + 64 && map <= map_work + 256),
+        "read work grew with sibling stores: {work:?}"
+    );
+}
+
 fn check_local_read_work(value_type: ProgramType, disjoint_type: ProgramType) {
     let _session = crate::kernel::VerificationSession::enter();
     let pointer_type = match value_type {
