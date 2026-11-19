@@ -3431,21 +3431,37 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 search_input.facts().assumptions(),
                 goal,
             )
-            // Weakening and two-premise transitivity can use one named lemma.
-            // Use a single normalization for longer chains of comparisons.
+            // Short paths have their own checked rules.
             && chain.len() > 2
-            // This path already names its complete evidence. The smart
-            // budget charges selecting and spelling its edges.
             && let Some(pairs) = Self::resolve_solve_premises_unmeasured(
                 search_input,
                 &chain,
                 introduced_surfaces,
             )
-            && let Some(closed) = attempt::candidate_outcome(search_input.driver().apply_step(
-                ProofStep::NormalizeUsing(pairs.into_iter().map(|(_, surface)| surface).collect()),
-            ))?
         {
-            return Ok(Some(closed));
+            let premises = pairs
+                .into_iter()
+                .map(|(_, surface)| surface)
+                .collect::<Vec<_>>();
+            // Pure proofs can expand the selected chain through Integer
+            // composition. Statement prerequisites can repeat the chain
+            // check for many operations, so keep their compact checker.
+            let closed = if matches!(search_input.context.as_ref(), ProofContext::Pure(_)) {
+                attempt::candidate_outcome(Self::try_integer_composition_using(
+                    search_input,
+                    &premises,
+                ))?
+                .flatten()
+            } else {
+                attempt::candidate_outcome(
+                    search_input
+                        .driver()
+                        .apply_step(ProofStep::NormalizeUsing(premises)),
+                )?
+            };
+            if let Some(closed) = closed {
+                return Ok(Some(closed));
+            }
         }
         // A separating conjunction already states its structural proof tree.
         // Decompose it before selecting ambient arithmetic/history candidates;
