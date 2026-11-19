@@ -612,7 +612,7 @@ sequence below. These rows record planned scope, not completed implementation.
 | 10n | Migrate theorem argument and recorded-state value storage. | Stored arguments and recorded values retain shared operands with unchanged substitution and state selection. | Landed in [PR #3181](https://github.com/clicklang/click/pull/3181); all six pushed commits verified on upstream. Validation and program-point integration evidence below. |
 | 10o | Migrate program-valued resource-field storage. | Program-valued fields retain shared operands while preserving resource identity and substitution. | Landed in [PR #3213](https://github.com/clicklang/click/pull/3213); all pushed commits verified on upstream. Local validation and final 648-check upstream integration passed. |
 | 10p | Migrate remaining expression payloads in sequence/resource descriptors. | Inventory and subdivide independent families before implementation; preserve legitimate opaque descriptor identities. | Complete: 10p1–10p6 landed, with every pushed commit verified upstream. |
-| 10q | Migrate remaining native expression payloads in proposition outputs. | Proposition outputs retain shared operands with unchanged fact identity, raising/lowering and proof admission. | In progress: 10q1–10q3 landed. 10q-A ([#3360](https://github.com/clicklang/click/pull/3360)) migrated program-value outputs. 10q-B ([#3370](https://github.com/clicklang/click/pull/3370)) migrated algebraic outputs. 10q-C migrates Integer equations from resource-field joins. 10q-D remains below. |
+| 10q | Migrate remaining native expression payloads in proposition outputs. | Proposition outputs retain shared operands with unchanged fact identity, raising/lowering and proof admission. | 10q1–10q3 landed. 10q-A ([#3360](https://github.com/clicklang/click/pull/3360)) migrated program-value outputs. 10q-B ([#3370](https://github.com/clicklang/click/pull/3370)) migrated algebraic outputs. 10q-C ([#3384](https://github.com/clicklang/click/pull/3384)) migrated Integer equations from resource-field joins. 10q-D completes the producer inventory below. |
 | 10r | Remove obsolete machine compatibility caches and reverse bridges. | Remove only after their live readers migrate; account for any retained reader and reason. | Planned; after affected consumers. |
 | 10s | Remove obsolete Boolean, float and algebraic compatibility caches. | Remove only after their live readers migrate; preserve explicit native input/output boundaries. | Planned; after affected consumers. |
 | 10t | Closure audit: account for every remaining native adapter and remove dead APIs. | Inventory every remaining adapter/cache/native expression field with a live consumer and reason, remove dead APIs, and report any unresolved migration gaps. | Planned; final audit. |
@@ -1610,7 +1610,7 @@ Existing native numeric-coercion readers remain explicit adapters for the later
 10r–10t audit; mixed-format conversion rules are unchanged. Expression-bearing
 equality and predicate `Term` payloads remain assigned to 10q4.
 
-### 10q4 Expression-bearing Term outputs (in progress)
+### 10q4 Expression-bearing Term outputs
 
 The remaining work is delivered by production output. Each PR changes a
 `Term` payload and an exercised handoff together. Migrate readers as needed
@@ -1646,6 +1646,21 @@ field equations carry the Integer roots already held by each exit and reuse
 the fresh successor root. Native inputs and selected compatibility readers
 continue to use exact Integer fact identity. Comparison propositions keep
 their existing condition form.
+
+10q-D carries `StoredConditionTerm` and `StoredMachineTerm` in the two
+remaining expression-bearing `Term` variants. The dynamic resource checker
+forwards stored conditions and loadability counts. Shared Boolean connectives
+and scalar reads use the existing operand views and read summaries. Native
+and opaque leaves keep their existing width and refusal rules. In particular,
+a stored count's nominal type does not supply missing evidence of a read's
+width.
+
+The remaining native constructors for these two variants are the loop's
+literal contradiction, temporary C range and heap words, checked
+rewrites, normalization, and test inputs. The native fact-key,
+substitution, diagnostic, and raising readers remain explicit for 10r–10t.
+`PointerOffset` and `Sequence` already store their migrated descriptor
+operands.
 
 #### Earlier Term reader and rewrite preparation
 

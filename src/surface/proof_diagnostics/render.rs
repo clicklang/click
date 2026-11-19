@@ -1787,8 +1787,8 @@ impl Renderer<'_> {
             return;
         }
         match term {
-            Term::Condition(c) => self.condition(c),
-            Term::Bitvector32(v) => self.bitvector(v),
+            Term::Condition(c) => self.condition(c.native_compat()),
+            Term::Bitvector32(v) => self.bitvector(v.native_compat()),
             Term::Integer(i) => self.integer(i.native_compat()),
             Term::PointerOffset(o) => self.offset(o, 0),
             Term::ProgramValue(v) => self.cvalue(v.native_compat()),
@@ -3092,8 +3092,8 @@ mod tests {
             body: Box::new(MachineTerm::Variable(crate::kernel::Variable(10))),
         };
         let rendered = render_proposition(&Proposition::Equal(
-            Term::Bitvector32(fold),
-            Term::Bitvector32(MachineTerm::constant(0)),
+            Term::Bitvector32(fold.into()),
+            Term::Bitvector32(MachineTerm::constant(0).into()),
         ));
         assert!(rendered.contains("fold("));
         assert!(rendered.contains("acc=acc, item=item"), "{rendered}");
@@ -3201,8 +3201,8 @@ mod tests {
             );
         }
         let rendered = render_proposition(&Proposition::Equal(
-            Term::Bitvector32(value),
-            Term::Bitvector32(MachineTerm::constant(0)),
+            Term::Bitvector32(value.into()),
+            Term::Bitvector32(MachineTerm::constant(0).into()),
         ));
         assert!(rendered.contains("truncated"));
     }

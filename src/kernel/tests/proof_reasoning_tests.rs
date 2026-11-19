@@ -2329,8 +2329,8 @@ fn builtin_obligation_solver_proves_trivial_props() {
     assert!(crate::kernel::search::ProofSearch::proves(
         &(assumptions),
         &Proposition::Equal(
-            Term::Bitvector32(MachineTerm::constant(7)),
-            Term::Bitvector32(MachineTerm::constant(7)),
+            Term::Bitvector32(MachineTerm::constant(7).into()),
+            Term::Bitvector32(MachineTerm::constant(7).into()),
         )
     ));
     assert!(crate::kernel::search::ProofSearch::proves(
@@ -3516,7 +3516,7 @@ fn forall_introduction_rejects_a_variable_free_in_ambient_assumptions() {
     let variable = Variable(186);
     let body = Proposition::Predicate {
         name: "holds".to_string(),
-        arguments: vec![Term::Bitvector32(MachineTerm::Variable(variable))],
+        arguments: vec![Term::Bitvector32(MachineTerm::Variable(variable).into())],
     };
     let goal = forall_int32(variable, body.clone());
     let assumptions = PureFactContext::new().assume_proposition(body);
@@ -3543,7 +3543,7 @@ fn forall_derivation_check_shadows_ambient_uses_of_the_binder_id() {
             .expect("reflexivity should prove a universal in an empty context");
     let contaminated = PureFactContext::new().assume_proposition(Proposition::Predicate {
         name: "ambient".to_string(),
-        arguments: vec![Term::Bitvector32(MachineTerm::Variable(variable))],
+        arguments: vec![Term::Bitvector32(MachineTerm::Variable(variable).into())],
     });
 
     assert!(derivation.check(&PureFactContext::new()));

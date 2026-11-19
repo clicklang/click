@@ -2560,6 +2560,84 @@ pub(crate) fn current_memory_loads_in_term(
     Ok(loads)
 }
 
+/// Check a stored byte-count expression under the same width rules as a
+/// standalone word. Its nominal type does not prove the width of a raw read.
+pub(crate) fn current_memory_loads_in_count(
+    count: &StoredMachineTerm,
+    current_memory: &SymbolicMemory,
+) -> Result<Vec<(Address, u32)>, String> {
+    let mut loads = Vec::new();
+    collect_stored_machine_memory_loads(count, current_memory, &mut loads, &mut BTreeSet::new())?;
+    loads.sort();
+    loads.dedup();
+    Ok(loads)
+}
+
+fn collect_stored_machine_memory_loads(
+    value: &StoredMachineTerm,
+    current_memory: &SymbolicMemory,
+    loads: &mut Vec<(Address, u32)>,
+    seen_integers: &mut BTreeSet<u64>,
+) -> Result<(), String> {
+    if let Some(root) = value.root()
+        && root.is_shared_machine_operand()
+        && !root.has_machine_conversions()
+    {
+        return collect_shared_read_memory_loads(root, current_memory, loads, None, seen_integers);
+    }
+    collect_bitvector_memory_loads(
+        value.native_compat(),
+        current_memory,
+        loads,
+        None,
+        seen_integers,
+    )
+}
+
+fn collect_condition_operand_memory_loads(
+    condition: crate::kernel::BooleanOperandView<'_>,
+    current_memory: &SymbolicMemory,
+    loads: &mut Vec<(Address, u32)>,
+    seen_integers: &mut BTreeSet<u64>,
+) -> Result<(), String> {
+    use crate::kernel::BooleanOperandView;
+    if let BooleanOperandView::Native(condition) = condition {
+        return collect_condition_memory_loads(condition, current_memory, loads, seen_integers);
+    }
+    let mut result = Ok(());
+    condition.for_each_dependency_leaf(|leaf| {
+        if result.is_err() {
+            return;
+        }
+        result = if let Some((
+            format,
+            [
+                MachineOperandView::Shared(left),
+                MachineOperandView::Shared(right),
+            ],
+        )) = leaf.machine_arguments()
+            && [left, right]
+                .into_iter()
+                .all(|root| root.is_shared_machine_operand() && !root.has_machine_conversions())
+        {
+            let width = Some(format.carrier_bytes());
+            collect_shared_read_memory_loads(left, current_memory, loads, width, seen_integers)
+                .and_then(|()| {
+                    collect_shared_read_memory_loads(
+                        right,
+                        current_memory,
+                        loads,
+                        width,
+                        seen_integers,
+                    )
+                })
+        } else {
+            collect_condition_memory_loads(&leaf.native(), current_memory, loads, seen_integers)
+        };
+    });
+    result
+}
+
 fn collect_term_memory_loads(
     term: &Term,
     current_memory: &SymbolicMemory,
@@ -2567,11 +2645,14 @@ fn collect_term_memory_loads(
     seen_integers: &mut BTreeSet<u64>,
 ) -> Result<(), String> {
     match term {
-        Term::Condition(condition) => {
-            collect_condition_memory_loads(condition, current_memory, loads, seen_integers)
-        }
+        Term::Condition(condition) => collect_condition_operand_memory_loads(
+            condition.operand_view(),
+            current_memory,
+            loads,
+            seen_integers,
+        ),
         Term::Bitvector32(term) => {
-            collect_bitvector_memory_loads(term, current_memory, loads, None, seen_integers)
+            collect_stored_machine_memory_loads(term, current_memory, loads, seen_integers)
         }
         Term::Integer(term) => {
             collect_integer_memory_loads(term.native_compat(), current_memory, loads, seen_integers)
@@ -11006,10 +11087,13 @@ mod dynamic_current_load_tests {
         let integer = SharedIntegerTerm::intern(IntegerTerm::Machine(
             SharedMachineIntegerTerm::intern(MachineIntegerType::Int64, load),
         ));
-        let condition = Term::Condition(ConditionTerm::IntegerEqual(
-            integer,
-            SharedIntegerTerm::intern(IntegerTerm::constant_i64(0)),
-        ));
+        let condition = Term::Condition(
+            ConditionTerm::IntegerEqual(
+                integer,
+                SharedIntegerTerm::intern(IntegerTerm::constant_i64(0)),
+            )
+            .into(),
+        );
         assert_eq!(
             current_memory_loads_in_term(&condition, &memory).unwrap(),
             vec![(pointer, 8)]
@@ -11155,10 +11239,13 @@ mod dynamic_current_load_tests {
     #[test]
     fn opaque_click_function_carrier_is_rejected() {
         let memory = SymbolicMemory::new();
-        let term = Term::Bitvector32(MachineTerm::ClickFunctionApplication {
-            name: "opaque".into(),
-            arguments: Vec::new(),
-        });
+        let term = Term::Bitvector32(
+            MachineTerm::ClickFunctionApplication {
+                name: "opaque".into(),
+                arguments: Vec::new(),
+            }
+            .into(),
+        );
         assert!(current_memory_loads_in_term(&term, &memory).is_err());
     }
 }

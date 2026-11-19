@@ -399,7 +399,24 @@ fn dynamic_body_fact_dependency(
         binder: QuantifiedBinder<'_>,
         selected: &mut Option<crate::kernel::LoanViewBinding>,
     ) -> Result<(), String> {
-        for (pointer, width) in crate::kernel::current_memory_loads_in_term(term, state.memory())? {
+        walk_loads(
+            crate::kernel::current_memory_loads_in_term(term, state.memory())?,
+            state,
+            assumptions,
+            temporary_views,
+            binder,
+            selected,
+        )
+    }
+    fn walk_loads(
+        loads: Vec<(Address, u32)>,
+        state: &ExecutionState,
+        assumptions: &PureFactContext,
+        temporary_views: &DynamicViewDependencyIndex,
+        binder: QuantifiedBinder<'_>,
+        selected: &mut Option<crate::kernel::LoanViewBinding>,
+    ) -> Result<(), String> {
+        for (pointer, width) in loads {
             check_load(
                 pointer,
                 width,
@@ -422,7 +439,7 @@ fn dynamic_body_fact_dependency(
     ) -> Result<(), String> {
         match proposition {
             Proposition::ConditionIs(condition, _) => walk_term(
-                &Term::Condition((condition.clone()).native_compat().clone()),
+                &Term::Condition(condition.clone()),
                 state,
                 assumptions,
                 temporary_views,
@@ -526,8 +543,8 @@ fn dynamic_body_fact_dependency(
                 }
                 Ok(())
             }
-            Proposition::MemoryLoadable { bytes, .. } => walk_term(
-                &Term::Bitvector32(bytes.native_compat().clone()),
+            Proposition::MemoryLoadable { bytes, .. } => walk_loads(
+                crate::kernel::current_memory_loads_in_count(bytes, state.memory())?,
                 state,
                 assumptions,
                 temporary_views,
@@ -535,7 +552,7 @@ fn dynamic_body_fact_dependency(
                 selected,
             ),
             Proposition::HeapAllocationFreed { bytes, .. } => walk_term(
-                &Term::Bitvector32(bytes.bytes().clone()),
+                &Term::Bitvector32(bytes.bytes().clone().into()),
                 state,
                 assumptions,
                 temporary_views,
@@ -6093,11 +6110,14 @@ void child_release(struct child* obj) {
         );
 
         let opaque = Proposition::Equal(
-            Term::Bitvector32(MachineTerm::ClickFunctionApplication {
-                name: "opaque".into(),
-                arguments: Vec::new(),
-            }),
-            Term::Bitvector32(MachineTerm::constant(0)),
+            Term::Bitvector32(
+                MachineTerm::ClickFunctionApplication {
+                    name: "opaque".into(),
+                    arguments: Vec::new(),
+                }
+                .into(),
+            ),
+            Term::Bitvector32(MachineTerm::constant(0).into()),
         );
         assert!(
             dynamic_body_fact_dependency(&opaque, &owner_state, &assumptions, &no_temporary_views,)

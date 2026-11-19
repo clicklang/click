@@ -8274,8 +8274,8 @@ pub(super) fn push_false_loop_effect_obligation(
 
 pub(super) fn false_equals_true_proposition() -> Proposition {
     Proposition::Equal(
-        Term::Condition(ConditionTerm::Constant(false)),
-        Term::Condition(ConditionTerm::Constant(true)),
+        Term::Condition(ConditionTerm::Constant(false).into()),
+        Term::Condition(ConditionTerm::Constant(true).into()),
     )
 }
 

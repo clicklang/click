@@ -4635,14 +4635,17 @@ mod integer_equality_fact_index_tests {
             var: binder,
             sort: Sort::Algebraic(path_type.clone()),
             body: Box::new(Proposition::Equal(
-                Term::Bitvector32(MachineTerm::ClickFunctionApplication {
-                    name: "walk".into(),
-                    arguments: vec![PureFunctionArgument::Algebraic(AlgebraicTerm {
-                        algebraic_type: path_type.clone(),
-                        node: AlgebraicTermNode::Variable(binder),
-                    })],
-                }),
-                Term::Bitvector32(MachineTerm::constant(1)),
+                Term::Bitvector32(
+                    MachineTerm::ClickFunctionApplication {
+                        name: "walk".into(),
+                        arguments: vec![PureFunctionArgument::Algebraic(AlgebraicTerm {
+                            algebraic_type: path_type.clone(),
+                            node: AlgebraicTermNode::Variable(binder),
+                        })],
+                    }
+                    .into(),
+                ),
+                Term::Bitvector32(MachineTerm::constant(1).into()),
             )),
         };
         let source = path_reaches("callee_path", Variable(207_750));

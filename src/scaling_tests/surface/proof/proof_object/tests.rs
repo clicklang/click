@@ -321,8 +321,8 @@ fn both_and_scopes_are_isolated_check_lineage_and_scale() {
     let context = pure_identity_fixture();
     let truth = Proposition::condition_is(ConditionTerm::Constant(true), true);
     let other = Proposition::Equal(
-        Term::Bitvector32(MachineTerm::constant(7)),
-        Term::Bitvector32(MachineTerm::constant(7)),
+        Term::Bitvector32(MachineTerm::constant(7).into()),
+        Term::Bitvector32(MachineTerm::constant(7).into()),
     );
     let goal = Proposition::And(Box::new(truth.clone()), Box::new(other.clone()));
     let samples = [16, 32, 64, 128].map(|size| {

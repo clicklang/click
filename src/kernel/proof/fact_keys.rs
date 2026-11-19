@@ -3678,8 +3678,16 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
     Some(match proposition {
         Proposition::Equal(Term::Bitvector32(left), Term::Bitvector32(right)) => {
             AlphaPropositionKey::EqualBitvector(
-                alpha_bitvector_key_with_bindings::<ALLOW_LOADS>(left, bindings, next_binder)?,
-                alpha_bitvector_key_with_bindings::<ALLOW_LOADS>(right, bindings, next_binder)?,
+                alpha_bitvector_key_with_bindings::<ALLOW_LOADS>(
+                    left.native_compat(),
+                    bindings,
+                    next_binder,
+                )?,
+                alpha_bitvector_key_with_bindings::<ALLOW_LOADS>(
+                    right.native_compat(),
+                    bindings,
+                    next_binder,
+                )?,
             )
         }
         Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) => {

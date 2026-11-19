@@ -34,7 +34,7 @@ impl StoredMachineTerm {
     }
     /// Admission for the nominal 32-bit Term payload. Native inputs retain
     /// their written syntax; this does not widen or retag other root sorts.
-    #[allow(dead_code)] // Prepared for the following Term storage integration.
+    #[cfg(test)]
     pub(crate) fn from_word32_root(root: KernelTerm) -> Option<Self> {
         matches!(
             root.ty(),
@@ -85,7 +85,7 @@ impl StoredMachineTerm {
     pub(crate) fn root(&self) -> Option<&KernelTerm> {
         self.0.root()
     }
-    #[allow(dead_code)] // Prepared for the following Term storage integration.
+    #[cfg(test)]
     pub(crate) fn into_native_compat(self) -> MachineTerm {
         match self.0.into_native_compat() {
             ProgramValue::Bool(value)

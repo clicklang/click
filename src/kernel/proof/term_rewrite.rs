@@ -1510,11 +1510,11 @@ fn collect_integer_substitution_term_variables(term: &Term, variables: &mut Carr
         Term::Integer(value) => {
             collect_integer_carriers(value.native_compat(), variables, &mut BTreeSet::new())
         }
-        Term::Bitvector32(value) => collect_bitvector_carriers(value, variables),
+        Term::Bitvector32(value) => collect_bitvector_carriers(value.native_compat(), variables),
         Term::ProgramValue(value) => {
             collect_program_value_carriers(value.native_compat(), variables)
         }
-        Term::Condition(value) => collect_condition_carriers(value, variables),
+        Term::Condition(value) => collect_condition_carriers(value.native_compat(), variables),
         Term::PointerOffset(value) => collect_pointer_offset_carriers(value, variables),
         Term::Algebraic(value) => collect_algebraic_carriers(value.native_compat(), variables),
         _ => {}
@@ -1637,8 +1637,8 @@ fn exhausted_argument(argument: &PureFunctionArgument) -> PureFunctionArgument {
 
 fn exhausted_term(term: &Term) -> Term {
     match term {
-        Term::Condition(_) => Term::Condition(ConditionTerm::Constant(false)),
-        Term::Bitvector32(_) => Term::Bitvector32(MachineTerm::constant(0)),
+        Term::Condition(_) => Term::Condition(ConditionTerm::Constant(false).into()),
+        Term::Bitvector32(_) => Term::Bitvector32(MachineTerm::constant(0).into()),
         Term::Integer(value) if value.root().is_some() => term.clone(),
         Term::Integer(value) => Term::Integer(exhausted_integer(value.native_compat()).into()),
         Term::PointerOffset(_) => Term::PointerOffset(exhausted_offset()),
@@ -3179,8 +3179,12 @@ impl<'a> TermRewrite<'a> {
         let mut seen = BTreeSet::new();
         for term in terms {
             match term {
-                Term::Condition(condition) => collect_condition_carriers(condition, &mut variables),
-                Term::Bitvector32(value) => collect_bitvector_carriers(value, &mut variables),
+                Term::Condition(condition) => {
+                    collect_condition_carriers(condition.native_compat(), &mut variables)
+                }
+                Term::Bitvector32(value) => {
+                    collect_bitvector_carriers(value.native_compat(), &mut variables)
+                }
                 Term::Integer(value) => collect_integer_shared_carriers(
                     &SharedIntegerTerm::from(value.native_compat().clone()),
                     &mut variables,
@@ -3702,10 +3706,10 @@ impl<'a> TermRewrite<'a> {
         }
         let result = match term {
             Term::Algebraic(v) => Term::Algebraic(self.algebraic(v.native_compat()).into()),
-            Term::Bitvector32(v) => Term::Bitvector32(self.bits(v)),
+            Term::Bitvector32(v) => Term::Bitvector32(v.map_native(|word| self.bits(word))),
             Term::Integer(v) => Term::Integer(self.integer(v.native_compat()).into()),
             Term::ProgramValue(v) => Term::ProgramValue(self.value(v.native_compat()).into()),
-            Term::Condition(v) => Term::Condition(self.condition(v)),
+            Term::Condition(v) => Term::Condition(self.condition(v.native_compat()).into()),
             Term::PointerOffset(v) => Term::PointerOffset(self.offset(v)),
             _ => term.clone(),
         };
@@ -6968,14 +6972,20 @@ mod tests {
                     },
                 ))
             };
-            let input = Term::Bitvector32(MachineTerm::ClickFunctionApplication {
-                name: "many".into(),
-                arguments: vec![argument(&from); size],
-            });
-            let expected = Term::Bitvector32(MachineTerm::ClickFunctionApplication {
-                name: "many".into(),
-                arguments: vec![argument(&to); size],
-            });
+            let input = Term::Bitvector32(
+                MachineTerm::ClickFunctionApplication {
+                    name: "many".into(),
+                    arguments: vec![argument(&from); size],
+                }
+                .into(),
+            );
+            let expected = Term::Bitvector32(
+                MachineTerm::ClickFunctionApplication {
+                    name: "many".into(),
+                    arguments: vec![argument(&to); size],
+                }
+                .into(),
+            );
             let mut rewrite = TermRewrite::new(&from, &to);
             assert_eq!(rewrite.term(&input), expected);
             assert!(rewrite.changed);
@@ -7176,10 +7186,13 @@ mod tests {
                 MachineTerm::Variable(Variable(880)),
             ),
         ));
-        let input = Term::Bitvector32(MachineTerm::IntegerToMachine {
-            value: payload,
-            destination: crate::kernel::MachineIntegerType::UInt32,
-        });
+        let input = Term::Bitvector32(
+            MachineTerm::IntegerToMachine {
+                value: payload,
+                destination: crate::kernel::MachineIntegerType::UInt32,
+            }
+            .into(),
+        );
         let from = MachineTerm::Variable(Variable(880));
         let to = MachineTerm::Variable(Variable(881));
         let mut rewrite = TermRewrite::for_bits(&from, &to);
@@ -7459,7 +7472,7 @@ mod tests {
                         &algebraic_replacements,
                     );
                     let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-                        rewrite.term(&Term::Condition(condition))
+                        rewrite.term(&Term::Condition(condition.into()))
                     });
                     let result = (
                         rewrite.integer_work_exhausted,
@@ -7949,7 +7962,7 @@ mod tests {
         }
         let (output, visits, exhausted) = with_checked_simple_budget(4, || {
             let mut rewrite = TermRewrite::for_bits_checked(&source, &replacement);
-            let output = rewrite.term(&Term::Bitvector32(source.clone()));
+            let output = rewrite.term(&Term::Bitvector32(source.clone().into()));
             (output, rewrite.visits, rewrite.integer_work_exhausted)
         });
         assert!(
@@ -7969,10 +7982,13 @@ mod tests {
     fn checked_rewrite_stops_before_wide_sibling_payloads() {
         let source = MachineTerm::Variable(Variable(3_020_000));
         let replacement = MachineTerm::constant(7);
-        let input = Term::Bitvector32(MachineTerm::PureFunctionApplication {
-            name: "wide_checked_payload".into(),
-            arguments: vec![source.clone(); 256],
-        });
+        let input = Term::Bitvector32(
+            MachineTerm::PureFunctionApplication {
+                name: "wide_checked_payload".into(),
+                arguments: vec![source.clone(); 256],
+            }
+            .into(),
+        );
         let (output, visits, exhausted) = with_checked_simple_budget(4, || {
             let mut rewrite = TermRewrite::for_bits_checked(&source, &replacement);
             let output = rewrite.term(&input);
@@ -9053,7 +9069,7 @@ mod comparison_read_batch_tests {
     fn atom(value: MachineTerm) -> Proposition {
         Proposition::Predicate {
             name: "selected_read".into(),
-            arguments: vec![Term::Bitvector32(value)],
+            arguments: vec![Term::Bitvector32(value.into())],
         }
     }
 
@@ -9154,8 +9170,8 @@ mod comparison_read_batch_tests {
             body: Box::new(Proposition::Predicate {
                 name: "pair".into(),
                 arguments: vec![
-                    Term::Bitvector32(MachineTerm::Variable(source)),
-                    Term::Bitvector32(MachineTerm::Variable(binder)),
+                    Term::Bitvector32(MachineTerm::Variable(source).into()),
+                    Term::Bitvector32(MachineTerm::Variable(binder).into()),
                 ],
             }),
         };
@@ -9173,8 +9189,8 @@ mod comparison_read_batch_tests {
             Proposition::Predicate {
                 name: "pair".into(),
                 arguments: vec![
-                    Term::Bitvector32(MachineTerm::Variable(binder)),
-                    Term::Bitvector32(MachineTerm::Variable(var))
+                    Term::Bitvector32(MachineTerm::Variable(binder).into()),
+                    Term::Bitvector32(MachineTerm::Variable(var).into())
                 ],
             }
         );
@@ -9335,8 +9351,8 @@ mod comparison_read_batch_tests {
                 )),
             );
             for argument in [
-                Term::Bitvector32(machine_fold),
-                Term::Bitvector32(machine_match),
+                Term::Bitvector32(machine_fold.into()),
+                Term::Bitvector32(machine_match.into()),
                 Term::Integer(integer_fold.into()),
             ] {
                 let input = Proposition::Predicate {
