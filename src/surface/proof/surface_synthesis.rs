@@ -18,7 +18,7 @@ mod pointer_indices;
 mod pointer_names;
 
 use crate::kernel::program_local_source_name as surface_local_name;
-use crate::surface::diagnostics::has_surface_chunk_binding;
+use crate::surface::diagnostics::has_surface_iterator_binding;
 
 const SURFACE_SYNTHESIS_WORK_LIMIT: usize = 16_384;
 pub(super) const SURFACE_SYNTHESIS_DEPTH_LIMIT: usize = 128;
@@ -784,7 +784,7 @@ fn synthesize_state_local(term: &MachineTerm) -> Option<ContractExpression> {
                 crate::kernel::MachineIntegerType::from_program_type(value.program_type()).is_some()
             })
         })?;
-        if !has_surface_chunk_binding(name) {
+        if !has_surface_iterator_binding(name) {
             return None;
         }
         if let Some(result) = SYNTHESIS_RECORDED_POINTS.with(|slot| {
@@ -817,7 +817,7 @@ fn synthesize_recorded_local(term: &MachineTerm) -> Option<ContractExpression> {
         let slot = slot.borrow();
         let points = slot.as_ref()?;
         let (selector, name, state) = points.point_naming_integer(term)?;
-        if !has_surface_chunk_binding(name) {
+        if !has_surface_iterator_binding(name) {
             return None;
         }
         if let Some(result) = state
@@ -5139,7 +5139,7 @@ fn synthesize_named_integer_local<'a>(
 ) -> Option<SurfaceTerm> {
     if let Some(name) = holders
         .next()
-        .filter(|name| has_surface_chunk_binding(name))
+        .filter(|name| has_surface_iterator_binding(name))
     {
         if let Some(result) = synthesize_call_capture(state, name) {
             return Some(result);
@@ -6963,7 +6963,7 @@ fn synthesize_surface_pointer(
         .pointer_objects_in_block(&pointer.base)
         .find_map(|(name, base)| {
             crate::instrumentation::record_deterministic_work(1);
-            if !has_surface_chunk_binding(name) {
+            if !has_surface_iterator_binding(name) {
                 return None;
             }
             let element_width = base.program_type().pointee_type()?.byte_width();

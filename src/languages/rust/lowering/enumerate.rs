@@ -2,7 +2,7 @@
 //! the slice iterator's fields and its count, how many elements it has
 //! yielded. Its `next` yields the slice iterator's element with the index
 //! `count`, then counts it. Its `Option` holds the yielded element's address
-//! and `<option>_index`.
+//! and index.
 use super::*;
 
 impl Context<'_> {
@@ -15,12 +15,8 @@ impl Context<'_> {
         ordinal: u32,
     ) -> Result<ProgramStatement, String> {
         let storage = self.shared_array_storage(name, element, option, owner, ordinal)?;
-        let field = if option {
-            let index = format!("{name}_index");
-            if !self.locals.insert(index.clone()) {
-                return Err("enumerated iterator identity collision".into());
-            }
-            self.binding(&index)
+        let field: BindingName = if option {
+            LocalBindingId::iterator_option_index(owner, ordinal).into()
         } else {
             LocalBindingId::enumerate_count(owner.clone(), ordinal).into()
         };
@@ -138,9 +134,7 @@ impl Context<'_> {
         let index = self.enumerate_index(option)?;
         Ok((
             program_assert(crate::kernel::program_expression::equal(
-                crate::kernel::program_expression::variable(
-                    self.binding(&format!("{option}_some")),
-                ),
+                crate::kernel::program_expression::variable(&self.shared_array_option(option)?.tag),
                 crate::kernel::program_expression::int32_literal(1),
             )),
             crate::kernel::program_expression::variable(index),

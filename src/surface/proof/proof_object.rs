@@ -1795,7 +1795,7 @@ fn register_state_names(
             if name
                 .local_id()
                 .is_some_and(crate::kernel::LocalBindingId::is_temporary)
-                || !crate::surface::diagnostics::has_surface_chunk_binding(name)
+                || !crate::surface::diagnostics::has_surface_iterator_binding(name)
                 || name.named().is_some_and(|name| {
                     name.starts_with("__click")
                         || name.starts_with("__rust_")
@@ -1906,7 +1906,7 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
                 labels.register_current_state(&execution.core.state);
                 for (name, value) in execution.core.state.locals().object_values() {
                     if !name.named().is_some_and(|name| name.starts_with("__rust_"))
-                        && crate::surface::diagnostics::has_surface_chunk_binding(name)
+                        && crate::surface::diagnostics::has_surface_iterator_binding(name)
                         && let Some(variable) = diagnostic_value_variable(&value.native())
                     {
                         let spelling = execution

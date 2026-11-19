@@ -355,11 +355,13 @@ pub(crate) fn rust_binding_spelling(name: &crate::kernel::BindingName) -> Option
 
 /// Only the loop's iterator fields have selectors. Raise the values held
 /// by iterator copies and the private Option fields structurally.
-pub(crate) fn has_surface_chunk_binding(name: &crate::kernel::BindingName) -> bool {
-    !name
-        .local_id()
-        .is_some_and(crate::kernel::LocalBindingId::is_chunk_storage_field)
-        || with_rust_loop_spelling(|loops| loops.chunk_fields.contains(name))
+pub(crate) fn has_surface_iterator_binding(name: &crate::kernel::BindingName) -> bool {
+    let Some(id) = name.local_id() else {
+        return true;
+    };
+    !id.is_iterator_option_field()
+        && (!id.is_chunk_iterator_field()
+            || with_rust_loop_spelling(|loops| loops.chunk_fields.contains(name)))
 }
 
 /// The Rust name of the scalar type `interface_type`, `u32` for `uint32`.
