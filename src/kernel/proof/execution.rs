@@ -4346,6 +4346,57 @@ fn interface_join_resources(
     })
 }
 
+/// Accept only the facts supplied by the arms and the written interface.
+fn check_interface_successor_facts(
+    introduced: &[Proposition],
+    arm_facts: [&PureFactStore; 2],
+    interface_propositions: &std::collections::BTreeSet<&Proposition>,
+    exported_resources: &[ResourceFact],
+    intrinsic_facts: &[Proposition],
+    assumptions: &PureFactContext,
+) -> Result<(), &'static str> {
+    let _timing =
+        crate::instrumentation::OperationTiming::new("", "", "branch interface successor facts");
+    let intrinsic_facts = intrinsic_facts
+        .iter()
+        .inspect(|_| crate::instrumentation::record_deterministic_work(1))
+        .collect::<std::collections::BTreeSet<_>>();
+    let mut composition_facts = None;
+    for fact in introduced {
+        crate::instrumentation::record_deterministic_work(1);
+        if arm_facts
+            .iter()
+            .all(|facts| checked_branch_fact_is_available(facts, fact))
+            || interface_propositions.contains(fact)
+            || intrinsic_facts.contains(fact)
+        {
+            continue;
+        }
+        // The observable projection can supply a composition of the exports.
+        // Build it lazily, since ordinary facts only need the indexes above.
+        if matches!(fact, Proposition::ResourceComposition(_))
+            && composition_facts
+                .get_or_insert_with(|| {
+                    let _timing = crate::instrumentation::OperationTiming::new(
+                        "",
+                        "",
+                        "branch interface exported composition",
+                    );
+                    ResourceContext::new_with_equalities(assumptions)
+                        .unchecked_with_facts(exported_resources.iter().cloned().inspect(|_| {
+                            crate::instrumentation::record_deterministic_work(1);
+                        }))
+                        .observable_facts_assuming_valid(assumptions)
+                })
+                .contains(fact)
+        {
+            continue;
+        }
+        return Err("the interface successor contains an unchecked new fact");
+    }
+    Ok(())
+}
+
 /// What an explicit join interface makes of two concrete arms: the
 /// abstraction both agree on, the interface resources each arm gives up, the
 /// facts the successor gains, and the checked lowering of every interface
@@ -4527,21 +4578,14 @@ fn construct_interface_abstraction(
     let introduced = successor_facts
         .introduced_since(root_facts)
         .ok_or("the interface successor facts do not descend from the branch root")?;
-    for fact in &introduced {
-        let common_arm_fact = arm_facts
-            .iter()
-            .all(|facts| checked_branch_fact_is_available(facts, fact));
-        let interface_fact = interface_propositions.contains(fact);
-        let interface_resource_fact =
-            ResourceContext::new_with_equalities(successor_facts.assumptions())
-                .unchecked_with_facts(successor_interface_resources.clone())
-                .observable_facts_assuming_valid(successor_facts.assumptions())
-                .contains(fact)
-                || successor_interface_resource_facts.contains(fact);
-        if !common_arm_fact && !interface_fact && !interface_resource_fact {
-            return Err("the interface successor contains an unchecked new fact");
-        }
-    }
+    check_interface_successor_facts(
+        &introduced,
+        arm_facts,
+        &interface_propositions,
+        &successor_interface_resources,
+        &successor_interface_resource_facts,
+        successor_facts.assumptions(),
+    )?;
 
     // A named interface instance carries a model the arms need not agree on.
     // The successor must hold it with the fresh model this join mints, so

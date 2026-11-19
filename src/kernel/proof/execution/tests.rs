@@ -2914,6 +2914,89 @@ fn interface_load_definition_rejects_wrong_variable_address_and_state() {
 }
 
 #[test]
+fn interface_successor_fact_checks_pay_for_exported_resources_once() {
+    use crate::instrumentation::{VerificationEvent, collect, measure_deterministic_work};
+
+    let arm = PureFactStore::default();
+    let written = std::collections::BTreeSet::new();
+    let assumptions = PureFactContext::new();
+    let memory = SymbolicMemory::new();
+    for size in [4usize, 16, 64] {
+        let ranges = (0..size)
+            .map(|index| {
+                MemoryRange::new(
+                    Address {
+                        base: crate::kernel::AddressBase::ExternalArgument,
+                        offset: crate::kernel::AddressOffset::Constant(index as i64 * 8),
+                    },
+                    MachineTerm::constant(0),
+                    MachineTerm::constant(1),
+                )
+            })
+            .collect::<Vec<_>>();
+        let intrinsic = ranges
+            .iter()
+            .map(|range| range.loadable_fact(&memory))
+            .collect::<Vec<_>>();
+        let exported = ranges
+            .into_iter()
+            .map(ResourceFact::own_memory)
+            .collect::<Vec<_>>();
+        let check = |introduced: &[Proposition]| {
+            let ((result, work), events) = collect(|| {
+                measure_deterministic_work(|| {
+                    check_interface_successor_facts(
+                        introduced,
+                        [&arm, &arm],
+                        &written,
+                        &exported,
+                        &intrinsic,
+                        &assumptions,
+                    )
+                })
+            });
+            let assemblies = events
+                .iter()
+                .filter(|event| {
+                    matches!(
+                        event,
+                        VerificationEvent::OperationFinished { name, .. }
+                            if name == "branch interface exported composition"
+                    )
+                })
+                .count();
+            (result, work, assemblies)
+        };
+        let (result, intrinsic_work, assemblies) = check(&intrinsic);
+        assert!(result.is_ok());
+        assert_eq!(assemblies, 0);
+        assert!(
+            intrinsic_work <= 8 * size,
+            "{size} facts used {intrinsic_work} work"
+        );
+
+        let resources = ResourceContext::new_with_equalities(&assumptions)
+            .unchecked_with_facts(exported.iter().cloned());
+        let mut introduced = intrinsic.clone();
+        introduced.extend(resources.observable_facts_assuming_valid(&assumptions));
+        assert_eq!(introduced.len(), size + 1);
+        let (result, _, assemblies) = check(&introduced);
+        assert!(result.is_ok());
+        assert_eq!(assemblies, 1);
+
+        let with_unexported = resources
+            .unchecked_with_fact(ResourceFact::own_token("unexported".to_owned(), Vec::new()));
+        introduced.extend(with_unexported.observable_facts_assuming_valid(&assumptions));
+        let (result, _, assemblies) = check(&introduced);
+        assert_eq!(
+            result,
+            Err("the interface successor contains an unchecked new fact")
+        );
+        assert_eq!(assemblies, 1);
+    }
+}
+
+#[test]
 fn interface_branch_constructs_resources_and_rejects_unproved_facts() {
     let function = program_function(
         ProgramType::Void,
