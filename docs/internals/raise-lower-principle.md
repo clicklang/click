@@ -465,6 +465,9 @@ Lowering never folds a comparison of two literals.
   `p == q` lowers to `PointerEqual` for them, and the round trip refuses.
 - A comparison of two `bool` literals, `true == false`, retains a
   `BoolEqual` of the two constants.
+- A logical Boolean comparison with identical operands also retains its
+  `BoolEqual`. `==` and `!=` record opposite polarities on that node.
+  The checker decides reflexivity, including when the comparison is a guard.
 - A written `true` or `false` is a literal proposition, not `literal ==
   true`: it lowers directly to the constant condition
   (`SpecProposition::Truth`). The raiser raises a constant condition to the
