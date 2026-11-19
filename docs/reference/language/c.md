@@ -418,7 +418,12 @@ restate a `long`. A pointer alias, `typedef struct node *node_ptr;` or
 written before it qualifies the pointer itself, as in C: `const node_ptr` is
 `struct node *const`. A parameter of a function-pointer alias is written
 with the alias, `int apply(unary f, int x)` for `typedef int (*unary)(int);`,
-and has the alias's exact signature. A parameter of a scalar array alias is
+and has the alias's exact signature. A function-type alias
+(`typedef int unary(int);` or `typedef int (unary)(int);`) is used with an
+explicit star, as in `int apply(unary *f, int x)`. This works in C declarations
+and in function heads. The C frontend reuses the callback signature for
+fields, parameters, and locals declared through the alias.
+A parameter of a scalar array alias is
 written with the alias, `int first(triple values)` for `typedef int
 triple[3];`, and means `int values[3]`: C passes it as a pointer to its
 first element, and the alias's length bounds the bytes the head declares.

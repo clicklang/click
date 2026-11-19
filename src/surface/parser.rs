@@ -7026,9 +7026,9 @@ impl Parser {
         Ok((name, interface_type, function_pointer_signature))
     }
 
-    /// A parameter type that is a function-pointer typedef name of the
-    /// verified C source, `unary f`: its callable type. `None`, with nothing
-    /// consumed, for any other type.
+    /// A callable parameter type from a verified C source's typedef. A
+    /// function-type alias requires a star, as in `unary *f`. A pointer-type
+    /// alias stands alone, as in `unary_ptr f`. Other types consume nothing.
     fn parse_program_function_pointer_typedef(
         &mut self,
     ) -> Result<
@@ -7044,18 +7044,21 @@ impl Parser {
         let Some(syntax::CHeadTypedef::FunctionPointer {
             interface_type,
             signature,
+            requires_star,
         }) = self.c_typedefs.get(name)
         else {
             return Ok(None);
         };
-        // `unary *f` is a pointer to a function pointer, which the type
-        // parser refuses.
-        if !matches!(self.peek_next(), Some(Token::Ident(_))) {
+        let type_tokens = if *requires_star && self.peek_next() == Some(&Token::Star) {
+            2
+        } else if !requires_star && matches!(self.peek_next(), Some(Token::Ident(_))) {
+            1
+        } else {
             return Ok(None);
-        }
+        };
         let callable = (*interface_type, signature.clone());
         self.check_head_typedef(name)?;
-        self.position += 1;
+        self.position += type_tokens;
         Ok(Some(callable))
     }
 

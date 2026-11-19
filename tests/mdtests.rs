@@ -42,6 +42,7 @@ const QUARANTINED: &[(&str, &str)] = &[];
 /// libraries stay in the gate so it checks both sides of their imports. Run
 /// one with `MDTEST_FILTER=<name>`.
 const NIGHTLY: &[&str] = &[
+    "c_function_type_typedef.md", // 0.86s focused: verify callback dispatch through an alias parameter and a field
     "pointer_offset_explicit_bridge.md", // 0.81s focused: explicit scalar-pointer law applications
     "nested_conditional_explicit_arm_equations.md", // 0.89s focused: arithmetic, observations and casts
     "widened_unsigned_sum_returned_identity.md",    // 1.19s focused: explicit returned-sum identity
