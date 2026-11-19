@@ -2193,8 +2193,8 @@ rule. Empty memory ranges, distinct storage blocks, and token/memory pairs
 are disjoint directly. This simple rule does not walk a region containing several transitions: write individual
 `have` goals using `preserve(...)`, then compose the equalities with `rewrite` and `known`.
 
-`preserve` supports complete pointer, `uint8`, 32/64-bit integer, and abstract
-typed memory observations. It also preserves a selected field of a named owned
+`preserve` supports complete pointer, `uint8`, `int16`, `uint16`, 32/64-bit
+integer, and abstract typed memory observations. It also preserves a selected field of a named owned
 resource: cite `separate(region.footprint, r)` and write
 `preserve(r, region);` under a goal such as
 `r.field == at(region.entry, r.field)`.
@@ -2204,9 +2204,10 @@ by identity; it does not unfold the resource or enumerate its other fields.
 Split expressions involving different resource fields into individual links.
 Supported field values include algebraic values, mathematical `Integer`,
 abstract C values, pointers, and the integer types listed above.
-A byte read retains its one-byte storage size even though C promotes its
-equality to `int32`; separating one byte never licenses a four-byte read. The
-result is oriented after-to-before. Logical read producers
+Byte and 16-bit reads retain their storage widths when C promotes the
+comparison to `int32`. For a promoted 16-bit comparison, both operands must
+widen from the same type, either `int16` or `uint16`. The result is oriented
+after-to-before. Logical read producers
 retain their complete typed values under the exact version point, address, and read
 type. `preserve` looks up the selected observations and constructs their equality;
 it does not reconstruct values from cached cells or memory derivations. This

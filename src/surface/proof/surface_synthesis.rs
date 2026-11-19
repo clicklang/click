@@ -4845,6 +4845,8 @@ fn synthesize_indexed_integer_read(
 ) -> Option<ContractExpression> {
     let value_type = match kind {
         crate::kernel::LoadKind::UInt8 => ProgramType::UInt8,
+        crate::kernel::LoadKind::Int16 => ProgramType::Int16,
+        crate::kernel::LoadKind::UInt16 => ProgramType::UInt16,
         crate::kernel::LoadKind::Int32 => ProgramType::Int32,
         crate::kernel::LoadKind::UInt32 => ProgramType::UInt32,
         _ => return None,

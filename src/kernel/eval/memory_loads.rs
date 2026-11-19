@@ -295,6 +295,11 @@ pub(in crate::kernel) fn evaluate_indexed_integer_read(
     let read = MachineTerm::MemoryLoad(version, Box::new(pointer.clone()), kind);
     let (format, value) = match kind {
         LoadKind::UInt8 => (MachineIntegerType::UInt8, ProgramValue::UInt8(read.clone())),
+        LoadKind::Int16 => (MachineIntegerType::Int16, ProgramValue::Int16(read.clone())),
+        LoadKind::UInt16 => (
+            MachineIntegerType::UInt16,
+            ProgramValue::UInt16(read.clone()),
+        ),
         LoadKind::Int32 => (MachineIntegerType::Int32, ProgramValue::Int32(read.clone())),
         LoadKind::UInt32 => (
             MachineIntegerType::UInt32,
