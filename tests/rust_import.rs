@@ -2207,6 +2207,59 @@ fn charon_trial_lock_rejects_source_and_profile_changes() {
     );
 }
 #[test]
+#[ignore = "requires the separately built pinned Charon/compiler"]
+fn charon_function_root_checks_an_unsupported_sibling_only_when_called() {
+    let source = r#"pub fn sibling(value: u32) -> u32 {
+    let wide: u128 = value as u128;
+    (wide >> 4) as u32
+}
+pub fn selected() -> u32 { 42 }
+"#;
+    let project = Project::isolated(source);
+    fs::write(
+        project.project_file(),
+        r#"{
+  "units": {
+    "root_probe": {
+      "language": "rust",
+      "sources": {"borrow.rs": {}},
+      "crate": {
+        "name": "root_probe",
+        "edition": "2024",
+        "features": [],
+        "roots": ["root_probe::selected"],
+        "files": ["borrow.rs"]
+      }
+    }
+  }
+}"#,
+    )
+    .unwrap();
+    let proof = r#"verifying "borrow.rs";
+fn root_probe::selected() -> u32 { ensures result == 42u32; }
+"#;
+    fs::write(project.root.join("borrow.click"), proof).unwrap();
+
+    project.refresh().unwrap();
+    let import = project.prepared().unwrap();
+    assert_eq!(import.export().functions.len(), 1);
+    let (_, verified) = ProgramVerificationSession::new_program_prepared(proof, &import).unwrap();
+    assert_eq!(verified.len(), 1);
+
+    let caller = source.replace("{ 42 }", "{ sibling(672) }");
+    fs::write(project.root.join("borrow.rs"), caller).unwrap();
+    let error = project
+        .refresh()
+        .expect_err("a called sibling must be lowered");
+    assert!(error.contains("borrow.rs:2"), "{error}");
+    assert!(error.contains("sibling"), "{error}");
+    assert!(
+        error.contains("does not support integer width `u128`"),
+        "{error}"
+    );
+}
+
+#[test]
 #[ignore = "requires the separately built pinned Charon/compiler; run explicitly after scripts/build-charon.sh"]
 fn charon_trial_live_refresh_and_compiler_rejections() {
     let p = charon_project();
