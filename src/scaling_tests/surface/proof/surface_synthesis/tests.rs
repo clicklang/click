@@ -41,12 +41,14 @@ fn boolean_local_synthesis_round_trips_and_scales_with_local_population() {
             operator: ComparisonOperator::Equal,
             right: surface,
         };
-        // A `Bool` equals itself (rule L-Eq), so the equality folds.
         let lowered = relower_written_proposition(&equality, &state).unwrap();
-        assert_eq!(
-            lowered,
-            Proposition::condition_is(ConditionTerm::Constant(true), true)
-        );
+        let Some((condition @ ConditionTerm::BoolEqual(left, right), true)) =
+            lowered.condition_native()
+        else {
+            panic!("expected the retained Boolean equality: {lowered:?}");
+        };
+        assert_eq!(left, right);
+        assert_eq!(PureFactContext::new().decide(condition), Some(true));
     }
 }
 
