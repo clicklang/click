@@ -742,8 +742,10 @@ pub(in crate::kernel) fn collect_term_bitvector_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     match term {
-        Term::Condition(condition) => collect_condition_bitvector_variables(condition, variables),
-        Term::Bitvector32(bits) => collect_bitvector_variables(bits, variables),
+        Term::Condition(condition) => {
+            collect_condition_bitvector_variables(condition.native_compat(), variables)
+        }
+        Term::Bitvector32(bits) => collect_bitvector_variables(bits.native_compat(), variables),
         Term::Integer(integer) => collect_integer_variables(integer.native_compat(), variables),
         Term::PointerOffset(offset) => {
             collect_pointer_offset_bitvector_variables(offset, variables)

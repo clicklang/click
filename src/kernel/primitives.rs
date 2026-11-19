@@ -13243,8 +13243,8 @@ mod population_authority_spec_tests {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum Term {
-    Condition(ConditionTerm),
-    Bitvector32(MachineTerm),
+    Condition(StoredConditionTerm),
+    Bitvector32(StoredMachineTerm),
     Integer(StoredIntegerTerm),
     PointerOffset(AddressOffset),
     ProgramValue(StoredProgramValue),
@@ -13269,14 +13269,14 @@ impl Term {
     /// carriers; structural consumers name the compatibility reading explicitly.
     pub(crate) fn condition_native(&self) -> Option<&ConditionTerm> {
         match self {
-            Self::Condition(value) => Some(value),
+            Self::Condition(value) => Some(value.native_compat()),
             _ => None,
         }
     }
     #[cfg(test)]
     pub(crate) fn bitvector_native(&self) -> Option<&MachineTerm> {
         match self {
-            Self::Bitvector32(value) => Some(value),
+            Self::Bitvector32(value) => Some(value.native_compat()),
             _ => None,
         }
     }

@@ -63,7 +63,7 @@ fn repeated_unsigned_and_integer_reductions_reuse_selected_evidence() {
                 ),
             ],
             wide_goal,
-            Term::Bitvector32(value),
+            Term::Bitvector32(value.into()),
         ),
         (
             vec![le(integer(0), integer(1))],

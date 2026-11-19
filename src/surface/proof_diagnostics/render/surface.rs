@@ -1370,7 +1370,7 @@ impl Printer<'_> {
             return elided;
         }
         match term {
-            Term::Bitvector32(value) => self.bitvector(value, None, depth + 1),
+            Term::Bitvector32(value) => self.bitvector(value.native_compat(), None, depth + 1),
             Term::Integer(value) => self.integer(value.native_compat(), depth + 1),
             term_source_0 @ Term::Condition(_)
                 if let Some(ConditionTerm::Constant(value)) = term_source_0.condition_native() =>
@@ -1380,7 +1380,9 @@ impl Printer<'_> {
             Term::ProgramValue(value) => self.cvalue(value.native_compat(), depth + 1),
             Term::Algebraic(value) => self.algebraic(value.native_compat(), depth + 1),
             _ if !self.source_mode() => None,
-            Term::Condition(condition) => self.condition(condition, true, depth + 1),
+            Term::Condition(condition) => {
+                self.condition(condition.native_compat(), true, depth + 1)
+            }
             Term::PointerOffset(offset) => Some(atom(self.offset(offset, depth + 1))),
             Term::Memory(memory) => Some(atom(self.state_phrase(memory))),
             Term::ExecutionState(state) => Some(atom(self.state_phrase(state.memory()))),

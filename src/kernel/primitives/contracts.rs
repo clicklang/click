@@ -3001,8 +3001,8 @@ impl MemoryRange {
         let mut mentioned = BTreeSet::new();
         for term in [
             Term::PointerOffset(base.offset.clone()),
-            Term::Bitvector32(lower.clone()),
-            Term::Bitvector32(upper.clone()),
+            Term::Bitvector32(lower.clone().into()),
+            Term::Bitvector32(upper.clone().into()),
         ] {
             crate::kernel::reasoning::collect_term_bitvector_variables(&term, &mut mentioned);
         }

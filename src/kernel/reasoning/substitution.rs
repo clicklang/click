@@ -2591,8 +2591,12 @@ fn collect_proposition_bound_variables_one(
 
 fn collect_term_bound_variables(term: &Term, variables: &mut BTreeSet<Variable>) {
     match term {
-        Term::Condition(condition) => collect_condition_bound_variables(condition, variables),
-        Term::Bitvector32(bits) => collect_bitvector_bound_variables(bits, variables),
+        Term::Condition(condition) => {
+            collect_condition_bound_variables(condition.native_compat(), variables)
+        }
+        Term::Bitvector32(bits) => {
+            collect_bitvector_bound_variables(bits.native_compat(), variables)
+        }
         Term::Integer(integer) => {
             collect_integer_bound_variables(integer.native_compat(), variables)
         }
@@ -3723,10 +3727,12 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_term(
     to: &MachineTerm,
 ) -> Term {
     match term {
-        Term::Condition(condition) => Term::Condition(substitute_bitvector_variable_in_condition(
-            condition, from, to,
-        )),
-        Term::Bitvector32(bits) => Term::Bitvector32(substitute_bitvector_variable(bits, from, to)),
+        Term::Condition(condition) => Term::Condition(
+            substitute_bitvector_variable_in_condition(condition.native_compat(), from, to).into(),
+        ),
+        Term::Bitvector32(bits) => {
+            Term::Bitvector32(bits.map_native(|word| substitute_bitvector_variable(word, from, to)))
+        }
         // Variable identities are shared by all logical sorts, but a
         // machine substitution must never rewrite an Integer variable with a
         // machine term. Integer binders use the dedicated function below.
@@ -6848,9 +6854,9 @@ fn pointer_capture_avoiding_quantifier_body(
 
 fn substitute_pointer_variable_in_term(term: &Term, from: Variable, to: &Address) -> Term {
     match term {
-        Term::Condition(condition) => Term::Condition(substitute_pointer_variable_in_condition(
-            condition, from, to,
-        )),
+        Term::Condition(condition) => Term::Condition(
+            substitute_pointer_variable_in_condition(condition.native_compat(), from, to).into(),
+        ),
         Term::Integer(_) => {
             crate::kernel::proof::term_rewrite::TermRewrite::for_pointer_variable(from, to)
                 .term(term)
@@ -8966,8 +8972,8 @@ mod integer_mixed_quantifier_tests {
 
     fn program_int_equality(left: Variable, right: Variable) -> Proposition {
         Proposition::Equal(
-            Term::Bitvector32(MachineTerm::Variable(left)),
-            Term::Bitvector32(MachineTerm::Variable(right)),
+            Term::Bitvector32(MachineTerm::Variable(left).into()),
+            Term::Bitvector32(MachineTerm::Variable(right).into()),
         )
     }
 
@@ -10096,7 +10102,7 @@ mod checked_singleton_substitution_tests {
             name: "opaque".into(),
             arguments: vec![
                 Term::Integer(observed(variable).into()),
-                Term::Bitvector32(MachineTerm::Variable(variable)),
+                Term::Bitvector32(MachineTerm::Variable(variable).into()),
                 Term::Integer(IntegerTerm::var(variable).into()),
             ],
         };
@@ -10106,7 +10112,7 @@ mod checked_singleton_substitution_tests {
                 name: "opaque".into(),
                 arguments: vec![
                     Term::Integer(IntegerTerm::constant_i64(7).into()),
-                    Term::Bitvector32(MachineTerm::constant(7)),
+                    Term::Bitvector32(MachineTerm::constant(7).into()),
                     Term::Integer(IntegerTerm::var(variable).into()),
                 ],
             }),

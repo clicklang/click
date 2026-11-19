@@ -375,7 +375,7 @@ fn pure_match_and_payload_freshening_ignore_unrelated_facts() {
             &(0..size)
                 .map(|i| Proposition::Predicate {
                     name: format!("unrelated_match_{i}"),
-                    arguments: vec![Term::Bitvector32(MachineTerm::Variable(Variable(i)))],
+                    arguments: vec![Term::Bitvector32(MachineTerm::Variable(Variable(i)).into())],
                 })
                 .collect::<Vec<_>>(),
         );
@@ -454,7 +454,7 @@ fn typed_universal_intro_adds_fresh_bounds_without_scanning_ambient_facts() {
     let binder = Variable(186);
     let body = Proposition::Predicate {
         name: "holds".into(),
-        arguments: vec![Term::Bitvector32(MachineTerm::Variable(binder))],
+        arguments: vec![Term::Bitvector32(MachineTerm::Variable(binder).into())],
     };
     let goal = Proposition::ForAll {
         name: Default::default(),

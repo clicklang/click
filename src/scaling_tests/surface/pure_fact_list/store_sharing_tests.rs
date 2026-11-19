@@ -6,7 +6,7 @@ fn fact(index: u64, related: bool) -> Proposition {
             format!("fact_{index}")
         },
         arguments: vec![crate::kernel::Term::Bitvector32(
-            crate::kernel::MachineTerm::constant(index as u32),
+            crate::kernel::MachineTerm::constant(index as u32).into(),
         )],
     }
 }

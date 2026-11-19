@@ -2823,8 +2823,8 @@ fn proposition_mentions_integer_variable(proposition: &Proposition, variable: Va
     fn term_contains(term: &Term, variable: Variable) -> bool {
         match term {
             Term::Integer(term) => integer_carrier_in_integer(term.native_compat(), variable),
-            Term::Bitvector32(term) => integer_carrier_in_bitvector(term, variable),
-            Term::Condition(condition) => condition_contains(condition, variable),
+            Term::Bitvector32(term) => integer_carrier_in_bitvector(term.native_compat(), variable),
+            Term::Condition(condition) => condition_contains(condition.native_compat(), variable),
             Term::ProgramValue(value) => {
                 integer_carrier_in_program_value(value.native_compat(), variable)
             }

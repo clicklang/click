@@ -3738,10 +3738,13 @@ mod tests {
             MachineIntegerType::Int128,
         ] {
             let cast = |value: IntegerTerm| {
-                Term::Bitvector32(MachineTerm::IntegerToMachine {
-                    value: value.into(),
-                    destination,
-                })
+                Term::Bitvector32(
+                    MachineTerm::IntegerToMachine {
+                        value: value.into(),
+                        destination,
+                    }
+                    .into(),
+                )
             };
             let native_goal = Proposition::Equal(cast(x.clone()), cast(y.clone()));
             assert_eq!(
