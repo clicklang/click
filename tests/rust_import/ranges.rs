@@ -11,7 +11,14 @@ fn charon_range_loops_verify_from_their_bounds() {
     let p = Project::from_fixture("design/charon-trial/ranges");
     fs::write(p.root.join("borrow.click"), SIDECAR).unwrap();
     let prepared = p.prepared().unwrap();
-    ProgramVerificationSession::new_program_prepared(SIDECAR, &prepared)
+    let witness = r#"fn grid(n: u32, m: u32) -> u32 {
+    requires n == 2u32 and m == 3u32;
+    ensures result == 6u32;
+} by {
+    step_until(function.exit);
+}"#;
+    let gate = with_rust_fixture_contract(SIDECAR, "grid", witness);
+    ProgramVerificationSession::new_program_prepared(&gate, &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
     for (before, after, expected) in [
         // The count trails the yielded value, it does not lead it.
@@ -116,4 +123,13 @@ fn charon_range_loop_failures_name_the_iterator_as_the_proof_does() {
         assert!(!rendered.contains("__rust_mir"), "{rendered}");
         assert!(!rendered.contains("at(region("), "{rendered}");
     }
+}
+
+#[test]
+#[ignore = "nightly: symbolic nested range proof took 5.3s in the focused gate profile"]
+fn charon_nested_range_grid_verifies_symbolically() {
+    let p = Project::from_fixture("design/charon-trial/ranges");
+    fs::write(p.root.join("borrow.click"), SIDECAR).unwrap();
+    let prepared = p.prepared().unwrap();
+    verify_rust_function(SIDECAR, &prepared, "grid").unwrap_or_else(|error| panic!("{error:?}"));
 }

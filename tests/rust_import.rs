@@ -2327,6 +2327,22 @@ fn rust_compiler_and_subset_rejections_are_distinct() {
         assert!(!p.artifact("borrow.rs").exists());
     }
 }
+/// Replace the proof of one top-level function in a fixture sidecar.
+fn with_rust_fixture_contract(source: &str, function: &str, contract: &str) -> String {
+    let head = format!("\nfn {function}(");
+    let start = source.find(&head).expect("fixture function exists");
+    let after_head = start + head.len();
+    let end = source[after_head..]
+        .find("\nfn ")
+        .map_or(source.len(), |next| after_head + next);
+    format!(
+        "{}\n{}\n{}",
+        &source[..start],
+        contract.trim(),
+        &source[end..]
+    )
+}
+
 // Check the complete function proof, including every postcondition and path,
 // without rechecking unrelated bodies already covered by the original module.
 fn verify_rust_function(
