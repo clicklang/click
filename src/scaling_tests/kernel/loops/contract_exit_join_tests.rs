@@ -5,6 +5,108 @@
 use super::*;
 
 #[test]
+fn a_loop_exit_join_visits_only_changed_bindings_and_cells() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let right_only = SymbolicMemory::global_pointer("exit-only");
+    let work = [4u32, 16, 64, 256].map(|size| {
+        let mut shared = ExecutionState::new()
+            .with_local("counter", int32(0))
+            .with_local("maybe_initialized", int32(7));
+        let mut memory = SymbolicMemory::new().with_block("shared", 4 * size);
+        for index in 0..size {
+            shared = shared.with_local(format!("spare{index}"), int32(index));
+            let pointer = Address {
+                base: AddressBase::from("shared"),
+                offset: AddressOffset::Constant(i64::from(index) * 4),
+            };
+            memory = memory.store(pointer, int32(index));
+        }
+        let shared = shared.with_memory(memory.clone());
+        let left = shared.clone().with_local("counter", int32(1));
+        let mut right = shared.clone().with_local("counter", int32(2));
+        assert!(right.locals.forget_initialization("maybe_initialized"));
+        let head = LoopHead {
+            top: shared.clone(),
+            body: shared.clone(),
+            guard: shared.clone(),
+            entry: shared,
+            iterations: IntegerTerm::Constant(0.into()),
+            summaries: Vec::new(),
+            resource_failures: Vec::new(),
+            loan_requirements: Vec::new(),
+            effect_checks: Vec::new(),
+        };
+        let facts = ExecutionFacts::new();
+        let mut requirements = Vec::new();
+        let ((joined, restatements), work) =
+            crate::instrumentation::measure_deterministic_work(|| {
+                abstract_loop_exit_states(
+                    &head,
+                    &ProgramStatement::Skip,
+                    &[],
+                    &[&left, &right],
+                    &[&facts, &facts],
+                    &[],
+                    &PureFactContext::new(),
+                    &mut requirements,
+                    &mut KernelVariableGenerator::fresh_for_execution(BTreeSet::new()),
+                    &mut ExecutionBudget::default(),
+                )
+                .unwrap()
+            });
+        assert!(joined.locals.is_uninitialized_object("maybe_initialized"));
+        assert_eq!(
+            joined.locals.get("spare0").unwrap().native().as_ref(),
+            &int32(0)
+        );
+        assert_eq!(joined.memory().cells, memory.cells);
+        assert!(requirements.is_empty());
+        assert_eq!(restatements.len(), 2);
+        assert!(restatements.iter().all(|exit| exit.equations.len() == 1));
+
+        // A later exit may hold a cache entry the successor never had.
+        // Measure candidate selection without interning a reconstructed
+        // memory for the residual witness comparison.
+        let exits = [
+            joined.clone(),
+            joined
+                .clone()
+                .with_memory(memory.store(right_only.clone(), int32(12))),
+        ];
+        let mut successor = joined;
+        let (cells, cell_work) = crate::instrumentation::measure_deterministic_work(|| {
+            abstract_loop_exit_memory(
+                &mut successor,
+                &exits,
+                &BTreeSet::new(),
+                true,
+                &[],
+                &PureFactContext::new(),
+                &[],
+                &mut [
+                    LoopExitRestatement::default(),
+                    LoopExitRestatement::default(),
+                ],
+                &mut requirements,
+                &mut KernelVariableGenerator::fresh_for_execution(BTreeSet::new()),
+                &mut ExecutionBudget::default(),
+            )
+            .unwrap()
+        });
+        assert_eq!(cells, BTreeSet::from([right_only.clone()]));
+        assert!(successor.memory().known_value(&right_only).is_none());
+        assert!(requirements.is_empty());
+        (work, cell_work)
+    });
+    assert!(
+        work.iter().all(|&(join, cells)| {
+            join > 0 && cells > 0 && join <= work[0].0 + 64 && cells <= work[0].1 + 16
+        }),
+        "(exit join, cell selection) work at 4/16/64/256 shared bindings and cells: {work:?}"
+    );
+}
+
+#[test]
 fn exit_cell_separation_shares_the_active_loan_footprint() {
     use crate::kernel::loans::LoanLedger;
 
