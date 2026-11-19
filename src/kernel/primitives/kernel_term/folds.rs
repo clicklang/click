@@ -113,8 +113,7 @@ impl KernelFold {
         self.arguments[2].ty()
     }
 
-    fn import_endpoint(
-        _import: &mut KernelTermImport,
+    pub(in crate::kernel) fn import_endpoint(
         format: MachineIntegerType,
         endpoint: &SharedIntegerRangeEndpoint,
     ) -> KernelTerm {
@@ -137,13 +136,13 @@ impl KernelFold {
         match index {
             IntegerRangeFoldIndex::Int32 { start, end } => (
                 KernelFoldIndex::Int32,
-                Self::import_endpoint(import, MachineIntegerType::Int32, start),
-                Self::import_endpoint(import, MachineIntegerType::Int32, end),
+                Self::import_endpoint(MachineIntegerType::Int32, start),
+                Self::import_endpoint(MachineIntegerType::Int32, end),
             ),
             IntegerRangeFoldIndex::UInt64 { start, end } => (
                 KernelFoldIndex::UInt64,
-                Self::import_endpoint(import, MachineIntegerType::UInt64, start),
-                Self::import_endpoint(import, MachineIntegerType::UInt64, end),
+                Self::import_endpoint(MachineIntegerType::UInt64, start),
+                Self::import_endpoint(MachineIntegerType::UInt64, end),
             ),
             IntegerRangeFoldIndex::Integer { start, end } => (
                 KernelFoldIndex::Integer,

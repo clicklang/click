@@ -1,5 +1,4 @@
-//! Scoped rewriting of prepared common fold payloads. Integer children retain
-//! the existing memoized compatibility boundary until the Integer walker moves.
+//! Scoped rewriting of retained fold payloads.
 use super::*;
 
 impl TermRewrite<'_> {
@@ -25,34 +24,6 @@ impl TermRewrite<'_> {
             return Err(refusal);
         }
         result.ok_or(RewriteRefusal::UnsupportedScope)
-    }
-
-    fn retained_integer_fold(&mut self, fold: &KernelFold) -> Option<KernelFold> {
-        if self.integer_exact.is_some()
-            || self.pointer_exact.is_some()
-            || self.pointer_offset_exact.is_some()
-            || (fold.index != KernelFoldIndex::Integer && self.has_composite_bitvector_source())
-        {
-            self.unsupported_integer_scope = true;
-            return None;
-        }
-        let IntegerTerm::RangeFold {
-            index,
-            initial,
-            body,
-            ..
-        } = fold
-            .integer_compatibility(&mut self.fold_integer_bridge)
-            .ok()?
-        else {
-            unreachable!("Integer fold compatibility shape")
-        };
-        let rewritten =
-            self.rewrite_integer_range_fold(&index, &initial, fold.accumulator, fold.item, &body);
-        if self.refusal_status().is_some() {
-            return None;
-        }
-        KernelFold::import_integer(&mut KernelTermImport::default(), &rewritten)
     }
 
     fn retained_machine_fold(&mut self, fold: &KernelFold) -> Option<KernelFold> {
@@ -196,6 +167,44 @@ mod tests {
         let result = new.retained_fold(&fold).unwrap();
         assert_eq!(result.arguments[3], fold.arguments[3]);
         assert_eq!(result.export_machine().unwrap(), expected);
+    }
+
+    #[test]
+    fn retained_integer_fold_rewrites_endpoints_outside_the_body_scope() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let from = Variable(40);
+        let accumulator = Variable(41);
+        let item = Variable(42);
+        let var = |id| KernelTerm::variable(KernelType::Integer, id);
+        let body = KernelTerm::integer_operation(
+            KernelIntegerOperator::Add,
+            vec![var(from), var(accumulator)],
+        )
+        .unwrap();
+        let fold = KernelFold::new(
+            KernelFoldIndex::Integer,
+            accumulator,
+            item,
+            [var(from), var(accumulator), var(from), body],
+        )
+        .unwrap();
+        let replacement = IntegerTerm::Variable(accumulator);
+        let renamings = BTreeMap::new();
+        let mut rewrite = TermRewrite::for_integer_variables(from, &replacement, false, &renamings);
+        let rewritten = rewrite.retained_fold(&fold).unwrap();
+        let [start, end, initial, body] = rewritten.arguments;
+        assert_eq!(
+            [start, end, initial],
+            [var(accumulator), var(accumulator), var(accumulator)]
+        );
+        assert_ne!(rewritten.accumulator, accumulator);
+        assert_eq!(rewritten.item, item);
+        let expected = KernelTerm::integer_operation(
+            KernelIntegerOperator::Add,
+            vec![var(accumulator), var(rewritten.accumulator)],
+        )
+        .unwrap();
+        assert_eq!(body, expected);
     }
 
     #[test]

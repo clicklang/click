@@ -57,6 +57,7 @@ impl TermRewrite<'_> {
                 source_disabled,
                 integer_shadowed,
                 resolve_reads,
+                false,
             )
         };
         let get = |term: &KernelTerm| {
