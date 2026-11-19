@@ -3112,9 +3112,16 @@ pub(crate) fn propositions_are_alpha_equal(left: &Proposition, right: &Propositi
         // because both key walks declined to represent them. They are equal
         // when they are the same proposition up to the numbering of their
         // own binders, which one renumbering of each decides exactly.
-        (None, None) => renumbered_binders(left, 0) == renumbered_binders(right, 0),
+        (None, None) => {
+            proposition_with_canonical_binders(left) == proposition_with_canonical_binders(right)
+        }
         _ => false,
     }
+}
+
+/// The structural comparison used when the indexed identity declines.
+pub(crate) fn proposition_with_canonical_binders(proposition: &Proposition) -> Proposition {
+    renumbered_binders(proposition, 0)
 }
 
 /// A variable range no lowering mints, for renumbering binders.

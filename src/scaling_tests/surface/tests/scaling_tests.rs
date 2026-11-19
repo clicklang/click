@@ -377,6 +377,39 @@ fn execution_target_resource_scope_parsing_is_linear_in_selected_declarations() 
 }
 
 #[test]
+fn reversed_all_arm_matching_scales_with_written_labels() {
+    fn conjunction(labels: &[String]) -> String {
+        if let [one] = labels {
+            return one.clone();
+        }
+        let (left, right) = labels.split_at(labels.len() / 2);
+        format!("({} and {})", conjunction(left), conjunction(right))
+    }
+
+    let mut samples = Vec::new();
+    for width in [4, 8, 16, 32] {
+        let goals = (0..width)
+            .map(|index| format!("(forall (i: int32) {{ i <= i or i == {index} }})"))
+            .collect::<Vec<_>>();
+        let arms = (0..width)
+            .rev()
+            .map(|index| {
+                format!("forall (j: int32) {{ j <= j or j == {index} }} => {{ intro(); solve(); }}")
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        let source = format!(
+            "theorem reordered() {{ ensures {} by {{ all {{ {arms} }} }} }}",
+            conjunction(&goals)
+        );
+        let (result, sample) = scaling_sample(width, || verify_click_theorems(&source));
+        result.expect("reversed and alpha-renamed arms match their goals");
+        samples.push(sample);
+    }
+    assert_near_linear_scaling("reversed conjunction arm matching", &samples);
+}
+
+#[test]
 fn nested_conjunction_body_parsing_uses_small_frames_and_linear_work() {
     // `surface::parse` expands a file against the standard library, whose
     // first use parses every library module into a process-wide `OnceLock`
