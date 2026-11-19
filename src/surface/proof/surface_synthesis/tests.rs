@@ -5578,6 +5578,7 @@ fn common_float_reads_round_trip_existing_cast_dereference_syntax() {
         let surface =
             raise_kernel_term(&root, ParameterBinding::default(), &state, &BTreeMap::new())
                 .unwrap();
+        assert!(!root.has_cached_native_argument());
         let text = diagnostics::describe_contract_expression(&surface);
         let parsed = parser::parse(&format!(
             "function probe(p: uint8*) -> {spelling} {{ {text} }}"

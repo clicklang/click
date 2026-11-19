@@ -96,7 +96,9 @@ pub use kernel_term::{
     KernelTermNode, KernelType,
 };
 #[allow(unused_imports)]
-pub(crate) use kernel_term::{PointerRewrite, PointerRewriteError, SharedAddressBase};
+pub(crate) use kernel_term::{
+    KernelMemoryRead, PointerRewrite, PointerRewriteError, SharedAddressBase,
+};
 mod machine_integer;
 pub use machine_integer::{
     MachineIntegerConstant, MachineIntegerDivisionError, MachineIntegerFormat, MachineIntegerWidth,
