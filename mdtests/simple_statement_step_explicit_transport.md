@@ -1,10 +1,8 @@
-# explicit fact transport between simple statement steps
+# A store leaves a different array element unchanged
 
-A fact about a cell the context proves unwritten keeps its meaning across a
-step, so `p[0] == 7` already holds after the store to `p[1]`, and the proof
-verifies without the `transport`. `transport(source, target)` states that one
-frame-transport rule explicitly: it carries the entry fact `old(p[0]) == 7` to
-the post-store state as `p[0] == 7` before the next statement uses it.
+The store to `p[1]` leaves the read of `p[0]` unchanged. After the store,
+`known()` uses the fact from the unfolded precondition to establish
+`p[0] == 7` before the return reads it.
 
 ```c filename=simple_statement_step_explicit_transport.c
 int32 set_second_return_first(int32 p[2]) {
@@ -28,7 +26,7 @@ int32 set_second_return_first(int32 p[2]) {
 } by {
     unfold(first_is_seven(p));
     step();
-    transport(old(p[0]) == 7, p[0] == 7);
+    have p[0] == 7 by { known(); }
     step();
     solve();
 }

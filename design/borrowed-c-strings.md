@@ -352,7 +352,8 @@ step 2 is deferred.
    the unfolded postcondition to a `have` over `n`. Three gaps between that
    proof and the verifier were found with M3; the first two were fixed then:
    a bare `transport` in a `have` selects its premises at the frontier the
-   `have` was opened on (`mdtests/bare_transport_inside_have.md`), and a
+   `have` was opened on (`mdtests/bare_transport_inside_have.md` now uses
+   `known()` for the unchanged read), and a
    `char *` argument to `bytes::equal`'s `uint8[]` parameters unfolds to the
    same `uint8` reads as `memcpy`'s postcondition
    (`mdtests/char_argument_to_byte_predicate_unfolds_as_bytes.md`). The third
