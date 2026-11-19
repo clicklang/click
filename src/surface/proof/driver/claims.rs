@@ -2133,6 +2133,84 @@ fn apply_post_execution_arithmetic_using<'a>(
     })())
 }
 
+/// Supplies missing ordinary output tokens with the same checked step that
+/// expansion will write at the return.
+fn prepare_produced_tokens<'a>(
+    function: &ProgramFunction,
+    claims: &[FunctionClaimRef<'_>],
+    closures: &[ClaimClosure<'_>],
+    outcome: &mut FunctionOutcome,
+    outcome_proof: &mut Option<Proof<'a>>,
+    surface_closers: &mut Vec<ProofTactic>,
+) -> Result<(), ClickError> {
+    if function.resource_constructors().is_empty() || super::proof_object::implicit_solve_disabled()
+    {
+        return Ok(());
+    }
+    for (claim, closure) in claims.iter().zip(closures) {
+        if closure.is_closed()
+            || !matches!(claim.key(), FunctionContractClaimKey::Ensure(_))
+            || claim.clause().borrowed()
+        {
+            continue;
+        }
+        let Ensure::Resource(
+            resource @ ResourceClause::Declared {
+                access: crate::surface::ResourceAccessMode::Own,
+                kind: crate::surface::ResourceKind::Token,
+                name,
+                ..
+            },
+        ) = claim.clause().ensure()
+        else {
+            continue;
+        };
+        if !function
+            .contract_interface()
+            .is_ordinary_abstract_family(name)
+        {
+            continue;
+        }
+        let FunctionOutcome::Return { state, value } = &*outcome else {
+            return Ok(());
+        };
+        let current = required_outcome(outcome_proof)?;
+        let ProofContext::Execution(context) = current.context.as_ref() else {
+            continue;
+        };
+        let (guard, deferred) = current.outcome_resource_guard(function, claim.key())?;
+        if guard == Some(false) || deferred {
+            continue;
+        }
+        let Ok(expected) = lower_resource_clause_at_state_with_result(
+            resource,
+            context.parameter_binding(),
+            state,
+            &value.native(),
+        ) else {
+            continue;
+        };
+        if state
+            .resources()
+            .satisfies_fact(&expected, current.facts().assumptions())
+        {
+            continue;
+        }
+
+        // The usual construct step checks that this exact token is authorized.
+        let before = current.checkpoint();
+        let step = ProofStep::ConstructResource(resource.clone());
+        let Ok(constructed) = current.driver().apply_step(step) else {
+            check_verification_deadline()?;
+            continue;
+        };
+        *outcome = constructed.focused_outcome_state()?;
+        surface_closers.extend(constructed.certificate_since(&before)?.to_proof_tactics());
+        *outcome_proof = Some(constructed);
+    }
+    Ok(())
+}
+
 /// Folds each open resource claim of a returned path whose fold checks on
 /// the path's outcome `Proof`, recording the fold for expansion as a
 /// written `fold` after execution is recorded.
@@ -2227,6 +2305,7 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
     closures: &mut Vec<ClaimClosure<'e>>,
     resource_transition_applied: &mut bool,
     pending_resource_transition_error: &mut Option<String>,
+    path_surface_post_tactics: &mut Vec<ProofTactic>,
     path_grouped_surface_closers: &mut Vec<ProofTactic>,
     path_deferred_capture_tactics: &mut Vec<ProofTactic>,
 ) -> Result<(), ClickError> {
@@ -2254,14 +2333,33 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
     let acts_on = |claim_index: usize| implicit_closer || Some(claim_index) == main_claim;
     let capturing_this_tactic =
         path_capture.is_some_and(|capture| capture.tactic_index == *tactic_index);
-    // Unrestricted solve folds a produced resource when the path holds
-    // its body. Written and implicit solves use the same preparation.
-    // A fold that does not check leaves the path as
-    // it was, and the claim reports what is missing.
+    // Written and implicit unrestricted solves prepare resource outputs.
+    // A refused construction or fold leaves ownership unchanged, so the
+    // claim check can report the missing resource.
     if restricted_premises.is_none()
         && !*resource_transition_applied
         && matches!(outcome, FunctionOutcome::Return { .. })
     {
+        // An individual claim keeps its own closer, so retain construction
+        // in the path's preceding tactics to replay it before that closer.
+        let construction_tactics = if proof_context.constants.grouped_contract {
+            &mut *path_grouped_surface_closers
+        } else {
+            path_surface_post_tactics
+        };
+        let before_construction = construction_tactics.len();
+        prepare_produced_tokens(
+            function,
+            claims,
+            closures,
+            outcome,
+            outcome_proof,
+            construction_tactics,
+        )?;
+        if capturing_this_tactic {
+            path_deferred_capture_tactics
+                .extend(construction_tactics[before_construction..].iter().cloned());
+        }
         fold_produced_resources(
             claims,
             closures,
@@ -5040,6 +5138,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                     &mut closures,
                                     &mut resource_transition_applied,
                                     &mut pending_resource_transition_error,
+                                    &mut path_surface_post_tactics,
                                     &mut path_grouped_surface_closers,
                                     &mut path_deferred_capture_tactics,
                                 )?;
@@ -5188,6 +5287,16 @@ pub(super) fn finish_ordered_proof<'a>(
                     }
 
                     if !require_explicit_closers {
+                        if !resource_transition_applied {
+                            prepare_produced_tokens(
+                                function,
+                                claims,
+                                &closures,
+                                &mut outcome,
+                                &mut outcome_proof,
+                                &mut path_surface_post_tactics,
+                            )?;
+                        }
                         for (claim_index, claim) in claims.iter().enumerate() {
                             if closures[claim_index].is_closed() {
                                 continue;
