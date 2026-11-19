@@ -28,6 +28,7 @@ use std::sync::Arc;
 
 #[cfg(test)]
 thread_local! {
+    static CHECKED_PATH_EFFECT_ADMISSIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     static MATCH_SCOPE_INDEX_BUILDS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     static MATCH_FRESHNESS_PROBES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     static CHECKED_CALL_EVENT_LOOKUP_CANDIDATES: std::cell::Cell<usize> =
@@ -273,7 +274,14 @@ fn path_context_extended_by(
     next: &PureFactContext,
     budget: usize,
 ) -> Option<PureFactContext> {
-    if previous.reasoning_policy != next.reasoning_policy
+    // A prepared statement retains open requirements for the driver;
+    // a branch decision may discharge them immediately. That choice only
+    // controls obligation reporting, so both use the same admitted facts.
+    let policy_delta =
+        previous.reasoning_policy.fingerprint() ^ next.reasoning_policy.fingerprint();
+    let obligation_policy =
+        crate::kernel::ReasoningPolicy::RETAIN_REQUIRED_OBLIGATIONS.fingerprint();
+    if policy_delta & !obligation_policy != 0
         || !previous
             .resource_compositions
             .shares_root_with(&next.resource_compositions)
@@ -296,7 +304,7 @@ fn path_context_extended_by(
         added.push(fact);
     }
     crate::instrumentation::record_deterministic_work(added.len());
-    let mut facts = facts.clone();
+    let mut facts = facts.clone().with_reasoning_policy_of(next);
     for fact in added {
         facts = facts.assume_execution_pure_fact(fact);
     }
@@ -1449,10 +1457,11 @@ impl CheckedResourceRewrite {
             if !folded.memory().access_in_bounds(&base, bytes) && !imported_control_cell {
                 return Err("authority control body exceeds live storage".into());
             }
-            if let Some(ledger) = folded.loan_ledger() {
-                ledger
-                    .permits_memory_access_with_assumptions(range, assumptions)
-                    .map_err(|_| "authority control body has an active borrow")?;
+            if folded
+                .loan_ledger()
+                .is_some_and(|ledger| !ledger.rewrite_separates_from_loans(range, assumptions))
+            {
+                return Err("authority control body requires separation from active loans".into());
             }
         }
         let expected_resources = if exposing {
@@ -2147,10 +2156,12 @@ impl CheckedResourceRewrite {
                     {
                         return Err("member private body exceeds live storage".into());
                     }
-                    if let Some(ledger) = before_state.loan_ledger() {
-                        ledger
-                            .permits_memory_access_with_assumptions(range, assumptions)
-                            .map_err(|_| "member private body has an active borrow")?;
+                    if before_state.loan_ledger().is_some_and(|ledger| {
+                        !ledger.rewrite_separates_from_loans(range, assumptions)
+                    }) {
+                        return Err(
+                            "member private body requires separation from active loans".into()
+                        );
                     }
                 }
                 let child_context = ResourceContext::new_with_equalities(assumptions)
@@ -4227,8 +4238,8 @@ struct InterfaceJoinResources {
     arm_interface_resources: [Vec<ResourceFact>; 2],
     successor_interface_resources: Vec<ResourceFact>,
     successor_interface_resource_facts: Vec<Proposition>,
-    /// What neither arm changed, with the interface resources composed in,
-    /// in the one normal form the successor must carry.
+    /// What neither arm changed, with the checked interface resources
+    /// composed into that frame.
     expected_resources: ResourceContext,
 }
 
@@ -4253,22 +4264,19 @@ fn interface_join_resources(
     let mut arm_residuals = Vec::with_capacity(2);
     for (index, (arm, facts)) in arms.iter().zip(arm_facts).enumerate() {
         let mut remaining = arm.state.resources().clone();
-        // Views are non-consuming. Check them while their owned support
-        // is still present, then consume the owned interface facts in
-        // their source order so consuming a parent cannot erase a view
-        // that the same interface has already established.
+        // Check observations against the held context while the owned
+        // support is present. The same indexed view judgment is used by
+        // Surface and for views already established by the common frame.
         for required in arm_interface_resources[index]
             .iter()
             .filter(|fact| fact.is_view())
         {
-            if remaining
-                .clone()
-                .without_facts(std::slice::from_ref(required), facts.assumptions())
-                .is_none()
-            {
+            if !remaining.satisfies_fact(required, facts.assumptions()) {
                 return Err("an interface resource is not owned by one concrete arm");
             }
         }
+        // Consume owned exports in source order: giving up one may also
+        // remove the retained observations it supported.
         for required in arm_interface_resources[index]
             .iter()
             .filter(|fact| fact.is_own())
@@ -4322,11 +4330,14 @@ fn interface_join_resources(
         })
         .cloned()
         .collect::<Vec<_>>();
-    let expected_resources = common_resources
-        .install_established_partition(additions.iter().cloned(), successor_facts.assumptions())
-        .map_err(|_| "the interface resources do not form a valid successor context")?
-        .0
-        .normalized_around_facts(&additions, successor_facts.assumptions());
+    let assumptions = successor_facts.assumptions();
+    let (expected_resources, mut inserted) = common_resources
+        .install_established_partition(additions, assumptions)
+        .map_err(|_| "the interface resources do not form a valid successor context")?;
+    // Keep the native representation of structural resource witnesses.
+    // Each other published occurrence can coalesce with its indexed neighbors.
+    inserted.retain(|(fact, _)| !expected_resources.protects_structural_resource(fact.resource()));
+    let expected_resources = expected_resources.normalized_delta(inserted, assumptions);
     Ok(InterfaceJoinResources {
         arm_interface_resources,
         successor_interface_resources,
@@ -4380,6 +4391,15 @@ fn construct_interface_abstraction(
         join_next_kernel_variable,
     )
     .map_err(|_| "the else interface state could not be abstracted")?;
+    if abstract_then
+        .unproved_memory_separation(root_facts)
+        .is_some()
+        || abstract_else
+            .unproved_memory_separation(root_facts)
+            .is_some()
+    {
+        return Err("branch memory join requires separation from active loans at the split");
+    }
     // Both abstractions derive from the memory at the split, so they are
     // compared by what each changed from it.
     if abstract_then.next_kernel_variable != abstract_else.next_kernel_variable
@@ -4951,35 +4971,17 @@ impl CheckedExecutionBranch {
 /// Whether every stable-view loan dependency the interface successor carries
 /// was already held by a concrete arm.
 ///
-/// The checked quantity is the binding itself -- the
-/// loan, scope, share, support occurrence, and viewed fact -- which names the
-/// exact authority that licenses reading the exported view. Requiring each of
-/// those to appear in some arm keeps the join from minting authority that no
-/// alternative execution actually reached (D2 law 9).
-///
-/// The binding count follows the proof -- one binding per exposed child per
-/// unfold or observe -- while the loans themselves follow the contract, so
-/// comparing the two sides pairwise would be quadratic in proof length. The
-/// arms' binding *values* are folded into one membership index first and each
-/// successor binding is then one lookup. That is the same predicate: a binding
-/// is inherited exactly when some arm holds an equal one, at whatever
-/// occurrence. The occurrence keys cannot serve as that index, because a
-/// `branch ensuring` interface rebuilds its resource context from the declared
-/// clauses and its occurrences are fresh.
+/// Check the exact authority (including the loan, share, scope, support,
+/// viewed fact and hold) of each claimed binding. Interface publication can
+/// give a held view a fresh occurrence, so membership is by binding value
+/// and the arms maintain that index as their bindings change (D2 law 9).
 fn interface_successor_loans_are_inherited(
     successor: &ExecutionState,
     arms: [&ExecutionState; 2],
 ) -> bool {
-    let mut held = std::collections::HashSet::new();
-    for arm in arms {
-        for (_, binding) in arm.loan_view_bindings().iter() {
-            crate::instrumentation::record_deterministic_work(1);
-            held.insert(binding);
-        }
-    }
     successor.loan_view_bindings().iter().all(|(_, binding)| {
-        crate::instrumentation::record_deterministic_work(1);
-        held.contains(binding)
+        arms.iter()
+            .any(|arm| arm.loan_view_bindings().contains_binding(binding))
     })
 }
 
@@ -6359,10 +6361,6 @@ pub(crate) struct ExecutionProofCore {
     pub(crate) last_footprint: Option<Arc<crate::kernel::RegionFootprint>>,
     pub(crate) state: SharedValue<ExecutionState>,
     initial_match_scope: SharedValue<ExecutionState>,
-    /// Context of the logical frontier cases admitted by the kernel, in
-    /// split order. Forks share the prefix; a join restores the parent's.
-    /// Other case producers use the ordinary local-context construction.
-    checked_step_cases: (usize, PureFactContext),
     /// The admitted case delta, shared by every returned descendant. Retain
     /// it at the split, before terminal joins could copy it into every path.
     publication_case_facts: ExecutionFacts,
@@ -7315,7 +7313,8 @@ fn retain_completed_path_fact(
 ) -> PureFactContext {
     crate::instrumentation::record_deterministic_work(1);
     if assumptions.contains_assumed_exact(fact.proposition())
-        && (!fact.is_certified() || fact.generated_load_binding().is_none())
+        && (!fact.is_certified()
+            || (fact.generated_load_binding().is_none() && !fact.has_checked_pointer_read()))
     {
         return assumptions;
     }
@@ -8183,7 +8182,6 @@ impl ExecutionProofCore {
             descent: None,
             last_footprint: None,
             initial_match_scope: state.clone(),
-            checked_step_cases: (0, PureFactContext::new()),
             publication_case_facts: ExecutionFacts::new(),
             cases_hold_memory_effects: false,
             path_context: None,
@@ -8308,6 +8306,8 @@ impl ExecutionProofCore {
             built.facts = retain_completed_path_fact(built.facts, fact);
         }
         for fact in self.effect_facts.facts_from(built.effects) {
+            #[cfg(test)]
+            CHECKED_PATH_EFFECT_ADMISSIONS.with(|count| count.set(count.get() + 1));
             built.facts = retain_completed_path_fact(built.facts, fact);
         }
         built.cases = self.publication_case_facts.len();
@@ -8332,6 +8332,36 @@ impl ExecutionProofCore {
         for trace in self.execution_evidence.iter_mut() {
             trace.push(CheckedExecutionEvent::CompletedContext(context.clone()));
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn take_checked_path_effect_admissions() -> usize {
+        CHECKED_PATH_EFFECT_ADMISSIONS.with(|count| count.replace(0))
+    }
+
+    /// Open the facts of this exact completed trace before outcome
+    /// publication. The path context already carries its checked effects.
+    pub(crate) fn checked_outcome_facts(
+        &self,
+        candidate: &crate::kernel::FunctionExecutionCandidate,
+        entry: &PureFactStore,
+        facts: &PureFactStore,
+    ) -> Option<PureFactStore> {
+        let frontier = self.frontier.execution()?;
+        if !self.evidence_completed
+            || self.execution_evidence.len() != 1
+            || frontier.path_count() != 1
+            || !frontier.candidate_at(0)?.shares_record_with(candidate)
+        {
+            return None;
+        }
+        let built = self.path_context.as_ref()?;
+        if built.cases != self.publication_case_facts.len()
+            || built.effects != self.effect_facts.len()
+        {
+            return None;
+        }
+        facts.with_outcome_context(built.facts.clone(), entry)
     }
 
     /// Appends a checked statement's effects to the proof's effect list and
@@ -9044,13 +9074,10 @@ impl ExecutionProofCore {
 
     /// Called only after the kernel admitted this logical frontier case.
     pub(in crate::kernel::proof) fn retain_step_case(&mut self, fact: Proposition) {
-        self.checked_step_cases.0 += 1;
-        crate::kernel::reasoning::path_facts::count_context_rebuild_entries(1);
         self.cases_hold_memory_effects |= is_memory_effect(&fact);
         self.publication_case_facts.ensure_indexed();
         self.publication_case_facts
-            .push(ExecutionPureFact::new(fact.clone()));
-        self.checked_step_cases.1 = self.checked_step_cases.1.clone().assume_proposition(fact);
+            .push(ExecutionPureFact::new(fact));
     }
 
     pub(crate) fn publication_case_prefix(&self) -> ExecutionFacts {
@@ -9122,13 +9149,6 @@ impl ExecutionProofCore {
         facts.forget_indexes();
         facts.extend_shared(&self.effect_facts);
         Some(facts)
-    }
-
-    /// A local context for a presentation containing exactly these admitted
-    /// cases. The caller still checks every selected premise against its
-    /// PureFactStore; presentation never supplies semantic authority.
-    pub(crate) fn checked_step_case_context(&self, count: usize) -> Option<PureFactContext> {
-        (self.checked_step_cases.0 == count).then(|| self.checked_step_cases.1.clone())
     }
 
     /// The state the retained evidence has reached, or the core's state
@@ -10010,8 +10030,8 @@ impl ExecutionProofCore {
         let environment_variables =
             crate::kernel::reasoning::execution_environment_variable_index(environment);
         let value_variables = crate::kernel::proposition_variables(&Proposition::Equal(
-            Term::Algebraic(value.clone()),
-            Term::Algebraic(value.clone()),
+            Term::Algebraic(value.clone().into()),
+            Term::Algebraic(value.clone().into()),
         ));
         let mut next = first_variable;
         let mut overflow = false;
@@ -10050,7 +10070,7 @@ impl ExecutionProofCore {
                 // result `c = a` matched at `c == None` gives `a == None`.
                 // Only the scrutinee's own index bucket is read.
                 if let Proposition::Equal(_, constructor) = case {
-                    let scrutinee = Term::Algebraic(value.clone());
+                    let scrutinee = Term::Algebraic(value.clone().into());
                     for equality in
                         facts.algebraic_equalities_mentioning(&Proposition::Equal(
                             scrutinee.clone(),
@@ -10069,7 +10089,7 @@ impl ExecutionProofCore {
                         };
                         if *other != scrutinee
                             && !matches!(other, Term::Algebraic(term)
-                                if matches!(term.node, crate::kernel::AlgebraicTermNode::Constructor { .. }))
+                                if matches!(term.native_compat().node, crate::kernel::AlgebraicTermNode::Constructor { .. }))
                         {
                             arm_facts = arm_facts
                                 .with_fact(Proposition::Equal(other.clone(), constructor.clone()));
@@ -10096,8 +10116,8 @@ impl ExecutionProofCore {
                     body_clauses = crate::kernel::functions::matched_resource_instance_case_clauses(
                         &self.state,
                         projection,
-                        model,
-                        constructor,
+                        model.native_compat(),
+                        constructor.native_compat(),
                         definitions,
                         arm_facts.assumptions(),
                     );
@@ -10115,7 +10135,7 @@ impl ExecutionProofCore {
                     crate::kernel::AlgebraicTermNode::Constructor { .. }
                 ) && let Proposition::Equal(left, Term::Algebraic(constructor)) = case
                     && let crate::kernel::AlgebraicTermNode::Constructor { variant, fields } =
-                        &constructor.node
+                        &constructor.native_compat().node
                 {
                     let spelled_fields = fields
                         .iter()
@@ -10136,14 +10156,14 @@ impl ExecutionProofCore {
                         .collect::<Vec<_>>();
                     if spelled_fields != *fields {
                         let spelled = crate::kernel::AlgebraicTerm {
-                            algebraic_type: constructor.algebraic_type.clone(),
+                            algebraic_type: constructor.native_compat().algebraic_type.clone(),
                             node: crate::kernel::AlgebraicTermNode::Constructor {
                                 variant: variant.clone(),
                                 fields: spelled_fields,
                             },
                         };
                         arm_facts = arm_facts
-                            .with_fact(Proposition::Equal(left.clone(), Term::Algebraic(spelled)));
+                            .with_fact(Proposition::Equal(left.clone(), Term::Algebraic(spelled.into())));
                     }
                 }
                 // A premise that reads the matched value holds of this arm's
@@ -10152,7 +10172,7 @@ impl ExecutionProofCore {
                 if let crate::kernel::AlgebraicTermNode::Variable(variable) = value.node
                     && let Proposition::Equal(_, Term::Algebraic(constructor)) = case
                 {
-                    for instance in matched_value_premise_instances(facts, variable, constructor) {
+                    for instance in matched_value_premise_instances(facts, variable, constructor.native_compat()) {
                         arm_facts = arm_facts.with_fact(instance);
                     }
                 }

@@ -27,6 +27,9 @@ including nested generic applications and several element widths.
 The adjacent-range law `separation::separate_adjacent_ranges` is verified in
 [`separation_adjacent_ranges.md`](separation_adjacent_ranges.md).
 
+The containment law `separation::contains_joined_ranges` is verified in
+[separation_adjacent_ranges.md](separation_adjacent_ranges.md).
+
 The rebasing law `separation::contains_rebase` is verified in
 [`separation_rebase.md`](separation_rebase.md), with signed and unsigned bounds.
 The selected-cell law `separation::contains_element` is verified in
@@ -150,6 +153,8 @@ import click::permutation;
 import click::c::string;
 import click::bytes;
 import click::c::stdio;
+import click::rust::option;
+import click::rust::result;
 import click::rust::i8;
 import click::rust::i16;
 import click::rust::i32;
@@ -239,6 +244,13 @@ theorem use_uint32_mul_guard_by_integer_bound(left: uint32, right: uint32) {
 theorem use_uint64_add_to_integer(left: uint64, right: uint64) {
     requires to_integer(left) + to_integer(right) <= 18446744073709551615;
     ensures to_integer(left + right) == to_integer(left) + to_integer(right) by apply(integer::uint64_add_to_integer(left, right));
+}
+
+theorem use_uint64_increment_upper_bound(value: uint64, upper: uint64) {
+    requires value < upper;
+    ensures to_integer(value + 1u64) <= to_integer(upper) by {
+        apply(integer::uint64_increment_upper_bound(value, upper)) using { value < upper; };
+    }
 }
 
 theorem use_uint64_multiply_to_integer(left: uint64, right: uint64) {

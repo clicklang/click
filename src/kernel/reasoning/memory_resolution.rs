@@ -4160,6 +4160,17 @@ fn canonical_memory_for_pointer_load_uncached(
     canonical.blocks = std::sync::Arc::new(blocks);
     canonical.cells = std::sync::Arc::new(cells);
     canonical.union_cells = std::sync::Arc::new(union_cells);
+    // A read is named by its version point and cell. A retired local is part
+    // of what this load observes only when the load may alias it and some
+    // pointer value can reach it (`retirements_agree_for_load` compares the
+    // same entries); the others are lifetime bookkeeping, not this read's
+    // bytes, and must not give one version two names. The candidates are the
+    // maintained addressable subset, so this visits no unreachable local.
+    let forgotten = std::sync::Arc::make_mut(&mut canonical.forgotten);
+    let mut ended = forgotten.ended_addressable_local_blocks.clone();
+    ended.retain(|block| block.observable_by_load(&pointer.base));
+    forgotten.ended_local_blocks = ended.clone();
+    forgotten.ended_addressable_local_blocks = ended;
     canonical.record_diagnostic_transform(
         "project memory for pointer read",
         vec![memory.clone()],

@@ -330,6 +330,8 @@ struct FunctionResourceTransfer {
     /// consumed capability when reconstructing the caller successor.
     borrowed_inputs: Vec<CheckedResourceFact>,
     consumed_inputs: Vec<CheckedResourceFact>,
+    /// Entry clauses whose checked expansion has no owned members.
+    empty_owned_input_indices: BTreeSet<usize>,
     /// Checked callee-side borrowed ownership paired with an equivalent
     /// caller-side spelling selected by the exclusive reservation planner.
     /// This is output-sized call-boundary pairing, not a search through
@@ -1204,13 +1206,14 @@ pub(crate) struct CheckedResourceFact {
     /// Caller-selected exact named authority for a mutex-use loan. The
     /// planner must consume this source, never select by address instead.
     pub(crate) selected_mutex_source: Option<std::sync::Arc<(Variable, ResourceFact)>>,
+    /// Byte extent formed from the evaluated mutex pointer at clause entry.
+    pub(crate) mutex_storage: Option<Arc<MemoryRange>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct FunctionMemoryEffectProjection {
     ranges: Vec<MemoryRange>,
     evidence_facts: ExecutionFacts,
-    has_exact_write_ranges: bool,
     /// The owned requirement each projected range came out of, for the ranges
     /// a checked resource transition produced. An explicit effect segment
     /// names no requirement and appears here not at all; the call site reads
@@ -1818,7 +1821,7 @@ fn execute_function_paths(
             ));
             continue;
         }
-        let Some((argument_values, argument_obligations)) = coerce_program_function_arguments(
+        let Some((argument_values, mut argument_obligations)) = coerce_program_function_arguments(
             function,
             &native_arguments,
             &arguments_path.obligations,
@@ -1838,6 +1841,7 @@ fn execute_function_paths(
             function,
             &argument_values,
             &arguments_path.values,
+            &mut argument_obligations,
         ) else {
             paths.push(FunctionPath::new(
                 FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(
@@ -2259,7 +2263,7 @@ pub(super) fn execute_program_function_call_paths(
             ));
             continue;
         }
-        let Some((argument_values, argument_obligations)) = coerce_program_function_arguments(
+        let Some((argument_values, mut argument_obligations)) = coerce_program_function_arguments(
             function,
             &native_arguments,
             &arguments_path.obligations,
@@ -2292,6 +2296,7 @@ pub(super) fn execute_program_function_call_paths(
             function,
             &argument_values,
             &arguments_path.values,
+            &mut argument_obligations,
         ) else {
             paths.push(FunctionPath::new(
                 FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(
@@ -2542,16 +2547,17 @@ pub(super) fn suspend_verified_worker(
     assumptions: &PureFactContext,
     environment: &ExecutionEnvironment,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<(super::threads::WorkerCompletion, Vec<ProofObligation>), String>> {
+) -> ExecutionResult<Result<(super::threads::WorkerCompletion, Vec<ProofObligation>), RuntimeError>>
+{
     if !rule
         .function
         .contract_interface()
         .exceptional_signature()
         .is_empty()
     {
-        return Ok(Err(
-            "exceptional workers are outside the scoped thread profile".to_string(),
-        ));
+        return Ok(Err(RuntimeError::FunctionContract(
+            "exceptional workers are outside the scoped thread profile".into(),
+        )));
     }
     let mut completions = Vec::new();
     let paths = execute_verified_function_applications_with_suspension(
@@ -2580,9 +2586,15 @@ pub(super) fn suspend_verified_worker(
         ..
     }) = paths.first()
     {
-        return Ok(Err(super::api::describe_certification_runtime_error(error)));
+        return Ok(Err(match error {
+            RuntimeError::PendingCallObligations(_) => error.clone(),
+            error => RuntimeError::FunctionContract(
+                super::api::describe_certification_runtime_error(error),
+            ),
+        }));
     }
-    Ok(unique_worker_completion(paths.is_empty(), completions))
+    Ok(unique_worker_completion(paths.is_empty(), completions)
+        .map_err(RuntimeError::FunctionContract))
 }
 
 pub(super) fn unique_worker_completion(
@@ -3340,7 +3352,6 @@ fn execute_verified_function_applications_with_suspension(
             name,
             interface_name,
             candidate_ordinal,
-            has_exact_write_ranges,
             storage,
             evidence,
             framed_rule,
@@ -3368,36 +3379,36 @@ fn execute_verified_function_applications_with_suspension(
                 caller_state.memory(),
             )
         };
-        let write_requirements = if suspended.is_some() || !has_exact_write_ranges {
-            // Worker admission has its own effect rules. Folded or guarded
-            // projections can widen an effect to a span containing bytes
-            // the callee cannot write.
-            if let Some(diagnostic) = entry_state.loan_ledger().and_then(|ledger| {
-                transfer.memory_effects.iter().find_map(|range| {
-                    ledger.memory_access_refusal(
-                        range,
-                        &effective_assumptions,
-                        LoanRefusalOperation::MemoryAccess,
-                    )
-                })
-            }) {
-                paths.push(FunctionPath::new(
-                    FunctionOutcome::RuntimeError(RuntimeError::LoanRefusal(Box::new(diagnostic))),
-                    facts,
-                    obligations,
-                ));
-                continue;
-            }
-            Vec::new()
-        } else {
-            verified_call_loan_requirements(
-                caller_state.loan_ledger(),
-                &transfer.memory_effects,
-                call_site,
-                interface.contract_requires().len(),
-                "verified call write separation",
-            )
-        };
+        // Each successfully lowered span bounds the bytes it can affect.
+        // For an undecided guard, the whole span is still a safe bound.
+        // An unnamed projection provides no span a caller can separate.
+        let caller_loans = caller_state.loan_ledger();
+        if caller_loans.is_some_and(LoanLedger::has_active_memory_loans)
+            && transfer
+                .memory_effects
+                .iter()
+                .any(MemoryRange::is_unnamed_footprint)
+        {
+            paths.push(FunctionPath::new(
+                FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(
+                    "call has a write effect without a checked byte range while memory loans are active".into(),
+                )),
+                facts,
+                obligations,
+            ));
+            continue;
+        }
+        let mut write_requirements = verified_call_loan_requirements(
+            caller_loans,
+            &transfer.memory_effects,
+            call_site,
+            interface.contract_requires().len(),
+            if suspended.is_some() {
+                "suspended worker write separation"
+            } else {
+                "verified call write separation"
+            },
+        );
         // A checked mutex-use call may execute runtime lock/unlock operations.
         // Their representation writes are authorized by the selected use
         // transfer, not by the contract's ordinary mutable footprint. Keep
@@ -3442,32 +3453,47 @@ fn execute_verified_function_applications_with_suspension(
                 mutex_storage_effects.push(range);
             }
         }
-        if let Some(diagnostic) = mutex_storage_effects.iter().find_map(|range| {
-            transfer
-                .stable_view_plan
-                .as_ref()
-                .and_then(|plan| {
-                    plan.ledger.memory_access_refusal(
-                        range,
-                        &effective_assumptions,
-                        LoanRefusalOperation::MemoryAccess,
-                    )
-                })
-                .or_else(|| {
-                    entry_state.stable_loan_memory_access_refusal(
-                        range,
-                        &effective_assumptions,
-                        LoanRefusalOperation::MemoryAccess,
-                    )
-                })
-        }) {
-            paths.push(FunctionPath::new(
-                FunctionOutcome::RuntimeError(RuntimeError::LoanRefusal(Box::new(diagnostic))),
-                facts,
-                obligations,
+        let checked_mutex_ranges = transfer
+            .stable_view_plan
+            .iter()
+            .flat_map(|plan| &plan.mutex_uses)
+            .map(|usage| usage.mutex_storage.as_deref())
+            .chain(
+                transfer
+                    .helper_call
+                    .iter()
+                    .map(|helper| helper.mutex_storage.as_deref()),
+            )
+            .collect::<Option<Vec<_>>>();
+        let mutex_ledger = transfer
+            .stable_view_plan
+            .as_ref()
+            .map(|plan| &plan.ledger)
+            .or_else(|| entry_state.loan_ledger());
+        let first_mutex_ordinal =
+            interface.contract_requires().len() + transfer.memory_effects.len();
+        let mutex_requirement_count = if let Some(ranges) = checked_mutex_ranges {
+            let ranges = ranges
+                .into_iter()
+                .cloned()
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect::<Vec<_>>();
+            write_requirements.extend(verified_call_loan_requirements(
+                mutex_ledger,
+                &ranges,
+                call_site,
+                first_mutex_ordinal,
+                "verified call mutex storage write separation",
+            ));
+            ranges.len()
+        } else {
+            paths.push(resource_call_failure(
+                "mutex write has no checked storage extent",
             ));
             continue;
-        }
+        };
+        let first_retirement_ordinal = first_mutex_ordinal + mutex_requirement_count;
         let copy_initialization = if let Some(effect) = application.representation_copy
             && !transfer.memory_effects.is_empty()
         {
@@ -3683,7 +3709,8 @@ fn execute_verified_function_applications_with_suspension(
                             .into_certified(),
                         );
                     }
-                    post_state.set_memory_directly(successor.memory.clone());
+                    // The helper's successor made this memory: stand where it stands.
+                    post_state.keep_memory_of(&successor);
                     post_state.mutex_ledger = successor.mutex_ledger.clone();
                     post_state.opaque_mutex_acquisitions =
                         successor.opaque_mutex_acquisitions.clone();
@@ -4586,11 +4613,6 @@ fn execute_verified_function_applications_with_suspension(
                     &output_resources,
                     interface,
                     &allocation_assumptions,
-                    if suspended.is_some() {
-                        post_state.loan_ledger()
-                    } else {
-                        None
-                    },
                     caller_state,
                     &post_state,
                 )
@@ -4808,6 +4830,7 @@ fn execute_verified_function_applications_with_suspension(
                     })
                 && worker_effects
                     .iter()
+                    .chain(&retired_allocations)
                     .all(|range| is_external_memory_pointer(range.base()))
                 && output_resources.facts().iter().all(|fact| match fact {
                     ResourceFact::Own(Resource::Memory(range), quantity) => {
@@ -4846,6 +4869,19 @@ fn execute_verified_function_applications_with_suspension(
                     deferred: deferred_exchange.clone(),
                 })
             };
+            // The checked partition has already separated projected writes
+            // from views issued to this worker. A whole allocation may
+            // exceed that projection, so retirement also protects the loans
+            // opened by the worker's entry transfer.
+            obligations.extend(write_requirements);
+            obligations.extend(verified_call_loan_requirements(
+                entry_state.loan_ledger(),
+                &retired_allocations,
+                call_site,
+                first_retirement_ordinal,
+                "suspended worker allocation retirement separation",
+            ));
+            worker_effects.extend(retired_allocations);
             completions.push((
                 super::threads::WorkerCompletion::checked(
                     plan,
@@ -4892,14 +4928,14 @@ fn execute_verified_function_applications_with_suspension(
             }
         };
 
-        let mut return_state = caller_state.clone();
-        return_state.set_memory_of(&post_state);
+        let mut return_state = caller_state
+            .clone()
+            .with_call_return(&post_state, return_resources);
         refresh_call_written_locals(
             &mut return_state,
             &transfer.memory_effects,
             &effective_assumptions,
         );
-        return_state.resources = return_resources;
         return_state.loan_ledger = return_ledger;
         return_state.loan_participant = return_participant;
         return_state = return_state.with_loan_view_bindings(return_view_bindings);
@@ -5127,15 +5163,13 @@ fn execute_verified_function_applications_with_suspension(
         // The retirement ranges are the consumed allocation tokens at
         // entry. Return facts may decide continuity, but they cannot prove
         // that retiring one of those allocations was permitted.
-        if suspended.is_none() {
-            obligations.extend(verified_call_loan_requirements(
-                entry_state.loan_ledger(),
-                &retired_allocations,
-                call_site,
-                interface.contract_requires().len() + transfer.memory_effects.len(),
-                "verified call allocation retirement separation",
-            ));
-        }
+        obligations.extend(verified_call_loan_requirements(
+            entry_state.loan_ledger(),
+            &retired_allocations,
+            call_site,
+            first_retirement_ordinal,
+            "verified call allocation retirement separation",
+        ));
         paths.push(FunctionPath {
             outcome,
             facts,
@@ -5343,14 +5377,14 @@ fn exceptional_direct_function_path(
                 ));
             }
         };
-    let mut throw_state = caller_state.clone();
-    throw_state.set_memory(memory);
+    let mut throw_state = caller_state
+        .clone()
+        .with_call_return(&post_state, resources);
     refresh_call_written_locals(
         &mut throw_state,
         &transfer.memory_effects,
         &post_assumptions,
     );
-    throw_state.resources = resources;
     throw_state.loan_ledger = ledger;
     throw_state.loan_participant = participant;
     throw_state = throw_state.with_loan_view_bindings(bindings);
@@ -5382,7 +5416,6 @@ struct PreparedVerifiedFunctionCall<'a> {
     name: &'a str,
     interface_name: &'a str,
     candidate_ordinal: usize,
-    has_exact_write_ranges: bool,
     /// Concrete declaration identity for global and static storage lowering.
     /// This is not evidence that the function body was checked.
     storage: Option<&'a ProgramFunction>,
@@ -5740,7 +5773,7 @@ fn prepare_verified_function_call<'a>(
                         .is_some_and(KernelTerm::is_shared_machine_operand)
             });
     crate::instrumentation::record_deterministic_work(parameters.len());
-    let (argument_values, argument_obligations) = if retains_words {
+    let (argument_values, mut argument_obligations) = if retains_words {
         (
             VerifiedCallArguments::BoundWords,
             arguments_path.obligations.clone(),
@@ -5763,6 +5796,7 @@ fn prepare_verified_function_call<'a>(
         &argument_values,
         application.storage,
         &arguments_path.values,
+        &mut argument_obligations,
     ) else {
         return Ok(Err(FunctionPath::new(
             FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(
@@ -6794,8 +6828,17 @@ fn prepare_verified_function_call<'a>(
     // Reassemble the transition in source order from its role partitions.
     // This keeps the effect projection tied to the checked role-bearing
     // inputs rather than to a normalized context that erased source metadata.
-    let mut checked_transition_inputs = transfer.borrowed_inputs.clone();
-    checked_transition_inputs.extend(transfer.consumed_inputs.clone());
+    let mut checked_transition_inputs = transfer
+        .borrowed_inputs
+        .iter()
+        .chain(&transfer.consumed_inputs)
+        .filter(|input| {
+            !input
+                .section_index
+                .is_some_and(|index| transfer.empty_owned_input_indices.contains(&index))
+        })
+        .cloned()
+        .collect::<Vec<_>>();
     checked_transition_inputs.sort_by_key(|checked| checked.clause_position);
     let projection = match project_contract_memory_effects(
         &footprint_state,
@@ -6830,7 +6873,6 @@ fn prepare_verified_function_call<'a>(
         )));
     }
     let projection_range_sources = projection.range_sources;
-    let has_exact_write_ranges = projection.has_exact_write_ranges;
     {
         // Compare the effects against the complete checked view frontier, not
         // just the views whose requirement is a plain memory range. A
@@ -7004,7 +7046,6 @@ fn prepare_verified_function_call<'a>(
         name: application.name,
         interface_name: application.interface_name,
         candidate_ordinal,
-        has_exact_write_ranges,
         storage: application.storage,
         evidence: application.evidence,
         framed_rule: application.framed_rule,
@@ -7070,7 +7111,7 @@ pub(super) fn contracts_for_pointer(
                 .iter()
                 .skip(2)
                 .map(|argument| match argument {
-                    Term::ProgramValue(value) => Some(value.clone()),
+                    Term::ProgramValue(value) => Some(value.native_compat().clone()),
                     _ => None,
                 })
                 .collect::<Option<Vec<_>>>()?;
@@ -7610,7 +7651,7 @@ fn function_contract_requirement_is_proven(
             let Some(values) = values
                 .iter()
                 .map(|value| match value {
-                    Term::ProgramValue(value) => Some(value.clone()),
+                    Term::ProgramValue(value) => Some(value.native_compat().clone()),
                     _ => None,
                 })
                 .collect::<Option<Vec<_>>>()
@@ -7974,7 +8015,7 @@ fn project_explicit_memory_segments(
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
     require_decided_guards: bool,
-) -> ExecutionResult<Result<(Vec<MemoryRange>, ExecutionFacts), String>> {
+) -> ExecutionResult<Result<FunctionMemoryEffectProjection, String>> {
     let mut projection_assumptions = assumptions.clone();
     let mut ranges = BTreeSet::new();
     let mut evidence_facts = Vec::new();
@@ -8006,7 +8047,11 @@ fn project_explicit_memory_segments(
             Err(message) => return Ok(Err(message.into())),
         }
     }
-    Ok(Ok((ranges.into_iter().collect(), evidence_facts.into())))
+    Ok(Ok(FunctionMemoryEffectProjection {
+        ranges: ranges.into_iter().collect(),
+        evidence_facts: evidence_facts.into(),
+        range_sources: Vec::new(),
+    }))
 }
 
 /// The canonical owned memory ranges one checked owned fact denotes, derived
@@ -8022,9 +8067,7 @@ pub(super) fn checked_owned_memory_ranges(
     state: &ExecutionState,
     assumptions: &PureFactContext,
 ) -> Option<Vec<MemoryRange>> {
-    OwnedFootprintDerivation::new(definitions, state, assumptions)
-        .derive(fact)
-        .map(|footprint| footprint.ranges)
+    OwnedFootprintDerivation::new(definitions, state, assumptions).derive(fact)
 }
 
 /// Project storage dependencies once at an independent contract entry. The
@@ -8049,7 +8092,6 @@ pub(super) fn assumed_mutex_input_reservations(
         ranges.extend(
             derivation
                 .derive(fact)
-                .map(|footprint| footprint.ranges)
                 .unwrap_or_else(|| vec![MemoryRange::unnamed_footprint()]),
         );
         let mut guards = OwnedFootprintDerivation::new(
@@ -8062,7 +8104,6 @@ pub(super) fn assumed_mutex_input_reservations(
         guard_ranges.extend(
             guards
                 .derive(fact)
-                .map(|footprint| footprint.ranges)
                 .unwrap_or_else(|| vec![MemoryRange::unnamed_footprint()]),
         );
     }
@@ -8525,18 +8566,12 @@ struct OwnedFootprintDerivation<'a> {
     assumptions: &'a PureFactContext,
     evaluation_assumptions: PureFactContext,
     ranges: Vec<MemoryRange>,
-    exact: bool,
     reaches_unnamed: bool,
     undefined_family: bool,
     work: usize,
     /// What remains to visit. The descent is a worklist rather than a
     /// recursion, so a long chain of families costs heap, not stack.
     pending: Vec<OwnedFootprintTask<'a>>,
-}
-
-struct OwnedMemoryFootprint {
-    ranges: Vec<MemoryRange>,
-    exact: bool,
 }
 
 /// One pending visit of [`OwnedFootprintDerivation`].
@@ -8569,7 +8604,6 @@ impl<'a> OwnedFootprintDerivation<'a> {
                 .allow_symbolic_contract_loads()
                 .prefer_symbolic_external_loads(),
             ranges: Vec::new(),
-            exact: false,
             reaches_unnamed: false,
             undefined_family: false,
             work: 0,
@@ -8580,14 +8614,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
     /// The footprint of `fact`, owned by the holder. `None` when a family
     /// it reaches has no definition in the set: the interface is malformed
     /// and the transition that needs the footprint is refused.
-    fn derive(mut self, fact: &ResourceFact) -> Option<OwnedMemoryFootprint> {
-        self.exact = match fact {
-            ResourceFact::Own(Resource::Memory(_), _) => true,
-            ResourceFact::Own(Resource::Composite { .. }, quantity) => {
-                quantity.as_const() == Some(1)
-            }
-            _ => false,
-        };
+    fn derive(mut self, fact: &ResourceFact) -> Option<Vec<MemoryRange>> {
         self.pending.push(OwnedFootprintTask::Fact(fact.clone()));
         while let Some(task) = self.pending.pop() {
             // Past the bound the footprint is unnamed memory, which covers
@@ -8618,10 +8645,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
             if self.reaches_unnamed {
                 self.ranges.push(MemoryRange::unnamed_footprint());
             }
-            return Some(OwnedMemoryFootprint {
-                ranges: self.ranges,
-                exact: false,
-            });
+            return Some(self.ranges);
         }
         // This is the footprint of the selected held/assumed head, including
         // conservative unions of match arms, not admission of new ownership.
@@ -8642,10 +8666,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
         }
         ranges.sort();
         ranges.dedup();
-        Some(OwnedMemoryFootprint {
-            ranges,
-            exact: self.exact && !self.reaches_unnamed,
-        })
+        Some(ranges)
     }
 
     /// Charges one unit; past the bound the footprint is unnamed.
@@ -8687,10 +8708,10 @@ impl<'a> OwnedFootprintDerivation<'a> {
     }
 
     fn owned_fact(&mut self, fact: &ResourceFact) {
-        if !fact.is_own() {
+        let ResourceFact::Own(resource, _) = fact else {
             return;
-        }
-        match fact.resource() {
+        };
+        match resource {
             Resource::Footprint(_) | Resource::Parameter(_) | Resource::Emp | Resource::Star(_) => {
                 self.reaches_unnamed = true;
             }
@@ -8797,11 +8818,6 @@ impl<'a> OwnedFootprintDerivation<'a> {
         if !self.enters(definition) {
             return;
         }
-        self.exact &= definition.condition.is_none()
-            && definition.witnesses.is_empty()
-            && definition.resource_parameters.is_empty()
-            && !definition.authorized
-            && !definition.is_sealed();
         if definition.instance_schema.is_some() || definition.matched.is_some() {
             self.reaches_unnamed = true;
             return;
@@ -8984,21 +9000,16 @@ impl<'a> OwnedFootprintDerivation<'a> {
         let mut budget = ExecutionBudget::beside_live_state();
         // An undecided guard counts the body as active: the footprint is an
         // upper bound, and a body that is not active owns nothing extra.
-        if evaluate_composite_resource_body_condition(
+        match evaluate_composite_resource_body_condition(
             definition,
             &evaluation,
             &self.evaluation_assumptions,
             &mut budget,
-        ) == Some(false)
-        {
-            return;
+        ) {
+            Some(false) => return,
+            Some(true) | None => {}
         }
         for spec in contains {
-            // A flat body contributes exactly its unconditional memory
-            // clauses. Other terms may project a conservative span or child.
-            self.exact &= matches!(spec.term(), ResourceTerm::Memory(segment) if segment.guard().is_none())
-                && spec.guard().is_none()
-                && spec.resource_arguments().is_empty();
             // Abstract tokens own no memory, regardless of their quantity.
             // Footprint discovery need not prove that quantity nonnegative;
             // the actual resource exchange still checks it. A population
@@ -9159,7 +9170,6 @@ pub(crate) fn project_contract_memory_effects_with_guard_policy(
     let mut ranges = BTreeSet::new();
     let mut evidence_facts = Vec::new();
     let mut range_sources = Vec::new();
-    let mut has_exact_write_ranges = true;
     if let Some(resources) = transition_resources {
         for checked in resources {
             // Borrowing is a boundary role, not an access-mode rewrite:
@@ -9168,7 +9178,7 @@ pub(crate) fn project_contract_memory_effects_with_guard_policy(
             if !checked.fact.is_own() {
                 continue;
             }
-            let Some(footprint) = OwnedFootprintDerivation::new(
+            let Some(footprint_ranges) = OwnedFootprintDerivation::new(
                 interface.composite_resource_definitions(),
                 entry,
                 assumptions,
@@ -9181,8 +9191,7 @@ pub(crate) fn project_contract_memory_effects_with_guard_policy(
                     "could not expand the checked resource transition".to_string()
                 ));
             };
-            has_exact_write_ranges &= footprint.exact || footprint.ranges.is_empty();
-            for range in footprint.ranges {
+            for range in footprint_ranges {
                 // Every byte of the expansion belongs to this one requirement,
                 // whatever depth it came from, so the requirement is the
                 // source recorded for each of its ranges.
@@ -9199,13 +9208,11 @@ pub(crate) fn project_contract_memory_effects_with_guard_policy(
     // modular-call source.  Functions without resource clauses retain their
     // explicit effect segments here.
     let explicit_segments = if !interface.resource_derived_mutable_frame() {
-        let segments = interface.contract_mutable();
-        has_exact_write_ranges = segments.iter().all(|segment| segment.guard().is_none());
-        segments
+        interface.contract_mutable()
     } else {
         &[]
     };
-    let (explicit_ranges, explicit_evidence) = match project_explicit_memory_segments(
+    let explicit = match project_explicit_memory_segments(
         entry,
         explicit_segments,
         assumptions,
@@ -9215,12 +9222,11 @@ pub(crate) fn project_contract_memory_effects_with_guard_policy(
         Ok(result) => result,
         Err(message) => return Ok(Err(message)),
     };
-    ranges.extend(explicit_ranges);
-    evidence_facts.extend(explicit_evidence);
+    ranges.extend(explicit.ranges);
+    evidence_facts.extend(explicit.evidence_facts);
     Ok(Ok(FunctionMemoryEffectProjection {
         ranges: ranges.into_iter().collect(),
         evidence_facts: evidence_facts.into(),
-        has_exact_write_ranges,
         range_sources,
     }))
 }
@@ -9436,7 +9442,7 @@ fn evaluate_decided_contract_mutable_ranges_for_interface(
                 None => return Ok(None),
             }
         }
-        let Ok((mut projected, _)) = project_explicit_memory_segments(
+        let Ok(mut projected) = project_explicit_memory_segments(
             entry,
             std::slice::from_ref(segment),
             &guard_assumptions,
@@ -9446,7 +9452,7 @@ fn evaluate_decided_contract_mutable_ranges_for_interface(
         else {
             return Ok(None);
         };
-        let Some(range) = projected.pop() else {
+        let Some(range) = projected.ranges.pop() else {
             return Ok(None);
         };
         ranges.push(range);
@@ -9960,7 +9966,6 @@ fn apply_verified_heap_allocation_delta(
     output_resources: &ResourceContext,
     interface: &FunctionContractInterface,
     assumptions: &PureFactContext,
-    worker_ledger: Option<&LoanLedger>,
     mutex_state: &ExecutionState,
     output_state: &ExecutionState,
 ) -> Result<VerifiedAllocationDelta, VerifiedAllocationDeltaError> {
@@ -10165,19 +10170,6 @@ fn apply_verified_heap_allocation_delta(
             ));
         }
         let allocation_range = bytes.byte_range(base.clone());
-        // Suspended worker admission still checks before publishing its
-        // separately recoverable state. Ordinary calls carry an obligation.
-        if let Some(diagnostic) = worker_ledger.and_then(|ledger| {
-            ledger.memory_access_refusal(
-                &allocation_range,
-                &allocation_assumptions,
-                LoanRefusalOperation::MemoryAccess,
-            )
-        }) {
-            return Err(VerifiedAllocationDeltaError::Runtime(
-                RuntimeError::LoanRefusal(Box::new(diagnostic)),
-            ));
-        }
         if let Some(error) = super::mutexes::storage_retirement_refusal(
             mutex_state,
             &allocation_range,
@@ -10695,6 +10687,8 @@ fn prepare_function_resource_transfer(
     )
 }
 
+pub(crate) mod call_supplier_selection;
+
 /// Unfolds exactly the folded composite owners a call's own requirements
 /// need, and nothing else.
 ///
@@ -10723,6 +10717,9 @@ fn candidate_planning_resources(
                     .is_empty())
     };
     let mut resources = caller_resources.clone();
+    if !call_supplier_selection::search_enabled() || !resources.has_folded_composites() {
+        return resources;
+    }
     for requirement in requirements {
         // A viewed composite requirement is lent folded, through the checked
         // composite backing, so opening it here would destroy the head that
@@ -10762,8 +10759,10 @@ fn candidate_planning_resources(
                     assumptions,
                 )
                 .filter(|expanded| supported(expanded, requirement))
+                .map(|expanded| (expanded, composite))
             });
-        if let Some(opened) = opened {
+        if let Some((opened, selected)) = opened {
+            call_supplier_selection::record(selected);
             resources = opened;
         }
     }
@@ -10825,10 +10824,13 @@ fn candidate_composite_view_adapter(
     let Resource::Composite { name, arguments } = required.resource() else {
         return Ok(None);
     };
-    let Some(definition) = definitions
-        .iter()
-        .find(|definition| definition.name() == name)
-    else {
+    let definition_for = |name: &str| {
+        definitions
+            .binary_search_by(|definition| definition.name().cmp(name))
+            .ok()
+            .map(|index| &definitions[index])
+    };
+    let Some(definition) = definition_for(name) else {
         return Ok(None);
     };
     if definition.owns_population_authority()
@@ -10887,61 +10889,62 @@ fn candidate_composite_view_adapter(
             restored: frontier,
         }));
     }
-    // The owned-composite form: one folded owner in the caller whose checked
-    // frontier covers this one. Only the caller's own composite facts are
-    // examined, and each is expanded at most once.
-    let owners = resources
-        .facts()
-        .iter()
-        .filter(|fact| fact.is_own() && matches!(fact.resource(), Resource::Composite { .. }))
-        .cloned()
-        .collect::<Vec<_>>();
-    for owner in owners {
+    let checked_cover = |owner: &ResourceFact, direct_only| {
         crate::instrumentation::record_deterministic_work(1);
-        let Resource::Composite {
-            name: owner_name, ..
-        } = owner.resource()
-        else {
-            continue;
+        let Resource::Composite { name, .. } = owner.resource() else {
+            return None;
         };
-        let Some(owner_definition) = definitions
-            .iter()
-            .find(|definition| definition.name() == owner_name)
-        else {
-            continue;
-        };
-        // An authority control's head is not the restoration recipe a lend
-        // needs: restoring it must restore the authority's ledger state too.
+        let owner_definition = definition_for(name)?;
+        // Restore the exact escrowed occurrence with no authority exchange.
         if owner_definition.owns_population_authority()
             || owner_definition.is_recursive()
             || !owner_definition.facts_are_loan_stable()
+            || (direct_only
+                && (owner.owned_quantity() != Some(1)
+                    || !owner_definition.has_argument_direct_body()))
+            || resources.exact_count(owner) != 1
         {
-            continue;
+            return None;
         }
-        // The escrow has to name one occurrence, as a same-composite lend
-        // does: two equal-looking owners are not the same authority (law 5).
-        if resources.owned_occurrences_for_fact(&owner).len() != 1 {
-            continue;
-        }
-        let Some(owner_frontier) =
-            checked_one_level_frontier(&owner, definitions, caller_state, assumptions)
-        else {
-            continue;
-        };
-        if checked_frontier_coverage(owner_frontier, &frontier, assumptions).is_none() {
-            continue;
-        }
-        if !facts_hold {
-            return refuse_for_the_fact();
-        }
-        return Ok(Some(CompositeViewAdapter {
-            resources: resources.clone(),
-            head: owner,
-            adapted: vec![required.clone()],
-            restored: Vec::new(),
-        }));
+        let owner_frontier =
+            checked_one_level_frontier(owner, definitions, caller_state, assumptions)?;
+        checked_frontier_coverage(owner_frontier, &frontier, assumptions)?;
+        Some(owner.clone())
+    };
+
+    // A positive memory span has at most one exclusive supplier in the
+    // caller's partition. The exact pointer bucket nominates one held head
+    // without visiting other folds. Its checked body must still cover the
+    // view; the index itself supplies no ownership.
+    let indexed = if let [piece] = frontier.as_slice()
+        && let Some(range) = piece.memory_own_range()
+        && super::primitives::constant_memory_coordinates(range)
+            .is_some_and(|(_, start, end)| start < end)
+    {
+        resources
+            .unique_owned_composite_with_pointer_argument(range.base())
+            .and_then(|owner| checked_cover(owner, true))
+    } else {
+        None
+    };
+    let selected = indexed.or_else(|| {
+        resources
+            .composite_facts()
+            .filter(|fact| fact.is_own())
+            .find_map(|owner| checked_cover(owner, false))
+    });
+    let Some(head) = selected else {
+        return Ok(None);
+    };
+    if !facts_hold {
+        return refuse_for_the_fact();
     }
-    Ok(None)
+    Ok(Some(CompositeViewAdapter {
+        resources: resources.clone(),
+        head,
+        adapted: vec![required.clone()],
+        restored: Vec::new(),
+    }))
 }
 
 /// The kernel's own one-level expansion of one owned composite head, read in
@@ -11587,14 +11590,23 @@ fn with_private_aggregate_parameter_owners(
     interface: &FunctionContractInterface,
 ) -> ResourceContext {
     // Only the selected parameters, never the caller's unrelated frame.
-    // Argument binding has already allocated each slot independently.
+    // Prepared C++ arguments already belong to the full expression.
+    // Their original owner remains in the caller's transfer frame unless
+    // explicitly selected by the resource interface.
     for parameter in interface.parameters() {
         crate::instrumentation::record_deterministic_work(1);
         if let Some(layout) = parameter.aggregate_layout()
-            && let Some(slot) = callee.locals.slot(parameter.binding_name().clone())
+            && let Some(LocalBinding::AggregateObject {
+                slot,
+                proof_input_for,
+                ..
+            }) = callee.locals.binding(parameter.binding_name())
+            && slot.base.prepared_argument_binding().is_none()
         {
-            resources = resources
-                .unchecked_with_fact(private_aggregate_storage_owner(slot.clone(), layout));
+            let owner = private_aggregate_storage_owner(slot.clone(), layout);
+            if proof_input_for.is_none() || resources.exact_count(&owner) == 0 {
+                resources = resources.unchecked_with_fact(owner);
+            }
         }
     }
     resources
@@ -11755,6 +11767,7 @@ fn prepare_contract_resource_transfer_unexplained(
             helper_call: None,
             borrowed_inputs: Vec::new(),
             consumed_inputs: Vec::new(),
+            empty_owned_input_indices: BTreeSet::new(),
             canonical_borrowed_owners: Vec::new(),
             consumed_cell_returns: ConsumedCellReturns::default(),
             allocation_creator: checked_allocation_creator(caller_state, callee_state),
@@ -12032,6 +12045,7 @@ fn prepare_contract_resource_transfer_unexplained(
             };
             let source = selected.1.clone();
             let required = checked.fact.clone();
+            let mutex_storage = checked.mutex_storage.clone();
             if let Err(error) = super::mutexes::helper_contracts::check_call_access(
                 caller_state,
                 &source,
@@ -12062,6 +12076,7 @@ fn prepare_contract_resource_transfer_unexplained(
                 contract,
                 source,
                 required,
+                mutex_storage,
                 guard,
             }))
         } else {
@@ -12159,11 +12174,9 @@ fn prepare_contract_resource_transfer_unexplained(
                         // Bytes the caller holds through any resource, such
                         // as a folded composite over part of the array, are
                         // not implicit local storage.
-                        && caller_state
+                        && !caller_state
                             .resources()
-                            .facts_that_may_refer_to_memory_block(&range.base().base)
-                            .next()
-                            .is_none()
+                            .has_fact_referring_to_local_view_block(&range.base().base)
                 })
             })
         {
@@ -12185,6 +12198,7 @@ fn prepare_contract_resource_transfer_unexplained(
                     clause_position: requirement.clause_position,
                     section_index: requirement.section_index,
                     selected_mutex_source: None,
+                    mutex_storage: None,
                 };
                 if !implicit_read_views.contains(&piece) {
                     implicit_read_views.push(piece);
@@ -12572,6 +12586,15 @@ fn prepare_contract_resource_transfer_unexplained(
                                 ResourceContextValidityError::UnestablishedOwnedBoundary(required),
                             )
                         }
+                        super::loans::StableViewPlanError::UnestablishedLocalSeparation(goal) => {
+                            RuntimeError::PendingCallObligations(
+                                vec![
+                                    ProofObligation::verification_condition(*goal)
+                                        .with_context("local loan admission separation"),
+                                ]
+                                .into(),
+                            )
+                        }
                         error => error
                             .loan_diagnostic(LoanRefusalOperation::Plan)
                             .map(|refusal| RuntimeError::LoanRefusal(Box::new(refusal)))
@@ -12914,6 +12937,10 @@ fn prepare_contract_resource_transfer_unexplained(
         helper_call,
         borrowed_inputs,
         consumed_inputs,
+        empty_owned_input_indices: definitionally_empty_owned
+            .iter()
+            .filter_map(|requirement| requirement.section_index)
+            .collect(),
         canonical_borrowed_owners,
         consumed_cell_returns,
         allocation_creator: checked_allocation_creator(caller_state, callee_state),
@@ -17655,6 +17682,7 @@ fn evaluate_resource_clauses_in_section(
         selected_instance_resource_load_values(state, definitions, assumptions)
     };
     let mut evaluated: Vec<Option<ResourceFact>> = vec![None; resources.len()];
+    let mut mutex_storage = vec![None; resources.len()];
     let mut active = vec![true; resources.len()];
     let mut supplied: Vec<ResourceFact> = Vec::new();
     // Each successful clause extends a shared persistent prefix. Rebuilding
@@ -17681,6 +17709,7 @@ fn evaluate_resource_clauses_in_section(
             &evaluation_state,
             resource,
             &selected_load_values,
+            &mut mutex_storage[index],
             assumptions,
             budget,
         )?;
@@ -17739,6 +17768,7 @@ fn evaluate_resource_clauses_in_section(
             &evaluation_state,
             &resources[index],
             &selected_load_values,
+            &mut mutex_storage[index],
             assumptions,
             budget,
         )?;
@@ -17836,6 +17866,7 @@ fn evaluate_resource_clauses_in_section(
                 clause_position: resources[index].clause_position(),
                 section_index: Some(index),
                 selected_mutex_source: None,
+                mutex_storage: mutex_storage[index].take(),
             })
         })
         .collect()))
@@ -17958,6 +17989,7 @@ fn evaluate_resource_clause_with_dependencies(
     state: &ExecutionState,
     resource: &ResourceSpec,
     selected_load_values: &BTreeMap<(Address, ProgramType), ProgramValue>,
+    mutex_storage: &mut Option<Arc<MemoryRange>>,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<(Result<ResourceFact, RuntimeError>, Vec<ResourceFact>)> {
@@ -17969,6 +18001,7 @@ fn evaluate_resource_clause_with_dependencies(
             state,
             resource,
             selected_load_values,
+            mutex_storage,
             assumptions,
             budget,
         )
@@ -18548,8 +18581,8 @@ fn instance_arm_refutation_facts(
             continue;
         };
         let negation = Proposition::Not(Box::new(Proposition::Equal(
-            Term::Algebraic(model.clone()),
-            Term::Algebraic(excluded.clone()),
+            Term::Algebraic(model.clone().into()),
+            Term::Algebraic(excluded.clone().into()),
         )));
         if required_obligation_is_exactly_discharged(assumptions, &negation) {
             continue;
@@ -18571,8 +18604,8 @@ fn instance_arm_refutation_facts(
             }
         }
         published.push(Proposition::Equal(
-            Term::Algebraic(model.clone()),
-            Term::Algebraic(selected.clone()),
+            Term::Algebraic(model.clone().into()),
+            Term::Algebraic(selected.clone().into()),
         ));
     }
     published
@@ -19406,6 +19439,7 @@ pub(super) fn evaluate_function_resource_spec_with_entry(
         state,
         resource,
         &BTreeMap::new(),
+        &mut None,
         assumptions,
         budget,
     )
@@ -19416,6 +19450,7 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
     state: &ExecutionState,
     resource: &ResourceSpec,
     selected_load_values: &BTreeMap<(Address, ProgramType), ProgramValue>,
+    mutex_storage: &mut Option<Arc<MemoryRange>>,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<ResourceFact, RuntimeError>> {
@@ -19592,6 +19627,11 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
                 identity.protected = Some(description);
                 fact = ResourceFact::own(Resource::MutexUse(identity));
             }
+            *mutex_storage = Some(Arc::new(super::mutexes::storage_write_range(
+                &pointer,
+                crate::languages::c::thread_runtime::ModeledPthreadBinding::builtin()
+                    .mutex_storage_bytes,
+            )));
             Ok(Ok(fact))
         }
         ResourceTerm::Publication {
@@ -19665,6 +19705,7 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
                 state,
                 &inner,
                 selected_load_values,
+                mutex_storage,
                 assumptions,
                 budget,
             )? {
@@ -20828,7 +20869,7 @@ fn end_function_body_automatic_lifetimes(
         if slot.base.is_local_block()
             && !(function.return_aggregate_layout().is_some()
                 && matches!(returned, Some(ProgramValue::Pointer(pointer)) if pointer.address().base == slot.base))
-            && !caller.has_block(&slot.base)
+            && (!caller.has_block(&slot.base) || state.locals.is_proof_input_slot(slot))
             && memory.has_block(&slot.base)
         {
             if !selected.insert(slot.base.clone()) {
@@ -20897,7 +20938,11 @@ pub(in crate::kernel) fn function_exit_memory(
     match value.pointer() {
         Some(pointer)
             if pointer.address().base.is_local_block()
-                && !caller_state.memory.has_block(&pointer.address().base) =>
+                && (!caller_state.memory.has_block(&pointer.address().base)
+                    || callee_state.locals.is_proof_input_slot(&Address {
+                        base: pointer.address().base.clone(),
+                        offset: AddressOffset::Constant(0),
+                    })) =>
         {
             let block = &pointer.address().base;
             if let Some(error) = callee_state.automatic_storage_loan_refusal(block) {
@@ -21412,11 +21457,9 @@ fn function_outcome_from_body_with_resource_transfer(
         Ok(None) => {}
     }
 
-    let mut return_state = caller_state.clone();
-    // The caller resumes with the callee's memory, made by the steps the
-    // callee took: continue the callee's path, which began at the call.
-    return_state.set_memory_of(&state);
-    return_state.resources = return_resources;
+    let mut return_state = caller_state
+        .clone()
+        .with_call_return(&state, return_resources);
     return_state.loan_ledger = return_ledger;
     return_state.loan_participant = return_participant;
     return_state = return_state.with_loan_view_bindings(return_view_bindings);

@@ -948,6 +948,29 @@ impl PreparedThreadCreate<'_> {
     }
 }
 
+#[cfg(test)]
+fn test_entry_evidence(assumptions: &PureFactContext, proposition: &Proposition) -> bool {
+    use super::Resource;
+
+    // The unit-test driver has no Surface proof script. Apply the
+    // separation-conjunction law to its explicit loan footprint and use
+    // ordinary atomic checks for the leaves.
+    fn separates(assumptions: &PureFactContext, left: &Resource, right: &Resource) -> bool {
+        match right {
+            Resource::Star(parts) => {
+                separates(assumptions, left, &parts.0) && separates(assumptions, left, &parts.1)
+            }
+            _ => assumptions.proves_resource_separate(left, right),
+        }
+    }
+
+    assumptions.proves_atomic_without_search(proposition)
+        || matches!(
+            proposition,
+            Proposition::ResourceSeparate { left, right } if separates(assumptions, left, right)
+        )
+}
+
 /// One parent path. Clones share immutable roots, just like ordinary C state;
 /// a successful join consumes its entry in the successor path's registry.
 #[derive(Clone)]
@@ -999,11 +1022,11 @@ impl ThreadContext {
         assumptions: &PureFactContext,
         environment: &ExecutionEnvironment,
         budget: &mut ExecutionBudget,
-    ) -> ExecutionResult<Result<PreparedThreadCreate<'a>, String>> {
+    ) -> ExecutionResult<Result<PreparedThreadCreate<'a>, super::RuntimeError>> {
         if termination.is_none_or(|termination| termination.function != worker.function) {
-            return Ok(Err(
-                "spawn requires termination evidence for the exact worker".to_string(),
-            ));
+            return Ok(Err(super::RuntimeError::FunctionContract(
+                "spawn requires termination evidence for the exact worker".into(),
+            )));
         }
         let (completion, obligations) = match suspend_verified_worker(
             &self.parent,
@@ -1019,16 +1042,18 @@ impl ThreadContext {
         if completion.plan.caller_participant()
             != self.parent.loan_participant().expect("parent participant")
         {
-            return Ok(Err(
-                "worker partition belongs to a different parent".to_string()
-            ));
+            return Ok(Err(super::RuntimeError::FunctionContract(
+                "worker partition belongs to a different parent".into(),
+            )));
         }
         if completion
             .plan
             .recheck_entry(self.parent.loan_ledger().expect("parent ledger"))
             .is_err()
         {
-            return Ok(Err("invalid worker entry evidence".to_string()));
+            return Ok(Err(super::RuntimeError::FunctionContract(
+                "invalid worker entry evidence".into(),
+            )));
         }
         let retained_names = if let Some(named) = &self.parent.named_mutex_authorities {
             let target = self
@@ -1044,9 +1069,9 @@ impl ThreadContext {
             match named.apply_checked_mutex_updates(&updates, &target) {
                 Ok(names) => Some(Arc::new(names)),
                 Err(_) => {
-                    return Ok(Err(
-                        "retained mutex authority cannot transport its proof name".to_string(),
-                    ));
+                    return Ok(Err(super::RuntimeError::FunctionContract(
+                        "retained mutex authority cannot transport its proof name".into(),
+                    )));
                 }
             }
         } else {
@@ -1079,7 +1104,18 @@ impl ThreadContext {
                 environment,
                 budget,
             )?
-            .map(PreparedThreadCreate::success))
+            .map_err(|error| super::api::describe_certification_runtime_error(&error))
+            .and_then(|mut prepared| {
+                if prepared
+                    .take_obligations()
+                    .iter()
+                    .all(|obligation| test_entry_evidence(assumptions, obligation.proposition()))
+                {
+                    Ok(prepared.success())
+                } else {
+                    Err("worker create requires entry evidence".to_string())
+                }
+            }))
     }
 
     pub(super) fn join(

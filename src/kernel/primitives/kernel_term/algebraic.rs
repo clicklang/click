@@ -141,6 +141,20 @@ impl KernelTermImport {
 }
 
 impl KernelTerm {
+    /// Borrow the exact payload of a legacy algebraic argument without
+    /// installing a second native copy in its program-value slot.
+    pub(crate) fn algebraic_native_term(&self) -> Option<&AlgebraicTerm> {
+        if let KernelTermNode::Legacy(legacy) = self.node()
+            && let PureFunctionArgument::Algebraic(value) = legacy.value()
+        {
+            return Some(value);
+        }
+        let ProgramValue::Parameter(value) = self.algebraic_native_value()? else {
+            unreachable!("algebraic value descriptor");
+        };
+        Some(value)
+    }
+
     /// Explicit selected-value compatibility view for native storage keys and
     /// APIs. Ordinary handoffs keep the common root and do not request it.
     pub(crate) fn algebraic_native_value(&self) -> Option<&ProgramValue> {
@@ -388,6 +402,23 @@ impl KernelTermExport {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_algebraic_term_borrows_a_legacy_payload() {
+        let ty = TypeParameterName::intern("LegacyAlgebraicCacheTest").algebraic_type();
+        let root = KernelTerm::legacy(PureFunctionArgument::Algebraic(AlgebraicTerm {
+            algebraic_type: ty,
+            node: AlgebraicTermNode::Variable(Variable(999619)),
+        }));
+        let KernelTermNode::Legacy(legacy) = root.node() else {
+            unreachable!();
+        };
+        let PureFunctionArgument::Algebraic(value) = legacy.value() else {
+            unreachable!();
+        };
+        assert!(std::ptr::eq(value, root.algebraic_native_term().unwrap()));
+        assert!(!root.has_cached_native_argument());
+    }
 
     #[test]
     fn algebraic_constructor_match_keys_keep_native_field_identity() {

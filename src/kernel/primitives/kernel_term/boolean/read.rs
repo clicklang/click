@@ -11,8 +11,7 @@ impl KernelTerm {
             KernelTermNode::BoolRead(KernelMemoryRead::new(point, address)),
         )
     }
-    /// Explicit native read-leaf boundary, shared by diagnostics and stored-cell
-    /// connection lookup. It never exports an enclosing Boolean expression.
+    /// Explicit native read-leaf boundary for native condition consumers.
     pub(crate) fn boolean_read_native(&self) -> Option<&ConditionTerm> {
         let KernelTermNode::BoolRead(read) = self.node() else {
             return None;

@@ -1342,7 +1342,7 @@ id = "tactic.intro"
 path = "reference/tactics/index.md#proposition-reasoning"
 
 [[item]]
-id = "tactic.both"
+id = "tactic.all"
 path = "reference/tactics/index.md#proposition-reasoning"
 
 [[item]]
@@ -1559,7 +1559,7 @@ path = "reference/tactics/index.md#proposition-reasoning"
 id = "tactic-form.intro-as"
 path = "reference/tactics/index.md#proposition-reasoning"
 [[item]]
-id = "tactic-form.both"
+id = "tactic-form.all"
 path = "reference/tactics/index.md#proposition-reasoning"
 [[item]]
 id = "tactic-form.enumerate"
@@ -2431,6 +2431,10 @@ id = "library.cpp.std::span<T>::data"
 path = "reference/library/index.md#stdspant"
 
 [[item]]
+id = "library.cpp.std::span<T>::empty"
+path = "reference/library/index.md#stdspant"
+
+[[item]]
 id = "library.cpp.std::span<T>::first"
 path = "reference/library/index.md#stdspant"
 
@@ -2452,6 +2456,10 @@ path = "reference/library/index.md#stdspant"
 
 [[item]]
 id = "library.cpp.std::span<T>::size_bytes"
+path = "reference/library/index.md#stdspant"
+
+[[item]]
+id = "library.cpp.std::span<T>::span"
 path = "reference/library/index.md#stdspant"
 
 [[item]]
@@ -3764,6 +3772,10 @@ id = "library.theorem.integer::uint64_add_to_integer"
 path = "reference/library/index.md#integeruint64_add_to_integer"
 
 [[item]]
+id = "library.theorem.integer::uint64_increment_upper_bound"
+path = "reference/library/index.md#integeruint64_increment_upper_bound"
+
+[[item]]
 id = "library.theorem.integer::uint64_multiply_to_integer"
 path = "reference/library/index.md#integeruint64_multiply_to_integer"
 
@@ -4754,6 +4766,10 @@ path = "reference/library/index.md#separationcontains_trans"
 [[item]]
 id = "library.theorem.separation::contains_left"
 path = "reference/library/index.md#separationcontains_left"
+
+[[item]]
+id = "library.theorem.separation::contains_joined_ranges"
+path = "reference/library/index.md#separationcontains_joined_ranges"
 
 [[item]]
 id = "library.theorem.separation::contains_right"

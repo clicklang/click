@@ -41,9 +41,10 @@ pub(in crate::surface) use cpp_model::{CapturedModelAccessors, ModelAccessorScop
 pub(crate) use object_fields::{clear_ambient_object_fields, enter_ambient_object_fields};
 use rust_spelling::rust_scalar_spelling;
 pub(crate) use rust_spelling::{
-    LoopPhaseSpelling, enter_rust_spelling, record_pure_function_slices, rust_binding_spelling,
-    rust_spelling, rust_variable_spelling, slice_call_arguments, slice_call_spelling,
-    slice_type_spelling, subslice_of_length, subslice_spelling,
+    LoopPhaseSpelling, enter_rust_spelling, has_surface_iterator_binding,
+    record_pure_function_slices, rust_binding_spelling, rust_spelling, rust_variable_spelling,
+    slice_call_arguments, slice_call_spelling, slice_type_spelling, subslice_of_length,
+    subslice_spelling,
 };
 
 const MAX_DIAGNOSTIC_ITEMS: usize = 12;
@@ -127,7 +128,7 @@ struct PlaceScope {
     /// An expansion scope's function: whether its signature is written in
     /// Rust syntax, and its slice parameters (`enter_rust_spelling`).
     rust_spelling: Option<Option<std::rc::Rc<[String]>>>,
-    rust_loop_iterators: Option<rust_spelling::RustLoopIterators>,
+    rust_loop_spelling: Option<rust_spelling::RustLoopSpelling>,
 }
 
 thread_local! {
@@ -263,7 +264,7 @@ impl ParameterPlaceScope {
                         .rust_slice_parameters()
                         .map(std::rc::Rc::<[String]>::from),
                 ),
-                rust_loop_iterators: Some(block.signature().rust_loop_iterators().clone()),
+                rust_loop_spelling: Some(rust_spelling::RustLoopSpelling::of(block.signature())),
             })
         });
         Self(())
@@ -1416,6 +1417,7 @@ fn local_naming_entries(
             !name
                 .local_id()
                 .is_some_and(crate::kernel::LocalBindingId::is_temporary)
+                && has_surface_iterator_binding(name)
                 && !name.named().is_some_and(|name| name.starts_with("__rust_"))
         })
         .filter_map(|(name, value)| {
@@ -1461,7 +1463,8 @@ pub(super) fn local_naming_tables(
 /// step's `<call>.result`, or `at(<assignment>.entry, x)` for the value an
 /// assignment step replaced in `x`.
 pub(in crate::surface) fn step_result_expression(step: u32) -> Option<ContractExpression> {
-    let layout = spelling_layout()?;
+    let layout =
+        spelling_layout().or_else(|| STEP_RESULT_LAYOUT.with(|slot| slot.borrow().clone()))?;
     let region = layout.step_region(step)?;
     match layout.prior_step_local(step) {
         Some(local) => {
@@ -6106,6 +6109,12 @@ pub(super) fn describe_program_expression(expression: &ProgramExpression) -> Str
             rust_binding_spelling(name).unwrap_or_else(|| name.to_string())
         }
         ProgramExpression::FunctionAddress(name) => format!("&{name}"),
+        // A step's result is spelled by its step, as lowering reads it back.
+        ProgramExpression::StepResult { step, .. }
+            if let Some(spelled) = step_result_expression(*step) =>
+        {
+            describe_contract_expression(&spelled)
+        }
         ProgramExpression::StepResult {
             origin: crate::kernel::StepOrigin::Call(function_name),
             ..
@@ -7190,6 +7199,45 @@ fn describe_untyped_array_field_read(
     }))
 }
 
+// Preserve a parseable, shallow spelling for concrete lists that would
+// otherwise print one level of nested constructors per byte.
+fn describe_byte_list(mut expression: &ContractExpression) -> Option<String> {
+    let mut bytes = Vec::new();
+    while let ContractExpression::AlgebraicConstructor {
+        algebraic_type,
+        variant,
+        arguments,
+    } = expression
+    {
+        if algebraic_type.rigid
+            || algebraic_type.name != "List"
+            || algebraic_type.arguments != [ClickType::Program(InterfaceType::UInt8)]
+        {
+            return None;
+        }
+        match (variant.as_str(), arguments.as_slice()) {
+            ("Nil", []) => {
+                return (!bytes.is_empty()).then(|| crate::source::click_byte_string(&bytes));
+            }
+            ("Cons", [head, tail]) if bytes.len() < crate::source::BYTE_STRING_MAX_BYTES => {
+                let ContractExpression::ProgramExpression(ProgramExpression::Value(
+                    ProgramValue::UInt8(MachineTerm::Constant {
+                        format: MachineIntegerType::UInt8,
+                        bits,
+                    }),
+                )) = head
+                else {
+                    return None;
+                };
+                bytes.push(u8::try_from(*bits).ok()?);
+                expression = tail;
+            }
+            _ => return None,
+        }
+    }
+    None
+}
+
 pub(super) fn describe_contract_expression(expression: &ContractExpression) -> String {
     if matches!(expression, ContractExpression::Add(_, _)) {
         return describe_add_contract_expression(expression);
@@ -7262,6 +7310,9 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
             variant,
             arguments,
         } => {
+            if let Some(literal) = describe_byte_list(expression) {
+                return literal;
+            }
             let type_arguments = if algebraic_type.arguments.is_empty() {
                 String::new()
             } else {
@@ -7428,6 +7479,18 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
             format!("{}.{field}", describe_contract_expression(base))
         }
         ContractExpression::Field { base, field, .. } => match base.as_ref() {
+            // A static struct's declaration reference names the object, so
+            // its fields are read with `.`, as `"file.c"::static(0).field`.
+            ContractExpression::ProgramExpression(ProgramExpression::Variable(binding))
+                if binding
+                    .static_id()
+                    .and_then(|id| id.metadata())
+                    .is_some_and(|metadata| {
+                        metadata.aggregate && metadata.array_shape.is_none()
+                    }) =>
+            {
+                format!("{}.{field}", describe_contract_expression(base))
+            }
             // A member of an embedded struct member is reached with `.`:
             // the inner member is an object, which lowers to its address
             // rather than to a load of a pointer.
@@ -7847,6 +7910,33 @@ thread_local! {
     /// the path through the statements as written that names it.
     static SPELLING_LAYOUT: std::cell::RefCell<Option<crate::surface::lowering::SourceExecutionLayout>> =
         const { std::cell::RefCell::new(None) };
+    /// The layout that spells step results while a [`StepResultSpellingScope`]
+    /// is alive, without changing how points print.
+    static STEP_RESULT_LAYOUT: std::cell::RefCell<Option<crate::surface::lowering::SourceExecutionLayout>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Spells step results by a checked function's layout while alive, for a
+/// certificate rendered after its check ended. Points keep the spelling the
+/// certificate recorded.
+pub(in crate::surface) struct StepResultSpellingScope(
+    Option<crate::surface::lowering::SourceExecutionLayout>,
+);
+
+impl StepResultSpellingScope {
+    pub(in crate::surface) fn enter(
+        layout: &crate::surface::lowering::SourceExecutionLayout,
+    ) -> Self {
+        Self(STEP_RESULT_LAYOUT.with(|slot| slot.replace(Some(layout.clone()))))
+    }
+}
+
+impl Drop for StepResultSpellingScope {
+    fn drop(&mut self) {
+        STEP_RESULT_LAYOUT.with(|slot| {
+            slot.replace(self.0.take());
+        });
+    }
 }
 
 /// The source layout of the function whose proof is being checked, if any.

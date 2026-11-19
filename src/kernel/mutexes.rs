@@ -820,6 +820,16 @@ pub(super) fn acquisition_availability_refusal(
     None
 }
 
+/// The caller-facing byte extent keeps the origin of the evaluated pointer.
+pub(super) fn storage_write_range(pointer: &super::Pointer, bytes: u32) -> super::MemoryRange {
+    super::MemoryRange::from_pointer_value(
+        &pointer.clone().with_root_bounds(),
+        0u32.into(),
+        bytes.into(),
+        1,
+    )
+}
+
 /// Preconditions for the C initialization operation, before any invariant
 /// or lifecycle authority moves. Owning bytes does not require initialized
 /// byte values. Automatic objects have implicit storage ownership; all other
@@ -869,16 +879,7 @@ pub(super) fn initialization_storage_refusal(
             alignment,
         });
     }
-    if let Some(error) = storage_write_refusal(state, &range, assumptions) {
-        return Some(error);
-    }
-    state
-        .stable_loan_memory_access_refusal(
-            &range,
-            assumptions,
-            super::LoanRefusalOperation::MemoryAccess,
-        )
-        .map(|refusal| super::RuntimeError::LoanRefusal(Box::new(refusal)))
+    storage_write_refusal(state, &range, assumptions)
 }
 
 /// Whether initialization storage is an automatic object, owned implicitly
@@ -3783,7 +3784,7 @@ mod tests {
     }
 
     #[test]
-    fn initialization_cannot_overwrite_an_active_local_storage_loan() {
+    fn runtime_mutex_writes_require_entry_evidence_for_an_active_local_loan() {
         use super::super::*;
         use crate::kernel::loans::{LoanLedger, plan_stable_view_transfer};
         use crate::kernel::prelude::CheckedResourceFact;
@@ -3812,6 +3813,7 @@ mod tests {
                 clause_position: None,
                 section_index: None,
                 selected_mutex_source: None,
+                mutex_storage: None,
             }],
             &assumptions,
         )
@@ -3819,18 +3821,24 @@ mod tests {
         let state = state
             .with_loan_ledger(Some(plan.ledger.clone()))
             .with_loan_participant(Some(caller));
-        assert!(matches!(
-            initialization_storage_refusal(&state, &pointer, 40, 8, &assumptions),
-            Some(RuntimeError::LoanRefusal(_))
-        ));
         for name in [
+            "pthread_mutex_init",
             "pthread_mutex_lock",
             "pthread_mutex_unlock",
             "pthread_mutex_destroy",
         ] {
-            let mut context = MutexContext::new(state.clone())
-                .initialize_empty(pointer.clone(), 40)
-                .unwrap();
+            let context = MutexContext::new(state.clone());
+            let mut arguments = vec![ProgramExpression::Value(ProgramValue::pointer(
+                pointer.clone(),
+            ))];
+            let mut context = if name == "pthread_mutex_init" {
+                arguments.push(ProgramExpression::Value(ProgramValue::pointer(
+                    Address::null(),
+                )));
+                context
+            } else {
+                context.initialize_empty(pointer.clone(), 40).unwrap()
+            };
             if name == "pthread_mutex_unlock" {
                 context = context.acquire_current(&pointer, &assumptions).unwrap();
             }
@@ -3841,9 +3849,7 @@ mod tests {
                 context.state(),
                 &ProgramStatement::Call {
                     function_name: name.into(),
-                    arguments: vec![ProgramExpression::Value(ProgramValue::pointer(
-                        pointer.clone(),
-                    ))],
+                    arguments,
                     callee: None,
                 },
                 &assumptions,
@@ -3851,13 +3857,23 @@ mod tests {
                 &mut ExecutionBudget::new(),
             )
             .unwrap();
+            let [path] = paths.as_slice() else {
+                panic!("expected one mutex transition: {paths:?}");
+            };
             assert!(
-                matches!(
-                    paths[0].outcome,
-                    StatementOutcome::RuntimeError(RuntimeError::LoanRefusal(_))
-                ),
+                matches!(path.outcome, StatementOutcome::Normal(_)),
                 "{name}: {paths:?}"
             );
+            let [obligation] = path.obligations.as_slice() else {
+                panic!("expected a storage obligation: {paths:?}");
+            };
+            assert!(obligation.requires_statement_entry());
+            let expected = plan
+                .ledger
+                .memory_access_requirement(&allocation_range(pointer.clone(), 40))
+                .unwrap();
+            assert_eq!(obligation.proposition(), &expected);
+            assert!(!assumptions.proves_atomic_without_search(obligation.proposition()));
         }
     }
 

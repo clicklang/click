@@ -5,30 +5,26 @@
 use super::*;
 
 #[test]
-fn interface_binding_inheritance_is_near_linear_in_the_binding_count() {
-    let mut samples = Vec::new();
-    for count in [8, 16, 32, 64] {
-        let (arm, successor) = interface_join_states(count);
-        let (inherited, work) = crate::instrumentation::measure_deterministic_work(|| {
-            interface_successor_loans_are_inherited(&successor, [&arm, &arm])
-        });
-        assert!(
-            inherited,
-            "every successor binding is one the arm held, so the join is admitted"
-        );
-        samples.push((count, work));
-    }
-    // 36, 136, 528, 2080 before the membership index; 24, 48, 96, 192
-    // after it (both arms folded in, then one lookup per successor
-    // binding). The second assertion pins the linear shape itself, so a
-    // reintroduced pairwise scan fails here and not only at eight times
-    // the size.
-    assert_near_linear("interface join binding count", &samples);
-    for (count, work) in &samples {
-        assert!(
-            *work <= 6 * count + 16,
-            "interface join binding inheritance stopped being one pass per binding: {samples:?}"
-        );
+fn interface_binding_inheritance_visits_only_claimed_bindings() {
+    for count in [16, 64, 256] {
+        for claimed in [0, 1, count] {
+            let (arm, successor) = interface_join_states(count, claimed);
+            let empty = ExecutionState::new();
+            let (inherited, work) = crate::instrumentation::measure_deterministic_work(|| {
+                interface_successor_loans_are_inherited(&successor, [&empty, &arm])
+            });
+            assert!(inherited);
+            assert_eq!(work, 2 * claimed, "{count} held, {claimed} claimed");
+
+            // A miss also costs only a lookup in each arm, even when the
+            // missing binding describes a resource at a fresh occurrence.
+            let (other, _) = interface_join_states(count, 0);
+            let (inherited, work) = crate::instrumentation::measure_deterministic_work(|| {
+                interface_successor_loans_are_inherited(&successor, [&other, &other])
+            });
+            assert_eq!(inherited, claimed == 0);
+            assert_eq!(work, if claimed == 0 { 0 } else { 2 });
+        }
     }
 }
 

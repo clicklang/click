@@ -73,14 +73,9 @@ impl StoredResourceField {
             Self::Integer(root) => {
                 ResourceFieldValue::Integer(root.integer_native_compat().expect("Integer field"))
             }
-            Self::Algebraic(root) => {
-                let ProgramValue::Parameter(value) =
-                    root.algebraic_native_value().expect("algebraic field")
-                else {
-                    unreachable!()
-                };
-                ResourceFieldValue::Algebraic(value)
-            }
+            Self::Algebraic(root) => ResourceFieldValue::Algebraic(
+                root.algebraic_native_term().expect("algebraic field"),
+            ),
         }
     }
 }
@@ -174,6 +169,23 @@ impl ResourceFieldValues {
             _ => None,
         }
     }
+    pub(crate) fn integer_term(&self, index: usize) -> Option<StoredIntegerTerm> {
+        let value = match self.0.as_ref() {
+            FieldStorage::Input(values) => values.get(index)?,
+            FieldStorage::Retained(values) => match values.get(index)? {
+                StoredResourceField::Integer(root) => {
+                    return StoredIntegerTerm::from_root(root.clone());
+                }
+                StoredResourceField::Input(value) => value,
+                _ => return None,
+            },
+        };
+        match value {
+            AlgebraicValue::Integer(value) => Some(value.clone().into()),
+            _ => None,
+        }
+    }
+
     pub(crate) fn retained_integer(&self, index: usize) -> Option<&KernelTerm> {
         match self.0.as_ref() {
             FieldStorage::Retained(values) => match values.get(index)? {

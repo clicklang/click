@@ -150,7 +150,7 @@ fn checked_program_substitution_reserves_free_integer_in_registered_load_pointer
     );
     let mut rewrite = TermRewrite::for_bits_checked(&source_term, &replacement_term);
     rewrite.enable_registered_load_resolution();
-    let output = rewrite.term(&Term::Integer(fold));
+    let output = rewrite.term(&Term::Integer(fold.into()));
     assert!(!rewrite.integer_work_exhausted);
     assert!(!rewrite.unsupported_integer_scope);
 
@@ -199,7 +199,7 @@ fn checked_program_substitution_reserves_free_program_in_registered_load_pointer
     let replacement_term = MachineTerm::Variable(load);
     let mut rewrite = TermRewrite::for_bits_checked(&source_term, &replacement_term);
     rewrite.enable_registered_load_resolution();
-    let output = rewrite.term(&Term::Integer(fold));
+    let output = rewrite.term(&Term::Integer(fold.into()));
     assert!(!rewrite.integer_work_exhausted);
     assert!(!rewrite.unsupported_integer_scope);
 
@@ -236,7 +236,7 @@ fn checked_registered_load_rewrite_remints_nested_direct_offset() {
             offset: AddressOffset::Variable(inner),
         },
     );
-    let input = Term::Integer(machine_variable(outer));
+    let input = Term::Integer(machine_variable(outer).into());
     let source_term = MachineTerm::Variable(source);
     let replacement_term = MachineTerm::constant(9);
     let mut rewrite = TermRewrite::for_bits_checked(&source_term, &replacement_term);
@@ -292,7 +292,7 @@ fn checked_integer_binding_rewrites_registered_load_at_exact_state() {
         ),
     };
     let load = exact_load(&memory, &pointer);
-    let input = Term::Integer(machine_variable(load));
+    let input = Term::Integer(machine_variable(load).into());
     let program_replacements = BTreeMap::new();
     let integer_replacements = BTreeMap::from([(source, IntegerTerm::constant_i64(9))]);
     let algebraic_replacements = BTreeMap::new();

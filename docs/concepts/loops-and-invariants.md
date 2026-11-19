@@ -256,7 +256,7 @@ loop {
 
 `initialize` is a pure proof of all invariants at the actual loop entry. Its
 script may use exactly `unfold(predicate(args))`, `apply(theorem(args))`, `have`,
-`known()`, `normalize()`, `rewrite(...)`, `solve()`, `both`, `cases`, and
+`known()`, `normalize()`, `rewrite(...)`, `solve()`, `all`, `cases`, and
 proof-level `if`;
 anything else is rejected with `` `initialize` is a pure proof and cannot use
 `<tactic>` ``. `preserve` assumes all invariants and the loop condition,
@@ -343,7 +343,7 @@ does not prove that such an iteration is eventually reached. The loop's
 `initialize` and `preserve` proofs, so an invariant can state a local over it
 instead of over another counter:
 
-<!-- verified-example: mdtests/a_loop_states_a_running_total_over_its_pass_count.md -->
+<!-- verified-example: mdtests/a_loop_pass_count_names_the_passes_after_the_loop.md -->
 ```click
 loop {
     decreases n - i;

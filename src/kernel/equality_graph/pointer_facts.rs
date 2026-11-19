@@ -62,8 +62,12 @@ impl EqualityGraph {
         while let Some(work) = pending.pop() {
             crate::instrumentation::record_deterministic_work(1);
             match work {
-                Work::Term(Term::ProgramValue(value)) => pending.push(Work::Value(value)),
-                Work::Term(Term::Algebraic(model)) => pending.push(Work::Model(model)),
+                Work::Term(Term::ProgramValue(value)) => {
+                    pending.push(Work::Value(value.native_compat()));
+                }
+                Work::Term(Term::Algebraic(model)) => {
+                    pending.push(Work::Model(model.native_compat()));
+                }
                 Work::Model(AlgebraicTerm {
                     node: AlgebraicTermNode::Constructor { fields, .. },
                     ..

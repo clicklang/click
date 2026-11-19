@@ -88,7 +88,7 @@ parenthesized head, as in `step() by { ... }`.
 
 End call statements with `;`, including calls with a `using { ... };` list.
 Do not add a trailing semicolon to proof-control blocks such as `by { ... }`,
-`if`, `both`, or `loop`. The parser still accepts redundant semicolons.
+`if`, `all`, or `loop`. The parser still accepts redundant semicolons.
 Generated premise lists put each premise on its own line. Wrap long premises
 and certificate entries near 100 columns with a further four-space indentation;
 keep quoted literals and individual tokens intact.

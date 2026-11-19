@@ -118,12 +118,12 @@ pub(in crate::surface) fn normalized_terms_equal(left: &Term, right: &Term) -> O
     }
     match (&left, &right) {
         (Term::Bitvector32(left), Term::Bitvector32(right)) => Some(
-            evaluate_bitvector_constant(&normalize_bitvector(left))?
-                == evaluate_bitvector_constant(&normalize_bitvector(right))?,
+            evaluate_bitvector_constant(&normalize_bitvector(left.native_compat()))?
+                == evaluate_bitvector_constant(&normalize_bitvector(right.native_compat()))?,
         ),
         (Term::Condition(left), Term::Condition(right)) => Some(
-            normalize_condition_without_assumptions(left)?
-                == normalize_condition_without_assumptions(right)?,
+            normalize_condition_without_assumptions(left.native_compat())?
+                == normalize_condition_without_assumptions(right.native_compat())?,
         ),
         _ => None,
     }
@@ -135,27 +135,29 @@ pub(in crate::surface) fn normalize_term(term: &Term) -> Term {
             if let Some(value @ ProgramValue::PointerInteger(_)) =
                 term_source_0.program_value_native() =>
         {
-            normalize_term(&Term::ProgramValue(value.numeric_value().clone()))
+            normalize_term(&Term::ProgramValue(value.numeric_value().clone().into()))
         }
-        Term::Condition(condition) => match normalize_condition_without_assumptions(condition) {
-            Some(value) => Term::Condition(ConditionTerm::Constant(value)),
-            None => term.clone(),
-        },
-        Term::Bitvector32(term) => Term::Bitvector32(normalize_bitvector(term)),
+        Term::Condition(condition) => {
+            match normalize_condition_without_assumptions(condition.native_compat()) {
+                Some(value) => Term::Condition(ConditionTerm::Constant(value).into()),
+                None => term.clone(),
+            }
+        }
+        Term::Bitvector32(term) => Term::Bitvector32(term.map_native(normalize_bitvector)),
         term_source_0 @ Term::ProgramValue(_)
             if let Some(ProgramValue::Int32(term)) = term_source_0.program_value_native() =>
         {
-            Term::ProgramValue(ProgramValue::Int32(normalize_bitvector(term)))
+            Term::ProgramValue(ProgramValue::Int32(normalize_bitvector(term)).into())
         }
         term_source_0 @ Term::ProgramValue(_)
             if let Some(ProgramValue::Int64(term)) = term_source_0.program_value_native() =>
         {
-            Term::ProgramValue(ProgramValue::Int64(normalize_bitvector(term)))
+            Term::ProgramValue(ProgramValue::Int64(normalize_bitvector(term)).into())
         }
         term_source_0 @ Term::ProgramValue(_)
             if let Some(ProgramValue::UInt64(term)) = term_source_0.program_value_native() =>
         {
-            Term::ProgramValue(ProgramValue::UInt64(normalize_bitvector(term)))
+            Term::ProgramValue(ProgramValue::UInt64(normalize_bitvector(term)).into())
         }
         _ => term.clone(),
     }

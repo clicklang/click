@@ -830,6 +830,39 @@ fn modeled_pthread_create_refuses_a_wrong_worker_abi() {
 }
 
 #[test]
+fn worker_write_retains_preexisting_loan_separation_at_create_entry() {
+    let (worker, termination) = worker();
+    let parent = ThreadContext::new(parent(2)).unwrap();
+    let mut budget = ExecutionBudget::new();
+    let (first, _) = spawn(&parent, 0, &worker, &termination, &mut budget);
+    let mut prepared = first
+        .prepare_create(
+            &worker,
+            Some(&termination),
+            ProgramValue::pointer(pointer(1)),
+            &PureFactContext::new(),
+            &ExecutionEnvironment::new(),
+            &mut budget,
+        )
+        .unwrap()
+        .unwrap();
+    let obligations = prepared.take_obligations();
+    let [obligation] = obligations.as_slice() else {
+        panic!("expected one write separation prerequisite");
+    };
+    assert_eq!(
+        obligation.context(),
+        Some("suspended worker write separation")
+    );
+    assert!(obligation.requires_statement_entry());
+    assert!(matches!(
+        obligation.proposition(),
+        Proposition::ResourceSeparate { left, .. }
+            if matches!(left.as_ref(), Resource::Memory(range) if range.base() == &pointer(1))
+    ));
+}
+
+#[test]
 fn thread_join_preserves_other_child_loans_in_both_orders() {
     let (worker, termination) = worker();
     let assumptions = PureFactContext::new();

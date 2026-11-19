@@ -82,7 +82,7 @@ into that step, as
 `step() by { ... }` or as its `requires` entries.
 
 A smart tactic that owns its body is one site. The `solve` written in a smart
-`have` (`have P by { solve(); }`) or anywhere inside a smart `both`
+`have` (`have P by { solve(); }`) or anywhere inside a smart `all`
 selects that enclosing tactic, and expansion
 rewrites the whole site. A `have` whose body mixes several tactics is not a
 site itself; each smart tactic written in its body is, and expanding one

@@ -175,11 +175,11 @@ fn instantiate_lowered_predicate_definition(
         } else {
             let actual = match arguments.get(argument_index) {
                 Some(Term::ProgramValue(value)) => Some(ClickType::Program(
-                    generics::interface_type_from_program_type(value.program_type()),
+                    generics::interface_type_from_program_type(value.value().program_type()),
                 )),
                 Some(Term::Algebraic(value)) => {
                     Some(generics::click_type_from_algebraic_value_type(
-                        &value.algebraic_type.value_type(),
+                        &value.native_compat().algebraic_type.value_type(),
                     ))
                 }
                 _ => None,
@@ -306,7 +306,7 @@ pub(in crate::surface) fn decode_predicate_arguments(
                         parameter.name()
                     ));
                 };
-                values.insert(parameter.name().to_string(), value.clone());
+                values.insert(parameter.name().to_string(), value.native_compat().clone());
                 index += 1;
             }
         }

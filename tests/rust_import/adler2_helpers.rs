@@ -2169,11 +2169,11 @@ theorem adler_outer_remaining_step(total: int32, remaining: int32) {
  requires 22208 <= remaining;
  ensures defined(remaining - 22208);
  ensures 0 <= remaining - 22208 and remaining - 22208 <= total by {
-  both {
-      left => {
+  all {
+      0 <= remaining - 22208 => {
        solve() using { 22208 <= remaining; };
       }
-      right => {
+      remaining - 22208 <= total => {
        solve() using { remaining <= total; 22208 <= remaining; };
       }
   }

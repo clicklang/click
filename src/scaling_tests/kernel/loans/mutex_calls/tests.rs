@@ -173,6 +173,7 @@ fn integrated_use_planner_reserves_and_recovers_without_scanning_the_frame() {
             clause_position: None,
             section_index: Some(0),
             selected_mutex_source: None,
+            mutex_storage: None,
         };
         let assumptions = PureFactContext::new();
         let ((recovered, work), persistent) = crate::persistent::measure_persistent_work(|| {

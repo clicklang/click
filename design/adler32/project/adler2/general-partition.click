@@ -41,7 +41,7 @@ theorem adler_u64_index_observation(value: uint64) {
  ensures to_integer(value as uint32 as int32) == to_integer(value) and (0 <= value as uint32 as int32 and value as uint32 as int32 <= 2147483647) by {
   have to_integer(value as uint32 as int32) == to_integer(value) by { solve() using { 0 <= to_integer(value); to_integer(value) <= 2147483647; }; }
   have 0 <= to_integer(value as uint32 as int32) by { rewrite(to_integer(value as uint32 as int32), to_integer(value)); known(); }
-  both { left => { known(); } right => { both { left => { known(); } right => { normalize(); } } } }
+  all { to_integer(((value as uint32) as int32)) == to_integer(value) => { known(); } 0 <= ((value as uint32) as int32) => { known(); } ((value as uint32) as int32) <= 2147483647 => { normalize(); } }
  }
 }
 
@@ -70,11 +70,11 @@ theorem adler_current_window(total: int32, remaining: int32) {
   have to_integer(total - remaining) <= 22204 by { rewrite(to_integer(total - remaining), to_integer(total) - to_integer(remaining)); solve() using { to_integer(0) <= to_integer(remaining); to_integer(total) <= to_integer(22204); }; }
   have to_integer(total - remaining) - to_integer(4) >= -2147483648 by solve() using { 0 <= to_integer(total - remaining); };
   have to_integer(total - remaining) - to_integer(4) <= 2147483647 by solve() using { to_integer(total - remaining) <= 22204; };
-  have defined(total - remaining - 4) by { both { left => { known(); } right => { known(); } } }
+  have defined(total - remaining - 4) by { all { ((to_integer((total as int32)) - to_integer((remaining as int32))) : Integer) <= 2147483647 and ((to_integer((total as int32)) - to_integer((remaining as int32))) : Integer) >= -2147483648 => { known(); } ((to_integer(((total - remaining) as int32)) - 4) : Integer) <= 2147483647 and ((to_integer(((total - remaining) as int32)) - 4) : Integer) >= -2147483648 => { known(); } } }
   have to_integer((total - remaining) - 4) == to_integer((total - remaining)) - to_integer(4);
   have to_integer(total - remaining - 4) + to_integer(4) >= -2147483648 by { rewrite(to_integer(total - remaining - 4), to_integer(total - remaining) - to_integer(4)); solve() using { 0 <= to_integer(total - remaining); }; }
   have to_integer(total - remaining - 4) + to_integer(4) <= 2147483647 by { rewrite(to_integer(total - remaining - 4), to_integer(total - remaining) - to_integer(4)); solve() using { to_integer(total - remaining) <= 22204; }; }
-  have defined((total - remaining - 4) + 4) by { both { left => { known(); } right => { known(); } } }
+  have defined((total - remaining - 4) + 4) by { all { ((to_integer((total as int32)) - to_integer((remaining as int32))) : Integer) <= 2147483647 and ((to_integer((total as int32)) - to_integer((remaining as int32))) : Integer) >= -2147483648 and (((to_integer(((total - remaining) as int32)) - 4) : Integer) <= 2147483647 and ((to_integer(((total - remaining) as int32)) - 4) : Integer) >= -2147483648) => { known(); } ((to_integer((((total - remaining) - 4) as int32)) + 4) : Integer) <= 2147483647 and ((to_integer((((total - remaining) - 4) as int32)) + 4) : Integer) >= -2147483648 => { known(); } } }
   have to_integer((total - remaining - 4) + 4) == to_integer((total - remaining - 4)) + to_integer(4);
   have to_integer((total - remaining - 4) + 4) <= to_integer(total) by {
    rewrite(to_integer((total - remaining - 4) + 4), to_integer(total - remaining - 4) + to_integer(4));
@@ -82,7 +82,7 @@ theorem adler_current_window(total: int32, remaining: int32) {
    rewrite(to_integer(total - remaining), to_integer(total) - to_integer(remaining));
    solve() using { to_integer(0) <= to_integer(remaining); };
   }
-  both { left => { both { left => { known(); } right => { known(); } } } right => { known(); } }
+  all { defined(((total - remaining) - 4)) => { known(); } defined((((total - remaining) - 4) + 4)) => { known(); } to_integer((((total - remaining) - 4) + 4)) <= to_integer(total) => { known(); } }
  }
 }
 
@@ -115,11 +115,11 @@ theorem adler_aligned_outer_partition_u64(p: Integer) {
     solve() using { not (5551 < truncating_quotient(p, 4) - 5552 * truncating_quotient(p, 22208)); };
    }
   }
-  both {
-   left => { known(); }
-   right => {
-    solve() using { truncating_remainder(p, 22208) == (truncating_quotient(p, 4) - 5552 * truncating_quotient(p, 22208)) * 4; truncating_quotient(p, 4) - 5552 * truncating_quotient(p, 22208) <= 5551; };
-   }
+  all {
+      0 <= truncating_remainder(p, 22208) => { known(); }
+      truncating_remainder(p, 22208) <= 22204 => {
+          solve() using { truncating_remainder(p, 22208) == (truncating_quotient(p, 4) - 5552 * truncating_quotient(p, 22208)) * 4; truncating_quotient(p, 4) - 5552 * truncating_quotient(p, 22208) <= 5551; };
+      }
   }
  }
  ensures truncating_remainder(truncating_remainder(p, 22208), 4) == 0 by {
@@ -291,7 +291,7 @@ theorem adler_outer_remainder_integer_bounds_u64(p: uint64) {
   have to_integer(22208u64) != 0 by { normalize(); }
   apply(integer::uint64_remainder_to_integer(p, 22208u64)) using { 22208u64 != 0u64; to_integer(22208u64) != 0; };
   rewrite(to_integer(p % 22208u64), truncating_remainder(to_integer(p), to_integer(22208u64)));
-  both { left => { known(); } right => { known(); } }
+  all { 0 <= truncating_remainder(to_integer(p), to_integer(22208u64)) => { known(); } truncating_remainder(to_integer(p), to_integer(22208u64)) <= 22204 => { known(); } }
  }
 }
 
@@ -302,7 +302,7 @@ theorem adler_outer_remainder_signed_bound_u64(p: uint64) {
   have to_integer(p % 22208u64) <= 2147483647 by solve() using { to_integer(p % 22208u64) <= 22204; };
   apply(adler_u64_index_observation(p % 22208u64)) using { 0 <= to_integer(p % 22208u64); to_integer(p % 22208u64) <= 2147483647; };
   have to_integer((p % 22208u64) as uint32 as int32) <= 22204 by { rewrite(to_integer((p % 22208u64) as uint32 as int32), to_integer(p % 22208u64)); known(); }
-  both { left => { known(); } right => { known(); } }
+  all { 0 <= (((p % 22208u64) as uint32) as int32) => { known(); } (((p % 22208u64) as uint32) as int32) <= 22204 => { known(); } }
  }
 }
 

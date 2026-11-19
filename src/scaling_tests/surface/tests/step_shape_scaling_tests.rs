@@ -10,6 +10,69 @@
 
 use super::*;
 
+#[test]
+fn branch_interface_reuses_saved_states_beside_growing_locals_and_marks() {
+    let target = ProgramPointRef {
+        region: CodeRegionRef::Region(2),
+        kind: ProgramPointKind::Entry,
+    };
+    let incidental = ProgramPointRef {
+        region: CodeRegionRef::Region(1),
+        kind: ProgramPointKind::Exit,
+    };
+    let mark = ProgramPointSelector::Mark("here".into());
+    let private_mark = ProgramPointSelector::Mark("only_in_one_arm".into());
+
+    for count in [16, 64, 256] {
+        let state = (0..count).fold(ExecutionState::new(), |state, index| {
+            state.with_local(format!("stable_{index}"), crate::kernel::int32(index))
+        });
+        let mut root = RecordedStates::new();
+        root.insert(incidental.clone(), state.clone());
+        root.insert(mark.clone(), state.clone());
+        let mut results = RecordedCallResults::default();
+        results.insert(1, RetainedProgramValue::from(crate::kernel::int32(42)));
+        root.set_call_result_snapshot(&mark, Some(results));
+        for index in 0..count {
+            root.insert(
+                ProgramPointSelector::Mark(format!("mark_{index}")),
+                state.clone(),
+            );
+        }
+        let successor = state
+            .clone()
+            .with_local("join_value", crate::kernel::int32(7));
+        let mut arm = root.clone();
+        arm.insert(target.clone(), state.clone());
+        arm.insert(private_mark.clone(), state.clone());
+        let common = arm.common_descendant(&root, &root).expect("common prefix");
+
+        let (records, work) = crate::instrumentation::measure_deterministic_work(|| {
+            arm.for_branch_interface(&common, &target, &successor)
+        });
+        assert_eq!(
+            work, 0,
+            "scope construction indexed a value at size {count}"
+        );
+        assert!(std::ptr::eq(
+            records.get(&mark).unwrap(),
+            common.get(&mark).unwrap()
+        ));
+        assert_eq!(records.get(&target), Some(&successor));
+        assert!(records.get(&incidental).is_none());
+        assert!(records.get(&private_mark).is_none());
+        assert_eq!(
+            records
+                .call_results_at(&mark)
+                .unwrap()
+                .get(&1)
+                .unwrap()
+                .native_compat(),
+            &crate::kernel::int32(42)
+        );
+    }
+}
+
 const TOUCH_C: &str = "";
 // An extern contract: the call takes the same contract-application path as a
 // verified callee's, without spending the test's time verifying its body.
@@ -540,7 +603,7 @@ impl Run {
 /// each must cost the same at every position, as a step must.
 const RESOURCE_TACTICS: [&str; 2] = ["unfold", "fold"];
 
-fn run(shape: fn(usize) -> (String, String), n: usize) -> Run {
+fn run(shape: impl FnOnce(usize) -> (String, String), n: usize) -> Run {
     let (c, click) = shape(n);
     let (result, samples) = crate::instrumentation::collect_tactic_work(|| {
         verify_c_sources(&click, &[("hunt.c", c.as_str())])
@@ -794,6 +857,65 @@ fn a_call_ignores_aliases_of_an_owned_object() {
 #[test]
 fn a_call_ignores_unrelated_owned_objects() {
     assert_flat_across("many_objects", many_objects, [1, 3], "touch(data);");
+}
+
+#[test]
+fn repeated_writing_calls_ignore_unrelated_folded_owners() {
+    let check = |owners, calls| {
+        let fixture = |owners| {
+            let parameters = (0..owners)
+                .map(|index| format!("int32* p{index}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let kept = lines(owners, |index| format!("    owns boxed(p{index});"));
+            let c = format!(
+                "void caller(int32* scratch, {parameters}) {{\n{}\n}}",
+                lines(calls, |_| "    ping(scratch);".into())
+            );
+            let click = format!(
+                r#"verifying "hunt.c";
+resource boxed(p: int32*) {{ owns *p; }}
+extern void ping(int32* scratch) {{ owns *scratch; ensures *scratch == 7; }}
+void caller(int32* scratch, {parameters}) {{
+    owns *scratch;
+{kept}
+}} by {{
+{}
+}}"#,
+                steps(calls)
+            );
+            (c, click)
+        };
+        let result = run(fixture, owners);
+        result
+            .statement_steps("repeated writing calls")
+            .iter()
+            .map(|(_, work)| *work)
+            .collect::<Vec<_>>()
+    };
+
+    let widths = [2, 4, 8, 16];
+    let by_width = widths.map(|owners| check(owners, 4));
+    for (owners, work) in widths.into_iter().zip(&by_width).skip(1) {
+        // The second call catches the cell index up with the first call's
+        // removals. Charge the diff and the index update once per owner.
+        assert!(
+            work[1] <= by_width[0][1] + 2 * (owners - widths[0]) + 8,
+            "catching up the call cell index revisits folded owners: {by_width:?}"
+        );
+        for (baseline, widened) in by_width[0][2..].iter().zip(&work[2..]) {
+            assert!(
+                *widened <= baseline + 8,
+                "writing calls revisit retained folded owners: {by_width:?}"
+            );
+        }
+    }
+    // Grow the call sequence at a fixed width to detect repeated upkeep.
+    let longer = check(16, 12);
+    assert!(
+        longer[4..].iter().all(|work| *work <= longer[3] + 32),
+        "repeated writing calls revisit earlier calls: {longer:?}"
+    );
 }
 
 // Splitting a caller's owner must not enumerate the other parameter owners

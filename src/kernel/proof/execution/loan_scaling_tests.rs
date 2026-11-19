@@ -21,14 +21,14 @@ fn assert_near_linear(axis: &str, samples: &[(usize, usize)]) {
     }
 }
 
-/// One arm state and one interface successor that both carry `count`
-/// occurrence-keyed bindings of a single shared loan. This is the shape a
+/// An arm carrying `count` occurrence-keyed bindings of one shared loan,
+/// and an interface successor claiming `claimed` of those bindings. This is the shape a
 /// proof reaches by exposing one child per unfold or observe: the binding
 /// count follows the proof, while the loan and its ledger follow the
 /// contract. The successor's resource context is rebuilt from the
 /// declared clauses, so its occurrences are fresh and only the binding
 /// content can connect it to the arm.
-fn interface_join_states(count: usize) -> (ExecutionState, ExecutionState) {
+fn interface_join_states(count: usize, claimed: usize) -> (ExecutionState, ExecutionState) {
     let support_fact = ResourceFact::own_token("shared_support".to_string(), Vec::new());
     let viewed = (0..count)
         .map(|index| ResourceFact::view_token(format!("child_{index}"), Vec::new()))
@@ -63,10 +63,12 @@ fn interface_join_states(count: usize) -> (ExecutionState, ExecutionState) {
         .with_loan_participant(Some(reader))
         .with_resource_context_and_loan_dependencies(resources, arm_dependencies);
 
-    let successor_resources = ResourceContext::new().unchecked_with_facts(viewed.iter().cloned());
+    let successor_resources =
+        ResourceContext::new().unchecked_with_facts(viewed.iter().take(claimed).cloned());
     let successor_dependencies = viewed
         .iter()
         .zip(&bindings)
+        .take(claimed)
         .map(|(fact, binding)| {
             (
                 successor_resources.occurrences_for_fact(fact)[0],

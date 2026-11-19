@@ -13,22 +13,6 @@ impl KernelTerm {
             KernelTermNode::AlgebraicRead(KernelMemoryRead::new(point, address)),
         )
     }
-
-    /// The native dependency reader treats an algebraic load as a Bits64
-    /// carrier, including stored-load connections and havoc-range origins.
-    pub(crate) fn algebraic_read_carrier(&self) -> Option<&MachineTerm> {
-        let KernelTermNode::AlgebraicRead(read) = self.node() else {
-            return None;
-        };
-        let (point, address) = read.parts();
-        Some(self.0.machine_leaf.get_or_init(|| {
-            MachineTerm::MemoryLoad(
-                point.clone(),
-                Box::new(address.export().expect("retained read address")),
-                LoadKind::Bits64,
-            )
-        }))
-    }
 }
 
 #[cfg(test)]

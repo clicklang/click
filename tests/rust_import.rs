@@ -1264,6 +1264,31 @@ fn charon_chunks_check_boundaries_authority_and_false_claims() {
         );
     }
 }
+#[test]
+#[ignore = "nightly: expand and replay a chunk iterator proof"]
+fn charon_chunk_iterator_fields_expand_and_replay() {
+    let prepared = charon_chunk_project().prepared().unwrap();
+    let claim = "walk.contract";
+    let sidecar = CHARON_CHUNK_SIDECAR.replacen(
+        "    step_until(loop(0));\n    loop {",
+        "    step_until(loop(0));\n    have bytes.len() % 4u64 <= bytes.len();\n    have loop(0).iter.rem.len() == bytes.len() % 4u64;\n    have loop(0).iter.rem == bytes + (bytes.len() - bytes.len() % 4u64);\n    loop {",
+        1,
+    );
+    assert_ne!(sidecar, CHARON_CHUNK_SIDECAR);
+    let expanded =
+        click::surface::expand_program_prepared_claim_source_by_label(&sidecar, &prepared, claim)
+            .unwrap();
+    assert_ne!(expanded, sidecar);
+    assert!(!expanded.contains("<chunk iterator "), "{expanded}");
+    assert!(!expanded.contains("__rust_mir"), "{expanded}");
+    click::surface::without_implicit_solve_for_claim(claim, || {
+        ProgramVerificationSession::new_program_prepared(&expanded, &prepared)
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
 #[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: 21 s, over the gate's per-test budget (2026-10-06)"]
@@ -1770,10 +1795,11 @@ fn charon_slice_iter_sums_bytes_by_its_library_contract() {
     ProgramVerificationSession::new_program_prepared(SLICE_ITER_PROOF, &prepared)
         .unwrap_or_else(|error| panic!("{}", error.message()));
     for (before, after) in [
-        // The reads need the slice's views.
+        // An omitted view defaults to the shared slice's coverage.
+        // An explicitly empty view leaves the reads without authority.
         (
             "    views bytes[0..bytes.len()];\n    ensures",
-            "    ensures",
+            "    views bytes[0..0];\n    ensures",
         ),
         // The result is the whole sum.
         (
@@ -1810,6 +1836,30 @@ fn charon_slice_iter_sums_bytes_by_its_library_contract() {
             "accepted {before} -> {after}"
         );
     }
+}
+
+#[test]
+#[ignore = "nightly: expand and replay the slice-iterator proof"]
+fn charon_slice_iterator_fields_expand_and_replay() {
+    let p = Project::from_fixture("design/charon-trial/slice-iter");
+    fs::write(p.root.join("borrow.click"), SLICE_ITER_PROOF).unwrap();
+    let prepared = p.prepared().unwrap();
+    let claim = "sum.contract";
+    let expanded = click::surface::expand_program_prepared_claim_source_by_label(
+        SLICE_ITER_PROOF,
+        &prepared,
+        claim,
+    )
+    .unwrap();
+    assert_ne!(expanded, SLICE_ITER_PROOF);
+    assert!(!expanded.contains("<slice iterator "), "{expanded}");
+    assert!(!expanded.contains("__rust_mir"), "{expanded}");
+    click::surface::without_implicit_solve_for_claim(claim, || {
+        ProgramVerificationSession::new_program_prepared(&expanded, &prepared)
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
 }
 
 #[cfg(not(feature = "fast-gate"))]
@@ -3442,7 +3492,7 @@ fn charon_result_values_read_as_click_results() {
             "result_values::must_say",
         ),
         (
-            "ensures result == click::result::unwrap_or(r, d);",
+            "ensures result == unwrap_or(r, d);",
             "ensures result == d;",
             "result_values::or_default.ensures_0",
         ),

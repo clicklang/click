@@ -715,9 +715,9 @@ impl<'a> Proof<'a> {
                     ..
                 } => {
                     let term = |value: &AlgebraicValue| match value {
-                        AlgebraicValue::Program(value) => Term::ProgramValue(value.clone()),
-                        AlgebraicValue::Integer(value) => Term::Integer(value.clone()),
-                        AlgebraicValue::Algebraic(value) => Term::Algebraic(value.clone()),
+                        AlgebraicValue::Program(value) => Term::ProgramValue(value.clone().into()),
+                        AlgebraicValue::Integer(value) => Term::Integer(value.clone().into()),
+                        AlgebraicValue::Algebraic(value) => Term::Algebraic(value.clone().into()),
                     };
                     Some((
                         "goal",
@@ -1182,8 +1182,7 @@ impl<'a> Proof<'a> {
                         integer_values = integer_values.with_inserted(name.clone(), value.clone());
                     }
                 }
-                let state =
-                    ExecutionState::new().with_memory(context.theorem_context.memory.clone());
+                let state = ExecutionState::at_point(&context.theorem_context.point);
                 self.apply_function_unfold_in_state(
                     application,
                     context.theorem_context.values.clone(),

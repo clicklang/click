@@ -279,6 +279,63 @@ pub(in crate::kernel) fn evaluate_logical_memory_load_paths(
     paths
 }
 
+/// A logical integer read whose version was selected from the execution path.
+pub(in crate::kernel) fn evaluate_indexed_integer_read(
+    memory: &SymbolicMemory,
+    version: ProgramPoint,
+    pointer: Address,
+    value_type: ProgramType,
+    mut facts: ExecutionFacts,
+    obligations: Vec<ProofObligation>,
+) -> ExpressionPath {
+    let stored = version
+        .indexed_integer_store_bits()
+        .expect("an indexed integer version comes from a direct store")
+        .clone();
+    let kind = LoadKind::of_type(value_type).expect("indexed integer read");
+    let format = MachineIntegerType::from_program_type(value_type).expect("indexed integer read");
+    let read = MachineTerm::MemoryLoad(version, Box::new(pointer.clone()), kind);
+    let value = match value_type {
+        ProgramType::Int8 => ProgramValue::Int8(read.clone()),
+        ProgramType::UInt8 => ProgramValue::UInt8(read.clone()),
+        ProgramType::Int16 => ProgramValue::Int16(read.clone()),
+        ProgramType::UInt16 => ProgramValue::UInt16(read.clone()),
+        ProgramType::Int32 => ProgramValue::Int32(read.clone()),
+        ProgramType::UInt32 => ProgramValue::UInt32(read.clone()),
+        ProgramType::Int64 => ProgramValue::Int64(read.clone()),
+        ProgramType::UInt64 => ProgramValue::UInt64(read.clone()),
+        ProgramType::Int128 => ProgramValue::Int128(read.clone()),
+        ProgramType::UInt128 => ProgramValue::UInt128(read.clone()),
+        _ => unreachable!("indexed integer read"),
+    };
+    // Retain the read and publish its exact store equation separately.
+    let equation = match value_type {
+        ProgramType::Int128 => wide_integer_comparison_condition(
+            ComparisonOperator::Equal,
+            &value,
+            &ProgramValue::Int128(stored),
+        )
+        .expect("typed signed 128-bit store"),
+        ProgramType::UInt128 => wide_integer_comparison_condition(
+            ComparisonOperator::Equal,
+            &value,
+            &ProgramValue::UInt128(stored),
+        )
+        .expect("typed unsigned 128-bit store"),
+        _ => ConditionTerm::machine_compare(format, CompareRelation::Equal, read, stored),
+    };
+    facts.push(ExecutionPureFact {
+        logical_read_equation: true,
+        ..ExecutionPureFact::certified(Proposition::condition_is(equation, true))
+    });
+    super::typed_reads::record(memory, &pointer, &value);
+    ExpressionPath {
+        outcome: ExpressionOutcome::Value(value),
+        facts,
+        obligations,
+    }
+}
+
 /// The value of Surface `exact(place)` (`design/exact-reads.md`): the read
 /// of the `value_type` cell at `pointer` named by `memory` itself. Unlike
 /// [`evaluate_logical_memory_load_paths`], it runs no version walk and
@@ -3135,6 +3192,14 @@ pub(crate) fn scalar_read_observation(
     read_observations::for_operand(operand)
 }
 
+pub(in crate::kernel) fn scalar_read_origin_for_cell(
+    memory: &SharedMemory,
+    address: &Address,
+    kind: LoadKind,
+) -> Option<SharedMemory> {
+    read_observations::origin_for_cell(memory, address, kind)
+}
+
 /// Build an exact read and publish its typed observation. This does not
 /// select a comparison identity or change the supplied memory state. Use
 /// `MachineTerm::memory_read` when no observation needs to be published.
@@ -4841,6 +4906,9 @@ pub(crate) fn latest_wide_load_observation(variable: &Variable) -> Option<Machin
 /// publication are separate operations. Until exact-state lowering migrates,
 /// callers still retain the selected identity as their read term.
 pub(in crate::kernel) fn canonical_scalar_read(bits: &MachineTerm) -> MachineTerm {
+    if matches!(bits, MachineTerm::MemoryLoad(point, _, _) if point.read_version_id().is_some()) {
+        return bits.clone();
+    }
     let Some(descriptor) = ScalarReadDescriptor::from_term(bits) else {
         return bits.clone();
     };
@@ -6123,6 +6191,44 @@ mod tests {
             &AlgebraicValue::Program(value),
             &argument_context,
         ));
+    }
+
+    #[test]
+    fn a_retired_local_no_pointer_reaches_is_not_part_of_a_read_projection() {
+        // A read through a pointer is named at the projection of its version
+        // point. Ending the lifetime of a local whose address is never taken
+        // changes nothing such a load can observe, so the projection, and
+        // with it the read's name, stays the same; ending the lifetime of a
+        // local whose address may be held changes it.
+        let _session = crate::kernel::VerificationSession::enter();
+        crate::kernel::primitives::set_never_address_taken_locals(
+            ["hidden".into()].into_iter().collect(),
+        );
+        let hidden: AddressBase = "local:hidden".into();
+        let escaped: AddressBase = "local:escaped".into();
+        let cell = Address::symbolic(Variable(93_101));
+        let base = SymbolicMemory::new()
+            .with_block(hidden.clone(), 4)
+            .with_block(escaped.clone(), 4);
+        let project = |memory: SymbolicMemory| {
+            crate::kernel::memory_history::canonical_projected_load_memory(
+                &crate::kernel::intern_memory(memory),
+                &cell,
+            )
+        };
+        let after_hidden = base.without_local_block(&hidden);
+        let after_escaped = base.without_local_block(&escaped);
+        assert_ne!(after_hidden, base, "the states differ by the retired local");
+        assert_eq!(
+            project(after_hidden),
+            project(base.clone()),
+            "an unreachable retired local is not part of the read's projection"
+        );
+        assert_ne!(
+            project(after_escaped),
+            project(base),
+            "a load through the pointer may observe a reachable retired local"
+        );
     }
 
     #[test]
@@ -9146,11 +9252,14 @@ fn scalar_read_presence_survives_shared_admission_and_registry_reset() {
     let name = load_variable_for_exact_cell(&memory, &pointer, LoadKind::Int32, 4);
     let observed = |term| {
         Proposition::Equal(
-            Term::Integer(IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
-                MachineIntegerType::Int32,
-                term,
-            ))),
-            Term::Integer(IntegerTerm::constant_i64(0)),
+            Term::Integer(
+                IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
+                    MachineIntegerType::Int32,
+                    term,
+                ))
+                .into(),
+            ),
+            Term::Integer(IntegerTerm::constant_i64(0).into()),
         )
     };
     let shared = observed(MachineTerm::Variable(name));

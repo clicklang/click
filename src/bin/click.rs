@@ -2048,12 +2048,10 @@ int32 f() { ensures result == 2; } by { step(); solve(); }
     #[test]
     fn supported_proof_boundary_verifies_and_profiles() {
         const STRUCTURAL_NESTING_LIMIT: usize = 32;
-        let mut proof_goal = String::from("0 == 0");
+        let proof_goal = "0 == 0";
         let mut proof_body = String::from("normalize();");
         for _ in 0..STRUCTURAL_NESTING_LIMIT - 2 {
-            proof_goal.push_str(" and 0 == 0");
-            proof_body =
-                format!("both {{ left => {{ {proof_body} }} right => {{ normalize(); }} }}");
+            proof_body = format!("have 0 == 0 by {{ {proof_body} }} normalize();");
         }
         verify_and_profile_supported_boundary(
             "proof",
@@ -2170,7 +2168,7 @@ int32 f() { ensures result == 2; } by { step(); solve(); }
                 format!(
                     "theorem too_deep_proof() {{ ensures 0 == 0 by {{ {} }} }}\n",
                     (0..=STRUCTURAL_LIMIT).fold("normalize();".to_string(), |body, _| format!(
-                        "both {{ left => {{ {body} }} right => {{ normalize(); }} }}"
+                        "all {{ true => {{ {body} }} true => {{ normalize(); }} }}"
                     ))
                 ),
                 "too_deep_proof.ensures_0",

@@ -460,8 +460,10 @@ requirement clauses use the existing conjunct index. Keep the position-drift,
 expanded-replay and negative ownership controls alongside the loan measurements.
 
 Pointee scalar stores return an ordinary separation obligation against a retained
-resource descriptor of active loan backing. Loan opens/closes update a persistent
-fixed-width identity trie; generating the obligation clones its root. The driver
+resource descriptor of active loan backing. Opens and closes update a
+persistent fixed-width identity trie. A reborrow whose footprint exactly
+repeats its parent uses the existing descriptor while the parent stays pinned.
+Generating the obligation clones the retained descriptor. The driver
 runs ordinary `solve`, whose conjunction case emits the existing `separate_star`
 and `separate_symm` applications. Restricting a larger separation emits
 containment proofs and `separation::separate_restrict`; candidate selection belongs only
@@ -472,13 +474,18 @@ source write with one view and 4/16/64 aliases; `loan_access_requirement_is_reta
 covers descriptor generation and persistent closes with 4/16/64/256 loans.
 These scoped controls do not certify every loan caller or proof-publication cost.
 
-Local assignments, bulk writes, free, loop checks, and resource rewrites still
-use `permits_memory_access_with_assumptions`. Its empty-loan decision now stays
-outside `ProofSearch`; active-loan callers retain alias enumeration and symbolic
-range comparisons. Migrate each actual caller to explicit obligations or isolate
-its bounded structural rule. The local-assignment prototype also exposed
-obligations for compiler-generated storage; resolve their pre-state spelling
-before migrating that route. Do not restore a search fallback for missing proofs.
+Checked scalar and bulk writes, allocation retirement, exact call and worker
+effects, loop heads and exits, ordinary branch memory joins, direct and modular
+mutex representation writes, and modular construction destinations now retain
+separation obligations. Automatic storage retirement and initialization use
+the object-identity index. A newly allocated aggregate result has no prior
+loan.
+
+Remaining uses of the legacy loan check cover unresolved call projections,
+direct constructor execution without a modular proof boundary, local-loan
+admission, and resource or authority rewrites. These need their own evidence
+before the legacy path can be removed. Cache retention remains a separate
+query.
 
 Independently grow symbolic loans at fixed aliases, cold/repeated queries, and
 persistent branches. Cache retention is separate from write permission: its

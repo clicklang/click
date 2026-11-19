@@ -3001,8 +3001,8 @@ impl MemoryRange {
         let mut mentioned = BTreeSet::new();
         for term in [
             Term::PointerOffset(base.offset.clone()),
-            Term::Bitvector32(lower.clone()),
-            Term::Bitvector32(upper.clone()),
+            Term::Bitvector32(lower.clone().into()),
+            Term::Bitvector32(upper.clone().into()),
         ] {
             crate::kernel::reasoning::collect_term_bitvector_variables(&term, &mut mentioned);
         }
@@ -4232,7 +4232,16 @@ impl ExecutionEnvironment {
                             _ => false,
                         }
                 });
-            let state_matches = rule.symbolic_entry_state.locals == state.locals
+            // A retained head obligation names the loans of its checked
+            // entry. An equal resource description may have different live
+            // loans, including when the original entry had none.
+            let active_loans = |state: &ExecutionState| {
+                state.loan_ledger()
+                    .filter(|ledger| ledger.has_active_memory_loans())
+                    .map(crate::kernel::loans::LoanLedger::state_identity)
+            };
+            let state_matches = active_loans(&rule.symbolic_entry_state) == active_loans(state)
+                && rule.symbolic_entry_state.locals == state.locals
                 && rule.symbolic_entry_state.memory == state.memory
                 && crate::kernel::api::contract_certification::resource_contexts_definitionally_equal_with_definitions(
                     &rule.composite_resource_definitions,

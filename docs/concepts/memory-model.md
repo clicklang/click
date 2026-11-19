@@ -24,10 +24,27 @@ These names describe different things:
   handle. It records symbolic memory information, which may be incomplete,
   abstracted by a call or loop, or projected for one selected read. It is
   not a program point or a complete execution state.
-- A **version point** is the point a read is lowered to, selected by the
-  assumption-free version walk for a particular cell or observed block.
+- A **version point** is the point a read is lowered to for a particular
+  cell or observed block. Choosing it depends on the execution effects
+  that can change the cell and is independent of the available pure facts.
   The kernel represents points with `ProgramPoint`. A read's address, type,
   and version point determine its identity.
+
+For an ordinary 8-, 16-, 32-, 64-, or 128-bit integer read at a fixed byte
+offset in an automatic object, a lookup by object, byte offset, and width can
+select a compatible write on the current execution path. A disjoint store
+preserves the entry, including a store to a sibling field in the same object.
+An overlapping store ends the previous version. The read retains the write's
+point, and its value equation comes from the recorded store. Other cases still
+use the existing version selection, including across joins and unclassified effects.
+Signed and unsigned 64-bit reads share a version of the same 64 bits.
+Signed and unsigned 128-bit reads retain their distinct load kinds.
+
+Naming existing cells during a resource proof can change the view at a
+point. The producer records which suffix only names cells and where it
+started. A view with this evidence retains the point's indexed versions
+when read directly and when execution next records a store. A replacement
+without that evidence cannot use those versions.
 
 A pending log of recorded transitions reaches a successor point even when
 its final memory contents equal its predecessor's. Repeatedly requesting that

@@ -1,8 +1,9 @@
 # A packed parent pointer survives metadata writes through an alias
 
-The numeric word and its complete pointer provenance must both cross the
-metadata-only call. The explicit transport lists the two disjoint write
-regions, while the resource retains the word through the loaded child alias.
+The packed resource retains the numeric word and its decoded parent through
+the metadata-only call, even when the resource came from a loaded child
+alias. After unfolding the resource, ordinary fact lookup checks that the
+word matches the read saved before the call.
 
 ```c filename=frame.c
 struct node { unsigned long word; struct node *left; struct node *right; };
@@ -68,7 +69,7 @@ struct node* caller(struct node* p, struct node* q, struct node* parent) {
     let kept = fold(packed(p, parent), { bits: saved_bits });
     step(update, { a: a, b: b });
     unfold(kept);
-    have p->word == at(before_update, p->word) by { transport(at(before_update, p->word) == at(before_update, p->word), p->word == at(before_update, p->word)); }
+    have p->word == at(before_update, p->word) by { known(); }
     have ((p->word & ~3) as (struct node *)) == parent by { known(); }
 }
 ```

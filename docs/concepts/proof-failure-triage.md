@@ -309,7 +309,7 @@ A failing proof step names where it was written:
 tactic for expansion. Each further segment descends into a block the user
 wrote: `have body tactic 2` is the second tactic of that `have`'s `by { ... }`
 block, and `open body tactic 2` is the second tactic of an `open` body. Inside
-a block, the arms of a proof `if`, `cases`, or `both` are blocks of their own:
+a block, the arms of a proof `if`, `cases`, or `all` are blocks of their own:
 `else arm tactic 1` is the first tactic of the `if`'s `else` arm (`then`,
 `else`, `left`, and `right` name the arms), so a tactic written after the
 `if` keeps its own position in the enclosing block even though each arm

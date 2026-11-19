@@ -36,6 +36,7 @@ impl SourceSiteKind {
 /// intrinsic tactic class.
 pub(in crate::surface) fn source_site_kind(tactic: &ProofTactic) -> SourceSiteKind {
     if let ProofTactic::Both(_)
+    | ProofTactic::All(_)
     | ProofTactic::CloseInvariantsBy(_)
     | ProofTactic::StepProved { .. } = tactic
     {

@@ -270,7 +270,7 @@ impl<'a> Proof<'a> {
         induction_setup: Option<PureInductionSetup>,
     ) -> Self {
         let mut ambient_variables = std::collections::BTreeSet::new();
-        let mut source_state = ExecutionState::new().with_memory(theorem_context.memory.clone());
+        let mut source_state = ExecutionState::at_point(&theorem_context.point);
         for (name, value) in &theorem_context.values {
             crate::kernel::collect_program_value_bitvector_variables(value, &mut ambient_variables);
             source_state = source_state.with_local(name.clone(), value.clone());

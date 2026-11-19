@@ -247,6 +247,8 @@ impl KernelFold {
         })
     }
 
+    /// Build the boxed reference term used by the native fold tests.
+    #[cfg(test)]
     pub(crate) fn export_integer(
         &self,
         export: &mut KernelTermExport,

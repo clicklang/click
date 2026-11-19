@@ -375,7 +375,7 @@ fn pure_match_and_payload_freshening_ignore_unrelated_facts() {
             &(0..size)
                 .map(|i| Proposition::Predicate {
                     name: format!("unrelated_match_{i}"),
-                    arguments: vec![Term::Bitvector32(MachineTerm::Variable(Variable(i)))],
+                    arguments: vec![Term::Bitvector32(MachineTerm::Variable(Variable(i)).into())],
                 })
                 .collect::<Vec<_>>(),
         );
@@ -454,7 +454,7 @@ fn typed_universal_intro_adds_fresh_bounds_without_scanning_ambient_facts() {
     let binder = Variable(186);
     let body = Proposition::Predicate {
         name: "holds".into(),
-        arguments: vec![Term::Bitvector32(MachineTerm::Variable(binder))],
+        arguments: vec![Term::Bitvector32(MachineTerm::Variable(binder).into())],
     };
     let goal = Proposition::ForAll {
         name: Default::default(),
@@ -695,12 +695,13 @@ fn known_quantified_identity_uses_selected_keys() {
         body: Box::new(Proposition::Predicate {
             name: "quantified_identity".into(),
             arguments: vec![
-                Term::ProgramValue(crate::kernel::ProgramValue::Int32(MachineTerm::Variable(
-                    Variable(binder),
-                ))),
-                Term::ProgramValue(crate::kernel::ProgramValue::Int32(MachineTerm::constant(
-                    index,
-                ))),
+                Term::ProgramValue(
+                    (crate::kernel::ProgramValue::Int32(MachineTerm::Variable(Variable(binder))))
+                        .into(),
+                ),
+                Term::ProgramValue(
+                    (crate::kernel::ProgramValue::Int32(MachineTerm::constant(index))).into(),
+                ),
             ],
         }),
         name: Default::default(),
@@ -772,12 +773,13 @@ fn apply_fact_quantified_sources_use_selected_alpha_keys() {
         body: Box::new(Proposition::Predicate {
             name: "selected_body".into(),
             arguments: vec![
-                Term::ProgramValue(crate::kernel::ProgramValue::Int32(MachineTerm::Variable(
-                    Variable(binder),
-                ))),
-                Term::ProgramValue(crate::kernel::ProgramValue::Int32(MachineTerm::constant(
-                    value,
-                ))),
+                Term::ProgramValue(
+                    (crate::kernel::ProgramValue::Int32(MachineTerm::Variable(Variable(binder))))
+                        .into(),
+                ),
+                Term::ProgramValue(
+                    (crate::kernel::ProgramValue::Int32(MachineTerm::constant(value))).into(),
+                ),
             ],
         }),
     };
@@ -899,5 +901,86 @@ fn known_compound_comparison_work_is_linear_in_selected_clauses() {
     assert!(
         costs[0] > 0 && costs.windows(2).all(|pair| pair[1] <= pair[0] * 3),
         "{costs:?}"
+    );
+}
+
+#[test]
+fn automatic_object_separation_ignores_ambient_address_facts() {
+    use crate::kernel::{
+        Address, AddressBase, AddressOffset, ConditionTerm, LocalBindingId, LocalFunctionId,
+        LocalStorageInstance, MemoryRange, Resource, Variable,
+    };
+
+    let _session = crate::kernel::VerificationSession::enter();
+    let function = LocalFunctionId::new(Some("separation.c".into()), "f".into());
+    let local = |index| Address {
+        base: AddressBase::AutomaticLocal {
+            binding: LocalBindingId::new(function.clone(), false, index, None),
+            instance: LocalStorageInstance::Implicit,
+        },
+        offset: AddressOffset::Constant(0),
+    };
+    let selected = local(0);
+    let incoming = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
+    };
+    let alias = Address::symbolic(Variable(1));
+    let resource = |pointer| {
+        Box::new(Resource::Memory(MemoryRange::new_with_element_width(
+            pointer,
+            MachineTerm::constant(0),
+            MachineTerm::constant(1),
+            4,
+        )))
+    };
+    let separate = |left, right| Proposition::ResourceSeparate {
+        left: resource(left),
+        right: resource(right),
+    };
+    let goals = [
+        (separate(selected.clone(), incoming.clone()), true),
+        (separate(incoming, selected.clone()), true),
+        (separate(local(1), selected.clone()), true),
+        (
+            separate(selected.clone(), selected.offset_by_bytes(1)),
+            false,
+        ),
+        (separate(selected.clone(), alias.clone()), false),
+    ];
+    let samples = [4u64, 16, 64, 256].map(|size| {
+        let mut facts = vec![Proposition::condition_is(
+            ConditionTerm::address_equal(selected.clone(), alias.clone()),
+            true,
+        )];
+        for i in 0..size {
+            facts.push(Proposition::condition_is(
+                ConditionTerm::address_equal(alias.clone(), Address::symbolic(Variable(10 + i))),
+                true,
+            ));
+            facts.push(Proposition::Predicate {
+                name: format!("unrelated_{i}"),
+                arguments: vec![],
+            });
+        }
+        let facts = PureFactStore::from_ordered(&facts);
+        let proofs = goals
+            .each_ref()
+            .map(|(goal, _)| known_computation_proof(goal.clone(), facts.clone()));
+        let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+            for (proof, (_, expected)) in proofs.iter().zip(&goals) {
+                assert_eq!(
+                    proof
+                        .apply_known(PropositionKnownContext::Materialized)
+                        .is_ok_and(|closed| closed.is_complete()),
+                    *expected
+                );
+            }
+        });
+        work
+    });
+    assert!(
+        samples[0] > 0 && samples.iter().all(|work| *work <= samples[0] + 32),
+        "{samples:?}"
     );
 }

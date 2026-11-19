@@ -181,6 +181,7 @@ pub(in crate::surface) fn kernel_law_index_types(
         "click::separation::contains_subrange"
         | "click::separation::contains_element"
         | "click::separation::contains_rebase"
+        | "click::separation::contains_joined_ranges"
         | "click::separation::separate_adjacent_ranges" => vec![
             InterfaceType::Int32,
             InterfaceType::UInt64(crate::languages::c::syntax::LongRank::Long),
@@ -236,7 +237,9 @@ pub(super) struct PureTheoremContext {
     /// Immutable specification parameter names, retained for diagnostics.
     pub(super) diagnostic_names: std::sync::Arc<[(Variable, String)]>,
     pub(super) declaration_bindings: BTreeMap<String, ContractExpression>,
-    pub(super) memory: SymbolicMemory,
+    /// The theorem's starting point: the memory it quantifies over, as the
+    /// first point of a path of its own.
+    pub(super) point: crate::kernel::ProgramPoint,
     pub(super) values: ProgramValueBindings,
     pub(super) integer_values: PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
     pub(super) array_refs: ClickArrayRefs,
@@ -303,7 +306,7 @@ impl PureTheoremContext {
                         // Conversion-backed and function-backed aliases also
                         // need shared terms. Inlining their source expressions
                         // would double a binary alias chain at every binding.
-                        let state = ExecutionState::new().with_memory(context.memory.clone());
+                        let state = ExecutionState::at_point(&context.point);
                         let integer_values = contract_expression_referenced_names(&promoted)
                             .into_iter()
                             .filter_map(|name| {
@@ -586,6 +589,11 @@ fn prepare_pure_induction_tactics(
                     declarations(&proof_if.then_tactics, found);
                     declarations(&proof_if.else_tactics, found);
                 }
+                ProofTactic::All(all) => {
+                    for arm in &all.arms {
+                        declarations(&arm.tactics, found);
+                    }
+                }
                 ProofTactic::Both(both) => {
                     declarations(&both.left_tactics, found);
                     declarations(&both.right_tactics, found);
@@ -696,6 +704,18 @@ fn prepare_pure_induction_tactics(
                         active,
                     )?,
                 })),
+                ProofTactic::All(all) => Ok(ProofTactic::All(ProofAll {
+                    arms: all
+                        .arms
+                        .iter()
+                        .map(|arm| {
+                            Ok(ProofAllArm {
+                                proposition: arm.proposition.clone(),
+                                tactics: transform(&arm.tactics, hypothesis, structural, active)?,
+                            })
+                        })
+                        .collect::<Result<_, ClickError>>()?,
+                })),
                 ProofTactic::Both(both) => Ok(ProofTactic::Both(ProofBoth {
                     left_tactics: transform(&both.left_tactics, hypothesis, structural, active)?,
                     right_tactics: transform(&both.right_tactics, hypothesis, structural, active)?,
@@ -782,7 +802,7 @@ fn prepare_pure_induction_tactics(
         let ClickType::Algebraic(algebraic_type) = p.click_type() else {
             unreachable!()
         };
-        let state = ExecutionState::new().with_memory(context.memory.clone());
+        let state = ExecutionState::at_point(&context.point);
         let captured = capture_fixed_state_algebraic_expression(
             &ContractExpression::AlgebraicVariable {
                 name: parameter.clone().into(),
@@ -835,6 +855,9 @@ pub(super) fn pure_theorem_context(
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<PureTheoremContext, ClickError> {
     let memory = SymbolicMemory::new();
+    // The theorem is stated over one memory: its requirements and its proof
+    // all stand at the point that starts there.
+    let point = crate::kernel::ProgramPoint::starting_at(&memory);
     let values = pure_theorem_parameter_values_with_generic_pointers(
         theorem.parameters(),
         &theorem.generic_pointer_parameters,
@@ -857,7 +880,7 @@ pub(super) fn pure_theorem_context(
             ContractEnvironment::new(&values, &array_refs),
             &BTreeMap::new(),
             &integer_values,
-            &memory,
+            &point,
             spec_definitions,
         )
         .map_err(|message| {
@@ -930,7 +953,7 @@ pub(super) fn pure_theorem_context(
                 ))
             })
             .collect(),
-        memory,
+        point,
         values,
         integer_values,
         array_refs,
@@ -976,7 +999,7 @@ pub(in crate::surface) fn assumed_theorem_certification_authorities(
                 ContractEnvironment::new(&context.values, &context.array_refs),
                 &BTreeMap::new(),
                 &context.integer_values,
-                &context.memory,
+                &context.point,
                 spec_definitions,
             )
             .map_err(|message| {
@@ -1435,7 +1458,7 @@ fn verify_theorem_ensure(
         return Ok(verified);
     }
     let lowering_assumptions = assumptions_from_propositions(&context.requires);
-    let state = ExecutionState::new().with_memory(context.memory.clone());
+    let state = ExecutionState::at_point(&context.point);
     let (goal, goal_introductions, _, obligations) =
         lower_fixed_state_proposition_retaining_requirements(
             surface_goal,
@@ -1684,7 +1707,7 @@ fn verify_contract_refinement_theorem(
             proposition,
             ContractEnvironment::new(&context.values, &context.array_refs),
             &context.integer_values,
-            &context.memory,
+            &context.point,
             spec_definitions,
         )
         .map_err(|message| {
@@ -2019,7 +2042,7 @@ fn contract_fact_values(fact: &Proposition) -> Option<Vec<ProgramValue>> {
         .get(2..)?
         .iter()
         .map(|argument| match argument {
-            Term::ProgramValue(value) => Some(value.clone()),
+            Term::ProgramValue(value) => Some(value.native_compat().clone()),
             _ => None,
         })
         .collect()
@@ -2054,7 +2077,7 @@ fn certificate_int32_rewrites(
                 claim_label,
                 surface,
                 ContractEnvironment::new(&context.values, &context.array_refs),
-                &context.memory,
+                &context.point,
                 spec_definitions,
             )
             .ok(),
@@ -2189,6 +2212,7 @@ pub(in crate::surface) fn is_kernel_standard_theorem_name(name: &str) -> bool {
                 "click::separation::contains_subrange"
                     | "click::separation::contains_element"
                     | "click::separation::contains_rebase"
+                    | "click::separation::contains_joined_ranges"
                     | "click::separation::separate_adjacent_ranges"
                     | "click::separation::separate_elements"
                     | "click::separation::distinct_elements"
@@ -2230,7 +2254,14 @@ fn verify_kernel_standard_theorem_axiom(
         name if name.split("::<").next() == Some("click::separation::contains_subrange") => (5, 3),
         name if name.split("::<").next() == Some("click::separation::contains_element") => (4, 2),
         name if name.split("::<").next() == Some("click::separation::contains_rebase") => (3, 2),
-        name if name.split("::<").next() == Some("click::separation::separate_adjacent_ranges") => {
+        name if matches!(
+            name.split("::<").next(),
+            Some(
+                "click::separation::separate_adjacent_ranges"
+                    | "click::separation::contains_joined_ranges"
+            )
+        ) =>
+        {
             (4, 2)
         }
         name if matches!(
@@ -2323,6 +2354,7 @@ fn verify_kernel_standard_theorem_axiom(
             "click::separation::contains_subrange"
                 | "click::separation::contains_element"
                 | "click::separation::contains_rebase"
+                | "click::separation::contains_joined_ranges"
                 | "click::separation::separate_adjacent_ranges"
         )
     ) {
@@ -2356,8 +2388,14 @@ fn verify_kernel_standard_theorem_axiom(
                 "interval law bounds must have the same type",
             ));
         }
-        if theorem.name().split("::<").next() == Some("click::separation::separate_adjacent_ranges")
-        {
+        let law = theorem.name().split("::<").next();
+        if matches!(
+            law,
+            Some(
+                "click::separation::separate_adjacent_ranges"
+                    | "click::separation::contains_joined_ranges"
+            )
+        ) {
             crate::kernel::prove_separation_adjacent_ranges(
                 pointer.clone(),
                 width,
@@ -2365,6 +2403,7 @@ fn verify_kernel_standard_theorem_axiom(
                 bounds[0].1.clone(),
                 bounds[1].1.clone(),
                 bounds[2].1.clone(),
+                law == Some("click::separation::contains_joined_ranges"),
             )
         } else if theorem.name().split("::<").next() == Some("click::separation::contains_rebase") {
             crate::kernel::prove_separation_rebase(
@@ -2410,7 +2449,7 @@ fn verify_kernel_standard_theorem_axiom(
             .collect::<Vec<_>>();
         if theorem.name() == "click::separation::viewable_restrict" {
             crate::kernel::prove_viewable_restrict(
-                &context.memory,
+                context.point.memory(),
                 args[0].clone(),
                 args[1].clone(),
             )
@@ -2938,14 +2977,14 @@ pub(super) fn lower_pure_theorem_proposition(
     theorem_name: &str,
     proposition: &ClickProposition,
     contract_environment: ContractEnvironment<'_>,
-    memory: &SymbolicMemory,
+    at: &crate::kernel::ProgramPoint,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Proposition, String> {
     lower_pure_theorem_proposition_with_opaque_calls(
         theorem_name,
         proposition,
         contract_environment,
-        memory,
+        at,
         spec_definitions,
         &BTreeSet::new(),
     )
@@ -2956,7 +2995,7 @@ pub(super) fn lower_pure_theorem_proposition_with_integer_values(
     proposition: &ClickProposition,
     contract_environment: ContractEnvironment<'_>,
     integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
-    memory: &SymbolicMemory,
+    at: &crate::kernel::ProgramPoint,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Proposition, String> {
     lower_pure_theorem_proposition_with_algebraic_and_integer_values(
@@ -2965,7 +3004,7 @@ pub(super) fn lower_pure_theorem_proposition_with_integer_values(
         contract_environment,
         &BTreeMap::new(),
         integer_values,
-        memory,
+        at,
         spec_definitions,
     )
 }
@@ -2977,7 +3016,7 @@ pub(super) fn lower_pure_theorem_proposition_with_algebraic_and_integer_values(
     contract_environment: ContractEnvironment<'_>,
     algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
     integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
-    memory: &SymbolicMemory,
+    at: &crate::kernel::ProgramPoint,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Proposition, String> {
     lower_pure_theorem_proposition_recording_introductions(
@@ -2987,7 +3026,7 @@ pub(super) fn lower_pure_theorem_proposition_with_algebraic_and_integer_values(
         contract_environment,
         algebraic_values,
         integer_values,
-        memory,
+        at,
         spec_definitions,
     )
     .map(|(proposition, _)| proposition)
@@ -3004,10 +3043,35 @@ pub(super) fn lower_pure_theorem_proposition_recording_introductions(
     contract_environment: ContractEnvironment<'_>,
     algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
     integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
-    memory: &SymbolicMemory,
+    at: &crate::kernel::ProgramPoint,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<(Proposition, crate::kernel::LoweringIntroductions), String> {
-    let state = ExecutionState::new().with_memory(memory.clone());
+    lower_pure_theorem_proposition_for_proof(
+        theorem_name,
+        proposition,
+        assumptions,
+        contract_environment,
+        algebraic_values,
+        integer_values,
+        at,
+        spec_definitions,
+        false,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn lower_pure_theorem_proposition_for_proof(
+    theorem_name: &str,
+    proposition: &ClickProposition,
+    assumptions: &PureFactContext,
+    contract_environment: ContractEnvironment<'_>,
+    algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
+    integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
+    at: &crate::kernel::ProgramPoint,
+    spec_definitions: SpecDefinitions<'_>,
+    is_conjunct_label: bool,
+) -> Result<(Proposition, crate::kernel::LoweringIntroductions), String> {
+    let state = ExecutionState::at_point(at);
     lower_fixed_state_proposition_through_kernel_with_introductions(
         proposition,
         &PureFactContext::new(),
@@ -3015,6 +3079,7 @@ pub(super) fn lower_pure_theorem_proposition_recording_introductions(
         FixedStateFrame::new(&state, &state, None, &RecordedStates::new()),
         spec_definitions,
         FixedStateLoweringOptions {
+            is_conjunct_label,
             algebraic_values: Some(algebraic_values),
             integer_values: Some(integer_values),
             obligation_assumptions: Some(assumptions),
@@ -3031,11 +3096,11 @@ fn lower_pure_theorem_proposition_with_opaque_calls(
     theorem_name: &str,
     proposition: &ClickProposition,
     contract_environment: ContractEnvironment<'_>,
-    memory: &SymbolicMemory,
+    at: &crate::kernel::ProgramPoint,
     spec_definitions: SpecDefinitions<'_>,
     opaque_click_functions: &BTreeSet<String>,
 ) -> Result<Proposition, String> {
-    let state = ExecutionState::new().with_memory(memory.clone());
+    let state = ExecutionState::at_point(at);
     lower_fixed_state_proposition_through_kernel_with(
         proposition,
         &PureFactContext::new(),
@@ -3063,7 +3128,7 @@ fn lower_pure_theorem_proposition_opaque(
         .keys()
         .cloned()
         .collect::<BTreeSet<_>>();
-    let state = ExecutionState::new().with_memory(context.memory.clone());
+    let state = ExecutionState::at_point(&context.point);
     lower_fixed_state_proposition_through_kernel_with(
         proposition,
         assumptions,
@@ -3825,7 +3890,7 @@ mod tests {
                 theorem.name(),
                 surface_goal,
                 ContractEnvironment::new(&context.values, &context.array_refs),
-                &context.memory,
+                &context.point,
                 spec_definitions,
             )
             .unwrap();

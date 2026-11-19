@@ -75,12 +75,15 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 })
                 .zip(ambient_delta.as_ref())
                 .map(|((_, facts, holds_effects), delta)| {
-                    (
-                        delta.iter().fold(facts.clone(), |facts, fact| {
-                            facts.with_kernel_checked_fact(fact.clone())
-                        }),
-                        *holds_effects,
-                    )
+                    let mut facts = delta.iter().fold(facts.clone(), |facts, fact| {
+                        facts.with_kernel_checked_fact(fact.clone())
+                    });
+                    if !holds_effects {
+                        for effect in path.effect_facts() {
+                            facts = facts.with_kernel_checked_fact(effect.proposition().clone());
+                        }
+                    }
+                    (facts, true)
                 });
             if retained.is_none() {
                 path_evidence.checked_leaf_facts = None;

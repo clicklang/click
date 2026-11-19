@@ -51,6 +51,7 @@ fn returned_borrows_keep_checked_entry_arguments_when_clauses_are_reordered() {
             clause_position: None,
             section_index: Some(index),
             selected_mutex_source: None,
+            mutex_storage: None,
         })
         .collect::<Vec<_>>();
     // Neither field has a materialized cell. Re-evaluating either return
@@ -406,6 +407,7 @@ fn return_roles_follow_skipped_guards_and_deferred_output_emission() {
         clause_position: None,
         section_index: Some(0),
         selected_mutex_source: None,
+        mutex_storage: None,
     }];
     let state = ExecutionState::new().with_memory(
         SymbolicMemory::new()
@@ -493,6 +495,7 @@ fn borrowed_composite_bodies_still_check_post_memory_against_the_retained_frame(
         clause_position: None,
         section_index: Some(0),
         selected_mutex_source: None,
+        mutex_storage: None,
     }];
     let facts = PureFactContext::new();
     let frame =

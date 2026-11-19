@@ -399,7 +399,24 @@ fn dynamic_body_fact_dependency(
         binder: QuantifiedBinder<'_>,
         selected: &mut Option<crate::kernel::LoanViewBinding>,
     ) -> Result<(), String> {
-        for (pointer, width) in crate::kernel::current_memory_loads_in_term(term, state.memory())? {
+        walk_loads(
+            crate::kernel::current_memory_loads_in_term(term, state.memory())?,
+            state,
+            assumptions,
+            temporary_views,
+            binder,
+            selected,
+        )
+    }
+    fn walk_loads(
+        loads: Vec<(Address, u32)>,
+        state: &ExecutionState,
+        assumptions: &PureFactContext,
+        temporary_views: &DynamicViewDependencyIndex,
+        binder: QuantifiedBinder<'_>,
+        selected: &mut Option<crate::kernel::LoanViewBinding>,
+    ) -> Result<(), String> {
+        for (pointer, width) in loads {
             check_load(
                 pointer,
                 width,
@@ -422,7 +439,7 @@ fn dynamic_body_fact_dependency(
     ) -> Result<(), String> {
         match proposition {
             Proposition::ConditionIs(condition, _) => walk_term(
-                &Term::Condition((condition.clone()).native_compat().clone()),
+                &Term::Condition(condition.clone()),
                 state,
                 assumptions,
                 temporary_views,
@@ -481,7 +498,7 @@ fn dynamic_body_fact_dependency(
             | Proposition::ResourceContains { .. } => Ok(()),
             Proposition::MemoryLoads { outcome, .. } => match outcome {
                 ExpressionOutcome::Value(value) => walk_term(
-                    &Term::ProgramValue(value.native_compat().clone()),
+                    &Term::ProgramValue(value.clone()),
                     state,
                     assumptions,
                     temporary_views,
@@ -501,7 +518,7 @@ fn dynamic_body_fact_dependency(
                 // Definedness is an observation of the same cell as a load.
                 // Retain its access dependency, including loads in its address.
                 walk_term(
-                    &Term::ProgramValue(ProgramValue::pointer(pointer.clone())),
+                    &Term::ProgramValue(ProgramValue::pointer(pointer.clone()).into()),
                     state,
                     assumptions,
                     temporary_views,
@@ -526,8 +543,8 @@ fn dynamic_body_fact_dependency(
                 }
                 Ok(())
             }
-            Proposition::MemoryLoadable { bytes, .. } => walk_term(
-                &Term::Bitvector32(bytes.native_compat().clone()),
+            Proposition::MemoryLoadable { bytes, .. } => walk_loads(
+                crate::kernel::current_memory_loads_in_count(bytes, state.memory())?,
                 state,
                 assumptions,
                 temporary_views,
@@ -535,7 +552,7 @@ fn dynamic_body_fact_dependency(
                 selected,
             ),
             Proposition::HeapAllocationFreed { bytes, .. } => walk_term(
-                &Term::Bitvector32(bytes.bytes().clone()),
+                &Term::Bitvector32(bytes.bytes().clone().into()),
                 state,
                 assumptions,
                 temporary_views,
@@ -2574,7 +2591,7 @@ fn append_composite_definition_observable_facts<F: ResourcePureFacts>(
         composite_body,
         substitutions,
         parameter_binding,
-        fact_state.memory(),
+        fact_state,
         propositions,
     )?;
 
@@ -2634,7 +2651,7 @@ fn append_composite_resource_loadable_facts<F: ResourcePureFacts>(
     composite_body: &CompositeResourceBody,
     substitutions: &BTreeMap<String, ContractExpression>,
     parameter_binding: ParameterBinding<'_>,
-    memory: &SymbolicMemory,
+    state: &ExecutionState,
     propositions: &mut F,
 ) -> Result<(), String> {
     for contained in composite_body.contains() {
@@ -2647,7 +2664,7 @@ fn append_composite_resource_loadable_facts<F: ResourcePureFacts>(
         append_resource_clause_loadable_fact_with_store(
             &contained,
             parameter_binding,
-            memory,
+            state,
             propositions,
         )
         .map_err(|error| {
@@ -2665,11 +2682,10 @@ fn append_composite_resource_loadable_facts<F: ResourcePureFacts>(
 fn append_resource_clause_loadable_fact_with_store<F: ResourcePureFacts>(
     resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
-    memory: &SymbolicMemory,
+    state: &ExecutionState,
     propositions: &mut F,
 ) -> Result<(), ClickError> {
-    let state = ExecutionState::new().with_memory(memory.clone());
-    let Some(ranges) = resource_clause_memory_ranges_at_state(resource, parameter_binding, &state)?
+    let Some(ranges) = resource_clause_memory_ranges_at_state(resource, parameter_binding, state)?
     else {
         return Ok(());
     };
@@ -2678,7 +2694,9 @@ fn append_resource_clause_loadable_fact_with_store<F: ResourcePureFacts>(
             propositions.insert(guard);
         }
     }
-    if let Some(proposition) = resource_clause_loadable_prop(resource, parameter_binding, memory)? {
+    if let Some(proposition) =
+        resource_clause_loadable_prop_at_state(resource, parameter_binding, state)?
+    {
         propositions.insert(proposition);
     }
     Ok(())
@@ -6093,11 +6111,14 @@ void child_release(struct child* obj) {
         );
 
         let opaque = Proposition::Equal(
-            Term::Bitvector32(MachineTerm::ClickFunctionApplication {
-                name: "opaque".into(),
-                arguments: Vec::new(),
-            }),
-            Term::Bitvector32(MachineTerm::constant(0)),
+            Term::Bitvector32(
+                MachineTerm::ClickFunctionApplication {
+                    name: "opaque".into(),
+                    arguments: Vec::new(),
+                }
+                .into(),
+            ),
+            Term::Bitvector32(MachineTerm::constant(0).into()),
         );
         assert!(
             dynamic_body_fact_dependency(&opaque, &owner_state, &assumptions, &no_temporary_views,)

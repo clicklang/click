@@ -25,29 +25,7 @@ impl TermRewrite<'_> {
             // Its retained dispatch must be implemented before admitting it.
             return None;
         }
-        if !self.source_variables_reserved {
-            let mut variables = self.new_carrier_variables();
-            let mut pending = vec![root];
-            let mut seen = BTreeSet::new();
-            while let Some(term) = pending.pop() {
-                if !seen.insert(term.id()) {
-                    continue;
-                }
-                if !variables.visit() {
-                    self.reserve_source_variables(variables);
-                    return None;
-                }
-                match term.node() {
-                    // The native condition carrier collector reserves neither
-                    // program nor Integer names for a bare Boolean variable.
-                    KernelTermNode::BoolLiteral(_) | KernelTermNode::Variable(_) => {}
-                    KernelTermNode::BoolIf { arguments } => pending.extend(arguments),
-                    KernelTermNode::BoolEqual { arguments } => pending.extend(arguments),
-                    _ => return None,
-                }
-            }
-            self.reserve_source_variables(variables);
-        }
+        self.reserve_shared_rewrite_variables_once(root)?;
         if self.checked_work_exhausted() {
             return None;
         }
@@ -77,30 +55,10 @@ impl TermRewrite<'_> {
                     .flatten()
             },
             |term| {
-                let native = match term.node() {
-                    KernelTermNode::BoolLiteral(value) => ConditionTerm::Constant(*value),
-                    KernelTermNode::Variable(variable) => ConditionTerm::Variable(*variable),
-                    _ => return Err(()),
-                };
-                let mut rewrite = rewrite.borrow_mut();
-                let result = rewrite.condition(&native);
-                if rewrite.checked_work_exhausted() {
-                    return Err(());
-                }
-                // Scalar predicate replacements need their own retained leaf
-                // rules, including conditional guard folding. Do not silently
-                // treat an arbitrary replacement as an already handled leaf.
-                if !matches!(
-                    result,
-                    ConditionTerm::Constant(_) | ConditionTerm::Variable(_)
-                ) {
-                    return Err(());
-                }
-                let result = if result == native {
-                    term.clone()
-                } else {
-                    KernelTermImport::for_exact_field_inputs().condition(&result)
-                };
+                let result = rewrite
+                    .borrow_mut()
+                    .shared_boolean_scalar_leaf(term)
+                    .ok_or(())?;
                 memo.borrow_mut().insert(key(term), result.clone());
                 Ok(result)
             },
@@ -113,7 +71,12 @@ impl TermRewrite<'_> {
                 let raw = rewrite.integer_exact.is_some();
                 let result = match (term.node(), children) {
                     (KernelTermNode::BoolIf { .. }, [guard, yes, no]) => {
-                        let arguments = [guard.clone(), yes.clone(), no.clone()];
+                        let guard = if raw {
+                            guard.clone()
+                        } else {
+                            common_boolean::folded_shared_machine_condition(guard.clone())
+                        };
+                        let arguments = [guard, yes.clone(), no.clone()];
                         Ok(if raw {
                             KernelTerm::boolean_if_raw(arguments)
                         } else {
@@ -318,8 +281,8 @@ mod tests {
         let output = exact.shared_boolean_operand(&atom).unwrap();
         assert!(matches!(output.node(), KernelTermNode::BoolLiteral(true)));
         assert!(exact.refusal_status().is_none());
-        // Introducing a scalar comparison is not admitted before that leaf's
-        // guard-folding policy is implemented.
+        // Truth-word replacement preserves the native produced scalar value;
+        // it is not recursively substituted or folded as an ordinary input.
         let integer = BTreeMap::new();
         let algebraic = BTreeMap::new();
         for replacement in [
@@ -342,10 +305,16 @@ mod tests {
             );
             let mut rewrite = TermRewrite::for_typed_variables(&program, &integer, &algebraic);
             let exports = KernelTermExport::machine_export_count();
-            assert!(rewrite.shared_boolean_operand(&atom).is_none());
+            let actual = rewrite.shared_boolean_operand(&atom).unwrap();
             assert_eq!(rewrite.refusal_status(), baseline.refusal_status());
             assert_eq!(KernelTermExport::machine_export_count(), exports);
             assert!(!atom.has_cached_native_argument());
+            assert_eq!(KernelTermExport::condition(&actual).unwrap(), expected);
+            let expected_root = KernelTermImport::for_exact_field_inputs().condition(&expected);
+            assert_eq!(
+                actual.condition_storage_key(),
+                expected_root.condition_storage_key()
+            );
         }
         let read = KernelTermImport::default().condition(&ConditionTerm::BoolLoad(
             ProgramPoint::at(&intern_memory(SymbolicMemory::new())),

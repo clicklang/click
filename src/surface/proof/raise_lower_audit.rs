@@ -344,6 +344,41 @@ mod tests {
         );
     }
 
+    /// A goal naming an `intro` binder raises through that binder's name,
+    /// as premise raising does: `0 <= k and k < 3` after `intro()`.
+    #[test]
+    fn an_intro_binder_goal_raises_with_its_binder_name() {
+        let lines = round_trips(
+            "copy3_array_demo.md",
+            include_str!("../../../mdtests/copy3_array_demo.md"),
+        );
+        let goal = "0 <= k and k < 3";
+        assert!(
+            lines.contains(&("same".to_string(), goal.to_string())),
+            "{lines:#?}"
+        );
+        assert!(
+            !lines.contains(&("unraised".to_string(), goal.to_string())),
+            "{lines:#?}"
+        );
+    }
+
+    /// A resource fact over a declared composite raises as the composite's
+    /// name applied to its arguments, a local's storage as `&pool`:
+    /// `contains(slot(&pool, p), p[0])`.
+    #[test]
+    fn a_declared_composite_resource_fact_round_trips() {
+        let lines = round_trips(
+            "authority_wildcard_create_private_body.md",
+            include_str!("../../../mdtests/authority_wildcard_create_private_body.md"),
+        );
+        let fact = "contains(slot(&pool, p), p[0])";
+        assert!(
+            lines.contains(&("same".to_string(), fact.to_string())),
+            "{lines:#?}"
+        );
+    }
+
     #[test]
     fn a_checked_step_records_how_each_added_fact_round_trips() {
         let fixture = crate::cli::parse_mdtest(

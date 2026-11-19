@@ -1,12 +1,15 @@
 use super::diagnostics::{
     aligned_sugar, describe_code_region_ref, describe_contract_expression,
     describe_contract_segment, describe_program_expression, describe_program_point_selector,
-    describe_resource_subject, program_point_aligned_sugar,
+    describe_resource_subject, object_at_address, program_point_aligned_sugar,
 };
 use super::*;
 
 /// Click source that parses back. Every spelling is chosen by its caller;
 /// no output depends on who else is printing.
+/// Diagnostic spelling for a kernel conjunction without complete Surface labels.
+pub(super) const UNRAISED_CONJUNCT: &str = "<unraised conjunct>";
+
 pub(in crate::surface) fn source_click_proposition(proposition: &ClickProposition) -> String {
     print_proposition(proposition, PropositionSpelling::Source)
 }
@@ -393,6 +396,28 @@ pub(super) fn print_proposition(
             format!("viewable({})", describe_contract_segment(segment))
         }
         ClickProposition::Defined { expression } => {
+            // Keep the indexed read when its base is an object address.
+            // A bare local can lower to a held value and lose the typed
+            // read-definedness fact that this proposition establishes.
+            let indexed = match expression {
+                ContractExpression::Index(base, index) => Some((
+                    describe_contract_expression(base),
+                    describe_contract_expression(index),
+                )),
+                ContractExpression::ProgramExpression(ProgramExpression::Index(base, index)) => {
+                    Some((
+                        describe_program_expression(base),
+                        describe_program_expression(index),
+                    ))
+                }
+                _ => None,
+            };
+            if let Some((base, index)) = indexed
+                && index == "0"
+                && object_at_address(&base).is_some()
+            {
+                return format!("defined(({base})[0])");
+            }
             format!("defined({})", describe_contract_expression(expression))
         }
         ClickProposition::At {
@@ -916,17 +941,21 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
             write_tactics(output, &proof_if.else_tactics, indent + 1);
             line(output, &prefix, "}");
         }
-        ProofTactic::Both(both) => {
+        ProofTactic::All(all) => {
+            line(output, &prefix, "all {");
             let arm_prefix = "    ".repeat(indent + 1);
-            line(output, &prefix, "both {");
-            line(output, &arm_prefix, "left => {");
-            write_tactics(output, &both.left_tactics, indent + 2);
-            line(output, &arm_prefix, "}");
-            line(output, &arm_prefix, "right => {");
-            write_tactics(output, &both.right_tactics, indent + 2);
-            line(output, &arm_prefix, "}");
+            for arm in &all.arms {
+                line(
+                    output,
+                    &arm_prefix,
+                    &format!("{} => {{", source_click_proposition(&arm.proposition)),
+                );
+                write_tactics(output, &arm.tactics, indent + 2);
+                line(output, &arm_prefix, "}");
+            }
             line(output, &prefix, "}");
         }
+        ProofTactic::Both(_) => line(output, &prefix, UNRAISED_CONJUNCT),
         ProofTactic::Cases(proof_cases) => {
             line(output, &prefix, "cases {");
             let arm_prefix = "    ".repeat(indent + 1);

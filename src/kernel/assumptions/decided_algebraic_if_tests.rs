@@ -65,7 +65,7 @@ pub(super) fn view(tag_variable: u64, payload: u64) -> AlgebraicTerm {
     })
 }
 pub(super) fn equal(left: AlgebraicTerm, right: AlgebraicTerm) -> Proposition {
-    Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right))
+    Proposition::Equal(Term::Algebraic(left.into()), Term::Algebraic(right.into()))
 }
 fn values_equal(left: u64, right: u64) -> ConditionTerm {
     ConditionTerm::Compare {

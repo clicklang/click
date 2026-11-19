@@ -381,6 +381,9 @@ pub(in crate::surface::proof) fn certified_condition_transitions(
             let mut successor_facts = pure_facts.clone();
             successor_facts.extend(path.facts().iter().map(|fact| fact.proposition().clone()));
             let prerequisite_assumptions = match context {
+                // The checked step's presentation already extends the
+                // incoming proof graph with this outcome's facts.
+                _ if pure_facts.is_statement_view() => successor_facts.context(),
                 // The successor facts beyond `pure_facts` are the path's.
                 Some(context) => path
                     .facts()
@@ -712,6 +715,9 @@ fn certified_transitions_from_execution(
             successor_facts.extend(statement_facts.iter().cloned());
             let execution_facts = path.execution_facts();
             let prerequisite_assumptions = match context {
+                // The checked step's presentation already extends the
+                // incoming proof graph with this outcome's facts.
+                _ if pure_facts.is_statement_view() => successor_facts.context(),
                 Some(context) => statement_facts
                     .iter()
                     .fold(context.clone(), |assumptions, fact| {
@@ -738,16 +744,28 @@ fn certified_transitions_from_execution(
                 }
             );
             for obligation in path.obligations() {
-                // Entry requirements cannot cite facts produced by this call.
-                // In particular an identical `ensures` is conditional on the
-                // very requirement being checked, not evidence for it.
-                let prerequisite_assumptions = if obligation.call_requirement_site().is_some() {
+                // A precondition cannot cite a fact produced by the
+                // transition whose validity depends on that precondition.
+                let prerequisite_assumptions = if obligation.requires_statement_entry() {
                     executed_under
                 } else {
                     &prerequisite_assumptions
                 };
                 let proposition = obligation.proposition();
-                if collecting_step_requirements() && !obligation.is_assumable() {
+                // An allocation step can establish this exact separation
+                // before the temporary has a Surface name. Its predecessor
+                // fact is checked here, without opening a source proof.
+                let established_temporary_separation =
+                    matches!(proposition, Proposition::ResourceSeparate { left, .. }
+                        if matches!(left.as_ref(), crate::kernel::Resource::Memory(range)
+                            if matches!(&range.base().base,
+                                crate::kernel::AddressBase::AutomaticLocal { binding, .. }
+                                if binding.is_temporary())))
+                    && executed_under.contains_assumed_exact(proposition);
+                if collecting_step_requirements()
+                    && !obligation.is_assumable()
+                    && !established_temporary_separation
+                {
                     let description = crate::surface::diagnostics::describe_proof_obligation_context(obligation)
                         .map(|description| format!(" ({description})"))
                         .unwrap_or_default();

@@ -1577,6 +1577,20 @@ pub fn loop_invariants_hold_at_entry(
 pub struct StateJoinAbstraction {
     pub state: ExecutionState,
     pub next_kernel_variable: u64,
+    memory_requirements: Vec<Proposition>,
+}
+
+impl StateJoinAbstraction {
+    /// The abstraction may be published only if every changed span separates
+    /// from the live loan footprint at the split, before any arm runs.
+    pub(crate) fn unproved_memory_separation(
+        &self,
+        entry_facts: &crate::kernel::proof::PureFactStore,
+    ) -> Option<&Proposition> {
+        self.memory_requirements
+            .iter()
+            .find(|goal| !crate::kernel::proof::checked_branch_fact_is_available(entry_facts, goal))
+    }
 }
 
 /// Builds a branch-independent symbolic state for a proof join.
@@ -2012,13 +2026,15 @@ fn abstract_execution_state_for_join_across_with_policy(
         && sibling_states
             .iter()
             .all(|sibling| state.memory.differs_only_within(&sibling.memory, preserved));
+    let mut memory_requirements = BTreeSet::new();
     if !common_memory {
         if let Some(ledger) = abstract_state.loan_ledger() {
             for sibling in sibling_states {
-                validate_branch_memory_delta_against_loans(
+                branch_memory_delta_requirements(
                     &abstract_state.memory,
                     &sibling.memory,
                     ledger,
+                    &mut memory_requirements,
                 )?;
             }
         }
@@ -2108,6 +2124,7 @@ fn abstract_execution_state_for_join_across_with_policy(
         // separately by the checked interface, not inserted into this placeholder.
         state: abstract_state.with_resource_context(ResourceContext::new()),
         next_kernel_variable: budget.next_kernel_variable(),
+        memory_requirements: memory_requirements.into_iter().collect(),
     })
 }
 
@@ -2124,10 +2141,11 @@ fn join_variable(
     })
 }
 
-fn validate_branch_memory_delta_against_loans(
+fn branch_memory_delta_requirements(
     base: &SymbolicMemory,
     sibling: &SymbolicMemory,
     ledger: &crate::kernel::loans::LoanLedger,
+    requirements: &mut BTreeSet<Proposition>,
 ) -> Result<(), String> {
     if !ledger.has_active_memory_loans() {
         return Ok(());
@@ -2139,28 +2157,10 @@ fn validate_branch_memory_delta_against_loans(
         return Err("branch memory join has an unsupported allocation or block delta while a stable-view loan is active".to_string());
     }
     for pointer in base.differing_cell_pointers(sibling) {
-        let mut byte_width = base
-            .cells
-            .get(&pointer)
-            .map(|value| value.byte_width())
-            .unwrap_or(0)
-            .max(
-                sibling
-                    .cells
-                    .get(&pointer)
-                    .map(|value| value.byte_width())
-                    .unwrap_or(0),
-            );
-        for (union_pointer, program_type) in base.union_cells.keys() {
-            if union_pointer == &pointer {
-                byte_width = byte_width.max(program_type.byte_width());
-            }
-        }
-        for (union_pointer, program_type) in sibling.union_cells.keys() {
-            if union_pointer == &pointer {
-                byte_width = byte_width.max(program_type.byte_width());
-            }
-        }
+        crate::instrumentation::record_deterministic_work(1);
+        let byte_width = base
+            .join_cell_width(&pointer)
+            .max(sibling.join_cell_width(&pointer));
         if byte_width == 0 {
             return Err(
                 "branch memory join has an unknown changed cell width while a stable-view loan is active".to_string(),
@@ -2172,11 +2172,7 @@ fn validate_branch_memory_delta_against_loans(
             MachineTerm::constant(byte_width),
             1,
         );
-        if let Err(error) = ledger.permits_memory_access(&range) {
-            return Err(format!(
-                "branch memory join changes an active stable-view footprint: {error}"
-            ));
-        }
+        requirements.extend(ledger.memory_access_requirement(&range));
     }
     Ok(())
 }
@@ -3758,6 +3754,50 @@ pub fn program_function_input_objects_state(
     program_function_entry_state_with(caller_state, function, arguments, true)
 }
 
+/// Keeps the identity of each aggregate proof input explicitly named by a
+/// logical resource. Select by the materialized slot's exact pointer key.
+pub(crate) fn with_resource_keyed_aggregate_proof_inputs(
+    mut state: ExecutionState,
+    function: &ProgramFunction,
+) -> ExecutionState {
+    let mut owner = None;
+    for parameter in function.parameters() {
+        crate::instrumentation::record_deterministic_work(1);
+        if parameter.aggregate_layout().is_none() {
+            continue;
+        }
+        let name = parameter.binding_name();
+        let Some(LocalBinding::AggregateObject {
+            layout,
+            slot,
+            constant,
+            ..
+        }) = state.locals.binding(name)
+        else {
+            continue;
+        };
+        if state
+            .resources
+            .owned_instances_with_pointer_argument(slot)
+            .next()
+            .is_none()
+        {
+            continue;
+        }
+        let owner = owner.get_or_insert_with(|| Arc::<str>::from(function.name()));
+        state.locals.insert_binding(
+            name.clone(),
+            LocalBinding::AggregateObject {
+                layout: layout.clone(),
+                slot: slot.clone(),
+                constant: *constant,
+                proof_input_for: Some(owner.clone()),
+            },
+        );
+    }
+    state
+}
+
 fn program_function_entry_state_with(
     caller_state: &ExecutionState,
     function: &ProgramFunction,
@@ -4065,13 +4105,10 @@ fn install_borrowed_contract_inputs(
         ) {
             continue;
         }
-        let candidates = state
+        let Some(occurrence) = state
             .resources()
-            .view_occurrences_for_fact(&input.fact, assumptions)
-            .into_iter()
-            .filter(|occurrence| state.resources().view_occurrence_is_principal(*occurrence))
-            .collect::<Vec<_>>();
-        let [occurrence] = candidates.as_slice() else {
+            .principal_input_view_occurrence(&input.fact, assumptions)
+        else {
             return Err(LoanRefusal::MissingLoanBinding.diagnostic_with_subject(
                 LoanRefusalOperation::Entry,
                 LoanRefusalSubject::for_resource(input.fact),
@@ -4079,12 +4116,12 @@ fn install_borrowed_contract_inputs(
         };
         let viewed = state
             .resources()
-            .view_fact_at_occurrence(*occurrence)
+            .view_fact_at_occurrence(occurrence)
             .cloned()
             .ok_or_else(|| {
                 LoanRefusal::MissingLoanBinding.diagnostic_with_subject(
                     LoanRefusalOperation::Entry,
-                    LoanRefusalSubject::with_support_id(*occurrence),
+                    LoanRefusalSubject::with_support_id(occurrence),
                 )
             })?;
         // Address-backed aggregate parameters and compiler-created local
@@ -4115,10 +4152,10 @@ fn install_borrowed_contract_inputs(
             let owner = owner.clone();
             return Err(LoanRefusal::ActiveDependency.diagnostic_with_subject(
                 LoanRefusalOperation::Entry,
-                LoanRefusalSubject::for_supported_view(viewed, owner, *occurrence),
+                LoanRefusalSubject::for_supported_view(viewed, owner, occurrence),
             ));
         }
-        selected.entry(*occurrence).or_insert(viewed);
+        selected.entry(occurrence).or_insert(viewed);
     }
 
     if selected.is_empty() {
@@ -5229,7 +5266,10 @@ fn symbolic_execution_statement_execution_with_loop_rule(
                     natural_exit_target: Some(exit_target),
                     ..
                 }, StatementOutcome::Jump { target, .. }) if target == exit_target
-            )) && path.obligations.iter().all(ProofObligation::is_assumable)
+            )) && path
+                .obligations
+                .iter()
+                .all(|obligation| obligation.is_assumable() || obligation.statement_entry_required)
         }))
     .then(|| VerifiedLoopRule {
         symbolic_entry_state: state.clone(),
@@ -5240,9 +5280,9 @@ fn symbolic_execution_statement_execution_with_loop_rule(
         composite_resource_definitions: Vec::new(),
         // The rule records the anchor its own body was stepped under. A
         // self-call in that body raised the descent obligations exactly when
-        // this is set, and the rule was only formed because every obligation
-        // on its paths was discharged or assumable, so this is the kernel's
-        // own note of what the summary already paid for.
+        // this is set. Every body obligation has already been discharged
+        // or was assumable. The application still owes any retained
+        // statement-entry conditions.
         recursion_anchor: environment.recursion_anchor_handle(),
         variable_index: Default::default(),
     });
@@ -5910,15 +5950,18 @@ mod proof_case_evidence_tests {
             offset: AddressOffset::Constant(1),
         };
         let changed = base.clone().store(later_byte, int32(1));
-        assert!(validate_branch_memory_delta_against_loans(&base, &changed, &ledger).is_err());
-        let disjoint = base.clone().store(
+        let mut requirements = BTreeSet::new();
+        branch_memory_delta_requirements(&base, &changed, &ledger, &mut requirements).unwrap();
+        let changed_range = MemoryRange::new_with_element_width(
             Address {
                 base: AddressBase::ExternalArgument,
-                offset: AddressOffset::Constant(4),
+                offset: AddressOffset::Constant(1),
             },
-            int32(1),
+            0u32.into(),
+            4u32.into(),
+            1,
         );
-        assert!(validate_branch_memory_delta_against_loans(&base, &disjoint, &ledger).is_ok());
+        assert!(requirements.contains(&ledger.memory_access_requirement(&changed_range).unwrap()));
     }
 
     #[test]
@@ -7660,7 +7703,7 @@ pub(crate) fn prove_program_function_contract_refinement(
         || !values
             .iter()
             .zip(context.contract.value_arguments())
-            .all(|(term, value)| matches!(term, Term::ProgramValue(term) if term == value))
+            .all(|(term, value)| matches!(term, Term::ProgramValue(term) if term.native_compat() == value))
     {
         return None;
     }
@@ -7686,7 +7729,7 @@ pub(crate) fn prove_program_function_contract_refinement(
                 name: source.predicate_name(),
                 arguments: [
                     state.clone(),
-                    Term::ProgramValue(ProgramValue::Pointer(context.pointer.clone())),
+                    Term::ProgramValue(ProgramValue::Pointer(context.pointer.clone()).into()),
                 ]
                 .into_iter()
                 .chain(
@@ -7694,7 +7737,7 @@ pub(crate) fn prove_program_function_contract_refinement(
                         .value_arguments()
                         .iter()
                         .cloned()
-                        .map(Term::ProgramValue),
+                        .map(|value| Term::ProgramValue(value.into())),
                 )
                 .collect(),
             };
@@ -7814,10 +7857,15 @@ pub(crate) fn prove_executed_contract_refinement(
                 .predicate_name(),
             arguments: [
                 state.clone(),
-                Term::ProgramValue(ProgramValue::Pointer(pointer.clone())),
+                Term::ProgramValue(ProgramValue::Pointer(pointer.clone()).into()),
             ]
             .into_iter()
-            .chain(source_values.iter().cloned().map(Term::ProgramValue))
+            .chain(
+                source_values
+                    .iter()
+                    .cloned()
+                    .map(|value| Term::ProgramValue(value.into())),
+            )
             .collect(),
         };
         implication = Proposition::Implies(Box::new(premise), Box::new(implication));
@@ -7845,7 +7893,7 @@ fn executed_conclusion_values(
         .get(2..)?
         .iter()
         .map(|argument| match argument {
-            Term::ProgramValue(value) => Some(value.clone()),
+            Term::ProgramValue(value) => Some(value.native_compat().clone()),
             _ => None,
         })
         .collect::<Option<Vec<_>>>()?;

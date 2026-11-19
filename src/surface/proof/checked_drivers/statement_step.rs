@@ -13,7 +13,6 @@ pub(in crate::surface::proof) fn check_statement_step_with_policy(
     execution: &mut ExecutionProofState,
     proof_context: &ExecutionProofContext<'_>,
     requirement_pure_facts: &PureFactStore,
-    context: Option<&PureFactContext>,
     prerequisite_policy: StatementPrerequisitePolicy,
 ) -> Result<CheckedStatementStep, ClickError> {
     let function_block = proof_context.function_block;
@@ -25,9 +24,6 @@ pub(in crate::surface::proof) fn check_statement_step_with_policy(
     let claim_label = proof_context.claim_label;
     let tactic_index = proof_context.tactic_index;
 
-    let checked_case_context = execution
-        .core
-        .checked_step_case_context(execution.presentation.case_assumptions.len());
     let state: &mut ExecutionState = &mut execution.core.state;
     let assumptions = requirement_pure_facts.assumptions();
     // A bare `step()` executes in the whole proof context: prerequisites
@@ -90,49 +86,28 @@ pub(in crate::surface::proof) fn check_statement_step_with_policy(
             step_facts.push(branch_fact);
         }
     }
-    // Reuse only the kernel-admitted case prefix when all written cases
-    // selected one distinct available fact each. Other producers and dropped
-    // or duplicate cases keep the ordinary ordered fold.
-    let mut local_context = checked_case_context.filter(|cases| {
-        step_facts.len() == execution.presentation.case_assumptions.len()
-            && step_facts.iter().all(|fact| cases.proves_exact(fact))
-    });
-    let step_assumptions = match context {
-        Some(context) => context.clone(),
-        None => assumptions_from_propositions(&step_facts),
-    };
     for resource_fact in state
         .resources()
-        .observable_facts_assuming_valid(&step_assumptions)
+        .observable_facts_assuming_valid(assumptions)
     {
         if listed.insert(resource_fact.clone()) {
-            if let Some(local) = &mut local_context {
-                crate::kernel::reasoning::path_facts::count_context_rebuild_entries(1);
-                *local = local.clone().assume_proposition(resource_fact.clone());
-            }
             step_facts.push(resource_fact);
         }
     }
-    let step_facts = PureFactList::for_statement(step_facts, local_context, requirement_pure_facts);
-    let apply = |policy, selected_context| {
-        execute_step_successor_from_frontier_position(
-            execution,
-            proof_context,
-            &step_facts,
-            tactic_name,
-            policy,
-            // A step transports nothing: the kernel keeps the names of cells it
-            // proves unwritten from the whole context, and ambient facts are
-            // restored below at their original states.
-            loop_step_policy,
-            selected_context,
-        )
-    };
+    let step_facts = PureFactList::for_statement(step_facts, requirement_pure_facts);
     let previous_effect_count = execution.core.effect_facts.len();
-    let successor = apply(prerequisite_policy, context)?;
+    let successor = execute_step_successor_from_frontier_position(
+        execution,
+        proof_context,
+        &step_facts,
+        tactic_name,
+        prerequisite_policy,
+        loop_step_policy,
+        Some(assumptions),
+    )?;
     let mut completed = successor.execution;
-    let mut facts = requirement_pure_facts.with_statement_facts_retaining_prefix(
-        successor.pure_facts.into_vec(),
+    let mut facts = requirement_pure_facts.publish_statement_view(
+        successor.pure_facts.into_store(),
         &completed.core.publication_case_prefix(),
     );
     // The checked core appends the selected statement's certified evidence.
@@ -146,14 +121,8 @@ pub(in crate::surface::proof) fn check_statement_step_with_policy(
     for fact in completed.core.effect_facts.iter().rev().take(effect_delta) {
         facts.retain_checked_read_fact(fact);
     }
-    let effect_leaf = super::super::proof_object::EffectLeaf::after_statement(
-        completed.presentation.effect_leaf.as_deref(),
-        &facts,
-        &completed.core.effect_facts,
-    );
-    // This is checked semantic state, shared by both source and Proof drivers.
     // A statement with several outcomes cannot attach one branch's facts to
-    // every candidate; loop-return producers likewise keep their own bases.
+    // every candidate. Loop-return producers also keep their own premises.
     completed.presentation.checked_leaf_facts = completed
         .core
         .frontier
@@ -161,13 +130,18 @@ pub(in crate::surface::proof) fn check_statement_step_with_policy(
         .filter(|paths| paths.path_count() == 1)
         .filter(|_| completed.core.frontier_loop_rules.is_empty())
         .map(|paths| {
+            let candidate = paths.candidate_at(0).expect("one checked outcome");
+            let indexed =
+                completed
+                    .core
+                    .checked_outcome_facts(candidate, requirement_pure_facts, &facts);
+            let holds_effects = indexed.is_some();
             Arc::new((
-                paths.candidate_at(0).expect("one checked outcome").clone(),
-                effect_leaf.facts.clone(),
-                true,
+                candidate.clone(),
+                indexed.unwrap_or_else(|| facts.clone()),
+                holds_effects,
             ))
         });
-    completed.presentation.effect_leaf = Some(Arc::new(effect_leaf));
     Ok(CheckedStatementStep {
         execution: completed,
         facts,

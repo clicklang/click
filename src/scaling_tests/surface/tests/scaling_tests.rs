@@ -377,6 +377,39 @@ fn execution_target_resource_scope_parsing_is_linear_in_selected_declarations() 
 }
 
 #[test]
+fn reversed_all_arm_matching_scales_with_written_labels() {
+    fn conjunction(labels: &[String]) -> String {
+        if let [one] = labels {
+            return one.clone();
+        }
+        let (left, right) = labels.split_at(labels.len() / 2);
+        format!("({} and {})", conjunction(left), conjunction(right))
+    }
+
+    let mut samples = Vec::new();
+    for width in [4, 8, 16, 32] {
+        let goals = (0..width)
+            .map(|index| format!("(forall (i: int32) {{ i <= i or i == {index} }})"))
+            .collect::<Vec<_>>();
+        let arms = (0..width)
+            .rev()
+            .map(|index| {
+                format!("forall (j: int32) {{ j <= j or j == {index} }} => {{ intro(); solve(); }}")
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        let source = format!(
+            "theorem reordered() {{ ensures {} by {{ all {{ {arms} }} }} }}",
+            conjunction(&goals)
+        );
+        let (result, sample) = scaling_sample(width, || verify_click_theorems(&source));
+        result.expect("reversed and alpha-renamed arms match their goals");
+        samples.push(sample);
+    }
+    assert_near_linear_scaling("reversed conjunction arm matching", &samples);
+}
+
+#[test]
 fn nested_conjunction_body_parsing_uses_small_frames_and_linear_work() {
     // `surface::parse` expands a file against the standard library, whose
     // first use parses every library module into a process-wide `OnceLock`
@@ -391,7 +424,7 @@ fn nested_conjunction_body_parsing_uses_small_frames_and_linear_work() {
             let samples = [2, 4, 8, 16].map(|depth| {
                 let mut body = "have 0 == 0 by { normalize(); } normalize();".to_string();
                 for _ in 0..depth {
-                    body = format!("both {{ left => {{ {body} }} right => {{ normalize(); }} }}");
+                    body = format!("all {{ true => {{ {body} }} true => {{ normalize(); }} }}");
                 }
                 let source = format!("theorem nested() {{ ensures 0 == 0 by {{ {body} }} }}");
                 let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -2979,6 +3012,7 @@ fn certificate_step_count(steps: &[ProofStep]) -> usize {
             ProofStep::Both {
                 left_proof,
                 right_proof,
+                ..
             }
             | ProofStep::Cases {
                 left_proof,
@@ -4481,10 +4515,13 @@ fn failing_solve_derivation_ignores_unrelated_algebraic_disjunctions() {
         )]))),
     };
     let term = |node| {
-        Term::Algebraic(AlgebraicTerm {
-            algebraic_type: color.clone(),
-            node,
-        })
+        Term::Algebraic(
+            AlgebraicTerm {
+                algebraic_type: color.clone(),
+                node,
+            }
+            .into(),
+        )
     };
     let is = |variable: u64, variant: &str| {
         Proposition::Equal(
@@ -4777,6 +4814,83 @@ fn call_preparation_and_ensures_keep_the_computed_argument_shared() {
         }),
         "call argument preparation or ensure lowering grew with argument depth or unrelated locals: {samples:?}"
     );
+}
+
+/// The first call can register a previously unseen expression. Later statement
+/// publications must use the same graph when they add another result equality.
+#[test]
+fn repeated_call_publication_reuses_the_argument_registration() {
+    use crate::instrumentation::VerificationEvent;
+
+    let mut samples = Vec::new();
+    for depth in [8, 32, 64] {
+        let updates = "    x = x * 3u + 1u;\n".repeat(depth);
+        let steps = "    step();\n".repeat(depth);
+        let c = format!(
+            "extern uint32 echo(uint32 value);\nvoid caller(uint32 x) {{\n{updates}    echo(x);\n    echo(x);\n}}"
+        );
+        let click = format!(
+            "verifying \"echo.c\";\n\
+             extern uint32 echo(uint32 value) {{ ensures result == old(value); }}\n\
+             void caller(uint32 x) {{ ensures true; }} by {{\n{steps}    step();\n    step();\n}}"
+        );
+        let (verified, events) =
+            crate::instrumentation::collect(|| verify_c_sources(&click, &[("echo.c", &c)]));
+        verified.unwrap_or_else(|error| panic!("depth {depth}: {}", error.report()));
+        let work = events.iter().find_map(|event| match event {
+            VerificationEvent::TacticFinished { tactic, work, .. }
+                if tactic.tactic_name == "step" && tactic.source_index == depth + 1 =>
+            {
+                Some(*work)
+            }
+            _ => None,
+        });
+        samples.push(work.expect("the second call was stepped"));
+    }
+    assert!(
+        samples.iter().all(|&work| work <= samples[0] + 64),
+        "publishing a new equality rewalked the argument: {samples:?}"
+    );
+}
+
+/// The return paths share the kernel's indexed effects for the common prefix.
+#[test]
+fn returning_branches_share_the_checked_effect_context() {
+    for stores in [8, 32, 64] {
+        let writes = (1..=stores)
+            .map(|value| format!("    p[0] = {value}u;\n"))
+            .collect::<String>();
+        let steps = "    step();\n".repeat(stores);
+        let c = format!(
+            "uint32 caller(uint32* p, uint32 x) {{\n{writes}\
+             if (x <= 2u) {{ if (x == 1u) return 1u; else return 2u; }}\n\
+             else {{ if (x == 3u) return 3u; else return 4u; }} }}"
+        );
+        let click = format!(
+            "verifying \"returns.c\";\n\
+             uint32 caller(uint32* p, uint32 x) {{ owns *p; ensures result <= 4; }} by {{\n{steps}\
+                 branch {{\n\
+                   true => {{ branch {{ true => {{ step(); solve(); }} false => {{ step(); solve(); }} }} }}\n\
+                   false => {{ branch {{ true => {{ step(); solve(); }} false => {{ step(); solve(); }} }} }}\n\
+                 }}\n}}"
+        );
+        use crate::kernel::proof::ExecutionProofCore;
+        ExecutionProofCore::take_checked_path_effect_admissions();
+        crate::surface::proof::take_outcome_fact_reads();
+        verify_c_sources(&click, &[("returns.c", c.as_str())])
+            .unwrap_or_else(|error| panic!("{stores} writes: {}", error.report()));
+        let (reused, imported) = crate::surface::proof::take_outcome_fact_reads();
+        assert!(
+            reused >= 4,
+            "{stores} writes: reused {reused} outcome contexts"
+        );
+        assert_eq!(imported, 0, "{stores} writes: replayed shared effects");
+        let admitted = ExecutionProofCore::take_checked_path_effect_admissions();
+        assert!(
+            (stores..=stores + 8).contains(&admitted),
+            "{stores} writes: indexed {admitted} path effects"
+        );
+    }
 }
 
 /// One `step()` over a call whose external contract has `N` ensures lowers
@@ -10455,7 +10569,7 @@ fn nested_conjunction_transport_scaling(balanced: bool) {
         });
         let expanded = expanded.unwrap();
         planning.push(work);
-        assert_eq!(expanded.matches("both {").count(), size - 1);
+        assert_eq!(expanded.matches("all {").count(), 1);
         assert_eq!(expanded.matches("preserve(").count(), size);
         assert!(!expanded.contains("transport("));
         assert!(!expanded.contains("transport_certificate"));
@@ -10525,7 +10639,7 @@ fn conjunction_projection_transport_scales_with_written_source() {
         let expanded = expanded.unwrap();
         expansion.push(work);
         assert_eq!(expanded.matches("preserve(").count(), 1);
-        assert!(!expanded.contains("both {"));
+        assert!(!expanded.contains("all {"));
         assert!(!expanded.contains("transport("));
         assert!(!expanded.contains("transport_certificate"));
         let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -10598,7 +10712,7 @@ fn conjunction_selection_transport_scales_with_sources_targets_and_premises() {
         });
         let expanded = expanded.unwrap();
         expansion.push(work);
-        assert_eq!(expanded.matches("both {").count(), size / 2 - 1);
+        assert_eq!(expanded.matches("all {").count(), 1);
         assert_eq!(expanded.matches("preserve(").count(), size / 2);
         assert!(!expanded.contains("transport("));
         assert!(!expanded.contains("transport_certificate"));

@@ -29,10 +29,9 @@ use crate::kernel::{
     SpecPredicateArgument, SpecProposition, SpecResource, StatementOutcome, SymbolicExecution,
     SymbolicMemory, Term, TerminationRefusal, Theorem, UnsuitableCallback, Variable,
     VerifiedLoopRule, VerifiedPureTheorem as KernelVerifiedPureTheorem,
-    abstract_execution_state_for_join, assume_universally_quantified_pure_implication,
-    contract_refinement_context, int32, loop_invariants_hold_at_entry, program_assign,
-    program_condition_fact_memories, program_declare,
-    program_do_while_with_invariant_and_effect_checks, program_function,
+    assume_universally_quantified_pure_implication, contract_refinement_context, int32,
+    loop_invariants_hold_at_entry, program_assign, program_condition_fact_memories,
+    program_declare, program_do_while_with_invariant_and_effect_checks, program_function,
     program_function_contract_entry_state, program_function_contract_refinement_arguments,
     program_function_contract_refinement_context, program_function_entry_state,
     program_function_termination_plan, program_if, program_pointer_offsets_proven_equal_for_effect,
@@ -509,8 +508,17 @@ pub(crate) fn rust_iterator_method(
         // A slice iterator is the slice it still covers: `iter.as_slice()`
         // reads as a slice parameter does, its data, and `iter.len()` is
         // its length. An enumeration also counts what it has yielded.
-        (K::Slice | K::Enumerate, "len()") => variable("len"),
-        (K::Slice | K::Enumerate, "as_slice()") => variable("ptr"),
+        (K::Slice | K::Enumerate, "len()" | "as_slice()") => {
+            let fields = iterator
+                .slice_fields
+                .as_ref()
+                .ok_or("missing slice iterator fields")?;
+            ProgramExpression::Variable(if accessor == "len()" {
+                fields.length.clone()
+            } else {
+                fields.pointer.clone()
+            })
+        }
         (K::Enumerate, "count") => ProgramExpression::Variable(
             iterator
                 .count_binding
@@ -539,15 +547,28 @@ pub(crate) fn rust_iterator_method(
         }
         // A slice field reads as a slice parameter does: `iter.v` is its
         // data and `iter.v.len()` its length.
-        (K::Chunks, "v") => variable("v"),
-        (K::Chunks, "v.len()") => variable("v_len"),
-        (K::Chunks, "rem") => variable("rem"),
-        (K::Chunks, "rem.len()") => variable("rem_len"),
-        (K::Chunks, "chunk_size") => variable("chunk_size"),
-        (K::Chunks, "len()") => ProgramExpression::Divide(
-            Box::new(variable("v_len")),
-            Box::new(variable("chunk_size")),
-        ),
+        (K::Chunks, "v" | "v.len()" | "rem" | "rem.len()" | "chunk_size" | "len()") => {
+            let fields = iterator
+                .chunk_fields
+                .as_ref()
+                .ok_or("missing chunk iterator fields")?;
+            let field = match accessor {
+                "v" => &fields.remaining,
+                "v.len()" => &fields.remaining_length,
+                "rem" => &fields.remainder,
+                "rem.len()" => &fields.remainder_length,
+                "chunk_size" => &fields.size,
+                _ => {
+                    return Ok(ContractExpression::ProgramExpression(
+                        ProgramExpression::Divide(
+                            Box::new(ProgramExpression::Variable(fields.remaining_length.clone())),
+                            Box::new(ProgramExpression::Variable(fields.size.clone())),
+                        ),
+                    ));
+                }
+            };
+            ProgramExpression::Variable(field.clone())
+        }
         _ => {
             return Err(format!(
                 "`iter.{accessor}` is not an accessor of this loop's {} iterator{}",
@@ -696,6 +717,10 @@ const CLICK_LIBRARY_MODULES: &[(&str, &str)] = &[
         include_str!("../library/c/stdio.click"),
     ),
     (
+        "library/cpp/span_state.click",
+        include_str!("../library/cpp/span_state.click"),
+    ),
+    (
         "library/rust/i8.click",
         include_str!("../library/rust/i8.click"),
     ),
@@ -734,6 +759,14 @@ const CLICK_LIBRARY_MODULES: &[(&str, &str)] = &[
     (
         "library/rust/usize.click",
         include_str!("../library/rust/usize.click"),
+    ),
+    (
+        "library/rust/option.click",
+        include_str!("../library/rust/option.click"),
+    ),
+    (
+        "library/rust/result.click",
+        include_str!("../library/rust/result.click"),
     ),
     (
         "library/rust/vec.click",
@@ -3606,6 +3639,9 @@ struct RecordedStates {
         >,
     >,
     version: std::sync::Arc<RecordedStateVersion>,
+    /// A temporary interface lowering scope reads marks from the common
+    /// tree without exposing its incidental program points.
+    interface_marks: Option<std::sync::Arc<RecordedInterfaceMarks>>,
     /// The labels the proof gave loops on this path. A program point is
     /// recorded once, under its loop's first label when it has one and as
     /// `loop(N)` otherwise; a lookup by either spelling, or by another label
@@ -3710,6 +3746,11 @@ struct RecordedStateVersion {
     origin: std::sync::Arc<()>,
 }
 
+struct RecordedInterfaceMarks {
+    root: Option<std::sync::Arc<RecordedStateNode>>,
+    call_result_snapshots: imbl::OrdMap<ProgramPointSelector, RecordedCallResults>,
+}
+
 impl Default for RecordedStates {
     fn default() -> Self {
         Self {
@@ -3724,6 +3765,7 @@ impl Default for RecordedStates {
                 history: None,
                 origin: std::sync::Arc::new(()),
             }),
+            interface_marks: None,
             loop_labels: None,
             source_layout: None,
             point_names: imbl::HashMap::new(),
@@ -3931,6 +3973,44 @@ impl RecordedStates {
 
     fn new() -> Self {
         Self::default()
+    }
+
+    /// The abstract interface can read its target and shared proof marks.
+    /// Its target is only a lowering input. Publication at the continuation
+    /// adds the checked successor to the ordinary indexes once.
+    fn for_branch_interface(
+        &self,
+        common: &Self,
+        target: &ProgramPointRef,
+        state: &ExecutionState,
+    ) -> Self {
+        let selector = self.recorded_spelling(target.clone().into());
+        let mut records = Self {
+            version: std::sync::Arc::new(RecordedStateVersion {
+                root: Some(recorded_state_node(
+                    selector.clone(),
+                    Some(state.clone()),
+                    None,
+                    None,
+                )),
+                history: None,
+                origin: std::sync::Arc::new(()),
+            }),
+            interface_marks: Some(std::sync::Arc::new(RecordedInterfaceMarks {
+                root: common.version.root.clone(),
+                call_result_snapshots: common.call_result_snapshots.clone(),
+            })),
+            loop_labels: self.loop_labels.clone(),
+            source_layout: self.source_layout.clone(),
+            loop_iterations: self.loop_iterations.clone(),
+            loop_iteration_variables: self.loop_iteration_variables.clone(),
+            ..Self::new()
+        };
+        records.effect_offsets.insert(selector.clone(), 0);
+        if records.records_call_snapshots() {
+            records.set_call_result_snapshot(&selector, Some(RecordedCallResults::default()));
+        }
+        records
     }
 
     fn get<K: RecordedStateKey + ?Sized>(&self, key: &K) -> Option<&ExecutionState> {
@@ -4169,8 +4249,13 @@ impl RecordedStates {
 
     fn call_results_at(&self, selector: &ProgramPointSelector) -> Option<&RecordedCallResults> {
         crate::instrumentation::record_deterministic_work(1);
-        self.call_result_snapshots
-            .get(&self.recorded_spelling(selector.clone()))
+        let selector = self.recorded_spelling(selector.clone());
+        if matches!(selector, ProgramPointSelector::Mark(_))
+            && let Some(marks) = &self.interface_marks
+        {
+            return marks.call_result_snapshots.get(&selector);
+        }
+        self.call_result_snapshots.get(&selector)
     }
 
     fn records_call_snapshots(&self) -> bool {
@@ -4704,7 +4789,13 @@ impl RecordedStates {
     }
 
     fn get_exact<K: RecordedStateKey + ?Sized>(&self, key: &K) -> Option<&ExecutionState> {
-        let mut node = self.version.root.as_deref();
+        let root = match &self.interface_marks {
+            Some(marks) if matches!(key.to_selector(), ProgramPointSelector::Mark(_)) => {
+                &marks.root
+            }
+            _ => &self.version.root,
+        };
+        let mut node = root.as_deref();
         while let Some(current) = node {
             match key.compare(&current.selector) {
                 std::cmp::Ordering::Less => node = current.left.as_deref(),
@@ -5314,32 +5405,6 @@ impl RecordedStates {
             .take_while(|(selector, _)| matches!(selector, ProgramPointSelector::Mark(_)))
             .take(limit)
             .collect()
-    }
-
-    fn retain(&mut self, mut keep: impl FnMut(&ProgramPointSelector, &mut ExecutionState) -> bool) {
-        let mut retained = Self::new();
-        retained.loop_labels = self.loop_labels.clone();
-        retained.source_layout = self.source_layout.clone();
-        retained.loop_iterations = self.loop_iterations.clone();
-        retained.loop_iteration_variables = self.loop_iteration_variables.clone();
-        for (selector, state) in self.iter() {
-            let mut state = state.clone();
-            if keep(selector, &mut state) {
-                retained.insert(selector.clone(), state);
-                retained.set_call_result_snapshot(
-                    selector,
-                    self.call_result_snapshots.get(selector).cloned(),
-                );
-                if let ProgramPointSelector::ProgramPoint(ProgramPointRef {
-                    region: CodeRegionRef::Region(index),
-                    kind: ProgramPointKind::Exit,
-                }) = selector
-                {
-                    retained.record_read_event_values(*index, self.read_event_values(*index));
-                }
-            }
-        }
-        *self = retained;
     }
 }
 
@@ -6024,6 +6089,7 @@ pub enum ProofTactic {
     Match(std::sync::Arc<ProofMatch>),
     Cases(ProofCases),
     Both(ProofBoth),
+    All(ProofAll),
     Branch(ProofBranch),
     CallOutcomes(ProofCallOutcomes),
     Loop(StructuralClause),
@@ -6422,8 +6488,8 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
         class: "control",
     },
     PublicTacticForm {
-        id: "both",
-        syntax: "both",
+        id: "all",
+        syntax: "all {",
         class: "control",
     },
     PublicTacticForm {
@@ -6614,6 +6680,11 @@ impl ProofTactic {
                 .iter()
                 .map(|arm| Continuing(Script(&arm.tactics)))
                 .collect(),
+            Self::All(all) => all
+                .arms
+                .iter()
+                .map(|arm| Continuing(Script(&arm.tactics)))
+                .collect(),
             Self::Both(both) => vec![
                 Continuing(Script(&both.left_tactics)),
                 Continuing(Script(&both.right_tactics)),
@@ -6705,7 +6776,7 @@ impl ProofTactic {
             Self::If(_) => TacticClass::Control(ControlTactic::If),
             Self::Match(_) => TacticClass::Control(ControlTactic::Match),
             Self::Cases(_) => TacticClass::Control(ControlTactic::Cases),
-            Self::Both(_) => TacticClass::Control(ControlTactic::Both),
+            Self::Both(_) | Self::All(_) => TacticClass::Control(ControlTactic::Both),
             Self::Branch(_) => TacticClass::Control(ControlTactic::Branch),
             Self::CallOutcomes(_) => TacticClass::Control(ControlTactic::CallOutcomes),
             Self::Loop(_) => TacticClass::Control(ControlTactic::Loop),
@@ -6826,6 +6897,18 @@ pub struct CertificateInductionArm {
 pub struct ProofBoth {
     pub left_tactics: Vec<ProofTactic>,
     pub right_tactics: Vec<ProofTactic>,
+}
+
+/// Proofs of the conjuncts of the focused goal, in goal order.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProofAll {
+    pub(crate) arms: Vec<ProofAllArm>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ProofAllArm {
+    pub(crate) proposition: ClickProposition,
+    pub(crate) tactics: Vec<ProofTactic>,
 }
 
 /// Explicit elimination of a disjunctive fact: proof checking requires the
@@ -8428,7 +8511,26 @@ pub struct VerifiedProgramTheorem {
     /// The entry the proof that issued this theorem was built from, shared
     /// by every theorem of that proof.
     pub(in crate::surface) entry_context: Option<std::sync::Arc<proof::ProofEntryContext>>,
+    /// The checked function's source layout, which spells the certificate's
+    /// step results when it is rendered after checking.
+    pub(in crate::surface) source_layout: TheoremSourceLayout,
 }
+
+/// The source layout a verified theorem's certificate is spelled by. It is
+/// presentation, not what the theorem states, so it never makes two
+/// theorems unequal.
+#[derive(Clone, Default)]
+pub(in crate::surface) struct TheoremSourceLayout(
+    pub(in crate::surface) Option<lowering::SourceExecutionLayout>,
+);
+
+impl PartialEq for TheoremSourceLayout {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl Eq for TheoremSourceLayout {}
 
 // Retained executions and proof states share large graphs. Formatting a
 // verification result (notably unwrap_err's unexpected-success panic) must
@@ -10231,7 +10333,19 @@ impl VerifiedProgramTheorem {
         })
     }
 
+    /// Spells this theorem's step results by its function's source layout
+    /// while alive, as checking did.
+    pub(in crate::surface) fn step_result_spelling_scope(
+        &self,
+    ) -> Option<diagnostics::StepResultSpellingScope> {
+        self.source_layout
+            .0
+            .as_ref()
+            .map(diagnostics::StepResultSpellingScope::enter)
+    }
+
     pub fn expanded_proof_source(&self) -> Result<String, ClickError> {
+        let _spelling = self.step_result_spelling_scope();
         let _reference_result_source = diagnostics::ReferenceResultSourceScope::enter(
             self.function_block.signature().returns_reference(),
         );

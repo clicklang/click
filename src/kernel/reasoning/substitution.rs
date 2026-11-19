@@ -765,11 +765,7 @@ fn walk_resource<S: VariableSubstitution + ?Sized>(resource: &Resource, s: &S) -
                             ))
                         }
                         StoredResourceField::Algebraic(root) => {
-                            let ProgramValue::Parameter(value) =
-                                root.algebraic_native_value().expect("algebraic field")
-                            else {
-                                unreachable!()
-                            };
+                            let value = root.algebraic_native_term().expect("algebraic field");
                             StoredResourceField::from_minted(AlgebraicValue::Algebraic(
                                 s.algebraic_term(value),
                             ))
@@ -877,10 +873,12 @@ fn walk_execution_state<S: VariableSubstitution + ?Sized>(
                     layout,
                     slot,
                     constant,
+                    proof_input_for,
                 } => LocalBinding::AggregateObject {
                     layout: layout.clone(),
                     slot: s.local_slot(slot),
                     constant: *constant,
+                    proof_input_for: proof_input_for.clone(),
                 },
             };
             (name.clone(), binding)
@@ -2299,8 +2297,8 @@ fn capture_avoiding_algebraic_quantifier_body(
     replacement: &AlgebraicTerm,
 ) -> (Variable, Proposition) {
     let replacement_probe = Proposition::Equal(
-        Term::Algebraic(replacement.clone()),
-        Term::Algebraic(replacement.clone()),
+        Term::Algebraic(replacement.clone().into()),
+        Term::Algebraic(replacement.clone().into()),
     );
     let replacement_variables = crate::kernel::proposition_variables(&replacement_probe);
     if !replacement_variables.contains(&binder) {
@@ -2589,13 +2587,21 @@ fn collect_proposition_bound_variables_one(
 
 fn collect_term_bound_variables(term: &Term, variables: &mut BTreeSet<Variable>) {
     match term {
-        Term::Condition(condition) => collect_condition_bound_variables(condition, variables),
-        Term::Bitvector32(bits) => collect_bitvector_bound_variables(bits, variables),
-        Term::Integer(integer) => collect_integer_bound_variables(integer, variables),
+        Term::Condition(condition) => {
+            collect_condition_bound_variables(condition.native_compat(), variables)
+        }
+        Term::Bitvector32(bits) => {
+            collect_bitvector_bound_variables(bits.native_compat(), variables)
+        }
+        Term::Integer(integer) => {
+            collect_integer_bound_variables(integer.native_compat(), variables)
+        }
         Term::PointerOffset(offset) => collect_pointer_offset_bound_variables(offset, variables),
-        Term::ProgramValue(value) => collect_program_value_bound_variables(value, variables),
+        Term::ProgramValue(value) => {
+            collect_program_value_bound_variables(value.native_compat(), variables);
+        }
         Term::Sequence(sequence) => collect_sequence_bound_variables(sequence, variables),
-        Term::Algebraic(term) => collect_algebraic_bound_variables(term, variables),
+        Term::Algebraic(term) => collect_algebraic_bound_variables(term.native_compat(), variables),
         Term::ExecutionState(state) => collect_execution_state_bound_variables(state, variables),
         Term::Memory(memory) => collect_memory_bound_variables(memory, variables),
     }
@@ -3717,113 +3723,120 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_term(
     to: &MachineTerm,
 ) -> Term {
     match term {
-        Term::Condition(condition) => Term::Condition(substitute_bitvector_variable_in_condition(
-            condition, from, to,
-        )),
-        Term::Bitvector32(bits) => Term::Bitvector32(substitute_bitvector_variable(bits, from, to)),
+        Term::Condition(condition) => Term::Condition(
+            substitute_bitvector_variable_in_condition(condition.native_compat(), from, to).into(),
+        ),
+        Term::Bitvector32(bits) => {
+            Term::Bitvector32(bits.map_native(|word| substitute_bitvector_variable(word, from, to)))
+        }
         // Variable identities are shared by all logical sorts, but a
         // machine substitution must never rewrite an Integer variable with a
         // machine term. Integer binders use the dedicated function below.
-        Term::Integer(integer) => {
-            Term::Integer(substitute_bitvector_variable_in_integer(integer, from, to))
-        }
+        Term::Integer(integer) => Term::Integer(
+            substitute_bitvector_variable_in_integer(integer.native_compat(), from, to).into(),
+        ),
         Term::PointerOffset(offset) => Term::PointerOffset(
             substitute_bitvector_variable_in_pointer_offset(offset, from, to),
         ),
         Term::ProgramValue(value) => Term::ProgramValue(
-            substitute_bitvector_variable_in_program_value(value, from, to),
+            substitute_bitvector_variable_in_program_value(value.native_compat(), from, to).into(),
         ),
         Term::Sequence(sequence) => Term::Sequence(substitute_bitvector_variable_in_sequence(
             sequence, from, to,
         )),
-        Term::Algebraic(term) => Term::Algebraic(AlgebraicTerm {
-            algebraic_type: term.algebraic_type.clone(),
-            node: match &term.node {
-                AlgebraicTermNode::Variable(variable) => AlgebraicTermNode::Variable(*variable),
-                AlgebraicTermNode::MemoryLoad {
-                    point: memory,
-                    pointer,
-                } => {
-                    match substitute_bitvector_variable_in_algebraic_value(
-                        &AlgebraicTermNode::memory_load_carrier_value(
-                            memory.shared_memory(),
-                            pointer,
-                        ),
-                        from,
-                        to,
-                    ) {
-                        AlgebraicValue::Program(value) => {
-                            AlgebraicTermNode::memory_load_from_carrier(&value)
-                                .unwrap_or_else(|| term.node.clone())
+        Term::Algebraic(term) => Term::Algebraic(
+            AlgebraicTerm {
+                algebraic_type: term.native_compat().algebraic_type.clone(),
+                node: match &term.native_compat().node {
+                    AlgebraicTermNode::Variable(variable) => AlgebraicTermNode::Variable(*variable),
+                    AlgebraicTermNode::MemoryLoad {
+                        point: memory,
+                        pointer,
+                    } => {
+                        match substitute_bitvector_variable_in_algebraic_value(
+                            &AlgebraicTermNode::memory_load_carrier_value(
+                                memory.shared_memory(),
+                                pointer,
+                            ),
+                            from,
+                            to,
+                        ) {
+                            AlgebraicValue::Program(value) => {
+                                AlgebraicTermNode::memory_load_from_carrier(&value)
+                                    .unwrap_or_else(|| term.native_compat().node.clone())
+                            }
+                            _ => term.native_compat().node.clone(),
                         }
-                        _ => term.node.clone(),
                     }
-                }
-                AlgebraicTermNode::Constructor { variant, fields } => {
-                    AlgebraicTermNode::Constructor {
-                        variant: variant.clone(),
-                        fields: fields
-                            .iter()
-                            .map(|field| {
-                                substitute_bitvector_variable_in_algebraic_value(field, from, to)
-                            })
-                            .collect(),
-                    }
-                }
-                AlgebraicTermNode::Match { scrutinee, arms } => AlgebraicTermNode::Match {
-                    scrutinee: Box::new(substitute_bitvector_variable_in_algebraic_term(
-                        scrutinee, from, to,
-                    )),
-                    arms: arms
-                        .iter()
-                        .map(|arm| AlgebraicResultMatchArm {
-                            binding_names: arm.binding_names.clone(),
-                            variant: arm.variant.clone(),
-                            bindings: arm
-                                .bindings
+                    AlgebraicTermNode::Constructor { variant, fields } => {
+                        AlgebraicTermNode::Constructor {
+                            variant: variant.clone(),
+                            fields: fields
                                 .iter()
-                                .map(|binding| {
+                                .map(|field| {
                                     substitute_bitvector_variable_in_algebraic_value(
-                                        binding, from, to,
+                                        field, from, to,
                                     )
                                 })
                                 .collect(),
-                            body: substitute_bitvector_variable_in_algebraic_term(
-                                &arm.body, from, to,
-                            ),
-                        })
-                        .collect(),
-                },
-                AlgebraicTermNode::PureFunctionApplication { name, arguments } => {
-                    AlgebraicTermNode::PureFunctionApplication {
-                        name: name.clone(),
-                        arguments: arguments
+                        }
+                    }
+                    AlgebraicTermNode::Match { scrutinee, arms } => AlgebraicTermNode::Match {
+                        scrutinee: Box::new(substitute_bitvector_variable_in_algebraic_term(
+                            scrutinee, from, to,
+                        )),
+                        arms: arms
                             .iter()
-                            .map(|argument| {
-                                substitute_bitvector_variable_in_pure_function_argument(
-                                    argument, from, to,
-                                )
+                            .map(|arm| AlgebraicResultMatchArm {
+                                binding_names: arm.binding_names.clone(),
+                                variant: arm.variant.clone(),
+                                bindings: arm
+                                    .bindings
+                                    .iter()
+                                    .map(|binding| {
+                                        substitute_bitvector_variable_in_algebraic_value(
+                                            binding, from, to,
+                                        )
+                                    })
+                                    .collect(),
+                                body: substitute_bitvector_variable_in_algebraic_term(
+                                    &arm.body, from, to,
+                                ),
                             })
                             .collect(),
+                    },
+                    AlgebraicTermNode::PureFunctionApplication { name, arguments } => {
+                        AlgebraicTermNode::PureFunctionApplication {
+                            name: name.clone(),
+                            arguments: arguments
+                                .iter()
+                                .map(|argument| {
+                                    substitute_bitvector_variable_in_pure_function_argument(
+                                        argument, from, to,
+                                    )
+                                })
+                                .collect(),
+                        }
                     }
-                }
-                AlgebraicTermNode::If {
-                    condition,
-                    then_term,
-                    else_term,
-                } => AlgebraicTermNode::If {
-                    condition: Box::new(substitute_bitvector_variable_in_condition(
-                        condition, from, to,
-                    )),
-                    then_term: Box::new(substitute_bitvector_variable_in_algebraic_term(
-                        then_term, from, to,
-                    )),
-                    else_term: Box::new(substitute_bitvector_variable_in_algebraic_term(
-                        else_term, from, to,
-                    )),
+                    AlgebraicTermNode::If {
+                        condition,
+                        then_term,
+                        else_term,
+                    } => AlgebraicTermNode::If {
+                        condition: Box::new(substitute_bitvector_variable_in_condition(
+                            condition, from, to,
+                        )),
+                        then_term: Box::new(substitute_bitvector_variable_in_algebraic_term(
+                            then_term, from, to,
+                        )),
+                        else_term: Box::new(substitute_bitvector_variable_in_algebraic_term(
+                            else_term, from, to,
+                        )),
+                    },
                 },
-            },
-        }),
+            }
+            .into(),
+        ),
         Term::Memory(memory) => {
             Term::Memory(substitute_bitvector_variable_in_memory(memory, from, to))
         }
@@ -3872,12 +3885,12 @@ fn substitute_bitvector_variable_in_integer_checked_with_mode(
     if resolve_registered_loads {
         rewrite.enable_registered_load_resolution();
     }
-    let result = match rewrite.term(&Term::Integer(term.clone())) {
+    let result = match rewrite.term(&Term::Integer(term.clone().into())) {
         Term::Integer(result) => result,
         _ => unreachable!(),
     };
     integer_substitution_refusal(rewrite.refusal())?;
-    Ok(result)
+    Ok(result.into_native_compat())
 }
 
 pub(in crate::kernel) fn collect_integer_bound_variables(
@@ -4102,8 +4115,8 @@ fn validate_integer_pure_proposition(
     integer_work(1)?;
     match proposition {
         Proposition::Equal(Term::Integer(left), Term::Integer(right)) => {
-            validate_integer_pure_term(left, variables, collector)?;
-            validate_integer_pure_term(right, variables, collector)?;
+            validate_integer_pure_term(left.native_compat(), variables, collector)?;
+            validate_integer_pure_term(right.native_compat(), variables, collector)?;
             Ok(())
         }
         Proposition::Equal(left, right)
@@ -4190,8 +4203,8 @@ fn validate_integer_pure_term(
 ) -> Result<(), IntegerPureSubstitutionError> {
     validate_integer_atomic_proposition(
         &Proposition::Equal(
-            Term::Integer(term.clone()),
-            Term::Integer(IntegerTerm::constant_i64(0)),
+            Term::Integer(term.clone().into()),
+            Term::Integer(IntegerTerm::constant_i64(0).into()),
         ),
         collector,
     )
@@ -4315,8 +4328,20 @@ fn substitute_pure_proposition_with_walker(
                     }
                     Proposition::Equal(Term::Integer(left), Term::Integer(right)) => {
                         rewritten.push(Proposition::Equal(
-                            Term::Integer(substitute_integer_pure_term_with_walker(left, walker)?),
-                            Term::Integer(substitute_integer_pure_term_with_walker(right, walker)?),
+                            Term::Integer(
+                                substitute_integer_pure_term_with_walker(
+                                    left.native_compat(),
+                                    walker,
+                                )?
+                                .into(),
+                            ),
+                            Term::Integer(
+                                substitute_integer_pure_term_with_walker(
+                                    right.native_compat(),
+                                    walker,
+                                )?
+                                .into(),
+                            ),
                         ));
                     }
                     Proposition::Equal(left, right)
@@ -4598,7 +4623,7 @@ fn rewrite_integer_memory_loadable_with_walker(
     {
         integer_work(1)?;
         let term_source_0 @ Term::ProgramValue(_) = walker.term(&Term::ProgramValue(
-            ProgramValue::Pointer(Pointer::new(pointer.clone(), ProgramType::VoidPointer)),
+            ProgramValue::Pointer(Pointer::new(pointer.clone(), ProgramType::VoidPointer)).into(),
         )) else {
             unreachable!("pointer rewrite changed its carrier")
         };
@@ -4625,7 +4650,8 @@ fn rewrite_integer_memory_loadable_with_walker(
     };
     integer_work(1)?;
     let pointer = ProgramValue::Pointer(Pointer::new(base.clone(), ProgramType::VoidPointer));
-    let term_source_0 @ Term::ProgramValue(_) = walker.term(&Term::ProgramValue(pointer)) else {
+    let term_source_0 @ Term::ProgramValue(_) = walker.term(&Term::ProgramValue(pointer.into()))
+    else {
         unreachable!("pointer rewrite changed its carrier")
     };
     let (Some(ProgramValue::Pointer(pointer)),) = (term_source_0.program_value_native(),) else {
@@ -4660,15 +4686,15 @@ fn substitute_integer_pure_term_with_walker(
     let Proposition::Equal(Term::Integer(result), _) =
         rewrite_integer_atomic_proposition_with_walker(
             &Proposition::Equal(
-                Term::Integer(term.clone()),
-                Term::Integer(IntegerTerm::constant_i64(0)),
+                Term::Integer(term.clone().into()),
+                Term::Integer(IntegerTerm::constant_i64(0).into()),
             ),
             walker,
         )?
     else {
         unreachable!()
     };
-    Ok(result)
+    Ok(result.into_native_compat())
 }
 
 fn integer_atomic_term_supported(term: &Term) -> bool {
@@ -4693,8 +4719,8 @@ fn substitute_integer_pure_term(
 ) -> Result<IntegerTerm, IntegerPureSubstitutionError> {
     let Proposition::Equal(Term::Integer(result), _) = rewrite_integer_atomic_proposition(
         &Proposition::Equal(
-            Term::Integer(term.clone()),
-            Term::Integer(IntegerTerm::constant_i64(0)),
+            Term::Integer(term.clone().into()),
+            Term::Integer(IntegerTerm::constant_i64(0).into()),
         ),
         from,
         to,
@@ -4704,7 +4730,7 @@ fn substitute_integer_pure_term(
     else {
         unreachable!()
     };
-    Ok(result)
+    Ok(result.into_native_compat())
 }
 
 /// Instantiate one Integer fold step without expanding the surrounding
@@ -4839,11 +4865,11 @@ fn substitute_bitvector_variable_in_algebraic_term(
     to: &MachineTerm,
 ) -> AlgebraicTerm {
     let Term::Algebraic(term) =
-        substitute_bitvector_variable_in_term(&Term::Algebraic(term.clone()), from, to)
+        substitute_bitvector_variable_in_term(&Term::Algebraic(term.clone().into()), from, to)
     else {
         unreachable!()
     };
-    term
+    term.into_native_compat()
 }
 
 pub(in crate::kernel) fn substitute_bitvector_variable_in_program_expression(
@@ -6261,7 +6287,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_pointer(
 ) -> Address {
     if matches!(pointer.base, AddressBase::PureFunctionApplication(_)) {
         let source = MachineTerm::Variable(from);
-        let term = Term::ProgramValue(ProgramValue::pointer(pointer.clone()));
+        let term = Term::ProgramValue(ProgramValue::pointer(pointer.clone()).into());
         let Some(ProgramValue::Pointer(result)) =
             crate::kernel::proof::term_rewrite::TermRewrite::for_bits(&source, to)
                 .term(&term)
@@ -6824,24 +6850,31 @@ fn pointer_capture_avoiding_quantifier_body(
 
 fn substitute_pointer_variable_in_term(term: &Term, from: Variable, to: &Address) -> Term {
     match term {
-        Term::Condition(condition) => Term::Condition(substitute_pointer_variable_in_condition(
-            condition, from, to,
-        )),
+        Term::Condition(condition) => Term::Condition(
+            substitute_pointer_variable_in_condition(condition.native_compat(), from, to).into(),
+        ),
         Term::Integer(_) => {
             crate::kernel::proof::term_rewrite::TermRewrite::for_pointer_variable(from, to)
                 .term(term)
         }
         Term::Bitvector32(_) | Term::PointerOffset(_) => term.clone(),
         Term::ProgramValue(value) => Term::ProgramValue(
-            substitute_pointer_variable_in_program_value(value, from, to),
+            substitute_pointer_variable_in_program_value(value.native_compat(), from, to).into(),
         ),
         Term::Sequence(sequence) => {
             Term::Sequence(substitute_pointer_variable_in_sequence(sequence, from, to))
         }
-        Term::Algebraic(term) => Term::Algebraic(AlgebraicTerm {
-            algebraic_type: term.algebraic_type.clone(),
-            node: substitute_pointer_variable_in_algebraic_term_node(term, from, to),
-        }),
+        Term::Algebraic(term) => Term::Algebraic(
+            AlgebraicTerm {
+                algebraic_type: term.native_compat().algebraic_type.clone(),
+                node: substitute_pointer_variable_in_algebraic_term_node(
+                    term.native_compat(),
+                    from,
+                    to,
+                ),
+            }
+            .into(),
+        ),
         Term::Memory(memory) => {
             Term::Memory(substitute_pointer_variable_in_memory(memory, from, to))
         }
@@ -6988,11 +7021,11 @@ fn substitute_pointer_variable_in_program_value(
 ) -> ProgramValue {
     let Term::ProgramValue(value) =
         crate::kernel::proof::term_rewrite::TermRewrite::for_pointer_variable(from, to)
-            .term(&Term::ProgramValue(value.clone()))
+            .term(&Term::ProgramValue(value.clone().into()))
     else {
         unreachable!("C value rewriting preserves its carrier")
     };
-    value
+    value.into()
 }
 
 fn substitute_pointer_variable_in_pointer(
@@ -7001,7 +7034,7 @@ fn substitute_pointer_variable_in_pointer(
     to: &Address,
 ) -> Address {
     if matches!(&pointer.base, AddressBase::PureFunctionApplication(_)) {
-        let term = Term::ProgramValue(ProgramValue::pointer(pointer.clone()));
+        let term = Term::ProgramValue(ProgramValue::pointer(pointer.clone()).into());
         let Some(ProgramValue::Pointer(result)) =
             crate::kernel::proof::term_rewrite::TermRewrite::for_pointer_variable(from, to)
                 .term(&term)
@@ -7274,6 +7307,12 @@ pub(crate) fn substitute_pointer_variable_in_memory(
             ended_local_blocks: memory
                 .forgotten
                 .ended_local_blocks
+                .iter()
+                .map(|block| substitute_pointer_variable_in_block(block, from, to))
+                .collect(),
+            ended_addressable_local_blocks: memory
+                .forgotten
+                .ended_addressable_local_blocks
                 .iter()
                 .map(|block| substitute_pointer_variable_in_block(block, from, to))
                 .collect(),
@@ -7872,11 +7911,11 @@ fn substitute_pointer_variable_in_spec_integer(
         SpecIntegerExpression::Term(term) => {
             let Term::Integer(term) =
                 crate::kernel::proof::term_rewrite::TermRewrite::for_pointer_variable(from, to)
-                    .term(&Term::Integer(term.clone()))
+                    .term(&Term::Integer(term.clone().into()))
             else {
                 unreachable!()
             };
-            SpecIntegerExpression::Term(term)
+            SpecIntegerExpression::Term(term.into_native_compat())
         }
         SpecIntegerExpression::If {
             condition,
@@ -8509,8 +8548,8 @@ mod integer_function_traversal_tests {
                 &MachineTerm::Variable(from),
                 &MachineTerm::Variable(Variable(818))
             )
-            .term(&Term::Integer(original)),
-            Term::Integer(expected)
+            .term(&Term::Integer(original.into())),
+            Term::Integer(expected.into())
         );
     }
 
@@ -8643,8 +8682,10 @@ mod integer_match_substitution_scope_tests {
                 .into(),
             }],
         };
-        let proposition =
-            Proposition::Equal(Term::Integer(IntegerTerm::var(source)), Term::Integer(rhs));
+        let proposition = Proposition::Equal(
+            Term::Integer(IntegerTerm::var(source).into()),
+            Term::Integer(rhs.into()),
+        );
         let rewritten = substitute_integer_variable_in_pure_proposition(
             &proposition,
             source,
@@ -8654,8 +8695,8 @@ mod integer_match_substitution_scope_tests {
         let Proposition::Equal(Term::Integer(left), Term::Integer(right)) = rewritten else {
             panic!("expected Integer equality")
         };
-        assert_eq!(left, IntegerTerm::var(replacement));
-        let IntegerTerm::AlgebraicMatch { arms, .. } = right else {
+        assert_eq!(left, IntegerTerm::var(replacement).into());
+        let IntegerTerm::AlgebraicMatch { arms, .. } = right.native_compat() else {
             panic!("expected RHS algebraic match")
         };
         let AlgebraicValue::Integer(IntegerTerm::Variable(fresh)) = arms[0].bindings[0] else {
@@ -8790,8 +8831,8 @@ mod integer_mixed_quantifier_tests {
             destination: MachineIntegerType::Int32,
         };
         let source = Proposition::Equal(
-            Term::Integer(application(IntegerTerm::var(from), converted)),
-            Term::Integer(IntegerTerm::var(from)),
+            Term::Integer(application(IntegerTerm::var(from), converted).into()),
+            Term::Integer(IntegerTerm::var(from).into()),
         );
         let result = substitute_integer_variable_in_pure_proposition(
             &source,
@@ -8802,14 +8843,17 @@ mod integer_mixed_quantifier_tests {
         assert_eq!(
             result,
             Proposition::Equal(
-                Term::Integer(application(
-                    IntegerTerm::constant_i64(9),
-                    MachineTerm::IntegerToMachine {
-                        value: IntegerTerm::constant_i64(9).into(),
-                        destination: MachineIntegerType::Int32,
-                    }
-                )),
-                Term::Integer(IntegerTerm::constant_i64(9)),
+                Term::Integer(
+                    application(
+                        IntegerTerm::constant_i64(9),
+                        MachineTerm::IntegerToMachine {
+                            value: IntegerTerm::constant_i64(9).into(),
+                            destination: MachineIntegerType::Int32,
+                        }
+                    )
+                    .into()
+                ),
+                Term::Integer(IntegerTerm::constant_i64(9).into()),
             )
         );
     }
@@ -8823,11 +8867,10 @@ mod integer_mixed_quantifier_tests {
             var: bound,
             sort: Sort::Integer,
             body: Box::new(Proposition::Equal(
-                Term::Integer(application(
-                    IntegerTerm::var(from),
-                    MachineTerm::Variable(bound),
-                )),
-                Term::Integer(IntegerTerm::var(bound)),
+                Term::Integer(
+                    application(IntegerTerm::var(from), MachineTerm::Variable(bound)).into(),
+                ),
+                Term::Integer(IntegerTerm::var(bound).into()),
             )),
         };
         let result = substitute_integer_variable_in_pure_proposition(
@@ -8846,11 +8889,10 @@ mod integer_mixed_quantifier_tests {
         assert_eq!(
             *body,
             Proposition::Equal(
-                Term::Integer(application(
-                    IntegerTerm::var(bound),
-                    MachineTerm::Variable(bound)
-                )),
-                Term::Integer(IntegerTerm::var(fresh)),
+                Term::Integer(
+                    application(IntegerTerm::var(bound), MachineTerm::Variable(bound)).into()
+                ),
+                Term::Integer(IntegerTerm::var(fresh).into()),
             )
         );
     }
@@ -8889,8 +8931,8 @@ mod integer_mixed_quantifier_tests {
             var: free_index,
             sort: Sort::Integer,
             body: Box::new(Proposition::Equal(
-                Term::Integer(IntegerTerm::var(source)),
-                Term::Integer(IntegerTerm::var(free_index)),
+                Term::Integer(IntegerTerm::var(source).into()),
+                Term::Integer(IntegerTerm::var(free_index).into()),
             )),
         };
 
@@ -8910,8 +8952,8 @@ mod integer_mixed_quantifier_tests {
         let Proposition::Equal(Term::Integer(left), Term::Integer(right)) = *body else {
             panic!("witness body changed carrier")
         };
-        assert_eq!(right, IntegerTerm::var(fresh));
-        let IntegerTerm::Machine(machine) = left else {
+        assert_eq!(right, IntegerTerm::var(fresh).into());
+        let IntegerTerm::Machine(machine) = left.into_native_compat() else {
             panic!("witness replacement changed Integer carrier")
         };
         let MachineTerm::Variable(rewritten_load) = machine.value() else {
@@ -8932,8 +8974,8 @@ mod integer_mixed_quantifier_tests {
 
     fn program_int_equality(left: Variable, right: Variable) -> Proposition {
         Proposition::Equal(
-            Term::Bitvector32(MachineTerm::Variable(left)),
-            Term::Bitvector32(MachineTerm::Variable(right)),
+            Term::Bitvector32(MachineTerm::Variable(left).into()),
+            Term::Bitvector32(MachineTerm::Variable(right).into()),
         )
     }
 
@@ -8951,8 +8993,8 @@ mod integer_mixed_quantifier_tests {
             sort: Sort::ProgramInt32,
             body: Box::new(Proposition::And(
                 Box::new(Proposition::Equal(
-                    Term::Integer(IntegerTerm::var(source)),
-                    Term::Integer(IntegerTerm::constant_i64(0)),
+                    Term::Integer(IntegerTerm::var(source).into()),
+                    Term::Integer(IntegerTerm::constant_i64(0).into()),
                 )),
                 Box::new(program_int_equality(c_binder, c_binder)),
             )),
@@ -8986,8 +9028,8 @@ mod integer_mixed_quantifier_tests {
             sort: Sort::ProgramInt32,
             body: Box::new(Proposition::And(
                 Box::new(Proposition::Equal(
-                    Term::Integer(IntegerTerm::var(source)),
-                    Term::Integer(IntegerTerm::constant_i64(0)),
+                    Term::Integer(IntegerTerm::var(source).into()),
+                    Term::Integer(IntegerTerm::constant_i64(0).into()),
                 )),
                 Box::new(program_int_equality(source, source)),
             )),
@@ -9009,8 +9051,8 @@ mod integer_mixed_quantifier_tests {
         assert_eq!(
             *integer_goal,
             Proposition::Equal(
-                Term::Integer(IntegerTerm::constant_i64(7)),
-                Term::Integer(IntegerTerm::constant_i64(0)),
+                Term::Integer(IntegerTerm::constant_i64(7).into()),
+                Term::Integer(IntegerTerm::constant_i64(0).into()),
             )
         );
         assert_eq!(*c_goal, program_int_equality(source, source));
@@ -9031,10 +9073,13 @@ mod integer_mixed_quantifier_tests {
         )
         .expect("pointer observations are Integer-valued");
         let pointer_value = |variable| {
-            Term::ProgramValue(ProgramValue::Pointer(Pointer::new(
-                Address::symbolic(variable),
-                ProgramType::Int32Pointer,
-            )))
+            Term::ProgramValue(
+                ProgramValue::Pointer(Pointer::new(
+                    Address::symbolic(variable),
+                    ProgramType::Int32Pointer,
+                ))
+                .into(),
+            )
         };
         let proposition = Proposition::ForAll {
             name: Default::default(),
@@ -9050,8 +9095,8 @@ mod integer_mixed_quantifier_tests {
                     sort: Sort::ProgramPointer(ProgramType::Int32Pointer),
                     body: Box::new(Proposition::And(
                         Box::new(Proposition::Equal(
-                            Term::Integer(IntegerTerm::var(source)),
-                            Term::Integer(IntegerTerm::var(inner_integer)),
+                            Term::Integer(IntegerTerm::var(source).into()),
+                            Term::Integer(IntegerTerm::var(inner_integer).into()),
                         )),
                         Box::new(Proposition::Equal(
                             pointer_value(outer_c),
@@ -9128,12 +9173,12 @@ mod integer_mixed_quantifier_tests {
             sort: Sort::Algebraic(algebraic_type),
             body: Box::new(Proposition::And(
                 Box::new(Proposition::Equal(
-                    Term::Integer(IntegerTerm::var(from)),
-                    Term::Integer(IntegerTerm::constant_i64(3)),
+                    Term::Integer(IntegerTerm::var(from).into()),
+                    Term::Integer(IntegerTerm::constant_i64(3).into()),
                 )),
                 Box::new(Proposition::Equal(
-                    Term::Algebraic(algebraic.clone()),
-                    Term::Algebraic(algebraic.clone()),
+                    Term::Algebraic(algebraic.clone().into()),
+                    Term::Algebraic(algebraic.clone().into()),
                 )),
             )),
         };
@@ -9152,12 +9197,12 @@ mod integer_mixed_quantifier_tests {
             *body,
             Proposition::And(
                 Box::new(Proposition::Equal(
-                    Term::Integer(IntegerTerm::constant_i64(3)),
-                    Term::Integer(IntegerTerm::constant_i64(3))
+                    Term::Integer(IntegerTerm::constant_i64(3).into()),
+                    Term::Integer(IntegerTerm::constant_i64(3).into())
                 )),
                 Box::new(Proposition::Equal(
-                    Term::Algebraic(algebraic.clone()),
-                    Term::Algebraic(algebraic)
+                    Term::Algebraic((algebraic.clone()).into()),
+                    Term::Algebraic((algebraic).into())
                 )),
             )
         );
@@ -9170,8 +9215,8 @@ mod integer_mixed_quantifier_tests {
         let algebraic_type = AlgebraicType::parameter("Flag".into());
         let replacement = algebraic_projection(&algebraic_type, bound);
         let leaf = Proposition::Equal(
-            Term::Integer(IntegerTerm::var(from)),
-            Term::Integer(replacement.clone()),
+            Term::Integer(IntegerTerm::var(from).into()),
+            Term::Integer(replacement.clone().into()),
         );
         let source = Proposition::And(
             Box::new(Proposition::ForAll {
@@ -9194,15 +9239,15 @@ mod integer_mixed_quantifier_tests {
         assert_eq!(
             *body,
             Proposition::Equal(
-                Term::Integer(replacement.clone()),
-                Term::Integer(algebraic_projection(&algebraic_type, var))
+                Term::Integer(replacement.clone().into()),
+                Term::Integer(algebraic_projection(&algebraic_type, var).into())
             )
         );
         assert_eq!(
             *sibling,
             Proposition::Equal(
-                Term::Integer(replacement.clone()),
-                Term::Integer(replacement)
+                Term::Integer(replacement.clone().into()),
+                Term::Integer(replacement.into())
             )
         );
     }
@@ -9214,8 +9259,8 @@ mod integer_mixed_quantifier_tests {
             var: Variable(9_230),
             sort: Sort::Condition,
             body: Box::new(Proposition::Equal(
-                Term::Integer(IntegerTerm::var(Variable(9_231))),
-                Term::Integer(IntegerTerm::constant_i64(0)),
+                Term::Integer(IntegerTerm::var(Variable(9_231)).into()),
+                Term::Integer(IntegerTerm::constant_i64(0).into()),
             )),
         };
         assert_eq!(
@@ -9456,8 +9501,8 @@ mod integer_range_fold_substitution_tests {
                 );
             }
             let proposition = Proposition::Equal(
-                Term::Integer(value),
-                Term::Integer(IntegerTerm::constant_i64(0)),
+                Term::Integer(value.into()),
+                Term::Integer(IntegerTerm::constant_i64(0).into()),
             );
             let replaced = substitute_integer_variable_in_pure_proposition(
                 &proposition,
@@ -9465,9 +9510,10 @@ mod integer_range_fold_substitution_tests {
                 &IntegerTerm::constant_i64(2),
             )
             .expect("fold substitution should preserve the supported Integer carrier");
-            let Proposition::Equal(Term::Integer(mut value), _) = replaced else {
+            let Proposition::Equal(Term::Integer(value), _) = replaced else {
                 panic!("equality carrier changed")
             };
+            let mut value = value.into_native_compat();
             for _ in 0..depth {
                 let IntegerTerm::RangeFold { body, .. } = value else {
                     panic!("nested fold shape changed")
@@ -9871,7 +9917,7 @@ mod checked_singleton_substitution_tests {
     }
 
     fn pointer_term(variable: Variable) -> Term {
-        Term::ProgramValue(ProgramValue::Pointer(pointer_value(variable)))
+        Term::ProgramValue(ProgramValue::Pointer(pointer_value(variable)).into())
     }
 
     #[test]
@@ -9880,8 +9926,8 @@ mod checked_singleton_substitution_tests {
         let captured = Variable(70_111);
         let leaf = Proposition::Equal(pointer_term(from), pointer_term(captured));
         let atom = Proposition::Equal(
-            Term::Integer(IntegerTerm::var(from)),
-            Term::Integer(IntegerTerm::var(from)),
+            Term::Integer(IntegerTerm::var(from).into()),
+            Term::Integer(IntegerTerm::var(from).into()),
         );
         let compound = Proposition::And(Box::new(atom.clone()), Box::new(leaf.clone()));
         assert_eq!(
@@ -9936,8 +9982,8 @@ mod checked_singleton_substitution_tests {
 
     fn proposition(variable: Variable) -> Proposition {
         Proposition::Equal(
-            Term::Integer(observed(variable)),
-            Term::Integer(IntegerTerm::var(variable)),
+            Term::Integer(observed(variable).into()),
+            Term::Integer(IntegerTerm::var(variable).into()),
         )
     }
 
@@ -9950,8 +9996,8 @@ mod checked_singleton_substitution_tests {
         assert_eq!(
             replaced,
             Proposition::Equal(
-                Term::Integer(IntegerTerm::constant_i64(7)),
-                Term::Integer(IntegerTerm::var(variable)),
+                Term::Integer(IntegerTerm::constant_i64(7).into()),
+                Term::Integer(IntegerTerm::var(variable).into()),
             )
         );
         for sort in [Sort::ProgramInt32, Sort::Integer] {
@@ -9997,7 +10043,10 @@ mod checked_singleton_substitution_tests {
         for _ in 0..64 {
             value = IntegerTerm::add(value.clone(), value.clone());
         }
-        let source = Proposition::Equal(Term::Integer(value), Term::Integer(observed(variable)));
+        let source = Proposition::Equal(
+            Term::Integer(value.into()),
+            Term::Integer(observed(variable).into()),
+        );
         assert!(substitute_machine_constant_in_pure_proposition(&source, variable, 7).is_ok());
         // These limits are below the 64 binary nodes plus their leaf. Avoid
         // a one-below-observed-work threshold: interning setup may already
@@ -10054,9 +10103,9 @@ mod checked_singleton_substitution_tests {
         let source = Proposition::Predicate {
             name: "opaque".into(),
             arguments: vec![
-                Term::Integer(observed(variable)),
-                Term::Bitvector32(MachineTerm::Variable(variable)),
-                Term::Integer(IntegerTerm::var(variable)),
+                Term::Integer(observed(variable).into()),
+                Term::Bitvector32(MachineTerm::Variable(variable).into()),
+                Term::Integer(IntegerTerm::var(variable).into()),
             ],
         };
         assert_eq!(
@@ -10064,9 +10113,9 @@ mod checked_singleton_substitution_tests {
             Ok(Proposition::Predicate {
                 name: "opaque".into(),
                 arguments: vec![
-                    Term::Integer(IntegerTerm::constant_i64(7)),
-                    Term::Bitvector32(MachineTerm::constant(7)),
-                    Term::Integer(IntegerTerm::var(variable)),
+                    Term::Integer(IntegerTerm::constant_i64(7).into()),
+                    Term::Bitvector32(MachineTerm::constant(7).into()),
+                    Term::Integer(IntegerTerm::var(variable).into()),
                 ],
             }),
         );
@@ -10147,16 +10196,16 @@ mod checked_surface_load_resolution_tests {
     fn surface_load_binding_rewrites_machine_observations_without_integer_binder_capture() {
         let variable = Variable(70_300);
         let source = Proposition::Equal(
-            Term::Integer(observed(variable)),
-            Term::Integer(IntegerTerm::var(variable)),
+            Term::Integer(observed(variable).into()),
+            Term::Integer(IntegerTerm::var(variable).into()),
         );
         let result =
             substitute_surface_load_binding(&source, variable, &MachineTerm::constant(7)).unwrap();
         assert_eq!(
             result,
             Proposition::Equal(
-                Term::Integer(IntegerTerm::constant_i64(7)),
-                Term::Integer(IntegerTerm::var(variable)),
+                Term::Integer(IntegerTerm::constant_i64(7).into()),
+                Term::Integer(IntegerTerm::var(variable).into()),
             )
         );
     }
@@ -10166,8 +10215,8 @@ mod checked_surface_load_resolution_tests {
         use crate::instrumentation::{self, TacticEvent, TacticWorkLimits, VerificationEvent};
         let variable = Variable(70_301);
         let source = Proposition::Equal(
-            Term::Integer(observed(variable)),
-            Term::Integer(IntegerTerm::constant_i64(0)),
+            Term::Integer(observed(variable).into()),
+            Term::Integer(IntegerTerm::constant_i64(0).into()),
         );
         let ((binding, registry), _) = instrumentation::with_tactic_work_limits(
             TacticWorkLimits {

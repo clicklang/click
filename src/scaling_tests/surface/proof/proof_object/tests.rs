@@ -321,8 +321,8 @@ fn both_and_scopes_are_isolated_check_lineage_and_scale() {
     let context = pure_identity_fixture();
     let truth = Proposition::condition_is(ConditionTerm::Constant(true), true);
     let other = Proposition::Equal(
-        Term::Bitvector32(MachineTerm::constant(7)),
-        Term::Bitvector32(MachineTerm::constant(7)),
+        Term::Bitvector32(MachineTerm::constant(7).into()),
+        Term::Bitvector32(MachineTerm::constant(7).into()),
     );
     let goal = Proposition::And(Box::new(truth.clone()), Box::new(other.clone()));
     let samples = [16, 32, 64, 128].map(|size| {
@@ -333,7 +333,7 @@ fn both_and_scopes_are_isolated_check_lineage_and_scale() {
             })
             .collect::<Vec<_>>();
         let root = Proof::for_pure_goal(
-            "both",
+            "all",
             &facts,
             goal.clone(),
             &context,
@@ -1049,7 +1049,7 @@ fn integer_equality_rewrite_builds_names_only_on_refusal_and_scales() {
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
             integer_values: PersistentBinderMap::default(),
-            memory: SymbolicMemory::new(),
+            point: crate::kernel::ProgramPoint::starting_at(&SymbolicMemory::new()),
             array_refs: BTreeMap::new(),
             requires: vec![equality.clone()],
             surface_requirements: SurfacePropositionMap::default(),
@@ -1264,7 +1264,7 @@ fn wide_bound_direct_rewrite_ignores_connected_ambient_equalities() {
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
             integer_values: PersistentBinderMap::default(),
-            memory: SymbolicMemory::new(),
+            point: crate::kernel::ProgramPoint::starting_at(&SymbolicMemory::new()),
             values: ProgramValueBindings::from([
                 ("x".into(), ProgramValue::UInt64(x.clone())),
                 ("y".into(), ProgramValue::UInt64(y.clone())),
@@ -2218,7 +2218,7 @@ fn check_impossible_offset_rewrite_search(already_intrinsic: bool, native: bool)
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
             integer_values: Default::default(),
-            memory: SymbolicMemory::new(),
+            point: crate::kernel::ProgramPoint::starting_at(&SymbolicMemory::new()),
             values: words
                 .iter()
                 .enumerate()

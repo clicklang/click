@@ -207,7 +207,7 @@ pub(in crate::kernel) fn memory_effect_execution_facts(
 pub(crate) fn solve_builtin_prop(proposition: &Proposition) -> bool {
     match proposition {
         Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) => {
-            algebraic_terms_equal(left, right)
+            algebraic_terms_equal(left.native_compat(), right.native_compat())
         }
         Proposition::Equal(Term::Integer(left), Term::Integer(right)) => left == right,
         Proposition::Equal(Term::Sequence(left), Term::Sequence(right)) => {
@@ -301,10 +301,10 @@ pub(in crate::kernel) fn disprove_builtin_prop(proposition: &Proposition) -> boo
             sequence_terms_definitely_distinct(left, right)
         }
         Proposition::Equal(Term::ProgramValue(left), Term::ProgramValue(right)) => {
-            program_values_definitely_distinct(left, right)
+            program_values_definitely_distinct(left.native_compat(), right.native_compat())
         }
         Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) => {
-            algebraic_terms_definitely_distinct(left, right)
+            algebraic_terms_definitely_distinct(left.native_compat(), right.native_compat())
         }
         Proposition::Equal(Term::Integer(left), Term::Integer(right)) => left != right,
         Proposition::And(left, right) => {
@@ -1647,6 +1647,7 @@ pub(in crate::kernel) fn add_required_proof_obligation_with_context(
         context,
         introductions,
         None,
+        false,
     );
 }
 
@@ -1657,19 +1658,22 @@ fn add_required_proof_obligation_with_context_and_site(
     context: Option<&str>,
     introductions: Option<&std::sync::Arc<LoweringIntroductions>>,
     call_site: Option<&std::sync::Arc<CallRequirementSource>>,
+    statement_entry_required: bool,
 ) {
     // Suppression is the exact index, the frozen condition checker for a
     // proposition that is already one bare condition, or the retained atomic
     // memory/resource checkers. A required verification condition with
     // logical structure is emitted for an ordinary Surface tactic to
     // discharge.
-    if !assumptions.retains_required_obligations()
+    if !statement_entry_required
+        && !assumptions.retains_required_obligations()
         && required_obligation_is_exactly_discharged(assumptions, &proposition)
     {
         return;
     }
     let mut obligation = ProofObligation::verification_condition(proposition)
-        .with_shared_introductions(introductions);
+        .with_shared_introductions(introductions)
+        .with_statement_entry_required(statement_entry_required);
     if let Some(call_site) = call_site {
         obligation = obligation.with_call_requirement_site(call_site.clone());
     }
@@ -1677,10 +1681,10 @@ fn add_required_proof_obligation_with_context_and_site(
         Some(context) => obligation.with_context(context),
         None => obligation,
     };
-    if let Some(existing) = obligations
-        .iter_mut()
-        .find(|existing| existing.proposition == obligation.proposition)
-    {
+    if let Some(existing) = obligations.iter_mut().find(|existing| {
+        existing.proposition == obligation.proposition
+            && existing.statement_entry_required == statement_entry_required
+    }) {
         match (
             existing.call_requirement_site(),
             obligation.call_requirement_site(),
@@ -1719,6 +1723,7 @@ pub(in crate::kernel) fn add_required_proof_obligation_without_search(
         context,
         introductions,
         None,
+        false,
     );
 }
 
@@ -1754,13 +1759,21 @@ fn add_required_proof_obligation_without_search_and_site(
     context: Option<&str>,
     introductions: Option<&std::sync::Arc<LoweringIntroductions>>,
     call_site: Option<&std::sync::Arc<CallRequirementSource>>,
+    statement_entry_required: bool,
 ) {
-    if !assumptions.retains_required_obligations()
+    if !statement_entry_required
+        && !assumptions.retains_required_obligations()
         && selected_obligation_is_stated(assumptions, &proposition)
     {
         return;
     }
-    let mut obligation = ProofObligation::new(proposition).with_shared_introductions(introductions);
+    let mut obligation = if statement_entry_required {
+        ProofObligation::verification_condition(proposition)
+    } else {
+        ProofObligation::new(proposition)
+    }
+    .with_shared_introductions(introductions)
+    .with_statement_entry_required(statement_entry_required);
     if let Some(call_site) = call_site {
         obligation = obligation.with_call_requirement_site(call_site.clone());
     }
@@ -1768,10 +1781,10 @@ fn add_required_proof_obligation_without_search_and_site(
         Some(context) => obligation.with_context(context),
         None => obligation,
     };
-    if let Some(existing) = obligations
-        .iter_mut()
-        .find(|existing| existing.proposition == obligation.proposition)
-    {
+    if let Some(existing) = obligations.iter_mut().find(|existing| {
+        existing.proposition == obligation.proposition
+            && existing.statement_entry_required == statement_entry_required
+    }) {
         match (
             existing.call_requirement_site(),
             obligation.call_requirement_site(),
@@ -1804,6 +1817,7 @@ pub(in crate::kernel) fn append_required_proof_obligations(
             obligation.context(),
             obligation.shared_introductions(),
             obligation.call_requirement_site(),
+            obligation.statement_entry_required,
         );
     }
 }
@@ -1821,6 +1835,7 @@ pub(in crate::kernel) fn append_required_proof_obligations_without_search(
             obligation.context(),
             obligation.shared_introductions(),
             obligation.call_requirement_site(),
+            obligation.statement_entry_required,
         );
     }
 }
@@ -1853,6 +1868,7 @@ pub(in crate::kernel) fn append_required_proof_obligations_under_path_context(
             obligation.context(),
             introductions.as_ref(),
             obligation.call_requirement_site(),
+            obligation.statement_entry_required,
         );
     }
 }
@@ -2485,6 +2501,7 @@ mod mandatory_integer_obligation_tests {
             Some("incoming context"),
             Some(&incoming_introductions),
             Some(&incoming_source),
+            false,
         );
         assert_eq!(tuple_obligations.len(), 1);
         assert_eq!(

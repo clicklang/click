@@ -18,8 +18,8 @@ use return_backing::PermittedDescriptions;
 use super::functions::CheckedResourceFact;
 use super::primitives::{
     Address, AddressBase, MemorySplitOrigins, OwnedMemberKey, ResourceMemoryIntervalNode,
-    memory_interval_ancestors, memory_interval_nodes, memory_range_is_proven_empty,
-    memory_ranges_proven_overlapping,
+    memory_interval_ancestors, memory_interval_nodes, memory_range_covers,
+    memory_range_is_proven_empty, memory_ranges_proven_overlapping,
 };
 use super::{
     ExecutionState, MachineTerm, MemoryRange, Proposition, PureFactContext, Resource,
@@ -253,6 +253,10 @@ pub(crate) struct LoanViewBindingsState {
     pub(crate) map: PersistentMap<ResourceOccurrenceId, LoanViewBinding>,
     changes: imbl::Vector<(u64, ResourceOccurrenceId)>,
     by_view: PersistentMap<ResourceFact, PersistentSet<ResourceOccurrenceId>>,
+    // A join can re-key a view, so exact inheritance looks up the whole
+    // authority by value. Keep all its occurrences so removing one leaves
+    // the others available.
+    by_binding: PersistentMap<LoanViewBinding, PersistentSet<ResourceOccurrenceId>>,
     by_key: PersistentMap<BoundViewKey, PersistentSet<ResourceOccurrenceId>>,
 }
 
@@ -265,15 +269,18 @@ impl LoanViewBindingsState {
         let mut changes = self.changes.clone();
         let identity = next_loan_binding_identity();
         let mut by_view = self.by_view.clone();
+        let mut by_binding = self.by_binding.clone();
         let mut by_key = self.by_key.clone();
         for occurrence in changed {
             changes.push_back((identity, occurrence));
             if let Some(old) = self.map.get(&occurrence) {
                 remove_bound_occurrence(&mut by_view, &old.viewed, occurrence);
+                remove_bound_occurrence(&mut by_binding, old, occurrence);
                 remove_bound_occurrence(&mut by_key, &BoundViewKey::of(&old.viewed), occurrence);
             }
             if let Some(new) = map.get(&occurrence) {
                 insert_bound_occurrence(&mut by_view, new.viewed.clone(), occurrence);
+                insert_bound_occurrence(&mut by_binding, new.clone(), occurrence);
                 insert_bound_occurrence(&mut by_key, BoundViewKey::of(&new.viewed), occurrence);
             }
         }
@@ -282,6 +289,7 @@ impl LoanViewBindingsState {
             map,
             changes,
             by_view,
+            by_binding,
             by_key,
         })
     }
@@ -401,6 +409,11 @@ impl LoanViewBindings {
 
     pub(crate) fn get(&self, occurrence: &ResourceOccurrenceId) -> Option<&LoanViewBinding> {
         self.state.map.get(occurrence)
+    }
+
+    pub(crate) fn contains_binding(&self, binding: &LoanViewBinding) -> bool {
+        crate::instrumentation::record_deterministic_work(1);
+        self.state.by_binding.contains_key(binding)
     }
 
     /// Nominate one bound occurrence, never enumerate observations or retry
@@ -1884,6 +1897,7 @@ impl CompositeLoanBacking {
 struct LocalViewBacking {
     memory: super::SymbolicMemory,
     viewed: ResourceFact,
+    block: AddressBase,
 }
 
 impl LocalViewBacking {
@@ -1910,16 +1924,64 @@ impl LocalViewBacking {
             bytes,
             1,
         );
-        if !ResourceContext::new_with_equalities(assumptions)
-            .unchecked_with_fact(ResourceFact::own_memory(entire))
-            .satisfies_fact(viewed, assumptions)
+        if !memory_range_is_proven_empty(range, assumptions)
+            && ((range.typed_carrier
+                && !assumptions.access_provenance_matches_range(
+                    range.access_provenance(),
+                    range,
+                    &entire,
+                ))
+                || !memory_range_covers(&entire, range, assumptions))
         {
             return None;
         }
         Some(Self {
             memory: memory.clone(),
             viewed: viewed.clone(),
+            block: range.base().base.clone(),
         })
+    }
+
+    fn check_admission(
+        &self,
+        ledger: &LoanLedger,
+        assumptions: &PureFactContext,
+    ) -> Result<(), StableViewPlanError> {
+        #[cfg(test)]
+        let _fast = crate::kernel::search::FastOperationScope::enter("local loan admission");
+        crate::instrumentation::record_deterministic_work(1);
+        let range = self.viewed.memory_range().expect("checked local view");
+        let Some(goal) = ledger.memory_access_requirement(range) else {
+            return Ok(());
+        };
+        let data = &ledger.storage.data;
+        let origin = Address {
+            base: self.block.clone(),
+            offset: super::AddressOffset::Constant(0),
+        };
+        let has_possible_symbolic_overlap = data.automatic_storage_loans.contains_key(&self.block)
+            && !data.unindexed_memory.is_empty();
+        if !has_possible_symbolic_overlap
+            && !assumptions
+                .equality_graph
+                .admitted
+                .pointer_alias_endpoints_by_object
+                .contains_key(&origin)
+        {
+            match ledger.first_active_memory_overlap(range) {
+                Ok(None) => return Ok(()),
+                Ok(Some(_)) => return Err(LoanRefusal::ActiveDependency.into()),
+                Err(LoanRefusal::UnsupportedPartition) => {}
+                Err(error) => return Err(error.into()),
+            }
+        }
+        if assumptions.proves_exact(&goal) {
+            Ok(())
+        } else {
+            Err(StableViewPlanError::UnestablishedLocalSeparation(Box::new(
+                goal,
+            )))
+        }
     }
 }
 
@@ -2785,6 +2847,7 @@ fn bound_view_covers_requirement(
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum StableViewPlanError {
     UnestablishedOwnedBoundary(Box<Proposition>),
+    UnestablishedLocalSeparation(Box<Proposition>),
     InvalidRequirement,
     MissingResource(ResourceFact),
     ConflictingRequirement(ResourceFact),
@@ -2820,7 +2883,7 @@ impl StableViewPlanError {
         operation: LoanRefusalOperation,
     ) -> Option<LoanRefusalDiagnostic> {
         match self {
-            Self::UnestablishedOwnedBoundary(_) => None,
+            Self::UnestablishedOwnedBoundary(_) | Self::UnestablishedLocalSeparation(_) => None,
             Self::Loan(refusal) => Some(refusal.diagnostic(operation)),
             Self::MissingResource(resource) => {
                 Some(LoanRefusal::MissingBacking.diagnostic_with_subject(
@@ -3211,6 +3274,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
                 _ => StableViewPlanError::MissingResource(requirement.fact.clone()),
             })?;
             use_plan = use_plan.with_required_type(identity.protected.clone());
+            use_plan.mutex_storage = requirement.mutex_storage.clone();
             if let Some(selected) = &requirement.selected_mutex_source {
                 use_plan = use_plan.with_selected_alias(selected.0);
             }
@@ -4113,10 +4177,6 @@ impl StableViewTransferPlan {
             }
             let backing = LocalViewBacking::check(memory, &requirement.fact, assumptions)
                 .ok_or_else(|| StableViewPlanError::MissingResource(requirement.fact.clone()))?;
-            let range = requirement
-                .fact
-                .memory_range()
-                .expect("checked memory view");
             let (resources, occurrence) = self
                 .callee_resources
                 .clone()
@@ -4132,8 +4192,7 @@ impl StableViewTransferPlan {
                     // Only the first worker opens the local root. The parent
                     // keeps its close right and a share, without receiving an
                     // owned or viewed resource fact.
-                    self.ledger
-                        .permits_memory_access_with_assumptions(range, assumptions)?;
+                    backing.check_admission(&self.ledger, assumptions)?;
                     let opening = self.ledger.open_borrowed_root(
                         self.caller,
                         support,
@@ -4207,8 +4266,7 @@ impl StableViewTransferPlan {
             }
             // An ordinary local loan closes with its call. New local
             // authority cannot bypass an existing loan.
-            self.parent_ledger
-                .permits_memory_access_with_assumptions(range, assumptions)?;
+            backing.check_admission(&self.parent_ledger, assumptions)?;
             let opening = self.ledger.open_borrowed_root(
                 self.callee,
                 support,
@@ -6275,6 +6333,7 @@ impl LoanLedger {
         Ok(loans.iter().copied().collect())
     }
 
+    #[cfg(test)]
     fn first_active_memory_overlap_with_assumptions(
         &self,
         range: &MemoryRange,
@@ -6330,6 +6389,17 @@ impl LoanLedger {
         })
     }
 
+    /// A proof-only ownership exchange may expose writable authority. Use
+    /// the exact separation established before the exchange.
+    pub(crate) fn rewrite_separates_from_loans(
+        &self,
+        range: &MemoryRange,
+        assumptions: &PureFactContext,
+    ) -> bool {
+        self.memory_access_requirement(range)
+            .is_none_or(|goal| assumptions.proves_exact(&goal))
+    }
+
     /// Whole-object retirement uses the backing identities retained when
     /// loans were opened. Select one live loan directly for the refusal.
     pub(super) fn automatic_storage_retirement_refusal(
@@ -6370,6 +6440,7 @@ impl LoanLedger {
     /// and it revisits the same index buckets the check itself used, so a
     /// permitted access costs nothing and a refused one never walks the
     /// ledger.
+    #[cfg(test)]
     pub(crate) fn memory_access_refusal(
         &self,
         range: &MemoryRange,
@@ -6393,6 +6464,7 @@ impl LoanLedger {
 
     /// The first active loan whose protected footprint explains a refusal of
     /// `range`, with the protected range and the loan's origin.
+    #[cfg(test)]
     fn conflicting_memory_loan(
         &self,
         range: &MemoryRange,
@@ -6440,6 +6512,7 @@ impl LoanLedger {
     /// the symbolic buckets. Fewer assumptions prove fewer overlaps, so this is the
     /// more permissive form; the ordinary owned-authority check remains the
     /// primary guard on every write.
+    #[cfg(test)]
     pub(crate) fn permits_memory_access(&self, range: &MemoryRange) -> Result<(), LoanRefusal> {
         self.permits_memory_access_with_assumptions(range, &PureFactContext::default())
     }
@@ -7007,7 +7080,8 @@ impl LoanLedger {
                 loan,
                 root,
             } => {
-                let (permitted, memory_backing, mutex_root) = match parent {
+                let (permitted, memory_backing, mutex_root, repeats_parent_footprint) = match parent
+                {
                     ReborrowBinding::View(binding) => {
                         self.validate_view_binding(binding.clone(), *lender)?;
                         let record = self
@@ -7017,7 +7091,12 @@ impl LoanLedger {
                             .get(&binding.loan)
                             .ok_or(LoanRefusal::MissingLoan)?;
                         let (permitted, backing) = reborrowed_authority(record, &binding.viewed);
-                        (permitted, backing, None)
+                        let repeats_parent = backing.len() == record.memory_backing.len()
+                            && backing
+                                .iter()
+                                .zip(&record.memory_backing)
+                                .all(|(child, parent)| child.spatial_key() == parent.spatial_key());
+                        (permitted, backing, None, repeats_parent)
                     }
                     ReborrowBinding::MutexUse(binding) => {
                         self.mutex_use_identity_description(*binding, *lender)?;
@@ -7027,7 +7106,7 @@ impl LoanLedger {
                             .loans
                             .get(&binding.0.loan)
                             .ok_or(LoanRefusal::MissingLoan)?;
-                        (Vec::new(), Vec::new(), record.mutex_root)
+                        (Vec::new(), Vec::new(), record.mutex_root, false)
                     }
                 };
                 let parent = parent.authority();
@@ -7118,7 +7197,11 @@ impl LoanLedger {
                         pinned_by: None,
                     },
                 );
-                data.active_footprint = data.active_footprint.with_loan(*loan, &memory_backing);
+                // The parent remains pinned. Reuse its footprint for an
+                // exact repeat, retaining any other checked child spelling.
+                if !repeats_parent_footprint {
+                    data.active_footprint = data.active_footprint.with_loan(*loan, &memory_backing);
+                }
                 for range in &memory_backing {
                     // A symbolic parent range stays protected by the parent
                     // entry, which remains active while its share is pinned.
@@ -7359,7 +7442,10 @@ impl LoanLedger {
                     },
                 );
                 if let Some(record) = data.loans.get(&scope_record.loan).cloned() {
-                    data.active_footprint = data.active_footprint.without_loan(scope_record.loan);
+                    if !matches!(record.origin, LoanOrigin::Reborrowed) {
+                        data.active_footprint =
+                            data.active_footprint.without_loan(scope_record.loan);
+                    }
                     data.unindexed_memory = without_unindexed_memory(
                         &data.unindexed_memory,
                         scope_record.loan,

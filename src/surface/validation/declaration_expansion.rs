@@ -694,6 +694,7 @@ fn empty_library_file() -> Result<ClickFile, ClickError> {
         &BTreeSet::new(),
         &BTreeMap::new(),
         Default::default(),
+        None,
     )
 }
 
@@ -733,6 +734,7 @@ fn load_library_modules(modules: &[(&str, &str)]) -> Result<Vec<LibraryModule>, 
             &BTreeSet::new(),
             &BTreeMap::new(),
             Default::default(),
+            None,
         )?;
         if !module.verifying_sources().is_empty()
             || !module.imports().is_empty()
@@ -1650,7 +1652,9 @@ fn expand_declared_resource_tactic(
         | ProofTactic::Loop(_)) => {
             expand_declared_resource_tactic_with_nested_proofs(tactic, resource_definitions)
         }
-        tactic @ (ProofTactic::Both(_) | ProofTactic::CloseInvariantsBy(_)) => {
+        tactic @ (ProofTactic::All(_)
+        | ProofTactic::Both(_)
+        | ProofTactic::CloseInvariantsBy(_)) => {
             expand_declared_resource_tactic_with_plain_scripts(tactic, resource_definitions)
         }
         ProofTactic::StepProved { step, proof } => {
@@ -1716,12 +1720,16 @@ fn expand_declared_resource_tactic_with_plain_scripts(
     enum Frame {
         Visit(ProofTactic),
         Script(Vec<ProofTactic>),
+        AllArm(Box<ProofAllArm>),
+        FinishArm(Box<ClickProposition>, usize),
+        All(usize),
         RestoreHypotheses(PersistentBinderMap<()>),
         Both { left: usize, right: usize },
         Close { count: usize },
     }
     let mut pending = vec![Frame::Visit(tactic)];
     let mut expanded = Vec::new();
+    let mut expanded_arms = Vec::new();
     while let Some(frame) = pending.pop() {
         match frame {
             Frame::Script(tactics) => {
@@ -1732,6 +1740,55 @@ fn expand_declared_resource_tactic_with_plain_scripts(
             }
             Frame::RestoreHypotheses(outer) => {
                 *resource_definitions.local_hypotheses.borrow_mut() = outer;
+            }
+            Frame::Visit(ProofTactic::All(all)) => {
+                pending.push(Frame::All(all.arms.len()));
+                pending.extend(
+                    all.arms
+                        .into_iter()
+                        .rev()
+                        .map(|arm| Frame::AllArm(Box::new(arm))),
+                );
+            }
+            Frame::AllArm(arm) => {
+                let proposition =
+                    expand_declared_resource_proposition(arm.proposition, resource_definitions)?;
+                if arm.tactics.iter().any(|tactic| {
+                    matches!(
+                        tactic,
+                        ProofTactic::LetSatisfy(_)
+                            | ProofTactic::Intro
+                            | ProofTactic::IntroAs(_)
+                            | ProofTactic::IntroBinder(_)
+                    )
+                }) {
+                    let SourceProof::Script(tactics) = expand_declared_resource_proof_of(
+                        SourceProof::Script(arm.tactics),
+                        Some(&proposition),
+                        resource_definitions,
+                    )?
+                    else {
+                        unreachable!("expansion retains proof scripts");
+                    };
+                    expanded_arms.push(ProofAllArm {
+                        proposition,
+                        tactics,
+                    });
+                } else {
+                    pending.push(Frame::FinishArm(Box::new(proposition), arm.tactics.len()));
+                    pending.push(Frame::Script(arm.tactics));
+                }
+            }
+            Frame::FinishArm(proposition, count) => {
+                let tactics = expanded.split_off(expanded.len() - count);
+                expanded_arms.push(ProofAllArm {
+                    proposition: *proposition,
+                    tactics,
+                });
+            }
+            Frame::All(count) => {
+                let arms = expanded_arms.split_off(expanded_arms.len() - count);
+                expanded.push(ProofTactic::All(ProofAll { arms }));
             }
             Frame::Visit(ProofTactic::Both(both)) => {
                 pending.push(Frame::Both {

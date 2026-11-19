@@ -1,7 +1,7 @@
 use super::prelude::*;
 use super::{ResourceDescription, ResourceFieldSchema};
-use crate::kernel::CompareRelation;
 use crate::kernel::eval::SpecDivision;
+use crate::kernel::{CompareRelation, ProgramPoint};
 use crate::kernel::{bits32_constant, constant_u32, int32_constant};
 
 mod existential;
@@ -2822,13 +2822,15 @@ fn sequence_contains_integer_variable(sequence: &SequenceTerm, variable: Variabl
 fn proposition_mentions_integer_variable(proposition: &Proposition, variable: Variable) -> bool {
     fn term_contains(term: &Term, variable: Variable) -> bool {
         match term {
-            Term::Integer(term) => integer_carrier_in_integer(term, variable),
-            Term::Bitvector32(term) => integer_carrier_in_bitvector(term, variable),
-            Term::Condition(condition) => condition_contains(condition, variable),
-            Term::ProgramValue(value) => integer_carrier_in_program_value(value, variable),
+            Term::Integer(term) => integer_carrier_in_integer(term.native_compat(), variable),
+            Term::Bitvector32(term) => integer_carrier_in_bitvector(term.native_compat(), variable),
+            Term::Condition(condition) => condition_contains(condition.native_compat(), variable),
+            Term::ProgramValue(value) => {
+                integer_carrier_in_program_value(value.native_compat(), variable)
+            }
             Term::Sequence(sequence) => sequence_contains_integer_variable(sequence, variable),
             Term::PointerOffset(offset) => integer_carrier_in_pointer_offset(offset, variable),
-            Term::Algebraic(value) => integer_carrier_in_algebraic(value, variable),
+            Term::Algebraic(value) => integer_carrier_in_algebraic(value.native_compat(), variable),
             // A state may carry a mathematical machine conversion in a
             // nested local.  Keep this conservative
             // rather than silently dropping the accumulator scope; memory
@@ -3253,14 +3255,14 @@ fn rewrite_integer_match_typed_body(
         integer_replacements,
         algebraic_replacements,
     );
-    let rewritten = rewrite.term(&Term::Integer(body));
+    let rewritten = rewrite.term(&Term::Integer(body.into()));
     if rewrite.refusal().is_some() {
         return None;
     }
     let Term::Integer(value) = rewritten else {
         return None;
     };
-    Some(value)
+    Some(value.into_native_compat())
 }
 
 /// Eliminates an arm's binders by substituting the selected constructor's
@@ -3519,12 +3521,12 @@ fn lower_spec_algebraic_comparison_at_state_in(
             };
             // State-dependent projections must be resolved (and their ownership
             // checked) before reflexivity can close a symbolic application.
-            let left_value = left_path.value.clone().into_native_compat();
-            let right_value = right_path.value.into_native_compat();
-            let equality = if left_value == right_value {
+            let left = algebraic_output(left_path.value.root().clone());
+            let right = algebraic_output(right_path.value.into_kernel());
+            let equality = if evaluated_algebraic_operands_equal(&left, &right) {
                 Proposition::condition_is(ConditionTerm::Constant(true), true)
             } else {
-                Proposition::Equal(Term::Algebraic(left_value), Term::Algebraic(right_value))
+                Proposition::Equal(left, right)
             };
             paths.push(SpecPropositionPath {
                 introductions: if equal {
@@ -4317,28 +4319,65 @@ fn spec_algebraic_result_match_arms_are_well_formed(
         })
 }
 
+// Different evaluated algebraic node forms have different native syntax.
+// For the same form, keep the existing native equality contract, including
+// cases where equal values carry different producer metadata.
+fn evaluated_algebraic_operands_equal(left: &Term, right: &Term) -> bool {
+    let (Term::Algebraic(left), Term::Algebraic(right)) = (left, right) else {
+        unreachable!("evaluated algebraic operands")
+    };
+    let (a, b) = (
+        left.root().expect("evaluated root"),
+        right.root().expect("evaluated root"),
+    );
+    match (a.node(), b.node()) {
+        (KernelTermNode::Legacy(_), _) | (_, KernelTermNode::Legacy(_)) => left == right,
+        (KernelTermNode::Variable(a), KernelTermNode::Variable(b)) => a == b,
+        (KernelTermNode::Constructor(a), KernelTermNode::Constructor(b))
+            if a.variant != b.variant =>
+        {
+            false
+        }
+        (a, b) if std::mem::discriminant(a) != std::mem::discriminant(b) => false,
+        _ => left == right,
+    }
+}
+
+/// Store evaluated operands and newly produced arm witnesses in their common form.
+fn algebraic_output(root: KernelTerm) -> Term {
+    Term::Algebraic(StoredAlgebraicTerm::from_root(root).expect("algebraic output"))
+}
+
+fn algebraic_arm_equation(
+    scrutinee: &AlgebraicResult,
+    variant: &str,
+    fields: &[AlgebraicValue],
+) -> Proposition {
+    let constructor = AlgebraicTerm {
+        algebraic_type: scrutinee.algebraic_type().clone(),
+        node: AlgebraicTermNode::Constructor {
+            variant: variant.into(),
+            fields: fields.to_vec(),
+        },
+    };
+    Proposition::Equal(
+        algebraic_output(scrutinee.root().clone()),
+        algebraic_output(KernelTermImport::for_exact_field_inputs().algebraic(&constructor)),
+    )
+}
+
 /// Arm-local definedness is required only at that constructor. Binding the
 /// payloads keeps the match's internal variables out of the enclosing path.
 fn guard_scalar_match_obligation(
     obligation: ProofObligation,
-    scrutinee: &AlgebraicTerm,
+    scrutinee: &AlgebraicResult,
     arm: &SpecAlgebraicMatchArm,
     bindings: &[AlgebraicValue],
     variables: &[Variable],
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<ProofObligation> {
     budget.consume_expression_step()?;
-    let constructor = AlgebraicTerm {
-        algebraic_type: scrutinee.algebraic_type.clone(),
-        node: AlgebraicTermNode::Constructor {
-            variant: arm.variant.clone(),
-            fields: bindings.to_vec(),
-        },
-    };
-    let guard = Proposition::Equal(
-        Term::Algebraic(scrutinee.clone()),
-        Term::Algebraic(constructor),
-    );
+    let guard = algebraic_arm_equation(scrutinee, &arm.variant, bindings);
     let mut obligation =
         obligation.map_proposition(|body| Proposition::Implies(Box::new(guard), Box::new(body)));
     for (index, ((variable, name), binding)) in variables
@@ -4420,9 +4459,19 @@ fn algebraic_case_paths_in(
             obligations: Vec::new(),
         }]);
     }
-    let term = value.clone().into_native_compat();
-    match &term.node {
-        AlgebraicTermNode::Constructor { variant, fields } => Ok(vec![SpecAlgebraicCasePath {
+    let native = match value.root().node() {
+        KernelTermNode::Legacy(legacy) => match legacy.value() {
+            PureFunctionArgument::Algebraic(term) => Some(term),
+            _ => None,
+        },
+        _ => value.native_constructor(),
+    };
+    if let Some(AlgebraicTerm {
+        node: AlgebraicTermNode::Constructor { variant, fields },
+        ..
+    }) = native
+    {
+        return Ok(vec![SpecAlgebraicCasePath {
             variant: variant.clone(),
             fields: fields
                 .iter()
@@ -4431,41 +4480,25 @@ fn algebraic_case_paths_in(
                 .collect(),
             facts: Vec::new().into(),
             obligations: Vec::new(),
-        }]),
-        AlgebraicTermNode::Variable(_)
-        | AlgebraicTermNode::Match { .. }
-        | AlgebraicTermNode::If { .. }
-        | AlgebraicTermNode::MemoryLoad { .. }
-        | AlgebraicTermNode::PureFunctionApplication { .. } => {
-            let mut paths = Vec::with_capacity(term.algebraic_type.variants.len());
-            for variant in term.algebraic_type.variants.iter() {
-                let fields =
-                    symbolic_algebraic_case_witnesses_in(&term.algebraic_type, variant, budget)?;
-                let constructor = AlgebraicTerm {
-                    algebraic_type: term.algebraic_type.clone(),
-                    node: AlgebraicTermNode::Constructor {
-                        variant: variant.name.clone(),
-                        fields: fields.clone(),
-                    },
-                };
-                paths.push(SpecAlgebraicCasePath {
-                    variant: variant.name.clone(),
-                    fields: fields
-                        .into_iter()
-                        .map(AlgebraicFieldResult::from_native)
-                        .collect(),
-                    facts: vec![ExecutionPureFact::new(Proposition::Equal(
-                        Term::Algebraic(term.clone()),
-                        Term::Algebraic(constructor),
-                    ))]
-                    .into(),
-                    obligations: Vec::new(),
-                });
-            }
-            budget.check_path_width(paths.len())?;
-            Ok(paths)
-        }
+        }]);
     }
+    let ty = value.algebraic_type();
+    let mut paths = Vec::with_capacity(ty.variants.len());
+    for variant in ty.variants.iter() {
+        let fields = symbolic_algebraic_case_witnesses_in(ty, variant, budget)?;
+        let equation = algebraic_arm_equation(value, &variant.name, &fields);
+        paths.push(SpecAlgebraicCasePath {
+            variant: variant.name.clone(),
+            fields: fields
+                .into_iter()
+                .map(AlgebraicFieldResult::from_native)
+                .collect(),
+            facts: vec![ExecutionPureFact::new(equation)].into(),
+            obligations: Vec::new(),
+        });
+    }
+    budget.check_path_width(paths.len())?;
+    Ok(paths)
 }
 
 fn lower_spec_sequence_membership_at_state_in(
@@ -5921,9 +5954,7 @@ fn lower_spec_predicate_proposition_at_state_in(
                     };
                     arguments.push(Term::Memory(memory.clone()));
                 }
-                arguments.push(Term::ProgramValue(
-                    argument_path.value.clone().into_native(),
-                ));
+                arguments.push(Term::ProgramValue(argument_path.value.clone().into()));
                 next_paths.push(SpecPropositionPath {
                     introductions: Vec::new(),
                     proposition: Proposition::Predicate { name, arguments },
@@ -6930,7 +6961,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                         for obligation in body_path.obligations {
                             obligations.push(guard_scalar_match_obligation(
                                 obligation,
-                                &scrutinee_path.value.clone().into_native_compat(),
+                                &scrutinee_path.value,
                                 arm,
                                 &bindings,
                                 &variables,
@@ -7834,6 +7865,42 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 }
                 // `exact(place)` names the read by the selected state itself;
                 // an ordinary read names its version point.
+                if !*exact
+                    && matches!(
+                        value_type,
+                        ProgramType::Int8
+                            | ProgramType::UInt8
+                            | ProgramType::Int16
+                            | ProgramType::UInt16
+                            | ProgramType::Int32
+                            | ProgramType::UInt32
+                            | ProgramType::Int64
+                            | ProgramType::UInt64
+                            | ProgramType::Int128
+                            | ProgramType::UInt128
+                    )
+                    && ProgramPoint::supports_indexed_local_integer_version(&pointer)
+                {
+                    let selected_point = match memory {
+                        SpecPoint::At(point) => point.clone(),
+                        _ => selected_state.expect("selected read state").program_point(),
+                    };
+                    let kind = LoadKind::of_type(*value_type).expect("indexed integer read");
+                    if let Some(version) =
+                        selected_point.indexed_local_integer_version(&pointer, kind)
+                    {
+                        let read = crate::kernel::eval::evaluate_indexed_integer_read(
+                            memory_view,
+                            version,
+                            pointer,
+                            *value_type,
+                            pointer_path.facts,
+                            obligations,
+                        );
+                        paths.extend(spec_value_paths_in(vec![read], budget));
+                        continue;
+                    }
+                }
                 let read_paths = if *exact {
                     crate::kernel::eval::evaluate_exact_logical_memory_load_paths(
                         memory_view,
@@ -9945,7 +10012,10 @@ pub(super) fn proposition_as_single_condition(
             Some(((condition.clone()).native_compat().clone(), *value))
         }
         Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) => Some((
-            ConditionTerm::AlgebraicEqual(Box::new(left.clone()), Box::new(right.clone())),
+            ConditionTerm::AlgebraicEqual(
+                Box::new(left.native_compat().clone()),
+                Box::new(right.native_compat().clone()),
+            ),
             true,
         )),
         Proposition::Not(body) => {

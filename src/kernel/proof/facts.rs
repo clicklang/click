@@ -837,9 +837,12 @@ fn call_payload_identity_key(fact: &Proposition) -> Option<CallPayloadKey> {
             CallPayloadKey::AlgebraicCondition(*truth, [algebraic(left)?, algebraic(right)?])
         }
         Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right))
-            if algebraic_call(left) || algebraic_call(right) =>
+            if algebraic_call(left.native_compat()) || algebraic_call(right.native_compat()) =>
         {
-            CallPayloadKey::AlgebraicEquation([algebraic(left)?, algebraic(right)?])
+            CallPayloadKey::AlgebraicEquation([
+                algebraic(left.native_compat())?,
+                algebraic(right.native_compat())?,
+            ])
         }
         _ => return None,
     })
@@ -951,8 +954,8 @@ impl PropositionSource for PureFactStore {
 fn is_constructor_clash(proposition: &Proposition) -> bool {
     matches!(proposition,
         Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right))
-            if left.algebraic_type == right.algebraic_type
-                && matches!((&left.node, &right.node), (
+            if left.native_compat().algebraic_type == right.native_compat().algebraic_type
+                && matches!((&left.native_compat().node, &right.native_compat().node), (
                     AlgebraicTermNode::Constructor { variant: left, .. },
                     AlgebraicTermNode::Constructor { variant: right, .. },
                 ) if left != right))
@@ -1046,29 +1049,21 @@ impl PureFactStore {
         if selected.len() == self.len() {
             return self.clone();
         }
-        Self::from_statement_facts(&selected, None, Some(self))
+        Self::from_source_retaining_reservations(&selected, Some(self))
     }
 
-    pub(crate) fn from_statement_facts(
-        facts: &[Proposition],
-        context: Option<PureFactContext>,
-        reservations: Option<&Self>,
-    ) -> Self {
-        struct Selected<'a> {
-            facts: &'a [Proposition],
-            context: Option<PureFactContext>,
+    /// Show only the statement's explicit premises while using the incoming
+    /// proof's reasoning indexes. Branch conflicts and exact written citations
+    /// still consult the selected presentation.
+    pub(crate) fn statement_view(&self, facts: Vec<Proposition>) -> Self {
+        let mut view = Self {
+            presentation: FactPresentation::default(),
+            ..self.clone()
+        };
+        for fact in facts {
+            view = view.with_list_fact(fact);
         }
-        impl PropositionSource for Selected<'_> {
-            fn propositions(&self) -> impl Iterator<Item = &Proposition> {
-                self.facts.iter()
-            }
-            fn pure_context(&self) -> PureFactContext {
-                self.context
-                    .clone()
-                    .unwrap_or_else(|| self.facts.pure_context())
-            }
-        }
-        Self::from_source_retaining_reservations(&Selected { facts, context }, reservations)
+        view
     }
 
     /// Bounded newest-first view for diagnostics. This deliberately exposes
@@ -1356,6 +1351,27 @@ impl PureFactStore {
     /// to the kernel so every such publication is visible in the kernel audit.
     pub(crate) fn with_kernel_checked_fact(&self, fact: Proposition) -> Self {
         self.with_fact(fact)
+    }
+
+    /// Reuse the checked path's reasoning context for the outcome, retaining
+    /// the ordinary proof's premise indexes and reasoning policy. The selected
+    /// statement's publication is the only ordinary delta since its entry.
+    pub(super) fn with_outcome_context(
+        &self,
+        mut context: PureFactContext,
+        entry: &Self,
+    ) -> Option<Self> {
+        let published = self.introduced_since(entry)?;
+        context = context.with_reasoning_policy_of(&self.assumptions);
+        for proposition in published {
+            if !context.contains_assumed_exact(&proposition) {
+                context = context.assume_proposition(proposition);
+            }
+        }
+        Some(Self {
+            assumptions: context,
+            ..self.clone()
+        })
     }
 
     /// Retain producer evidence for a read whose defining proposition was
@@ -2015,38 +2031,30 @@ impl PureFactStore {
         instances
     }
 
-    /// Adds one statement's selected successor context while retaining the
-    /// old ambient order by shared prefix. The statement delta is explicit,
-    /// so insertion work is proportional only to that delta and index height.
     #[cfg(test)]
     pub(crate) fn with_statement_facts(&self, facts: Vec<Proposition>) -> Self {
-        self.with_statement_facts_retaining_prefix(facts, &ExecutionFacts::new())
+        let view = self.statement_view(facts);
+        self.publish_statement_view(view, &ExecutionFacts::new())
     }
 
-    /// Publish a statement batch. Its order indexes share canonical stored
-    /// propositions, including the checked case prefix. The prefix parameter
-    /// also distinguishes local suffix work in the test instrumentation.
-    pub(crate) fn with_statement_facts_retaining_prefix(
+    /// Commit the selected fork's semantic indexes and prioritize its
+    /// statement-local presentation in the encompassing proof.
+    pub(crate) fn publish_statement_view(
         &self,
-        mut facts: Vec<Proposition>,
+        mut successor: Self,
         _prefix: &ExecutionFacts,
     ) -> Self {
+        let mut facts = successor
+            .occurrences()
+            .map(crate::kernel::clone_proposition_iteratively)
+            .collect::<Vec<_>>();
         let ordered = self.ordered.clone();
         let parent = self.statement_batches.clone();
-        let mut successor = self.clone();
-        let mut introduced = Vec::new();
-        for fact in &facts {
-            // A fact the context holds introduces nothing; skipping it spares
-            // a copy of every index for each fact the step restates.
-            if successor.top_level_exact.contains(fact) {
-                continue;
-            }
-            let before = successor.fact_count();
-            successor = successor.with_fact(fact.clone());
-            if successor.fact_count() != before {
-                introduced.push(fact.clone());
-            }
-        }
+        let mut introduced = facts
+            .iter()
+            .filter(|fact| !self.top_level_exact.contains(*fact))
+            .cloned()
+            .collect::<Vec<_>>();
         for instance in successor.known_constructor_instances(&introduced) {
             let before = successor.fact_count();
             successor = successor.with_fact(instance.clone());
@@ -3292,14 +3300,16 @@ fn index_algebraic_equality_fact(
     let Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) = fact.as_ref() else {
         return index;
     };
-    for term in [left, right]
-        .into_iter()
-        .filter(|term| !matches!(term.node, AlgebraicTermNode::Constructor { .. }))
-    {
-        let mut bucket = index.get(term).cloned().unwrap_or_default();
+    for term in [left, right].into_iter().filter(|term| {
+        !matches!(
+            term.native_compat().node,
+            AlgebraicTermNode::Constructor { .. }
+        )
+    }) {
+        let mut bucket = index.get(term.native_compat()).cloned().unwrap_or_default();
         if !bucket.iter().any(|candidate| candidate == fact) {
             bucket.push(fact.clone());
-            index = index.with_inserted(term.clone(), bucket);
+            index = index.with_inserted(term.native_compat().clone(), bucket);
         }
     }
     index
@@ -3311,8 +3321,8 @@ fn collect_proposition_algebraic_terms(
 ) {
     match proposition {
         Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) => {
-            collect_algebraic_term_roots(left, terms);
-            collect_algebraic_term_roots(right, terms);
+            collect_algebraic_term_roots(left.native_compat(), terms);
+            collect_algebraic_term_roots(right.native_compat(), terms);
         }
         condition_source_0 @ Proposition::ConditionIs(_, _)
             if let Some((ConditionTerm::AlgebraicEqual(left, right), _)) =
@@ -4581,7 +4591,7 @@ mod integer_equality_fact_index_tests {
                 name: "sample".to_string(),
                 arguments: vec![
                     Term::ExecutionState(Box::new(state)),
-                    Term::ProgramValue(ProgramValue::Int32(MachineTerm::Variable(binder))),
+                    Term::ProgramValue((ProgramValue::Int32(MachineTerm::Variable(binder))).into()),
                 ],
             }),
         };
@@ -4646,14 +4656,17 @@ mod integer_equality_fact_index_tests {
             var: binder,
             sort: Sort::Algebraic(path_type.clone()),
             body: Box::new(Proposition::Equal(
-                Term::Bitvector32(MachineTerm::ClickFunctionApplication {
-                    name: "walk".into(),
-                    arguments: vec![PureFunctionArgument::Algebraic(AlgebraicTerm {
-                        algebraic_type: path_type.clone(),
-                        node: AlgebraicTermNode::Variable(binder),
-                    })],
-                }),
-                Term::Bitvector32(MachineTerm::constant(1)),
+                Term::Bitvector32(
+                    MachineTerm::ClickFunctionApplication {
+                        name: "walk".into(),
+                        arguments: vec![PureFunctionArgument::Algebraic(AlgebraicTerm {
+                            algebraic_type: path_type.clone(),
+                            node: AlgebraicTermNode::Variable(binder),
+                        })],
+                    }
+                    .into(),
+                ),
+                Term::Bitvector32(MachineTerm::constant(1).into()),
             )),
         };
         let source = path_reaches("callee_path", Variable(207_750));
@@ -5402,7 +5415,8 @@ mod statement_publication_delta_tests {
             let fresh = fact(size);
             let mut selected = prefix_facts.clone();
             selected.push(fresh.clone());
-            let successor = root.with_statement_facts_retaining_prefix(selected.clone(), &prefix);
+            let successor =
+                root.publish_statement_view(root.statement_view(selected.clone()), &prefix);
             for proposition in &prefix_facts {
                 assert!(Arc::ptr_eq(
                     root.top_level_exact.get(proposition).unwrap(),
@@ -5412,7 +5426,8 @@ mod statement_publication_delta_tests {
             assert_eq!(successor.to_vec(), selected);
             assert_eq!(successor.introduced_since(&root), Some(vec![fresh]));
             selected.swap(0, 1);
-            let reordered = root.with_statement_facts_retaining_prefix(selected.clone(), &prefix);
+            let reordered =
+                root.publish_statement_view(root.statement_view(selected.clone()), &prefix);
             for proposition in &prefix_facts {
                 assert!(Arc::ptr_eq(
                     root.top_level_exact.get(proposition).unwrap(),

@@ -19,7 +19,7 @@ fn value(pointer: &Address, checked: bool) -> ProgramValue {
 fn source(name: &str, pointer: &Address) -> Proposition {
     Proposition::Predicate {
         name: name.into(),
-        arguments: vec![Term::ProgramValue(value(pointer, true))],
+        arguments: vec![Term::ProgramValue((value(pointer, true)).into())],
     }
 }
 fn equal(a: &Address, b: &Address) -> Proposition {
@@ -52,7 +52,10 @@ fn model_source(pointer: &Address, condition: bool) -> Proposition {
             true,
         )
     } else {
-        Proposition::Equal(Term::Algebraic(variable), Term::Algebraic(constructor))
+        Proposition::Equal(
+            Term::Algebraic(variable.into()),
+            Term::Algebraic(constructor.into()),
+        )
     }
 }
 
@@ -159,7 +162,9 @@ fn goals_alternatives_and_weak_cast_metadata_do_not_admit_type_evidence() {
         unreachable!()
     };
     let context = PureFactContext::new();
-    context.equality_graph.are_algebraic_equal(a, b);
+    context
+        .equality_graph
+        .are_algebraic_equal(a.native_compat(), b.native_compat());
     assert!(!can_type(&context, &p));
     let alternatives = context.clone().assume_proposition(Proposition::Or(
         Box::new(model),
@@ -170,7 +175,7 @@ fn goals_alternatives_and_weak_cast_metadata_do_not_admit_type_evidence() {
         .with_contract_pointer_object_class(Some(class()), None, 0, 91);
     let weak = context.assume_proposition(Proposition::Predicate {
         name: "weak".into(),
-        arguments: vec![Term::ProgramValue(weak)],
+        arguments: vec![Term::ProgramValue((weak).into())],
     });
     assert!(!can_type(&weak, &p));
 }
@@ -204,7 +209,10 @@ fn opaque_call_interning_cannot_supply_another_scopes_type_annotations() {
     );
     assert_eq!(first, reused);
     let scalar = IntegerTerm::PureFunctionApplication(reused.clone());
-    let source = Proposition::Equal(Term::Integer(scalar.clone()), Term::Integer(scalar));
+    let source = Proposition::Equal(
+        Term::Integer(scalar.clone().into()),
+        Term::Integer(scalar.into()),
+    );
     let context = PureFactContext::new().assume_proposition(source);
     assert!(!can_type(&context, &p));
     let ty = super::algebraic_tests::model_type(
@@ -219,8 +227,8 @@ fn opaque_call_interning_cannot_supply_another_scopes_type_annotations() {
         },
     };
     let context = context.assume_proposition(Proposition::Equal(
-        Term::Algebraic(model.clone()),
-        Term::Algebraic(model),
+        Term::Algebraic(model.clone().into()),
+        Term::Algebraic(model.into()),
     ));
     assert!(!can_type(&context, &p));
 }

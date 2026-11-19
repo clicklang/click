@@ -3,7 +3,7 @@ fn retained_pure_citations_use_singletons_without_scanning_related_or_unrelated_
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);
     let theorems = TheoremEnvironment::new(&[]);
-    let memory = SymbolicMemory::new();
+    let point = crate::kernel::ProgramPoint::starting_at(&SymbolicMemory::new());
     let value = MachineTerm::Variable(Variable(987_123));
     let values = ProgramValueBindings::from([("n".into(), ProgramValue::Int32(value))]);
     let source = ClickProposition::Comparison {
@@ -15,14 +15,14 @@ fn retained_pure_citations_use_singletons_without_scanning_related_or_unrelated_
         "retained citation",
         &source,
         ContractEnvironment::new(&values, &BTreeMap::new()),
-        &memory,
+        &point,
         SpecDefinitions::new(&predicates, &functions),
     )
     .unwrap();
     let context = super::super::pure_theorems::PureTheoremContext {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
-        memory,
+        point: point.clone(),
         values,
         integer_values: Default::default(),
         array_refs: BTreeMap::new(),

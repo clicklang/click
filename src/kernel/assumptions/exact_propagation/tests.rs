@@ -273,15 +273,15 @@ fn exact_propagation_does_not_match_distinct_numeric_carriers() {
     use crate::kernel::*;
     let narrow = Proposition::Predicate {
         name: "typed".into(),
-        arguments: vec![Term::ProgramValue(ProgramValue::Int32(
-            MachineTerm::constant(0),
-        ))],
+        arguments: vec![Term::ProgramValue(
+            (ProgramValue::Int32(MachineTerm::constant(0))).into(),
+        )],
     };
     let wide = Proposition::Predicate {
         name: "typed".into(),
-        arguments: vec![Term::ProgramValue(ProgramValue::UInt64(
-            MachineTerm::uint64_constant(0),
-        ))],
+        arguments: vec![Term::ProgramValue(
+            (ProgramValue::UInt64(MachineTerm::uint64_constant(0))).into(),
+        )],
     };
     let result = atom("result");
     let rule = implies(narrow.clone(), result.clone());

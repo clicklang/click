@@ -37,7 +37,10 @@ fn refuted_disjunction_requires_the_source_and_every_exact_negation() {
     // Propagation may add intermediate disjunctions, their remaining arm,
     // and checked falsehood. The certificate must still reject every context
     // missing one of the original supports.
-    let goal = Proposition::Equal(Term::ProgramValue(int32(0)), Term::ProgramValue(int32(1)));
+    let goal = Proposition::Equal(
+        Term::ProgramValue(int32(0).into()),
+        Term::ProgramValue(int32(1).into()),
+    );
     let derivation = crate::kernel::search::ProofSearch::derive_proposition(&(context), &goal)
         .expect("all arms are refuted");
     assert!(derivation.check(&context));
@@ -153,16 +156,22 @@ fn checked_algebraic_constructor_rules_are_sound() {
     let field_equality =
         Proposition::condition_is(ConditionTerm::equal(left.clone(), right.clone()), true);
     let constructor_equality = Proposition::Equal(
-        Term::Algebraic(maybe_constructor(
-            &algebraic_type,
-            "Some",
-            vec![ProgramValue::Int32(left.clone())],
-        )),
-        Term::Algebraic(maybe_constructor(
-            &algebraic_type,
-            "Some",
-            vec![ProgramValue::Int32(right.clone())],
-        )),
+        Term::Algebraic(
+            maybe_constructor(
+                &algebraic_type,
+                "Some",
+                vec![ProgramValue::Int32(left.clone())],
+            )
+            .into(),
+        ),
+        Term::Algebraic(
+            maybe_constructor(
+                &algebraic_type,
+                "Some",
+                vec![ProgramValue::Int32(right.clone())],
+            )
+            .into(),
+        ),
     );
 
     let injectivity_context =
@@ -183,16 +192,12 @@ fn checked_algebraic_constructor_rules_are_sound() {
     assert!(congruence.check(&congruence_context));
 
     let malformed = Proposition::Equal(
-        Term::Algebraic(maybe_constructor(
-            &algebraic_type,
-            "Some",
-            vec![ProgramValue::UInt32(left)],
-        )),
-        Term::Algebraic(maybe_constructor(
-            &algebraic_type,
-            "Some",
-            vec![ProgramValue::UInt32(right)],
-        )),
+        Term::Algebraic(
+            maybe_constructor(&algebraic_type, "Some", vec![ProgramValue::UInt32(left)]).into(),
+        ),
+        Term::Algebraic(
+            maybe_constructor(&algebraic_type, "Some", vec![ProgramValue::UInt32(right)]).into(),
+        ),
     );
     assert!(
         crate::kernel::search::ProofSearch::derive_solve_proposition(
@@ -212,19 +217,22 @@ fn algebraic_equality_lookup_for_constructor_disequality_is_goal_local() {
         node: AlgebraicTermNode::Variable(Variable(89_020)),
     };
     let source = Proposition::Equal(
-        Term::Algebraic(model.clone()),
-        Term::Algebraic(maybe_constructor(&algebraic_type, "Some", vec![int32(7)])),
+        Term::Algebraic(model.clone().into()),
+        Term::Algebraic(maybe_constructor(&algebraic_type, "Some", vec![int32(7)]).into()),
     );
     let unrelated = Proposition::Equal(
-        Term::Algebraic(AlgebraicTerm {
-            algebraic_type: algebraic_type.clone(),
-            node: AlgebraicTermNode::Variable(Variable(89_021)),
-        }),
-        Term::Algebraic(maybe_constructor(&algebraic_type, "None", vec![])),
+        Term::Algebraic(
+            AlgebraicTerm {
+                algebraic_type: algebraic_type.clone(),
+                node: AlgebraicTermNode::Variable(Variable(89_021)),
+            }
+            .into(),
+        ),
+        Term::Algebraic(maybe_constructor(&algebraic_type, "None", vec![]).into()),
     );
     let goal = Proposition::Not(Box::new(Proposition::Equal(
-        Term::Algebraic(model),
-        Term::Algebraic(maybe_constructor(&algebraic_type, "None", vec![])),
+        Term::Algebraic(model.into()),
+        Term::Algebraic(maybe_constructor(&algebraic_type, "None", vec![]).into()),
     )));
     let assumptions = PureFactContext::new().assume_proposition(source.clone());
     let derivation =
@@ -235,11 +243,14 @@ fn algebraic_equality_lookup_for_constructor_disequality_is_goal_local() {
     let facts = crate::kernel::proof::PureFactStore::from_ordered(&[source.clone(), unrelated]);
     assert_eq!(facts.algebraic_equalities_mentioning(&goal), vec![source]);
     let unmatched = Proposition::Not(Box::new(Proposition::Equal(
-        Term::Algebraic(AlgebraicTerm {
-            algebraic_type: algebraic_type.clone(),
-            node: AlgebraicTermNode::Variable(Variable(89_022)),
-        }),
-        Term::Algebraic(maybe_constructor(&algebraic_type, "None", vec![])),
+        Term::Algebraic(
+            AlgebraicTerm {
+                algebraic_type: algebraic_type.clone(),
+                node: AlgebraicTermNode::Variable(Variable(89_022)),
+            }
+            .into(),
+        ),
+        Term::Algebraic(maybe_constructor(&algebraic_type, "None", vec![]).into()),
     )));
     assert!(facts.algebraic_equalities_mentioning(&unmatched).is_empty());
 }
@@ -289,8 +300,8 @@ fn algebraic_equality_lookup_descends_constructor_fields() {
         },
     };
     let source = Proposition::Equal(
-        Term::Algebraic(function.clone()),
-        Term::Algebraic(middle.clone()),
+        Term::Algebraic(function.clone().into()),
+        Term::Algebraic(middle.clone().into()),
     );
     let constructor = |field: AlgebraicTerm| AlgebraicTerm {
         algebraic_type: algebraic_type.clone(),
@@ -300,18 +311,24 @@ fn algebraic_equality_lookup_descends_constructor_fields() {
         },
     };
     let goal = Proposition::Equal(
-        Term::Algebraic(constructor(function)),
-        Term::Algebraic(constructor(middle)),
+        Term::Algebraic(constructor(function).into()),
+        Term::Algebraic(constructor(middle).into()),
     );
     let unrelated = Proposition::Equal(
-        Term::Algebraic(AlgebraicTerm {
-            algebraic_type: algebraic_type.clone(),
-            node: AlgebraicTermNode::Variable(Variable(89_032)),
-        }),
-        Term::Algebraic(AlgebraicTerm {
-            algebraic_type: algebraic_type.clone(),
-            node: AlgebraicTermNode::Variable(Variable(89_033)),
-        }),
+        Term::Algebraic(
+            AlgebraicTerm {
+                algebraic_type: algebraic_type.clone(),
+                node: AlgebraicTermNode::Variable(Variable(89_032)),
+            }
+            .into(),
+        ),
+        Term::Algebraic(
+            AlgebraicTerm {
+                algebraic_type: algebraic_type.clone(),
+                node: AlgebraicTermNode::Variable(Variable(89_033)),
+            }
+            .into(),
+        ),
     );
     let facts = crate::kernel::proof::PureFactStore::from_ordered(&[source.clone(), unrelated]);
     assert_eq!(facts.algebraic_equalities_mentioning(&goal), vec![source]);
@@ -354,7 +371,10 @@ fn algebraic_symbolic_reflexivity_checks_well_formed_terms() {
         },
     };
     let equality = |a: &AlgebraicTerm, b: &AlgebraicTerm| {
-        Proposition::Equal(Term::Algebraic(a.clone()), Term::Algebraic(b.clone()))
+        Proposition::Equal(
+            Term::Algebraic(a.clone().into()),
+            Term::Algebraic(b.clone().into()),
+        )
     };
     let context = PureFactContext::new();
     for term in [&call, &matched] {
@@ -412,7 +432,7 @@ fn algebraic_conditions_decide_from_condition_facts_and_keep_checked_polarity() 
         node: AlgebraicTermNode::Variable(Variable(89_101)),
     };
     let condition = ConditionTerm::AlgebraicEqual(Box::new(left.clone()), Box::new(right.clone()));
-    let equality = Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right));
+    let equality = Proposition::Equal(Term::Algebraic(left.into()), Term::Algebraic(right.into()));
     assert_eq!(PureFactContext::new().decide(&condition), None);
     for expected in [true, false] {
         let premise = if expected {
@@ -517,8 +537,8 @@ fn algebraic_condition_substitution_visits_scalar_fields() {
 fn distinct_algebraic_constructors_make_the_context_inconsistent() {
     let algebraic_type = maybe_int32_type();
     let conflict = Proposition::Equal(
-        Term::Algebraic(maybe_constructor(&algebraic_type, "None", vec![])),
-        Term::Algebraic(maybe_constructor(&algebraic_type, "Some", vec![int32(7)])),
+        Term::Algebraic(maybe_constructor(&algebraic_type, "None", vec![]).into()),
+        Term::Algebraic(maybe_constructor(&algebraic_type, "Some", vec![int32(7)]).into()),
     );
     assert!(
         PureFactContext::new()
@@ -2309,8 +2329,8 @@ fn builtin_obligation_solver_proves_trivial_props() {
     assert!(crate::kernel::search::ProofSearch::proves(
         &(assumptions),
         &Proposition::Equal(
-            Term::Bitvector32(MachineTerm::constant(7)),
-            Term::Bitvector32(MachineTerm::constant(7)),
+            Term::Bitvector32(MachineTerm::constant(7).into()),
+            Term::Bitvector32(MachineTerm::constant(7).into()),
         )
     ));
     assert!(crate::kernel::search::ProofSearch::proves(
@@ -3496,7 +3516,7 @@ fn forall_introduction_rejects_a_variable_free_in_ambient_assumptions() {
     let variable = Variable(186);
     let body = Proposition::Predicate {
         name: "holds".to_string(),
-        arguments: vec![Term::Bitvector32(MachineTerm::Variable(variable))],
+        arguments: vec![Term::Bitvector32(MachineTerm::Variable(variable).into())],
     };
     let goal = forall_int32(variable, body.clone());
     let assumptions = PureFactContext::new().assume_proposition(body);
@@ -3523,7 +3543,7 @@ fn forall_derivation_check_shadows_ambient_uses_of_the_binder_id() {
             .expect("reflexivity should prove a universal in an empty context");
     let contaminated = PureFactContext::new().assume_proposition(Proposition::Predicate {
         name: "ambient".to_string(),
-        arguments: vec![Term::Bitvector32(MachineTerm::Variable(variable))],
+        arguments: vec![Term::Bitvector32(MachineTerm::Variable(variable).into())],
     });
 
     assert!(derivation.check(&PureFactContext::new()));
@@ -4514,10 +4534,9 @@ fn forall_pointer_instantiation_takes_a_pointer_of_the_binder_type() {
     let binder = Variable(640);
     let pointer = |variable, program_type| Pointer::new(Address::symbolic(variable), program_type);
     let pointer_term = |variable| {
-        Term::ProgramValue(ProgramValue::Pointer(pointer(
-            variable,
-            ProgramType::Int32Pointer,
-        )))
+        Term::ProgramValue(
+            ProgramValue::Pointer(pointer(variable, ProgramType::Int32Pointer)).into(),
+        )
     };
     let quantified = Proposition::ForAll {
         name: Default::default(),
@@ -7870,7 +7889,10 @@ fn model_fact_restriction_keeps_only_selected_graph_support() {
         node: AlgebraicTermNode::Variable(Variable(id)),
     };
     let (a, b) = (model(97900), model(97901));
-    let equality = Proposition::Equal(Term::Algebraic(a.clone()), Term::Algebraic(b.clone()));
+    let equality = Proposition::Equal(
+        Term::Algebraic(a.clone().into()),
+        Term::Algebraic(b.clone().into()),
+    );
     let condition = ConditionTerm::AlgebraicEqual(Box::new(a), Box::new(b));
     let both = PureFactContext::new()
         .assume_proposition(equality.clone())
@@ -8134,13 +8156,11 @@ fn pointer_predicate_matching_preserves_types_arguments_states_and_scope() {
     ) -> Proposition {
         let mut arguments = vec![
             Term::ExecutionState(Box::new(state)),
-            Term::ProgramValue(int32(tag)),
+            Term::ProgramValue((int32(tag)).into()),
         ];
-        arguments.extend(
-            pointers.iter().map(|pointer| {
-                Term::ProgramValue(ProgramValue::typed_pointer(pointer.clone(), ty))
-            }),
-        );
+        arguments.extend(pointers.iter().map(|pointer| {
+            Term::ProgramValue(ProgramValue::typed_pointer(pointer.clone(), ty).into())
+        }));
         Proposition::Predicate {
             name: name.into(),
             arguments,
@@ -8231,10 +8251,13 @@ fn predicate_and_callback_lookup_share_late_pointer_class_merges() {
         name: FunctionContract::predicate_name_for("Invoke"),
         arguments: vec![
             Term::ExecutionState(Box::new(state)),
-            Term::ProgramValue(ProgramValue::typed_pointer(
-                pointer,
-                ProgramType::FunctionPointer(CallbackSignature::from_encoded(121_000)),
-            )),
+            Term::ProgramValue(
+                (ProgramValue::typed_pointer(
+                    pointer,
+                    ProgramType::FunctionPointer(CallbackSignature::from_encoded(121_000)),
+                ))
+                .into(),
+            ),
         ],
     };
     let source = fact(a.clone(), ExecutionState::new());
@@ -8281,10 +8304,9 @@ fn pointer_fact_payloads_are_not_revisited_when_fresh_aliases_join_a_large_class
         for index in 0..size {
             context = context.assume_proposition(Proposition::Predicate {
                 name: format!("Witness{index}"),
-                arguments: vec![Term::ProgramValue(ProgramValue::typed_pointer(
-                    target.clone(),
-                    ProgramType::Int32Pointer,
-                ))],
+                arguments: vec![Term::ProgramValue(
+                    (ProgramValue::typed_pointer(target.clone(), ProgramType::Int32Pointer)).into(),
+                )],
             });
         }
         EqualityGraph::take_pointer_fact_merge_visits();

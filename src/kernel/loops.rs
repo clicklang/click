@@ -582,6 +582,7 @@ fn execute_modeled_pthread_mutex_paths(
                 &path.facts,
                 &path.obligations,
             );
+            let footprint = super::mutexes::storage_write_range(mutex, binding.mutex_storage_bytes);
             let storage_refusal = (initializing && !state.preserves_mutex_protocols)
                 .then(|| {
                     super::mutexes::initialization_storage_refusal(
@@ -592,25 +593,7 @@ fn execute_modeled_pthread_mutex_paths(
                         &current,
                     )
                 })
-                .flatten()
-                .or_else(|| {
-                    if initializing {
-                        return None;
-                    }
-                    let storage = MemoryRange::new_with_element_width(
-                        mutex.address().clone(),
-                        0u32.into(),
-                        binding.mutex_storage_bytes.into(),
-                        1,
-                    );
-                    state
-                        .stable_loan_memory_access_refusal(
-                            &storage,
-                            &current,
-                            super::LoanRefusalOperation::MemoryAccess,
-                        )
-                        .map(|refusal| RuntimeError::LoanRefusal(Box::new(refusal)))
-                });
+                .flatten();
             let transition = if let Some(error) = storage_refusal {
                 Err(error)
             } else if initializing {
@@ -843,22 +826,30 @@ fn execute_modeled_pthread_mutex_paths(
                     loan_evidence = evidence;
                     // Every runtime transition may change the opaque representation.
                     // Only this checked path bypasses its ordinary-write reservation.
+                    if let Some(requirement) = state
+                        .loan_ledger()
+                        .and_then(|ledger| ledger.memory_access_requirement(&footprint))
                     {
-                        let storage = current.equality_graph.storage_address(mutex.address());
-                        let footprint = MemoryRange::new_with_element_width(
-                            storage,
-                            0u32.into(),
-                            binding.mutex_storage_bytes.into(),
-                            1,
+                        path.obligations.push(
+                            ProofObligation::verification_condition(requirement)
+                                .with_statement_entry_required(true)
+                                .with_context("pthread mutex storage write separation"),
                         );
-                        let identity = budget.allocate_kernel_variable()?;
-                        let memory = next.memory.clone().with_storage_memory_havoc(
-                            identity,
-                            &[footprint],
-                            &current,
-                        );
-                        next.set_memory(memory);
                     }
+                    let storage = current.equality_graph.storage_address(mutex.address());
+                    let storage_range = MemoryRange::new_with_element_width(
+                        storage,
+                        0u32.into(),
+                        binding.mutex_storage_bytes.into(),
+                        1,
+                    );
+                    let identity = budget.allocate_kernel_variable()?;
+                    let memory = next.memory.clone().with_storage_memory_havoc(
+                        identity,
+                        &[storage_range],
+                        &current,
+                    );
+                    next.set_memory(memory);
                     if let Some(error) = target.and_then(|target| {
                         assign_call_result(
                             &mut next,
@@ -1176,7 +1167,7 @@ fn execute_modeled_pthread_create_paths(
                                 )
                             }
                         }
-                        Err(message) => refusal(&message),
+                        Err(error) => StatementOutcome::RuntimeError(error),
                     },
                     Err(error) => StatementOutcome::RuntimeError(error),
                 }
@@ -2439,6 +2430,7 @@ fn join_loop_exits(
         .collect::<Vec<_>>();
     let unchanged = || vec![LoopExitRestatement::default(); exits.len()];
     let invariant_state_unchanged = states[1..].iter().all(|other| **other == exit_state);
+    let mut join_requirements = Vec::new();
     let (exit_state, restatements, mismatch) = if invariant_state_unchanged {
         (exit_state, unchanged(), None)
     } else {
@@ -2458,6 +2450,7 @@ fn join_loop_exits(
             &facts,
             &contexts,
             assumptions,
+            &mut join_requirements,
             variables,
             budget,
         ) {
@@ -2481,6 +2474,8 @@ fn join_loop_exits(
                     "loop exits reach different states, so they have no common successor: {mismatch}"
                 )),
         );
+    } else {
+        obligations.extend(join_requirements);
     }
     // Only name invariants whose source still denotes this successor. A
     // changed-state break can leave old head facts in the intersection; those
@@ -2586,6 +2581,7 @@ fn abstract_loop_exit_states(
     exit_facts: &[&ExecutionFacts],
     retained_contexts: &[Option<PureFactContext>],
     assumptions: &PureFactContext,
+    join_requirements: &mut Vec<ProofObligation>,
     variables: &mut KernelVariableGenerator,
     budget: &mut ExecutionBudget,
 ) -> Result<(ExecutionState, Vec<LoopExitRestatement>), String> {
@@ -2661,6 +2657,7 @@ fn abstract_loop_exit_states(
         assumptions,
         &contexts,
         &mut restatements,
+        join_requirements,
         variables,
         budget,
     )?;
@@ -2919,8 +2916,8 @@ impl LoopExitRestatement {
             program_value_comparison_proposition(fresh, ComparisonOperator::Equal, held)
                 .unwrap_or_else(|| {
                     Proposition::Equal(
-                        Term::ProgramValue(fresh.clone()),
-                        Term::ProgramValue(held.clone()),
+                        Term::ProgramValue(fresh.clone().into()),
+                        Term::ProgramValue(held.clone().into()),
                     )
                 }),
         );
@@ -2947,8 +2944,8 @@ impl LoopExitRestatement {
                     .or_insert_with(|| fresh.clone());
                 if representative != fresh {
                     self.equations.push(Proposition::Equal(
-                        Term::Algebraic(fresh.clone()),
-                        Term::Algebraic(representative.clone()),
+                        Term::Algebraic(fresh.clone().into()),
+                        Term::Algebraic(representative.clone().into()),
                     ));
                 }
                 return;
@@ -3361,6 +3358,32 @@ fn joined_resource_fields<'a>(
 ) -> Result<ResourceFieldValues, String> {
     let mut joined = Vec::with_capacity(base.len());
     for position in 0..base.len() {
+        if let Some(initial) = base.integer_term(position)
+            && let Some(held) = exits
+                .clone()
+                .map(|exit| exit.integer_term(position))
+                .collect::<Option<Vec<_>>>()
+        {
+            if held
+                .iter()
+                .all(|other| same_loop_exit_integer(&initial, other))
+            {
+                joined.push(base.stored_field(position).expect("field index"));
+                continue;
+            }
+            let variable = variables.next_in(budget).map_err(exhausted_identities)?;
+            let root = KernelTerm::variable(KernelType::Integer, variable);
+            let fresh = Term::Integer(
+                StoredIntegerTerm::from_root(root.clone()).expect("fresh Integer field"),
+            );
+            for (restatement, held) in restatements.iter_mut().zip(held) {
+                restatement
+                    .equations
+                    .push(Proposition::Equal(fresh.clone(), Term::Integer(held)));
+            }
+            joined.push(StoredResourceField::Integer(root));
+            continue;
+        }
         let value = base.get(position).expect("field index");
         let held = exits
             .clone()
@@ -3381,6 +3404,18 @@ fn joined_resource_fields<'a>(
         joined.push(StoredResourceField::from_minted(fresh));
     }
     Ok(ResourceFieldValues::from_stored(joined))
+}
+
+fn same_loop_exit_integer(left: &StoredIntegerTerm, right: &StoredIntegerTerm) -> bool {
+    match (left.root(), right.root()) {
+        (Some(left), Some(right))
+            if !matches!(left.node(), KernelTermNode::Legacy(_))
+                && !matches!(right.node(), KernelTermNode::Legacy(_)) =>
+        {
+            left.integer_native_syntax_equal(right)
+        }
+        _ => left == right,
+    }
 }
 
 /// A fresh symbolic value of the same sort as `value`.
@@ -3415,9 +3450,9 @@ fn exhausted_identities(limit: ExecutionLimit) -> String {
 /// One resource argument or field as the term an equation is written over.
 fn resource_value_term(value: &AlgebraicValue) -> Term {
     match value {
-        AlgebraicValue::Integer(term) => Term::Integer(term.clone()),
-        AlgebraicValue::Program(value) => Term::ProgramValue(value.clone()),
-        AlgebraicValue::Algebraic(term) => Term::Algebraic(term.clone()),
+        AlgebraicValue::Integer(term) => Term::Integer(term.clone().into()),
+        AlgebraicValue::Program(value) => Term::ProgramValue(value.clone().into()),
+        AlgebraicValue::Algebraic(term) => Term::Algebraic(term.clone().into()),
     }
 }
 
@@ -3559,7 +3594,20 @@ fn join_loop_exit_storage_bookkeeping(
             .iter()
             .flat_map(|state| state.memory.forgotten.ended_local_blocks.iter().cloned())
             .collect::<crate::kernel::HashedOrdSet<_>>();
-        std::sync::Arc::make_mut(&mut memory.forgotten).ended_local_blocks = ended;
+        let ended_addressable = exits
+            .iter()
+            .flat_map(|state| {
+                state
+                    .memory
+                    .forgotten
+                    .ended_addressable_local_blocks
+                    .iter()
+                    .cloned()
+            })
+            .collect::<crate::kernel::HashedOrdSet<_>>();
+        let forgotten = std::sync::Arc::make_mut(&mut memory.forgotten);
+        forgotten.ended_local_blocks = ended;
+        forgotten.ended_addressable_local_blocks = ended_addressable;
         let marker = variables.next_in(budget).map_err(exhausted_identities)?;
         if markers_differ {
             // Keep the common history and mint one new epoch. A union of all
@@ -3700,6 +3748,7 @@ fn abstract_loop_exit_memory(
     assumptions: &PureFactContext,
     contexts: &[PureFactContext],
     restatements: &mut [LoopExitRestatement],
+    join_requirements: &mut Vec<ProofObligation>,
     variables: &mut KernelVariableGenerator,
     budget: &mut ExecutionBudget,
 ) -> Result<BTreeSet<Address>, String> {
@@ -3761,11 +3810,18 @@ fn abstract_loop_exit_memory(
         }
         havoced.push((pointer, fresh));
     }
-    if let Some(ledger) = successor.loan_ledger() {
+    if let Some(ledger) = successor
+        .loan_ledger()
+        .filter(|ledger| ledger.has_active_memory_loans())
+    {
+        // Use the cells this join is about to abstract and the common exit
+        // ledger retained in the successor. The resulting conditions are
+        // prerequisites of the join, independent of its pinning equations.
         for pointer in dropped
             .iter()
             .chain(havoced.iter().map(|(pointer, _)| pointer))
         {
+            crate::instrumentation::record_deterministic_work(1);
             let byte_width = memory
                 .cells
                 .get(pointer)
@@ -3780,15 +3836,11 @@ fn abstract_loop_exit_memory(
                 MachineTerm::constant(byte_width),
                 1,
             );
-            if ledger
-                .permits_memory_access_with_assumptions(&range, assumptions)
-                .is_err()
-            {
-                return Err(format!(
-                    "the cell in `{}` that the exits abstract is under an active stable-view loan",
-                    pointer.base
-                ));
-            }
+            join_requirements.extend(loop_loan_separation(
+                ledger,
+                &range,
+                "loop exit join separation",
+            ));
         }
     }
     let mut abstracted = BTreeSet::new();
@@ -4682,6 +4734,8 @@ fn execute_program_loop_exit_paths(
     }
     budget.check_path_width(paths.len())?;
     for path in &mut paths {
+        path.obligations
+            .extend(head.loan_requirements.iter().cloned());
         path.loop_invariant_correspondence.iterations = Some(head.iterations.clone());
     }
     Ok(paths)
@@ -5748,6 +5802,8 @@ pub(super) struct LoopHead {
     /// Why a declared loop resource could not be taken from the enclosing
     /// resource context. A non-empty list is a verification failure.
     pub(super) resource_failures: Vec<LoopResourceFailure>,
+    /// Premises of applying the head abstraction to the original loop entry.
+    loan_requirements: Vec<ProofObligation>,
     /// The loop's effect checks with every declared-resource frame installed
     /// from the checked evaluation of the loop's own resource specs at entry.
     /// Every later check of this loop reads these, never the originals.
@@ -6017,20 +6073,20 @@ pub(super) fn prepare_loop_top_state(
     // also derives its havoc footprint from that bad declaration, so running
     // the barrier first would report the overlap it caused instead of the
     // ownership violation that is the real error.
-    let havoc_loan_failure = entry_state
+    let loan_check = if let Some(ledger) = entry_state
         .loan_ledger()
-        .filter(|_| statement_may_write_memory(entry_state, body))
-        .and_then(|ledger| {
-            // An unevaluable declared write set is not yet unknown: a loop
-            // body can only write memory the enclosing function owns, so the
-            // checked owned entry footprint is a sound upper bound on what
-            // the head abstraction erases. Only when that footprint cannot be
-            // named either does the write set stay unknown and fail closed.
-            let validated = loop_havoc_ranges
-                .clone()
-                .or_else(|| checked_owned_entry_footprint(entry_state.resources()));
-            validate_loop_havoc_stable_loans(ledger, validated.as_deref(), assumptions).err()
-        });
+        .filter(|ledger| include_mutable_summaries && ledger.has_active_memory_loans())
+    {
+        // When the loop has no checked summary, use the enclosing checked
+        // owned footprint as the existing upper bound on its writes.
+        let fallback = loop_havoc_ranges
+            .is_none()
+            .then(|| checked_owned_entry_footprint(entry_state.resources()))
+            .flatten();
+        loop_head_loan_requirements(ledger, loop_havoc_ranges.as_deref().or(fallback.as_deref()))
+    } else {
+        Ok(Vec::new())
+    };
     let mut resource_failures = capture_failures;
     let withheld = if resource_specs.is_empty() || effect_ranges.is_empty() {
         None
@@ -6377,7 +6433,10 @@ pub(super) fn prepare_loop_top_state(
     };
     resource_failures.extend(rebound_failures.drain(..).map(LoopResourceFailure::Message));
     resource_failures.extend(body_failures);
-    resource_failures.extend(havoc_loan_failure.map(LoopResourceFailure::Message));
+    let loan_requirements = loan_check.unwrap_or_else(|message| {
+        resource_failures.push(LoopResourceFailure::Message(message.to_string()));
+        Vec::new()
+    });
     // D7 at a loop head: the invariants play the part of a contract's
     // requirements, so a folded matched instance publishes the cells of the
     // arm they select. That is what lets a guard such as `root->left != 0`
@@ -6440,6 +6499,7 @@ pub(super) fn prepare_loop_top_state(
         iterations,
         summaries,
         resource_failures,
+        loan_requirements,
         effect_checks,
     })
 }
@@ -8227,8 +8287,8 @@ pub(super) fn push_false_loop_effect_obligation(
 
 pub(super) fn false_equals_true_proposition() -> Proposition {
     Proposition::Equal(
-        Term::Condition(ConditionTerm::Constant(false)),
-        Term::Condition(ConditionTerm::Constant(true)),
+        Term::Condition(ConditionTerm::Constant(false).into()),
+        Term::Condition(ConditionTerm::Constant(true).into()),
     )
 }
 
@@ -8787,32 +8847,34 @@ fn checked_owned_entry_footprint(resources: &ResourceContext) -> Option<Vec<Memo
         .collect()
 }
 
-/// Check the write set that the loop-head abstraction is about to erase
-/// against the active stable-view footprint.  An unknown write set is a
-/// barrier: silently turning it into a fresh state would discard the only
-/// evidence that a loan protects its bytes.
-fn validate_loop_havoc_stable_loans(
+/// Retain separation from the entry ledger for each checked write range.
+fn loop_head_loan_requirements(
     ledger: &super::loans::LoanLedger,
-    mutable_ranges: Option<&[MemoryRange]>,
-    assumptions: &PureFactContext,
-) -> Result<(), String> {
-    let Some(ranges) = mutable_ranges else {
-        if ledger.has_active_memory_loans() {
-            return Err(
-                "loop memory havoc has no checked write set while a stable-view loan is active"
-                    .to_string(),
-            );
-        }
-        return Ok(());
+    ranges: Option<&[MemoryRange]>,
+) -> Result<Vec<ProofObligation>, &'static str> {
+    let Some(ranges) =
+        ranges.filter(|ranges| ranges.iter().all(|range| !range.is_unnamed_footprint()))
+    else {
+        return Err(
+            "loop memory havoc has no checked write set while a stable-view loan is active",
+        );
     };
-    for range in ranges {
-        if let Err(error) = ledger.permits_memory_access_with_assumptions(range, assumptions) {
-            return Err(format!(
-                "loop memory havoc overlaps an active stable-view loan: {error}"
-            ));
-        }
-    }
-    Ok(())
+    Ok(ranges
+        .iter()
+        .filter_map(|range| loop_loan_separation(ledger, range, "loop head write separation"))
+        .collect())
+}
+
+fn loop_loan_separation(
+    ledger: &super::loans::LoanLedger,
+    range: &MemoryRange,
+    context: &'static str,
+) -> Option<ProofObligation> {
+    ledger.memory_access_requirement(range).map(|requirement| {
+        ProofObligation::verification_condition(requirement)
+            .with_statement_entry_required(true)
+            .with_context(context)
+    })
 }
 
 pub(super) fn statement_may_write_memory(
@@ -9129,6 +9191,7 @@ fn loop_written_automatic_objects(
                     layout,
                     slot,
                     constant: false,
+                    ..
                 } => (slot, layout.size_bytes()),
                 LocalBinding::ArrayObject {
                     element_type,

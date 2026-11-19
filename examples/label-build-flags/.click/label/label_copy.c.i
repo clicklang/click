@@ -3,17 +3,9 @@
 # 0 "<command-line>"
 # 1 "label_copy.c"
 # 1 "<string.h>" 1 3 4
+# 12 "<string.h>" 3 4
 
-
-
-
-
-       
-
-
-
-
-# 10 "<string.h>" 3 4
+# 12 "<string.h>" 3 4
 void *memcpy(void *dest, const void *src, size_t n);
 int memcmp(const void *s1, const void *s2, size_t n);
 void *memset(void *s, int c, size_t n);

@@ -140,3 +140,66 @@ fn reference_substitution_selects_only_its_carrier_and_keeps_lexical_captures_fr
         assert_eq!(*baseline.get_or_insert(cost), cost);
     }
 }
+
+#[test]
+fn interface_substitution_reads_only_referenced_proof_bindings() {
+    use crate::kernel::BindingName;
+
+    let generated = SurfaceBinder::fresh();
+    let selected = SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(42)));
+    let fact = ClickProposition::ForAll {
+        name: "x".into(),
+        written_name: None,
+        click_type: ClickType::Integer,
+        body: Box::new(ClickProposition::Comparison {
+            left: SurfaceTerm::Binding("n".into()),
+            operator: ComparisonOperator::Equal,
+            right: SurfaceTerm::Binding("x".into()),
+        }),
+    };
+    let resource = ResourceClause::Declared {
+        type_schema: None,
+        resource_type_arguments: Vec::new(),
+        resource_arguments: Vec::new(),
+        access: ResourceAccessMode::View,
+        kind: ResourceKind::Token,
+        name: "observed".into(),
+        arguments: vec![generated.reference()],
+        parameter_types: vec![InterfaceType::Int32],
+    };
+    let mut samples = Vec::new();
+    for size in [16, 64, 256] {
+        let mut bindings: PersistentBinderMap<_> = (0..size)
+            .map(|index| (format!("unused_{index}"), selected.clone()))
+            .collect();
+        bindings.insert("x", selected.clone());
+        bindings.insert("n", SurfaceTerm::Binding("x".into()));
+        bindings.insert(generated.clone(), selected.clone());
+        let ((rewritten_fact, rewritten_resource), work) =
+            crate::persistent::measure_persistent_work(|| {
+                let substitutions = ContractSubstitutions::new(&bindings);
+                (
+                    lowering::substitute_click_proposition_in(&fact, &substitutions).unwrap(),
+                    verification::substitute_resource_clause_for_summary_in(
+                        &resource,
+                        &substitutions,
+                    )
+                    .unwrap(),
+                )
+            });
+
+        let mut free = BTreeSet::new();
+        lowering::collect_click_proposition_referenced_bindings(&rewritten_fact, &mut free);
+        assert_eq!(free, BTreeSet::from([BindingName::from("x")]));
+        assert!(matches!(
+            rewritten_resource,
+            ResourceClause::Declared { arguments, .. } if arguments == [selected.clone()]
+        ));
+        samples.push(work);
+    }
+    assert!(samples[0] > 0);
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 32),
+        "a fixed interface should read only its named bindings: {samples:?}"
+    );
+}

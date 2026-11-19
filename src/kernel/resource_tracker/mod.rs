@@ -1415,14 +1415,15 @@ fn collect_proposition_reads(fact: &Proposition, reads: &mut Vec<ResourceRead>) 
 
 fn collect_term_reads(term: &Term, reads: &mut Vec<ResourceRead>) {
     match term {
-        Term::Condition(condition) => collect_condition_reads(condition, reads),
-        Term::Bitvector32(term) => collect_bitvector_reads(term, reads),
-        Term::Integer(term) => collect_integer_term_reads(term, reads),
+        Term::Condition(condition) => collect_condition_reads(condition.native_compat(), reads),
+        Term::Bitvector32(term) => collect_bitvector_reads(term.native_compat(), reads),
+        Term::Integer(term) => collect_integer_term_reads(term.native_compat(), reads),
         Term::PointerOffset(offset) => collect_offset_reads(offset, reads),
         Term::Algebraic(term) => {
-            term.for_each_machine_operand(|term| collect_operand_reads(term, reads));
+            term.native_compat()
+                .for_each_machine_operand(|term| collect_operand_reads(term, reads));
         }
-        Term::ProgramValue(value) => collect_value_reads(value, reads),
+        Term::ProgramValue(value) => collect_value_reads(value.native_compat(), reads),
         _ => {}
     }
 }

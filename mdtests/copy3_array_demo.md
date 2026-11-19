@@ -40,11 +40,11 @@ int32 copy3(int32 dst[3], int32 src[3]) {
         invariant forall (k: int32) { 0 <= k and k < i implies dst[k] == old(src[k]) };
         initialize by {
             have i >= 0 and i <= 3 by {
-                both {
-                    left => {
+                all {
+                    i >= 0 => {
                         normalize();
                     }
-                    right => {
+                    i <= 3 => {
                         normalize();
                     }
                 }

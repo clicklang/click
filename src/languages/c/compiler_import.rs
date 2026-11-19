@@ -208,6 +208,8 @@ struct SourceConfig {
     /// translation unit is imported.
     #[serde(default)]
     projection: Option<String>,
+    #[serde(default)]
+    functions: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -258,6 +260,7 @@ struct LockedSource {
     logical_source: String,
     path: String,
     args: Vec<String>,
+    functions: Vec<String>,
     artifact: String,
     source_sha256: String,
     artifact_sha256: String,
@@ -301,6 +304,8 @@ struct SectionSource {
     logical_source: String,
     path: String,
     args: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    functions: Vec<String>,
     local_dependencies: BTreeMap<String, String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     unit_dependencies: BTreeMap<String, String>,
@@ -350,6 +355,7 @@ fn lock_entry(lock: &Lock) -> Entry {
                 logical_source: locked.logical_source.clone(),
                 path: locked.path.clone(),
                 args: locked.args.clone(),
+                functions: locked.functions.clone(),
                 local_dependencies: locked.local_dependencies.clone(),
                 unit_dependencies: locked.unit_dependencies.clone(),
                 click_headers: locked.click_headers.clone(),
@@ -391,6 +397,7 @@ fn entry_lock(entry: &Entry) -> Result<Lock, String> {
             logical_source: part.logical_source,
             path: part.path,
             args: part.args,
+            functions: part.functions,
             artifact: recorded.artifact.path.clone(),
             source_sha256,
             artifact_sha256: recorded.artifact.sha256.clone(),
@@ -506,6 +513,7 @@ pub(crate) struct UnitSource {
     /// The artifact's path relative to the project root.
     pub artifact: String,
     pub projection: Option<String>,
+    pub functions: Vec<String>,
 }
 
 /// Prepares a project unit: its lock entry and the artifacts to write.
@@ -590,6 +598,7 @@ fn unit_config(unit: &UnitConfig, use_for: ConfigUse) -> Result<Config, String> 
                 args: source.args.clone(),
                 artifact: source.artifact.clone(),
                 projection: source.projection.clone(),
+                functions: source.functions.clone(),
             })
             .collect(),
         config_directory: project_root,
@@ -683,7 +692,7 @@ fn load_locked(config: &Config, lock: &Lock) -> Result<Vec<PreparedCImport>, Str
             .map_err(|e| format!("compiler output is not UTF-8: {e}"))?;
         let (mut clean, map) = CSourceMap::decode(text)?;
         if source.projection.is_some() {
-            clean = super::projection::project_dependency_closure(&clean, &map)
+            clean = super::projection::project_dependency_closure(&clean, &map, &source.functions)
                 .map_err(|reason| {
                     format!(
                         "dependency-closure projection of `{}`: {reason}",
@@ -729,6 +738,7 @@ fn build_lock(config: &Config) -> Result<(Lock, Vec<(PathBuf, Vec<u8>)>), String
             logical_source: source.logical_source.clone(),
             path: source.path.clone(),
             args: source.args.clone(),
+            functions: source.functions.clone(),
             artifact: source.artifact.clone(),
             source_sha256: result.source_sha256.clone(),
             artifact_sha256: hex_digest(&result.artifact),
@@ -955,6 +965,7 @@ fn validate_locked_source(
     if locked.logical_source != source.logical_source
         || locked.path != source.path
         || locked.args != source.args
+        || locked.functions != source.functions
         || locked.artifact != source.artifact
     {
         return Err(format!(
@@ -1381,6 +1392,26 @@ fn validate_config(config: &Config, use_for: ConfigUse) -> Result<(), String> {
                 "unsupported import projection `{projection}`; only `{}` is supported",
                 super::projection::DEPENDENCY_CLOSURE
             ));
+        }
+        let mut function_names = HashSet::new();
+        for name in &source.functions {
+            let mut bytes = name.bytes();
+            if !bytes
+                .next()
+                .is_some_and(|byte| byte.is_ascii_alphabetic() || byte == b'_')
+                || !bytes.all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+            {
+                return Err(format!(
+                    "source `{}`: invalid C function root `{name}`",
+                    source.logical_source
+                ));
+            }
+            if !function_names.insert(name) {
+                return Err(format!(
+                    "source `{}`: duplicate C function root `{name}`",
+                    source.logical_source
+                ));
+            }
         }
         let path = resolve_source(config, &source.path)?;
         let artifact = resolve_artifact(config, &source.artifact)?;
@@ -2239,6 +2270,7 @@ mod tests {
             logical_source: source_config.logical_source.clone(),
             path: source_config.path.clone(),
             args: source_config.args.clone(),
+            functions: source_config.functions.clone(),
             artifact: source_config.artifact.clone(),
             source_sha256: hex_digest(source),
             artifact_sha256: hex_digest(artifact),

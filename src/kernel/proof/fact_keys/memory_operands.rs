@@ -193,7 +193,7 @@ pub(super) fn clear() {
 }
 
 pub(super) fn operand(view: crate::kernel::MachineOperandView<'_>) -> MemoryErasedBitvectorKey {
-    use crate::kernel::MachineOperandView as V;
+    use crate::kernel::{KernelTermNode, MachineOperandView as V};
     let V::Shared(root) = view else {
         let V::Legacy(term) = view else {
             unreachable!()
@@ -239,7 +239,14 @@ pub(super) fn operand(view: crate::kernel::MachineOperandView<'_>) -> MemoryEras
             };
             get(child).expect("keyed child")
         };
-        let key = if let Some((_, address, kind)) = view.read() {
+        let key = if let KernelTermNode::MemoryLoad { address, kind, .. } = root.node() {
+            // This is a candidate key. It forgets the read state and keeps
+            // the exact address policy and load kind used by native keys.
+            intern(Node::Load(
+                Box::new(memory_erased_address_key(address.exact_cell_key())),
+                *kind,
+            ))
+        } else if let Some((_, address, kind)) = view.read() {
             intern(Node::Load(
                 Box::new(memory_erased_address_key(address)),
                 kind,
@@ -307,8 +314,8 @@ pub(super) fn operand(view: crate::kernel::MachineOperandView<'_>) -> MemoryEras
 mod tests {
     use super::*;
     use crate::kernel::{
-        KernelTerm, KernelTermExport, KernelTermImport, KernelType, MachineBinaryOp,
-        MachineOperandView as V,
+        KernelTerm, KernelTermExport, KernelTermImport, KernelTermNode, KernelType,
+        MachineBinaryOp, MachineOperandView as V, ProgramPoint,
     };
 
     #[test]
@@ -396,6 +403,35 @@ mod tests {
                 assert_eq!(KernelTermExport::machine_export_count(), exports);
             }
         }
+    }
+
+    #[test]
+    fn retained_read_candidate_keys_keep_kind_and_do_not_build_a_native_load() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let address = Address::symbolic(Variable(998203));
+        let before = crate::kernel::intern_memory(crate::kernel::SymbolicMemory::new());
+        let after = crate::kernel::intern_memory(before.memory().clone().store(
+            address.clone(),
+            ProgramValue::Int32(MachineTerm::constant(7)),
+        ));
+        let source = |memory: &SharedMemory, kind| {
+            MachineTerm::MemoryLoad(ProgramPoint::at(memory), Box::new(address.clone()), kind)
+        };
+        let before_read = source(&before, LoadKind::Int32);
+        let after_read = source(&after, LoadKind::Int32);
+        let other_kind = source(&after, LoadKind::UInt32);
+        let key = |read| {
+            let root = KernelTermImport::default().machine(MachineIntegerType::Int32, read);
+            assert!(matches!(root.node(), KernelTermNode::MemoryLoad { .. }));
+            let retained = operand(V::Shared(&root));
+            assert_eq!(retained, written(read));
+            assert!(!root.has_cached_machine_leaf());
+            retained
+        };
+        assert_eq!(key(&before_read), key(&after_read));
+        assert_ne!(key(&after_read), key(&other_kind));
+        let (name, _) = crate::kernel::eval::load_variable_for_term(&before_read).unwrap();
+        assert_eq!(written(&MachineTerm::Variable(name)), key(&before_read));
     }
 
     #[test]

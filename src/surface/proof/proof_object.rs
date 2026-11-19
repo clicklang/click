@@ -677,9 +677,6 @@ pub(in crate::surface::proof) struct ExecutionProofPresentation {
     outcome_evidence: crate::kernel::proof::PersistentVector<OutcomeEvidence>,
     outcome_fact_root: Option<Arc<PureFactStore>>,
     pub(in crate::surface::proof) checked_leaf_facts: Option<Arc<CheckedLeafFacts>>,
-    /// The facts of the last checked statement with every effect the path
-    /// has retained, extended step by step ([`EffectLeaf`]).
-    pub(in crate::surface::proof) effect_leaf: Option<Arc<EffectLeaf>>,
     /// Exact producer-issued bindings for load-defining equations.  The
     /// vector is output-sized and persistent across proof forks; conflicting
     /// observations for one variable are retained as an ambiguity tombstone.
@@ -926,7 +923,6 @@ impl ExecutionProofState {
                 outcome_evidence: Default::default(),
                 outcome_fact_root: None,
                 checked_leaf_facts: None,
-                effect_leaf: None,
                 generated_load_bindings: PersistentMap::default(),
                 generated_load_binding_events: PersistentSequence::default(),
                 generated_load_source_resolutions: PersistentMap::default(),
@@ -1348,54 +1344,6 @@ impl ProofExecutionView<'_> {
 pub(in crate::surface::proof) type CheckedLeafFacts =
     (FunctionExecutionCandidate, PureFactStore, bool);
 
-/// The facts a path's last checked statement held, with every effect the
-/// path has retained. Each statement extends it by the facts it introduced
-/// and the effects it retained, so a completed path's outcome goal reads it
-/// instead of importing the path's whole effect history.
-pub(in crate::surface::proof) struct EffectLeaf {
-    /// The statement's own facts, the lineage the next statement extends.
-    base: PureFactStore,
-    pub(in crate::surface::proof) facts: PureFactStore,
-    /// How many of the path's effects `facts` holds.
-    effects: usize,
-}
-
-impl EffectLeaf {
-    /// The leaf after a statement checked under `facts`, with the path's
-    /// effects `effects`. A statement whose facts descend from the last
-    /// leaf's adds only its own facts and new effects, unless they outnumber
-    /// the effects a rebuild refolds; any other starts over.
-    pub(in crate::surface::proof) fn after_statement(
-        previous: Option<&Self>,
-        facts: &PureFactStore,
-        effects: &crate::kernel::ExecutionFacts,
-    ) -> Self {
-        let extended = previous.and_then(|previous| {
-            // Rebuilding refolds the `previous.effects` effects the previous
-            // leaf already holds; a larger delta (the facts a join or a long
-            // run of cases added since that leaf) is cheaper to rebuild.
-            let introduced = (previous.effects <= effects.len())
-                .then(|| facts.introduced_since_within(&previous.base, previous.effects))
-                .flatten()?;
-            let leaf = introduced
-                .into_iter()
-                .fold(previous.facts.clone(), |leaf, fact| {
-                    leaf.with_kernel_checked_fact(fact)
-                });
-            Some((leaf, previous.effects))
-        });
-        let (mut leaf, folded) = extended.unwrap_or_else(|| (facts.clone(), 0));
-        for fact in effects.facts_from(folded) {
-            leaf = leaf.with_kernel_checked_fact(fact.proposition().clone());
-        }
-        Self {
-            base: facts.clone(),
-            facts: leaf,
-            effects: effects.len(),
-        }
-    }
-}
-
 /// Explicit case facts emitted by one terminal statement, in evaluation order.
 /// Kept with each outcome so expansion can place different closers after a
 /// single `step()` without reconstructing guards from ambient facts.
@@ -1795,6 +1743,7 @@ fn register_state_names(
             if name
                 .local_id()
                 .is_some_and(crate::kernel::LocalBindingId::is_temporary)
+                || !crate::surface::diagnostics::has_surface_iterator_binding(name)
                 || name.named().is_some_and(|name| {
                     name.starts_with("__click")
                         || name.starts_with("__rust_")
@@ -1905,6 +1854,7 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
                 labels.register_current_state(&execution.core.state);
                 for (name, value) in execution.core.state.locals().object_values() {
                     if !name.named().is_some_and(|name| name.starts_with("__rust_"))
+                        && crate::surface::diagnostics::has_surface_iterator_binding(name)
                         && let Some(variable) = diagnostic_value_variable(&value.native())
                     {
                         let spelling = execution
@@ -3206,35 +3156,58 @@ impl<'a> Proof<'a> {
                 let _points = synthesis::SynthesisRecordedPointsScope::enter(
                     context.fixed_state.recorded_states,
                 );
-                synthesis::synthesize_surface_proposition_at_entry_and_post(
-                    goal,
-                    context.parameter_binding,
-                    context.fixed_state.pre_state,
-                    context.fixed_state.state,
-                )
+                let (bound_variable_names, binder_names) = self.binder_variable_names();
+                synthesis::with_proof_binder_names(std::sync::Arc::new(binder_names), || {
+                    synthesis::synthesize_surface_proposition_at_entry_post_with_bound_variable_names(
+                        goal,
+                        context.parameter_binding,
+                        context.fixed_state.pre_state,
+                        context.fixed_state.state,
+                        &bound_variable_names,
+                    )
+                })
             }
             ProofContext::Execution(_) => {
                 let view = self.premise_fixed_state_view()?;
                 let _points = synthesis::SynthesisRecordedPointsScope::enter(
                     view.fixed_state.recorded_states,
                 );
-                synthesis::synthesize_surface_proposition_at_entry_and_post(
-                    goal,
-                    view.parameter_binding,
-                    view.fixed_state.pre_state,
-                    view.fixed_state.state,
-                )
+                let (bound_variable_names, binder_names) = self.binder_variable_names();
+                synthesis::with_proof_binder_names(std::sync::Arc::new(binder_names), || {
+                    synthesis::synthesize_surface_proposition_at_entry_post_with_bound_variable_names(
+                        goal,
+                        view.parameter_binding,
+                        view.fixed_state.pre_state,
+                        view.fixed_state.state,
+                        &bound_variable_names,
+                    )
+                })
             }
         })
     }
 
-    fn structural_goal_spelling(&self, goal: &Proposition) -> Option<ClickProposition> {
+    pub(in crate::surface::proof) fn structural_goal_spelling(
+        &self,
+        goal: &Proposition,
+    ) -> Option<ClickProposition> {
         let candidate = self.structural_proposition_candidate(goal)?;
         // This compares presentation, not proof authority: rewriting already
         // produced the successor. A spelling must retain its exact term.
         self.lower_surface_proposition_direct(&candidate, "structural goal raising")
             .ok()
             .filter(|lowered| lowered == goal)
+            .map(|_| candidate)
+    }
+
+    pub(in crate::surface::proof) fn conjunct_goal_spelling(
+        &self,
+        goal: &Proposition,
+    ) -> Option<ClickProposition> {
+        let mut candidate = self.structural_proposition_candidate(goal)?;
+        super::surface_synthesis::spell_conjunct_observations(goal, &mut candidate);
+        self.lower_conjunct_label(&candidate)
+            .ok()
+            .filter(|lowered| crate::kernel::proof::propositions_are_alpha_equal(lowered, goal))
             .map(|_| candidate)
     }
 
@@ -3524,6 +3497,8 @@ impl<'a> Proof<'a> {
     /// execution state.
     pub(super) fn checkpoint(&self) -> ProofCheckpoint<'a> {
         ProofCheckpoint {
+            conjuncts: [None, None],
+            unspelled_conjuncts: None,
             context: self.context.clone(),
             node: self.node.clone(),
         }
@@ -3613,7 +3588,7 @@ impl<'a> Proof<'a> {
         self.step_error_with_details(error.message, None, None, error.rejected_fact, Vec::new())
     }
 
-    fn step_error_with_requirement(
+    pub(super) fn step_error_with_requirement(
         &self,
         message: impl Into<String>,
         comparison: Option<crate::surface::proof_trace::ChildArgumentTrace>,
@@ -3868,7 +3843,7 @@ impl Drop for NestedTacticCaptureGuard<'_> {
 fn proof_step_source_name(step: &ProofStep) -> &'static str {
     match step {
         ProofStep::Match { .. } => "match",
-        ProofStep::Both { .. } => "both",
+        ProofStep::Both { .. } | ProofStep::All(_) => "all",
         ProofStep::CheckTerminationLocal(_) => "check_termination_local",
         ProofStep::CheckTerminationComponent { .. } => "check_termination_component",
         ProofStep::CheckTerminationCallbacks => "check_termination_callbacks",

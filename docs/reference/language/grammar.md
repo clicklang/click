@@ -27,13 +27,27 @@ radix prefixes, underscore separators, and the suffixes described under
 [Rust integer literals](../rust.md#integer-literals).
 Character literals use single quotes, including
 the ordinary C escapes accepted by the parser. String literals occur in source
-locations and other explicitly documented string positions; Click doesn't
-have a first-class string type.
+locations and other explicitly documented string positions. The
+[byte string syntax](#byte-string-literals) is available in specifications.
 
 Call-style proof tactics require parentheses, including the no-argument
 call `solve()`. A single tactic call can follow `by` directly; braces enclose
 a sequence and may also enclose one call. An omitted proof runs the whole
 proof by automation.
+
+## Byte string literals
+
+`b"..."` denotes a `List<uint8>` in a Click expression. Printable ASCII
+characters supply their byte values. The escapes `\0`, `\n`, `\r`, `\t`,
+`\"`, `\'`, and `\\` supply individual bytes, and `\xNN` takes exactly
+two hexadecimal digits. The list contains exactly those bytes, in order.
+For example, `b"a\0b"` has three elements, and `b""` is
+`List<uint8>::Nil`. A literal may contain up to 64 bytes after decoding.
+
+The spelling has the same meaning in a C, C++, or Rust sidecar. The source
+language supplies the encoding and terminator rules for its own literals.
+
+<!-- verified-example: mdtests/byte_string_literals.md -->
 
 ## Exact float bit literals
 
@@ -107,7 +121,8 @@ documentation inventory keep the following accepted words synchronized.
 | `mark`, `step`, `step_until` | Execution tactics. |
 | `unfold`, `fold`, `observe`, `construct`, `open` | Predicate and resource tactics. |
 | `unfold` and `fold` with `[i]` or `[..]` | Expose or restore an iterated ownership slot, or form or dissolve the whole iterated fact. `forall` inside a resource body starts the iterated clause itself. |
-| `apply`, `have`, `if`, `cases`, `both`, `branch`, `outcomes`, `loop` | Theorem application and structural proof tactics. |
+| `apply`, `have`, `if`, `cases`, `all`, `branch`, `outcomes`, `loop` | Theorem application and structural proof tactics. |
+| `both` | Retired conjunction tactic. Use `all { P => { ... } Q => { ... } }`. |
 | `witness`, `obtain` | Existential introduction and elimination. `let` binds what an operation produces. |
 | `known`, `normalize`, `intro`, `enumerate`, `contradiction` | Explicit proposition tactics. |
 | `sorry` | Dev-only proof hole `sorry()`. It parses only under `click verify --allow-sorry`; see [Dev-only proof hole](../cli/verify.md#dev-only-proof-hole). A user-defined tactic may not take the name. |

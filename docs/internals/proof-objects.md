@@ -814,7 +814,7 @@ witness, so it is a conjunct of the quantified body instead; guarding by
 implication there would make the claim vacuously true of every witness the
 guard excludes. Nothing under an existential binder is reachable before a
 `witness` names its value, so the head chain stops at the binder and the
-proof reaches a guard conjunct with `both`.
+proof reaches a guard conjunct with `all`.
 
 `RecordedStates` is a persistent map from `ProgramPointSelector` to `ExecutionState`.
 A selector is either a static C `ProgramPointRef` or a proof-local mark. A

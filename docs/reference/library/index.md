@@ -52,6 +52,8 @@ how far it is trusted:
 | [`click::c::string`](#clickcstring) | `import click::c::string;`, or when the C declares or calls a modeled string function | C library interface and specification |
 | [C++ standard library interfaces](#c-standard-library-interfaces), `library/cpp/` (not a module) | when a C++ import calls one of its functions | C++ library interface |
 | [`click::rust::i8` ... `click::rust::usize`](#clickrusti8-through-clickrustusize) | `import click::rust::u32;`; named by path in Rust core-method contracts | specification |
+| [`click::rust::option`](#clickrustoption) | `import click::rust::option;` | specification |
+| [`click::rust::result`](#clickrustresult) | `import click::rust::result;` | specification |
 | [`click::rust::vec`](#clickrustvec) | `import click::rust::vec;` | specification, with trusted axioms |
 | [`click::rust::slice`](#clickrustslice) | `import click::rust::slice;` | specification |
 | [Rust core interfaces](#rust-core-interfaces), `library/rust/core.click` (not a module) | when a Rust import calls one of its methods | Rust library interface |
@@ -650,25 +652,6 @@ spec enum Option<T> {
 this value in a contract: `ensures result == Option<u32>::Some(x);`. The
 importer lays the Rust value out itself; a contract never reads that layout.
 
-### `option::unwrap_or`
-
-```click
-function unwrap_or<T>(o: Option<T>, default: T) -> T {
-    match o {
-        Option::Some(value) => value,
-        Option::None => default,
-    }
-}
-```
-
-**Meaning:** Rust's `Option::unwrap_or`: the payload of `Some`, else
-`default`. A call `o.unwrap_or(d)` in imported Rust calls an external function
-whose contract is `ensures result == click::option::unwrap_or(o, d);`. The
-module is implicit, so a sidecar writes `option::unwrap_or(o, d)` with no
-import.
-
-**Verified use:** [`design/charon-trial/option-values`](https://github.com/clicklang/click/blob/master/design/charon-trial/option-values/options.click).
-
 ## `click::result`
 
 Source: `library/result.click`, implicit.
@@ -685,24 +668,6 @@ spec enum Result<T, E> {
 **Meaning:** A value or an error. A Rust `Result<u32, u8>` parameter or result
 is this value in a contract: `ensures result == Result<u32, u8>::Ok(x);`. As
 for `Option`, the importer lays the Rust value out itself.
-
-### `result::unwrap_or`
-
-```click
-function unwrap_or<T, E>(r: Result<T, E>, default: T) -> T {
-    match r {
-        Result::Ok(value) => value,
-        Result::Err(error) => default,
-    }
-}
-```
-
-**Meaning:** Rust's `Result::unwrap_or`: the payload of `Ok`, else `default`.
-A call `r.unwrap_or(d)` in imported Rust calls an external function whose
-contract is `ensures result == click::result::unwrap_or(r, d);`. The module is
-implicit; a sidecar writes `click::result::unwrap_or(r, d)` with no import.
-
-**Verified use:** [`design/charon-trial/result-values`](https://github.com/clicklang/click/blob/master/design/charon-trial/result-values/results.click).
 
 ## `click::integer`
 
@@ -3032,6 +2997,43 @@ theorem uint64_add_to_integer(left: uint64, right: uint64) {
 Unsigned addition agrees with Integer addition when the sum fits uint64. Native unsigned definedness alone permits wrapping.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
+### `integer::uint64_increment_upper_bound`
+
+```click
+theorem uint64_increment_upper_bound(value: uint64, upper: uint64) {
+    requires value < upper;
+    ensures to_integer(value + 1u64) <= to_integer(upper) by {
+        have to_integer(value) < to_integer(upper) by known();
+        have (to_integer(value) + 1) <= to_integer(upper) by {
+            apply(integer::lt_step_le(to_integer(value), to_integer(upper))) using {
+                to_integer(value) < to_integer(upper);
+            };
+        }
+        have to_integer(upper) <= 18446744073709551615 by known();
+        have (to_integer(value) + 1) <= 18446744073709551615 by {
+            apply(integer::le_transitive(to_integer(value) + 1, to_integer(upper), 18446744073709551615)) using {
+                to_integer(value) + 1 <= to_integer(upper);
+                to_integer(upper) <= 18446744073709551615;
+            };
+        }
+        have (to_integer(value) + to_integer(1u64)) <= 18446744073709551615 by known();
+        have to_integer(value + 1u64) == (to_integer(value) + 1) by {
+            apply(integer::uint64_add_to_integer(value, 1u64)) using {
+                to_integer(value) + to_integer(1u64) <= 18446744073709551615;
+            };
+            known();
+        }
+        rewrite(to_integer(value + 1u64), to_integer(value) + 1);
+        known();
+    }
+}
+```
+
+The strict bound on the original value proves the increment fits in `uint64`
+and the incremented word remains at most the upper bound.
+
+**Verified use:** [`mdtests/back_edge_closes_an_unsigned_bound_from_the_guard.md`](https://github.com/clicklang/click/blob/master/mdtests/back_edge_closes_an_unsigned_bound_from_the_guard.md).
 
 ### `integer::uint64_multiply_to_integer`
 
@@ -9661,7 +9663,7 @@ theorem len_has_terminator(bytes: uint8[], len: uint64) {
 
 Source: `library/cpp/span.click`, `library/cpp/array.click` and
 `library/cpp/as_writable_bytes.click`. These files are not modules: the C++
-importer appends the ones an import calls to its sidecar and writes each
+importer adds the selected contracts to the sidecar's environment and writes each
 `template<...> extern` block out at each element type and extent a call
 names, `std::span<int>::size`. Its name table,
 `src/languages/cpp/standard_library.rs`, lists the functions and element
@@ -9669,6 +9671,38 @@ types it maps to them. The model accessors `std_span_data`,
 `std_span_size` and `std_array_data` name a span's or array's state.
 
 ### `std::span<T>`
+
+The catalog also supplies copy construction and `empty()` for dynamic
+`std::span<int>`. These use the logical descriptor resource
+`click::cpp::span_state::span_state`, defined in `library/cpp/span_state.click`.
+Copy construction produces a new descriptor resource with the same address
+and count while preserving the source. `empty()` observes the count and
+preserves the descriptor. The resource grants no access to backing memory.
+
+```click
+abstract resource span_state(span: uint8*) {
+    field data: int32*;
+    field count: uint64;
+}
+
+template<class T> extern std::span<T>::span(const std::span<T>& source) {
+    owns input: span_state(&source as (uint8*));
+    produces copy: span_state(this as (uint8*));
+    ensures input.data == old(input.data);
+    ensures input.count == old(input.count);
+    ensures copy.data == input.data;
+    ensures copy.count == input.count;
+}
+
+template<class T> extern bool std::span<T>::empty() const {
+    owns state: span_state(this as (uint8*));
+    ensures state.data == old(state.data);
+    ensures state.count == old(state.count);
+    ensures state.count == 0u64 implies result;
+    ensures state.count != 0u64 implies not result;
+}
+```
+
 
 The dynamic pointer/count constructor initializes the descriptor and establishes
 its address and count. Its contract grants no authority over the backing.
@@ -10925,6 +10959,50 @@ proved by applying it.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md); `tests/rust_import.rs` applies it to imported Rust (`rust_usize_arithmetic_casts_and_expansion_verify`).
 
+## `click::rust::option`
+
+The proof helper in `library/rust/option.click` states the result of Rust's
+`Option::unwrap_or`.
+
+### `option::unwrap_or`
+
+```click
+function unwrap_or<T>(o: Option<T>, default: T) -> T {
+    match o {
+        Option::Some(value) => value,
+        Option::None => default,
+    }
+}
+```
+
+`unwrap_or` returns the payload of `Some` or the supplied default.
+A sidecar can write `click::rust::option::unwrap_or(o, d)` or selectively
+import it with `import click::rust::option::{unwrap_or};`.
+
+**Verified use:** [`core-methods/methods.click`](https://github.com/clicklang/click/blob/master/design/charon-trial/core-methods/methods.click).
+
+## `click::rust::result`
+
+The proof helper in `library/rust/result.click` states the result of Rust's
+`Result::unwrap_or`.
+
+### `result::unwrap_or`
+
+```click
+function unwrap_or<T, E>(r: Result<T, E>, default: T) -> T {
+    match r {
+        Result::Ok(value) => value,
+        Result::Err(error) => default,
+    }
+}
+```
+
+`unwrap_or` returns the payload of `Ok` or the supplied default.
+A sidecar can write `click::rust::result::unwrap_or(r, d)` or selectively
+import it with `import click::rust::result::{unwrap_or};`.
+
+**Verified use:** [`result-values/results.click`](https://github.com/clicklang/click/blob/master/design/charon-trial/result-values/results.click).
+
 ## `click::rust::vec`
 
 Source: `library/rust/vec.click`, `import click::rust::vec;`.
@@ -11219,7 +11297,7 @@ extern fn Option::expect<T>(o: Option<T>) -> T {
     ensures o == Option<T>::Some(result);
 }
 extern fn Option::unwrap_or<T>(o: Option<T>, d: T) -> T {
-    ensures result == click::option::unwrap_or(o, d);
+    ensures result == click::rust::option::unwrap_or(o, d);
 }
 extern fn Result::unwrap<T, E>(r: Result<T, E>) -> T {
     requires exists (value: T) { r == Result<T, E>::Ok(value) };
@@ -11230,7 +11308,7 @@ extern fn Result::expect<T, E>(r: Result<T, E>) -> T {
     ensures r == Result<T, E>::Ok(result);
 }
 extern fn Result::unwrap_or<T, E>(r: Result<T, E>, d: T) -> T {
-    ensures result == click::result::unwrap_or(r, d);
+    ensures result == click::rust::result::unwrap_or(r, d);
 }
 ```
 
@@ -11467,6 +11545,19 @@ paths; both premises are explicit.
 
 **Verified use:** `mdtests/viewable_restrict_memory.md` and
 `mdtests/viewable_restrict_resources.md`.
+
+### `separation::contains_joined_ranges`
+
+Two ordered adjacent ranges on the same pointer cover their combined interval.
+This theorem describes the ranges and grants no memory permission.
+
+```click
+theorem contains_joined_ranges<T, I>(p: T*, lo: I, mid: I, hi: I) {
+    requires lo <= mid;
+    requires mid <= hi;
+    ensures contains(memory(p[lo..mid]) * memory(p[mid..hi]), memory(p[lo..hi]));
+}
+```
 
 ### Separating conjunction laws
 

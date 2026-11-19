@@ -469,7 +469,7 @@ fn parser_bounds_non_parenthesized_surface_nesting_before_ast_construction() {
 
     let mut proof_body = String::from("normalize();");
     for _ in 0..=parser::STRUCTURAL_NESTING_LIMIT {
-        proof_body = format!("both {{ left => {{ {proof_body} }} right => {{ normalize(); }} }}");
+        proof_body = format!("have 0 == 0 by {{ {proof_body} }} normalize();");
     }
     let proof_error = parser::parse_file_items(&format!(
         "theorem too_deep_proof() {{ ensures 0 == 0 by {{ {proof_body} }} }}"
@@ -656,11 +656,10 @@ fn surface_depths_survive_consumption(
     drop(printed_sequence);
     drop(sequence_file);
 
-    let mut proof_goal = String::from("0 == 0");
+    let proof_goal = "0 == 0";
     let mut proof_body = String::from("normalize();");
     for _ in 0..structural_depth - 2 {
-        proof_goal.push_str(" and 0 == 0");
-        proof_body = format!("both {{ left => {{ {proof_body} }} right => {{ normalize(); }} }}");
+        proof_body = format!("have 0 == 0 by {{ {proof_body} }} normalize();");
     }
     let proof_source =
         format!("theorem at_limit_proof() {{ ensures {proof_goal} by {{ {proof_body} }} }}");
@@ -671,7 +670,7 @@ fn surface_depths_survive_consumption(
         panic!("the supported proof boundary should remain a script");
     };
     let printed_proof = super::super::printing::format_partial_tactic_sequence(tactics);
-    assert!(printed_proof.contains("both"));
+    assert!(printed_proof.contains("have 0 == 0 by"));
     drop(printed_proof);
     drop(proof_file);
 
@@ -1928,7 +1927,7 @@ fn surface_synthesis_omits_a_predicates_hidden_resource_state_argument() {
         name: "valid_pool".to_string(),
         arguments: vec![
             Term::ExecutionState(Box::new(ExecutionState::new())),
-            Term::ProgramValue(ProgramValue::pointer(pool.clone())),
+            Term::ProgramValue((ProgramValue::pointer(pool.clone())).into()),
         ],
     };
 
@@ -1979,9 +1978,9 @@ fn surface_synthesis_spells_reserved_predicates_by_their_click_names() {
             crate::kernel::FunctionContract::predicate_name_for("ordered"),
             vec![
                 state.clone(),
-                Term::ProgramValue(ProgramValue::pointer(Address::function(
-                    "compare".to_string()
-                ))),
+                Term::ProgramValue(
+                    (ProgramValue::pointer(Address::function("compare".to_string()))).into()
+                ),
             ],
         ),
         Some(ClickProposition::PredicateCall {
@@ -1994,7 +1993,9 @@ fn surface_synthesis_spells_reserved_predicates_by_their_click_names() {
     assert_eq!(
         synthesize(
             format!("{}4", crate::kernel::SUBOBJECT_COVERS_PREDICATE_PREFIX),
-            vec![Term::ProgramValue(ProgramValue::pointer(mutex.clone()))],
+            vec![Term::ProgramValue(
+                (ProgramValue::pointer(mutex.clone())).into()
+            )],
         ),
         None,
         "bookkeeping has no Click spelling"
@@ -2244,7 +2245,7 @@ theorem reflexive_pair() {
     let explicit = r#"
 theorem reflexive_pair() {
     ensures 1 == 1 and 2 == 2 by {
-        both { left => { normalize(); } right => { normalize(); } }
+        all { 1 == 1 => { normalize(); } 2 == 2 => { normalize(); } }
     }
 }
 "#;

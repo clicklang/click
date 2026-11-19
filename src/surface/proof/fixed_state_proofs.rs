@@ -22,7 +22,8 @@ pub(super) use have_proofs::{
     lower_fixed_state_proposition_with_algebraic_values,
     lower_fixed_state_proposition_with_assumptions,
     lower_fixed_state_proposition_with_assumptions_recording_introductions,
-    lower_fixed_state_proposition_with_integer_values, reverse_kernel_equality,
+    lower_fixed_state_proposition_with_integer_values,
+    lower_fixed_state_proposition_with_proof_locals, reverse_kernel_equality,
     reverse_surface_equality,
 };
 pub(in crate::surface) use have_proofs::{

@@ -282,8 +282,8 @@ impl ExecutionValue {
         match self {
             Self::Native(value) => value,
             Self::Shared(term) => {
-                if let Some(value) = term.algebraic_native_value() {
-                    return value.clone();
+                if let Some(value) = term.algebraic_native_term() {
+                    return ProgramValue::Parameter(Box::new(value.clone()));
                 }
                 if let Some(value) = term.boolean_native() {
                     return value.clone();

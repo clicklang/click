@@ -304,7 +304,7 @@ pub(in crate::surface) fn asserted_condition<'s>(
 ) -> Option<&'s ProgramExpression> {
     if !matches!(
         proposition,
-        Proposition::Equal(Term::ProgramValue(_), Term::ProgramValue(one)) if *one == int32(1)
+        Proposition::Equal(Term::ProgramValue(_), Term::ProgramValue(one)) if one.native_compat() == &int32(1)
     ) {
         return None;
     }

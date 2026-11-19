@@ -96,7 +96,9 @@ pub use kernel_term::{
     KernelTermNode, KernelType,
 };
 #[allow(unused_imports)]
-pub(crate) use kernel_term::{PointerRewrite, PointerRewriteError, SharedAddressBase};
+pub(crate) use kernel_term::{
+    KernelMemoryRead, PointerRewrite, PointerRewriteError, SharedAddressBase,
+};
 mod machine_integer;
 pub use machine_integer::{
     MachineIntegerConstant, MachineIntegerDivisionError, MachineIntegerFormat, MachineIntegerWidth,
@@ -2436,10 +2438,9 @@ impl SubobjectBounds {
     /// The fact that these opaque bounds cover `range`.
     pub(crate) fn coverage_fact(&self, range: &MemoryRange) -> Proposition {
         let pointer = |pointer: Address| {
-            Term::ProgramValue(ProgramValue::Pointer(Pointer::new(
-                pointer,
-                ProgramType::VoidPointer,
-            )))
+            Term::ProgramValue(
+                ProgramValue::Pointer(Pointer::new(pointer, ProgramType::VoidPointer)).into(),
+            )
         };
         let width = range.element_width();
         if let Some((start, end)) = range.wide_bounds() {
@@ -2448,8 +2449,8 @@ impl SubobjectBounds {
                 arguments: vec![
                     pointer(self.start.clone()),
                     pointer(range.base().clone()),
-                    Term::ProgramValue(ProgramValue::UInt64(start.clone())),
-                    Term::ProgramValue(ProgramValue::UInt64(end.clone())),
+                    Term::ProgramValue((ProgramValue::UInt64(start.clone())).into()),
+                    Term::ProgramValue((ProgramValue::UInt64(end.clone())).into()),
                 ],
             };
         }
@@ -3200,6 +3201,14 @@ impl AddressBase {
     /// Whether a concrete block name records a `static` object.
     pub(crate) fn is_static_name(name: &str) -> bool {
         name.starts_with(STATIC_BLOCK_PREFIX)
+    }
+
+    /// A frontend-created C++ parameter object, allocated in its caller.
+    pub(crate) fn prepared_argument_binding(&self) -> Option<&LocalBindingId> {
+        match self {
+            Self::AutomaticLocal { binding, .. } if binding.is_prepared_argument() => Some(binding),
+            _ => None,
+        }
     }
 
     /// Automatic storage: a local, parameter, frame or lifetime object.
@@ -7845,8 +7854,8 @@ pub struct VerifiedLoopRule {
     /// produced in; there is no other way to set it, so it is a record of what
     /// the body actually owed rather than a claim about it. A self-call inside
     /// the body raised its descent obligations exactly when this is `Some`,
-    /// and the rule exists at all only because every obligation on its paths
-    /// was discharged or assumable. Applying the rule and the termination
+    /// and the rule's paths retain any outstanding statement-entry
+    /// conditions for application. Applying the rule and the termination
     /// judgment both read it; see
     /// [`ExecutionEnvironment::applicable_verified_loop_rule`].
     pub(super) recursion_anchor: Option<std::sync::Arc<RecursionAnchor>>,
@@ -8586,6 +8595,8 @@ pub(super) enum LocalBinding {
         layout: AggregateLayout,
         slot: Address,
         constant: bool,
+        /// Set only on the parameter object materialized for a standalone proof.
+        proof_input_for: Option<std::sync::Arc<str>>,
     },
 }
 
@@ -8656,6 +8667,12 @@ pub struct ForgottenKnowledge {
     /// the block alone, retaining this tombstone makes stale aliases invalid
     /// even when a later proof step forgets or rejoins ordinary cells.
     pub(super) ended_local_blocks: HashedOrdSet<AddressBase>,
+    /// The entries of `ended_local_blocks` whose address some pointer value
+    /// may hold (`block_is_never_address_taken_local` is false). Only these
+    /// can make a load through a pointer observe a retired object, so only
+    /// these belong in a read's projection. Maintained wherever
+    /// `ended_local_blocks` changes, so naming never scans the whole set.
+    pub(super) ended_addressable_local_blocks: HashedOrdSet<AddressBase>,
     /// Set where cached values were dropped without the memory itself being
     /// known unchanged; see [`ForgottenFrom`]. Carried by later stores and by
     /// the projections used for load naming, so a state that has forgotten
@@ -10192,6 +10209,17 @@ pub(crate) fn intern_derivation_base(memory: &mut SymbolicMemory) -> SharedMemor
 pub(crate) fn record_memory_derivation(result: &mut SymbolicMemory, derivation: MemoryDerivation) {
     let variable_base = derivation.base().clone();
     let derivation = Arc::new(derivation);
+    let names_existing_cells = match derivation.as_ref() {
+        MemoryDerivation::CellObserved { .. } => true,
+        MemoryDerivation::CellsSeeded { base, run } => {
+            matches!(run.value_mode(), cell_store::RunValueMode::Load)
+                && (run.element_width() == run.value_width()
+                    || (run.element_width() > run.value_width()
+                        && run.element_type() != ProgramType::Bool))
+                && base.read_identity() == run.source().read_identity()
+        }
+        _ => false,
+    };
     // The log this value carries from the path that made it; the step is
     // added once the result's arena identity is known.
     let inherited = result.pending_steps.take();
@@ -10208,30 +10236,22 @@ pub(crate) fn record_memory_derivation(result: &mut SymbolicMemory, derivation: 
             inherited,
             derivation.clone(),
             produced,
+            names_existing_cells,
         ));
         return;
     }
     // Interning borrows the arena, so it has to finish before the write.
     let read_identity = match derivation.as_ref() {
         MemoryDerivation::CellsForgotten { base }
-        | MemoryDerivation::CellObserved { base }
         | MemoryDerivation::BlockDeclared { base, .. }
         | MemoryDerivation::ObjectInitializationRecorded { base, .. } => {
             // Declaration/initialization metadata writes no values. Keep the
             // bytes' identity; type, lifetime and access use this state.
             Some(base.read_identity())
         }
-        MemoryDerivation::CellsSeeded { base, run }
-            if matches!(run.value_mode(), cell_store::RunValueMode::Load)
-                && (run.element_width() == run.value_width()
-                    || (run.element_width() > run.value_width()
-                        && run.element_type() != ProgramType::Bool))
-                && base.read_identity() == run.source().read_identity() =>
-        {
-            // Copying the same bytes already in the base is materialization,
-            // including sibling runs copied from an equivalent earlier source.
-            Some(base.read_identity())
-        }
+        // Naming the same bytes includes runs copied from an equivalent
+        // earlier source, even if their cache entries differ.
+        _ if names_existing_cells => Some(variable_base.read_identity()),
         _ => None,
     };
     // A state this call interns is one no query has seen yet, so filling
@@ -10246,6 +10266,7 @@ pub(crate) fn record_memory_derivation(result: &mut SymbolicMemory, derivation: 
         inherited,
         derivation.clone(),
         derived.clone(),
+        names_existing_cells,
     ));
     C_MEMORY_ARENA.with(|arena| {
         let mut arena = arena.borrow_mut();
@@ -11214,6 +11235,9 @@ pub(super) struct ResourceContextIndex {
     /// the other instances of the context
     /// (`functions::store_opened_instance_composition`).
     pub(super) owned_instances_by_pointer_argument: PersistentMap<Address, ResourceEntryIds>,
+    /// Logical resource occurrences whose pointer arguments name a C++
+    /// prepared argument object. Its lifetime end queries only this block.
+    pub(super) prepared_argument_resources: PersistentMap<AddressBase, ResourceEntryIds>,
     /// Owned folded composites keyed by each C pointer argument they name,
     /// and by the block of each. A call's kept memory answers a question
     /// about one address from the composites whose arguments can spell it,
@@ -11221,6 +11245,7 @@ pub(super) struct ResourceContextIndex {
     /// (`memory_state::CallKeptRanges::range_holding`).
     pub(super) owned_composites_by_pointer_argument: PersistentMap<Address, ResourceEntryIds>,
     pub(super) owned_composites_by_argument_block: PersistentMap<AddressBase, ResourceEntryIds>,
+    pub(super) viewed_composites_by_argument_block: PersistentMap<AddressBase, ResourceEntryIds>,
     /// Owned unit heads with exactly one argument, a nominal heap pointer.
     /// The count for a typed family can cover its whole shape without
     /// enumerating the occurrences the caller kept.
@@ -13230,13 +13255,13 @@ mod population_authority_spec_tests {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum Term {
-    Condition(ConditionTerm),
-    Bitvector32(MachineTerm),
-    Integer(IntegerTerm),
+    Condition(StoredConditionTerm),
+    Bitvector32(StoredMachineTerm),
+    Integer(StoredIntegerTerm),
     PointerOffset(AddressOffset),
-    ProgramValue(ProgramValue),
+    ProgramValue(StoredProgramValue),
     Sequence(SequenceTerm),
-    Algebraic(AlgebraicTerm),
+    Algebraic(StoredAlgebraicTerm),
     // Outcomes carry ExecutionState. Keep them out of Term's inline size so cloning
     // a deep pure proposition does not spend stack on unused C variants.
     Memory(SymbolicMemory),
@@ -13247,7 +13272,7 @@ impl Term {
     /// Consume an owned payload without cloning its native expression prefix.
     pub(crate) fn into_program_value_native(self) -> Option<ProgramValue> {
         match self {
-            Self::ProgramValue(value) => Some(value),
+            Self::ProgramValue(value) => Some(value.into()),
             _ => None,
         }
     }
@@ -13256,33 +13281,33 @@ impl Term {
     /// carriers; structural consumers name the compatibility reading explicitly.
     pub(crate) fn condition_native(&self) -> Option<&ConditionTerm> {
         match self {
-            Self::Condition(value) => Some(value),
+            Self::Condition(value) => Some(value.native_compat()),
             _ => None,
         }
     }
     #[cfg(test)]
     pub(crate) fn bitvector_native(&self) -> Option<&MachineTerm> {
         match self {
-            Self::Bitvector32(value) => Some(value),
+            Self::Bitvector32(value) => Some(value.native_compat()),
             _ => None,
         }
     }
     #[cfg(test)]
     pub(crate) fn integer_native(&self) -> Option<&IntegerTerm> {
         match self {
-            Self::Integer(value) => Some(value),
+            Self::Integer(value) => Some(value.native_compat()),
             _ => None,
         }
     }
     pub(crate) fn program_value_native(&self) -> Option<&ProgramValue> {
         match self {
-            Self::ProgramValue(value) => Some(value),
+            Self::ProgramValue(value) => Some(value.native_compat()),
             _ => None,
         }
     }
     pub(crate) fn algebraic_native(&self) -> Option<&AlgebraicTerm> {
         match self {
-            Self::Algebraic(value) => Some(value),
+            Self::Algebraic(value) => Some(value.native_compat()),
             _ => None,
         }
     }
@@ -13320,7 +13345,7 @@ mod term_payload_view_tests {
                 std::ptr::from_ref(right.as_ref()),
             ];
             let Some(ProgramValue::Pointer(pointer)) =
-                Term::ProgramValue(value).into_program_value_native()
+                Term::ProgramValue(value.into()).into_program_value_native()
             else {
                 unreachable!()
             };
@@ -15125,6 +15150,8 @@ pub struct ProofObligation {
     /// Producer metadata: emitted on the false arm of a C assertion.
     /// This tags the existing truthiness obligation, not a new proposition.
     pub(super) assertion_failure: bool,
+    /// This condition must be established before applying the statement.
+    pub(super) statement_entry_required: bool,
     /// Source identity for a required call precondition, when this
     /// obligation was emitted while applying a selected callee contract.
     /// This is planning metadata only and is excluded from obligation
@@ -15152,6 +15179,7 @@ impl PartialEq for ProofObligation {
             && self.context == other.context
             && self.assumable == other.assumable
             && self.evaluation_domain == other.evaluation_domain
+            && self.statement_entry_required == other.statement_entry_required
     }
 }
 
@@ -15163,6 +15191,7 @@ impl Hash for ProofObligation {
         self.context.hash(state);
         self.assumable.hash(state);
         self.evaluation_domain.hash(state);
+        self.statement_entry_required.hash(state);
     }
 }
 
@@ -15173,6 +15202,10 @@ impl Ord for ProofObligation {
             .then_with(|| self.context.cmp(&other.context))
             .then_with(|| self.assumable.cmp(&other.assumable))
             .then_with(|| self.evaluation_domain.cmp(&other.evaluation_domain))
+            .then_with(|| {
+                self.statement_entry_required
+                    .cmp(&other.statement_entry_required)
+            })
     }
 }
 
@@ -16007,7 +16040,9 @@ mod representation_size_tests {
     #[test]
     fn pure_facts_do_not_pay_for_program_payloads() {
         assert!(std::mem::size_of::<Term>() <= 144);
-        assert!(std::mem::size_of::<Proposition>() <= 2 * std::mem::size_of::<Term>());
+        // Keep this budget independent of Term's current layout. Shrinking
+        // an operand does not increase the space used by other fact variants.
+        assert!(std::mem::size_of::<Proposition>() <= 2 * 144);
         assert!(std::mem::size_of::<ExecutionPureFact>() <= 352);
         assert!(std::mem::size_of::<StatementOutcome>() <= 144);
         assert!(std::mem::size_of::<FunctionOutcome>() <= 144);

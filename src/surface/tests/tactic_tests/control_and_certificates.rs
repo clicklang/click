@@ -49,7 +49,7 @@ fn check_integer_rewrite_of_nested_native_bounds(ty: &str, suffix: &str) {
         requires y <= 20;
         ensures x <= 10{suffix} and x <= 20{suffix} by {{
             rewrite(to_integer(x), y);
-            both {{ left => {{ known(); }} right => {{ known(); }} }}
+            all {{ y <= 10 => {{ known(); }} y <= 20 => {{ known(); }} }}
         }}
     }}"#
     );
@@ -94,11 +94,11 @@ theorem prefix_bound(n: uint64) {
  ensures 0 <= to_integer(n - n % 4u64) and to_integer(n - n % 4u64) <= 22204 by {
   rewrite(to_integer(n - n % 4u64), to_integer(n) - truncating_remainder(to_integer(n), 4));
   unfold(prefix(to_integer(n)));
-  both {
-      left => {
+  all {
+      0 <= to_integer(n) - truncating_remainder(to_integer(n), 4) => {
        solve() using { 0 <= prefix(to_integer(n)); prefix(to_integer(n)) == to_integer(n) - truncating_remainder(to_integer(n), 4); };
       }
-      right => {
+      to_integer(n) - truncating_remainder(to_integer(n), 4) <= 22204 => {
        known();
       }
   }
@@ -229,45 +229,31 @@ fn both_and_proves_exact_conjuncts_and_rejects_incomplete_arms() {
     let source = r#"
         theorem pair(x: int32) {
             ensures x == x and (x <= x and x >= x) by {
-                both {
-                    left => { normalize(); }
-                    right => {
-                        both { left => { normalize(); } right => { normalize(); } }
+                all {
+                    x == x => { normalize(); }
+                    (x <= x and x >= x) => {
+                        all { x <= x => { normalize(); } x >= x => { normalize(); } }
                     }
                 }
             }
         }
     "#;
     verify_c_sources(source, &[]).expect("nested exact conjunction proofs");
-    let right_first = r#"
-        theorem pair(x: int32) {
-            ensures (x == 0 implies x == 0) and ((x == 1 implies x == 1) and x == x) by {
-                both {
-                    right => {
-                        both { right => { normalize(); } left => { intro(); known(); } }
-                    }
-                    left => { intro(); known(); }
-                }
-            }
-        }
-    "#;
-    verify_c_sources(right_first, &[]).expect("nested right-first conjunction proofs");
     for bad in [
-        source.replacen("left => { normalize(); }", "left => { }", 1),
+        source.replacen("x == x => { normalize(); }", "x == x => { }", 1),
         source.replace("x >= x", "x > x"),
-        source.replacen("right => { normalize(); }", "", 1),
-        source.replacen("right =>", "left =>", 1),
-        right_first.replace("left =>", "right =>"),
+        source.replacen("x >= x => { normalize(); }", "", 1),
+        source.replacen("x == x =>", "x <= x =>", 1),
         source.replace(
-            "both { left => { normalize(); } right => { normalize(); } }",
-            "both { normalize(); } and { normalize(); }",
+            "all { x <= x => { normalize(); } x >= x => { normalize(); } }",
+            "all { normalize(); } and { normalize(); }",
         ),
     ] {
         assert!(verify_c_sources(&bad, &[]).is_err());
     }
     let leaking = r#"theorem leak(x: int32) {
         ensures (x == 0 implies x == 0) and x == 0 by {
-            both { left => { intro(); known(); } right => { known(); } }
+            all { (x == 0 implies x == 0) => { intro(); known(); } x == 0 => { known(); } }
         }
     }"#;
     assert!(
@@ -282,16 +268,16 @@ fn both_and_outcome_expands_and_rechecks() {
     let c = "int32 identity(int32 x) { return x; }";
     let source = r#"verifying "identity.c";
         int32 identity(int32 x) { ensures result == x and result <= x; } by {
-            step(); both { right => { solve(); } left => { known(); } }
+            step(); all { result == x => { known(); } result <= x => { solve(); } }
         }
     "#;
     let sources = [("identity.c", c)];
     let verified_for_expansion = verify_c_sources(source, &sources).expect("both at an outcome");
     let expanded =
         expand_checked_grouped_claim(source, &verified_for_expansion, "identity").unwrap();
-    assert!(expanded.contains("both {"), "{expanded}");
+    assert!(expanded.contains("all {"), "{expanded}");
     assert!(
-        expanded.find("left => {").unwrap() < expanded.find("right => {").unwrap(),
+        expanded.find("result == x => {").unwrap() < expanded.find("result <= x => {").unwrap(),
         "{expanded}"
     );
     verify_c_sources(&expanded, &sources).expect("expanded child proofs");
@@ -1487,4 +1473,57 @@ test_batches! {
         parses_execute_until_assignment_and_preserves_same_spelled_labels,
         parses_execute_until_read_and_preserves_read_labels,
     ],
+}
+
+#[test]
+fn named_conjunct_proofs_match_labels_in_either_order() {
+    let source = r#"
+        theorem conjunction(x: int32) {
+            ensures (x == x and x <= x) and x == x by {
+                all {
+                    x <= x => { normalize(); }
+                    x == x => { normalize(); }
+                    x == x => { normalize(); }
+                }
+            }
+        }
+    "#;
+    verify_click_theorems(source).unwrap();
+    assert!(verify_click_theorems(&source.replace("all {", "all positional {")).is_err());
+
+    let grouped = r#"
+        theorem grouped() {
+            ensures (forall (i: int32) { i == i }) and (2 == 2 and 3 == 3) by {
+                all {
+                    (2 == 2 and 3 == 3) => {
+                        all { 3 == 3 => { normalize(); } 2 == 2 => { normalize(); } }
+                    }
+                    forall (j: int32) { j == j } => { intro(); normalize(); }
+                }
+            }
+        }
+    "#;
+    let expanded = expand_c_claim_source_by_label(grouped, &[], "grouped.ensures_0").unwrap();
+    crate::surface::proof::without_implicit_solve(|| verify_click_theorems(&expanded)).unwrap();
+    for (changed, reason) in [
+        (
+            source.replace("x <= x => { normalize(); }", ""),
+            "is missing an arm for this conjunct",
+        ),
+        (
+            source.replace("x <= x => { normalize(); }", "x < x => { normalize(); }"),
+            "is missing an arm for this conjunct",
+        ),
+        (
+            source.replace(
+                "x <= x => { normalize(); }",
+                "x <= x => { normalize(); } x <= x => { normalize(); }",
+            ),
+            "has no corresponding conjunct",
+        ),
+        (source.replace("all {", "both {"), "`both` is retired"),
+    ] {
+        let error = verify_click_theorems(&changed).unwrap_err().report();
+        assert!(error.contains(reason), "{error}");
+    }
 }

@@ -455,6 +455,8 @@ fn child_reborrow_of_a_symbolic_root_keeps_the_root_protected() {
         .borrowed_contract_input(holder, support, viewed.clone(), None)
         .unwrap();
     let ledger = ledger.apply(&opening.transition).unwrap();
+    let write = parameter_range(10, 0, 1, 4);
+    let requirement = ledger.memory_access_requirement(&write).unwrap();
     let parent = LoanViewBinding {
         loan: opening.loan,
         scope: opening.scope,
@@ -467,6 +469,10 @@ fn child_reborrow_of_a_symbolic_root_keeps_the_root_protected() {
     let ledger = ledger.apply(&child.transition).unwrap();
     assert!(ledger.invariant_holds());
     assert_eq!(
+        ledger.memory_access_requirement(&write),
+        Some(requirement.clone())
+    );
+    assert_eq!(
         ledger.permits_memory_access_with_assumptions(&parameter_range(9, 0, 1, 4), &assumptions),
         Err(LoanRefusal::ActiveDependency)
     );
@@ -475,6 +481,10 @@ fn child_reborrow_of_a_symbolic_root_keeps_the_root_protected() {
     let end = ledger.end(child.scope, holder).unwrap();
     let ledger = ledger.apply(&end).unwrap();
     assert!(ledger.invariant_holds());
+    assert_eq!(
+        ledger.memory_access_requirement(&write),
+        Some(requirement.clone())
+    );
     assert!(ledger.has_active_memory_loans());
     assert_eq!(
         ledger.permits_memory_access_with_assumptions(&parameter_range(9, 0, 1, 4), &assumptions),
@@ -2789,6 +2799,7 @@ pub(super) fn checked(fact: ResourceFact) -> CheckedResourceFact {
         clause_position: None,
         section_index: None,
         selected_mutex_source: None,
+        mutex_storage: None,
     }
 }
 
@@ -3092,6 +3103,7 @@ fn composite_planner_rejects_an_owned_requirement_inside_the_viewed_frontier() {
                     clause_position: None,
                     section_index: None,
                     selected_mutex_source: None,
+                    mutex_storage: None,
                 },
                 checked(view.clone()),
             ],
@@ -4041,6 +4053,7 @@ fn joint_planner_rejects_view_and_mutable_transfer_of_same_authority() {
             clause_position: None,
             section_index: None,
             selected_mutex_source: None,
+            mutex_storage: None,
         },
     ];
     assert!(matches!(
@@ -4068,6 +4081,7 @@ fn joint_planner_partitions_disjoint_write_and_view_ranges_in_any_clause_order()
         clause_position: None,
         section_index: None,
         selected_mutex_source: None,
+        mutex_storage: None,
     };
     let read = checked(memory(0, 4, false));
     let left = plan_stable_view_transfer(
@@ -4129,6 +4143,7 @@ fn joint_planner_partitions_disjoint_write_and_view_ranges_in_any_clause_order()
         clause_position: None,
         section_index: None,
         selected_mutex_source: None,
+        mutex_storage: None,
     };
     let reverse_view = checked(memory(6, 8, false));
     let reverse = plan_stable_view_transfer(
@@ -4170,6 +4185,7 @@ fn rejected_joint_plan_leaves_caller_resources_and_ledger_unchanged() {
             clause_position: None,
             section_index: None,
             selected_mutex_source: None,
+            mutex_storage: None,
         },
     ];
     assert_eq!(

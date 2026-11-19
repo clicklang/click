@@ -4148,6 +4148,377 @@ fn unified_certificate_terms_raise_and_lower_by_identity() {
     }
 }
 
+fn local_read_test_address(name: &str) -> Address {
+    Address {
+        base: AddressBase::Concrete(format!("local:{name}")),
+        offset: AddressOffset::Constant(0),
+    }
+}
+
+fn local_test_read_operand(claim: &Proposition, value_type: ProgramType) -> &MachineTerm {
+    let term = match claim.condition_native() {
+        Some((ConditionTerm::Compare { left, .. }, true)) => left,
+        Some((ConditionTerm::IntegerLessEqual(left, _), true)) => {
+            let crate::kernel::IntegerTerm::Machine(observation) = &**left else {
+                panic!("expected an exact Integer observation: {left:?}");
+            };
+            assert_eq!(observation.ty().program_type(), value_type);
+            observation.value()
+        }
+        _ => panic!("read comparison: {claim:?}"),
+    };
+    if let Some((source, operand)) = term.narrow_widening32_operand()
+        && source.program_type() == value_type
+    {
+        return operand;
+    }
+    term
+}
+
+fn local_read_test_store(
+    state: &ExecutionState,
+    pointer: &Address,
+    value_type: ProgramType,
+    bits: u32,
+) -> ExecutionState {
+    let value = match value_type {
+        ProgramType::Int8 => ProgramValue::Int8(MachineTerm::narrow_constant(
+            MachineIntegerType::Int8,
+            u128::from(bits & 0xff),
+        )),
+        ProgramType::UInt8 => ProgramValue::UInt8(MachineTerm::narrow_constant(
+            MachineIntegerType::UInt8,
+            u128::from(bits & 0xff),
+        )),
+        ProgramType::Int16 => ProgramValue::Int16(MachineTerm::narrow_constant(
+            MachineIntegerType::Int16,
+            u128::from(bits & 0xffff),
+        )),
+        ProgramType::UInt16 => ProgramValue::UInt16(MachineTerm::narrow_constant(
+            MachineIntegerType::UInt16,
+            u128::from(bits & 0xffff),
+        )),
+        ProgramType::Int32 => ProgramValue::Int32(MachineTerm::constant(bits)),
+        ProgramType::UInt32 => ProgramValue::UInt32(MachineTerm::uint32_constant(bits)),
+        ProgramType::Int64 => ProgramValue::Int64(MachineTerm::int64_constant(i64::from(bits))),
+        ProgramType::UInt64 => ProgramValue::UInt64(MachineTerm::uint64_constant(u64::from(bits))),
+        ProgramType::Int128 | ProgramType::UInt128 => {
+            let format = MachineIntegerType::from_program_type(value_type).unwrap();
+            format
+                .constant_value(
+                    crate::kernel::MachineIntegerConstant::from_bits(
+                        format.format(),
+                        u128::from(bits),
+                    )
+                    .unwrap(),
+                )
+                .unwrap()
+        }
+        _ => unreachable!("indexed local test type"),
+    };
+    state
+        .clone()
+        .with_memory(state.memory().clone().store(pointer.clone(), value))
+}
+
+fn local_read_test_claim(value_type: ProgramType) -> ClickProposition {
+    let limit = match value_type {
+        ProgramType::UInt32 => ProgramValue::UInt32(MachineTerm::uint32_constant(20)),
+        ProgramType::Int64 => ProgramValue::Int64(MachineTerm::int64_constant(20)),
+        ProgramType::UInt64 => ProgramValue::UInt64(MachineTerm::uint64_constant(20)),
+        _ => int32(20),
+    };
+    ClickProposition::Comparison {
+        left: ContractExpression::CUnary {
+            operand: Box::new(ContractExpression::ProgramExpression(
+                ProgramExpression::Variable("p".into()),
+            )),
+            lowered: ProgramExpression::TypedLoad {
+                pointer: Box::new(ProgramExpression::Value(int32(0))),
+                value_type,
+                volatile: false,
+                pointee_constant: false,
+                access_class: None,
+                source: Default::default(),
+            },
+        },
+        operator: ComparisonOperator::LessEqual,
+        right: ContractExpression::ProgramExpression(ProgramExpression::Value(limit)),
+    }
+}
+
+#[test]
+fn ordinary_indexed_integer_reads_select_the_write_on_their_own_path() {
+    check_local_read_versions(ProgramType::Int8, ProgramType::UInt8);
+    check_local_read_versions(ProgramType::UInt8, ProgramType::Int8);
+    check_local_read_versions(ProgramType::Int16, ProgramType::UInt16);
+    check_local_read_versions(ProgramType::UInt16, ProgramType::Int16);
+    check_local_read_versions(ProgramType::UInt8, ProgramType::Int32);
+    check_local_read_versions(ProgramType::Int32, ProgramType::UInt8);
+    check_local_read_versions(ProgramType::Int32, ProgramType::UInt32);
+    check_local_read_versions(ProgramType::UInt32, ProgramType::Int32);
+    check_local_read_versions(ProgramType::Int64, ProgramType::Int32);
+    check_local_read_versions(ProgramType::UInt64, ProgramType::UInt32);
+    check_local_read_versions(ProgramType::Int128, ProgramType::UInt128);
+    check_local_read_versions(ProgramType::UInt128, ProgramType::Int128);
+}
+
+fn check_local_read_versions(value_type: ProgramType, disjoint_type: ProgramType) {
+    let _session = crate::kernel::VerificationSession::enter();
+    let pointer_type = match value_type {
+        ProgramType::Int8 => ProgramType::Int8Pointer,
+        ProgramType::UInt8 => ProgramType::UInt8Pointer,
+        ProgramType::Int16 => ProgramType::Int16Pointer,
+        ProgramType::UInt16 => ProgramType::UInt16Pointer,
+        ProgramType::Int32 => ProgramType::Int32Pointer,
+        ProgramType::UInt32 => ProgramType::UInt32Pointer,
+        ProgramType::Int64 => ProgramType::Int64Pointer,
+        ProgramType::UInt64 => ProgramType::UInt64Pointer,
+        ProgramType::Int128 => ProgramType::Int128Pointer,
+        ProgramType::UInt128 => ProgramType::UInt128Pointer,
+        _ => unreachable!("indexed local test type"),
+    };
+    let slot = local_read_test_address("slot");
+    let other = local_read_test_address("other");
+    let load_kind = crate::kernel::LoadKind::of_type(value_type).unwrap();
+    let start = ExecutionState::new()
+        .with_memory(
+            SymbolicMemory::new()
+                .with_block("local:slot", value_type.byte_width())
+                .with_block("local:other", disjoint_type.byte_width()),
+        )
+        .with_local("p", ProgramValue::typed_pointer(slot.clone(), pointer_type));
+    let left_write = local_read_test_store(&start, &slot, value_type, 7);
+    let right_write = local_read_test_store(&start, &slot, value_type, 7);
+    let left = local_read_test_store(&left_write, &other, disjoint_type, 1);
+    let right = local_read_test_store(&right_write, &other, disjoint_type, 1);
+    assert_eq!(left.memory(), right.memory());
+    assert_ne!(
+        left_write.program_point_id(),
+        right_write.program_point_id()
+    );
+
+    let claim = local_read_test_claim(value_type);
+    let selectors = [
+        ProgramPointSelector::Mark("left_write".into()),
+        ProgramPointSelector::Mark("right_write".into()),
+    ];
+    let mut points = RecordedStates::new();
+    points.insert(selectors[0].clone(), left_write.clone());
+    points.insert(selectors[1].clone(), right_write.clone());
+    let _points = SynthesisRecordedPointsScope::enter(&points);
+
+    let mut roots = Vec::new();
+    for (reader, write, other_path, selector) in [
+        (&left, &left_write, &right, &selectors[0]),
+        (&right, &right_write, &left, &selectors[1]),
+    ] {
+        let lowered = relower_written_proposition(&claim, reader).unwrap();
+        let read = local_test_read_operand(&lowered, value_type);
+        let MachineTerm::MemoryLoad(point, _, kind) = read else {
+            panic!("ordinary {value_type:?} read: {read:?}");
+        };
+        assert_eq!(*kind, load_kind);
+        assert_eq!(point.id(), write.program_point_id());
+        let root = crate::kernel::KernelTermImport::default().machine(
+            MachineIntegerType::from_program_type(value_type).unwrap(),
+            read,
+        );
+        assert!(
+            matches!(root.node(), crate::kernel::KernelTermNode::MemoryLoad { point, .. }
+            if point.id() == write.program_point_id())
+        );
+        let raised = raise_kernel_term(
+            &root,
+            ParameterBinding::default(),
+            other_path,
+            &BTreeMap::new(),
+        )
+        .expect("a named version has an ordinary read spelling");
+        assert!(matches!(&raised, ContractExpression::At { selector: at, .. } if at == selector));
+        let mut replay = claim.clone();
+        let ClickProposition::Comparison { left, .. } = &mut replay else {
+            unreachable!("test comparison")
+        };
+        *left = raised;
+        assert_eq!(
+            relower_written_proposition_with_states(&replay, other_path, other_path, &points),
+            Ok(lowered)
+        );
+        roots.push(root);
+    }
+    assert_ne!(roots[0], roots[1]);
+
+    let repeated = local_read_test_store(&left, &slot, value_type, 7);
+    assert_eq!(left.memory(), repeated.memory());
+    assert_eq!(
+        repeated
+            .program_point()
+            .indexed_local_integer_version(&slot, load_kind)
+            .unwrap()
+            .id(),
+        repeated.program_point_id()
+    );
+    let mismatched = local_read_test_store(&left, &slot, disjoint_type, 7);
+    assert!(
+        mismatched
+            .program_point()
+            .indexed_local_integer_version(&slot, load_kind)
+            .is_none(),
+        "a write with a different load kind ends the prior version"
+    );
+
+    let possibly_aliasing =
+        local_read_test_store(&left, &Address::symbolic(Variable(981_640)), value_type, 9);
+    assert!(
+        possibly_aliasing
+            .program_point()
+            .indexed_local_integer_version(&slot, load_kind)
+            .is_none(),
+        "an unclassified store cannot keep an indexed version"
+    );
+}
+
+#[test]
+fn ordinary_indexed_integer_read_work_is_bounded_as_path_grows() {
+    check_local_read_work(ProgramType::Int8, ProgramType::UInt8);
+    check_local_read_work(ProgramType::Int16, ProgramType::UInt16);
+    check_local_read_work(ProgramType::UInt16, ProgramType::Int16);
+    check_local_read_work(ProgramType::UInt8, ProgramType::Int32);
+    check_local_read_work(ProgramType::Int32, ProgramType::UInt32);
+    check_local_read_work(ProgramType::UInt32, ProgramType::Int32);
+    check_local_read_work(ProgramType::Int64, ProgramType::Int32);
+    check_local_read_work(ProgramType::UInt64, ProgramType::UInt32);
+    check_local_read_work(ProgramType::Int128, ProgramType::UInt128);
+    check_local_read_work(ProgramType::UInt128, ProgramType::Int128);
+}
+
+#[test]
+fn ordinary_fixed_offset_read_keeps_its_version_across_sibling_stores() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let left = local_read_test_address("pair");
+    let right = Address {
+        offset: AddressOffset::Constant(4),
+        ..left.clone()
+    };
+    let ty = ProgramType::Int32;
+    let entry = ExecutionState::new()
+        .with_memory(SymbolicMemory::new().with_block("local:pair", 8))
+        .with_local(
+            "p",
+            ProgramValue::typed_pointer(right.clone(), ProgramType::Int32Pointer),
+        );
+    let written = local_read_test_store(&entry, &right, ty, 7);
+    let selector = ProgramPointSelector::Mark("written".into());
+    let mut points = RecordedStates::new();
+    points.insert(selector.clone(), written.clone());
+    let _points = SynthesisRecordedPointsScope::enter(&points);
+    let claim = local_read_test_claim(ty);
+
+    let mut work = Vec::new();
+    for count in [4, 64, 1024] {
+        let mut reader = written.clone();
+        for value in 0..count {
+            reader = local_read_test_store(&reader, &left, ty, value);
+        }
+        let ((lowered, map_work), proof_work) =
+            crate::instrumentation::measure_deterministic_work(|| {
+                crate::persistent::measure_persistent_work(|| {
+                    relower_written_proposition(&claim, &reader).unwrap()
+                })
+            });
+        let read = local_test_read_operand(&lowered, ty);
+        let MachineTerm::MemoryLoad(point, address, crate::kernel::LoadKind::Int32) = read else {
+            panic!("expected a typed read: {read:?}");
+        };
+        assert_eq!(address.as_ref(), &right);
+        assert_eq!(point.read_version_id(), written.program_point_id());
+        work.push((proof_work, map_work));
+
+        let root =
+            crate::kernel::KernelTermImport::default().machine(MachineIntegerType::Int32, read);
+        let raised =
+            raise_kernel_term(&root, ParameterBinding::default(), &entry, &BTreeMap::new())
+                .expect("a recorded fixed-offset read has a spelling");
+        assert!(matches!(&raised, ContractExpression::At { selector: at, .. } if at == &selector));
+        let mut replay = claim.clone();
+        let ClickProposition::Comparison { left, .. } = &mut replay else {
+            unreachable!("test comparison")
+        };
+        *left = raised;
+        assert_eq!(
+            relower_written_proposition_with_states(&replay, &entry, &entry, &points),
+            Ok(lowered)
+        );
+    }
+    let (proof_work, map_work) = work[0];
+    assert!(
+        work.iter()
+            .all(|&(proof, map)| proof <= proof_work + 64 && map <= map_work + 256),
+        "read work grew with sibling stores: {work:?}"
+    );
+}
+
+fn check_local_read_work(value_type: ProgramType, disjoint_type: ProgramType) {
+    let _session = crate::kernel::VerificationSession::enter();
+    let pointer_type = match value_type {
+        ProgramType::Int8 => ProgramType::Int8Pointer,
+        ProgramType::UInt8 => ProgramType::UInt8Pointer,
+        ProgramType::Int16 => ProgramType::Int16Pointer,
+        ProgramType::UInt16 => ProgramType::UInt16Pointer,
+        ProgramType::Int32 => ProgramType::Int32Pointer,
+        ProgramType::UInt32 => ProgramType::UInt32Pointer,
+        ProgramType::Int64 => ProgramType::Int64Pointer,
+        ProgramType::UInt64 => ProgramType::UInt64Pointer,
+        ProgramType::Int128 => ProgramType::Int128Pointer,
+        ProgramType::UInt128 => ProgramType::UInt128Pointer,
+        _ => unreachable!("indexed local test type"),
+    };
+    let slot = local_read_test_address("slot");
+    let other = local_read_test_address("other");
+    let start = ExecutionState::new()
+        .with_memory(
+            SymbolicMemory::new()
+                .with_block("local:slot", value_type.byte_width())
+                .with_block("local:other", disjoint_type.byte_width()),
+        )
+        .with_local("p", ProgramValue::typed_pointer(slot.clone(), pointer_type));
+    let claim = local_read_test_claim(value_type);
+    let mut work = Vec::new();
+    for (earlier, later) in [(4, 4), (64, 4), (1024, 4), (4, 64), (4, 1024)] {
+        // Grow the history of overwritten values and the disjoint suffix
+        // independently. Every sample names a new version on its own path.
+        let mut before = start.clone();
+        for i in 0..earlier {
+            before = local_read_test_store(&before, &slot, value_type, i);
+        }
+        let write = local_read_test_store(&before, &slot, value_type, 0x80);
+        let mut reader = write.clone();
+        for i in 0..later {
+            reader = local_read_test_store(&reader, &other, disjoint_type, i);
+        }
+        let ((lowered, map_work), proof_work) =
+            crate::instrumentation::measure_deterministic_work(|| {
+                crate::persistent::measure_persistent_work(|| {
+                    relower_written_proposition(&claim, &reader).unwrap()
+                })
+            });
+        assert!(
+            matches!(local_test_read_operand(&lowered, value_type), MachineTerm::MemoryLoad(point, _, _)
+            if point.id() == write.program_point_id())
+        );
+        work.push((proof_work, map_work));
+    }
+    let (first_proof_work, first_map_work) = work[0];
+    // The terms and persistent-map keys for each version have fresh identities.
+    // Allow a fixed amount of lookup variation as the history grows by 256x.
+    assert!(
+        work.iter()
+            .all(|&(proof, map)| { proof <= first_proof_work + 64 && map <= first_map_work + 256 }),
+        "lowering {value_type:?} grew with the execution history: {work:?}"
+    );
+}
+
 #[test]
 fn shared_scalar_load_raises_and_relowers_to_the_same_read_node() {
     let _session = crate::kernel::VerificationSession::enter();
@@ -4302,13 +4673,23 @@ fn volatile_read_event_results_follow_state_branches() {
             .region_result_value(&CodeRegionRef::Region(3))
             .is_err()
     );
-    left.retain(|_, _| true);
+    let interface = left.for_branch_interface(
+        &joined,
+        &ProgramPointRef {
+            region: CodeRegionRef::Region(4),
+            kind: ProgramPointKind::Entry,
+        },
+        &ExecutionState::new(),
+    );
+    assert!(
+        interface
+            .region_result_value(&CodeRegionRef::Region(3))
+            .is_err()
+    );
     assert_eq!(
         left.region_result_value(&CodeRegionRef::Region(3)).unwrap(),
         next
     );
-    left.retain(|_, _| false);
-    assert!(left.region_result_value(&CodeRegionRef::Region(3)).is_err());
     assert_eq!(
         ancestor
             .region_result_value(&CodeRegionRef::Region(3))
@@ -5197,6 +5578,7 @@ fn common_float_reads_round_trip_existing_cast_dereference_syntax() {
         let surface =
             raise_kernel_term(&root, ParameterBinding::default(), &state, &BTreeMap::new())
                 .unwrap();
+        assert!(!root.has_cached_native_argument());
         let text = diagnostics::describe_contract_expression(&surface);
         let parsed = parser::parse(&format!(
             "function probe(p: uint8*) -> {spelling} {{ {text} }}"
@@ -7350,6 +7732,41 @@ fn symbolic_unsigned_equality_guards_keep_high_bit_literals() {
 }
 
 #[test]
+fn boolean_equality_guards_round_trip_after_rewrite() {
+    use MachineIntegerType as T;
+    for (format, spelling) in [
+        (T::Int32, "int32"),
+        (T::UInt32, "uint32"),
+        (T::Int64, "int64"),
+        (T::UInt64, "uint64"),
+    ] {
+        let mut fixture = ConditionalRoundTrip::new(format, spelling);
+        for (name, id) in [("a", 999712), ("b", 999713)] {
+            fixture.state = fixture.state.with_local(
+                name,
+                ProgramValue::of_bool(ConditionTerm::Variable(Variable(id))),
+            );
+        }
+        for replacement in [
+            "if a == b { true } else { false }",
+            "a",
+            "if y < z { true } else { false }",
+        ] {
+            let equality = fixture.lower(&format!("flag == ({replacement})"));
+            let literal = format!("(5 as {spelling})");
+            for guard in ["flag", "not flag"] {
+                for arm in ["x", literal.as_str()] {
+                    for reverse in [false, true] {
+                        let original = fixture.goal(guard, reverse, arm);
+                        fixture.check(&original, &equality, guard, reverse);
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn boolean_variable_guard_conditionals_round_trip_after_rewrite() {
     use crate::kernel::MachineIntegerType as T;
     for (format, spelling) in [
@@ -7543,6 +7960,37 @@ fn bitwise_round_trip_operands(spelling: &str) -> [String; 4] {
         format!("z ^ (7 as {spelling})"),
         "~z".into(),
     ]
+}
+
+#[test]
+fn nested_machine_conditionals_round_trip_after_rewrite() {
+    use MachineIntegerType as T;
+    for (format, spelling) in [
+        (T::Int32, "int32"),
+        (T::UInt32, "uint32"),
+        (T::Int64, "int64"),
+        (T::UInt64, "uint64"),
+    ] {
+        let mut fixture = ConditionalRoundTrip::new(format, spelling);
+        fixture.state = fixture.state.with_local(
+            "inner",
+            ProgramValue::of_bool(ConditionTerm::Variable(Variable(999712))),
+        );
+        for replacement in [
+            "y".into(),
+            format!("y & (7 as {spelling})"),
+            "if inner { y } else { z }".into(),
+            format!("if y < z {{ y }} else {{ 4 as {spelling} }}"),
+        ] {
+            let equality = fixture.lower(&format!("x == ({replacement})"));
+            for guard in ["flag", "not flag", "y < z", "y == z"] {
+                for reverse in [false, true] {
+                    let original = fixture.goal(guard, reverse, "x");
+                    fixture.check(&original, &equality, guard, reverse);
+                }
+            }
+        }
+    }
 }
 
 #[test]
@@ -7816,6 +8264,39 @@ fn fixed_unsigned_left_shifts_in_conditionals_round_trip_after_rewrite() {
 }
 
 #[test]
+fn variable_shift_counts_in_conditionals_round_trip_after_rewrite() {
+    use MachineIntegerType as T;
+    for (format, spelling, operator) in [
+        (T::Int32, "int32", ">>"),
+        (T::UInt32, "uint32", ">>"),
+        (T::Int64, "int64", ">>"),
+        (T::UInt64, "uint64", ">>"),
+        (T::UInt32, "uint32", "<<"),
+        (T::UInt64, "uint64", "<<"),
+    ] {
+        let mut fixture = ConditionalRoundTrip::new(format, spelling);
+        fixture.state = fixture.state.with_local(
+            "w",
+            format.value_from_term(MachineTerm::Variable(Variable(999712))),
+        );
+        for count in ["w", "3"] {
+            let equality = fixture.lower(&format!("x == (z {operator} {count})"));
+            for reverse in [false, true] {
+                for (guards, arm) in [
+                    (&["flag", "not flag"][..], "x"),
+                    (&["x < y", "x == y", "y <= x", "y != x"][..], "z"),
+                ] {
+                    for guard in guards {
+                        let original = fixture.goal(guard, reverse, arm);
+                        fixture.check(&original, &equality, guard, reverse);
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn wrapping_add_subtract_in_conditionals_round_trip_after_rewrite() {
     use crate::kernel::MachineIntegerType as T;
     for (format, spelling, boundary) in [
@@ -7862,6 +8343,35 @@ fn two_variable_unsigned_arithmetic_in_conditionals_round_trips_after_rewrite() 
                     for guard in guards {
                         let original = fixture.goal(guard, reverse, then_value);
                         fixture.check(&original, &equality, guard, reverse);
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn variable_divisors_in_conditionals_round_trip_after_rewrite() {
+    use MachineIntegerType as T;
+    for (format, spelling) in [(T::UInt32, "uint32"), (T::UInt64, "uint64")] {
+        let mut fixture = ConditionalRoundTrip::new(format, spelling);
+        fixture.state = fixture.state.with_local(
+            "w",
+            format.value_from_term(MachineTerm::Variable(Variable(999712))),
+        );
+        for operator in ["/", "%"] {
+            let literal = format!("(3 as {spelling})");
+            for divisor in ["w", literal.as_str()] {
+                let equality = fixture.lower(&format!("x == (z {operator} {divisor})"));
+                for reverse in [false, true] {
+                    for (guards, arm) in [
+                        (&["flag", "not flag"][..], "x"),
+                        (&["x < y", "x == y", "y <= x", "y != x"][..], "z"),
+                    ] {
+                        for guard in guards {
+                            let original = fixture.goal(guard, reverse, arm);
+                            fixture.check(&original, &equality, guard, reverse);
+                        }
                     }
                 }
             }
@@ -8109,6 +8619,41 @@ fn widening_casts_in_conditionals_round_trip_after_rewrite() {
 }
 
 #[test]
+fn signedness_casts_in_conditionals_round_trip_after_rewrite() {
+    use MachineIntegerType as T;
+    for (source, destination, spelling) in [
+        (T::UInt32, T::Int32, "int32"),
+        (T::Int32, T::UInt32, "uint32"),
+        (T::UInt64, T::Int64, "int64"),
+        (T::Int64, T::UInt64, "uint64"),
+    ] {
+        let mut fixture = ConditionalRoundTrip::new(destination, spelling);
+        fixture.state = fixture.state.with_local(
+            "w",
+            source.value_from_term(MachineTerm::Variable(Variable(999712))),
+        );
+        let equality = fixture.lower(&format!("x == (w as {spelling})"));
+        for reverse in [false, true] {
+            for (guard, arm) in [
+                ("flag", "x"),
+                ("not flag", "x"),
+                ("x < y", "z"),
+                ("x == y", "z"),
+                ("y <= x", "z"),
+                ("y != x", "z"),
+            ] {
+                fixture.check(
+                    &fixture.goal(guard, reverse, arm),
+                    &equality,
+                    guard,
+                    reverse,
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn low_word_casts_in_conditionals_round_trip_after_rewrite() {
     use MachineIntegerType as T;
     for (destination, spelling) in [(T::Int32, "int32"), (T::UInt32, "uint32")] {
@@ -8157,5 +8702,50 @@ fn recorded_volatile_read_slots_retain_the_producer_value() {
     assert_eq!(
         branch.read_event_results.get(&(3, 0)).unwrap().root(),
         Some(&root)
+    );
+}
+
+/// Lowering keeps a comparison of two identical or literal machine words,
+/// `address(p) + 3u64 == address(p) + 3u64`, rather than deciding it;
+/// checking decides it. A comparison its operands' type range decides,
+/// `0u64 <= w`, keeps its established decision.
+#[test]
+fn identical_word_comparisons_keep_their_comparison_through_lowering() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let pointer = crate::kernel::Pointer::new(
+        Address::symbolic(Variable(999_962)),
+        ProgramType::Int32Pointer,
+    );
+    let state = ExecutionState::new()
+        .with_local("p", ProgramValue::Pointer(pointer))
+        .with_local(
+            "w",
+            ProgramValue::UInt64(MachineTerm::Variable(Variable(999_961))),
+        );
+    let lower = |text: &str| {
+        let file = parser::parse(&format!(
+            "theorem probe() {{ requires {text}; ensures true; }}"
+        ))
+        .unwrap();
+        let Requirement::Proposition(written) = &file.theorem_definitions()[0].requires()[0] else {
+            panic!("requirement")
+        };
+        relower_written_proposition(written, &state).unwrap()
+    };
+    let Proposition::ConditionIs(condition, true) = lower("address(p) + 3u64 == address(p) + 3u64")
+    else {
+        panic!("a held comparison")
+    };
+    assert!(
+        matches!(condition.native_compat(), ConditionTerm::Compare { .. }),
+        "{condition:?}"
+    );
+    assert_eq!(condition.native_compat().reflexive_value(), Some(true));
+    let Proposition::ConditionIs(range, true) = lower("0u64 <= w") else {
+        panic!("a held comparison")
+    };
+    assert!(
+        matches!(range.native_compat(), ConditionTerm::Constant(true)),
+        "{range:?}"
     );
 }

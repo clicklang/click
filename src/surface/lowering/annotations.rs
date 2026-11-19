@@ -9656,6 +9656,23 @@ impl AnnotationLowerer<'_> {
         expression: &ProgramExpression,
         environment: &SpecElaborationContext,
     ) -> Result<SpecExpression, String> {
+        // Construction binds the return object's address at entry. Its storage
+        // can be named before the result value is in scope.
+        if !environment.contract_result_in_scope
+            && let ProgramExpression::AddressOf(target) = expression
+            && matches!(target.as_ref(), ProgramExpression::Variable(name)
+                if name == &crate::kernel::CONTRACT_RESULT)
+            && let Some(destination) = self
+                .entry_state
+                .locals()
+                .aggregate_object_pointer(crate::kernel::CONTRACT_RESULT)
+        {
+            return Ok(SpecExpression::Value(ProgramValue::typed_pointer(
+                destination.clone(),
+                ProgramType::UInt8Pointer,
+            )));
+        }
+
         if let ProgramExpression::AddressOf(target)
         | ProgramExpression::CheckedObjectAddress(target) = expression
             && matches!(
@@ -10719,6 +10736,10 @@ fn aggregate_projection_root(
     expression: &ProgramExpression,
 ) -> Option<&crate::kernel::BindingName> {
     match expression {
+        // A static object is storage, read from memory at the selected
+        // state, not a by-value parameter's entry value. The entry state
+        // binds it as an aggregate, so name it here rather than there.
+        ProgramExpression::Variable(name) if name.static_id().is_some() => None,
         ProgramExpression::Variable(name) => Some(name),
         ProgramExpression::PointerOffsetBytes { pointer, .. }
         | ProgramExpression::Subobject { pointer, .. } => aggregate_projection_root(pointer),

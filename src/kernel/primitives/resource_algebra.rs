@@ -581,6 +581,15 @@ impl ResourceContextIndex {
                 }
             }
         }
+        if let ResourceFact::View(Resource::Composite { arguments, .. }) = fact {
+            for pointer in algebraic_pointer_arguments(arguments) {
+                result.viewed_composites_by_argument_block = insert_resource_index_entry(
+                    &result.viewed_composites_by_argument_block,
+                    pointer.base.clone(),
+                    entry,
+                );
+            }
+        }
         if let Resource::MutexGuard(identity) = fact.resource() {
             result.mutex_authorities = insert_resource_index_entry(
                 &result.mutex_authorities,
@@ -673,6 +682,13 @@ impl ResourceContextIndex {
                     entry,
                 );
             }
+        }
+        for block in prepared_argument_resource_blocks(fact) {
+            result.prepared_argument_resources = insert_resource_index_entry(
+                &result.prepared_argument_resources,
+                block.clone(),
+                entry,
+            );
         }
         let hash = resource_fact_content_hash(fact);
         result.fact_hash = result.fact_hash.wrapping_add(hash);
@@ -988,6 +1004,15 @@ impl ResourceContextIndex {
                 }
             }
         }
+        if let ResourceFact::View(Resource::Composite { arguments, .. }) = fact {
+            for pointer in algebraic_pointer_arguments(arguments) {
+                result.viewed_composites_by_argument_block = remove_resource_index_entry(
+                    &result.viewed_composites_by_argument_block,
+                    &pointer.base,
+                    entry,
+                );
+            }
+        }
         if let Resource::MutexGuard(identity) = fact.resource() {
             result.mutex_authorities = remove_resource_index_entry(
                 &result.mutex_authorities,
@@ -1074,6 +1099,10 @@ impl ResourceContextIndex {
                     );
                 }
             }
+        }
+        for block in prepared_argument_resource_blocks(fact) {
+            result.prepared_argument_resources =
+                remove_resource_index_entry(&result.prepared_argument_resources, block, entry);
         }
         if let Resource::Iterated(iterated) = fact.resource() {
             let [first, second] = iterated.blocks();
@@ -3288,6 +3317,21 @@ impl ResourceContext {
         self.rebuild_paired_memory_entries();
     }
 
+    /// Selects one remaining logical resource for a retiring prepared argument.
+    pub(in crate::kernel) fn prepared_argument_resource_name(
+        &self,
+        block: &AddressBase,
+    ) -> Option<&str> {
+        crate::instrumentation::record_deterministic_work(1);
+        let entries = self.storage.index.prepared_argument_resources.get(block)?;
+        let entry = entries.iter().next()?;
+        match self.fact(*entry).resource() {
+            Resource::Instance(instance) => Some(instance.name()),
+            Resource::Composite { name, .. } | Resource::Token { name, .. } => Some(name),
+            _ => unreachable!("only logical resources are indexed by prepared argument"),
+        }
+    }
+
     /// The owned instances of this context with a C pointer argument equal
     /// to `base`, as their entries and facts, read from the argument index:
     /// one unit to position and one per instance returned, never the
@@ -3327,6 +3371,24 @@ impl ResourceContext {
                 crate::instrumentation::record_deterministic_work(1);
                 self.fact(*entry)
             })
+    }
+
+    /// Select a sole folded owner naming this exact pointer argument.
+    /// An ambiguous bucket needs separate selection evidence.
+    pub(in crate::kernel) fn unique_owned_composite_with_pointer_argument(
+        &self,
+        pointer: &Address,
+    ) -> Option<&ResourceFact> {
+        crate::instrumentation::record_deterministic_work(1);
+        let entries = self
+            .storage
+            .index
+            .owned_composites_by_pointer_argument
+            .get(pointer)?;
+        if entries.len() != 1 {
+            return None;
+        }
+        Some(self.fact(*entries.iter().next().expect("one indexed owner")))
     }
 
     /// The owned folded composites with a C pointer argument in `block`.
@@ -3482,6 +3544,22 @@ impl ResourceContext {
             .chain(composites)
             .chain(iterated)
             .inspect(|_| crate::instrumentation::record_deterministic_work(1))
+    }
+
+    /// Whether any explicit fact names this block through the same frontier
+    /// used for implicit local composite views.
+    pub(in crate::kernel) fn has_fact_referring_to_local_view_block(
+        &self,
+        block: &AddressBase,
+    ) -> bool {
+        crate::instrumentation::record_deterministic_work(1);
+        let index = &self.storage.index;
+        index.memory_by_block.contains_key(block)
+            || index.owned_composites_by_argument_block.contains_key(block)
+            || index
+                .viewed_composites_by_argument_block
+                .contains_key(block)
+            || index.iterated_by_block.contains_key(block)
     }
 
     /// Positive absence evidence for implicit local-storage borrowing. Any
@@ -4397,6 +4475,33 @@ impl ResourceContext {
                 .requirement(entry, required)
                 .is_some_and(|aligned| resource_fact_entails(available, &aligned, assumptions)))
         .then(|| self.occurrence(entry))
+    }
+
+    /// Resolve an authored input against the checked partition. An exact
+    /// principal occurrence wins over other views covering the same bytes.
+    /// After normalization a single covering principal may represent several
+    /// clauses, in which case they install one loan for that occurrence.
+    pub(crate) fn principal_input_view_occurrence(
+        &self,
+        required: &ResourceFact,
+        assumptions: &PureFactContext,
+    ) -> Option<ResourceOccurrenceId> {
+        crate::instrumentation::record_deterministic_work(1);
+        if let Some(entries) = self.storage.index.exact.get(required)
+            && entries.len() == 1
+            && let Some(entry) = entries.iter().next()
+        {
+            let occurrence = self.occurrence(*entry);
+            if self.view_occurrence_is_principal(occurrence) {
+                return Some(occurrence);
+            }
+        }
+        let candidates = self.view_occurrences_for_fact(required, assumptions);
+        let mut principals = candidates
+            .into_iter()
+            .filter(|occurrence| self.view_occurrence_is_principal(*occurrence));
+        let occurrence = principals.next()?;
+        principals.next().is_none().then_some(occurrence)
     }
 
     /// Return indexed view occurrences that entail `required`. The caller
@@ -8346,100 +8451,6 @@ impl ResourceContext {
         }
     }
 
-    /// Normalizes only the resource buckets affected by `seeds`.
-    ///
-    /// Exact token/composite resources use their full resource key, so other
-    /// arguments in the same declared family are not visited. SymbolicMemory uses its
-    /// block bucket because splitting and recombining one exported range may
-    /// touch adjacent residual ranges in that block.
-    pub(crate) fn normalized_around_facts(
-        mut self,
-        seeds: &[ResourceFact],
-        assumptions: &PureFactContext,
-    ) -> Self {
-        let supported = self.supported_projection_pairs();
-        let expansions = self.cached_support_expansions();
-        let mut exact_resources = BTreeSet::new();
-        let mut memory_blocks = BTreeSet::new();
-        for fact in seeds {
-            match fact.resource() {
-                Resource::Memory(range) => {
-                    memory_blocks.insert(range.base().base.clone());
-                }
-                resource => {
-                    exact_resources.insert(resource.clone());
-                }
-            }
-        }
-        let mut buckets = Vec::new();
-        for resource in exact_resources {
-            if let Some(entries) = self.storage.index.by_resource.get(&resource) {
-                buckets.push(entries.clone());
-            }
-        }
-        for block in memory_blocks {
-            if let Some(entries) = self.storage.index.memory_by_block.get(&block) {
-                buckets.push(entries.clone());
-            }
-        }
-        for entries in buckets {
-            // Proof-relevant witnesses, like loan-bound views, keep their
-            // native occurrences instead of being folded into equal facts.
-            if let Some(entry) = entries.iter().next()
-                && self.protects_structural_resource(self.fact(*entry).resource())
-            {
-                continue;
-            }
-
-            let original = entries
-                .iter()
-                .map(|entry| self.fact(*entry).clone())
-                .collect::<Vec<_>>();
-            let mut reusable_occurrences = original
-                .iter()
-                .zip(entries.iter())
-                .filter(|(fact, _)| fact.is_own())
-                .fold(
-                    BTreeMap::<ResourceFact, Vec<ResourceOccurrenceId>>::new(),
-                    |mut occurrences, (fact, entry)| {
-                        occurrences
-                            .entry(fact.clone())
-                            .or_default()
-                            .push(self.occurrence(*entry));
-                        occurrences
-                    },
-                );
-            let normalized = ResourceContext::new()
-                .unchecked_with_facts(original.iter().cloned())
-                .normalized(assumptions)
-                .iter()
-                .cloned()
-                .collect::<Vec<_>>();
-            if original == normalized {
-                continue;
-            }
-            for entry in entries.iter() {
-                // Removing an owner also removes its supported projections,
-                // which can already be members of this selected bucket.
-                if self.storage.facts.contains_key(entry) {
-                    self.remove_entry(*entry);
-                }
-            }
-            for fact in normalized {
-                let occurrence = fact
-                    .is_own()
-                    .then(|| reusable_occurrences.get_mut(&fact))
-                    .flatten()
-                    .and_then(Vec::pop);
-                self.insert_fact_with_support_occurrence_and_metadata_at(
-                    fact, None, None, None, occurrence,
-                );
-            }
-        }
-        self.restore_supported_projection_pairs(supported)
-            .restore_cached_support_expansions(expansions)
-    }
-
     pub(crate) fn without_exact_representation(mut self, fact: &ResourceFact) -> Option<Self> {
         let entry = *self.storage.index.exact.get(fact)?.iter().next()?;
         self.remove_entry(entry);
@@ -8672,7 +8683,7 @@ impl ResourceContext {
     /// Coalesce only the written neighbors reached by this insertion. Every
     /// successful iteration consumes one changed occurrence; unrelated facts,
     /// aliases, projections, and loan dependencies retain their identities.
-    fn normalized_delta(
+    pub(in crate::kernel) fn normalized_delta(
         mut self,
         inserted: Vec<(ResourceFact, ResourceOccurrenceId)>,
         assumptions: &PureFactContext,
@@ -9666,6 +9677,21 @@ impl ResourceNormalizationIndex {
         }
         candidates.into_iter().collect()
     }
+}
+
+fn prepared_argument_resource_blocks(fact: &ResourceFact) -> impl Iterator<Item = &AddressBase> {
+    let arguments = match fact.resource() {
+        Resource::Instance(instance) => Some(&instance.arguments),
+        Resource::Composite { arguments, .. } | Resource::Token { arguments, .. } => {
+            Some(arguments)
+        }
+        _ => None,
+    };
+    arguments
+        .into_iter()
+        .flat_map(algebraic_pointer_arguments)
+        .map(|pointer| &pointer.base)
+        .filter(|block| block.prepared_argument_binding().is_some())
 }
 
 /// The C pointer arguments of an instance, as its index keys them.
@@ -14231,6 +14257,35 @@ fn symbolic_struct_coverage_uses_exact_element_indices() {
         &required(distant, 8u32.into()),
         &first
     ));
+}
+
+#[cfg(test)]
+#[test]
+fn exact_principal_input_view_ignores_covering_views() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let assumptions = PureFactContext::new();
+    let pointer = Address {
+        base: "local:input-view".into(),
+        offset: AddressOffset::Constant(0),
+    };
+    let required =
+        ResourceFact::view_memory(MemoryRange::new(pointer.clone(), 0u32.into(), 1u32.into()));
+    for count in [0u32, 16, 64, 256] {
+        let mut facts = ResourceContext::new().unchecked_with_fact(required.clone());
+        let exact = facts.indexed_view_witness(&required, &assumptions).unwrap();
+        for end in 2..count + 2 {
+            facts = facts.unchecked_with_fact(ResourceFact::view_memory(MemoryRange::new(
+                pointer.clone(),
+                0u32.into(),
+                end.into(),
+            )));
+        }
+        let (selected, work) = crate::instrumentation::measure_deterministic_work(|| {
+            facts.principal_input_view_occurrence(&required, &assumptions)
+        });
+        assert_eq!(selected, Some(exact));
+        assert_eq!(work, 1, "covering views: {count}");
+    }
 }
 
 #[cfg(test)]

@@ -27,11 +27,28 @@ pub(crate) fn computes_leaf(goal: &Proposition) -> bool {
             condition_value(condition.native_compat()).map(|value| value == *truth)
         }
         Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) => {
-            algebraic_equality(left, right)
+            algebraic_equality(left.native_compat(), right.native_compat())
         }
-        Proposition::Equal(Term::Integer(left), Term::Integer(right)) => integer_affine_comparison(
-            &ConditionTerm::IntegerEqual(left.clone().into(), right.clone().into()),
-        ),
+        Proposition::Equal(Term::Integer(left), Term::Integer(right)) => {
+            integer_affine_comparison(&ConditionTerm::IntegerEqual(
+                left.native_compat().clone().into(),
+                right.native_compat().clone().into(),
+            ))
+        }
+        Proposition::MemoryReadDefined {
+            memory,
+            pointer,
+            value_type,
+            ..
+        } => memory
+            .indexed_read_is_defined(pointer, *value_type)
+            .then_some(true),
+        Proposition::ResourceSeparate { left, right }
+            if let (Resource::Memory(left), Resource::Memory(right)) =
+                (left.as_ref(), right.as_ref()) =>
+        {
+            automatic_object_ranges_separate(left, right).then_some(true)
+        }
         Proposition::Equal(left, right)
             if matches!(
                 left,
@@ -48,6 +65,22 @@ pub(crate) fn computes_leaf(goal: &Proposition) -> bool {
     };
     value == Some(expected)
         || (expected && super::super::arithmetic_special::intrinsic_pointer_alignment(goal))
+}
+
+/// These exact block kinds use the structural separation rule without
+/// asking about pointer loads or resolving aliases. Range formation has
+/// its own checked obligations before the separation goal is opened.
+fn automatic_object_ranges_separate(left: &MemoryRange, right: &MemoryRange) -> bool {
+    use AddressBase::{AutomaticLocal, ExternalArgument, ExternalObject};
+    let left = left.base();
+    let right = right.base();
+    matches!(
+        (&left.base, &right.base),
+        (
+            AutomaticLocal { .. },
+            AutomaticLocal { .. } | ExternalArgument | ExternalObject(_),
+        ) | (ExternalArgument | ExternalObject(_), AutomaticLocal { .. })
+    ) && left.blocks_proven_distinct(right)
 }
 
 /// Constant operands and reflexivity only: a bounded structural check, with

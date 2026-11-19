@@ -615,7 +615,7 @@ fn linux_rbtree_locked_artifact_frontier() {
 
     // The dependency-closure projection keeps the definitions in
     // `lib/rbtree.c` and what they name; everything it keeps must parse.
-    let projection = super::projection::project_dependency_closure(&source, &map)
+    let projection = super::projection::project_dependency_closure(&source, &map, &[])
         .expect("project the pinned translation unit");
     let projected = projection.text.clone();
     let projected_map = map.clone();

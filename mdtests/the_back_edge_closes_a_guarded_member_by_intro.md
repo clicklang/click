@@ -13,7 +13,7 @@ compares `to_integer(2 + run)` with `to_integer(i)`, so the `else` arm first
 derives `defined(2 + run)` from the incremented `run`'s Integer bounds. It also
 records the corresponding equality with addition in Integer arithmetic for
 expansion replay. The closing proof is
-`both { left => { intro(); known(); } right => { known(); } }`, and the back edge's closer
+an `all` block with `intro(); known();` in its guarded arm, and the back edge's closer
 must find it by splitting the bundle and closing each conjunct with the
 direct logical steps, before the premise-selecting and rewriting strategies
 run over the whole bundle. Before that, this arm fell through to the indexed

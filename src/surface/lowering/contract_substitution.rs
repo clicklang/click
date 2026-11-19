@@ -3065,6 +3065,11 @@ impl SubstitutionSourceMap for BinderMap<ContractExpression> {
         self.get(name)
     }
 }
+impl SubstitutionSourceMap for PersistentBinderMap<ContractExpression> {
+    fn replacement(&self, name: &crate::kernel::BindingName) -> Option<&ContractExpression> {
+        self.get(name)
+    }
+}
 impl SubstitutionSourceMap for BTreeMap<&str, ContractExpression> {
     fn replacement(&self, name: &crate::kernel::BindingName) -> Option<&ContractExpression> {
         name.named().and_then(|name| self.get(name))

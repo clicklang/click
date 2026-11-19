@@ -1772,8 +1772,8 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
             .focused_proposition()
             .ok_or("match requires a proposition goal")?;
         let equality = Proposition::Equal(
-            crate::kernel::Term::Algebraic(value.clone()),
-            crate::kernel::Term::Algebraic(value.clone()),
+            crate::kernel::Term::Algebraic(value.clone().into()),
+            crate::kernel::Term::Algebraic(value.clone().into()),
         );
         let reserved = crate::kernel::proposition_variables(goal.proposition())
             .into_iter()
@@ -3257,7 +3257,7 @@ mod tests {
         let bound = Variable(2_000_000);
         let body = Proposition::Predicate {
             name: "witness_body".into(),
-            arguments: vec![Term::Bitvector32(MachineTerm::constant(0))],
+            arguments: vec![Term::Bitvector32(MachineTerm::constant(0).into())],
         };
         let reserving = Proposition::ForAll {
             name: Default::default(),
@@ -3566,7 +3566,7 @@ mod tests {
         let variable = Variable(186);
         let domain = Proposition::Predicate {
             name: "defined".into(),
-            arguments: vec![Term::Bitvector32(MachineTerm::Variable(variable))],
+            arguments: vec![Term::Bitvector32(MachineTerm::Variable(variable).into())],
         };
         let truth = Proposition::condition_is(crate::kernel::ConditionTerm::Constant(true), true);
         let body = Proposition::And(Box::new(domain), Box::new(truth));
@@ -3617,7 +3617,7 @@ mod tests {
         let binder = Variable(186);
         let body = Proposition::Predicate {
             name: "holds".to_string(),
-            arguments: vec![Term::Bitvector32(MachineTerm::Variable(binder))],
+            arguments: vec![Term::Bitvector32(MachineTerm::Variable(binder).into())],
         };
         let goal = Proposition::ForAll {
             name: Default::default(),
@@ -3659,7 +3659,7 @@ mod tests {
             obligation.proposition(),
             &Proposition::Predicate {
                 name: "holds".to_string(),
-                arguments: vec![Term::Bitvector32(MachineTerm::Variable(introduced))],
+                arguments: vec![Term::Bitvector32(MachineTerm::Variable(introduced).into())],
             }
         );
     }

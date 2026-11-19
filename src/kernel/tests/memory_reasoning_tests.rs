@@ -4437,6 +4437,7 @@ fn the_entry_partition_pairs_a_transferred_clause_only_with_a_borrowed_one() {
         clause_position: None,
         section_index: None,
         selected_mutex_source: None,
+        mutex_storage: None,
     };
     let separation = |left: &MemoryRange, right: &MemoryRange| Proposition::ResourceSeparate {
         left: Box::new(Resource::Memory(left.clone())),

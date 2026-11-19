@@ -18,6 +18,8 @@ use cpp_description::{load_import, refresh_import};
 
 #[path = "support/pinned_clang.rs"]
 mod pinned_clang;
+#[path = "support/span_by_value.rs"]
+mod span_by_value;
 use pinned_clang::{output, pinned_clang, sha256};
 
 const ARCHIVE: &[u8] = include_bytes!("fixtures/libcxx-span/input-closure.tar.gz");
@@ -193,22 +195,13 @@ fn libcxx_span_empty_checks_abstract_state() {
         "#include <span>\nbool probe(const std::span<int>& s) noexcept { return s.empty(); }\n",
         &["libcxx/include/c++/v1/span"],
     );
-    let library = "
-abstract resource span_state(s: const std::span<int>*) {
-    field size: uint64;
-}
-extern bool std::span<int>::empty() const {
-    owns state: span_state(this);
-    ensures state.size == old(state.size);
-    ensures state.size == 0u64 implies result;
-    ensures state.size != 0u64 implies not result;
-}";
+    let library = "import click::cpp::span_state::{span_state};";
     let client = "
 bool probe(const std::span<int>& s) {
-    owns state: span_state(&s);
-    ensures state.size == old(state.size);
-    ensures state.size == 0u64 implies result;
-    ensures state.size != 0u64 implies not result;
+    owns state: span_state(&s as (uint8*));
+    ensures state.count == old(state.count);
+    ensures state.count == 0u64 implies result;
+    ensures state.count != 0u64 implies not result;
 }";
     check(
         &root,
@@ -341,34 +334,16 @@ fn libcxx_span_copy_initialization_uses_an_opaque_contract() {
         &["libcxx/include/c++/v1/span"],
     );
     let proof = "
-abstract resource span_state(s: const std::span<int>*) {
-    field data: int32*;
-    field count: uint64;
-}
-extern std::span<int>::span(const std::span<int>& source) {
-    owns input: span_state(&source);
-    produces output: span_state(this);
-    ensures input.data == old(input.data);
-    ensures input.count == old(input.count);
-    ensures output.data == input.data;
-    ensures output.count == input.count;
-}
-extern bool std::span<int>::empty() const {
-    owns state: span_state(this);
-    ensures state.data == old(state.data);
-    ensures state.count == old(state.count);
-    ensures state.count == 0u64 implies result;
-    ensures state.count != 0u64 implies not result;
-}
+import click::cpp::span_state::{span_state};
 bool probe(const std::span<int>& s) {
-    owns input: span_state(&s);
+    owns input: span_state(&s as (uint8*));
     ensures input.data == old(input.data);
     ensures input.count == old(input.count);
     ensures input.count == 0u64 implies result;
     ensures input.count != 0u64 implies not result;
 } by {
     step();
-    let { output: copied } = step(std::span<int>::span, { input: input });
+    let { copy: copied } = step(std::span<int>::span, { input: input });
     step(std::span<int>::empty, { state: copied });
 }";
     check(
@@ -380,5 +355,17 @@ bool probe(const std::span<int>& s) {
             "named resource instance does not match its contract",
         )],
     );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+#[ignore = "nightly: pinned libc++ by-value span proof and replay"]
+fn libcxx_span_by_value_caller_uses_the_verified_helper() {
+    let (root, import) = libcxx_fixture(
+        "by-value-helper",
+        span_by_value::CPP,
+        &["libcxx/include/c++/v1/span"],
+    );
+    span_by_value::check(&root, &import);
     fs::remove_dir_all(root).unwrap();
 }
