@@ -186,9 +186,35 @@ impl SharedAddressBase {
 }
 
 /// Cloning, comparing and hashing prepared addresses inspect only handles.
-/// There is no retained native Address or native offset tree.
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct SharedAddress(Arc<KernelAddress>);
+/// Exact native cell lookups borrow a lazily prepared address.
+#[derive(Clone)]
+pub struct SharedAddress(Arc<SharedAddressData>);
+
+struct SharedAddressData {
+    node: KernelAddress,
+    cell_key: std::sync::OnceLock<Address>,
+}
+
+impl std::fmt::Debug for SharedAddress {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("SharedAddress").field(self.node()).finish()
+    }
+}
+
+impl PartialEq for SharedAddress {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0) || self.node() == other.node()
+    }
+}
+
+impl Eq for SharedAddress {}
+
+impl Hash for SharedAddress {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.node().hash(state);
+    }
+}
+
 #[derive(Debug, Eq, PartialEq, Hash)]
 pub(crate) struct KernelAddress {
     pub(crate) base: SharedAddressBase,
@@ -197,10 +223,13 @@ pub(crate) struct KernelAddress {
 impl SharedAddress {
     pub(crate) fn new(base: SharedAddressBase, offset: SharedAddressOffset) -> Self {
         crate::instrumentation::record_deterministic_work(1);
-        Self(Arc::new(KernelAddress { base, offset }))
+        Self(Arc::new(SharedAddressData {
+            node: KernelAddress { base, offset },
+            cell_key: std::sync::OnceLock::new(),
+        }))
     }
     pub(crate) fn node(&self) -> &KernelAddress {
-        &self.0
+        &self.0.node
     }
     pub(crate) fn import(pointer: &Address) -> Self {
         Self::new(
@@ -222,9 +251,15 @@ impl SharedAddress {
 
     pub(crate) fn export(&self) -> Result<Address, &'static str> {
         Ok(Address {
-            base: self.0.base.native_atom().clone(),
-            offset: KernelAddressOffset::export(&self.0.offset)?,
+            base: self.node().base.native_atom().clone(),
+            offset: KernelAddressOffset::export(&self.node().offset)?,
         })
+    }
+
+    pub(crate) fn exact_cell_key(&self) -> &Address {
+        self.0
+            .cell_key
+            .get_or_init(|| self.export().expect("retained read address"))
     }
 }
 

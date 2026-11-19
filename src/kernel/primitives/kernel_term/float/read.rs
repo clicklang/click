@@ -25,18 +25,10 @@ impl KernelTerm {
     /// Selected native read descriptor for remaining native readers. It never
     /// exports an enclosing expression or chooses a different state.
     pub(crate) fn float_read_native(&self) -> Option<&MachineTerm> {
-        let KernelTermNode::FloatRead(read) = self.node() else {
+        if !matches!(self.node(), KernelTermNode::FloatRead(_)) {
             return None;
-        };
-        let format = FloatOperandView::from_shared(self)?.format();
-        let (point, address) = read.parts();
-        Some(self.0.machine_leaf.get_or_init(|| {
-            MachineTerm::MemoryLoad(
-                point.clone(),
-                Box::new(address.export().expect("float read address")),
-                format.load_kind(),
-            )
-        }))
+        }
+        FloatOperandView::from_value(self.float_native_value()?)?.native_compat()
     }
 }
 
@@ -76,11 +68,17 @@ mod tests {
                     root,
                     KernelTerm::float_read(
                         format,
-                        crate::kernel::ProgramPoint::at(&memory),
+                        crate::kernel::ProgramPoint::at(memory),
                         address.clone()
                     )
                 );
                 assert_eq!(root.float_read_native(), Some(&source));
+                let value = FloatOperandView::from_value(root.float_native_value().unwrap())
+                    .unwrap()
+                    .native_compat()
+                    .unwrap();
+                assert!(std::ptr::eq(value, root.float_read_native().unwrap()));
+                assert!(root.0.machine_leaf.0.get().is_none());
                 assert_eq!(
                     KernelTermExport::float(&root).unwrap(),
                     format.value(source)

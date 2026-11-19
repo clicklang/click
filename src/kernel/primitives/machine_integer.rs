@@ -1165,7 +1165,7 @@ mod tests {
                 for integer in &samples {
                     let constant = MachineIntegerConstant::from_integer(format, integer).unwrap();
                     let substituted = substitute_bitvector_variable_in_term(
-                        &Term::ProgramValue(symbolic.clone()),
+                        &Term::ProgramValue(symbolic.clone().into()),
                         variable,
                         &source.constant_term(constant).unwrap(),
                     );
@@ -1177,7 +1177,7 @@ mod tests {
                     if destination.format().is_signed() && expected >= (&modulus >> 1) {
                         expected -= &modulus;
                     }
-                    let term = match actual {
+                    let term = match actual.native_compat() {
                         crate::kernel::integer64_c_value!(t) => t,
                         _ => unreachable!(),
                     };

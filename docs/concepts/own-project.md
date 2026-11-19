@@ -361,7 +361,7 @@ uint64 label_fit(uint64 length) {
 
 uint64 label_measure(const char* src) {
     let n: uint64;
-    views click::cstr::cstr_at(src, n);
+    views click::c::string::cstr_at(src, n);
     ensures result < 32;
     ensures result <= n;
 }
@@ -384,17 +384,18 @@ declaration-only system headers and checks each call against its own contract
 for the function; GCC finds them in place of the platform's. The modeled
 headers are `<stdint.h>`, `<inttypes.h>`, `<stdbool.h>`, `<limits.h>`,
 `<stddef.h>`, `<string.h>` (`memcpy`, `memcmp`, `memset`, `strlen`), and
-`<stdlib.h>` (`malloc`, `calloc`, `realloc`, `free`), plus the type-only
+`<stdlib.h>` (`malloc`, `calloc`, `realloc`, `free`),
+`<stdio.h>` (`FILE` and `stdout`), and the type-only
 `<stdarg.h>` (`va_list`) and `<sys/types.h>` (`ssize_t`, `off_t`); the
 [system headers](../reference/language/c.md#system-headers) table has the
-details. Any other system include, such as `<ctype.h>` or `<stdio.h>`, stops
+details. Any other system include, such as `<ctype.h>`, stops
 `click import lock` with a message that names it. Had `label_copy.c` begun
-with `#include <stdio.h>`, the lock would fail with:
+with `#include <ctype.h>`, the lock would fail with:
 
 ```text
 click: unit `label`: preprocess label_copy.c: compiler exited with exit status: 1: In file included from label_copy.c:1:
-<click>/stdio.h:2:2: error: #error "<stdio.h> is not one of Click's modeled system headers for x86_64-unknown-linux-gnu (userspace); see docs/reference/language/c.md#system-headers"
-    2 | #error "<stdio.h> is not one of Click's modeled system headers for x86_64-unknown-linux-gnu (userspace); see docs/reference/language/c.md#system-headers"
+<click>/ctype.h:2:2: error: #error "<ctype.h> is not one of Click's modeled system headers for x86_64-unknown-linux-gnu (userspace); see docs/reference/language/c.md#system-headers"
+    2 | #error "<ctype.h> is not one of Click's modeled system headers for x86_64-unknown-linux-gnu (userspace); see docs/reference/language/c.md#system-headers"
       |  ^~~~~
 ```
 
@@ -429,7 +430,7 @@ Try the remaining function, `label_copy`:
 
 ```click filename=label.click
 import click::bytes;
-import click::cstr;
+import click::c::string::{cstr_at};
 import click::separation;
 
 verifying "label_fit.c";
@@ -493,7 +494,7 @@ uint64 label_copy(char* dst, const char* src) {
 fits, 31 bytes otherwise. The omitted
 proof of `label_fit` proves its two new claims: on each path of
 the C branch it refutes the claim's other hypothesis, such as `length < 32u64`
-where `length >= 32`. The sidecar imports `click::cstr` for
+where `length >= 32`. The sidecar imports `click::c::string` for
 `cstr_at`; see [Click library imports](sidecars.md#click-library-imports).
 `label_copy` opens the string it views to lend a prefix of its bytes to
 `memcpy`. `memcpy` owns its destination and views its source, and a call

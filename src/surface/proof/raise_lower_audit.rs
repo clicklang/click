@@ -323,6 +323,62 @@ mod tests {
         );
     }
 
+    /// An Integer comparison over a C conditional raises with machine
+    /// operands, `(if old(n[0]) == 0 { 0 } else { 1 }) == 1`: lowering keeps
+    /// that comparison Integer, as the fact is. Explicit `to_integer`
+    /// observations would lower to the native comparison instead.
+    #[test]
+    fn an_integer_comparison_over_a_conditional_round_trips() {
+        let lines = round_trips(
+            "a_loop_condition_s_call_and_test_are_the_loop_s_own.md",
+            include_str!("../../../mdtests/a_loop_condition_s_call_and_test_are_the_loop_s_own.md"),
+        );
+        let fact = "to_integer(if old(n[0]) == 0 { 0 } else { 1 }) == 1";
+        assert!(
+            lines.contains(&("same".to_string(), fact.to_string())),
+            "{lines:#?}"
+        );
+        assert!(
+            !lines.contains(&("differs".to_string(), fact.to_string())),
+            "{lines:#?}"
+        );
+    }
+
+    /// A goal naming an `intro` binder raises through that binder's name,
+    /// as premise raising does: `0 <= k and k < 3` after `intro()`.
+    #[test]
+    fn an_intro_binder_goal_raises_with_its_binder_name() {
+        let lines = round_trips(
+            "copy3_array_demo.md",
+            include_str!("../../../mdtests/copy3_array_demo.md"),
+        );
+        let goal = "0 <= k and k < 3";
+        assert!(
+            lines.contains(&("same".to_string(), goal.to_string())),
+            "{lines:#?}"
+        );
+        assert!(
+            !lines.contains(&("unraised".to_string(), goal.to_string())),
+            "{lines:#?}"
+        );
+    }
+
+    /// A resource fact over a declared composite raises as the composite's
+    /// name applied to its arguments, a local's storage as `&pool`:
+    /// `contains(slot(&pool, p), p[0])`.
+    #[test]
+    fn a_declared_composite_resource_fact_round_trips() {
+        let lines = round_trips(
+            "authority_wildcard_create_private_body.md",
+            include_str!("../../../mdtests/authority_wildcard_create_private_body.md"),
+        );
+        let fact = "contains(slot(&pool, p), p[0])";
+        assert!(
+            lines.contains(&("same".to_string(), fact.to_string())),
+            "{lines:#?}"
+        );
+    }
+
     #[test]
     fn a_checked_step_records_how_each_added_fact_round_trips() {
         let fixture = crate::cli::parse_mdtest(

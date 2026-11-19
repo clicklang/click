@@ -101,6 +101,29 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         {
             return Ok(closed);
         }
+        if let Some(guard) = search_input
+            .goal()
+            .and_then(uint64_increment_upper_bound_guard)
+            && let Some(sources) = &premises
+            && let Some(step) = sources.iter().find_map(|source| {
+                search_input
+                    .lower_cited_surface_proposition(source, "uint64 increment guard")
+                    .ok()
+                    .filter(|premise| *premise == guard)
+                    .and_then(|_| uint64_increment_upper_bound_application(source))
+            })
+            && let Some(applied) =
+                attempt::candidate_outcome(search_input.driver().apply_step(step))?
+        {
+            if applied.focused_discharged() {
+                return Ok(applied);
+            }
+            if let Some(closed) =
+                attempt::candidate_outcome(applied.driver().apply_step(ProofStep::Known))?
+            {
+                return Ok(closed);
+            }
+        }
         let step = match premises {
             Some(premises) => ProofStep::NormalizeUsing(premises),
             None => ProofStep::Normalize,
@@ -149,8 +172,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(None);
         };
         let kernel = search_input.lower_integer_surface_proposition(&canonical, "product bound")?;
-        let Some((ConditionTerm::IntegerLessEqual(a, b), true)) = (&kernel).condition_native()
-        else {
+        let Some((ConditionTerm::IntegerLessEqual(a, b), true)) = kernel.condition_native() else {
             return Ok(None);
         };
         let (product, target, lower) = if let Some(target) = a.as_const() {
@@ -395,8 +417,17 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         {
             return Ok(Some(closed));
         }
+        if retained
+            && let [source] = kernels.as_slice()
+            && let Some(closed) = Self::try_native_integer_bound(search_input, source)?
+            && closed.is_complete()
+        {
+            return Ok(Some(closed));
+        }
         if retained {
-            let step = if crate::surface::planning::solve::computes_with_known(goal) {
+            let step = if kernels.contains(goal)
+                || crate::surface::planning::solve::computes_with_known(goal)
+            {
                 Some(ProofStep::Known)
             } else if crate::kernel::proof::fact_reasoning::normalize_using_conditions(
                 goal,
@@ -575,6 +606,24 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         Some((proof, reversed, lower, upper))
     }
 
+    fn try_direct_logical_leaf(
+        input: &Proof<'a>,
+        budget: &mut attempt::AttemptBudget,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_direct_logical_leaf");
+        let mut candidates = direct_logical_candidates(input.goal()).into_iter();
+        if let Some(closed) = attempt::try_steps(input, budget, candidates.by_ref().take(1))? {
+            return Ok(Some(closed));
+        }
+        if let Some(closed) =
+            attempt::candidate_outcome(Self::try_conditional_bound_using(input, &[]))?.flatten()
+        {
+            return Ok(Some(closed));
+        }
+        attempt::try_steps(input, budget, candidates)
+    }
+
     /// A small shared search combinator for structural proposition closure.
     /// Every candidate is accepted only through `apply_step`; `intro` is the
     /// binder move; disjunctions open a `have` for a smaller disjunct.
@@ -591,9 +640,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let mut budget = attempt::AttemptBudget::unbounded();
         let mut proof = search_input.clone();
         loop {
-            if let Some(closed) =
-                attempt::try_steps(&proof, &mut budget, direct_logical_candidates(proof.goal()))?
-            {
+            if let Some(closed) = Self::try_direct_logical_leaf(&proof, &mut budget)? {
                 scope.succeed();
                 return Ok(Some(closed));
             }
@@ -1020,11 +1067,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         crate::kernel::search::record_discovery("try_direct_structural_closure_inner_impl");
         check_verification_deadline()?;
         let mut budget = attempt::AttemptBudget::unbounded();
-        if let Some(closed) = attempt::try_steps(
-            search_input,
-            &mut budget,
-            direct_logical_candidates(search_input.goal()),
-        )? {
+        if let Some(closed) = Self::try_direct_logical_leaf(search_input, &mut budget)? {
             return Ok(Some(closed));
         }
         if let Some(closed) =
@@ -1052,7 +1095,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             else {
                 return Ok(None);
             };
-            let marker = split_proof.checkpoint();
+            let marker = split_proof.conjunction_checkpoint(ids)?;
             let Some(left) =
                 crate::kernel::search::ProofSearch::try_direct_structural_closure_inner(
                     &(split_proof.focus_branch(ids[0])?),
@@ -1990,7 +2033,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let before_product = proof.clone();
             let conversion =
                 crate::kernel::machine_integer::conversion::integer_conversion(observed).is_some();
-            let (spelled_observed, spelled_value) = match value {
+            let (spelled_observed, spelled_value, signed_operation) = match value {
                 // The conversion's operand as the observation itself writes
                 // it, `E` of `to_integer(to_T(E))`: lowering is fact-stable,
                 // so `E` lowers to the operand `z`, and the kernel checks it.
@@ -2018,7 +2061,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     if name != "to_integer" {
                         return Ok(Err(failed.clone()));
                     }
-                    (spelled_observed.clone(), operand.clone())
+                    (spelled_observed.clone(), operand.clone(), None)
                 }
                 IntegerTerm::Add(left, right)
                 | IntegerTerm::Subtract(left, right)
@@ -2061,20 +2104,25 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                             Box::new(native(&spelled_right)),
                         ),
                     };
+                    let operation = ContractExpression::Call {
+                        name: "to_integer".into(),
+                        arguments: vec![native(&operation)],
+                    };
                     let observed = sources
                         .entry(observed.value_read().clone())
-                        .or_insert_with(|| ContractExpression::Call {
-                            name: "to_integer".into(),
-                            arguments: vec![native(&operation)],
-                        })
+                        .or_insert_with(|| operation.clone())
                         .clone();
+                    let signed_operation = (machine.ty() == MachineIntegerType::Int32
+                        && matches!(value, IntegerTerm::Add(..) | IntegerTerm::Subtract(..))
+                        && observed != operation)
+                        .then_some(operation);
                     let (left, right) = (Box::new(spelled_left), Box::new(spelled_right));
                     let value = match value {
                         IntegerTerm::Subtract(..) => ContractExpression::Subtract(left, right),
                         IntegerTerm::Multiply(..) => ContractExpression::Multiply(left, right),
                         _ => ContractExpression::Add(left, right),
                     };
-                    (observed, value)
+                    (observed, value, signed_operation)
                 }
                 IntegerTerm::Machine(_) => {
                     let Some(spelled) = search_input.spell_integer_observation(value, &written)
@@ -2085,7 +2133,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     else {
                         return Ok(Err(failed.clone()));
                     };
-                    (observed, spelled)
+                    (observed, spelled, None)
                 }
                 _ => return Ok(Err(failed.clone())),
             };
@@ -2199,16 +2247,44 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
             let identity_surface = identity.clone();
             let scope = proof.driver().open_have(identity.clone())?;
-            // Written operators use the local observation rule. A retained
-            // read can still require the legacy read-over-write adapter;
-            // keep that selected normalizer until memory transport is explicit.
-            let closed = match scope.driver().apply_step(ProofStep::Known).or_else(|_| {
+            // Prove the operation observation from the established range.
+            // A retained read of the stored result can then use the checked
+            // fact through its read-over-write comparison form.
+            let closed = if let Some(closed) =
+                attempt::candidate_outcome(scope.driver().apply_step(ProofStep::Known))?
+            {
+                closed
+            } else if let Some(operation) = signed_operation
+                && scope
+                    .body()
+                    .goal()
+                    .and_then(crate::kernel::comparison_form)
+                    .is_some()
+                && let Some(closed) = attempt::candidate_outcome((|| {
+                    let operation_identity = ClickProposition::Comparison {
+                        left: operation,
+                        operator: ComparisonOperator::Equal,
+                        right: spelled_value,
+                    };
+                    let scope = scope
+                        .driver()
+                        .apply_step(super::super::wide_arithmetic::have(
+                            operation_identity,
+                            vec![ProofStep::Known],
+                        ))?;
+                    scope.driver().apply_step(ProofStep::Known)
+                })())?
+                && closed.is_complete()
+            {
+                closed
+            } else if let Some(closed) = attempt::candidate_outcome(
                 scope
                     .driver()
-                    .apply_step(ProofStep::NormalizeUsing(vec![lower, upper]))
-            }) {
-                Ok(closed) => closed,
-                Err(_) => return Ok(Err(failed.clone())),
+                    .apply_step(ProofStep::NormalizeUsing(vec![lower, upper])),
+            )? {
+                closed
+            } else {
+                return Ok(Err(failed.clone()));
             };
             proof = closed.join()?;
             established.extend(
@@ -5212,8 +5288,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             .filter_map(|(bound, introduced_surface)| {
                 let (variable, pivot) = kernel_upper_bound_split_candidate(&bound)?;
                 let pivot_probe = Proposition::Equal(
-                    Term::Integer(crate::kernel::IntegerTerm::Machine(pivot.clone())),
-                    Term::Integer(crate::kernel::IntegerTerm::Machine(pivot.clone())),
+                    Term::Integer(crate::kernel::IntegerTerm::Machine(pivot.clone()).into()),
+                    Term::Integer(crate::kernel::IntegerTerm::Machine(pivot.clone()).into()),
                 );
                 if crate::kernel::proposition_variables(&pivot_probe).contains(&variable) {
                     return None;
@@ -6560,16 +6636,16 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 .map(|index| (variant.clone(), index)),
             _ => None,
         };
-        let Some((value, (variant, index))) = split(right)
+        let Some((value, (variant, index))) = split(right.native_compat())
             .map(|found| (left, found))
-            .or_else(|| split(left).map(|found| (right, found)))
+            .or_else(|| split(left.native_compat()).map(|found| (right, found)))
         else {
             return Ok(None);
         };
         let Some(known) = search_input
             .facts()
             .assumptions()
-            .known_algebraic_constructor(value)
+            .known_algebraic_constructor(value.native_compat())
         else {
             return Ok(None);
         };
@@ -6758,7 +6834,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_structural_and_solve_closure");
         let (split_proof, split, ids) = search_input.split_focused_both()?;
-        let marker = split_proof.checkpoint();
+        let marker = split_proof.conjunction_checkpoint(ids)?;
         let Some(left) = crate::kernel::search::ProofSearch::try_solve_closure_with_surfaces(
             &(split_proof.focus_branch(ids[0])?),
             introduced_surfaces,
@@ -7582,16 +7658,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // loop, that spelling may stop denoting its old checked fact.
         // Re-lower those movable forms below; other live recorded pairs keep
         // their indexed lookup without repeating proposition lowering.
-        let constructor_equation = matches!(
-            kernel,
-            Proposition::Equal(
+        let constructor_equation = matches!(&(
+            kernel), Proposition::Equal(
                 Term::Algebraic(_),
-                Term::Algebraic(crate::kernel::AlgebraicTerm {
+                term_source_0 @ Term::Algebraic(_)
+            ) if matches!((term_source_0.algebraic_native(),), (Some(crate::kernel::AlgebraicTerm {
                     node: crate::kernel::AlgebraicTermNode::Constructor { .. },
                     ..
-                })
-            )
-        );
+                }),)));
         let retained_branch_equality = match kernel {
             condition_source_0 @ Proposition::ConditionIs(_, _)
                 if let Some((
@@ -10388,7 +10462,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         {
             let split = (|| {
                 let (proof, split, ids) = search_input.split_focused_both().ok()?;
-                let marker = proof.checkpoint();
+                let marker = proof.conjunction_checkpoint(ids).ok()?;
                 let left = crate::kernel::search::ProofSearch::try_restricted_solve_closure(
                     &(proof.focus_branch(ids[0]).ok()?),
                     surfaces,

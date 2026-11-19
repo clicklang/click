@@ -563,7 +563,11 @@ impl ImportedFunction {
         }
         let mut named = self.clone();
         for (parameter, name) in named.parameters.iter_mut().zip(names) {
-            parameter.name = (name.to_string()).into();
+            parameter.name = if parameter.name.reference_referent().is_some() {
+                crate::kernel::BindingName::reference_carrier(name)
+            } else {
+                name.to_string().into()
+            };
         }
         named.positional_parameters = false;
         Some(named)
@@ -673,7 +677,17 @@ impl ImportedFunction {
         parameters: impl IntoIterator<Item = ImportedParameter>,
     ) -> Self {
         let mut function = self.clone();
+        let first = function.parameters.len();
         function.parameters.extend(parameters);
+        if let Some(lowered) = function.prelowered_kernel_function.as_mut() {
+            // Contract lowering moves these parameters back out of the
+            // executable signature. Give it the same suffix as the import.
+            lowered.extend_parameters(
+                function.parameters[first..]
+                    .iter()
+                    .map(ImportedParameter::to_kernel_parameter),
+            );
+        }
         function
     }
 
@@ -1840,21 +1854,51 @@ pub(super) fn declared_pointer_locals(
 /// what it iterates.
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct RustLoopIterator {
+    pub(crate) chunk_fields: Option<ChunkIteratorFields>,
+    pub(crate) slice_fields: Option<SliceIteratorFields>,
     pub local: String,
     pub kind: RustIteratorKind,
+    pub(crate) count_binding: Option<crate::kernel::BindingName>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub(crate) struct ChunkIteratorFields {
+    pub(crate) remaining: crate::kernel::BindingName,
+    pub(crate) remaining_length: crate::kernel::BindingName,
+    pub(crate) remainder: crate::kernel::BindingName,
+    pub(crate) remainder_length: crate::kernel::BindingName,
+    pub(crate) size: crate::kernel::BindingName,
+}
+
+impl ChunkIteratorFields {
+    pub(crate) fn bindings(&self) -> [&crate::kernel::BindingName; 5] {
+        [
+            &self.remaining,
+            &self.remaining_length,
+            &self.remainder,
+            &self.remainder_length,
+            &self.size,
+        ]
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub(crate) struct SliceIteratorFields {
+    pub(crate) pointer: crate::kernel::BindingName,
+    pub(crate) length: crate::kernel::BindingName,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum RustIteratorKind {
     /// `core::slice::Iter` or a shared array's iterator: the slice it still
-    /// covers, `_ptr` and `_len`, which a proof reads as `iter.as_slice()`
+    /// covers, whose pointer and length a proof reads as `iter.as_slice()`
     /// and `iter.len()`.
     Slice,
-    /// `Enumerate<Iter<T>>`: the slice iterator's fields and `_count`,
+    /// `Enumerate<Iter<T>>`: the slice iterator's fields and its count,
     /// which a proof reads as `iter.count`.
     Enumerate,
-    /// `ChunksExact<u8>`: its fields `_v`, `_v_len`, `_rem`, `_rem_len`
-    /// and `_chunk_size`, which a proof reads as `iter.v`, `iter.v.len()`,
+    /// `ChunksExact<u8>`: the remaining slice, remainder slice, and chunk
+    /// size, which a proof reads as `iter.v`, `iter.v.len()`,
     /// `iter.rem`, `iter.rem.len()` and `iter.chunk_size`.
     Chunks,
     /// `Range`: `_start` and `_end`.

@@ -687,6 +687,7 @@ void rb_set_parent_color(struct rb_node* rb, struct rb_node* p, int32 color) {
 #[test]
 #[ignore = "nightly: whole rbtree insert expansion and cold verification exceed the gate budget"]
 fn rbtree_insert_whole_claim_expansion_verifies() {
+    let claim = "__rb_insert.contract";
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let path = root.join("examples/rbtree/rbtree-insert/rbtree_insert.click");
     let source = fs::read_to_string(&path).unwrap();
@@ -696,14 +697,20 @@ fn rbtree_insert_whole_claim_expansion_verifies() {
         "rbtree insert whole-claim expansion",
         "click-rbtree-expansion".to_string(),
         move || {
-            let expanded = click::surface::expand_project_claim_source_by_label(
-                &project,
-                &ProgramInputs::Bundle(source_refs(&c_sources)),
-                "__rb_insert.contract",
-            )?;
+            let inputs = ProgramInputs::Bundle(source_refs(&c_sources));
+            let expanded =
+                click::surface::expand_project_claim_source_by_label(&project, &inputs, claim)
+                    .map_err(|error| error.report())?;
             assert_ne!(expanded, source);
+            assert!(
+                !expanded.contains("transport("),
+                "the expanded insert claim must be free of transport"
+            );
             let rewritten = project.with_entry_source(expanded);
-            click::surface::verify_c_project(&rewritten, &source_refs(&c_sources))
+            click::surface::without_implicit_solve_for_claim(claim, || {
+                click::surface::verify_c_project(&rewritten, &source_refs(&c_sources))
+                    .map_err(|error| error.report())
+            })
         },
     )
     .unwrap()
@@ -2602,19 +2609,42 @@ fn run_documented_session_versions(page: &str) -> BTreeMap<String, Vec<String>> 
 }
 
 #[cfg(not(feature = "fast-gate"))]
-/// The README's quick start is `examples/clamp`, and its transcript is what
-/// `click verify` prints.
+/// Each README example matches its source files and its CLI transcript.
 #[test]
-fn readme_quick_start_is_the_clamp_example() {
+fn readme_examples_match_the_verifier() {
     let files = run_documented_session("README.md");
-    let example = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples/clamp");
-    for name in ["clamp.c", "clamp.click"] {
-        assert_eq!(
-            files[name],
-            fs::read_to_string(example.join(name)).unwrap(),
-            "README `{name}` differs from examples/clamp"
-        );
+    let examples = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples");
+    for (directory, stem) in [("hello-world", "hello"), ("clamp", "clamp")] {
+        for extension in ["c", "click"] {
+            let name = format!("{stem}.{extension}");
+            assert_eq!(
+                files[&name],
+                fs::read_to_string(examples.join(directory).join(&name)).unwrap(),
+                "README `{name}` differs from examples/{directory}"
+            );
+        }
     }
+
+    limits::spawn(
+        "hello-world mutations",
+        "hello-world-mutations".into(),
+        move || {
+            let source = &files["hello.c"];
+            let proof = &files["hello.click"];
+            let wrong_greeting = source.replace("hello, world", "Hello, world");
+            let wrong_bytes = verify_c_sources(proof, &[("hello.c", &wrong_greeting)]).unwrap_err();
+            assert!(wrong_bytes.report().contains("write_requests"));
+
+            let duplicate_greeting = source.replace(
+                "    printf(",
+                "    printf(\"hello, world\\n\");\n    printf(",
+            );
+            let extra_write =
+                verify_c_sources(proof, &[("hello.c", &duplicate_greeting)]).unwrap_err();
+            assert!(extra_write.report().contains("write_requests"));
+        },
+    )
+    .unwrap();
 }
 
 #[cfg(not(feature = "fast-gate"))]

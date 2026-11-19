@@ -62,8 +62,12 @@ impl EqualityGraph {
         while let Some(work) = pending.pop() {
             crate::instrumentation::record_deterministic_work(1);
             match work {
-                Work::Term(Term::ProgramValue(value)) => pending.push(Work::Value(value)),
-                Work::Term(Term::Algebraic(model)) => pending.push(Work::Model(model)),
+                Work::Term(Term::ProgramValue(value)) => {
+                    pending.push(Work::Value(value.native_compat()));
+                }
+                Work::Term(Term::Algebraic(model)) => {
+                    pending.push(Work::Model(model.native_compat()));
+                }
                 Work::Model(AlgebraicTerm {
                     node: AlgebraicTermNode::Constructor { fields, .. },
                     ..
@@ -113,7 +117,10 @@ impl EqualityGraph {
                 .iter()
                 .enumerate()
                 .find_map(|(position, argument)| {
-                    if let Term::ProgramValue(ProgramValue::Pointer(pointer)) = argument {
+                    if let term_source_0 @ Term::ProgramValue(_) = argument
+                        && let Some(ProgramValue::Pointer(pointer)) =
+                            term_source_0.program_value_native()
+                    {
                         Some((position, pointer))
                     } else {
                         None
@@ -202,11 +209,8 @@ impl EqualityGraph {
         // it fix the contract's value parameters.
         if let Proposition::Predicate { name, arguments } = proposition
             && FunctionContract::surface_name_from_predicate(name).is_some()
-            && matches!(
-                arguments.as_slice(),
-                [Term::ExecutionState(_), Term::ProgramValue(ProgramValue::Pointer(_)), values @ ..]
-                    if values.iter().all(|value| matches!(value, Term::ProgramValue(_)))
-            )
+            && matches!(&(
+                arguments.as_slice()), [Term::ExecutionState(_), term_source_0 @ Term::ProgramValue(_), values @ ..] if matches!((term_source_0.program_value_native(),), (Some(ProgramValue::Pointer(_)),) if values.iter().all(|value| matches!(value, Term::ProgramValue(_)))))
         {
             let address = state.register_pointer_address(&predicate.expect("contract pointer").0);
             state.terms.adjust_pointer_fact(
@@ -265,9 +269,13 @@ impl EqualityGraph {
                         crate::instrumentation::record_deterministic_work(1);
                         match (left, right) {
                             (
-                                Term::ProgramValue(ProgramValue::Pointer(left)),
-                                Term::ProgramValue(ProgramValue::Pointer(right)),
-                            ) => {
+                                term_source_0 @ Term::ProgramValue(_),
+                                term_source_1 @ Term::ProgramValue(_),
+                            ) if let Some(ProgramValue::Pointer(left)) =
+                                term_source_0.program_value_native()
+                                && let Some(ProgramValue::Pointer(right)) =
+                                    term_source_1.program_value_native() =>
+                            {
                                 left.program_type() == right.program_type()
                                     && left.pointee_volatile() == right.pointee_volatile()
                                     && self.knows_condition(

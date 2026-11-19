@@ -30,6 +30,7 @@ pub(in crate::kernel) struct HelperCall {
     pub(in crate::kernel) contract: HelperContract,
     pub(in crate::kernel) source: ResourceFact,
     pub(in crate::kernel) required: ResourceFact,
+    pub(in crate::kernel) mutex_storage: Option<std::sync::Arc<crate::kernel::MemoryRange>>,
     pub(in crate::kernel) guard: Option<ResourceFact>,
 }
 
@@ -413,11 +414,7 @@ pub(in crate::kernel) fn check_call_access(
                     .iter()
                     .zip(actual.arguments())
                     .all(|(left, right)| {
-                        crate::kernel::resource_field_values_proven_equal(
-                            (left).into(),
-                            (right).into(),
-                            assumptions,
-                        )
+                        crate::kernel::resource_field_values_proven_equal(left, right, assumptions)
                     }) => {}
         (None, Some(_)) => {
             return Err("unary mutex transfer helpers require a payload-free protocol".into());

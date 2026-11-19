@@ -1,6 +1,10 @@
 //! Contextual Surface Click lowering for checked proof operations.
 
-use super::pure_theorems::lower_pure_theorem_proposition_recording_introductions;
+use super::fixed_state_proofs::lower_fixed_state_proposition_with_proof_locals;
+use super::pure_theorems::{
+    lower_pure_theorem_proposition_for_proof,
+    lower_pure_theorem_proposition_recording_introductions,
+};
 use super::*;
 
 pub(super) fn promote_integer_expression(
@@ -265,7 +269,7 @@ impl<'a> Proof<'a> {
                     ),
                     &algebraic_values,
                     &integer_values,
-                    &context.theorem_context.memory,
+                    &context.theorem_context.point,
                     context.spec_definitions,
                 )
                 .map(|(proposition, _)| proposition)
@@ -420,6 +424,22 @@ impl<'a> Proof<'a> {
         surface: &ClickProposition,
         description: &str,
     ) -> Result<Proposition, ClickError> {
+        self.lower_direct_proposition(surface, description, false)
+    }
+
+    pub(in crate::surface::proof) fn lower_conjunct_label(
+        &self,
+        surface: &ClickProposition,
+    ) -> Result<Proposition, ClickError> {
+        self.lower_direct_proposition(surface, "`all` arm label", true)
+    }
+
+    fn lower_direct_proposition(
+        &self,
+        surface: &ClickProposition,
+        description: &str,
+        is_conjunct_label: bool,
+    ) -> Result<Proposition, ClickError> {
         match self.context.as_ref() {
             ProofContext::Pure(context) => {
                 let surface = &self.substitute_pure_proof_locals_in_proposition(surface)?;
@@ -438,7 +458,7 @@ impl<'a> Proof<'a> {
                     &self.local_integer_values(),
                     self.retained_match_integer_values(),
                 );
-                lower_pure_theorem_proposition_recording_introductions(
+                lower_pure_theorem_proposition_for_proof(
                     context.claim_label,
                     surface,
                     self.facts().assumptions(),
@@ -448,8 +468,9 @@ impl<'a> Proof<'a> {
                     ),
                     &algebraic_values,
                     &integer_values,
-                    &context.theorem_context.memory,
+                    &context.theorem_context.point,
                     context.spec_definitions,
+                    is_conjunct_label,
                 )
                 .map(|(proposition, _)| proposition)
             }
@@ -464,7 +485,7 @@ impl<'a> Proof<'a> {
                     self.local_algebraic_values(),
                     self.retained_match_algebraic_values(),
                 );
-                lower_fixed_state_proposition_with_algebraic_values(
+                lower_fixed_state_proposition_with_proof_locals(
                     &surface,
                     self.facts().assumptions(),
                     context.parameter_binding,
@@ -472,6 +493,7 @@ impl<'a> Proof<'a> {
                     &algebraic_values,
                     &self.local_integer_values(),
                     context.spec_definitions,
+                    is_conjunct_label,
                 )
                 .map_err(|message| {
                     self.step_error(format!("could not lower {description}: {message}"))
@@ -488,7 +510,7 @@ impl<'a> Proof<'a> {
                     self.local_algebraic_values(),
                     self.retained_match_algebraic_values(),
                 );
-                lower_fixed_state_proposition_with_algebraic_values(
+                lower_fixed_state_proposition_with_proof_locals(
                     &surface,
                     self.facts().assumptions(),
                     view.parameter_binding,
@@ -496,6 +518,7 @@ impl<'a> Proof<'a> {
                     &algebraic_values,
                     &self.local_integer_values(),
                     view.spec_definitions,
+                    is_conjunct_label,
                 )
                 .map_err(|message| {
                     self.step_error(format!("could not lower {description}: {message}"))
@@ -514,7 +537,7 @@ impl<'a> Proof<'a> {
                 );
                 let pre_state =
                     context.old_reference_state(&execution.core.frontier, &execution.core.state);
-                lower_fixed_state_proposition_with_algebraic_values(
+                lower_fixed_state_proposition_with_proof_locals(
                     &surface,
                     self.facts().assumptions(),
                     context.parameter_binding(),
@@ -527,6 +550,7 @@ impl<'a> Proof<'a> {
                     &algebraic_values,
                     &self.local_integer_values(),
                     context.spec_definitions,
+                    is_conjunct_label,
                 )
                 .map_err(|message| {
                     if let Some(local) = unassigned_local_read_by(&surface, &execution.core.state) {
@@ -633,7 +657,7 @@ impl<'a> Proof<'a> {
                     ),
                     &algebraic_values,
                     &integer_values,
-                    &context.theorem_context.memory,
+                    &context.theorem_context.point,
                     context.spec_definitions,
                 )
                 .map(|(proposition, introductions)| (proposition, Some(introductions)))

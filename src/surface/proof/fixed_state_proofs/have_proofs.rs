@@ -153,6 +153,29 @@ pub(in crate::surface::proof) fn lower_fixed_state_proposition_with_algebraic_va
     integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Proposition, String> {
+    lower_fixed_state_proposition_with_proof_locals(
+        proposition,
+        assumptions,
+        parameter_binding,
+        fixed_state,
+        algebraic_values,
+        integer_values,
+        spec_definitions,
+        false,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(in crate::surface::proof) fn lower_fixed_state_proposition_with_proof_locals(
+    proposition: &ClickProposition,
+    assumptions: &PureFactContext,
+    parameter_binding: ParameterBinding<'_>,
+    fixed_state: FixedStateFrame<'_>,
+    algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
+    integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
+    spec_definitions: SpecDefinitions<'_>,
+    is_conjunct_label: bool,
+) -> Result<Proposition, String> {
     let names = proposition_referenced_names(proposition);
     let (values, array_refs) =
         contract_environment_for_names(parameter_binding, &names, fixed_state.state)
@@ -164,6 +187,7 @@ pub(in crate::surface::proof) fn lower_fixed_state_proposition_with_algebraic_va
         fixed_state,
         spec_definitions,
         FixedStateLoweringOptions {
+            is_conjunct_label,
             algebraic_values: Some(algebraic_values),
             integer_values: Some(integer_values),
             pointer_element_widths: parameter_pointer_element_widths_named(
@@ -286,6 +310,9 @@ pub(in crate::surface) struct FixedStateLoweringOptions<'a> {
     /// A `branch ensuring` fact at its join, which every arm already lowered
     /// with ordinary lowering: its typed calls' argument domains are assumed.
     pub(in crate::surface) assumed_interface: bool,
+    /// A label only names a proposition the kernel has already selected.
+    /// Its exact comparison with that goal publishes no evaluation evidence.
+    pub(in crate::surface) is_conjunct_label: bool,
 }
 
 /// [`lower_fixed_state_proposition_through_kernel_with_facts`], keeping only
@@ -352,6 +379,7 @@ pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_with_fact
 > {
     let no_integer_values = PersistentBinderMap::default();
     let integer_values = options.integer_values.unwrap_or(&no_integer_values);
+    let is_conjunct_label = options.is_conjunct_label;
     let obligation_assumptions = options.obligation_assumptions.unwrap_or(assumptions);
     let (lowered, introductions, facts, obligations) =
         lower_fixed_state_proposition_retaining_requirements(
@@ -362,16 +390,18 @@ pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_with_fact
             spec_definitions,
             options,
         )?;
-    refuse_unproved_conversion_bounds(
-        &obligations,
-        obligation_assumptions,
-        &StatedSite::new(
-            StatedForm::Proposition(proposition),
-            fixed_state.state,
-            contract_environment.values,
-        )
-        .with_integer_values(integer_values),
-    )?;
+    if !is_conjunct_label {
+        refuse_unproved_conversion_bounds(
+            &obligations,
+            obligation_assumptions,
+            &StatedSite::new(
+                StatedForm::Proposition(proposition),
+                fixed_state.state,
+                contract_environment.values,
+            )
+            .with_integer_values(integer_values),
+        )?;
+    }
     Ok((lowered, introductions, facts))
 }
 
@@ -401,6 +431,7 @@ pub(in crate::surface) fn lower_fixed_state_proposition_retaining_requirements(
         pointer_element_widths,
         obligation_assumptions,
         assumed_interface,
+        is_conjunct_label: _,
     } = options;
     let integer_values = integer_values.unwrap_or(&no_integer_values);
     let obligation_assumptions = obligation_assumptions.unwrap_or(assumptions);

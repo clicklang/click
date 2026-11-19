@@ -944,13 +944,16 @@ fn check_executed_refinement_shape(return_type: ProgramType, alter_result: bool)
         name: target.predicate_name(),
         arguments: vec![
             Term::ExecutionState(Box::new(ExecutionState::new())),
-            Term::ProgramValue(ProgramValue::Pointer(Pointer::new(
-                Address {
-                    base: AddressBase::FunctionSymbolic(Variable(0)),
-                    offset: AddressOffset::Constant(0),
-                },
-                pointer_type,
-            ))),
+            Term::ProgramValue(
+                (ProgramValue::Pointer(Pointer::new(
+                    Address {
+                        base: AddressBase::FunctionSymbolic(Variable(0)),
+                        offset: AddressOffset::Constant(0),
+                    },
+                    pointer_type,
+                )))
+                .into(),
+            ),
         ],
     };
     let environment = ExecutionEnvironment::new()
@@ -1945,10 +1948,9 @@ fn named_contract_fact(contract: &FunctionContract, pointer: Address) -> Proposi
         name: contract.predicate_name(),
         arguments: vec![
             Term::ExecutionState(Box::new(ExecutionState::new())),
-            Term::ProgramValue(ProgramValue::typed_pointer(
-                pointer,
-                contract.function_pointer_type(),
-            )),
+            Term::ProgramValue(
+                (ProgramValue::typed_pointer(pointer, contract.function_pointer_type())).into(),
+            ),
         ],
     }
 }
@@ -2082,6 +2084,7 @@ fn supplementary_callback_postcondition_uses_the_return_point() {
             point: SpecPoint::Current,
             pointer: Box::new(SpecExpression::ProgramExpression(variable("p"))),
             value_type: ProgramType::Int32,
+            exact: false,
         })],
     );
     let callback = Address::symbolic_function(Variable(8_960_012));

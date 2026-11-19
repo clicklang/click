@@ -49,7 +49,7 @@ int32 probe(int32 a[], int32 n, int32 k) {
         };
     }
     have viewable(a[0..k]) and 0 <= k by {
-        both { left => { known(); } right => { solve(); } }
+        all { viewable(a[0..k]) => { known(); } 0 <= k => { solve(); } }
     }
     have forall (j: int32) { 0 <= j and j <= k implies viewable(a[0..j]) } by {
         intro(); intro();

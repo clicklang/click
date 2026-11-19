@@ -3710,15 +3710,10 @@ impl PureFactContext {
             return true;
         }
 
+        // Constructor fields and their padding can share an allocation while
+        // being spelled at different byte offsets and element widths.
         if let (Resource::Memory(left), Resource::Memory(right)) = (left, right)
-            && left.base() == right.base()
-            && let (Some(left_start), Some(left_end), Some(right_start), Some(right_end)) = (
-                left.signed_constant_start(),
-                left.signed_constant_end(),
-                right.signed_constant_start(),
-                right.signed_constant_end(),
-            )
-            && (left_end <= right_start || right_end <= left_start)
+            && crate::kernel::primitives::constant_memory_overlap(left, right) == Some(false)
         {
             return true;
         }
@@ -4846,7 +4841,11 @@ impl PureFactContext {
                 let Proposition::Predicate { arguments, .. } = fact else {
                     return false;
                 };
-                let Some(Term::ProgramValue(ProgramValue::Pointer(source))) = arguments.first()
+                let Some(term_source_0 @ Term::ProgramValue(_)) = arguments.first() else {
+                    return false;
+                };
+                let (Some(ProgramValue::Pointer(source)),) =
+                    (term_source_0.program_value_native(),)
                 else {
                     return false;
                 };

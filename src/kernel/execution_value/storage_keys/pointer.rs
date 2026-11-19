@@ -259,12 +259,11 @@ impl Ord for OffsetKey {
 impl Drop for OffsetKey {
     fn drop(&mut self) {
         fn take(key: &mut OffsetKey, pending: &mut Vec<OffsetKey>) {
-            if let Some(data) = Arc::get_mut(&mut key.0) {
-                if let OffsetShape::Add(children) =
+            if let Some(data) = Arc::get_mut(&mut key.0)
+                && let OffsetShape::Add(children) =
                     std::mem::replace(&mut data.shape, OffsetShape::Constant(0))
-                {
-                    pending.extend(children);
-                }
+            {
+                pending.extend(children);
             }
         }
         let mut pending = Vec::new();

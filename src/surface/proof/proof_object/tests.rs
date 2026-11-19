@@ -168,6 +168,7 @@ fn ordinary_arithmetic_work_size(steps: &[ProofStep]) -> Option<usize> {
             ProofStep::Both {
                 left_proof,
                 right_proof,
+                ..
             } => {
                 pending.extend(left_proof.steps());
                 pending.extend(right_proof.steps());
@@ -483,7 +484,7 @@ fn pure_identity_fixture() -> PureTheoremContext {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: PersistentBinderMap::default(),
-        memory: SymbolicMemory::new(),
+        point: crate::kernel::ProgramPoint::starting_at(&SymbolicMemory::new()),
         values: ProgramValueBindings::new(),
         array_refs: BTreeMap::new(),
         requires: Vec::new(),
@@ -825,7 +826,7 @@ fn invariant_bundle_closure_descends_surface_free_both_and_intro_and_rechecks() 
     let certificate = checked.certificate();
     assert!(matches!(
         certificate.steps(),
-        [ProofStep::Both { left_proof, right_proof }]
+        [ProofStep::Both { left_proof, right_proof, .. }]
             if left_proof.steps() == [ProofStep::Known]
                 && right_proof.steps() == [
                     ProofStep::Intro,
@@ -1097,7 +1098,7 @@ fn both_surface_conjunction_is_positional_even_for_duplicate_or_reversed_childre
             "positional both presentation",
             surface,
             ContractEnvironment::new(&context.values, &context.array_refs),
-            &context.memory,
+            &context.point,
             SpecDefinitions::new(&predicate_environment, &click_function_environment),
         )
         .expect("constant equality should lower")
@@ -1195,7 +1196,7 @@ fn both_preserves_written_body_across_an_inserted_guard_and_reverifies_cold() {
         split.focus_branch(ids[1]).unwrap().surface_goal(),
         Some(&body_surface)
     );
-    let marker = split.checkpoint();
+    let marker = split.conjunction_checkpoint(ids).unwrap();
     let left = split
         .focus_branch(ids[0])
         .unwrap()
@@ -1219,6 +1220,7 @@ fn both_preserves_written_body_across_an_inserted_guard_and_reverifies_cold() {
         .expect("the rendered guarded split should close");
     assert_eq!(cold.certificate(), certificate);
     let missing_guard = ProofCertificate::from_steps(vec![ProofStep::Both {
+        conjuncts: [None, None],
         left_proof: Box::new(ProofCertificate::from_steps(Vec::new()).unwrap()),
         right_proof: Box::new(ProofCertificate::from_steps(vec![ProofStep::Normalize]).unwrap()),
     }])
@@ -1326,7 +1328,7 @@ fn focused_case_split_partitions_by_attribution_and_rejects_foreign_joins() {
         "focused cases",
         &disjunction,
         ContractEnvironment::new(&theorem_context.values, &theorem_context.array_refs),
-        &theorem_context.memory,
+        &theorem_context.point,
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
     )
     .expect("constant disjunction should lower");
@@ -1485,7 +1487,7 @@ fn proof_failure_preserves_ancestor_and_selected_lineage() {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: PersistentBinderMap::default(),
-        memory: SymbolicMemory::new(),
+        point: crate::kernel::ProgramPoint::starting_at(&SymbolicMemory::new()),
         values: ProgramValueBindings::new(),
         array_refs: BTreeMap::new(),
         requires: vec![goal.clone()],
@@ -1531,7 +1533,7 @@ fn branch_identity_is_stable_across_fork_refinement_and_closure() {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: PersistentBinderMap::default(),
-        memory: SymbolicMemory::new(),
+        point: crate::kernel::ProgramPoint::starting_at(&SymbolicMemory::new()),
         values: ProgramValueBindings::new(),
         array_refs: BTreeMap::new(),
         requires: Vec::new(),
@@ -1597,7 +1599,7 @@ fn certificate_suffix_requires_an_exact_shared_ancestor() {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: PersistentBinderMap::default(),
-        memory: SymbolicMemory::new(),
+        point: crate::kernel::ProgramPoint::starting_at(&SymbolicMemory::new()),
         values: ProgramValueBindings::new(),
         array_refs: BTreeMap::new(),
         requires: Vec::new(),
@@ -1672,7 +1674,7 @@ fn have_scope_publishes_only_a_completed_checked_body() {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: PersistentBinderMap::default(),
-        memory: SymbolicMemory::new(),
+        point: crate::kernel::ProgramPoint::starting_at(&SymbolicMemory::new()),
         values: ProgramValueBindings::new(),
         array_refs: BTreeMap::new(),
         requires: Vec::new(),
@@ -1682,7 +1684,7 @@ fn have_scope_publishes_only_a_completed_checked_body() {
         "have",
         &proposition,
         ContractEnvironment::new(&theorem_context.values, &theorem_context.array_refs),
-        &theorem_context.memory,
+        &theorem_context.point,
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
     )
     .expect("constant equality should lower");
@@ -1770,7 +1772,7 @@ fn pure_have_presentation_root(surface: ClickProposition) -> Proof<'static> {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: PersistentBinderMap::default(),
-        memory: SymbolicMemory::new(),
+        point: crate::kernel::ProgramPoint::starting_at(&SymbolicMemory::new()),
         values: ProgramValueBindings::new(),
         array_refs: BTreeMap::new(),
         requires: Vec::new(),
@@ -1780,7 +1782,7 @@ fn pure_have_presentation_root(surface: ClickProposition) -> Proof<'static> {
         "reported have",
         &surface,
         ContractEnvironment::new(&theorem_context.values, &theorem_context.array_refs),
-        &theorem_context.memory,
+        &theorem_context.point,
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
     )
     .expect("test proposition should lower");
@@ -2130,12 +2132,12 @@ fn smart_have_scope_and_explicit_step_scale_with_local_output() {
     let predicate_environment = PredicateEnvironment::new(&[]);
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
     let theorem_environment = TheoremEnvironment::new(&[]);
-    let memory = SymbolicMemory::new();
+    let point = crate::kernel::ProgramPoint::starting_at(&SymbolicMemory::new());
     let kernel = lower_pure_theorem_proposition(
         "smart have scaling",
         &proposition,
         ContractEnvironment::new(&ProgramValueBindings::new(), &BTreeMap::new()),
-        &memory,
+        &point,
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
     )
     .expect("constant equality should lower");
@@ -2154,7 +2156,7 @@ fn smart_have_scope_and_explicit_step_scale_with_local_output() {
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
             integer_values: PersistentBinderMap::default(),
-            memory: memory.clone(),
+            point: point.clone(),
             values: ProgramValueBindings::new(),
             array_refs: BTreeMap::new(),
             requires: requires.clone(),
@@ -2390,7 +2392,7 @@ fn persistent_fact_lookup_scales_logarithmically() {
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
             integer_values: PersistentBinderMap::default(),
-            memory: SymbolicMemory::new(),
+            point: crate::kernel::ProgramPoint::starting_at(&SymbolicMemory::new()),
             values: ProgramValueBindings::new(),
             array_refs: BTreeMap::new(),
             requires,
@@ -2688,7 +2690,7 @@ fn proposition_unfold_uses_indexed_facts_and_persistent_local_state() {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: PersistentBinderMap::default(),
-        memory: SymbolicMemory::new(),
+        point: crate::kernel::ProgramPoint::starting_at(&SymbolicMemory::new()),
         values: ProgramValueBindings::new(),
         array_refs: BTreeMap::new(),
         requires: Vec::new(),
@@ -2699,7 +2701,7 @@ fn proposition_unfold_uses_indexed_facts_and_persistent_local_state() {
             "persistent proposition unfold",
             surface,
             ContractEnvironment::new(&base_context.values, &base_context.array_refs),
-            &base_context.memory,
+            &base_context.point,
             SpecDefinitions::new(&predicate_environment, &click_function_environment),
         )
         .expect("test proposition should lower")
@@ -3212,7 +3214,7 @@ fn proof_if_fork_and_join_work_is_logarithmic_in_unrelated_facts() {
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
             integer_values: PersistentBinderMap::default(),
-            memory: SymbolicMemory::new(),
+            point: crate::kernel::ProgramPoint::starting_at(&SymbolicMemory::new()),
             values: ProgramValueBindings::new(),
             array_refs: BTreeMap::new(),
             requires,
@@ -3222,7 +3224,7 @@ fn proof_if_fork_and_join_work_is_logarithmic_in_unrelated_facts() {
             "branch scaling",
             &surface_goal,
             ContractEnvironment::new(&theorem_context.values, &theorem_context.array_refs),
-            &theorem_context.memory,
+            &theorem_context.point,
             SpecDefinitions::new(&predicate_environment, &click_function_environment),
         )
         .expect("excluded-middle goal should lower");
@@ -3645,6 +3647,62 @@ fn fixed_state_choose_uses_indexed_requirement_and_persistent_local_bindings() {
 }
 
 #[test]
+fn composite_body_and_explicit_definedness_requirement_share_the_entry_point() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let file = crate::surface::parse(
+        r#"
+        resource initialized_cell(p: int32*) {
+            owns p[0..2];
+            fact defined(*p);
+        }
+        int32 read(int32* p) {
+            owns initialized_cell(p);
+            requires defined(p[1]);
+            ensures true;
+        }
+        "#,
+    )
+    .unwrap();
+    let function = &file.function_blocks()[0];
+    let parsed = syntax::parse_function("int32 read(int32* p) { return *p; }").unwrap();
+    let predicates = PredicateEnvironment::new(&[]);
+    let functions = ClickFunctionEnvironment::new(&[]);
+    let resources = ResourceEnvironment::new(file.resource_definitions());
+    let owner = CallerSourceOwnerId::ordinary("read.c", "read");
+    let context = initial_claim_context_with_caller_owner(
+        function,
+        &parsed,
+        &resources,
+        SpecDefinitions::new(&predicates, &functions),
+        "definedness at function entry",
+        Some(&owner),
+    )
+    .unwrap();
+    let entry_point = context.state.observation_point_id().unwrap();
+    let mut body_fact = false;
+    let mut requirement_fact = false;
+    for (fact, origin) in context.pure_facts.iter().zip(&context.entry_fact_origins) {
+        let Proposition::MemoryReadDefined { at, .. } = fact else {
+            continue;
+        };
+        match origin {
+            EntryFactOrigin::Derived => body_fact = true,
+            EntryFactOrigin::Requirement {
+                source_id,
+                role: RequirementFactRole::Principal { .. },
+            } if source_id.outer_ordinal == 1 => requirement_fact = true,
+            _ => continue,
+        }
+        assert_eq!(*at, Some(entry_point), "{origin:?}");
+    }
+    assert!(body_fact, "missing the composite body's definedness fact");
+    assert!(
+        requirement_fact,
+        "missing the explicit definedness requirement"
+    );
+}
+
+#[test]
 fn initial_entry_origins_keep_nonzero_requirement_identity_after_derived_insertions() {
     let click_file = crate::surface::parse(
         r#"
@@ -3774,7 +3832,7 @@ fn pure_rewrite_uses_indexed_equality_availability_without_changing_facts() {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: PersistentBinderMap::default(),
-        memory: SymbolicMemory::new(),
+        point: crate::kernel::ProgramPoint::starting_at(&SymbolicMemory::new()),
         values,
         array_refs: BTreeMap::new(),
         requires: Vec::new(),
@@ -3784,7 +3842,7 @@ fn pure_rewrite_uses_indexed_equality_availability_without_changing_facts() {
         "persistent rewrite",
         &equality,
         ContractEnvironment::new(&base_context.values, &base_context.array_refs),
-        &base_context.memory,
+        &base_context.point,
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
     )
     .expect("constant equality should lower");
@@ -3846,7 +3904,7 @@ fn pure_rewrite_uses_indexed_equality_availability_without_changing_facts() {
             "persistent rewrite",
             surface,
             ContractEnvironment::new(&base_context.values, &base_context.array_refs),
-            &base_context.memory,
+            &base_context.point,
             SpecDefinitions::new(&predicate_environment, &click_function_environment),
         )
         .expect("the retained rewrite goal must lower");
@@ -3936,7 +3994,7 @@ fn surface_rewrite_retains_structural_successor_and_scales() {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: PersistentBinderMap::default(),
-        memory: SymbolicMemory::new(),
+        point: crate::kernel::ProgramPoint::starting_at(&SymbolicMemory::new()),
         values,
         array_refs: BTreeMap::new(),
         requires: Vec::new(),
@@ -3947,7 +4005,7 @@ fn surface_rewrite_retains_structural_successor_and_scales() {
             "persistent structural rewrite",
             surface,
             ContractEnvironment::new(&base_context.values, &base_context.array_refs),
-            &base_context.memory,
+            &base_context.point,
             SpecDefinitions::new(&predicate_environment, &click_function_environment),
         )
         .expect("test proposition should lower")
@@ -4015,7 +4073,7 @@ fn surface_rewrite_retains_structural_successor_and_scales() {
             closed.certificate().steps(),
             [
                 ProofStep::Rewrite(root_equality),
-                ProofStep::Both { left_proof: left, right_proof: right },
+                ProofStep::Both { left_proof: left, right_proof: right, .. },
             ] if root_equality == &equality
                 && matches!(left.steps(), [ProofStep::Rewrite(_), ProofStep::Known])
                 && matches!(right.steps(), [ProofStep::Rewrite(_), ProofStep::Known])
@@ -4041,7 +4099,7 @@ fn apply_fact_uses_selected_implication_and_alpha_equivalent_antecedent() {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: PersistentBinderMap::default(),
-        memory: SymbolicMemory::new(),
+        point: crate::kernel::ProgramPoint::starting_at(&SymbolicMemory::new()),
         values: ProgramValueBindings::from([(
             "x".to_string(),
             ProgramValue::Int32(MachineTerm::Variable(Variable(8_000_000))),
@@ -4054,7 +4112,7 @@ fn apply_fact_uses_selected_implication_and_alpha_equivalent_antecedent() {
         "indexed implication application",
         &target_surface,
         ContractEnvironment::new(&theorem_context.values, &theorem_context.array_refs),
-        &theorem_context.memory,
+        &theorem_context.point,
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
     )
     .expect("target should lower");
@@ -4076,7 +4134,7 @@ fn apply_fact_uses_selected_implication_and_alpha_equivalent_antecedent() {
         "selected implication antecedent",
         &antecedent_surface,
         ContractEnvironment::new(&theorem_context.values, &theorem_context.array_refs),
-        &theorem_context.memory,
+        &theorem_context.point,
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
     )
     .expect("antecedent should lower in the current comparison representation");
@@ -6302,7 +6360,7 @@ fn pure_signed_order_solve_builds_its_certificate_with_logarithmic_local_updates
     let theorem_definitions =
         proof_theorem_definitions(&click_file).expect("standard order theorems should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
-    let memory = SymbolicMemory::new();
+    let point = crate::kernel::ProgramPoint::starting_at(&SymbolicMemory::new());
     let terms = [
         MachineTerm::Variable(Variable(8_150_000)),
         MachineTerm::Variable(Variable(8_150_001)),
@@ -6328,7 +6386,7 @@ fn pure_signed_order_solve_builds_its_certificate_with_logarithmic_local_updates
             "persistent signed-order solve",
             surface,
             ContractEnvironment::new(&named_values, &BTreeMap::new()),
-            &memory,
+            &point,
             SpecDefinitions::new(&predicate_environment, &click_function_environment),
         )
         .expect("the fixed signed comparison should lower")
@@ -6351,7 +6409,7 @@ fn pure_signed_order_solve_builds_its_certificate_with_logarithmic_local_updates
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
             integer_values: PersistentBinderMap::default(),
-            memory: memory.clone(),
+            point: point.clone(),
             values: named_values.clone(),
             array_refs: BTreeMap::new(),
             requires: requires.clone(),
@@ -6395,7 +6453,7 @@ fn pure_signed_order_solve_builds_its_certificate_with_logarithmic_local_updates
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
             integer_values: PersistentBinderMap::default(),
-            memory: memory.clone(),
+            point: point.clone(),
             values: named_values.clone(),
             array_refs: BTreeMap::new(),
             requires: exact_requires.clone(),
@@ -6445,7 +6503,7 @@ fn pure_equality_refinement_solve_applies_one_rewrite_with_logarithmic_local_upd
     let theorem_definitions =
         proof_theorem_definitions(&click_file).expect("standard theorem prelude should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
-    let memory = SymbolicMemory::new();
+    let point = crate::kernel::ProgramPoint::starting_at(&SymbolicMemory::new());
     let value = MachineTerm::Variable(Variable(8_174_000));
     let named = [value.clone()];
     let named_values = named_int32_values(&named);
@@ -6470,7 +6528,7 @@ fn pure_equality_refinement_solve_applies_one_rewrite_with_logarithmic_local_upd
             "persistent equality-refinement solve",
             surface,
             ContractEnvironment::new(&named_values, &BTreeMap::new()),
-            &memory,
+            &point,
             SpecDefinitions::new(&predicate_environment, &click_function_environment),
         )
         .expect("the fixed int32 proposition should lower")
@@ -6489,7 +6547,7 @@ fn pure_equality_refinement_solve_applies_one_rewrite_with_logarithmic_local_upd
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
             integer_values: PersistentBinderMap::default(),
-            memory: memory.clone(),
+            point: point.clone(),
             values: named_values.clone(),
             array_refs: BTreeMap::new(),
             requires: requires.clone(),
@@ -6603,7 +6661,7 @@ fn goal_term_equality_rewrite_ignores_unrelated_equality_buckets() {
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
             integer_values: PersistentBinderMap::default(),
-            memory: memory.clone(),
+            point: crate::kernel::ProgramPoint::starting_at(&memory),
             values: named_values.clone(),
             array_refs: BTreeMap::new(),
             requires: facts.clone(),
@@ -6722,7 +6780,7 @@ fn goal_term_equality_rewrite_chain_shrinks_independently_of_unrelated_buckets()
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
             integer_values: PersistentBinderMap::default(),
-            memory: memory.clone(),
+            point: crate::kernel::ProgramPoint::starting_at(&memory),
             values: named_values.clone(),
             array_refs: BTreeMap::new(),
             requires: facts.clone(),
@@ -7509,7 +7567,7 @@ fn check_fixed_state_single_premise_arithmetic_solves(sizes: &[u32], labels: Opt
                 diagnostic_names: Default::default(),
                 declaration_bindings: BTreeMap::new(),
                 integer_values: PersistentBinderMap::default(),
-                memory: state.memory().clone(),
+                point: state.program_point(),
                 values: named_values.clone(),
                 array_refs: BTreeMap::new(),
                 requires: facts.clone(),
@@ -7832,7 +7890,7 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
                 diagnostic_names: Default::default(),
                 declaration_bindings: BTreeMap::new(),
                 integer_values: PersistentBinderMap::default(),
-                memory: state.memory().clone(),
+                point: state.program_point(),
                 values: named_values.clone(),
                 array_refs: BTreeMap::new(),
                 requires: facts.clone(),
@@ -7954,7 +8012,7 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
             integer_values: PersistentBinderMap::default(),
-            memory: state.memory().clone(),
+            point: state.program_point(),
             values: named_values.clone(),
             array_refs: BTreeMap::new(),
             requires: facts.clone(),
@@ -8107,7 +8165,7 @@ fn le_and_not_lt_equality_solve_retains_one_indexed_arithmetic_step() {
                     "persistent restricted <=/not-< equality solve",
                     surface,
                     ContractEnvironment::new(&named_values, &BTreeMap::new()),
-                    state.memory(),
+                    &state.program_point(),
                     SpecDefinitions::new(&predicate_environment, &click_function_environment),
                 )
                 .expect("each restricted equality premise should lower")
@@ -8124,7 +8182,7 @@ fn le_and_not_lt_equality_solve_retains_one_indexed_arithmetic_step() {
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
             integer_values: PersistentBinderMap::default(),
-            memory: state.memory().clone(),
+            point: state.program_point(),
             values: named_values.clone(),
             array_refs: BTreeMap::new(),
             requires: pure_facts.clone(),
@@ -8545,7 +8603,7 @@ fn symbolic_arithmetic_definedness_retains_two_indexed_theorem_premises() {
                 diagnostic_names: Default::default(),
                 declaration_bindings: BTreeMap::new(),
                 integer_values: PersistentBinderMap::default(),
-                memory: state.memory().clone(),
+                point: state.program_point(),
                 values: named_values.clone(),
                 array_refs: BTreeMap::new(),
                 requires: facts.clone(),
@@ -8869,6 +8927,7 @@ fn surface_structural_solve_retains_recursive_child_proofs_and_scales() {
                         [ProofStep::Both {
                             left_proof: left,
                             right_proof: right,
+                            ..
                         }] if ordinary_arithmetic_work_size(left.steps()).is_some()
                             && ordinary_arithmetic_work_size(right.steps()).is_some()
                     ),
@@ -9081,7 +9140,7 @@ fn predecessor_solves_retain_indexed_named_rule_premises() {
                 diagnostic_names: Default::default(),
                 declaration_bindings: BTreeMap::new(),
                 integer_values: PersistentBinderMap::default(),
-                memory: state.memory().clone(),
+                point: state.program_point(),
                 values: named_values.clone(),
                 array_refs: BTreeMap::new(),
                 requires: facts.clone(),
@@ -9150,7 +9209,7 @@ fn pure_apply_search_instantiates_requirements_and_retains_its_successor() {
     let theorem_definitions =
         proof_theorem_definitions(&click_file).expect("standard theorem prelude should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
-    let memory = SymbolicMemory::new();
+    let point = crate::kernel::ProgramPoint::starting_at(&SymbolicMemory::new());
     let left = ProgramValue::Int32(MachineTerm::Variable(Variable(8_200_000)));
     let right = ProgramValue::Int32(MachineTerm::Variable(Variable(8_200_001)));
     let premise = ClickProposition::Comparison {
@@ -9167,7 +9226,7 @@ fn pure_apply_search_instantiates_requirements_and_retains_its_successor() {
         "persistent pure theorem search",
         &premise,
         ContractEnvironment::new(&ProgramValueBindings::new(), &BTreeMap::new()),
-        &memory,
+        &point,
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
     )
     .expect("the exact pure premise should lower");
@@ -9175,7 +9234,7 @@ fn pure_apply_search_instantiates_requirements_and_retains_its_successor() {
         "persistent pure theorem search",
         &conclusion,
         ContractEnvironment::new(&ProgramValueBindings::new(), &BTreeMap::new()),
-        &memory,
+        &point,
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
     )
     .expect("the pure theorem conclusion should lower");
@@ -9199,7 +9258,7 @@ fn pure_apply_search_instantiates_requirements_and_retains_its_successor() {
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
             integer_values: PersistentBinderMap::default(),
-            memory: memory.clone(),
+            point: point.clone(),
             values: ProgramValueBindings::new(),
             array_refs: BTreeMap::new(),
             requires: requires.clone(),
@@ -9293,7 +9352,7 @@ fn pure_apply_using_selects_a_checked_conjunct_without_accepting_disjunctions() 
     let theorem_definitions =
         proof_theorem_definitions(&click_file).expect("standard theorem prelude should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
-    let memory = SymbolicMemory::new();
+    let point = crate::kernel::ProgramPoint::starting_at(&SymbolicMemory::new());
     let left = ProgramValue::Int32(MachineTerm::Variable(Variable(8_210_000)));
     let right = ProgramValue::Int32(MachineTerm::Variable(Variable(8_210_001)));
     let premise = ClickProposition::Comparison {
@@ -9314,7 +9373,7 @@ fn pure_apply_using_selects_a_checked_conjunct_without_accepting_disjunctions() 
         "checked conjunct theorem application",
         &premise,
         ContractEnvironment::new(&ProgramValueBindings::new(), &BTreeMap::new()),
-        &memory,
+        &point,
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
     )
     .expect("the theorem requirement should lower");
@@ -9322,7 +9381,7 @@ fn pure_apply_using_selects_a_checked_conjunct_without_accepting_disjunctions() 
         "checked conjunct theorem application",
         &selected,
         ContractEnvironment::new(&ProgramValueBindings::new(), &BTreeMap::new()),
-        &memory,
+        &point,
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
     )
     .expect("the conjunction should lower");
@@ -9330,7 +9389,7 @@ fn pure_apply_using_selects_a_checked_conjunct_without_accepting_disjunctions() 
         "checked conjunct theorem application",
         &disjunction,
         ContractEnvironment::new(&ProgramValueBindings::new(), &BTreeMap::new()),
-        &memory,
+        &point,
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
     )
     .expect("the disjunction should lower");
@@ -9338,7 +9397,7 @@ fn pure_apply_using_selects_a_checked_conjunct_without_accepting_disjunctions() 
         "checked conjunct theorem application",
         &wrong_conjunction,
         ContractEnvironment::new(&ProgramValueBindings::new(), &BTreeMap::new()),
-        &memory,
+        &point,
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
     )
     .expect("the unrelated conjunction should lower");
@@ -9346,7 +9405,7 @@ fn pure_apply_using_selects_a_checked_conjunct_without_accepting_disjunctions() 
         "checked conjunct theorem application",
         &implication,
         ContractEnvironment::new(&ProgramValueBindings::new(), &BTreeMap::new()),
-        &memory,
+        &point,
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
     )
     .expect("the implication should lower");
@@ -9376,7 +9435,7 @@ fn pure_apply_using_selects_a_checked_conjunct_without_accepting_disjunctions() 
         "checked conjunct theorem application",
         &conclusion,
         ContractEnvironment::new(&ProgramValueBindings::new(), &BTreeMap::new()),
-        &memory,
+        &point,
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
     )
     .expect("the theorem conclusion should lower");
@@ -9384,7 +9443,7 @@ fn pure_apply_using_selects_a_checked_conjunct_without_accepting_disjunctions() 
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: PersistentBinderMap::default(),
-        memory,
+        point: point.clone(),
         values: ProgramValueBindings::new(),
         array_refs: BTreeMap::new(),
         requires: vec![kernel_selected],
@@ -9448,7 +9507,7 @@ fn execution_unfold_forks_persistently_and_ignores_unrelated_facts() {
         name: "selected".to_string(),
         arguments: vec![
             Term::ExecutionState(Box::new(state.clone())),
-            Term::ProgramValue(ProgramValue::Int32(MachineTerm::constant(7))),
+            Term::ProgramValue((ProgramValue::Int32(MachineTerm::constant(7))).into()),
         ],
     };
 
@@ -11317,7 +11376,8 @@ fn execution_proof_if_split_is_logarithmic_in_unrelated_facts() {
         for take_then in [true, false] {
             let focused = split.focus_execution_if_arm(&record, take_then).unwrap();
             let execution = focused.execution().unwrap();
-            let cases = execution.core.checked_step_case_context(1).unwrap();
+            let cases = focused.facts().assumptions();
+            assert_eq!(execution.core.publication_case_prefix().len(), 1);
             let selected = execution
                 .presentation
                 .case_assumptions
@@ -11334,8 +11394,7 @@ fn execution_proof_if_split_is_logarithmic_in_unrelated_facts() {
                 .last()
                 .unwrap();
             assert!(!cases.proves_exact(opposite_fact.fact.as_ref().unwrap()));
-            assert!(!cases.proves_exact(&indexed_fact(0)));
-            assert!(execution.core.checked_step_case_context(2).is_none());
+            assert!(cases.proves_exact(&indexed_fact(0)));
         }
 
         let completed = split
@@ -11362,8 +11421,8 @@ fn execution_proof_if_split_is_logarithmic_in_unrelated_facts() {
                 .execution()
                 .unwrap()
                 .core
-                .checked_step_case_context(0)
-                .is_some()
+                .publication_case_prefix()
+                .is_empty()
         );
         assert!(completed.is_at_function_exit());
         assert!(matches!(
@@ -14004,7 +14063,7 @@ fn completed_application_retention_does_not_rerun_and_scales() {
             "retained",
             &surface,
             ContractEnvironment::new(&context.values, &context.array_refs),
-            &context.memory,
+            &context.point,
             SpecDefinitions::new(&predicates, &functions),
         )
         .unwrap();
@@ -14887,7 +14946,7 @@ fn have_primitive_reports_prerequisites_and_driver_solves_them() {
             "have prerequisite",
             surface,
             ContractEnvironment::new(&context.values, &context.array_refs),
-            &context.memory,
+            &context.point,
             definitions,
         )
         .unwrap();
@@ -14907,7 +14966,7 @@ fn have_primitive_reports_prerequisites_and_driver_solves_them() {
         "have prerequisite",
         parent,
         ContractEnvironment::new(&context.values, &context.array_refs),
-        &context.memory,
+        &context.point,
         definitions,
     )
     .unwrap();
@@ -14977,7 +15036,7 @@ fn proposed_goal_spelling_retains_unproved_domains_for_the_driver() {
         "spelling domain",
         parent,
         ContractEnvironment::new(&context.values, &context.array_refs),
-        &context.memory,
+        &context.point,
         definitions,
     )
     .unwrap();

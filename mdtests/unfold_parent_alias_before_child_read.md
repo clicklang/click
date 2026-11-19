@@ -73,7 +73,7 @@ void probe(struct node *p, struct node *q) {
                 known();
             }
 
-            let b = fold(frame(p), {model: Tag::At(id, cm)}, {kid: kid});
+            let b = fold(frame(p), { model: Tag::At(id, cm), kid: kid });
             step_until(function.exit); solve();
         },
     }

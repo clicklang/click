@@ -170,7 +170,10 @@ range must fit inside the live allocation. Checked entry storage includes
 fresh by-value aggregate parameter copies as well as the caller's original
 locals. The loan grants a callee share and a caller close right, but escrows
 no owned fact; closing it restores implicit access without adding an ownership
-resource. Read-only storage retains intrinsic read authority and is neither
+resource. Opening a root checks the retained allocation and byte range
+against indexed live loans. Ambiguous coordinates require a separation
+proof at call entry. Worker reborrows use the selected existing binding.
+Read-only storage retains intrinsic read authority and is neither
 lent nor recovered. So does a view of a composite whose checked one-level
 expansion is only string-literal bytes and whose body facts those bytes
 decide (`string_literal_composite_holds` in `src/kernel/functions.rs`), such
@@ -204,6 +207,12 @@ be separate from the caller's pre-existing live loans. The proof uses the
 ranges selected at call entry. The standard-library `memcpy` uses its
 checked destination byte range for this obligation. Its source view still
 participates in the call's resource partition.
+The call projection retains exact owned ranges from finite folded bodies,
+including nested ordinary owners and named children with known fields.
+A matched body contributes exact ranges when the projection selects its
+constructor. Undecided guards, unresolved arms, and unnamed memory keep a
+conservative footprint. The projection retains decisions for body guards
+and explicitly guarded write segments. A false guard contributes no range.
 Call retirement requires the full input allocation to be separate from the
 entry ledger, including loans opened by the call. This applies to a definite
 free and to an output that leaves the allocation's continuity undecided.
@@ -212,10 +221,37 @@ ledger by automatic object identity. A live loan pins its backing object until t
 including when its protected bytes have symbolic bounds. Retained proof
 events repeat the same check.
 
+A loop head with a checked write set requires separation from the
+active loan footprint. An explicit proof can state this fact with `have`
+before `loop`. A memory-writing loop with active loans needs a usable write
+bound. When several exits join, any memory cell the successor drops or
+abstracts also needs separation from the shared exit loan footprint. Its
+proof belongs at loop entry, where it cannot depend on the joined state's
+fresh values or exit equations. A `branch ensuring` join likewise checks
+the byte spans of cells that differ across its arms against the common loan
+footprint. Establish those separations before the split. A join with active
+memory loans still requires the arms to agree on allocation and block state.
+
+Population member exchanges and opening or closing a private body or an
+authority wrapper check each owned memory range in the selected body against
+the live loan footprint. State the separation before the rewrite with
+`have separate(...)`. The rewrite checks the same premise when validating
+the ownership exchange.
+
 Direct scalar assignments to address-taken locals and stores through their
 addresses require separation from the ledger's live memory footprint,
 including same-value writes. A nested reader reborrows the local loan through
 its exact resource binding.
+
+Direct modeled pthread operations and verified calls with mutex effects
+require the mutex representation bytes to be separate from the live loan
+footprint. The obligation uses the evaluated mutex pointer at entry and the
+modeled representation size, so the caller can name a field's byte range
+even when the protocol identifies the storage by another spelling. Modular
+construction checks the destination fields, or the complete result span for
+a construction return. Fresh aggregate result temporaries cannot have a
+prior loan. Automatic initialization checks the active-loan index for the
+storage identity.
 
 For a suspended modeled-pthread worker borrowing a parent view, the checked
 entry splits the parent's current share. The parent retains one sibling and
@@ -359,7 +395,12 @@ summary as synchronous calls, but keeps the worker's output resources and
 postconditions in an opaque completion registry. Spawn requires termination
 evidence for the exact verified function. Failed creation preserves the
 parent; an empty or ambiguous summary refuses rather than removing its path.
-Successful creation exposes only the mutable-footprint havoc to the parent.
+Creation requires entry separation for each exact worker write range against
+existing loans. A whole-allocation retirement also covers loans opened by the
+worker transfer. Both conditions are checked at `pthread_create`, before
+either runtime outcome can be used. Successful creation exposes the write
+and retirement effects to the parent. An unresolved write projection keeps
+its conservative admission check.
 
 Join composes the explicit worker output delta into the current parent frame
 and closes just that worker's loans against the current ledger. It never
@@ -445,5 +486,5 @@ between compiler-checked borrow legality and Click's functional claims.
 | Loops and branches | `loop_havoc_requires_a_checked_set_disjoint_from_active_loans`, `loop_back_edge_refuses_a_dropped_share_or_a_regenerated_root`, `abstract_join_rejects_a_loan_ended_on_only_one_arm` |
 | Suspended workers | `src/kernel/tests/thread_transition_tests.rs` (both join orders, linear completion rights, refusal paths, scoped termination, withheld guarantees, backing lifetime, and four-size recovery scaling) |
 | Evidence | `hostile_transition_payload_is_rechecked`, `transitions_are_bound_to_their_exact_predecessor`, `session_rejects_a_stale_identity_before_reverification` |
-| Scaling | `local_view_work_tracks_the_explicit_delta_not_ambient_local_storage`, the four-size curves in `src/scaling_tests/kernel/loans/`, `interface_binding_inheritance_is_near_linear_in_the_binding_count`, `loop_head_havoc_work_over_cells_and_symbolic_loans` |
+| Scaling | `local_view_work_tracks_the_explicit_delta_not_ambient_local_storage`, the four-size curves in `src/scaling_tests/kernel/loans/`, `interface_binding_inheritance_visits_only_claimed_bindings`, `loop_head_havoc_work_over_cells_and_symbolic_loans` |
 | Model | the `r27_`, `r28_`, `r29_`, and `r30_` tests in `loan_model_tests.rs` |

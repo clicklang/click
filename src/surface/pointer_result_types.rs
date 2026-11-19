@@ -553,6 +553,7 @@ impl Analysis<'_> {
             | ContractExpression::Negate(inner)
             | ContractExpression::BitwiseNot(inner)
             | ContractExpression::Old(inner)
+            | ContractExpression::Exact(inner)
             | ContractExpression::At {
                 expression: inner, ..
             }

@@ -172,7 +172,7 @@ pub(crate) fn prove_separation_subrange(
     )
 }
 
-/// Adjacent ordered intervals are disjoint. Exact element coordinates avoid
+/// Adjacent ordered intervals are disjoint and cover their concatenation. Exact coordinates avoid
 /// endpoint subtraction and wrapping; the constructor inspects no proof state.
 pub(crate) fn prove_separation_adjacent_ranges(
     base: Pointer,
@@ -181,6 +181,7 @@ pub(crate) fn prove_separation_adjacent_ranges(
     lo: MachineTerm,
     mid: MachineTerm,
     hi: MachineTerm,
+    join: bool,
 ) -> Theorem {
     assert!(width > 0);
     assert!(matches!(
@@ -196,9 +197,18 @@ pub(crate) fn prove_separation_adjacent_ranges(
         }
         _ => unreachable!(),
     };
-    let conclusion = Proposition::ResourceSeparate {
-        left: Box::new(Resource::Memory(range(lo, mid.clone()))),
-        right: Box::new(Resource::Memory(range(mid, hi))),
+    let first = Resource::Memory(range(lo.clone(), mid.clone()));
+    let second = Resource::Memory(range(mid, hi.clone()));
+    let conclusion = if join {
+        Proposition::ResourceContains {
+            parent: Box::new(Resource::star(first, second)),
+            child: Box::new(Resource::Memory(range(lo, hi))),
+        }
+    } else {
+        Proposition::ResourceSeparate {
+            left: Box::new(first),
+            right: Box::new(second),
+        }
     };
     Theorem::new(
         premises

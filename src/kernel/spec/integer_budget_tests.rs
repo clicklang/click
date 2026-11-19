@@ -573,6 +573,7 @@ fn defined_memory_load_retains_typed_validity_after_dropping_registry_metadata()
             ProgramType::Int32Pointer,
         )))),
         value_type: ProgramType::Int32,
+        exact: false,
     });
 
     let paths = lower_spec_proposition_at_state_with_loop_entry_in(
@@ -611,6 +612,7 @@ fn defined_memory_load_retains_typed_validity_for_an_already_known_cell() {
             ProgramType::Int32Pointer,
         )))),
         value_type: ProgramType::Int32,
+        exact: false,
     });
 
     let paths = lower_spec_proposition_at_state_with_loop_entry_in(
@@ -784,6 +786,7 @@ fn empty_integer_fold_preserves_shape_without_live_load_obligation() {
             ProgramType::Int32Pointer,
         )))),
         value_type: ProgramType::Int32,
+        exact: false,
     }));
     let expression = SpecIntegerExpression::RangeFold {
         index: SpecIntegerRangeFoldIndex::Int32 {
@@ -845,6 +848,7 @@ fn nonempty_integer_fold_is_logical_but_checked_reads_remain_scoped() {
         point: SpecPoint::At(ProgramPoint::of_memory(&SymbolicMemory::new())),
         pointer: Box::new(pointer),
         value_type: ProgramType::Int32,
+        exact: false,
     }));
     let expression = SpecIntegerExpression::RangeFold {
         index: SpecIntegerRangeFoldIndex::Int32 {

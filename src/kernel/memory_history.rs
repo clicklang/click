@@ -215,12 +215,12 @@ pub(crate) fn resource_field_values_proven_equal(
             left.algebraic_type == right.algebraic_type
                 && (left == right
                     || assumptions.proves_exact(&Proposition::Equal(
-                        Term::Algebraic(left.clone()),
-                        Term::Algebraic(right.clone()),
+                        Term::Algebraic(left.clone().into()),
+                        Term::Algebraic(right.clone().into()),
                     ))
                     || assumptions.proves_exact(&Proposition::Equal(
-                        Term::Algebraic(right.clone()),
-                        Term::Algebraic(left.clone()),
+                        Term::Algebraic(right.clone().into()),
+                        Term::Algebraic(left.clone().into()),
                     ))
                     || assumptions.decide(&ConditionTerm::AlgebraicEqual(
                         Box::new(left.clone()),
@@ -427,15 +427,8 @@ pub(crate) fn resources_directly_match(
                 && left
                     .arguments()
                     .iter()
-                    .map(crate::kernel::ResourceFieldValue::from)
                     .chain(left.fields())
-                    .zip(
-                        right
-                            .arguments()
-                            .iter()
-                            .map(crate::kernel::ResourceFieldValue::from)
-                            .chain(right.fields()),
-                    )
+                    .zip(right.arguments().iter().chain(right.fields()))
                     .all(|(a, b)| resource_field_values_proven_equal(a, b, assumptions))
         }
         (

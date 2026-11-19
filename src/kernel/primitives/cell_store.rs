@@ -1856,22 +1856,39 @@ impl CellStore {
         }
     }
 
-    /// The held runs whose span on `line` holds `offset`, in key order: one
-    /// lookup of the cover segment holding it.
+    fn cover_segment(&self, line: &CoverLine, offset: i64) -> Option<&CoverSegment> {
+        let ((segment_line, _), segment) = self
+            .span_cover
+            .range(..=(line.clone(), offset))
+            .next_back()?;
+        (segment_line == line && offset < segment.end).then_some(segment)
+    }
+
+    /// The held runs whose span on `line` holds `offset`, in key order.
     fn runs_covering<'a>(&'a self, line: &CoverLine, offset: i64) -> Vec<&'a CellRun> {
-        let Some(((segment_line, _), segment)) =
-            self.span_cover.range(..=(line.clone(), offset)).next_back()
-        else {
-            return Vec::new();
-        };
-        if segment_line != line || segment.end <= offset {
-            return Vec::new();
-        }
-        segment
-            .runs
-            .iter()
+        self.cover_segment(line, offset)
+            .into_iter()
+            .flat_map(|segment| segment.runs.iter())
             .map(|key| self.runs.get(key).expect("a covering run is held"))
             .collect()
+    }
+
+    /// Inspect one indexed slot's type without constructing a load value.
+    /// An ambiguous cover is a refusal. An absent live slot is `Ok(None)`.
+    pub(super) fn exact_run_slot_type(&self, pointer: &Address) -> Result<Option<ProgramType>, ()> {
+        let (stem, offset) = offset_stem_and_constant(&pointer.offset);
+        let line = CoverLine {
+            block: pointer.base.clone(),
+            stem: stem.cloned(),
+        };
+        let Some(segment) = self.cover_segment(&line, offset) else {
+            return Ok(None);
+        };
+        let [key] = segment.runs.as_slice() else {
+            return Err(());
+        };
+        let run = self.runs.get(key).expect("a covering run is held");
+        Ok(run.live_slot_index(pointer).map(|_| run.element_type()))
     }
 
     /// Splits the cover segment of `line` holding `offset`, if one does

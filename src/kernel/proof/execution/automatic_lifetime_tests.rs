@@ -33,6 +33,7 @@ fn automatic_lifetime_event_rejects_active_local_loan_and_forged_retirement() {
             clause_position: None,
             section_index: None,
             selected_mutex_source: None,
+            mutex_storage: None,
         }],
         &assumptions,
     )

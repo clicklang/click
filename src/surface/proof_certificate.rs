@@ -30,6 +30,12 @@ impl PartialEq for ProofCertificate {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CertificateConjunct {
+    proposition: ClickProposition,
+    proof: ProofCertificate,
+}
+
 /// One explicit, surface-expressible step in a [`ProofCertificate`].
 ///
 /// Unlike [`ProofTactic`], this representation has no smart-tactic variants.
@@ -44,7 +50,9 @@ pub enum ProofStep {
         arms: Vec<CertificateInductionArm>,
     },
     CloseInvariantsBy(Box<ProofCertificate>),
+    All(Vec<CertificateConjunct>),
     Both {
+        conjuncts: [Option<std::sync::Arc<ClickProposition>>; 2],
         left_proof: Box<ProofCertificate>,
         right_proof: Box<ProofCertificate>,
     },
@@ -185,6 +193,7 @@ pub(super) struct CertificateStructuralItem {
 pub enum CertificatePathSegment {
     MatchArm(usize),
     InvariantBody,
+    Conjunct(usize),
     LeftConjunct,
     RightConjunct,
     Tactic(usize),
@@ -382,6 +391,7 @@ impl ProofCertificate {
                     ProofStep::Both {
                         left_proof,
                         right_proof,
+                        ..
                     },
                 ] => {
                     pending.push(right_proof.steps());
@@ -436,9 +446,15 @@ pub(crate) fn proof_step_contains_arithmetic_using(step: &ProofStep) -> bool {
                         }
                     }
                 }
+                ProofStep::All(arms) => {
+                    for arm in arms {
+                        pending.extend(arm.proof.steps.iter());
+                    }
+                }
                 ProofStep::Both {
                     left_proof,
                     right_proof,
+                    ..
                 }
                 | ProofStep::Cases {
                     left_proof,
@@ -508,7 +524,22 @@ impl ProofStep {
                     body.iter().map(Self::from_validated_tactic).collect(),
                 )))
             }
+            ProofTactic::All(all) => Self::All(
+                all.arms
+                    .iter()
+                    .map(|arm| CertificateConjunct {
+                        proposition: arm.proposition.clone(),
+                        proof: ProofCertificate::from_validated_steps(
+                            arm.tactics
+                                .iter()
+                                .map(Self::from_validated_tactic)
+                                .collect(),
+                        ),
+                    })
+                    .collect(),
+            ),
             ProofTactic::Both(both) => Self::Both {
+                conjuncts: [None, None],
                 left_proof: Box::new(ProofCertificate::from_validated_steps(
                     both.left_tactics
                         .iter()
@@ -777,18 +808,66 @@ impl ProofStep {
         })
     }
 
+    /// Flatten a consecutive conjunction split using the surface goals
+    /// carried by its leaves. Unspelled children can replay internally but
+    /// cannot be printed as a source certificate.
+    fn named_conjunction_tactic(&self) -> Option<ProofAll> {
+        let mut pending = vec![(None, std::slice::from_ref(self))];
+        let mut leaves = Vec::new();
+        while let Some((label, steps)) = pending.pop() {
+            match steps {
+                [
+                    Self::Both {
+                        conjuncts,
+                        left_proof,
+                        right_proof,
+                    },
+                ] => {
+                    pending.push((conjuncts[1].as_deref(), right_proof.steps()));
+                    pending.push((conjuncts[0].as_deref(), left_proof.steps()));
+                }
+                _ => leaves.push((label?, steps)),
+            }
+        }
+        Some(ProofAll {
+            arms: leaves
+                .into_iter()
+                .map(|(label, steps)| ProofAllArm {
+                    proposition: label.clone(),
+                    tactics: ProofCertificate::steps_to_proof_tactics(steps),
+                })
+                .collect(),
+        })
+    }
+
     pub(super) fn to_proof_tactic(&self) -> ProofTactic {
         match self {
             Self::CloseInvariantsBy(body) => {
                 ProofTactic::CloseInvariantsBy(body.to_proof_tactics())
             }
+            Self::All(arms) => ProofTactic::All(ProofAll {
+                arms: arms
+                    .iter()
+                    .map(|arm| ProofAllArm {
+                        proposition: arm.proposition.clone(),
+                        tactics: arm.proof.to_proof_tactics(),
+                    })
+                    .collect(),
+            }),
             Self::Both {
                 left_proof,
                 right_proof,
-            } => ProofTactic::Both(ProofBoth {
-                left_tactics: left_proof.to_proof_tactics(),
-                right_tactics: right_proof.to_proof_tactics(),
-            }),
+                ..
+            } => {
+                if let Some(all) = self.named_conjunction_tactic() {
+                    ProofTactic::All(all)
+                } else {
+                    ProofTactic::Both(ProofBoth {
+                        left_tactics: left_proof.to_proof_tactics(),
+                        right_tactics: right_proof.to_proof_tactics(),
+                    })
+                }
+            }
             Self::Mark(name) => ProofTactic::Mark(name.clone()),
             Self::StepProved { step, proof } => ProofTactic::StepProved {
                 step: Box::new(step.to_proof_tactic()),
@@ -1045,6 +1124,7 @@ impl CertificateError {
             let segment = match segment {
                 CertificatePathSegment::MatchArm(index) => format!("match arm {index}"),
                 CertificatePathSegment::InvariantBody => "invariant body".to_string(),
+                CertificatePathSegment::Conjunct(index) => format!("conjunct {}", index + 1),
                 CertificatePathSegment::LeftConjunct => "left conjunct".to_string(),
                 CertificatePathSegment::RightConjunct => "right conjunct".to_string(),
                 CertificatePathSegment::Tactic(index) => format!("tactic {index}"),
@@ -1145,7 +1225,7 @@ pub(super) fn certificate_step_class(step: &ProofStep) -> TacticClass {
         ProofStep::Instantiate { .. } => TacticClass::Simple(SimpleTactic::Instantiate),
         ProofStep::CloseInvariantsBy(_) => TacticClass::Control(ControlTactic::CloseInvariants),
         ProofStep::StepProved { .. } => TacticClass::Control(ControlTactic::StepProofs),
-        ProofStep::Both { .. } => TacticClass::Control(ControlTactic::Both),
+        ProofStep::Both { .. } | ProofStep::All(_) => TacticClass::Control(ControlTactic::Both),
         ProofStep::Have { .. } => TacticClass::Control(ControlTactic::Have),
         ProofStep::Open { .. } => TacticClass::Control(ControlTactic::Open),
         ProofStep::If { .. } => TacticClass::Control(ControlTactic::If),
@@ -1270,18 +1350,26 @@ pub(super) fn validate_certificate_tactics(
                         }
                     }
                 }
-                TacticClass::Control(ControlTactic::Both) => {
-                    let ProofTactic::Both(both) = tactic else {
-                        unreachable!()
-                    };
-                    path.push(CertificatePathSegment::LeftConjunct);
-                    validate_certificate_tactics(&both.left_tactics, path)?;
-                    path.pop();
-                    path.push(CertificatePathSegment::RightConjunct);
-                    let result = validate_certificate_tactics(&both.right_tactics, path);
-                    path.pop();
-                    result
-                }
+                TacticClass::Control(ControlTactic::Both) => match tactic {
+                    ProofTactic::All(all) => {
+                        for (index, arm) in all.arms.iter().enumerate() {
+                            path.push(CertificatePathSegment::Conjunct(index));
+                            validate_certificate_tactics(&arm.tactics, path)?;
+                            path.pop();
+                        }
+                        Ok(())
+                    }
+                    ProofTactic::Both(both) => {
+                        path.push(CertificatePathSegment::LeftConjunct);
+                        validate_certificate_tactics(&both.left_tactics, path)?;
+                        path.pop();
+                        path.push(CertificatePathSegment::RightConjunct);
+                        let result = validate_certificate_tactics(&both.right_tactics, path);
+                        path.pop();
+                        result
+                    }
+                    _ => unreachable!("tactic class and variant must agree"),
+                },
                 tactic_class @ (TacticClass::Smart(_) | TacticClass::Sorry) => {
                     Err(CertificateError {
                         tactic_class,

@@ -1028,7 +1028,24 @@ private:
     return record;
   }
 
-  std::optional<Json> lower_parameter(const clang::ParmVarDecl *parameter) {
+  std::optional<Json> lower_parameter(
+      const clang::ParmVarDecl *parameter,
+      const clang::FunctionDecl *opaque = nullptr) {
+    // An unnamed opaque parameter has no Clang USR and cannot be used by a
+    // body. Its declaration and argument slot still give it a stable identity.
+    auto parameter_metadata = [&] {
+      llvm::json::Object result;
+      if (opaque != nullptr && parameter->getName().empty()) {
+        const std::string slot = std::to_string(parameter->getFunctionScopeIndex());
+        result["declaration_id"] = declaration_id(opaque) + "@argument" + slot;
+        result["name"] = "__click_argument_" + slot;
+      } else {
+        result["declaration_id"] = declaration_id(parameter);
+        result["name"] = parameter->getNameAsString();
+      }
+      result["span"] = span(parameter->getSourceRange());
+      return result;
+    };
     if (std_function_prototype(parameter->getType()) != nullptr) {
       const auto *reference = parameter->getType()->getAs<clang::LValueReferenceType>();
       if (reference != nullptr && !reference->getPointeeType().isConstQualified()) {
@@ -1039,11 +1056,8 @@ private:
       auto value_type = lower_type(parameter->getType(), parameter->getLocation());
       if (!value_type)
         return std::nullopt;
-      llvm::json::Object result;
-      result["declaration_id"] = declaration_id(parameter);
-      result["name"] = parameter->getNameAsString();
+      auto result = parameter_metadata();
       result["value_type"] = std::move(*value_type);
-      result["span"] = span(parameter->getSourceRange());
       return Json(std::move(result));
     }
     const auto *reference =
@@ -1118,11 +1132,8 @@ private:
     if (!value_type) {
       return std::nullopt;
     }
-    llvm::json::Object result;
-    result["declaration_id"] = declaration_id(parameter);
-    result["name"] = parameter->getNameAsString();
+    auto result = parameter_metadata();
     result["value_type"] = std::move(*value_type);
-    result["span"] = span(parameter->getSourceRange());
     if (!state_.error.empty()) {
       return std::nullopt;
     }
@@ -1938,6 +1949,13 @@ private:
         while (const auto *cast = llvm::dyn_cast_or_null<clang::ImplicitCastExpr>(assignment_rhs))
           assignment_rhs = cast->getSubExpr()->IgnoreParens();
         if (method != nullptr && method->isCopyAssignmentOperator() &&
+            !method->isDeleted() && !method->isVirtual() &&
+            (is_axiom(method) || is_external(method)) &&
+            operation->getNumArgs() == 2 && operation->getArg(0)->isLValue() &&
+            operation->getArg(1)->isLValue() &&
+            !llvm::isa_and_nonnull<clang::MaterializeTemporaryExpr>(assignment_rhs))
+          return lower_call(operation, function);
+        if (method != nullptr && method->isCopyAssignmentOperator() &&
             method->isTrivial() && !method->isDeleted() && !method->isVirtual() &&
             method->getParent()->hasTrivialDestructor() && operation->getNumArgs() == 2 &&
             operation->getArg(0)->isLValue() && operation->getArg(1)->isLValue() &&
@@ -2277,7 +2295,9 @@ private:
                                      "and caller return types");
             return std::nullopt;
           }
-          auto lowered = lower_call_operation(call, function, true);
+          auto lowered = lower_call_operation(
+              call, function, true, {}, reference_return == nullptr &&
+                  !call->getCallReturnType(context_)->isReferenceType());
           auto value_type = lower_type(reference_return != nullptr ? function->getReturnType() : returned->getRetValue()->getType(),
                                        returned->getRetValue()->getExprLoc(),
                                        direct_source_alias(function->getTypeSourceInfo()));
@@ -2422,7 +2442,7 @@ private:
 
   std::optional<Json> lower_call(const clang::CallExpr *call,
                                  const clang::FunctionDecl *caller) {
-    auto lowered = lower_call_operation(call, caller, true);
+    auto lowered = lower_call_operation(call, caller, true, {}, true);
     if (!lowered) {
       return std::nullopt;
     }
@@ -2922,7 +2942,16 @@ private:
                                    ? nullptr
                                    : llvm::dyn_cast_or_null<clang::CXXConstructorDecl>(
                                          constructor->getDefinition());
-      if (local->getInitStyle() != clang::VarDecl::CallInit ||
+      // Copy initialization of an opaque object invokes the resolved copy
+      // constructor. Preserve that call so its contract can establish the
+      // destination's logical state.
+      const bool opaque_copy =
+          local->getInitStyle() == clang::VarDecl::CInit &&
+          constructor != nullptr && constructor->isCopyConstructor() &&
+          constructor->isTrivial() && !constructor->isDeleted() &&
+          is_axiom(constructor) && construction->getNumArgs() == 1 &&
+          construction->getArg(0)->isLValue();
+      if ((local->getInitStyle() != clang::VarDecl::CallInit && !opaque_copy) ||
           construction == nullptr || definition == nullptr ||
           construction->getConstructionKind() != clang::CXXConstructionKind::Complete ||
           definition->getParent()->getCanonicalDecl() !=
@@ -2963,7 +2992,8 @@ private:
              "C++ call capture requires matching final initializer and local types");
         return std::nullopt;
       }
-      auto lowered = lower_call_operation(call, function, true);
+      auto lowered = lower_call_operation(
+          call, function, true, {}, !call->getCallReturnType(context_)->isReferenceType());
       if (!lowered) {
         return std::nullopt;
       }
@@ -3414,7 +3444,8 @@ private:
   lower_call_operation(const clang::CallExpr *call,
                        const clang::FunctionDecl *caller,
                        bool allow_nested = false,
-                       clang::SourceLocation default_use = {}) {
+                       clang::SourceLocation default_use = {},
+                       bool prepare_opaque_copies = false) {
     const clang::FunctionDecl *callee = call->getDirectCallee();
     // A value of an abstract type argument is passed only to a method of a
     // template at abstract arguments, which is that template's method at
@@ -3603,8 +3634,9 @@ private:
         value["span"] = std::move(operation->span);
         argument = Json(std::move(value));
       } else {
-        argument = lower_call_argument(source_argument,
-                                       definition->getParamDecl(index), caller);
+        const auto *parameter = definition->getParamDecl(index);
+        argument = lower_call_argument(source_argument, parameter->getType(),
+                                       parameter->getLocation(), caller, prepare_opaque_copies);
       }
       if (!argument) {
         return std::nullopt;
@@ -3698,7 +3730,7 @@ private:
   std::optional<Json>
   lower_call_argument(const clang::Expr *argument, clang::QualType parameter_type,
                       clang::SourceLocation parameter_location,
-                      const clang::FunctionDecl *caller) {
+                      const clang::FunctionDecl *caller, bool prepare_opaque_copies = false) {
     if (std_function_prototype(parameter_type) != nullptr)
       return lower_std_function_argument(argument, parameter_type, parameter_location,
                                          caller);
@@ -3712,7 +3744,13 @@ private:
       const auto *construction = llvm::dyn_cast<clang::CXXConstructExpr>(operand);
       const auto *constructor = construction == nullptr ? nullptr : construction->getConstructor();
       const auto *record = parameter_type->getAsCXXRecordDecl();
-      if (constructor != nullptr && !constructor->isCopyOrMoveConstructor() &&
+      const bool opaque_copy =
+          prepare_opaque_copies && constructor != nullptr && constructor->isCopyConstructor() &&
+          constructor->isTrivial() && is_axiom(constructor) &&
+          archetype_name(parameter_type) == nullptr && construction->getNumArgs() == 1 &&
+          construction->getArg(0)->isLValue();
+      if (constructor != nullptr &&
+          (!constructor->isCopyOrMoveConstructor() || opaque_copy) &&
           construction->isPRValue() && !constructor->isDeleted() &&
           record->isTriviallyCopyable() && record->hasTrivialDestructor() &&
           context_.hasSameUnqualifiedType(construction->getType(), parameter_type)) {
@@ -3726,7 +3764,7 @@ private:
         for (unsigned index = 0; index < construction->getNumArgs(); ++index) {
           auto value = lower_call_argument(construction->getArg(index), definition->getParamDecl(index), caller);
           if (!value) return std::nullopt;
-          if (value->getAsObject()->getString("kind") != "value") {
+          if (!opaque_copy && value->getAsObject()->getString("kind") != "value") {
             fail(argument->getExprLoc(), "C++ temporary constructor arguments require pure values");
             return std::nullopt;
           }
@@ -3740,6 +3778,7 @@ private:
         callee["name"] = constructor_name(constructor);
         callee["span"] = span(construction->getSourceRange());
         result["kind"] = "construct";
+        if (opaque_copy) result["opaque_copy"] = true;
         result["callee"] = std::move(callee);
         result["arguments"] = std::move(arguments);
         result["value_type"] = std::move(*value_type);
@@ -6588,6 +6627,9 @@ private:
     std::string name = method->getNameAsString();
     if (method->isOverloadedOperator()) {
       switch (method->getOverloadedOperator()) {
+      case clang::OO_Equal:
+        name = "operator_assign";
+        break;
       case clang::OO_PlusEqual:
         name = "operator_add_assign";
         break;
@@ -6599,7 +6641,7 @@ private:
         break;
       default:
         fail(method->getLocation(), "the supported C++ operator methods are "
-                                    "operator+=, operator-= and operator[] only");
+                                    "operator=, operator+=, operator-= and operator[] only");
         return {};
       }
     }
@@ -6733,7 +6775,7 @@ private:
                (external ? "external" : "axiomatic") + " slice");
       return std::nullopt;
     }
-    if (!prototype->isNothrow()) {
+    if (external && !prototype->isNothrow()) {
       fail(declaration->getLocation(),
            kind + " `" + declaration->getQualifiedNameAsString() +
                "` must be noexcept; throwing contracts are not modeled");
@@ -6799,7 +6841,7 @@ private:
              "default arguments of standard-library constructors are not modeled");
         return std::nullopt;
       }
-      auto lowered = lower_parameter(parameter);
+      auto lowered = lower_parameter(parameter, declaration);
       if (!lowered)
         return std::nullopt;
       parameters.push_back(std::move(*lowered));
@@ -6819,7 +6861,7 @@ private:
     result["function_kind"] = std::move(function_kind);
     result["return_type"] = std::move(*return_type);
     result["parameters"] = std::move(parameters);
-    result["declared_noexcept"] = true;
+    result["declared_noexcept"] = prototype->isNothrow();
     result["span"] = span(declaration->getSourceRange());
     result["body"] = llvm::json::Array();
     if (external)

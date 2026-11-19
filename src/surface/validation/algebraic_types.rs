@@ -161,6 +161,7 @@ impl AlgebraicVariables {
                 }
             }
             ContractExpression::Old(inner)
+            | ContractExpression::Exact(inner)
             | ContractExpression::At {
                 expression: inner, ..
             } => {
@@ -1956,6 +1957,7 @@ fn expression_is_integer_match_result(
     match expression {
         ContractExpression::Negate(inner)
         | ContractExpression::Old(inner)
+        | ContractExpression::Exact(inner)
         | ContractExpression::At {
             expression: inner, ..
         } => expression_is_integer_match_result(
@@ -2637,6 +2639,7 @@ fn validate_algebraic_expression_node(
             Ok(None)
         }
         ContractExpression::Old(inner)
+        | ContractExpression::Exact(inner)
         | ContractExpression::At {
             expression: inner, ..
         } => validate_algebraic_expression(
@@ -3854,6 +3857,7 @@ fn infer_generic_expression_type(
         )
         .map(|interface_type| interface_type.map(ClickType::Program)),
         ContractExpression::Old(inner)
+        | ContractExpression::Exact(inner)
         | ContractExpression::At {
             expression: inner, ..
         } => infer_generic_expression_type(inner, variables, click_functions, definitions, context),

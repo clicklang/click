@@ -130,7 +130,7 @@ fn mixed_bit_field_copy_work_tracks_named_bytes() {
         let masks: Vec<_> = (0..words).map(|index| (4 * index + 1, full_mask)).collect();
         let scalars: Vec<_> = (0..words)
             .map(|index| {
-                AggregateField::new(&format!("scalar{index}"), 4 * index + 2, ProgramType::UInt8)
+                AggregateField::new(format!("scalar{index}"), 4 * index + 2, ProgramType::UInt8)
             })
             .collect();
         let mut samples = Vec::new();

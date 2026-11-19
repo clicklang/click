@@ -92,7 +92,7 @@ void frame_top(struct tree_node* child) {
     ensures ctx.model == Context::Top;
 } by {
     step_until(function.exit);
-    let ctx = fold(ctx_at(child), { model: Context::Top }, {});
+    let ctx = fold(ctx_at(child), { model: Context::Top });
     solve();
 }
 
@@ -109,8 +109,9 @@ void frame_push(struct tree_node* parent, struct tree_node* child,
 } by {
     step_until(function.exit);
     let ctx = fold(ctx_at(child), {
-        model: Context::Left(parent, value, s.model, u.model)
-    }, { sibling: s, up: u });
+        model: Context::Left(parent, value, s.model, u.model),
+        sibling: s, up: u
+    });
     solve();
 }
 
@@ -125,7 +126,7 @@ int frame_parent_value(struct tree_node* child, struct tree_node* parent) {
     unfold(s);
     step_until(function.exit);
     let s = fold(tree_at(parent->right), { model: HeapTree::Empty });
-    let ctx = fold(ctx_at(child), { model: old(ctx.model) }, { sibling: s, up: u });
+    let ctx = fold(ctx_at(child), { model: old(ctx.model), sibling: s, up: u });
     solve();
 }
 
@@ -137,7 +138,7 @@ struct tree_node* frame_focus(struct tree_node* child, struct tree_node* parent)
 } by {
     let { sibling: s, up: u } = unfold(ctx);
     step_until(function.exit);
-    let ctx = fold(ctx_at(child), { model: old(ctx.model) }, { sibling: s, up: u });
+    let ctx = fold(ctx_at(child), { model: old(ctx.model), sibling: s, up: u });
     solve();
 }
 ```

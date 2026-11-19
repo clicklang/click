@@ -3014,7 +3014,7 @@ impl adler2::Adler32 {
      have 0 <= ((remainder_len as u32) as i32);
      have ((remainder_len as u32) as i32) <= 3;
      have ((__rust_mir_138_remaining as u32) as i32) == ((remainder_len as u32) as i32) by solve() using { remainder_len <= 3u64; };
-     have 0 <= ((__rust_mir_138_remaining as u32) as i32) and ((__rust_mir_138_remaining as u32) as i32) <= ((remainder_len as u32) as i32) by { rewrite(((__rust_mir_138_remaining as u32) as i32), ((remainder_len as u32) as i32)); both { left => { known(); } right => { normalize() using {}; } } }
+     have 0 <= ((__rust_mir_138_remaining as u32) as i32) and ((__rust_mir_138_remaining as u32) as i32) <= ((remainder_len as u32) as i32) by { rewrite(((__rust_mir_138_remaining as u32) as i32), ((remainder_len as u32) as i32)); all { 0 <= ((remainder_len as u32) as i32) => { known(); } ((remainder_len as u32) as i32) <= ((remainder_len as u32) as i32) => { normalize() using {}; } } }
      have __rust_mir_138_base == remainder;
      have __rust_mir_138_length == remainder_len;
      have adler_tail_consumed(((remainder_len as u32) as i32), ((__rust_mir_138_remaining as u32) as i32)) == 0 by { unfold(adler_tail_consumed(((remainder_len as u32) as i32), ((__rust_mir_138_remaining as u32) as i32))); rewrite(((__rust_mir_138_remaining as u32) as i32), ((remainder_len as u32) as i32)); solve() using {}; }

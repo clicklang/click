@@ -628,7 +628,7 @@ When execution reaches function exit, the path's open goals are the
 contract's claims in the order the contract writes them: every `ensures`, and
 every `owns` and `produces` clause, whose goal is that the path still holds the
 instance. `views` and `consumes` clauses make no claim. A closer (`known`,
-`normalize`, `both`, `solve`, `solve() using`) acts on the first
+`normalize`, `all`, `solve`, `solve() using`) acts on the first
 open goal, and a refusal names that goal; it does not look further down the
 list for a claim it could close
 (`mdtests/a_closer_after_execution_acts_on_the_first_open_claim.md`,
@@ -693,6 +693,11 @@ finishes the current loop preservation region with checked steps; invariant
 and ranking closure are separate. `step_until(loop(i).back_edge())` does the
 same and is refused outside `loop(i)`'s preservation region
 (`mdtests/step_until_refuses_another_loop_s_back_edge.md`).
+
+A construction-return proof may use `&result` before the return to name the
+destination object. Its address alone supplies neither initialized field
+values nor permission to read them. A program variable named `result` is
+still available as `program::result`.
 
 `step_until(function.exit)` steps until the function returns, and the proof
 continues at exit, where `result` names the returned value. Where the C
@@ -808,8 +813,7 @@ loop's clauses and phases bare `iterations` is always the pass count; a
 program variable of that name is [`program::iterations`](../language/index.md#program-binding-references)
 ([`a_c_local_named_iterations_is_written_program_iterations.md`](https://github.com/clicklang/click/blob/master/mdtests/a_c_local_named_iterations_is_written_program_iterations.md)).
 Like any proof `Integer`, it compares with a C value directly, `i == iterations`
-([`a_loop_states_a_running_total_over_its_pass_count.md`](https://github.com/clicklang/click/blob/master/mdtests/a_loop_states_a_running_total_over_its_pass_count.md),
-[`a_loop_pass_count_names_the_passes_after_the_loop.md`](https://github.com/clicklang/click/blob/master/mdtests/a_loop_pass_count_names_the_passes_after_the_loop.md),
+([`a_loop_pass_count_names_the_passes_after_the_loop.md`](https://github.com/clicklang/click/blob/master/mdtests/a_loop_pass_count_names_the_passes_after_the_loop.md),
 [`a_break_exit_counts_the_passes_before_it.md`](https://github.com/clicklang/click/blob/master/mdtests/a_break_exit_counts_the_passes_before_it.md),
 [`a_continue_is_a_pass_of_the_loop.md`](https://github.com/clicklang/click/blob/master/mdtests/a_continue_is_a_pass_of_the_loop.md),
 [`an_inner_loop_counts_its_own_passes.md`](https://github.com/clicklang/click/blob/master/mdtests/an_inner_loop_counts_its_own_passes.md)).
@@ -1096,7 +1100,7 @@ step is still checked.
 
 | Form | Class | Audience | Purpose | Details |
 | --- | --- | --- | --- | --- |
-| `both { left => { ... } right => { ... } }` | control | Expansion output | Prove both sides of a conjunction. | [Reference](#conjunctions) |
+| `all { P => { ... } Q => { ... } }` | control | Expansion output | Prove each conjunct. | [Reference](#conjunctions) |
 | `outcomes { returned => { ... } threw => { ... } }` | control | Specialized | Prove each returned or exceptional outcome. | [Reference](#execution-outcomes) |
 | `solve()` | smart | Core | Close one goal from available facts and bounded rules. | [Reference](#simplification) |
 | `solve() using { P; ... }` | smart | Specialized | Close one goal from written premises only. | [Reference](#simplification-with-selected-premises) |
@@ -1141,12 +1145,10 @@ cannot reuse a live proof binding. Narrow machine binders also supply their
 intrinsic bounds at introduction; these type facts need no extra `intro()`.
 A written range quantifier still has its explicit range-membership guard.
 
-`both { left => { ... } right => { ... } }` opens the exact `A` and `B` child
-goals of `A and B`. Both arms inherit the parent assumptions; neither inherits
-facts proved only in the other arm. This differs from `known()`, which
-closes a conjunction from already-established facts. Empty or unfinished arms fail.
-The `both` source location owns expansion and profiling of its nested proof;
-expansion preserves both bodies with their checked steps.
+`all { A => { ... } B => { ... } }` gives each conjunct a separate
+proof. Each arm inherits the parent assumptions, and facts proved in an arm
+stay in that arm. The `all` location owns expansion and profiling of its
+nested proofs.
 
 `by solve();` is sugar for a script containing the same `solve()` operation at
 the same proof state, followed like every script by the implicit tail. A
@@ -1268,20 +1270,21 @@ complete rewritten surface proof through the ordinary entry point.
 
 ### Conjunctions
 
-**Form:** `both { left => { ... } right => { ... } }`
+**Form:** `all { P => { ... } Q => { ... } }`
 
-**Expansion output.** `click expand` writes it; by hand, a conjunction goal is
-normally split by `solve` or the implicit closer. Write `both` when each side
-needs its own explicit proof. The `left` and `right` labels select the
-respective children of the `and` goal. The arms can appear in either order,
-and each has its own proof scope. Expansion prints `left` before `right`.
+Write one labeled arm per conjunct in any order. For `P and (Q and R)`, a
+single block may contain three arms. Repeated conjuncts take separate arms.
+Identically labeled arms are used in written order.
+An arm can also name a whole conjunct that is itself a conjunction, for
+example when its proof changes the goal before splitting it.
 
-**Failure, checking, and tools:**
+Each proof starts with the parent assumptions. Facts established in one arm
+are local to that arm. An absent, extra, or unfinished arm fails. An ordinary conjunction can still be closed by `solve()`.
 
-A non-conjunction or unfinished arm fails. Arms inherit only the parent
-assumptions. The source container owns expansion of its nested proof.
+Expansion writes a flat list using the retained child goals or by raising
+their kernel propositions from the names in scope.
 
-**Checked examples:** [`proof_both_and.md`](https://github.com/clicklang/click/blob/master/mdtests/proof_both_and.md)
+**Checked examples:** [Conjunction goals](https://github.com/clicklang/click/blob/master/mdtests/proof_both_and.md)
 
 ### Execution outcomes
 
@@ -1579,6 +1582,16 @@ available when one of these holds:
 
 - It is a fact, or a leaf conjunct of a fact. An implication or quantified
   goal must be such a fact up to renaming of its bound variables.
+- It is a typed read-definedness goal whose memory state holds a compatible
+  cell or one unambiguous live slot of the requested type at the exact
+  address. It also accepts the whole read of a declared local `uint32` when
+  all four bytes are recorded initialized. These checks use the goal's
+  memory state and decline if its lifetime or initialization needs further
+  evidence.
+- It is a separation of memory ranges on two distinct automatic objects,
+  or between an automatic object and storage incoming to the function.
+  The check uses the exact block identities in the goal. Forming the
+  ranges still carries the ordinary range obligations.
 - It follows by exact Boolean unit propagation. Admitting `A or B` and
   `not A` makes `B` available; admitting `A implies B` and `A` makes `B`
   available. Either admission order works, and consequences propagate through
@@ -1745,7 +1758,7 @@ or definedness facts.
 
 **Outside it**, with what to write instead:
 
-- A top-level `and`, `or`, implication, or quantifier: use `both`, prove one
+- A top-level `and`, `or`, implication, or quantifier: use `all`, prove one
   disjunct with `have` and close with `known()`, or `intro`.
 - A goal that needs a fact, including a premise of the theorem: use
   `normalize() using { P; ... }`, `rewrite`, or `known()`.
@@ -1759,7 +1772,7 @@ or definedness facts.
 
 A refusal prints the goal after substitution. Click runs the deterministic
 leaf check; expansion is unchanged, and profiling charges the normalized
-expression. Smart tactics retain the corresponding `both`, disjunct proof and
+expression. Smart tactics retain the corresponding `all`, disjunct proof and
 `known()`, or `intro` proof.
 
 Intrinsic Integer bounds on a machine quotient, right shift, or remainder
@@ -1889,7 +1902,7 @@ cited premise is accepted:
 - An unlisted ambient order condition, or an ambient `Integer` or algebraic
   equality: cite it.
 - A top-level conjunction, disjunction, or implication remaining after
-  reduction: `both`, a disjunct `have`, or `intro`, as for `normalize()`.
+  reduction: `all`, a disjunct `have`, or `intro`, as for `normalize()`.
 - A condition inside a quantified body, a `match`-arm body, or a range-fold
   binder: `intro` or `unfold` it first. Pure calls stay symbolic.
 
@@ -2193,7 +2206,7 @@ rule. Empty memory ranges, distinct storage blocks, and token/memory pairs
 are disjoint directly. This simple rule does not walk a region containing several transitions: write individual
 `have` goals using `preserve(...)`, then compose the equalities with `rewrite` and `known`.
 
-`preserve` supports complete pointer, `uint8`, 32/64-bit integer, and abstract
+`preserve` supports complete pointer, 8/16/32/64/128-bit integer, and abstract
 typed memory observations. It also preserves a selected field of a named owned
 resource: cite `separate(region.footprint, r)` and write
 `preserve(r, region);` under a goal such as
@@ -2203,10 +2216,12 @@ reads that field from the footprint's persistent entry and exit resource context
 by identity; it does not unfold the resource or enumerate its other fields.
 Split expressions involving different resource fields into individual links.
 Supported field values include algebraic values, mathematical `Integer`,
-abstract C values, pointers, and the integer types listed above.
-A byte read retains its one-byte storage size even though C promotes its
-equality to `int32`; separating one byte never licenses a four-byte read. The
-result is oriented after-to-before. Logical read producers
+abstract C values, pointers, and 8/16/32/64-bit integers.
+Byte and 16-bit reads retain their storage widths when C promotes the
+comparison to `int32`. For a promoted comparison, both operands must
+widen from the same byte or 16-bit type. A 128-bit equality retains both
+operands' signed or unsigned Integer observations. The result is oriented
+after-to-before. Logical read producers
 retain their complete typed values under the exact version point, address, and read
 type. `preserve` looks up the selected observations and constructs their equality;
 it does not reconstruct values from cached cells or memory derivations. This
@@ -2453,7 +2468,7 @@ introduction:
 - An order comparison not written as `not`, such as `x < y`: `intro` does not
   turn it into a refutation of `x >= y`. Prove it directly, or split with a
   proof `if` or `cases` on the complement.
-- A conjunction: `both`. A disjunction: prove one disjunct with `have` and
+- A conjunction: `all`. A disjunction: prove one disjunct with `have` and
   close with `known()`.
 - An existential, including `(lo..hi).any(...)`: `witness`.
 - A comparison or other leaf: `normalize`, `solve() using`, `known`, or
@@ -2943,7 +2958,7 @@ halves of each range that requirement names at `m`, imply the theorem's goal
 at `m`. Every other parameter keeps its current value. The goal is unchanged.
 Earlier helper proofs may precede `induct`; the hypothesis is unavailable
 before its declaration. The script then uses `ih` through `apply(ih(m))` or
-`apply(ih(m)) using { ... }`, at its top level and inside nested `if`, `both`,
+`apply(ih(m)) using { ... }`, at its top level and inside nested `if`, `all`,
 `cases`, `have`, and `match` blocks.
 
 **Outside it**, with what to write instead:
@@ -3320,7 +3335,7 @@ checked; prove it next.
 **Outside it**, with what to write instead:
 
 - An existential below the top of the goal, such as `A and exists ...`: split
-  it with `both` first.
+  it with `all` first.
 - A value of another type, such as an `int32` variable for a `uint64` or
   `Integer` binder: convert it (`to_integer(n)`) or write the suffixed literal.
 
@@ -3433,8 +3448,8 @@ mathematical product.
 | `construct(resource)` | simple | Specialized | Create an abstract token authorized by a `constructs` clause. | [Reference](#constructing-resources) |
 | `unfold(resource(args)[i])` | simple | Specialized | Expose one guarded ownership slot. | [Reference](#indexed-resource-unfolding-and-folding) |
 | `fold(resource(args)[i])` | simple | Specialized | Restore one guarded ownership slot. | [Reference](#indexed-resource-unfolding-and-folding) |
-| `gather(resource(args))` | simple | Specialized | Form iterated ownership from its covering range. | [Reference](#gathering-resources) |
-| `scatter(resource(args))` | simple | Specialized | Dissolve iterated ownership into its covering range. | [Reference](#scattering-resources) |
+| `fold(resource(args)[..])` | simple | Specialized | Form the whole iterated clause from its covering range. | [Reference](#whole-clause-resource-unfolding-and-folding) |
+| `unfold(resource(args)[..])` | simple | Specialized | Recover the covering range from the whole iterated clause. | [Reference](#whole-clause-resource-unfolding-and-folding) |
 | `name(args, { binder: instance })` | simple | Specialized | Apply a verified tactic with resource bindings. | [Reference](#user-defined-tactic-calls) |
 | `observe(resource)` | simple | Specialized | Read a resource's persistent observations. | [Reference](#observing-resources) |
 
@@ -3556,8 +3571,8 @@ Every supplied separation must be used and checked. See
 `mdtests/two_read_transport_expansion.md`.
 Conjunction trees of supported scalar comparisons also expand: for example,
 `transport(at(statement(0).entry, *q == 7 and (*r == 8 and *s == 9)), *q == 7 and (*r == 8 and *s == 9))`.
-Expansion emits nested ordinary `both` proofs, preserving the written grouping,
-with a preservation/rewrite proof for each scalar leaf. This form handles
+Expansion emits a flat `all` block in goal order, with a preservation and
+rewrite proof for each scalar leaf. This form handles
 matching conjunction structure; selection and regrouping are described below. The source can wrap the whole tree, a
 subtree, or individual leaves in `at(...)`; nested `at(...)` wrappers are not
 handled by this route. Each leaf checks its earlier fact with `known()`
@@ -3576,7 +3591,7 @@ leaves in a conjunction tree.
 The driver indexes the written source's `at(...)` comparison leaves once and
 selects each target leaf by exact source text. It emits a `have` for each selected
 historical leaf using `known()`, followed by its ordinary preservation/rewrite
-proof, and combines the results with `both` in the target's written shape.
+proof, and combines the results with `all` in the target's conjunct order.
 Discarded conjuncts need not remain true; only the selected reads need footprint
 separations. The supplied separations are indexed once and must all be used and
 checked. Whole-tree and subtree `at(...)` wrappers are supported. The exact
@@ -3757,10 +3772,12 @@ the head hold that borrow open until the head is unfolded or consumed.
 
 For an `authorized` family it creates one member and requires that family's
 owned `authority(...)`; `fold(authority(R(..)))` establishes an empty
-population. `let name = fold(resource, { field: value }, { slot: child })`
-constructs an instance with fields from the named children; a child whose owned
-resource has the slot's own name may be left out of the map, and a map left
-empty is left out.
+population. `let name = fold(resource, { field: value, slot: child })`
+constructs an instance from one input map. The resource declaration tells Click
+which entries are field values and which name held child instances. Entries
+can be written in either order. Include every named child of the selected
+arm, even when the held instance has the same name as the slot. An empty
+input map is optional.
 
 An instance name a proof binds, by `let name = fold(...)`, `unfold` or a call,
 names its instance only to the end of the block that holds it, like every other
@@ -3807,16 +3824,13 @@ expansion retains that proof. A failed proof names the body fact.
 
 A body fact over a witness the proof cannot name cannot be written as a
 requirement, so the fold is refused at it; the fold never searches. A missing
-body member, false body fact, or undecided guard fails. A slot is taken by name
-only for the arm the model selects, only from an owned, folded resource of the
-slot's family, and never from the fold's own result; otherwise the fold names
-the missing child.
+body member, false body fact, or undecided guard fails. A child binding must
+refer to an owned, folded resource of the slot's family.
 
-Click folds exactly the named resource, completing the child map before the
-kernel checks it; expansion keeps a bare fold unless the implicit closer proved
-a body fact, and profiling charges its body.
+Expansion prints a single input map and retains any
+proofs of body facts. Profiling charges the resource body.
 
-**Checked examples:** [`composite_resource_composes_token.md`](https://github.com/clicklang/click/blob/master/mdtests/composite_resource_composes_token.md), [`a_fold_takes_children_by_name.md`](https://github.com/clicklang/click/blob/master/mdtests/a_fold_takes_children_by_name.md), [`a_fold_does_not_take_an_unfolded_child_by_name.md`](https://github.com/clicklang/click/blob/master/mdtests/a_fold_does_not_take_an_unfolded_child_by_name.md), [`a_fold_does_not_take_a_child_of_another_family_by_name.md`](https://github.com/clicklang/click/blob/master/mdtests/a_fold_does_not_take_a_child_of_another_family_by_name.md), [`fold_proves_an_unstated_body_fact_by_implicit_solve.md`](https://github.com/clicklang/click/blob/master/mdtests/fold_proves_an_unstated_body_fact_by_implicit_solve.md), [`a_block_bound_instance_name_ends_with_its_block.md`](https://github.com/clicklang/click/blob/master/mdtests/a_block_bound_instance_name_ends_with_its_block.md), [`an_instance_bound_before_a_block_is_named_inside_it.md`](https://github.com/clicklang/click/blob/master/mdtests/an_instance_bound_before_a_block_is_named_inside_it.md)
+**Checked examples:** [`composite_resource_composes_token.md`](https://github.com/clicklang/click/blob/master/mdtests/composite_resource_composes_token.md), [`a_fold_binds_same_named_children_explicitly.md`](https://github.com/clicklang/click/blob/master/mdtests/a_fold_binds_same_named_children_explicitly.md), [`a_fold_rejects_an_unfolded_child.md`](https://github.com/clicklang/click/blob/master/mdtests/a_fold_rejects_an_unfolded_child.md), [`a_fold_requires_an_explicit_same_named_child.md`](https://github.com/clicklang/click/blob/master/mdtests/a_fold_requires_an_explicit_same_named_child.md), [`fold_proves_an_unstated_body_fact_by_implicit_solve.md`](https://github.com/clicklang/click/blob/master/mdtests/fold_proves_an_unstated_body_fact_by_implicit_solve.md), [`a_block_bound_instance_name_ends_with_its_block.md`](https://github.com/clicklang/click/blob/master/mdtests/a_block_bound_instance_name_ends_with_its_block.md), [`an_instance_bound_before_a_block_is_named_inside_it.md`](https://github.com/clicklang/click/blob/master/mdtests/an_instance_bound_before_a_block_is_named_inside_it.md)
 
 ### Folding with one obligation
 
@@ -3920,86 +3934,44 @@ function exit. Expansion retains the indexed form.
 [Allocation](https://github.com/clicklang/click/blob/master/mdtests/iterated_ownership_allocate_one.md),
 [Release](https://github.com/clicklang/click/blob/master/mdtests/iterated_ownership_release_one.md).
 
-### Gathering resources
+### Whole-clause resource unfolding and folding
 
-**Form:** `gather(resource(args))`
+**Forms**
 
-**Specialized.** Write it to form an iterated ownership fact from the range it
-covers. Form the iterated ownership fact the named resource's clause denotes:
-from the owned range its elements cover when a quantified fact says every guard
-is true, or from nothing when every guard is false.
+- `fold(resource(args)[..]);` forms the named resource's whole iterated clause.
+  It requires ownership of the guard cells and consumes the covering memory
+  range when every guard is true. When every guard is false, it forms an empty
+  clause without consuming element memory. A subsequent `fold(resource(args));`
+  can package the clause and the rest of the resource body.
+- `unfold(resource(args)[..]);` consumes the whole iterated clause and returns
+  its covering range when every guard is true, or no element memory when every
+  guard is false. First open the outer resource if it is folded and restore
+  any open slots with indexed `fold`.
 
-The guard cells must be owned.
+Both forms run at an execution frontier before function exit. Write
+`at(point, resource(args))[..]` to select the clause using saved arguments.
+The guards and ownership transfer use the current state. Expansion retains
+the whole-clause form.
 
-**Accepts**, at a C function's execution frontier before exit, a declared
-resource whose body has an iterated clause over `lo..hi`, instantiated at the
-written arguments, when:
+For a clause over `lo..hi`, both forms require every guard to be decided the
+same way. The kernel checks the guard once at an arbitrary in-range index
+using available quantified facts. For example,
+`forall (k: int32) { lo <= k and k < hi implies occupied[k] == 0 }`
+establishes that every guard `occupied[k] == 0` holds. A fact over a wider range
+or one establishing every guard false also works. State the conjoined bounds
+with `have` if the available fact uses nested implications.
 
-- The guard cells of the whole range are owned.
-- Every guard is settled one way: the guard at a fresh index `k` with
-  `lo <= k` and `k < hi` is decided by the kernel's condition decision after
-  instantiating each `forall (k: int32) { A implies B }` fact once. A fact
-  `forall (k: int32) { lo <= k and k < hi implies occupied[k] == 0 }`, one
-  over a wider range, or one stating the negation (`occupied[k] != 0`,
-  `occupied[k] == 1`) qualifies.
-- When every guard is true, the elements tile one range
-  (`b - a == s` in `base[s * k + a..s * k + b]`) and that range
-  `base[s * lo + a..s * hi + a]` is owned, possibly inside a larger owned
-  range.
+With true guards, the elements must tile a contiguous range. For elements
+`base[s * k + a..s * k + b]`, this means `b - a == s`, yielding
+`base[s * lo + a..s * hi + a]`. False guards allow gapped layouts because
+there is no element memory to transfer. Mixed or unknown guards prevent
+whole-clause conversion. Folding may form more than one empty fact when all
+guards are false. Proofs should avoid relying on this behavior.
 
-It consumes the covering range (nothing when every guard is false) and adds
-the iterated fact with nothing taken out, as an `unfold` of the resource would
-expose it; `fold` then forms the resource.
-
-**Outside it**, with what to write instead:
-
-- Guards mixed or not settled by one instantiation, including a curried
-  `forall (k: int32) { lo <= k implies (k < hi implies guard) }`: state the
-  conjoined form with `have` first.
-- Gapped elements (`b - a < s`) with true guards: there is no single covering
-  range to gather from. With every guard false, `gather` forms the gapped
-  fact from nothing.
-- A resource without an iterated clause: `fold` it.
-- After the function exit: gather before execution reaches the exit.
-
-`gather` does not check that the same fact is already held: with every guard
-false, gathering twice holds two empty facts. That is not a guarantee.
-
-**Failure, checking, and tools:**
-
-Guards that are not all known one way, an unowned guard range, or an unowned
-covering range fails. The kernel instantiates the quantified guard fact once at
-an arbitrary index; the range is never enumerated.
-
-**Checked examples:** [`iterated_ownership_gather_scatter.md`](https://github.com/clicklang/click/blob/master/mdtests/iterated_ownership_gather_scatter.md), [`iterated_ownership_gather_fresh_heap_map.md`](https://github.com/clicklang/click/blob/master/mdtests/iterated_ownership_gather_fresh_heap_map.md), [`iterated_ownership_rejects_gather_unknown_guards.md`](https://github.com/clicklang/click/blob/master/mdtests/iterated_ownership_rejects_gather_unknown_guards.md), [`gather_refuses_elements_that_do_not_tile_a_range.md`](https://github.com/clicklang/click/blob/master/mdtests/gather_refuses_elements_that_do_not_tile_a_range.md)
-
-### Scattering resources
-
-**Form:** `scatter(resource(args))`
-
-**Specialized.** Write it to dissolve an iterated ownership fact back into its
-range. The converse of `gather`: consume the named clause's iterated fact, with
-nothing taken out, and return the covering range when every guard is true, or
-nothing when every guard is false.
-
-**Accepts**, at a C function's execution frontier before exit, a declared
-resource whose body has an iterated clause, when the iterated fact that clause
-denotes at the written arguments is held with nothing taken out, and every
-guard is settled one way as for `gather`. When every guard is true the
-elements must tile one range, which it adds as owned memory.
-
-**Outside it**, with what to write instead:
-
-- A fact with an open slot: restore it with indexed `fold` first.
-- A fact still folded inside its resource: `unfold` the resource first.
-- Guards not settled one way: as for `gather`.
-
-**Failure, checking, and tools:**
-
-As for `gather`; a fact not held, or held with an element out, fails with
-"scattering needs the iterated ownership fact with no element taken out".
-
-**Checked examples:** [`iterated_ownership_gather_scatter.md`](https://github.com/clicklang/click/blob/master/mdtests/iterated_ownership_gather_scatter.md)
+**Checked examples** [Whole-clause round trip](https://github.com/clicklang/click/blob/master/mdtests/iterated_ownership_whole_clause.md),
+[Fresh guard map](https://github.com/clicklang/click/blob/master/mdtests/iterated_ownership_fold_fresh_heap_map.md),
+[Unknown guards](https://github.com/clicklang/click/blob/master/mdtests/iterated_ownership_rejects_whole_fold_unknown_guards.md),
+[Gapped elements](https://github.com/clicklang/click/blob/master/mdtests/whole_fold_refuses_elements_that_do_not_tile_a_range.md).
 
 ### User-defined tactic calls
 

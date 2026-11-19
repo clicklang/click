@@ -1384,6 +1384,9 @@ fn unparseable_expansion_error_for_file(
     parse_error: ClickError,
     file: Option<&ClickFile>,
 ) -> ClickError {
+    if replacement.contains(super::printing::UNRAISED_CONJUNCT) {
+        return ClickError::new("the expansion could not raise a checked `all` arm label");
+    }
     if !UNRAISABLE_POINTER_FORMS
         .iter()
         .any(|form| replacement.contains(form))
@@ -2076,6 +2079,7 @@ fn claim_expansion_source(theorem: &VerifiedProgramTheorem) -> Result<String, Cl
     );
     let _reference_carriers =
         super::diagnostics::ParameterPlaceScope::enter(&theorem.function_block);
+    let _spelling = theorem.step_result_spelling_scope();
     let certificate = theorem.expanded_proof_certificate()?;
     if !theorem.function_block.is_tactic_procedure() {
         return Ok(super::printing::format_proof_block(
@@ -2091,9 +2095,7 @@ fn claim_expansion_source(theorem: &VerifiedProgramTheorem) -> Result<String, Cl
     // supplied by the checker and cannot be written in
     // a tactic's proof, which runs no code, so the expansion leaves it out.
     let mut tactics = certificate.to_proof_tactics();
-    let ending = 1
-        + theorem.function_block.ensures().len()
-        + crate::kernel::proof::ContractClosingGoal::COUNT;
+    let ending = super::verification::tactic_procedure_ending_len(&theorem.function_block);
     remove_tactic_procedure_ending(&mut tactics, ending).map_err(|()| {
         ClickError::new(format!(
             "the expanded proof of tactic `{}` does not end in the step and {} closing known step(s) its check supplies",
@@ -3678,13 +3680,17 @@ fn expand_selected_tactics_context(
             Some(file),
         )
     })?;
+    // The whole claim's tactics are rendered below, after checking ended:
+    // spell their step results by the checked function's layout.
+    let mut _whole_claim_spelling = None;
     if let Some((name, claim)) = whole_function {
         let theorem = select_expansion_theorem(&verified, name, claim)?;
+        _whole_claim_spelling = theorem.step_result_spelling_scope();
         let mut tactics = theorem.expanded_proof_certificate()?.to_proof_tactics();
         if theorem.function_block.is_tactic_procedure() {
             remove_tactic_procedure_ending(
                 &mut tactics,
-                1 + theorem.function_block.ensures().len(),
+                super::verification::tactic_procedure_ending_len(&theorem.function_block),
             )
             .map_err(|()| ClickError::new("expanded tactic procedure lost its checked ending"))?;
         } else {
@@ -4860,18 +4866,21 @@ fn proof_tactic_entries(
                         entries,
                     )?;
                 }
-                // A structural `both` numbers as one claim-level tactic; the
+                // An `all` block counts as one claim-level tactic; the
                 // tactics in its arms are addressed by arm and written
                 // position below it, as the script runner reports them.
-                if let FlatTactic::Written(ProofTactic::Both(both)) = item.tactic
-                    && !smart
-                {
-                    let arms = tokens.labeled_arms(&item.tokens, ["left", "right"])?;
-                    for (arm, ((open, close), tactics)) in arms
-                        .into_iter()
-                        .zip([&both.left_tactics, &both.right_tactics])
-                        .enumerate()
-                    {
+                let arms = match item.tactic {
+                    FlatTactic::Written(ProofTactic::All(all)) if !smart => Some(
+                        tokens
+                            .cases_arms(&item.tokens)?
+                            .into_iter()
+                            .zip(all.arms.iter().map(|arm| arm.tactics.as_slice()))
+                            .collect::<Vec<_>>(),
+                    ),
+                    _ => None,
+                };
+                if let Some(arms) = arms {
+                    for (arm, ((open, close), tactics)) in arms.into_iter().enumerate() {
                         block_tactic_entries(
                             tokens,
                             &WrittenBlock {
@@ -5035,6 +5044,9 @@ fn block_tactic_entries(
             ProofTactic::Cases(cases) => {
                 Some(cases.arms().iter().map(|arm| arm.tactics()).collect())
             }
+            ProofTactic::All(all) => {
+                Some(all.arms.iter().map(|arm| arm.tactics.as_slice()).collect())
+            }
             ProofTactic::Both(both) => Some(vec![&both.left_tactics, &both.right_tactics]),
             _ => None,
         };
@@ -5139,10 +5151,12 @@ fn smart_container_alias_entries(
                 blocks.push((block, script));
             }
         }
-        ProofTactic::Both(both) => {
-            if let Ok([left, right]) = tokens.labeled_arms(&tactic_tokens, ["left", "right"]) {
-                blocks.push((left, &both.left_tactics));
-                blocks.push((right, &both.right_tactics));
+        ProofTactic::All(all) => {
+            if let Ok(arms) = tokens.cases_arms(&tactic_tokens) {
+                blocks.extend(
+                    arms.into_iter()
+                        .zip(all.arms.iter().map(|arm| arm.tactics.as_slice())),
+                );
             }
         }
         _ => {}
@@ -5622,15 +5636,14 @@ fn offset_at_position(source: &str, line: usize, column: usize) -> Result<usize,
 }
 
 /// The written arm blocks, as `(open, close)` token pairs, of a proof `if`,
-/// `cases`, or `both` tactic; `None` for any other tactic.
+/// `cases`, or `all` tactic; `None` for any other tactic.
 fn structured_tactic_arm_blocks(
     tokens: &ProofTokens<'_>,
     range: Range<usize>,
 ) -> Result<Option<Vec<(usize, usize)>>, ClickError> {
     Ok(match tokens[range.start].text.as_str() {
         "if" => Some(tokens.two_arms(&range, "if")?.to_vec()),
-        "both" => Some(tokens.labeled_arms(&range, ["left", "right"])?.to_vec()),
-        "cases" => Some(tokens.cases_arms(&range)?),
+        "cases" | "all" => Some(tokens.cases_arms(&range)?),
         _ => None,
     })
 }
@@ -5759,6 +5772,17 @@ fn collect_tactic_block_spans<'t>(
                     &proof_branch.else_tactics,
                     spans,
                 )?;
+            }
+            ProofTactic::All(all) => {
+                let blocks = tokens.cases_arms(&token_range)?;
+                if blocks.len() != all.arms.len() {
+                    return Err(ClickError::new(
+                        "source `all` arms do not match the parsed proof",
+                    ));
+                }
+                for ((open, close), arm) in blocks.into_iter().zip(&all.arms) {
+                    collect_tactic_block_spans(tokens, open, close, &arm.tactics, spans)?;
+                }
             }
             ProofTactic::Cases(proof_cases) => {
                 let blocks = tokens.cases_arms(&token_range)?;

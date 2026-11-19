@@ -84,8 +84,9 @@ void probe(struct node* g, struct node* n) {
             // made the transport below refuse.
             let { word: w } = unfold(state);
             let state = fold(frame(g,n), {
-                anchor: old(state.anchor)
-            }, { word: w });
+                anchor: old(state.anchor),
+                word: w
+            });
 
             loop {
                 owns state: frame(g,n);

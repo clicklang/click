@@ -212,7 +212,10 @@ mod tests {
                 "is false",
             ),
             (
-                Proposition::Equal(Term::Algebraic(model.clone()), Term::Algebraic(model)),
+                Proposition::Equal(
+                    Term::Algebraic(model.clone().into()),
+                    Term::Algebraic(model.into()),
+                ),
                 ":Tree",
             ),
             (
@@ -272,11 +275,9 @@ mod tests {
         let second =
             crate::kernel::intern_memory(SymbolicMemory::new().with_block("trace_changed", 4));
         let load = |memory, kind| {
-            Term::Bitvector32(MachineTerm::MemoryLoad(
-                memory,
-                Box::new(address.clone()),
-                kind,
-            ))
+            Term::Bitvector32(
+                MachineTerm::MemoryLoad(memory, Box::new(address.clone()), kind).into(),
+            )
         };
         let fact = Proposition::Equal(
             load(crate::kernel::ProgramPoint::at(&first), LoadKind::UInt8),
@@ -347,8 +348,8 @@ mod tests {
             ),
         ] {
             let text = render(&Proposition::Equal(
-                Term::Bitvector32(value),
-                Term::Bitvector32(MachineTerm::constant(0)),
+                Term::Bitvector32(value.into()),
+                Term::Bitvector32(MachineTerm::constant(0).into()),
             ));
             assert!(text.contains(expected), "{text}");
         }

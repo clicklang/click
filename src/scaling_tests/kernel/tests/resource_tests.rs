@@ -701,12 +701,12 @@ fn resource_match_constructor_index_tracks_evidence_and_scales_locally() {
         },
     };
     let equality = Proposition::Equal(
-        Term::Algebraic(model.clone()),
-        Term::Algebraic(constructor.clone()),
+        Term::Algebraic(model.clone().into()),
+        Term::Algebraic(constructor.clone().into()),
     );
     let reversed = Proposition::Equal(
-        Term::Algebraic(constructor.clone()),
-        Term::Algebraic(model.clone()),
+        Term::Algebraic(constructor.clone().into()),
+        Term::Algebraic(model.clone().into()),
     );
     for fact in [equality.clone(), reversed] {
         let assumptions = PureFactContext::new().assume_proposition(fact);
@@ -722,8 +722,8 @@ fn resource_match_constructor_index_tracks_evidence_and_scales_locally() {
         let mut assumptions = PureFactContext::new().assume_proposition(equality.clone());
         for index in 100..100 + size {
             assumptions.insert_proposition_fact(Proposition::Equal(
-                Term::Algebraic(resource_index_variable(&ty, index)),
-                Term::Algebraic(constructor.clone()),
+                Term::Algebraic(resource_index_variable(&ty, index).into()),
+                Term::Algebraic(constructor.clone().into()),
             ));
         }
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -777,8 +777,8 @@ fn resource_instance_lookup_and_transfer_scale_by_identity() {
     let m = resource_index_variable(&ty, 1);
     let n = resource_index_variable(&ty, 2);
     let assumptions = PureFactContext::new().assume_proposition(Proposition::Equal(
-        Term::Algebraic(m.clone()),
-        Term::Algebraic(n.clone()),
+        Term::Algebraic(m.clone().into()),
+        Term::Algebraic(n.clone().into()),
     ));
     let selected = ResourceFact::own(Resource::Instance(field_instance(1, n, 0)));
     let mut samples = Vec::new();
@@ -863,8 +863,8 @@ fn symbolic_resource_indices_share_states_and_scale_with_indexed_context() {
         false,
     ));
     let assumptions = PureFactContext::new().assume_proposition(Proposition::Equal(
-        Term::Algebraic(resource_index_variable(&ty, 991_000)),
-        Term::Algebraic(resource_index_variable(&ty, 991_001)),
+        Term::Algebraic(resource_index_variable(&ty, 991_000).into()),
+        Term::Algebraic(resource_index_variable(&ty, 991_001).into()),
     ));
     let mut samples = Vec::new();
     for size in [16, 32, 64, 128] {
@@ -2471,8 +2471,8 @@ fn resource_model_arm_selection_ignores_unrelated_premises() {
     let empty = arm_selection_constructor(&ty, "Empty", vec![]);
     let exclusion = |value: &AlgebraicTerm| {
         Proposition::Not(Box::new(Proposition::Equal(
-            Term::Algebraic(value.clone()),
-            Term::Algebraic(empty.clone()),
+            Term::Algebraic(value.clone().into()),
+            Term::Algebraic(empty.clone().into()),
         )))
     };
     let mut samples = Vec::new();
@@ -3111,8 +3111,8 @@ fn known_resource_constructor_skips_predicate_refutation_work() {
             ));
         }
         let known = assumptions.clone().assume_proposition(Proposition::Equal(
-            Term::Algebraic(model.clone()),
-            Term::Algebraic(constructor.clone()),
+            Term::Algebraic(model.clone().into()),
+            Term::Algebraic(constructor.clone().into()),
         ));
         let (facts, work) = crate::instrumentation::measure_deterministic_work(|| {
             crate::kernel::functions::instance_arm_model_facts(
@@ -3213,8 +3213,8 @@ fn known_exclusion_skips_refutation_of_unpublishable_arms() {
             ));
         }
         let negation = Proposition::Not(Box::new(Proposition::Equal(
-            Term::Algebraic(model.clone()),
-            Term::Algebraic(empty.clone()),
+            Term::Algebraic(model.clone().into()),
+            Term::Algebraic(empty.clone().into()),
         )));
         let excluded = assumptions.assume_proposition(negation.clone());
         // The exact-fact index is built on its first query; a live context

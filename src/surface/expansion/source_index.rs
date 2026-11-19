@@ -147,10 +147,9 @@ impl ProofSourceIndex {
                     .map(|arms| arms.to_vec())
                     .unwrap_or_default();
             }
-            "cases" | "match" => result.arms = parsed.child_blocks(range),
-            kind @ ("both" | "branch" | "outcomes") => {
+            "cases" | "match" | "all" => result.arms = parsed.child_blocks(range),
+            kind @ ("branch" | "outcomes") => {
                 let labels = match kind {
-                    "both" => ["left", "right"],
                     "branch" => ["true", "false"],
                     _ => ["returned", "threw"],
                 };
@@ -248,7 +247,7 @@ impl ProofSourceIndex {
                 .ok_or_else(|| ClickError::new("source tactic has no nested body"))?;
             let (open, child) = if matches!(
                 self.tokens[current].text.as_str(),
-                "if" | "cases" | "both" | "match"
+                "if" | "cases" | "all" | "match"
             ) {
                 let &(open, _) = tactic
                     .arms

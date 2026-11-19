@@ -83,7 +83,7 @@ struct node* h(struct node* p) {
         preserve by {
             step();
             have s == p->right by solve();
-            let ns = fold(tree(s), { model: Tree::Node(tl.model, tr.model) }, { left: tl, right: tr });
+            let ns = fold(tree(s), { model: Tree::Node(tl.model, tr.model), left: tl, right: tr });
             let { left: nl, right: nr } = unfold(ns);
             have s->left == p->right->left by known();
             step();

@@ -108,7 +108,7 @@ void overwrite(struct node* p, struct node* q) {
         known();
     }
     fold(hop(p));
-    let h = fold(holder(p, q), { tag: t }, { side: s });
+    let h = fold(holder(p, q), { tag: t, side: s });
 }
 
 int32 caller(struct node* p, struct node* q) {
@@ -164,7 +164,7 @@ int32 caller(struct node* p, struct node* q) {
         known();
     }
     fold(hop(p));
-    let h = fold(holder(p, q), { tag: t }, { side: s });
+    let h = fold(holder(p, q), { tag: t, side: s });
     mark before;
     step(overwrite, { h: h });
     let { tag: t2, side: s2 } = unfold(h);
@@ -185,7 +185,7 @@ int32 caller(struct node* p, struct node* q) {
         known();
     }
     fold(hop(p));
-    let h = fold(holder(p, q), { tag: t2 }, { side: s2 });
+    let h = fold(holder(p, q), { tag: t2, side: s2 });
 }
 ```
 

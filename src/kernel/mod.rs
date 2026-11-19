@@ -38,6 +38,7 @@ pub(crate) mod fact_collections;
 pub(crate) mod fact_stability;
 mod fold_read_summary;
 mod functions;
+pub(crate) use functions::call_supplier_selection;
 mod owned_footprint_reach;
 mod pointer_provenance;
 mod population_access;
@@ -56,7 +57,6 @@ pub(crate) use functions::memory_range_is_initialized;
 #[cfg(test)]
 pub(crate) use functions::rewrite_resource_instance;
 pub(crate) use functions::rewrite_resource_instance_selecting_children;
-pub(crate) use functions::selected_instance_child_names;
 pub(crate) use functions::{
     InstantiatedCompositeResourceFacts, instantiate_composite_resource_facts_at,
     instantiate_private_member_body_facts,
@@ -151,13 +151,13 @@ pub(crate) use termination::descent_completion::DescentStep;
 mod threads;
 
 pub use api::*;
-pub(crate) use assumptions::current_memory_loads_in_term;
 pub(crate) use assumptions::proposition_has_free_bitvector_variable;
 pub(crate) use assumptions::{
     PureFactContextIdScope, SelectedFacts, arm_frame_composite_definitions,
     capture_implicit_consulted_premises, collect_consulted_premises, finite_forall_goal_instances,
     record_implicit_consulted_premises, with_search_attempt_rollback,
 };
+pub(crate) use assumptions::{current_memory_loads_in_count, current_memory_loads_in_term};
 pub(crate) use equality_graph::{
     ReadEqualityCheckpoint, ReadEqualityDelta, logical_pointer_read_term,
 };

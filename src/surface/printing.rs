@@ -1,12 +1,15 @@
 use super::diagnostics::{
     aligned_sugar, describe_code_region_ref, describe_contract_expression,
     describe_contract_segment, describe_program_expression, describe_program_point_selector,
-    describe_resource_subject, program_point_aligned_sugar,
+    describe_resource_subject, object_at_address, program_point_aligned_sugar,
 };
 use super::*;
 
 /// Click source that parses back. Every spelling is chosen by its caller;
 /// no output depends on who else is printing.
+/// Diagnostic spelling for a kernel conjunction without complete Surface labels.
+pub(super) const UNRAISED_CONJUNCT: &str = "<unraised conjunct>";
+
 pub(in crate::surface) fn source_click_proposition(proposition: &ClickProposition) -> String {
     print_proposition(proposition, PropositionSpelling::Source)
 }
@@ -393,6 +396,28 @@ pub(super) fn print_proposition(
             format!("viewable({})", describe_contract_segment(segment))
         }
         ClickProposition::Defined { expression } => {
+            // Keep the indexed read when its base is an object address.
+            // A bare local can lower to a held value and lose the typed
+            // read-definedness fact that this proposition establishes.
+            let indexed = match expression {
+                ContractExpression::Index(base, index) => Some((
+                    describe_contract_expression(base),
+                    describe_contract_expression(index),
+                )),
+                ContractExpression::ProgramExpression(ProgramExpression::Index(base, index)) => {
+                    Some((
+                        describe_program_expression(base),
+                        describe_program_expression(index),
+                    ))
+                }
+                _ => None,
+            };
+            if let Some((base, index)) = indexed
+                && index == "0"
+                && object_at_address(&base).is_some()
+            {
+                return format!("defined(({base})[0])");
+            }
             format!("defined({})", describe_contract_expression(expression))
         }
         ClickProposition::At {
@@ -739,35 +764,19 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
             let fields = binding.fold_fields.as_ref().unwrap();
             let only_hidden =
                 !fields.is_empty() && fields.iter().all(|(name, _)| name.contains('.'));
-            let children = binding
-                .child_bindings
-                .as_ref()
-                .map(|children| {
-                    children
+            let inputs = fields
+                .iter()
+                .filter(|(name, _)| !name.contains('.'))
+                .map(|(name, value)| format!("{name}: {}", describe_contract_expression(value)))
+                .chain(
+                    binding
+                        .child_bindings
                         .iter()
-                        .map(|(slot, name, _)| format!("{slot}: {name}"))
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                })
-                .unwrap_or_default();
-            let inputs = if only_hidden {
-                format!("{{ {children} }}")
-            } else {
-                let visible = fields
-                    .iter()
-                    .filter(|(name, _)| !name.contains('.'))
-                    .map(|(name, value)| format!("{name}: {}", describe_contract_expression(value)))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                format!(
-                    "{{ {visible} }}{}",
-                    if children.is_empty() {
-                        String::new()
-                    } else {
-                        format!(", {{ {children} }}")
-                    }
+                        .flat_map(|children| children.iter())
+                        .map(|(slot, name, _)| format!("{slot}: {name}")),
                 )
-            };
+                .collect::<Vec<_>>()
+                .join(", ");
             let result = if binding.name.starts_with('#') {
                 String::new()
             } else {
@@ -795,7 +804,7 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
                 output,
                 &prefix,
                 &format!(
-                    "{result}fold({}, {inputs});{record}",
+                    "{result}fold({}, {{ {inputs} }});{record}",
                     format_resource_target(resource)
                 ),
             );
@@ -932,17 +941,21 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
             write_tactics(output, &proof_if.else_tactics, indent + 1);
             line(output, &prefix, "}");
         }
-        ProofTactic::Both(both) => {
+        ProofTactic::All(all) => {
+            line(output, &prefix, "all {");
             let arm_prefix = "    ".repeat(indent + 1);
-            line(output, &prefix, "both {");
-            line(output, &arm_prefix, "left => {");
-            write_tactics(output, &both.left_tactics, indent + 2);
-            line(output, &arm_prefix, "}");
-            line(output, &arm_prefix, "right => {");
-            write_tactics(output, &both.right_tactics, indent + 2);
-            line(output, &arm_prefix, "}");
+            for arm in &all.arms {
+                line(
+                    output,
+                    &arm_prefix,
+                    &format!("{} => {{", source_click_proposition(&arm.proposition)),
+                );
+                write_tactics(output, &arm.tactics, indent + 2);
+                line(output, &arm_prefix, "}");
+            }
             line(output, &prefix, "}");
         }
+        ProofTactic::Both(_) => line(output, &prefix, UNRAISED_CONJUNCT),
         ProofTactic::Cases(proof_cases) => {
             line(output, &prefix, "cases {");
             let arm_prefix = "    ".repeat(indent + 1);
@@ -1349,25 +1362,19 @@ pub(in crate::surface) fn format_resource_call(resource: &ResourceClause) -> Str
 
 /// Write one iterated-ownership tactic.
 pub(in crate::surface) fn describe_iterated_tactic(tactic: &IteratedTactic) -> String {
-    format!(
-        "{}({})",
-        tactic.name(),
-        match tactic {
-            IteratedTactic::UnfoldSlot(slot) | IteratedTactic::FoldSlot(slot) => {
-                let resource = format_resource_target(&slot.resource);
-                let target = match &slot.point {
-                    Some(point) => {
-                        format!("at({}, {resource})", describe_program_point_selector(point))
-                    }
-                    None => resource,
-                };
-                format!("{target}[{}]", describe_contract_expression(&slot.index))
-            }
-            IteratedTactic::Gather(resource) | IteratedTactic::Scatter(resource) => {
-                format_resource_target(resource)
-            }
-        }
-    )
+    let target = match tactic {
+        IteratedTactic::Unfold(target) | IteratedTactic::Fold(target) => target,
+    };
+    let resource = format_resource_target(&target.resource);
+    let selection = match &target.point {
+        Some(point) => format!("at({}, {resource})", describe_program_point_selector(point)),
+        None => resource,
+    };
+    let index = target
+        .index
+        .as_ref()
+        .map_or_else(|| "..".to_string(), describe_contract_expression);
+    format!("{}({selection}[{index}])", tactic.name())
 }
 
 pub(in crate::surface) fn format_resource_target(resource: &ResourceClause) -> String {

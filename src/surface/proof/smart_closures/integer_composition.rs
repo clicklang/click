@@ -1206,17 +1206,22 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     let equal = compare(value.clone(), true, zero());
                     let mut body = Vec::new();
                     if *reverse {
-                        let factor = literal(&BigInt::from(-1));
+                        let source_value = expression(&source.form, &atoms);
+                        // Keep the sign change additive. The law's conclusion
+                        // has unary negation of Integer zero, which the literal
+                        // spelling `-0` would lower to a constant.
+                        let integer_zero =
+                            super::super::surface_synthesis::integer_typed_expression(zero());
                         let fact = compare(
-                            multiply(expression(&source.form, &atoms), factor.clone()),
+                            ContractExpression::Negate(Box::new(source_value.clone())),
                             true,
-                            multiply(zero(), factor.clone()),
+                            ContractExpression::Negate(Box::new(integer_zero)),
                         );
                         body.push(have(
                             fact.clone(),
                             vec![application(
-                                "equal_multiply",
-                                vec![expression(&source.form, &atoms), zero(), factor],
+                                "equal_negate",
+                                vec![source_value, zero()],
                                 vec![source.claim.clone()],
                             )],
                         ));
@@ -1435,14 +1440,18 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 .listed_premise_available(&kernel, &[], false)
             {
                 domain_proofs.push(have(domain.clone(), vec![ProofStep::Known]));
-            } else if query
-                .bounds()
-                .iter()
-                .all(|bound| prepared.facts().listed_premise_available(bound, &[], false))
+            } else if let Proposition::And(left, right) = &kernel
+                && query
+                    .bounds()
+                    .iter()
+                    .all(|bound| prepared.facts().listed_premise_available(bound, &[], false))
             {
+                let conjuncts =
+                    [left, right].map(|bound| prepared.conjunct_goal_spelling(bound).map(Arc::new));
                 domain_proofs.push(have(
                     domain.clone(),
                     vec![ProofStep::Both {
+                        conjuncts,
                         left_proof: Box::new(ProofCertificate::from_validated_steps(vec![
                             ProofStep::Known,
                         ])),
@@ -1525,7 +1534,7 @@ mod tests {
         let mut context = PureTheoremContext {
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
-            memory: SymbolicMemory::new(),
+            point: crate::kernel::ProgramPoint::starting_at(&SymbolicMemory::new()),
             values: ProgramValueBindings::new(),
             integer_values: PersistentBinderMap::default(),
             array_refs: BTreeMap::new(),
@@ -1812,7 +1821,7 @@ mod tests {
     #[test]
     #[ignore = "nightly: two composed branches and replay"]
     fn integer_composition_closes_its_focused_conjunction_branch() {
-        let source = "theorem composition(x: Integer) { requires x <= 3; ensures 2 * x <= 6 and 3 * x <= 9 by { both { left => { solve() using { x <= 3; }; } right => { solve() using { x <= 3; }; } } } }";
+        let source = "theorem composition(x: Integer) { requires x <= 3; ensures 2 * x <= 6 and 3 * x <= 9 by { all { 2 * x <= 6 => { solve() using { x <= 3; }; } 3 * x <= 9 => { solve() using { x <= 3; }; } } } }";
         let expanded =
             expand_c_claim_source_by_label(source, &[], "composition.ensures_0").unwrap();
         without_implicit_solve(|| verify_c_sources(&expanded, &[])).unwrap();

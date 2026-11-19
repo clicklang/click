@@ -3370,7 +3370,9 @@ impl EqualityGraph {
 /// register as applications, and explicit equations supply their values.
 fn exact_read_comparison_input(term: &MachineTerm) -> MachineTerm {
     if let MachineTerm::MemoryLoad(memory, pointer, kind) = term {
-        if crate::kernel::eval::is_selected_scalar_read(memory.shared_memory(), pointer, *kind) {
+        if memory.read_version_id().is_some()
+            || crate::kernel::eval::is_selected_scalar_read(memory.shared_memory(), pointer, *kind)
+        {
             return term.clone();
         }
         if matches!(

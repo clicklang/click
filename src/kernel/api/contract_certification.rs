@@ -229,8 +229,7 @@ pub(crate) fn contract_resource_condition_cases(
         if definition.parameters().len() != resource_arguments.len() {
             return None;
         }
-        let mut condition_state = ExecutionState::new()
-            .with_memory(entry_state.memory().clone())
+        let mut condition_state = ExecutionState::at_state(&entry_state)
             .with_resource_context(required_resources.clone());
         for (parameter, value) in definition
             .parameters()
@@ -2105,7 +2104,7 @@ fn program_function_contract_entry_facts(
                 continue;
             }
             Resource::Composite { name, arguments } | Resource::Token { name, arguments } => {
-                (name.as_str(), arguments.as_ref())
+                (name.as_str(), arguments)
             }
             Resource::PopulationAuthority(description) => {
                 (description.family(), description.arguments())
@@ -3095,7 +3094,10 @@ pub(crate) fn propositions_alpha_equivalent(left: &Proposition, right: &Proposit
         (
             Proposition::Equal(Term::Algebraic(al), Term::Algebraic(ar)),
             Proposition::Equal(Term::Algebraic(bl), Term::Algebraic(br)),
-        ) => retained_syntax::algebraic_equal(al, bl) && retained_syntax::algebraic_equal(ar, br),
+        ) => {
+            retained_syntax::algebraic_equal(al.native_compat(), bl.native_compat())
+                && retained_syntax::algebraic_equal(ar.native_compat(), br.native_compat())
+        }
         (
             Proposition::MemoryLoadable {
                 memory: left_memory,

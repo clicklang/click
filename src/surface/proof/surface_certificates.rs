@@ -1477,10 +1477,13 @@ fn conjunction_leaf_preservation_steps(
     let mut built = Vec::new();
     for node in shape {
         if let Some(index) = node {
-            built.push(proofs[index].take()?);
+            built.push((
+                Some(std::sync::Arc::new(leaves[index].1.clone())),
+                proofs[index].take()?,
+            ));
         } else {
-            let right = built.pop()?;
-            let left = built.pop()?;
+            let (right_label, right) = built.pop()?;
+            let (left_label, left) = built.pop()?;
             // Children were constructed above from ordinary steps. Do not walk
             // their entire certificate trees again at every enclosing `both`.
             let certificate = |steps| {
@@ -1489,13 +1492,17 @@ fn conjunction_leaf_preservation_steps(
                         .expect("ordinary conjunction proof"),
                 )
             };
-            built.push(vec![ProofStep::Both {
-                left_proof: certificate(left),
-                right_proof: certificate(right),
-            }]);
+            built.push((
+                None,
+                vec![ProofStep::Both {
+                    conjuncts: [left_label, right_label],
+                    left_proof: certificate(left),
+                    right_proof: certificate(right),
+                }],
+            ));
         }
     }
-    built.pop()
+    built.pop().map(|(_, steps)| steps)
 }
 
 #[derive(Eq, PartialEq, Hash)]
@@ -3261,6 +3268,46 @@ pub(super) fn surface_nonstrict_parts(
         ComparisonOperator::GreaterEqual => Some((right, left)),
         _ => None,
     }
+}
+
+/// Derive the exact guard a uint64 successor bound must cite. The
+/// incremented term and the guard both retain the original word operands.
+pub(super) fn uint64_increment_upper_bound_guard(goal: &Proposition) -> Option<Proposition> {
+    let (
+        ConditionTerm::Compare {
+            format: MachineIntegerType::UInt64,
+            relation: CompareRelation::LessEqual,
+            left,
+            right: upper,
+        },
+        true,
+    ) = goal.condition_native()?
+    else {
+        return None;
+    };
+    let binary_term!(UInt64, Add, base, amount) = left.as_ref() else {
+        return None;
+    };
+    if !matches!(amount.as_ref(), crate::kernel::uint64_constant!(1)) {
+        return None;
+    }
+    Some(Proposition::condition_is(
+        ConditionTerm::uint64_less_than(base.as_ref().clone(), upper.as_ref().clone()),
+        true,
+    ))
+}
+
+pub(super) fn uint64_increment_upper_bound_application(
+    guard: &ClickProposition,
+) -> Option<ProofStep> {
+    let (value, upper) = surface_strict_parts(guard)?;
+    Some(ProofStep::ApplyTheoremUsing {
+        application: TheoremApplication {
+            name: "click::integer::uint64_increment_upper_bound".into(),
+            arguments: vec![value, upper],
+        },
+        premises: vec![guard.clone()],
+    })
 }
 
 pub(super) fn plan_explicit_increment_upper_bound(
@@ -5288,6 +5335,7 @@ pub(super) fn contract_expression_mentions_program_local(
         }
         ContractExpression::Field { base, .. }
         | ContractExpression::Old(base)
+        | ContractExpression::Exact(base)
         | ContractExpression::At {
             expression: base, ..
         }

@@ -626,6 +626,16 @@ keep their original backing allocation and do not grant access to it. Moves,
 prvalue arguments, user-defined copy bodies, and nontrivial destruction remain
 refused. Artifact schema 57 requires refreshing older locks.
 
+For a direct nonthrowing statement call or a direct call supplying a scalar
+initializer or return, an opaque trivial copy constructor can initialize the
+by-value parameter through its Click contract. The constructor's destination
+and the callee's parameter are the same private object. The call can select the
+constructor's produced resource using its parameter's address, with no raw
+field reads or new authority over backing memory. Logical resources keyed by
+the parameter's address must be discharged by the end of the full expression,
+such as through a callee's `consumes` clause. Click then retires the parameter's
+storage. Refresh an existing import lock to retain this constructor call.
+
 Contracts cannot observe a modified private parameter object as though it were
 the caller's original object. Entry-state pointer values can still name
 backing effects: `load_int32(old(value.data))` reads current memory through the
@@ -2086,6 +2096,20 @@ Limits:
   (`mdtests/cpp_class_object_state_override_keeps_the_interface.md`,
   `tests/cpp_import.rs::class_object_state_refuses_undefined_overrides_and_inherited_methods`).
 
+For discarded-result copy assignment between live lvalues, a resolved
+`operator=` from a system header or declared in another translation unit is
+checked as a call. An `extern` contract can describe the destination's
+updated logical state, the source's state, and the returned reference.
+
+A C++ function taking a record by value can declare contract value parameters
+with `let`. For example, `let count: uint64;` and
+`requires value.count == count;` give the contract a name for the entry
+count independently of later writes to the parameter. A caller can relate
+its record's entry count to a resource field in a precondition and pass
+the count with `step(shorten, { count: old(source.count) });`. The call
+checks the equality on the copied record. The copy's storage is local
+to the callee, and copying pointer fields grants no backing authority.
+
 Discarded-result trivial copy assignment between live lvalues of the same
 nominal record lowers to shared C aggregate field copies. Clang must resolve a
 non-deleted, non-virtual trivial copy assignment; the record and embedded
@@ -2096,7 +2120,15 @@ Clang layouts preserve native pointer and unsigned extent values; copying a
 descriptor transfers no backing-storage authority. Self-assignment preserves
 the fields. User-defined assignment bodies and move assignment remain refused.
 
-Copy construction and moves, default or partial aggregate initialization, multiple
+Copy-initializing a local from a live lvalue, as in `auto copy = source;`,
+can use a resolved trivial copy constructor declared in a system header.
+The constructor call takes the destination's address and a reference to the
+source. Its `extern` contract can establish the destination's logical state
+independently of the object's fields. The pinned libc++ test
+`libcxx_span_copy_initialization_uses_an_opaque_contract` checks this with a
+logical pointer and count.
+
+Other copy construction and moves, default or partial aggregate initialization, multiple
 non-destructible aggregate locals, broader nested lifetime combinations,
 general inheritance, bit-fields, nested record construction,
 and same-named record layouts remain explicit errors.
@@ -2492,13 +2524,13 @@ state accessors, as described below. This is an implementation dependency, liste
 among the [departures](../../concepts/library-interfaces.md#where-the-implementation-departs-from-this);
 the contract boundary above is the target for replacing it.
 
-The pinned libc++ test `libcxx_span_empty_checks_abstract_state` exercises the
-contract boundary with an explicit `extern` for `std::span<int>::empty()`.
-Its contract takes the receiver's count from a Click abstract resource. The
-same count is available to the caller, and the call is refused when the
-caller lacks that resource. To migrate the built-in span contracts, Click
-also needs to establish that logical state at construction, preserve it
-through C++ copies, and transfer it to returned spans.
+The pinned libc++ tests `libcxx_span_empty_checks_abstract_state` and
+`libcxx_span_assignment_carries_abstract_state` exercise this boundary with
+explicit `extern` contracts. The observers use state in a Click abstract
+resource, and the assignment contract updates the destination's resource
+with the source's pointer and count. A caller without the required state is
+refused. The built-in span contracts still use the layout to establish
+descriptor state for constructed and returned spans.
 
 A function declared in a system header (one reached through `-isystem`, a
 system include path, or `#pragma clang system_header`) is an axiom. The
@@ -2518,7 +2550,9 @@ contract:
   unsigned long std::span<T, N>::size() const { ensures result == N; }`.
   The dynamic pointer/count constructor is also a library interface,
   `template<class T> extern std::span<T>::span<T *>(T* first, unsigned long count)`.
-  It consumes unwritten descriptor storage, produces it initialized and
+  Its Click contract has no exceptional outcome, including on standard
+  libraries that omit `noexcept` on this overload. It consumes unwritten
+  descriptor storage, produces it initialized and
   establishes the data pointer and count, without granting backing authority.
   Static-extent constructors and iterator-pair overloads are outside that model.
   `library/cpp/array.click` states `std::array<T, N>`, whose element
@@ -2544,11 +2578,13 @@ contract:
   written out the same way, at the arguments its instance's segment names.
 - A call to a standard function with no catalog contract is refused, naming
   the function. A sidecar may state its own `extern` contract instead, which is
-  an assumption like any other external contract. Its head is the C++
-  declaration, as a verified function's is: `extern int* ministd::identity(int* p)`,
-  or, for a member, `extern int ministd::Box::get() const` with `this`
-  implicit (`tests/cpp_import.rs`, `axiomatic_*`).
-- A standard function must be `noexcept`; throwing contracts are not modeled.
+  an assumption like any other external contract. Its head matches the C++
+  declaration's parameter types in order and provides names for the contract.
+  For example, `extern int* ministd::identity(int* p)` names its parameter
+  `p`, and `extern int ministd::Box::get() const` has an implicit `this`
+  (`tests/cpp_import.rs`, `axiomatic_*`).
+- This slice admits a standard function when its declaration is `noexcept`
+  or a matching Click catalog contract establishes that it cannot throw.
   One returning a record by value constructs it in the caller's destination.
 
 A sidecar writes a standard type as C++ does,
@@ -2646,16 +2682,30 @@ that implements Click's contracts.
 
 ## Dependency-closure projection
 
-A source entry may set `"projection": "dependency-closure"`. Click then
-imports only part of the locked artifact: every function definition written
-in the translation unit's own source file (the file the first line marker
-names), and, transitively, every file-scope declaration that defines a name a
-kept declaration mentions. That includes types, struct, union, and enum tags,
-enumeration constants, typedefs, objects, prototypes, and inline helpers.
-Everything kept is parsed, lowered, and checked as usual, so an unsupported
-construct inside the closure is still rejected with its original location.
-Declarations outside the closure are not parsed, and nothing is claimed about
-them.
+A C source entry may set `"projection": "dependency-closure"` and list the
+functions to select by their C names:
+
+```json
+"sources": {
+  "arraylist.c": {
+    "projection": "dependency-closure",
+    "functions": ["array_list_get_idx"]
+  }
+}
+```
+
+The names must identify definitions in the translation unit's primary
+source file (the file the first line marker names). With `functions` omitted
+or empty, projection starts from every function defined in this file.
+The named roots are recorded in the lock. Run `click import lock` after
+changing them.
+
+Projection keeps the roots and, transitively, file-scope declarations
+that define names a kept declaration mentions. That includes types, tags,
+enumeration constants, typedefs, objects, prototypes, and helper bodies.
+An unsupported construct in a kept item is rejected at its original
+location. An unreferenced sibling can use features outside Click's C
+subset. Only functions with proof blocks in the sidecar are verified.
 
 Two rules keep the omission checked rather than permissive:
 
@@ -2668,16 +2718,19 @@ Two rules keep the omission checked rather than permissive:
   attribute, the projection is refused, because such a function runs
   without being named.
 
+With explicit function roots, Click refuses file-scope assembly and GNU
+asm labels. Both can bind symbols through strings that the name-based
+dependency calculation cannot follow.
+
 Every other declaration that defines a needed name is kept, including
 redeclarations that add attributes such as `weak`. Omitted declarations are
 blanked in place, so line numbers and original-source locations are
 unchanged. The option is part of the import configuration and therefore of
 the lock's identity.
 
-This is a bounded arrangement for importing one kernel translation unit
-whose headers declare far more than its functions use. It is not a general
-statement that omitted header declarations are harmless, and it does not
-validate them.
+The dependency calculation is conservative. Its name-based analysis can
+keep additional declarations with the same spelling. The prepared artifact
+and lock still cover the entire preprocessed translation unit and its inputs.
 
 ## Locations and trust boundary
 

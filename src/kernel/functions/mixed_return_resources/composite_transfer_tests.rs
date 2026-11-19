@@ -308,8 +308,8 @@ fn held_body_construction_uses_the_parent_partition_and_fresh_child_occurrences(
     let head = ResourceFact::own_composite(
         "packet".into(),
         vec![
-            ProgramValue::pointer(child.memory_own_range().unwrap().base().clone()).into(),
-            ProgramValue::Int32(child.memory_own_range().unwrap().end().clone()).into(),
+            ProgramValue::pointer(child.memory_own_range().unwrap().base().clone()),
+            ProgramValue::Int32(child.memory_own_range().unwrap().end().clone()),
         ],
     );
     let ambient = ResourceFact::own_memory(MemoryRange::new(

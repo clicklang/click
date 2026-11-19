@@ -247,6 +247,8 @@ apply_division_have
 known_bridge_using
 try_machine_bridge_using
 try_conditional_bridge_using
+try_conditional_bound_using
+try_direct_logical_leaf
 
 try_integer_algebra
 try_quotient_shift_using
@@ -261,3 +263,5 @@ try_pointer_translation_closure
 try_bounded_cast_identity_using
 try_bounded_cast_identity_closure
 try_rewrite_conditional_arms_using
+try_native_integer_bound
+selected_call_supplier_unfold

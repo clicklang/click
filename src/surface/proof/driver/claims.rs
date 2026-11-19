@@ -911,6 +911,7 @@ pub(super) fn with_implicit_tail(tactics: &[ProofTactic]) -> (Vec<ProofTactic>, 
                 | ProofTactic::Match(_)
                 | ProofTactic::CallOutcomes(_)
                 | ProofTactic::Both(_)
+                | ProofTactic::All(_)
         )
     );
     if ends_linearly {
@@ -4011,7 +4012,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                 | ProofTactic::ArithmeticUsing(_)
                                 | ProofTactic::Preserve(_)),
                             ) => Some(tactic_name(tactic)),
-                            PostExecutionTactic::Both(_) => Some("both"),
+                            PostExecutionTactic::Both(_) => Some("all"),
                             _ => None,
                         };
                         if let Some(closer) = proposition_closer
@@ -4521,7 +4522,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                     PostExecutionTactic::Leaf(ProofTactic::Known)
                                 );
                                 let closer_name = match post_tactic {
-                                    PostExecutionTactic::Both(_) => "both",
+                                    PostExecutionTactic::Both(_) => "all",
                                     PostExecutionTactic::Leaf(tactic) => tactic_name(tactic),
                                     _ => unreachable!("matched a closer above"),
                                 };
@@ -4545,7 +4546,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                     path_index,
                                     |proof| {
                                         if let PostExecutionTactic::Both(both) = post_tactic {
-                                            proof.driver().apply_both_source(both)
+                                            proof.driver().apply_all_source(both)
                                         } else {
                                             proof.driver().apply_step(closer_step.clone())
                                         }
@@ -4778,7 +4779,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                                 return Ok(focused
                                                     .at_source_tactic(*source_index)
                                                     .driver()
-                                                    .apply_both_source(both));
+                                                    .apply_all_source(both));
                                             }
                                             let PostExecutionTactic::Leaf(
                                                 ProofTactic::ArithmeticUsing(surface_premises),
@@ -5381,6 +5382,9 @@ pub(super) fn finish_ordered_proof<'a>(
                             ),
                             checked_proposition,
                             entry_context: proof_context.constants.entry_context.clone(),
+                            source_layout: TheoremSourceLayout(Some(
+                                proof_context.constants.source_layout.clone(),
+                            )),
                         });
                     }
                     if let Some(return_proof) = loop_return {

@@ -49,6 +49,10 @@ impl StructuralClauses {
         self.entries.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
     /// Whether any clause carries a proof scope.
     pub(in crate::surface) fn any_scoped(&self) -> bool {
         self.scoped != 0

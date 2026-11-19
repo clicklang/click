@@ -1,5 +1,8 @@
 # A retained view still excludes a callee write
 
+The call's folded owner projects the same cell the caller views. The
+entry separation obligation for that cell cannot be proved.
+
 ```c filename=overlap.c
 void mutate(int32 *p) { *p = 1; }
 int32 observe(int32 *p) { int32 value = *p; mutate(p); return value; }
@@ -21,5 +24,5 @@ int32 observe(int32* p) {
 ```
 
 ```expect
-fail: stable-view memory access conflicts with an active loan
+fail: verified call write separation
 ```

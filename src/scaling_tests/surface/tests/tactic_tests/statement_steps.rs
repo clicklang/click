@@ -33,7 +33,7 @@ void set(int32* data, int32 len, int32 x0{parameters}) {{
                     verify_c_sources(&click, &[("store.c", &c)])
                 })
             });
-            let refusal = result.err().expect("the store needs a bounds proof");
+            let refusal = result.expect_err("the store needs a bounds proof");
             assert!(
                 refusal.report().contains("0 <= x0 and x0 < len"),
                 "related={related}, size={size}: {refusal}"

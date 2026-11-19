@@ -2052,7 +2052,7 @@ pub(crate) fn connected_equalities(
                 right,
             },
             true,
-        )) = (&fact).condition_native()
+        )) = fact.condition_native()
             && left.is_sign_cast32_of(right)
         {
             continue;
@@ -2470,9 +2470,9 @@ mod shared_atomic_premise_tests {
         for size in [8u64, 16, 32, 64] {
             let predicate = |index| Proposition::Predicate {
                 name: "wide-index".to_string(),
-                arguments: vec![Term::Bitvector32(MachineTerm::Variable(Variable(
-                    800_000 + index,
-                )))],
+                arguments: vec![Term::Bitvector32(
+                    MachineTerm::Variable(Variable(800_000 + index)).into(),
+                )],
             };
             let mut body = predicate(0);
             for index in 1..size {
@@ -2539,7 +2539,7 @@ mod atomic_reduction_tests {
         for index in 0..size {
             context = context.assume_proposition(Proposition::Predicate {
                 name: format!("connected_{index}"),
-                arguments: vec![Term::Bitvector32(left.clone())],
+                arguments: vec![Term::Bitvector32(left.clone().into())],
             });
         }
         let (evidence, id) =

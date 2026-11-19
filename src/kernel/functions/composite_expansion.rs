@@ -241,7 +241,7 @@ pub(in crate::kernel) fn evaluate_resource_population_fact_propositions(
             }
             bind_composite_witnesses(
                 definition,
-                &(&arguments).native_values(),
+                &arguments.native_values(),
                 &mut population_state,
                 assumptions,
             )?;
@@ -277,7 +277,7 @@ pub(in crate::kernel) fn evaluate_resource_population_fact_propositions(
         }
         bind_composite_witnesses(
             definition,
-            &(&arguments).native_values(),
+            &arguments.native_values(),
             &mut population_state,
             assumptions,
         )?;
@@ -643,10 +643,11 @@ pub(crate) fn instantiate_composite_resource_facts(
     resources: &ResourceContext,
     assumptions: &PureFactContext,
 ) -> Option<InstantiatedCompositeResourceFacts> {
-    instantiate_composite_resource_facts_in_state(
+    // A memory-only query has no position on an execution path.
+    instantiate_composite_resource_facts_at(
         composite,
         definitions,
-        ExecutionState::new().with_memory(memory.clone()),
+        &ProgramPoint::of_memory(memory),
         resources,
         assumptions,
     )

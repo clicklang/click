@@ -1,4 +1,5 @@
 use super::*;
+use crate::languages::SourceLanguage;
 
 const MAX_IMPORT_CHAIN: usize = 256;
 
@@ -164,15 +165,20 @@ pub(in crate::surface) fn resolve_click_project_with_layouts(
             .filter_map(|imported| locals.get(imported))
             .flat_map(module_declarations)
             .collect::<Vec<_>>();
-        // The entry module is parsed with the frontend's library contracts
-        // after its own text, so its positions are unchanged.
+        // C++ catalog binders are in scope for client proof steps. Give
+        // the catalog its own token positions so client locations stay put.
+        let catalog = (identity == project.entry()
+            && layouts.language == Some(SourceLanguage::Cpp)
+            && !library_contracts.is_empty())
+        .then_some(library_contracts);
         let entry_source;
-        let source = if identity == project.entry() && !library_contracts.is_empty() {
-            entry_source = format!("{}\n{library_contracts}", module.source());
-            entry_source.as_str()
-        } else {
-            module.source()
-        };
+        let source =
+            if identity == project.entry() && catalog.is_none() && !library_contracts.is_empty() {
+                entry_source = format!("{}\n{library_contracts}", module.source());
+                entry_source.as_str()
+            } else {
+                module.source()
+            };
         let mut local = parser::parse_file_items_for_module(
             source,
             identity,
@@ -186,6 +192,7 @@ pub(in crate::surface) fn resolve_click_project_with_layouts(
             &imported_pointer_functions,
             &imported_integer_parameters,
             layouts.clone(),
+            catalog,
         )?;
         if local.imports().len() != module.imports().len() {
             return Err(ClickError::new(format!(
@@ -848,7 +855,7 @@ theorem local_conditional(x: int32) {
             [
                 ClickModuleSource::new(
                     "model.click",
-                    "import click::cstr;\nimport click::bytes;\n",
+                    "import click::c::string;\nimport click::bytes;\n",
                     [],
                 ),
                 ClickModuleSource::new(
@@ -862,7 +869,7 @@ theorem local_conditional(x: int32) {
         assert_eq!(file.imports().len(), 1);
         assert_eq!(
             file.library_imports(),
-            ["library/cstr.click", "library/bytes.click"]
+            ["library/c/string.click", "library/bytes.click"]
         );
     }
 

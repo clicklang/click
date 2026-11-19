@@ -42,6 +42,7 @@ const QUARANTINED: &[(&str, &str)] = &[];
 /// libraries stay in the gate so it checks both sides of their imports. Run
 /// one with `MDTEST_FILTER=<name>`.
 const NIGHTLY: &[&str] = &[
+    "c_function_type_typedef.md", // 0.86s focused: verify callback dispatch through an alias parameter and a field
     "pointer_offset_explicit_bridge.md", // 0.81s focused: explicit scalar-pointer law applications
     "nested_conditional_explicit_arm_equations.md", // 0.89s focused: arithmetic, observations and casts
     "widened_unsigned_sum_returned_identity.md",    // 1.19s focused: explicit returned-sum identity
@@ -216,8 +217,8 @@ const NIGHTLY: &[&str] = &[
     "interior_pointer_pieces_rejoin_after_an_external_call.md",                // 0.7s
     "iterated_ownership_allocate_one.md",                                      // 0.6s
     "iterated_ownership_claim_loop.md",                                        // 1.1s
-    "iterated_ownership_gather_fresh_heap_map.md",                             // 0.7s
-    "iterated_ownership_gather_scatter.md",                                    // 1.4s
+    "iterated_ownership_fold_fresh_heap_map.md",                               // 0.7s
+    "iterated_ownership_whole_clause.md",                                      // 1.4s
     "iterated_ownership_release_loop.md",                                      // 1.4s
     "iterated_ownership_released_cells_feed_an_external_claim.md",             // 1.4s
     "iterated_ownership_run_scan_crosses_its_locals_ending.md",                // 1.1s

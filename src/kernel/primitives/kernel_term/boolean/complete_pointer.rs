@@ -158,6 +158,13 @@ impl KernelTerm {
     pub(crate) fn pointer_equal(arguments: [SharedPointer; 2]) -> Self {
         let [left, right] = arguments.each_ref();
         let (a, b) = (left.node(), right.node());
+        // A pointer equal to the null pointer is null: as in
+        // `ConditionTerm::pointer_equal`, a comparison with null states
+        // address equality, which is how `p == 0` lowers.
+        let null = SharedAddress::import(&Address::null());
+        if a.address.syntax_equal(&null) || b.address.syntax_equal(&null) {
+            return Self::address_equal([a.address.clone(), b.address.clone()]);
+        }
         let (aq, bq) = (a.qualifiers.as_ref(), b.qualifiers.as_ref());
         let known = aq.is_some_and(|q| q.bounds_known);
         let same_domain = a.provenance.syntax_equal(&b.provenance)
@@ -361,6 +368,31 @@ mod tests {
                     );
                 }
             }
+        }
+    }
+    #[test]
+    fn a_pointer_compared_with_null_states_address_equality() {
+        // `p == 0` lowers to address equality. Every producer of the
+        // comparison, native or shared, builds that same term, in either
+        // operand order, so a produced fact raises and lowers back to itself.
+        let _session = crate::kernel::VerificationSession::enter();
+        let value = Pointer::new(
+            Address::symbolic(Variable(999130)),
+            ProgramType::Int32Pointer,
+        );
+        let null = Pointer::new(Address::null(), ProgramType::Int32Pointer);
+        for (left, right) in [(value.clone(), null.clone()), (null, value)] {
+            let expected =
+                ConditionTerm::address_equal(left.address().clone(), right.address().clone());
+            assert_eq!(
+                ConditionTerm::pointer_equal(left.clone(), right.clone()),
+                expected
+            );
+            let shared = KernelTerm::pointer_equal([&left, &right].map(SharedPointer::import));
+            assert_eq!(
+                format!("{:?}", KernelTermExport::condition(&shared).unwrap()),
+                format!("{expected:?}")
+            );
         }
     }
     #[test]

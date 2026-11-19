@@ -175,11 +175,11 @@ fn instantiate_lowered_predicate_definition(
         } else {
             let actual = match arguments.get(argument_index) {
                 Some(Term::ProgramValue(value)) => Some(ClickType::Program(
-                    generics::interface_type_from_program_type(value.program_type()),
+                    generics::interface_type_from_program_type(value.value().program_type()),
                 )),
                 Some(Term::Algebraic(value)) => {
                     Some(generics::click_type_from_algebraic_value_type(
-                        &value.algebraic_type.value_type(),
+                        &value.native_compat().algebraic_type.value_type(),
                     ))
                 }
                 _ => None,
@@ -257,8 +257,15 @@ pub(in crate::surface) fn decode_predicate_arguments(
                         parameter.name()
                     ));
                 };
-                let Some(Term::ProgramValue(ProgramValue::Pointer(pointer))) =
-                    arguments.get(index + 1)
+                let Some(term_source_0 @ Term::ProgramValue(_)) = arguments.get(index + 1) else {
+                    return Err(format!(
+                        "predicate `{}` argument `{}` is missing its array-ref pointer",
+                        definition.name(),
+                        parameter.name()
+                    ));
+                };
+                let (Some(ProgramValue::Pointer(pointer)),) =
+                    (term_source_0.program_value_native(),)
                 else {
                     return Err(format!(
                         "predicate `{}` argument `{}` is missing its array-ref pointer",
@@ -299,7 +306,7 @@ pub(in crate::surface) fn decode_predicate_arguments(
                         parameter.name()
                     ));
                 };
-                values.insert(parameter.name().to_string(), value.clone());
+                values.insert(parameter.name().to_string(), value.native_compat().clone());
                 index += 1;
             }
         }

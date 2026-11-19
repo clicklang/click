@@ -75,7 +75,7 @@ void roundtrip(struct node* p, struct node* q) {
             have id->right == at(before_store, id->right) by {
                 preserve(memory(id->right), statement(0));
             }
-            let t = fold(tree(id), { model: Tree::Node(id, lm, rm) }, { left: l, right: r });
+            let t = fold(tree(id), { model: Tree::Node(id, lm, rm), left: l, right: r });
             step_until(function.exit);
             solve();
         },

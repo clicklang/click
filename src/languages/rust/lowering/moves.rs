@@ -98,7 +98,12 @@ pub(super) fn region_count(statement: &ProgramStatement) -> usize {
     }
 }
 
-pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result<Sited, String> {
+pub(super) fn lower(
+    cx: &mut Context<'_>,
+    f: &Function,
+    mir: &MirBody,
+    owner: &LocalFunctionId,
+) -> Result<Sited, String> {
     // Index storage starts once. Locals without a compiler storage event
     // retain their function-entry backing (including return-place arrays).
     let storage_starts: BTreeSet<&str> = mir
@@ -165,6 +170,9 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                     &local.name,
                     element,
                     matches!(local.value_type, Type::SharedArrayOption { .. }),
+                    owner,
+                    u32::try_from(index - owned_parameter_count)
+                        .map_err(|_| "MIR local index exceeds u32")?,
                 )?,
             );
             continue;
@@ -172,12 +180,16 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
         if let Type::EnumerateIterator { element } | Type::EnumerateOption { element } =
             &local.value_type
         {
+            let ordinal = u32::try_from(index - owned_parameter_count)
+                .map_err(|_| "MIR local index exceeds u32")?;
             declarations = program_seq(
                 declarations,
                 cx.enumerate_storage(
                     &local.name,
                     element,
                     matches!(local.value_type, Type::EnumerateOption { .. }),
+                    owner,
+                    ordinal,
                 )?,
             );
             continue;
@@ -192,7 +204,13 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
         if matches!(local.value_type, Type::ChunkIterator | Type::ChunkOption) {
             declarations = program_seq(
                 declarations,
-                cx.chunk_storage(&local.name, local.value_type == Type::ChunkOption)?,
+                cx.chunk_storage(
+                    &local.name,
+                    local.value_type == Type::ChunkOption,
+                    owner,
+                    u32::try_from(index - owned_parameter_count)
+                        .map_err(|_| "MIR local index exceeds u32")?,
+                )?,
             );
             continue;
         }
@@ -355,7 +373,6 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
         return Err("MIR body has no entry block".into());
     }
     let flow = flow::Flow::analyze(f, mir)?;
-    let owner = LocalFunctionId::new(Some(cx.source.to_owned()), f.name.clone());
     let mut escape_flags = BTreeMap::new();
     for (header, loop_) in &flow.loops {
         if loop_.escapes.is_empty() {
@@ -465,16 +482,16 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
             // effect.
             T::BoxFree { local, glue, .. } => {
                 let free = crate::kernel::program_heap_free(
-                    crate::kernel::program_expression::variable(cx.binding(&local)),
+                    crate::kernel::program_expression::variable(cx.binding(local)),
                 );
                 match glue {
                     Some(glue) => program_seq(
                         crate::kernel::program_if(
-                            crate::kernel::program_expression::variable(cx.binding(&local)),
+                            crate::kernel::program_expression::variable(cx.binding(local)),
                             program_call(
                                 glue,
                                 vec![crate::kernel::program_expression::variable(
-                                    cx.binding(&local),
+                                    cx.binding(local),
                                 )],
                             ),
                             program_skip(),
@@ -492,7 +509,7 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                     Some(dtor) if cx.functions.contains_key(dtor.as_str()) => program_call(
                         dtor,
                         vec![crate::kernel::program_expression::cast(
-                            crate::kernel::program_expression::variable(cx.binding(&local)),
+                            crate::kernel::program_expression::variable(cx.binding(local)),
                             ProgramType::Int32Pointer,
                         )],
                     ),
@@ -592,7 +609,7 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                         .to_kernel_aggregate_layout();
                     let (call, result) = cx.call_value(function, arguments_values);
                     let copy = crate::kernel::program_copy_aggregate(
-                        crate::kernel::program_expression::variable(cx.binding(&destination)),
+                        crate::kernel::program_expression::variable(cx.binding(destination)),
                         result,
                         layout,
                     );
@@ -881,12 +898,12 @@ pub(super) fn lower(cx: &mut Context<'_>, f: &Function, mir: &MirBody) -> Result
                     for field in &record_fields {
                         let source_address =
                             crate::kernel::program_expression::pointer_offset_bytes(
-                                crate::kernel::program_expression::variable(cx.binding(&source)),
+                                crate::kernel::program_expression::variable(cx.binding(source)),
                                 field.offset,
                             );
                         let target_address =
                             crate::kernel::program_expression::pointer_offset_bytes(
-                                crate::kernel::program_expression::variable(cx.binding(&target)),
+                                crate::kernel::program_expression::variable(cx.binding(target)),
                                 field.offset,
                             );
                         let write = if let Type::Array { element, length } = &field.value_type {
@@ -1154,6 +1171,7 @@ impl LoopExits<'_> {
 /// The iterator the loop headed at `header` advances: the first `next` of a
 /// supported iterator in its header blocks, then in its body.
 fn loop_iterator(
+    cx: &Context<'_>,
     mir: &MirBody,
     header: usize,
     loop_: &flow::While,
@@ -1195,8 +1213,11 @@ fn loop_iterator(
             });
         if let Some(local) = user {
             return Some(RustLoopIterator {
+                chunk_fields: None,
+                slice_fields: None,
                 local,
                 kind: K::User,
+                count_binding: None,
             });
         }
     }
@@ -1234,8 +1255,18 @@ fn loop_iterator(
                 _ => return None,
             };
             Some(RustLoopIterator {
+                chunk_fields: cx.mir_chunk_iterators.get(local).cloned(),
+                slice_fields: cx
+                    .shared_array_iterators
+                    .get(local)
+                    .map(|iter| iter.fields.clone()),
                 local: local.clone(),
                 kind,
+                count_binding: if kind == K::Enumerate {
+                    cx.enumerate_fields.get(local).cloned()
+                } else {
+                    None
+                },
             })
         })
 }
@@ -1283,9 +1314,8 @@ fn region(
             // The loop's index is its place in preorder, the order its
             // `while` takes in the lowered body; its iterator is the one the
             // first `next` from its header on advances.
-            let ordinal = cx.loop_iterators.len();
-            cx.loop_iterators.push(None);
-            cx.loop_iterators[ordinal] = loop_iterator(mir, block, loop_);
+            let iterator = loop_iterator(cx, mir, block, loop_);
+            cx.loop_iterators.push(iterator);
             let body = region(
                 cx,
                 mir,
@@ -1789,11 +1819,11 @@ mod tests {
                 references: BTreeMap::new(),
                 shared_array_iterators: BTreeMap::new(),
                 ranges: BTreeMap::new(),
-                enumerated: BTreeSet::new(),
+                enumerate_fields: BTreeMap::new(),
                 shared_array_options: BTreeMap::new(),
                 shared_scalar_slices: BTreeMap::new(),
-                mir_chunk_iterators: BTreeSet::new(),
-                chunk_options: BTreeSet::new(),
+                mir_chunk_iterators: BTreeMap::new(),
+                chunk_options: BTreeMap::new(),
                 local_arrays: BTreeSet::new(),
                 arrays: BTreeMap::new(),
                 owned_locals: BTreeSet::new(),

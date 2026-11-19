@@ -574,9 +574,8 @@ pub(in crate::surface) fn initial_call_state(
         .any(|parameter| parameter.is_struct_value())
     {
         // A by-value argument is an already-evaluated C value. Materialize its
-        // aggregate image using the same typed copy operation as C calls,
-        // before resource clauses follow any pointer fields. This image is
-        // caller storage; the callee still receives its own fresh copy.
+        // parameter object before resource clauses name its address or follow
+        // its pointer fields.
         state = crate::kernel::program_function_input_objects_state(&state, function, &arguments)
             .ok_or_else(|| {
             ClickError::new("could not materialize aggregate argument values")
@@ -640,6 +639,9 @@ pub(in crate::surface) fn initial_call_state(
     let mut state = crate::kernel::execution_state_with_assumed_mutex_inputs(
         state.with_resource_context(resources),
     );
+    if !aggregate_parameters.is_empty() {
+        state = crate::kernel::with_resource_keyed_aggregate_proof_inputs(state, function);
+    }
     {
         // A standalone helper is proved for an arbitrary population supplied
         // by its caller. Import only the explicitly declared ownership, with
@@ -1527,13 +1529,10 @@ pub(in crate::surface) fn requirement_propositions_sharing_lowering_state(
         for index in std::mem::take(&mut pending) {
             let requirement = &requires[index];
             let result = match requirement {
-                Requirement::LoadableSegment { .. } => loadable_requirement_props(
-                    requirement,
-                    parameter_binding,
-                    state.memory(),
-                    &assumptions,
-                )
-                .map(Some),
+                Requirement::LoadableSegment { .. } => {
+                    loadable_requirement_props(requirement, parameter_binding, state, &assumptions)
+                        .map(Some)
+                }
                 Requirement::Proposition(proposition) => lowering_state
                     .0
                     .get_or_init(|| {
@@ -2349,7 +2348,8 @@ fn lower_resource_clause_with_values_mode_at_entry(
                         crate::surface::validation::describe_interface_type(*parameter_type)
                     )));
                 }
-                resource_values.push(value);
+                resource_values
+                    .push(value.resource_argument_at_type(parameter_type.to_kernel_type()));
             }
             if name == "mutex_guard" {
                 let [ProgramValue::Pointer(mutex)] = resource_values.as_slice() else {
@@ -2931,6 +2931,9 @@ pub(in crate::surface) fn resource_argument_to_program_expression(
         | ContractExpression::MethodCall { .. } => Err(ClickError::new(
             "declared resource arguments currently support current-state C expressions only",
         )),
+        ContractExpression::Exact(_) => Err(ClickError::new(
+            "a declared resource argument is a C expression and has no `exact` read; read the place as ordinary C",
+        )),
         ContractExpression::Let { body, .. } => {
             // `apply_contract_lets_to_expression` already substituted every
             // referenced value into the body; the wrapper only preserves
@@ -3101,13 +3104,13 @@ fn lower_resource_segment_with_values(
 fn loadable_requirement_props(
     requirement: &Requirement,
     parameter_binding: ParameterBinding<'_>,
-    memory: &SymbolicMemory,
+    state: &ExecutionState,
     assumptions: &PureFactContext,
 ) -> Result<Vec<Proposition>, ClickError> {
+    let memory = state.memory();
     if let Requirement::LoadableSegment { segment } = requirement
         && segment.state == ContractSegmentState::Current
     {
-        let state = ExecutionState::new().with_memory(memory.clone());
         let values = parameter_values(parameter_binding)?;
         // A requirement names the footprint and its formation conditions.
         // Collect these debts once; callers owe them and function entry
@@ -3125,7 +3128,7 @@ fn loadable_requirement_props(
                     ),
                 )
                 .with_parameters(parameter_binding),
-                &state,
+                state,
                 None,
                 contract_segment_element_width(parameter_binding.parameters, segment),
                 assumptions,
@@ -3154,18 +3157,6 @@ fn loadable_requirement_props(
     }];
     propositions.extend(guards);
     Ok(propositions)
-}
-
-pub(in crate::surface) fn resource_clause_loadable_prop(
-    resource: &ResourceClause,
-    parameter_binding: ParameterBinding<'_>,
-    memory: &SymbolicMemory,
-) -> Result<Option<Proposition>, ClickError> {
-    resource_clause_loadable_prop_at_state(
-        resource,
-        parameter_binding,
-        &ExecutionState::new().with_memory(memory.clone()),
-    )
 }
 
 pub(in crate::surface) fn resource_clause_loadable_prop_at_state(

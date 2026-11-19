@@ -819,6 +819,7 @@ fn a_borrowed_composites_post_footprint_cannot_overlap_a_transferred_cell() {
         clause_position: None,
         section_index: Some(1),
         selected_mutex_source: None,
+        mutex_storage: None,
     };
     let mut checked = vec![CheckedResourceFact {
         fact: owner.clone(),
@@ -827,6 +828,7 @@ fn a_borrowed_composites_post_footprint_cannot_overlap_a_transferred_cell() {
         clause_position: None,
         section_index: Some(0),
         selected_mutex_source: None,
+        mutex_storage: None,
     }];
     checked.push(checked_borrow.clone());
     let child = ProgramExpression::TypedLoad {
@@ -2097,6 +2099,7 @@ fn selected_view_expansion_fixture_with_cells(
         clause_position: None,
         section_index: None,
         selected_mutex_source: None,
+        mutex_storage: None,
     };
     let (caller_resources, owned) =
         ResourceContext::new().unchecked_with_facts_and_occurrences([owner.clone()]);
@@ -2216,6 +2219,7 @@ pub(in crate::kernel::functions) fn returned_hold_fixture_with_ledger(
         clause_position: None,
         section_index: None,
         selected_mutex_source: None,
+        mutex_storage: None,
     };
     let ledger = LoanLedger::new();
     let caller = ledger.fresh_participant().unwrap();
@@ -2420,6 +2424,7 @@ fn escrow_recovery_uses_the_lend_time_frontier_of_a_folded_owner() {
         clause_position: None,
         section_index: None,
         selected_mutex_source: None,
+        mutex_storage: None,
     };
     for (frontier, opaque) in [
         (vec![piece.clone()], false),

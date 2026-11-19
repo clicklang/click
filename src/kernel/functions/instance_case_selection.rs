@@ -397,7 +397,7 @@ pub(super) fn selected_instance_resource_load_values(
             if definition.parameters.len() != instance.arguments().len() {
                 return None;
             }
-            let mut evaluation = ExecutionState::new().with_memory(state.memory().clone());
+            let mut evaluation = ExecutionState::at_state(state);
             for (parameter, argument) in definition.parameters.iter().zip(instance.arguments()) {
                 let value = argument.as_program_value()?;
                 if value.program_type() != parameter.program_type() {
@@ -449,6 +449,7 @@ pub(super) fn selected_instance_resource_load_values(
                         point: SpecPoint::Current,
                         pointer,
                         value_type,
+                        exact: false,
                     } = load
                     else {
                         return None;

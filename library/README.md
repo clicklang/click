@@ -14,15 +14,18 @@ imports with `import click::...;`, and the modules those import:
 | `result.click` | implicit | `Result<T, E>`, the value of a Rust `Result` |
 | `permutation.click` | `import click::permutation;` | `permutation::count`, generic over the element type, and `permutation::permutation` over `int32[]` |
 | `bytes.click` | `import click::bytes;`, or with `c/string` | `bytes::count`, `bytes::equal` and the other byte-range predicates over `uint8[]` |
-| `cstr.click` | `import click::cstr;`, or with `c/string` | C-string predicates and theorems, and the C-string resource `cstr_at` |
 | `c/builtins.click` | implicit | Verifier primitive `__click_constant_p_unknown`, the value of `__builtin_constant_p` |
-| `c/string.click` | when the C declares or calls one of its functions | `memcpy`, `memcmp`, `memset` and `strlen` contracts |
+| `c/string.click` | `import click::c::string;`, or when the C declares or calls a modeled string function | `memcpy`, `memcmp`, `memset` and `strlen` contracts, C-string predicates and theorems, and the `cstr_at` resource |
+| `c/stdio.click` | `import click::c::stdio;`, or with the projected `<stdio.h>` | `stream`, `write_requests` and decimal formatting functions and theorems |
+| `c/stream_output.click.in` | for checked literal `printf` and `fprintf` calls | One C stream-write contract, instantiated for the requested bytes |
 | `integer.click` | `import click::integer;` | `integer::` order, increment and definedness lemmas over native integer widths, `to_integer` bridges for native arithmetic, unsigned wrapping operations, and `Integer` division laws |
-| `format.click` | `import click::format;`; the C front end's `snprintf` contracts name it by path | `format::decimal_length`, `format::decimal_digit` and the other decimal rendering functions `printf` writes, with evaluation theorems |
 | `rust/i8.click` ... `rust/usize.click` | `import click::rust::u32;`; the integer-method contracts of `rust/integers.click` name them by path | One module per Rust integer type: `u32::min`, `u32::checked_add` and the other core methods the importer specifies, and the Rust names of the lemmas a Rust proof applies (`u32::multiply_to_integer`) |
-| `cpp/span.click` | appended to a C++ sidecar when an import calls one of its methods | `std::span<T>` and static-extent `std::span<T, N>` contracts, as template methods written out at each called element type and extent |
-| `cpp/array.click` | appended to a C++ sidecar when an import calls one of its methods | `std::array<T, N>` contracts, with each element accessor's `const` and mutable overload as two template methods |
-| `cpp/as_writable_bytes.click` | appended to a C++ sidecar when an import calls it | The `std::as_writable_bytes<T, N>` contract, a function template written out at each called instance |
+| `cpp/span.click` | selected when a C++ import calls one of its methods | `std::span<T>` and static-extent `std::span<T, N>` contracts, as template methods written out at each called element type and extent |
+| `cpp/span_state.click` and `cpp/span_state_contracts.click` | `import click::cpp::span_state::{span_state};` | Logical state, copy construction, and `empty()` for dynamic `std::span<int>` |
+| `cpp/array.click` | selected when a C++ import calls one of its methods | `std::array<T, N>` contracts, with each element accessor's `const` and mutable overload as two template methods |
+| `cpp/as_writable_bytes.click` | selected when a C++ import calls it | The `std::as_writable_bytes<T, N>` contract, a function template written out at each called instance |
+| `rust/option.click` | `import click::rust::option;` | Rust's `Option::unwrap_or` proof helper |
+| `rust/result.click` | `import click::rust::result;` | Rust's `Result::unwrap_or` proof helper |
 | `rust/vec.click` | `import click::rust::vec;` | The primitive type `Vec<T>`, its bodyless operations and their trusted axioms |
 | `rust/slice.click` | `import click::rust::slice;` | `Slice<T>`, a Rust slice as its data pointer and length |
 | `rust/core.click` | appended to a Rust sidecar when an import calls one of its methods | The `Vec`, `slice::swap` and `Option`/`Result` unwrapping contracts, as generic `extern fn` blocks written out at each called type; a block no call names is dropped |
@@ -73,11 +76,9 @@ trusted kernel constructors. Their declarations must match the corresponding ker
 axioms exactly. The `extern` contracts are knowns, listed in
 [trust](../docs/concepts/trust.md).
 
-A module is named by a `click::` path that mirrors its file:
-`import click::cstr;` is `cstr.click` and `import click::c::string;` is
-`c/string.click`. A declaration's qualified name adds its own name:
-`click::cstr::len`, or `cstr::len` once the module is in scope
-(`src/surface/parser/library_paths.rs`).
+A module's `click::` path mirrors its file. Importing `click::c::string`
+selects `c/string.click`. Its length predicate is `click::c::string::len`
+or `string::len` once the module is in scope.
 
 The library is checked on its own, like any dependency: `verify_standard_library`
 proves every library theorem that has a proof, checks each kernel standard

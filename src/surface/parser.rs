@@ -227,6 +227,8 @@ pub(in crate::surface) struct ProgramLayouts {
     /// A C definition's execution name, indexed by translation unit and source spelling.
     pub(in crate::surface) qualified_functions: BTreeMap<(String, String), String>,
     pub(in crate::surface) program_object_names: BTreeMap<String, std::sync::Arc<BTreeSet<String>>>,
+    /// Library-provided C values with stable identities in the selected profile.
+    pub(in crate::surface) hosted_stdout: BTreeMap<String, ProgramValue>,
     /// The other members of each function's recursive C component, for the
     /// functions in a component of two or more. An expression `decreases`
     /// measure ranks calls to these functions too.
@@ -522,11 +524,13 @@ pub(super) fn parse_file_items_for_module(
     imported_pointer_functions: &BTreeSet<String>,
     imported_integer_parameters: &BTreeMap<String, Vec<usize>>,
     layouts: ProgramLayouts,
+    catalog: Option<&str>,
 ) -> Result<ClickFile, ClickError> {
-    let mut parser = Parser::with_program_layouts(
+    let mut parser = Parser::with_program_layouts_and_catalog(
         source,
         layouts,
         Some(&crate::source::SourceContainer::new(identity, line_offset)),
+        catalog,
     )?;
     parser.symbols.import_declarations(imported_declarations)?;
     let imported_tactics = parser
@@ -613,6 +617,9 @@ pub(super) fn parse_file_items_for_module(
     }
     parser.in_contract_definition = false;
     for definition in imported_resources {
+        parser
+            .declared_resource_fields
+            .insert(definition.name().to_string(), definition.fields().to_vec());
         if let Some(body) = definition.composite_body() {
             parser
                 .declared_resource_child_slots
@@ -663,6 +670,7 @@ fn is_tactic_name(name: &str) -> bool {
 /// The refusal of a removed tactic spelling, naming what replaced it.
 fn removed_tactic_refusal(name: &str) -> Option<&'static str> {
     Some(match name {
+        "both" => "`both` is retired: write `all { P => { ... } Q => { ... } }`",
         "assumption" => {
             "`assumption()` is now `known()`; use `known()` to close a goal from available facts"
         }
@@ -699,6 +707,7 @@ pub(super) enum Token {
     /// A Rust lifetime, `'a`, by its name without the quote.
     Lifetime(String),
     String(String),
+    ByteString(std::sync::Arc<[u8]>),
     LBrace,
     RBrace,
     LParen,
@@ -765,6 +774,7 @@ impl Token {
             }
             Self::Lifetime(name) => format!("lifetime `'{name}`"),
             Self::String(value) => format!("string literal `\"{value}\"`"),
+            Self::ByteString(_) => "byte string literal".to_string(),
             other => format!("`{}`", other.spelling()),
         }
     }
@@ -784,7 +794,8 @@ impl Token {
             | Self::UInt64Number(_)
             | Self::CharLiteral(_)
             | Self::Lifetime(_)
-            | Self::String(_) => "",
+            | Self::String(_)
+            | Self::ByteString(_) => "",
             Self::LBrace => "{",
             Self::RBrace => "}",
             Self::LParen => "(",
@@ -820,6 +831,32 @@ impl Token {
             Self::Pipe => "|",
         }
     }
+}
+
+/// A byte string denotes the ordinary structural list of its byte values.
+fn byte_list_expression(bytes: &[u8]) -> ContractExpression {
+    let algebraic_type = AlgebraicTypeApplication {
+        rigid: false,
+        name: "List".to_string(),
+        arguments: vec![ClickType::Program(InterfaceType::UInt8)],
+    };
+    bytes.iter().rev().fold(
+        ContractExpression::AlgebraicConstructor {
+            algebraic_type: algebraic_type.clone(),
+            variant: "Nil".to_string(),
+            arguments: Vec::new(),
+        },
+        |tail, byte| ContractExpression::AlgebraicConstructor {
+            algebraic_type: algebraic_type.clone(),
+            variant: "Cons".to_string(),
+            arguments: vec![
+                ContractExpression::ProgramExpression(ProgramExpression::Value(
+                    crate::kernel::uint8(u32::from(*byte)),
+                )),
+                tail,
+            ],
+        },
+    )
 }
 
 type ContractBinaryConstructor =
@@ -871,6 +908,8 @@ struct Parser {
     loop_predicate_bodies: BTreeMap<String, ClickProposition>,
     resource_parameters: BTreeMap<String, usize>,
     program_object_names_by_function: BTreeMap<String, std::sync::Arc<BTreeSet<String>>>,
+    hosted_stdout_by_function: BTreeMap<String, ProgramValue>,
+    hosted_stdout: Option<ProgramValue>,
     recursion_peers_by_function: BTreeMap<String, Vec<String>>,
     /// Click library modules the program's C declarations bring.
     implied_library_modules: BTreeSet<&'static str>,
@@ -886,6 +925,7 @@ struct Parser {
     /// before any library theorem of that name. Empty in a library module.
     symbols: names::SymbolTable,
     source_aliases: BTreeMap<String, String>,
+    ambiguous_default_source_aliases: BTreeMap<String, BTreeSet<String>>,
     qualified_functions: BTreeMap<(String, String), String>,
     qualified_objects: Option<BTreeMap<String, BTreeMap<String, parser::QualifiedCObject>>>,
     /// Set while a `tactic` declaration's signature is parsed: the name
@@ -1030,6 +1070,7 @@ struct Parser {
     /// The C type of the current function's `result`, which keeps its C
     /// meaning in a comparison when it is a pointer or a float.
     current_result_interface_type: Option<InterfaceType>,
+    current_aggregate_result: bool,
     /// The current function's locals of pointer type that no parameter
     /// shadows.
     current_local_pointers: BTreeSet<String>,
@@ -1284,6 +1325,7 @@ struct ParsedFunctionSignature {
     struct_array_params: BTreeSet<String>,
     reference_params: BTreeSet<String>,
     return_struct_name: Option<String>,
+    aggregate_result: bool,
 }
 
 impl ProgramLayouts {
@@ -1612,6 +1654,7 @@ impl Parser {
             None,
             &BTreeMap::new(),
             &BTreeMap::new(),
+            None,
         )
     }
 
@@ -1620,6 +1663,15 @@ impl Parser {
         source: &str,
         layouts: ProgramLayouts,
         container: Option<&crate::source::SourceContainer>,
+    ) -> Result<Self, ClickError> {
+        Self::with_program_layouts_and_catalog(source, layouts, container, None)
+    }
+
+    fn with_program_layouts_and_catalog(
+        source: &str,
+        layouts: ProgramLayouts,
+        container: Option<&crate::source::SourceContainer>,
+        catalog: Option<&str>,
     ) -> Result<Self, ClickError> {
         let mut parser = Self::new_with_layouts_and_aggregate_objects(
             source,
@@ -1631,12 +1683,14 @@ impl Parser {
             container,
             &layouts.rust_trait_instances,
             &layouts.record_spellings,
+            catalog,
         )
         .map_err(|error| error.with_kind(ClickErrorKind::Syntax))?;
         parser.local_bindings = layouts.local_bindings;
         parser.string_literal_values = layouts.string_literal_values;
         parser.string_literal_owners = layouts.string_literal_owners;
         parser.program_object_names_by_function = layouts.program_object_names;
+        parser.hosted_stdout_by_function = layouts.hosted_stdout;
         parser.rust_enum_types = layouts.rust_enum_types;
         parser.recursion_peers_by_function = layouts.recursion_peers;
         parser
@@ -1814,8 +1868,18 @@ impl Parser {
         container: Option<&crate::source::SourceContainer>,
         rust_trait_instances: &BTreeMap<String, BTreeSet<Vec<String>>>,
         record_spellings: &BTreeMap<String, String>,
+        catalog: Option<&str>,
     ) -> Result<Self, ClickError> {
         let (tokens, positions) = tokenize(source, container)?;
+        let (tokens, positions) = if let Some(catalog) = catalog {
+            let source = crate::source::SourceContainer::new("C++ catalog", 0);
+            let (mut catalog_tokens, mut catalog_positions) = tokenize(catalog, Some(&source))?;
+            catalog_tokens.extend(tokens);
+            catalog_positions.extend(positions);
+            (catalog_tokens, catalog_positions)
+        } else {
+            (tokens, positions)
+        };
         let (tokens, positions) = rewrite_model_accessors(tokens, positions, &struct_layouts);
         let names::ResolvedLibraryTokens {
             tokens,
@@ -1913,6 +1977,7 @@ impl Parser {
             record_spellings: BTreeMap::new(),
             c_typedefs: BTreeMap::new(),
             source_aliases: BTreeMap::new(),
+            ambiguous_default_source_aliases: BTreeMap::new(),
             qualified_functions: BTreeMap::new(),
             qualified_objects: None,
             pending_tactic_signature: false,
@@ -1965,6 +2030,8 @@ impl Parser {
             loop_proof_value_names: Default::default(),
             loop_predicate_bodies: BTreeMap::new(),
             program_object_names_by_function: BTreeMap::new(),
+            hosted_stdout_by_function: BTreeMap::new(),
+            hosted_stdout: None,
             recursion_peers_by_function: BTreeMap::new(),
             implied_library_modules: path_library_modules,
             library_module,
@@ -1976,6 +2043,7 @@ impl Parser {
             local_struct_pointers_by_function: BTreeMap::new(),
             current_reference_result: false,
             current_result_interface_type: None,
+            current_aggregate_result: false,
             current_local_pointers: BTreeSet::new(),
             names: NameTable::default(),
             pure_function_slices: BTreeMap::new(),
@@ -2293,6 +2361,7 @@ impl Parser {
     }
 
     fn parse_file_items(&mut self) -> Result<ClickFile, ClickError> {
+        self.index_default_source_aliases();
         self.index_algebraic_variant_fields();
         let mut imports = Vec::new();
         let mut verifying_sources = Vec::new();
@@ -3125,6 +3194,85 @@ impl Parser {
         Ok(AlgebraicFieldType::Algebraic { name, arguments })
     }
 
+    /// Resolve default names as a group so duplicate stems never pick a
+    /// source based on the order of the verifying declarations.
+    fn index_default_source_aliases(&mut self) {
+        if self.language != SourceLanguage::C {
+            return;
+        }
+        let mut explicit_names = BTreeSet::new();
+        let mut explicitly_aliased_sources = BTreeSet::new();
+        let mut candidates = BTreeMap::<&str, BTreeSet<&str>>::new();
+        crate::instrumentation::record_deterministic_work(self.tokens.len());
+        for (index, window) in self.tokens.windows(3).enumerate() {
+            let [Token::Ident(keyword), Token::String(path), next] = window else {
+                continue;
+            };
+            if keyword != "verifying" || SourceLanguage::of_source_path(path) != SourceLanguage::C {
+                continue;
+            }
+            match next {
+                Token::Semicolon => {
+                    let Some(stem) = std::path::Path::new(path)
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                    else {
+                        continue;
+                    };
+                    let mut chars = stem.chars();
+                    if chars.next().is_some_and(tokenizer::is_ident_start)
+                        && chars.all(tokenizer::is_ident_continue)
+                        && !matches!(stem, "click" | "program")
+                        && rust_syntax::click_numeric_cast_type(stem).is_none()
+                        && !self.symbols.declares(names::DeclarationKind::Enum, stem)
+                        && !names::is_library_qualifier(stem)
+                    {
+                        candidates.entry(stem).or_default().insert(path);
+                    }
+                }
+                Token::Ident(word) if word == "as" => {
+                    if let Some(Token::Ident(alias)) = self.tokens.get(index + 3) {
+                        explicit_names.insert(alias.as_str());
+                        explicitly_aliased_sources.insert(path.as_str());
+                    }
+                }
+                _ => {}
+            }
+        }
+        for (alias, mut paths) in candidates {
+            if explicit_names.contains(alias) {
+                continue;
+            }
+            paths.retain(|path| !explicitly_aliased_sources.contains(path));
+            match paths.len() {
+                0 => {}
+                1 => {
+                    let path = paths.first().expect("one default source");
+                    self.source_aliases
+                        .insert(alias.to_string(), path.to_string());
+                }
+                _ => {
+                    self.ambiguous_default_source_aliases.insert(
+                        alias.to_string(),
+                        paths.into_iter().map(str::to_string).collect(),
+                    );
+                }
+            }
+        }
+    }
+
+    fn lookup_source_alias(&self, alias: &str) -> Result<Option<&String>, ClickError> {
+        if let Some(paths) = self.ambiguous_default_source_aliases.get(alias) {
+            let mut paths = paths.iter();
+            let first = paths.next().expect("at least two default sources");
+            let second = paths.next().expect("at least two default sources");
+            return Err(self.error(format!(
+                "ambiguous default C source alias `{alias}` matches `{first}` and `{second}`. Use `as` to give the sources distinct aliases"
+            )));
+        }
+        Ok(self.source_aliases.get(alias))
+    }
+
     fn parse_verifying_source(&mut self) -> Result<String, ClickError> {
         self.expect_ident_spelling("verifying")?;
         let source_path = self.expect_string("C source path")?;
@@ -3212,18 +3360,20 @@ impl Parser {
     }
 
     fn is_qualified_program_name(&self) -> bool {
+        let is_source_alias = |name: &str| {
+            self.source_aliases.contains_key(name)
+                || self.ambiguous_default_source_aliases.contains_key(name)
+        };
         if let Some(written) = self
             .here()
             .and_then(|position| self.symbols.written_path(&position))
         {
             return written
                 .split_once("::")
-                .is_some_and(|(alias, _)| self.source_aliases.contains_key(alias));
+                .is_some_and(|(alias, _)| is_source_alias(alias));
         }
         self.peek_next() == Some(&Token::ColonColon)
-            && self
-                .peek_ident()
-                .is_some_and(|name| self.source_aliases.contains_key(name))
+            && self.peek_ident().is_some_and(is_source_alias)
     }
 
     fn parse_qualified_program_name(&mut self) -> Result<(String, ProgramExpression), ClickError> {
@@ -3242,8 +3392,7 @@ impl Parser {
         }
         let qualified = format!("{alias}::{name}");
         let source = self
-            .source_aliases
-            .get(&alias)
+            .lookup_source_alias(&alias)?
             .ok_or_else(|| self.error(format!("unknown C source alias `{alias}`")))?;
         let expression = match &self.qualified_objects {
             None => ProgramExpression::Variable((qualified.clone()).into()),
@@ -4876,6 +5025,7 @@ impl Parser {
             struct_array_params,
             mut reference_params,
             return_struct_name,
+            aggregate_result,
         } = {
             let previous = std::mem::replace(&mut self.exact_long_rank, true);
             let signature = self.parse_function_signature();
@@ -5012,6 +5162,10 @@ impl Parser {
                 .get(&table_name)
                 .cloned(),
         );
+        let previous_hosted_stdout = std::mem::replace(
+            &mut self.hosted_stdout,
+            self.hosted_stdout_by_function.get(&table_name).cloned(),
+        );
         let previous_c_parameter_types = std::mem::replace(
             &mut self.names.program_parameter_types,
             signature
@@ -5065,6 +5219,8 @@ impl Parser {
         let previous_result_c_type = self
             .current_result_interface_type
             .replace(signature.return_type());
+        let previous_aggregate_result =
+            std::mem::replace(&mut self.current_aggregate_result, aggregate_result);
         let local_pointers = self
             .local_struct_pointers_by_function
             .get(&table_name)
@@ -5570,6 +5726,7 @@ impl Parser {
             .replace(NameKind::VoidPointerParameter, previous_void_pointer_params);
         self.names.program_parameter_types = previous_c_parameter_types;
         self.names.program_object_names = previous_c_object_names;
+        self.hosted_stdout = previous_hosted_stdout;
         self.rust_loop_iterators = previous_loop_iterators;
         self.rust_slice_locals = previous_slice_locals;
         let parameter_struct_casts = std::mem::replace(
@@ -5588,6 +5745,7 @@ impl Parser {
             .replace(NameKind::ReferenceParameter, previous_reference_params);
         self.current_reference_result = previous_reference_result;
         self.current_result_interface_type = previous_result_c_type;
+        self.current_aggregate_result = previous_aggregate_result;
         self.current_local_pointers = previous_local_pointers;
         self.names
             .replace(NameKind::IntegerParameter, previous_integer_params);
@@ -5855,6 +6013,7 @@ impl Parser {
                 struct_array_params: parsed_parameters.struct_array_params,
                 reference_params: parsed_parameters.reference_params,
                 return_struct_name: None,
+                aggregate_result: false,
             });
         }
         self.rust_slice_params.clear();
@@ -5911,7 +6070,7 @@ impl Parser {
             let name =
                 if let Some((alias, name)) = alias.split_once("::") {
                     c_source =
-                        Some(self.source_aliases.get(alias).cloned().ok_or_else(|| {
+                        Some(self.lookup_source_alias(alias)?.cloned().ok_or_else(|| {
                             self.error(format!("unknown C source alias `{alias}`"))
                         })?);
                     format!("{alias}::{name}")
@@ -5919,7 +6078,7 @@ impl Parser {
                     self.position += 1;
                     let name = self.expect_ident("C function name")?;
                     c_source =
-                        Some(self.source_aliases.get(&alias).cloned().ok_or_else(|| {
+                        Some(self.lookup_source_alias(&alias)?.cloned().ok_or_else(|| {
                             self.error(format!("unknown C source alias `{alias}`"))
                         })?);
                     format!("{alias}::{name}")
@@ -6063,6 +6222,8 @@ impl Parser {
             struct_params,
             struct_array_params,
             reference_params,
+            aggregate_result: parsed_return_type.struct_name.is_some()
+                && !parsed_return_type.struct_pointer,
             return_struct_name: parsed_return_type.struct_name,
         };
         if self.verifies_rust() && !self.in_contract_definition {
@@ -6166,6 +6327,14 @@ impl Parser {
         self.refuse_unknown_loop_value(&name)?;
         if let Some(expression) = self.take_rust_vec_method(&name)? {
             return Ok(expression);
+        }
+        if name == "stdout"
+            && let Some(value) = &self.hosted_stdout
+        {
+            return Ok(ContractExpression::QualifiedC {
+                name,
+                lowered: ProgramExpression::Value(value.clone()),
+            });
         }
         Ok(ContractExpression::ProgramExpression(
             ProgramExpression::Variable(name.into()),
@@ -6921,9 +7090,9 @@ impl Parser {
         Ok((name, interface_type, function_pointer_signature))
     }
 
-    /// A parameter type that is a function-pointer typedef name of the
-    /// verified C source, `unary f`: its callable type. `None`, with nothing
-    /// consumed, for any other type.
+    /// A callable parameter type from a verified C source's typedef. A
+    /// function-type alias requires a star, as in `unary *f`. A pointer-type
+    /// alias stands alone, as in `unary_ptr f`. Other types consume nothing.
     fn parse_program_function_pointer_typedef(
         &mut self,
     ) -> Result<
@@ -6939,18 +7108,21 @@ impl Parser {
         let Some(syntax::CHeadTypedef::FunctionPointer {
             interface_type,
             signature,
+            requires_star,
         }) = self.c_typedefs.get(name)
         else {
             return Ok(None);
         };
-        // `unary *f` is a pointer to a function pointer, which the type
-        // parser refuses.
-        if !matches!(self.peek_next(), Some(Token::Ident(_))) {
+        let type_tokens = if *requires_star && self.peek_next() == Some(&Token::Star) {
+            2
+        } else if !requires_star && matches!(self.peek_next(), Some(Token::Ident(_))) {
+            1
+        } else {
             return Ok(None);
-        }
+        };
         let callable = (*interface_type, signature.clone());
         self.check_head_typedef(name)?;
-        self.position += 1;
+        self.position += type_tokens;
         Ok(Some(callable))
     }
 
@@ -7820,7 +7992,6 @@ impl Parser {
                         fields: None,
                         fold_fields: None,
                         child_bindings: None,
-                        default_child_bindings: None,
                     },
                     resource: Box::new(protected),
                 });
@@ -8016,7 +8187,6 @@ impl Parser {
                     fields: binding.fields,
                     fold_fields: None,
                     child_bindings: binding.child_bindings,
-                    default_child_bindings: None,
                 },
                 resource,
             },
@@ -8066,7 +8236,6 @@ impl Parser {
                         fields: None,
                         fold_fields: None,
                         child_bindings: None,
-                        default_child_bindings: None,
                     },
                     resource: Box::new(ResourceClause::Declared {
                         type_schema: None,
@@ -8315,7 +8484,6 @@ impl Parser {
                 fields: None,
                 fold_fields: None,
                 child_bindings: None,
-                default_child_bindings: None,
             },
             resource: Box::new(resource),
         };
@@ -8370,7 +8538,6 @@ impl Parser {
                 fields: None,
                 fold_fields: None,
                 child_bindings: None,
-                default_child_bindings: None,
             },
             resource: Box::new(target),
         };
@@ -8378,7 +8545,7 @@ impl Parser {
         named
     }
 
-    /// An application (or an `at` around one) followed by an index.
+    /// An application (or an `at` around one) followed by an iterated selector.
     fn indexed_resource_target_follows(&self) -> bool {
         self.peek_ident().is_some()
             && self.peek_next() == Some(&Token::LParen)
@@ -8386,7 +8553,7 @@ impl Parser {
                 .is_some_and(|close| self.tokens.get(close + 1) == Some(&Token::LBracket))
     }
 
-    fn parse_iterated_slot(&mut self) -> Result<Box<IteratedSlot>, ClickError> {
+    fn parse_iterated_target(&mut self) -> Result<Box<IteratedTarget>, ClickError> {
         let point = if self.peek_ident() == Some("at") {
             self.position += 1;
             self.expect(Token::LParen)?;
@@ -8401,10 +8568,15 @@ impl Parser {
             self.expect(Token::RParen)?;
         }
         self.expect(Token::LBracket)?;
-        let index = self.parse_contract_expression()?;
+        let index = if self.peek() == Some(&Token::DotDot) {
+            self.position += 1;
+            None
+        } else {
+            Some(self.parse_contract_expression()?)
+        };
         self.expect(Token::RBracket)?;
         self.expect(Token::RParen)?;
-        Ok(Box::new(IteratedSlot {
+        Ok(Box::new(IteratedTarget {
             resource,
             point,
             index,
@@ -8932,6 +9104,7 @@ impl Parser {
 
         if matches!(self.peek(), Some(Token::Ident(_)))
             && self.peek_ident() != Some("old")
+            && self.peek_ident() != Some("exact")
             && self.peek_ident() != Some("at")
             && !(self.peek_ident() == Some("program")
                 && self.peek_next() == Some(&Token::ColonColon))
@@ -9348,9 +9521,18 @@ impl Parser {
         self.expect(Token::LParen)?;
         // An untyped item binder is contextual sugar for a predicate lambda.
         // A typed literal or another expression is an ordinary predicate value.
+        // The item may be a generated binder, spelled `binder(N)`.
+        let binder_end = if self.tokens.get(self.position + 1)
+            == Some(&Token::Ident("binder".into()))
+            && self.tokens.get(self.position + 2) == Some(&Token::LParen)
+        {
+            self.position + 5
+        } else {
+            self.position + 2
+        };
         let untyped_binder = self.peek() == Some(&Token::Pipe)
             && matches!(self.peek_next(), Some(Token::Ident(_)))
-            && self.tokens.get(self.position + 2) == Some(&Token::Pipe);
+            && self.tokens.get(binder_end) == Some(&Token::Pipe);
         if !untyped_binder {
             let predicate = self.parse_contract_expression()?;
             self.expect(Token::RParen)?;
@@ -9953,27 +10135,6 @@ impl Parser {
         }
     }
 
-    fn parse_resource_child_bindings(
-        &mut self,
-        parent: &ResourceClause,
-        introduce: bool,
-    ) -> Result<Vec<(String, String, Variable)>, ClickError> {
-        self.expect(Token::LBrace)?;
-        let mut bindings = Vec::new();
-        while self.peek() != Some(&Token::RBrace) {
-            let slot = self.expect_ident("child slot")?;
-            self.expect(Token::Colon)?;
-            let name = self.expect_ident("child resource name")?;
-            bindings.push((slot, name));
-            if self.peek() != Some(&Token::Comma) {
-                break;
-            }
-            self.position += 1;
-        }
-        self.expect(Token::RBrace)?;
-        self.bind_resource_child_names(parent, None, bindings, introduce)
-    }
-
     /// Binds the names of an unfold or fold pattern over `parent`, whose
     /// resource is `family` when the instance recorded one other than its
     /// clause's.
@@ -10069,7 +10230,6 @@ impl Parser {
                             fields: None,
                             fold_fields: None,
                             child_bindings: Some(Vec::new().into()),
-                            default_child_bindings: None,
                         },
                         resource: Box::new(parent.clone()),
                     },
@@ -10118,7 +10278,7 @@ impl Parser {
         let name = self.expect_ident("tactic")?;
         match name.as_str() {
             "let" => self.parse_let_proof_tactic(),
-            "both" => self.parse_both_proof_tactic(),
+            "all" => self.parse_all_proof_tactic(),
             "if" => self.parse_if_proof_tactic(),
             _ => self.parse_other_proof_tactic(name),
         }
@@ -10306,7 +10466,7 @@ impl Parser {
         self.parse_fold_construction(Some(name))
     }
 
-    /// `fold(resource, { field: value }, { slot: child })` after its opening
+    /// `fold(resource, { field: value, slot: child })` after its opening
     /// parenthesis. `let name = fold(...)` binds the instance to `name`. A
     /// resource whose every field is hidden is folded without a name,
     /// `fold(pair(p), { first: c });`, under the binder it is held by.
@@ -10343,56 +10503,61 @@ impl Parser {
             self.next_resource_identity += 1;
             identity
         };
-        // A resource whose every field is retained from children has no
-        // declared field initializer, so its one brace is the child map; a map whose
-        // every child defaults by name may be left out with it.
         let declared = self
             .declared_resource_fields
             .get(resource_name)
             .cloned()
             .unwrap_or_default();
-        let only_hidden =
-            !declared.is_empty() && declared.iter().all(|field| field.name.contains('.'));
-        if !(only_hidden && self.peek() == Some(&Token::RParen)) {
-            self.expect(Token::Comma)?;
-        }
         let mut fields = Vec::new();
-        if !only_hidden {
+        let mut children = Vec::new();
+        if self.peek() == Some(&Token::Comma) {
+            self.position += 1;
             self.expect(Token::LBrace)?;
+            let mut entries = BTreeSet::new();
             while self.peek() != Some(&Token::RBrace) {
-                let field = self.expect_ident("resource field name")?;
+                let key = self.expect_ident("fold field or child slot")?;
+                if !entries.insert(key.clone()) {
+                    return Err(self.error(format!("duplicate fold entry `{key}`")));
+                }
                 self.expect(Token::Colon)?;
-                let value = self.parse_contract_expression()?;
-                // An `Integer` field's value is read where an Integer is
-                // expected.
-                let value = if declared.iter().any(|declared| {
-                    declared.name() == field && declared.click_type() == &ClickType::Integer
-                }) {
-                    self.at_integer_position(value)
-                } else {
-                    value
+                let is_child = match self.declared_resource_child_slots.get(resource_name) {
+                    Some(slots) => slots.contains_key(&key),
+                    // For a later declaration, read a bare resource binding
+                    // as a child selection. Declaration expansion checks
+                    // that the key names a child of the declared family.
+                    None => self.peek_ident().is_some_and(|name| {
+                        matches!(self.peek_next(), Some(Token::Comma | Token::RBrace))
+                            && self.names.resource_bindings.contains_key(name)
+                            && !self.names.is_program_variable(name)
+                    }),
                 };
-                fields.push((field, value));
+                if is_child {
+                    children.push((key, self.expect_ident("child resource name")?));
+                } else {
+                    let value = self.parse_contract_expression()?;
+                    let value = if declared.iter().any(|field| {
+                        field.name() == key && field.click_type() == &ClickType::Integer
+                    }) {
+                        self.at_integer_position(value)
+                    } else {
+                        value
+                    };
+                    fields.push((key, value));
+                }
                 if self.peek() != Some(&Token::Comma) {
                     break;
                 }
                 self.position += 1;
             }
             self.expect(Token::RBrace)?;
+        } else if self.peek() != Some(&Token::RParen) {
+            return Err(self.error("expected a single fold input map or `)`"));
         }
-        let child_bindings = if only_hidden && self.peek() == Some(&Token::LBrace) {
-            self.parse_resource_child_bindings(&resource, false)?
-        } else if !only_hidden && self.peek() == Some(&Token::Comma) {
-            self.position += 1;
-            self.parse_resource_child_bindings(&resource, false)?
-        } else {
-            Vec::new()
-        };
-        let default_child_bindings =
-            self.default_fold_child_bindings(resource_name, &name, &child_bindings);
-        let mut hidden_sources = child_bindings.clone();
-        hidden_sources.extend(default_child_bindings.iter().cloned());
-        self.fill_hidden_fold_fields(&declared, &hidden_sources, &mut fields);
+        let child_bindings = self.bind_resource_child_names(&resource, None, children, false)?;
+        self.fill_hidden_fold_fields(&declared, &child_bindings, &mut fields);
+        if self.peek() == Some(&Token::Comma) {
+            return Err(self.error("fold takes one map containing both fields and child slots"));
+        }
         self.expect(Token::RParen)?;
         let binding = ResourceInstanceBinding {
             name: name.clone(),
@@ -10402,7 +10567,6 @@ impl Parser {
             fields: None,
             fold_fields: None,
             child_bindings: Some(Vec::new().into()),
-            default_child_bindings: None,
         };
         self.names
             .bind_instance(name.clone(), (identity, resource_name.clone()));
@@ -10419,46 +10583,10 @@ impl Parser {
             binding: ResourceInstanceBinding {
                 fold_fields: Some(fields),
                 child_bindings: Some(child_bindings.into()),
-                default_child_bindings: (!default_child_bindings.is_empty())
-                    .then(|| default_child_bindings.into()),
                 ..binding
             },
             resource: Box::new(resource),
         }))
-    }
-
-    /// The child slots of `family` that a fold's map left out and that an
-    /// in-scope resource of the same name could fill: `{ left: left }` is
-    /// written `{}` or not at all. A name the map already uses, the fold's
-    /// own result, or a name that is also a pure binding fills nothing.
-    /// Which of these the fold keeps is decided by the arm it selects.
-    #[inline(never)]
-    fn default_fold_child_bindings(
-        &self,
-        family: &str,
-        result: &str,
-        explicit: &[(String, String, Variable)],
-    ) -> Vec<(String, String, Variable)> {
-        let Some(slots) = self.declared_resource_child_slots.get(family) else {
-            return Vec::new();
-        };
-        slots
-            .keys()
-            .filter(|slot| {
-                slot.as_str() != result
-                    && !explicit
-                        .iter()
-                        .any(|(bound, name, _)| bound == *slot || name == *slot)
-                    && !self.names.contains(NameKind::ContractBinding, slot)
-                    && !self.names.contains(NameKind::IntegerParameter, slot)
-                    && !self.names.contains(NameKind::IntegerLet, slot)
-                    && !self.names.contains(NameKind::ProofBinder, slot)
-            })
-            .filter_map(|slot| {
-                let (identity, _) = self.names.resource_bindings.get(slot)?;
-                Some((slot.clone(), slot.clone(), *identity))
-            })
-            .collect()
     }
 
     /// A hidden field `slot.field` is the field of the child bound to
@@ -10544,62 +10672,76 @@ impl Parser {
     }
 
     #[inline(never)]
-    fn parse_both_proof_tactic(&mut self) -> Result<ProofTactic, ClickError> {
-        // The first-written blocks that hold only a nested `both`,
-        // outermost first. Keep this descent iterative for deep proofs.
-        let mut nested_blocks = Vec::new();
-        let mut first_is_left;
-        let mut first_tactics = loop {
-            let nested_both = nested_blocks.len();
-            if nested_both > 0 && self.proof_nesting + nested_both >= STRUCTURAL_NESTING_LIMIT {
-                return Err(self.error(format!(
-                    "structural proof nesting exceeds Click's supported depth of {STRUCTURAL_NESTING_LIMIT}"
-                )));
-            }
-            self.expect(Token::LBrace)?;
-            first_is_left = match self.peek_ident() {
-                Some("left") => true,
-                Some("right") => false,
-                _ => return Err(self.error("`both` expects a `left` or `right` arm")),
-            };
-            self.position += 1;
-            self.expect(Token::FatArrow)?;
-            self.expect(Token::LBrace)?;
-            if self.peek_ident() == Some("both") {
-                nested_blocks.push((
-                    first_is_left,
-                    self.positions[self.position - 1].clone(),
-                    self.positions[self.position].clone(),
-                ));
-                self.position += 1;
-            } else {
-                break self.parse_tactics_until_rbrace()?;
-            }
-        };
-        self.expect(Token::RBrace)?;
-
+    fn parse_all_proof_tactic(&mut self) -> Result<ProofTactic, ClickError> {
+        // Descend into arm-leading conjunctions on an explicit stack. Each
+        // deferred arm has its own lexical scope and may have a script tail.
+        let mut parents = Vec::new();
+        let mut arms = Vec::new();
+        self.expect(Token::LBrace)?;
         loop {
-            self.expect_ident_spelling(if first_is_left { "right" } else { "left" })?;
-            self.expect(Token::FatArrow)?;
-            let second_tactics = self.parse_possibly_empty_tactic_block()?;
-            self.expect(Token::RBrace)?;
-            self.skip_redundant_semicolon();
-            let (left_tactics, right_tactics) = if first_is_left {
-                (first_tactics, second_tactics)
+            if self.peek() == Some(&Token::RBrace) {
+                self.expect(Token::RBrace)?;
+                if arms.len() < 2 {
+                    return Err(self.error("`all` needs at least two conjunct proofs"));
+                }
+                self.skip_redundant_semicolon();
+                let nested = ProofTactic::All(ProofAll { arms });
+                let Some((outer, proposition, open, start, scope, names, values)) = parents.pop()
+                else {
+                    return Ok(nested);
+                };
+                self.proof_nesting -= 1;
+                arms = outer;
+                let mut tactics = vec![nested];
+                let mut starts = vec![start];
+                while self.peek() != Some(&Token::RBrace) {
+                    let position = self.position;
+                    tactics.push(self.parse_proof_tactic()?);
+                    starts.push(self.positions[position].clone());
+                }
+                self.record_proof_block(open, starts);
+                self.expect(Token::RBrace)?;
+                self.names.end(scope);
+                self.names.replace(NameKind::ProofBinder, names);
+                self.loop_proof_value_names = values;
+                arms.push(ProofAllArm {
+                    proposition,
+                    tactics,
+                });
             } else {
-                (second_tactics, first_tactics)
-            };
-            let current = ProofTactic::Both(ProofBoth {
-                left_tactics,
-                right_tactics,
-            });
-            let Some((parent_first_is_left, open, start)) = nested_blocks.pop() else {
-                return Ok(current);
-            };
-            self.record_proof_block(open, vec![start]);
-            self.expect(Token::RBrace)?;
-            first_is_left = parent_first_is_left;
-            first_tactics = vec![current];
+                let proposition = self.parse_proposition()?;
+                self.expect(Token::FatArrow)?;
+                if matches!(self.tokens.get(self.position..self.position + 2),
+                    Some([Token::LBrace, Token::Ident(name)]) if name == "all")
+                {
+                    if self.proof_nesting > STRUCTURAL_NESTING_LIMIT {
+                        return Err(self.error(format!(
+                            "structural proof nesting exceeds Click's supported depth of {STRUCTURAL_NESTING_LIMIT}"
+                        )));
+                    }
+                    parents.push((
+                        std::mem::take(&mut arms),
+                        proposition,
+                        self.positions[self.position].clone(),
+                        self.positions[self.position + 1].clone(),
+                        self.names.scope(),
+                        self.names.take(NameKind::ProofBinder),
+                        self.loop_proof_value_names.clone(),
+                    ));
+                    self.proof_nesting += 1;
+                    self.position += 2;
+                    self.expect(Token::LBrace)?;
+                    continue;
+                }
+                let tactics = self.parse_possibly_empty_tactic_block()?;
+                arms.push(ProofAllArm {
+                    proposition,
+                    tactics,
+                });
+            }
+            if self.peek() == Some(&Token::Comma) {
+                self.position += 1;
+            }
         }
     }
 
@@ -11168,9 +11310,9 @@ impl Parser {
             "unfold" => {
                 self.expect(Token::LParen)?;
                 if self.indexed_resource_target_follows() {
-                    let slot = self.parse_iterated_slot()?;
+                    let target = self.parse_iterated_target()?;
                     self.expect(Token::Semicolon)?;
-                    return Ok(ProofTactic::Iterated(IteratedTactic::UnfoldSlot(slot)));
+                    return Ok(ProofTactic::Iterated(IteratedTactic::Unfold(target)));
                 }
                 // Look ahead without parsing: parsing an expression may split
                 // generic `>>` tokens, so rewinding only the cursor is unsafe.
@@ -11250,7 +11392,10 @@ impl Parser {
                 let start = self.position;
                 let application = if self.peek_ident().is_some()
                     && self.peek_next() == Some(&Token::LParen)
-                    && !matches!(self.peek_ident(), Some("at" | "old" | "forall" | "exists"))
+                    && !matches!(
+                        self.peek_ident(),
+                        Some("at" | "old" | "exact" | "forall" | "exists")
+                    )
                 {
                     let application = self.parse_theorem_application()?;
                     if self.peek() == Some(&Token::RParen) {
@@ -11285,17 +11430,6 @@ impl Parser {
                         premises,
                     });
                 }
-            }
-            "gather" | "scatter" => {
-                self.expect(Token::LParen)?;
-                let resource =
-                    self.parse_declared_resource_call_with_access(ResourceAccessMode::Own)?;
-                self.expect(Token::RParen)?;
-                ProofTactic::Iterated(if name == "gather" {
-                    IteratedTactic::Gather(resource)
-                } else {
-                    IteratedTactic::Scatter(resource)
-                })
             }
             "observe" => {
                 self.expect(Token::LParen)?;
@@ -11483,9 +11617,9 @@ impl Parser {
             "fold" => {
                 self.expect(Token::LParen)?;
                 if self.indexed_resource_target_follows() {
-                    let slot = self.parse_iterated_slot()?;
+                    let target = self.parse_iterated_target()?;
                     self.expect(Token::Semicolon)?;
-                    return Ok(ProofTactic::Iterated(IteratedTactic::FoldSlot(slot)));
+                    return Ok(ProofTactic::Iterated(IteratedTactic::Fold(target)));
                 }
                 if self
                     .peek_ident()
@@ -11620,7 +11754,6 @@ impl Parser {
                 fields: None,
                 fold_fields: None,
                 child_bindings: None,
-                default_child_bindings: None,
             },
             resource: Box::new(resource),
         };
@@ -13792,6 +13925,7 @@ impl Parser {
                     .map(str::to_string)
             }
             ContractExpression::Old(inner)
+            | ContractExpression::Exact(inner)
             | ContractExpression::At {
                 expression: inner, ..
             } => self.contract_expression_struct_name(inner),
@@ -14405,6 +14539,16 @@ impl Parser {
                     },
                 ));
             }
+            if self.current_aggregate_result
+                && matches!(&expression, ContractExpression::ProgramExpression(
+                    ProgramExpression::Variable(name)) if name.is_named("result"))
+            {
+                return Ok(ContractExpression::ProgramExpression(
+                    ProgramExpression::AddressOf(Box::new(ProgramExpression::Variable(
+                        crate::kernel::CONTRACT_RESULT,
+                    ))),
+                ));
+            }
             let source_expression = expression.clone();
             let Some(expression) = contract_expression_as_program_expression(&expression) else {
                 return Err(self.error("address-of is only supported on current C expressions"));
@@ -14457,7 +14601,7 @@ impl Parser {
         let carrier = self.reference_binding_carrier(name);
         self.position += 2;
         Ok(ContractExpression::ProgramExpression(
-            ProgramExpression::Variable((carrier).into()),
+            ProgramExpression::Variable(carrier),
         ))
     }
 
@@ -14485,9 +14629,8 @@ impl Parser {
                     "`{name}` is a struct reference; name a field as `{name}.field`, or its address as `&{name}`"
                 )));
             }
-            expression = ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                (carrier).into(),
-            ));
+            expression =
+                ContractExpression::ProgramExpression(ProgramExpression::Variable(carrier));
             if !is_struct {
                 if self.peek() == Some(&Token::LBracket) {
                     return Err(self.error(format!(
@@ -14546,6 +14689,7 @@ impl Parser {
                 .or_else(|| self.names.aggregate_objects.get(name))
                 .cloned(),
             ContractExpression::Old(inner)
+            | ContractExpression::Exact(inner)
             | ContractExpression::At {
                 expression: inner, ..
             } => self.contract_expression_struct_name(inner),
@@ -14988,6 +15132,7 @@ impl Parser {
                     let surface_base = expression.clone();
                     let base = match &expression {
                         ContractExpression::Old(inner)
+                        | ContractExpression::Exact(inner)
                         | ContractExpression::At {
                             expression: inner, ..
                         } => contract_expression_as_program_expression(inner),
@@ -15222,8 +15367,8 @@ impl Parser {
             let source = if first.0 {
                 first.1.clone()
             } else {
-                // An explicit source alias uses the same qualification as C objects.
-                match self.source_aliases.get(&first.1) {
+                // Source aliases use the same qualification as C objects.
+                match self.lookup_source_alias(&first.1)? {
                     Some(source) => source.clone(),
                     None => {
                         self.position = start;
@@ -15238,7 +15383,7 @@ impl Parser {
                 return Ok(None);
             }
             if let Some((alias, name)) = first.1.split_once("::") {
-                let Some(source) = self.source_aliases.get(alias).cloned() else {
+                let Some(source) = self.lookup_source_alias(alias)?.cloned() else {
                     self.position = start;
                     return Ok(None);
                 };
@@ -15338,8 +15483,8 @@ impl Parser {
             let source = if first.0 {
                 first.1.clone()
             } else {
-                // An explicit source alias uses the same qualification as C objects.
-                match self.source_aliases.get(&first.1) {
+                // Source aliases use the same qualification as C objects.
+                match self.lookup_source_alias(&first.1)? {
                     Some(source) => source.clone(),
                     None => {
                         self.position = start;
@@ -15354,7 +15499,7 @@ impl Parser {
                 return Ok(None);
             }
             if let Some((alias, name)) = first.1.split_once("::") {
-                let Some(source) = self.source_aliases.get(alias).cloned() else {
+                let Some(source) = self.lookup_source_alias(alias)?.cloned() else {
                     self.position = start;
                     return Ok(None);
                 };
@@ -15880,6 +16025,13 @@ impl Parser {
             return Ok(ContractExpression::Old(Box::new(expression)));
         }
 
+        if self.peek_ident() == Some("exact") && self.peek_next() == Some(&Token::LParen) {
+            self.position += 2;
+            let place = self.parse_contract_expression()?;
+            self.expect(Token::RParen)?;
+            return Ok(ContractExpression::Exact(Box::new(place)));
+        }
+
         if self.peek_ident() == Some("at") && self.peek_next() == Some(&Token::LParen) {
             self.position += 2;
             let selector = self.parse_program_point_selector()?;
@@ -16161,6 +16313,7 @@ impl Parser {
             Some(Token::UnsuffixedUInt64(value)) => {
                 Ok(ContractExpression::IntegerLiteral(value.to_string()))
             }
+            Some(Token::ByteString(bytes)) => Ok(byte_list_expression(&bytes)),
             Some(Token::UInt8Number(value)) => Ok(ContractExpression::ProgramExpression(
                 ProgramExpression::Value(crate::kernel::uint8(u32::from(value))),
             )),
@@ -16929,7 +17082,7 @@ impl Parser {
             };
             let carrier = self.reference_binding_carrier(name);
             self.position += 2;
-            return Ok(CExpression::Variable((carrier).into()));
+            return Ok(CExpression::Variable(carrier));
         }
         if self.peek() == Some(&Token::Amp) {
             self.check_unary_nesting_limit(depth)?;
@@ -16982,7 +17135,7 @@ impl Parser {
             Some(Token::Ident(name)) if self.is_reference_binding(&name) => {
                 let carrier = self.reference_binding_carrier(&name);
                 let is_struct = self.names.struct_params.contains_key(carrier.source_name());
-                let carrier = CExpression::Variable((carrier).into());
+                let carrier = CExpression::Variable(carrier);
                 Ok(if is_struct {
                     carrier
                 } else {
@@ -17780,15 +17933,13 @@ fn validate_parenthesis_nesting(
                 let proof = pending_proof_blocks != 0 || parent_is_proof;
                 pending_proof_blocks = pending_proof_blocks.saturating_sub(1);
                 let preceding = index.checked_sub(1).and_then(|i| tokens.get(i));
-                // The outer `both` braces group the labeled arms. Only
-                // the arm bodies add proof nesting.
-                let both_container = matches!(preceding, Some(Token::Ident(name)) if name == "both")
-                    && matches!(tokens.get(index + 1..index + 4),
-                        Some([Token::Ident(label), Token::FatArrow, Token::LBrace]) if label == "left");
+                // An `all` container groups its arms. Only their
+                // bodies contribute to proof nesting.
+                let all_container = matches!(preceding, Some(Token::Ident(name)) if name == "all");
                 // Proof `if` else blocks are read by the iterative spine
                 // parser. They retain a scope, but no recursive parser frame.
                 let recursive_proof = proof
-                    && !both_container
+                    && !all_container
                     && !matches!(preceding, Some(Token::Ident(name)) if name == "else");
                 brace_kinds.push((quantifier, proof, recursive_proof));
                 if quantifier {
@@ -18292,8 +18443,8 @@ mod tactic_classification_tests {
         ("fold-resource", "fold(reference(p));"),
         ("unfold-slot", "unfold(reference(p)[0]);"),
         ("fold-slot", "fold(reference(p)[0]);"),
-        ("gather-resource", "gather(reference(p));"),
-        ("scatter-resource", "scatter(reference(p));"),
+        ("fold-iterated-clause", "fold(reference(p)[..]);"),
+        ("unfold-iterated-clause", "unfold(reference(p)[..]);"),
         ("construct-resource", "construct(reference(p));"),
         ("induct", "let ih = induct(n);"),
         (
@@ -18320,8 +18471,8 @@ mod tactic_classification_tests {
             "cases { x == 1 => { normalize(); } x != 1 => { normalize(); } }",
         ),
         (
-            "both",
-            "both { left => { normalize(); } right => { normalize(); } }",
+            "all",
+            "all { x == 1 => { known(); } x <= 1 => { known(); } }",
         ),
         (
             "branch",
@@ -18912,5 +19063,50 @@ impl ProgramLayouts {
         for object in unit.global_aggregate_arrays.values() {
             self.register_static_binding(object.kernel_name());
         }
+    }
+}
+
+#[cfg(test)]
+mod exact_syntax_tests {
+    use super::*;
+
+    /// `exact(place)` is a built-in form wherever an expression is read, and
+    /// its printed spelling parses back to the same term.
+    #[test]
+    fn an_exact_read_parses_and_prints_back() {
+        for source in [
+            "exact(p[0])",
+            "exact(exact(p[i])[j])",
+            "at(saved, exact(p[0]))",
+        ] {
+            let parsed = Parser::new(source)
+                .unwrap()
+                .parse_contract_expression()
+                .unwrap();
+            let printed = crate::surface::diagnostics::describe_contract_expression(&parsed);
+            assert_eq!(printed, source);
+            let reparsed = Parser::new(&printed)
+                .unwrap()
+                .parse_contract_expression()
+                .unwrap();
+            assert_eq!(reparsed, parsed, "{source}");
+        }
+        let ContractExpression::Exact(place) = Parser::new("exact(p[0])")
+            .unwrap()
+            .parse_contract_expression()
+            .unwrap()
+        else {
+            panic!("`exact(...)` is its own form")
+        };
+        assert!(!matches!(place.as_ref(), ContractExpression::Exact(_)));
+        // A proposition that starts with `exact(` is a comparison, not a
+        // predicate call.
+        assert!(matches!(
+            Parser::new("exact(p[0]) == p[0]")
+                .unwrap()
+                .parse_proposition()
+                .unwrap(),
+            ClickProposition::Comparison { .. }
+        ));
     }
 }

@@ -479,11 +479,11 @@ impl<'a> ProofScope<'a> {
             .presentation
             .surface_propositions
             .record_lowering(proposition, kernel)?;
-        execution.presentation.surface_record.retained_have_facts = execution
+        execution
             .presentation
             .surface_record
             .retained_have_facts
-            .with_kernel_checked_fact(kernel.clone());
+            .push(Arc::new(kernel.clone()));
         Ok(())
     }
 

@@ -2560,6 +2560,84 @@ pub(crate) fn current_memory_loads_in_term(
     Ok(loads)
 }
 
+/// Check a stored byte-count expression under the same width rules as a
+/// standalone word. Its nominal type does not prove the width of a raw read.
+pub(crate) fn current_memory_loads_in_count(
+    count: &StoredMachineTerm,
+    current_memory: &SymbolicMemory,
+) -> Result<Vec<(Address, u32)>, String> {
+    let mut loads = Vec::new();
+    collect_stored_machine_memory_loads(count, current_memory, &mut loads, &mut BTreeSet::new())?;
+    loads.sort();
+    loads.dedup();
+    Ok(loads)
+}
+
+fn collect_stored_machine_memory_loads(
+    value: &StoredMachineTerm,
+    current_memory: &SymbolicMemory,
+    loads: &mut Vec<(Address, u32)>,
+    seen_integers: &mut BTreeSet<u64>,
+) -> Result<(), String> {
+    if let Some(root) = value.root()
+        && root.is_shared_machine_operand()
+        && !root.has_machine_conversions()
+    {
+        return collect_shared_read_memory_loads(root, current_memory, loads, None, seen_integers);
+    }
+    collect_bitvector_memory_loads(
+        value.native_compat(),
+        current_memory,
+        loads,
+        None,
+        seen_integers,
+    )
+}
+
+fn collect_condition_operand_memory_loads(
+    condition: crate::kernel::BooleanOperandView<'_>,
+    current_memory: &SymbolicMemory,
+    loads: &mut Vec<(Address, u32)>,
+    seen_integers: &mut BTreeSet<u64>,
+) -> Result<(), String> {
+    use crate::kernel::BooleanOperandView;
+    if let BooleanOperandView::Native(condition) = condition {
+        return collect_condition_memory_loads(condition, current_memory, loads, seen_integers);
+    }
+    let mut result = Ok(());
+    condition.for_each_dependency_leaf(|leaf| {
+        if result.is_err() {
+            return;
+        }
+        result = if let Some((
+            format,
+            [
+                MachineOperandView::Shared(left),
+                MachineOperandView::Shared(right),
+            ],
+        )) = leaf.machine_arguments()
+            && [left, right]
+                .into_iter()
+                .all(|root| root.is_shared_machine_operand() && !root.has_machine_conversions())
+        {
+            let width = Some(format.carrier_bytes());
+            collect_shared_read_memory_loads(left, current_memory, loads, width, seen_integers)
+                .and_then(|()| {
+                    collect_shared_read_memory_loads(
+                        right,
+                        current_memory,
+                        loads,
+                        width,
+                        seen_integers,
+                    )
+                })
+        } else {
+            collect_condition_memory_loads(&leaf.native(), current_memory, loads, seen_integers)
+        };
+    });
+    result
+}
+
 fn collect_term_memory_loads(
     term: &Term,
     current_memory: &SymbolicMemory,
@@ -2567,27 +2645,53 @@ fn collect_term_memory_loads(
     seen_integers: &mut BTreeSet<u64>,
 ) -> Result<(), String> {
     match term {
-        Term::Condition(condition) => {
-            collect_condition_memory_loads(condition, current_memory, loads, seen_integers)
-        }
+        Term::Condition(condition) => collect_condition_operand_memory_loads(
+            condition.operand_view(),
+            current_memory,
+            loads,
+            seen_integers,
+        ),
         Term::Bitvector32(term) => {
-            collect_bitvector_memory_loads(term, current_memory, loads, None, seen_integers)
+            collect_stored_machine_memory_loads(term, current_memory, loads, seen_integers)
         }
         Term::Integer(term) => {
-            collect_integer_memory_loads(term, current_memory, loads, seen_integers)
+            collect_integer_memory_loads(term.native_compat(), current_memory, loads, seen_integers)
         }
         Term::PointerOffset(offset) => {
             collect_pointer_offset_memory_loads(offset, current_memory, loads, seen_integers)
         }
         Term::ProgramValue(value) => {
-            collect_cvalue_memory_loads(value, current_memory, loads, seen_integers)
+            if let Some(root) = value.root()
+                && root.is_shared_machine_operand()
+                && !root.has_machine_conversions()
+                && let Some(format) =
+                    MachineIntegerType::from_program_type(value.value().program_type())
+            {
+                collect_shared_read_memory_loads(
+                    root,
+                    current_memory,
+                    loads,
+                    Some(format.format().byte_width()),
+                    seen_integers,
+                )
+            } else {
+                collect_cvalue_memory_loads(
+                    value.native_compat(),
+                    current_memory,
+                    loads,
+                    seen_integers,
+                )
+            }
         }
         Term::Sequence(sequence) => {
             collect_sequence_memory_loads(sequence, current_memory, loads, seen_integers)
         }
-        Term::Algebraic(term) => {
-            collect_algebraic_memory_loads(term, current_memory, loads, seen_integers)
-        }
+        Term::Algebraic(term) => collect_algebraic_memory_loads(
+            term.native_compat(),
+            current_memory,
+            loads,
+            seen_integers,
+        ),
         Term::Memory(_) | Term::ExecutionState(_) => Ok(()),
     }
 }
@@ -3455,7 +3559,8 @@ fn decided_algebraic_if(proposition: &Proposition) -> Option<(ConditionTerm, boo
     let Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) = proposition else {
         return None;
     };
-    let (conditional, constructor) = match (&left.node, &right.node) {
+    let (conditional, constructor) = match (&left.native_compat().node, &right.native_compat().node)
+    {
         (AlgebraicTermNode::If { .. }, AlgebraicTermNode::Constructor { .. }) => (left, right),
         (AlgebraicTermNode::Constructor { .. }, AlgebraicTermNode::If { .. }) => (right, left),
         _ => return None,
@@ -3467,7 +3572,10 @@ fn decided_algebraic_if(proposition: &Proposition) -> Option<(ConditionTerm, boo
             else_term,
         },
         AlgebraicTermNode::Constructor { variant, .. },
-    ) = (&conditional.node, &constructor.node)
+    ) = (
+        &conditional.native_compat().node,
+        &constructor.native_compat().node,
+    )
     else {
         return None;
     };
@@ -3483,8 +3591,8 @@ fn decided_algebraic_if(proposition: &Proposition) -> Option<(ConditionTerm, boo
         condition.as_ref().clone(),
         value,
         Proposition::Equal(
-            Term::Algebraic(selected.as_ref().clone()),
-            Term::Algebraic(constructor.clone()),
+            Term::Algebraic(selected.as_ref().clone().into()),
+            Term::Algebraic(constructor.clone().into()),
         ),
     ))
 }
@@ -3499,7 +3607,7 @@ pub(crate) fn algebraic_constructor_field_equalities(
     let Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) = proposition else {
         return None;
     };
-    if left.algebraic_type != right.algebraic_type {
+    if left.native_compat().algebraic_type != right.native_compat().algebraic_type {
         return None;
     }
     let (
@@ -3511,15 +3619,15 @@ pub(crate) fn algebraic_constructor_field_equalities(
             variant: right_variant,
             ..
         },
-    ) = (&left.node, &right.node)
+    ) = (&left.native_compat().node, &right.native_compat().node)
     else {
         return None;
     };
     if left_variant != right_variant {
         return None;
     }
-    let left_fields = left.checked_constructor_fields()?;
-    let right_fields = right.checked_constructor_fields()?;
+    let left_fields = left.native_compat().checked_constructor_fields()?;
+    let right_fields = right.native_compat().checked_constructor_fields()?;
     left_fields
         .iter()
         .zip(right_fields)
@@ -3529,8 +3637,8 @@ pub(crate) fn algebraic_constructor_field_equalities(
             }
             (AlgebraicValue::Algebraic(left), AlgebraicValue::Algebraic(right)) => {
                 Some(Proposition::Equal(
-                    Term::Algebraic(left.clone()),
-                    Term::Algebraic(right.clone()),
+                    Term::Algebraic(left.clone().into()),
+                    Term::Algebraic(right.clone().into()),
                 ))
             }
             _ => None,
@@ -3542,14 +3650,14 @@ fn is_algebraic_constructor_conflict(proposition: &Proposition) -> bool {
     let Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) = proposition else {
         return false;
     };
-    if left.algebraic_type != right.algebraic_type
-        || left.checked_constructor_fields().is_none()
-        || right.checked_constructor_fields().is_none()
+    if left.native_compat().algebraic_type != right.native_compat().algebraic_type
+        || left.native_compat().checked_constructor_fields().is_none()
+        || right.native_compat().checked_constructor_fields().is_none()
     {
         return false;
     }
     matches!(
-        (&left.node, &right.node),
+        (&left.native_compat().node, &right.native_compat().node),
         (
             AlgebraicTermNode::Constructor { variant: left, .. },
             AlgebraicTermNode::Constructor { variant: right, .. }
@@ -3958,9 +4066,14 @@ impl PureFactContext {
     fn adjust_pointer_equality(&mut self, proposition: &Proposition) {
         let (left, right) = match proposition {
             Proposition::Equal(
-                Term::ProgramValue(ProgramValue::Pointer(left)),
-                Term::ProgramValue(ProgramValue::Pointer(right)),
-            ) => (left, right),
+                term_source_0 @ Term::ProgramValue(_),
+                term_source_1 @ Term::ProgramValue(_),
+            ) if let Some(ProgramValue::Pointer(left)) = term_source_0.program_value_native()
+                && let Some(ProgramValue::Pointer(right)) =
+                    term_source_1.program_value_native() =>
+            {
+                (left, right)
+            }
             condition_source_0 @ Proposition::ConditionIs(_, true)
                 if let Some((ConditionTerm::PointerEqual(left, right), _)) =
                     condition_source_0.condition_native() =>
@@ -4001,7 +4114,9 @@ impl PureFactContext {
 
     fn adjust_algebraic_graph_equality(&mut self, proposition: &Proposition) {
         let (left, right) = match proposition {
-            Proposition::Equal(Term::Algebraic(a), Term::Algebraic(b)) => (a, b),
+            Proposition::Equal(Term::Algebraic(a), Term::Algebraic(b)) => {
+                (a.native_compat(), b.native_compat())
+            }
             condition_source_0 @ Proposition::ConditionIs(_, true)
                 if let Some((ConditionTerm::AlgebraicEqual(a, b), _)) =
                     condition_source_0.condition_native() =>
@@ -5661,18 +5776,19 @@ impl PureFactContext {
         let Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) = proposition else {
             return;
         };
-        let (variable, constructor) = match (&left.node, &right.node) {
-            (AlgebraicTermNode::Variable(variable), AlgebraicTermNode::Constructor { .. }) => {
-                (*variable, right)
-            }
-            (AlgebraicTermNode::Constructor { .. }, AlgebraicTermNode::Variable(variable)) => {
-                (*variable, left)
-            }
-            _ => return,
-        };
-        if left.algebraic_type != right.algebraic_type
-            || !left.is_well_formed()
-            || !right.is_well_formed()
+        let (variable, constructor) =
+            match (&left.native_compat().node, &right.native_compat().node) {
+                (AlgebraicTermNode::Variable(variable), AlgebraicTermNode::Constructor { .. }) => {
+                    (*variable, right)
+                }
+                (AlgebraicTermNode::Constructor { .. }, AlgebraicTermNode::Variable(variable)) => {
+                    (*variable, left)
+                }
+                _ => return,
+            };
+        if left.native_compat().algebraic_type != right.native_compat().algebraic_type
+            || !left.native_compat().is_well_formed()
+            || !right.native_compat().is_well_formed()
         {
             return;
         }
@@ -5681,7 +5797,8 @@ impl PureFactContext {
             .get(&variable)
             .cloned()
             .unwrap_or_default();
-        let entries = entries.with_inserted(proposition.clone(), constructor.clone());
+        let entries =
+            entries.with_inserted(proposition.clone(), constructor.native_compat().clone());
         self.algebraic_variable_constructors = if entries.is_empty() {
             self.algebraic_variable_constructors.without_key(&variable)
         } else {
@@ -5708,25 +5825,30 @@ impl PureFactContext {
             else {
                 return None;
             };
-            if left.algebraic_type != right.algebraic_type
-                || !left.is_well_formed()
-                || !right.is_well_formed()
+            if left.native_compat().algebraic_type != right.native_compat().algebraic_type
+                || !left.native_compat().is_well_formed()
+                || !right.native_compat().is_well_formed()
             {
                 return None;
             }
-            let (variable, constructor) = match (&left.node, &right.node) {
-                (AlgebraicTermNode::Variable(variable), AlgebraicTermNode::Constructor { .. }) => {
-                    (*variable, right)
-                }
-                (AlgebraicTermNode::Constructor { .. }, AlgebraicTermNode::Variable(variable)) => {
-                    (*variable, left)
-                }
-                _ => return None,
-            };
+            let (variable, constructor) =
+                match (&left.native_compat().node, &right.native_compat().node) {
+                    (
+                        AlgebraicTermNode::Variable(variable),
+                        AlgebraicTermNode::Constructor { .. },
+                    ) => (*variable, right),
+                    (
+                        AlgebraicTermNode::Constructor { .. },
+                        AlgebraicTermNode::Variable(variable),
+                    ) => (*variable, left),
+                    _ => return None,
+                };
             if bound.contains(&variable) {
                 return None;
             }
-            let AlgebraicTermNode::Constructor { variant, fields } = &constructor.node else {
+            let AlgebraicTermNode::Constructor { variant, fields } =
+                &constructor.native_compat().node
+            else {
                 return None;
             };
             Some((variable, variant.clone(), fields.len()))
@@ -5858,8 +5980,8 @@ impl PureFactContext {
                 record_consulted_premises(
                     self,
                     &Proposition::Equal(
-                        Term::Algebraic(value.clone()),
-                        Term::Algebraic(constructor.clone()),
+                        Term::Algebraic(value.clone().into()),
+                        Term::Algebraic(constructor.clone().into()),
                     ),
                 );
                 Some(constructor)
@@ -6917,6 +7039,13 @@ impl PureFactContext {
         self
     }
 
+    pub(in crate::kernel) fn with_reasoning_policy_of(mut self, source: &Self) -> Self {
+        self.content_fingerprint ^=
+            self.reasoning_policy.fingerprint() ^ source.reasoning_policy.fingerprint();
+        self.reasoning_policy = source.reasoning_policy;
+        self
+    }
+
     fn toggle_reasoning_policy(&mut self, choice: ReasoningPolicy) {
         self.reasoning_policy.toggle(choice);
         self.content_fingerprint ^= choice.fingerprint();
@@ -7246,9 +7375,12 @@ impl PureFactContext {
                     })
             }
             Proposition::Equal(
-                Term::ProgramValue(ProgramValue::Pointer(left)),
-                Term::ProgramValue(ProgramValue::Pointer(right)),
-            ) => {
+                term_source_0 @ Term::ProgramValue(_),
+                term_source_1 @ Term::ProgramValue(_),
+            ) if let Some(ProgramValue::Pointer(left)) = term_source_0.program_value_native()
+                && let Some(ProgramValue::Pointer(right)) =
+                    term_source_1.program_value_native() =>
+            {
                 self.equality_graph
                     .admitted
                     .pointer_value_classes
@@ -7257,9 +7389,9 @@ impl PureFactContext {
                         && left.bounds() == right.bounds()
                         && self.pointers_known_equal(left.address(), right.address()))
             }
-            Proposition::Equal(Term::Algebraic(a), Term::Algebraic(b)) => {
-                self.equality_graph.are_algebraic_equal(a, b)
-            }
+            Proposition::Equal(Term::Algebraic(a), Term::Algebraic(b)) => self
+                .equality_graph
+                .are_algebraic_equal(a.native_compat(), b.native_compat()),
             Proposition::Predicate { .. } => {
                 self.equality_graph.knows_pointer_predicate(proposition)
             }
@@ -7377,8 +7509,8 @@ impl PureFactContext {
             let decided = match &condition {
                 ConditionTerm::AlgebraicEqual(left, right) if value => {
                     decided_algebraic_if(&Proposition::Equal(
-                        Term::Algebraic(left.as_ref().clone()),
-                        Term::Algebraic(right.as_ref().clone()),
+                        Term::Algebraic(left.as_ref().clone().into()),
+                        Term::Algebraic(right.as_ref().clone().into()),
                     ))
                 }
                 _ => None,
@@ -10138,6 +10270,7 @@ impl ProofObligation {
             assumable: true,
             evaluation_domain: false,
             assertion_failure: false,
+            statement_entry_required: false,
             call_requirement_site: None,
             introductions: None,
         }
@@ -10153,6 +10286,7 @@ impl ProofObligation {
             assumable: false,
             evaluation_domain: false,
             assertion_failure: false,
+            statement_entry_required: false,
             call_requirement_site: None,
             introductions: None,
         }
@@ -10171,6 +10305,15 @@ impl ProofObligation {
 
     pub(crate) fn is_assertion_failure(&self) -> bool {
         self.assertion_failure
+    }
+
+    pub(in crate::kernel) fn with_statement_entry_required(mut self, required: bool) -> Self {
+        self.statement_entry_required = required;
+        self
+    }
+
+    pub(crate) fn requires_statement_entry(&self) -> bool {
+        self.statement_entry_required || self.call_requirement_site.is_some()
     }
 
     pub fn with_context(mut self, context: impl Into<String>) -> Self {
@@ -10258,6 +10401,7 @@ impl ProofObligation {
             assumable: self.assumable,
             evaluation_domain: self.evaluation_domain,
             assertion_failure: self.assertion_failure,
+            statement_entry_required: self.statement_entry_required,
             call_requirement_site: None,
             // The chain describes the head nodes of the proposition it was
             // recorded for. A rewrite adds or removes head nodes, so the
@@ -10269,6 +10413,7 @@ impl ProofObligation {
 
 impl ExecutionPureFact {
     /// The value observed by this producer's completed volatile read.
+    #[cfg(test)]
     pub(crate) fn volatile_read_result(&self) -> Option<&ProgramValue> {
         crate::instrumentation::record_deterministic_work(1);
         if !self.is_certified() {
@@ -10940,7 +11085,7 @@ mod dynamic_current_load_tests {
             Box::new(pointer.clone()),
             crate::kernel::LoadKind::Int32,
         );
-        let value = Term::ProgramValue(ProgramValue::Int64(load.clone()));
+        let value = Term::ProgramValue(ProgramValue::Int64(load.clone()).into());
         assert_eq!(
             current_memory_loads_in_term(&value, &memory).unwrap(),
             vec![(pointer.clone(), 8)]
@@ -10949,10 +11094,13 @@ mod dynamic_current_load_tests {
         let integer = SharedIntegerTerm::intern(IntegerTerm::Machine(
             SharedMachineIntegerTerm::intern(MachineIntegerType::Int64, load),
         ));
-        let condition = Term::Condition(ConditionTerm::IntegerEqual(
-            integer,
-            SharedIntegerTerm::intern(IntegerTerm::constant_i64(0)),
-        ));
+        let condition = Term::Condition(
+            ConditionTerm::IntegerEqual(
+                integer,
+                SharedIntegerTerm::intern(IntegerTerm::constant_i64(0)),
+            )
+            .into(),
+        );
         assert_eq!(
             current_memory_loads_in_term(&condition, &memory).unwrap(),
             vec![(pointer, 8)]
@@ -10970,7 +11118,7 @@ mod dynamic_current_load_tests {
     fn observed(root: crate::kernel::KernelTerm, format: MachineIntegerType) -> Term {
         let value = SharedMachineIntegerTerm::from_shared(format, root).unwrap();
         assert!(!value.has_boxed_operand());
-        Term::Integer(IntegerTerm::Machine(value))
+        Term::Integer(IntegerTerm::Machine(value).into())
     }
 
     fn load_payload(memory: &SymbolicMemory, format: MachineIntegerType) -> SharedIntegerTerm {
@@ -11070,16 +11218,19 @@ mod dynamic_current_load_tests {
             .unwrap();
         assert!(!endpoint.machine_operand().has_boxed_operand());
         let exports = KernelTermExport::machine_export_count();
-        let fold = Term::Integer(IntegerTerm::RangeFold {
-            index: IntegerRangeFoldIndex::UInt64 {
-                start: endpoint.clone(),
-                end: endpoint,
-            },
-            initial: IntegerTerm::constant_i64(0).into(),
-            accumulator: Variable(995002),
-            item: Variable(995003),
-            body: IntegerTerm::constant_i64(0).into(),
-        });
+        let fold = Term::Integer(
+            IntegerTerm::RangeFold {
+                index: IntegerRangeFoldIndex::UInt64 {
+                    start: endpoint.clone(),
+                    end: endpoint,
+                },
+                initial: IntegerTerm::constant_i64(0).into(),
+                accumulator: Variable(995002),
+                item: Variable(995003),
+                body: IntegerTerm::constant_i64(0).into(),
+            }
+            .into(),
+        );
         assert_eq!(
             current_memory_loads_in_term(&fold, &memory).unwrap(),
             vec![(pointer(), 8)]
@@ -11095,10 +11246,13 @@ mod dynamic_current_load_tests {
     #[test]
     fn opaque_click_function_carrier_is_rejected() {
         let memory = SymbolicMemory::new();
-        let term = Term::Bitvector32(MachineTerm::ClickFunctionApplication {
-            name: "opaque".into(),
-            arguments: Vec::new(),
-        });
+        let term = Term::Bitvector32(
+            MachineTerm::ClickFunctionApplication {
+                name: "opaque".into(),
+                arguments: Vec::new(),
+            }
+            .into(),
+        );
         assert!(current_memory_loads_in_term(&term, &memory).is_err());
     }
 }
@@ -11536,7 +11690,7 @@ mod integer_observation_tests {
             let Proposition::ConditionIs(condition, truth) = bound else {
                 unreachable!()
             };
-            assert_eq!(facts.decide((&condition).native_compat()), Some(truth));
+            assert_eq!(facts.decide(condition.native_compat()), Some(truth));
         }
         assert_eq!(
             PureFactContext::new().signed_interval_past_exclusions(&word(1879)),
@@ -12177,7 +12331,7 @@ mod integer_observation_tests {
                 // Each reading files exactly the native fact it came from.
                 assert_eq!(
                     native_comparison_of_integer_observation(
-                        (&reading).native_compat(),
+                        reading.native_compat(),
                         reading_truth
                     ),
                     Some((native.clone(), native_truth))
@@ -12290,24 +12444,24 @@ mod integer_observation_tests {
                             unreachable!()
                         };
                         assert_eq!(
-                            parent.decide((&query).native_compat()),
+                            parent.decide(query.native_compat()),
                             None,
                             "{ty:?} {relation:?}"
                         );
                         assert!(
                             child
                                 .equality_graph
-                                .knows_condition((&query).native_compat(), value),
+                                .knows_condition(query.native_compat(), value),
                             "{ty:?} {relation:?} {truth}"
                         );
                         assert!(
                             !child
                                 .equality_graph
-                                .knows_condition((&query).native_compat(), !value),
+                                .knows_condition(query.native_compat(), !value),
                             "{ty:?} {relation:?} {truth}"
                         );
                         assert_eq!(
-                            child.decide((&query).native_compat()),
+                            child.decide(query.native_compat()),
                             Some(value),
                             "{ty:?} {relation:?} {truth}"
                         );
@@ -12344,7 +12498,7 @@ mod integer_observation_tests {
                     unreachable!()
                 };
                 assert_eq!(
-                    context.decide((&query).native_compat()),
+                    context.decide(query.native_compat()),
                     Some(value),
                     "{query:?}"
                 );
@@ -12369,7 +12523,7 @@ mod integer_observation_tests {
                 unreachable!()
             };
             assert_eq!(
-                constants.decide((&query).native_compat()),
+                constants.decide(query.native_compat()),
                 Some(value),
                 "{query:?}"
             );

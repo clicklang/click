@@ -251,6 +251,12 @@ fn tokenize_impl<const SPANS: bool>(
                     index += 1;
                 }
             }
+            'b' if chars.get(index + 1) == Some(&'"') => {
+                let (bytes, end) = tokenize_byte_string(&chars, index + 2)
+                    .map_err(|error| error.with_context(position.to_string()))?;
+                tokens.push(Token::ByteString(bytes.into()));
+                index = end;
+            }
             '"' => {
                 let (value, next_index) = tokenize_string(&chars, index)
                     .map_err(|error| error.with_context(position.to_string()))?;
@@ -494,6 +500,63 @@ fn tokenize_char_literal(chars: &[char], start: usize) -> Result<(u8, usize), Cl
     Ok((value, end + 1))
 }
 
+/// The cursor starts after the opening b".
+fn tokenize_byte_string(chars: &[char], mut index: usize) -> Result<(Vec<u8>, usize), ClickError> {
+    let mut bytes = Vec::new();
+    while let Some(ch) = chars.get(index).copied() {
+        index += 1;
+        let byte = match ch {
+            '"' => return Ok((bytes, index)),
+            '\\' => {
+                let Some(escaped) = chars.get(index).copied() else {
+                    break;
+                };
+                index += 1;
+                match escaped {
+                    '0' => 0,
+                    'n' => b'\n',
+                    'r' => b'\r',
+                    't' => b'\t',
+                    '"' => b'"',
+                    '\'' => b'\'',
+                    '\\' => b'\\',
+                    'x' => {
+                        let [high, low] = chars.get(index..index + 2).unwrap_or_default() else {
+                            return Err(ClickError::new("byte string `\\x` needs two hex digits"));
+                        };
+                        let Some(value) = high.to_digit(16).zip(low.to_digit(16)) else {
+                            return Err(ClickError::new("byte string `\\x` needs two hex digits"));
+                        };
+                        index += 2;
+                        (value.0 * 16 + value.1) as u8
+                    }
+                    other => {
+                        return Err(ClickError::new(format!(
+                            "unsupported escape `\\{other}` in byte string literal"
+                        )));
+                    }
+                }
+            }
+            ' '..='~' => ch as u8,
+            other => {
+                return Err(ClickError::new(if other.is_ascii() {
+                    "unescaped control character in byte string literal"
+                } else {
+                    "byte string literals use ASCII source characters. Write non-ASCII bytes with `\\xNN`"
+                }));
+            }
+        };
+        if bytes.len() == crate::source::BYTE_STRING_MAX_BYTES {
+            return Err(ClickError::new(format!(
+                "byte string literal exceeds {} bytes",
+                crate::source::BYTE_STRING_MAX_BYTES
+            )));
+        }
+        bytes.push(byte);
+    }
+    Err(ClickError::new("unterminated byte string literal"))
+}
+
 fn tokenize_string(chars: &[char], start: usize) -> Result<(String, usize), ClickError> {
     let mut value = String::new();
     let mut index = start + 1;
@@ -526,11 +589,11 @@ fn tokenize_string(chars: &[char], start: usize) -> Result<(String, usize), Clic
     Err(ClickError::new("unterminated string literal"))
 }
 
-fn is_ident_start(ch: char) -> bool {
+pub(super) fn is_ident_start(ch: char) -> bool {
     ch.is_ascii_alphabetic() || ch == '_'
 }
 
-fn is_ident_continue(ch: char) -> bool {
+pub(super) fn is_ident_continue(ch: char) -> bool {
     ch.is_ascii_alphanumeric() || ch == '_'
 }
 
@@ -631,5 +694,39 @@ mod comment_tests {
                 "line 2, column 3: unterminated block comment"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod byte_string_tests {
+    use super::*;
+
+    #[test]
+    fn encoded_byte_strings_round_trip_every_byte() {
+        let all = (0..=255).collect::<Vec<u8>>();
+        for bytes in all.chunks(crate::source::BYTE_STRING_MAX_BYTES) {
+            let spelling = crate::source::click_byte_string(bytes);
+            let (tokens, _) = tokenize(&spelling, None).unwrap();
+            assert_eq!(tokens, [Token::ByteString(bytes.into())]);
+        }
+    }
+
+    #[test]
+    fn malformed_byte_strings_have_local_errors() {
+        for (source, message) in [
+            (r#"b"\x4""#, "needs two hex digits"),
+            (r#"b"\xGG""#, "needs two hex digits"),
+            (r#"b"\u00ff""#, "unsupported escape"),
+            (r#"b"é""#, "use ASCII source characters"),
+            ("b\"\n\"", "unescaped control character"),
+            ("b\"unfinished", "unterminated byte string"),
+        ] {
+            let error = tokenize(source, None).unwrap_err();
+            assert!(error.message().contains(message), "{error}");
+        }
+        let too_long =
+            crate::source::click_byte_string(&[b'a'; crate::source::BYTE_STRING_MAX_BYTES + 1]);
+        let error = tokenize(&too_long, None).unwrap_err();
+        assert!(error.message().contains("byte string literal exceeds"));
     }
 }

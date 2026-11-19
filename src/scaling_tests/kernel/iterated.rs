@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn iterated_exposure_preserves_the_frame_without_admission_or_normalization() {
-    for scatter in [false, true] {
+    for unfold_clause in [false, true] {
         for axis in ["owners", "aliases", "same-block aliases", "range premises"] {
             let mut samples = Vec::new();
             let mut preparation = Vec::new();
@@ -93,7 +93,7 @@ fn iterated_exposure_preserves_the_frame_without_admission_or_normalization() {
                 let state = ExecutionState::new()
                     .with_memory(memory)
                     .with_resource_context(resources);
-                if scatter && axis == "range premises" {
+                if unfold_clause && axis == "range premises" {
                     for premise in 0..count {
                         let var = Variable(9_990_000);
                         let index = MachineTerm::Variable(var);
@@ -120,12 +120,12 @@ fn iterated_exposure_preserves_the_frame_without_admission_or_normalization() {
                         });
                     }
                     assert!(
-                        prepare_iterated_scatter(&state, &template, &facts).is_err(),
+                        prepare_iterated_clause_unfold(&state, &template, &facts).is_err(),
                         "a different range is not the explicit whole-range premise"
                     );
                 }
-                if scatter {
-                    // Scatter's explicit whole-range premise: a selected
+                if unfold_clause {
+                    // Whole-clause unfolding's explicit whole-range premise: a selected
                     // element's known value alone does not prove every guard.
                     let var = Variable(9_990_000);
                     let index = MachineTerm::Variable(var);
@@ -157,13 +157,13 @@ fn iterated_exposure_preserves_the_frame_without_admission_or_normalization() {
                         )),
                     });
                 }
-                let range = if scatter {
+                let range = if unfold_clause {
                     template.covering_range().unwrap()
                 } else {
                     template.element_range(&1u32.into())
                 };
-                let step = if scatter {
-                    IteratedStep::Scatter {
+                let step = if unfold_clause {
+                    IteratedStep::UnfoldClause {
                         template: template.clone(),
                     }
                 } else {
@@ -172,10 +172,10 @@ fn iterated_exposure_preserves_the_frame_without_admission_or_normalization() {
                         index: 1u32.into(),
                     }
                 };
-                let prepared = if scatter {
+                let prepared = if unfold_clause {
                     let (prepared, work) =
                         crate::instrumentation::measure_deterministic_work(|| {
-                            prepare_iterated_scatter(&state, &template, &facts).unwrap()
+                            prepare_iterated_clause_unfold(&state, &template, &facts).unwrap()
                         });
                     preparation.push(work);
                     Some(prepared)
@@ -218,15 +218,15 @@ fn iterated_exposure_preserves_the_frame_without_admission_or_normalization() {
                 samples.push(work);
             }
             eprintln!(
-                "iterated exposure scatter={scatter}, {axis}: {samples:?}; guard preparation={preparation:?}"
+                "iterated exposure unfold_clause={unfold_clause}, {axis}: {samples:?}; guard preparation={preparation:?}"
             );
             assert!(
                 preparation.iter().all(|work| *work <= preparation[0] + 32),
-                "scatter guard preparation {axis}: {preparation:?}"
+                "unfold_clause guard preparation {axis}: {preparation:?}"
             );
             assert!(
                 samples.iter().all(|work| *work <= samples[0] + 64),
-                "{scatter}, {axis}: {samples:?}"
+                "{unfold_clause}, {axis}: {samples:?}"
             );
         }
     }

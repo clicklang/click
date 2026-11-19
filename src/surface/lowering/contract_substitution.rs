@@ -1277,6 +1277,11 @@ fn rewrite_contract_expression_exact(
             let (inner, changed) = unary(inner);
             (ContractExpression::Negate(Box::new(inner)), changed)
         }
+        // An exact read is read in the surrounding state.
+        ContractExpression::Exact(inner) => {
+            let (inner, changed) = unary(inner);
+            (ContractExpression::Exact(Box::new(inner)), changed)
+        }
         ContractExpression::AlgebraicConstructor {
             algebraic_type,
             variant,
@@ -2607,6 +2612,7 @@ pub(in crate::surface) fn collect_contract_expression_referenced_bindings<N: Ref
                 ContractExpression::CUnary { operand: inner, .. }
                 | ContractExpression::Negate(inner)
                 | ContractExpression::Old(inner)
+                | ContractExpression::Exact(inner)
                 | ContractExpression::BitwiseNot(inner)
                 | ContractExpression::At {
                     expression: inner, ..
@@ -2660,7 +2666,7 @@ fn collect_contract_expression_referenced_bindings_one<N: ReferencedBinding>(
         }
 
         ContractExpression::ResourceField(_) | ContractExpression::IntegerLiteral(_) => {}
-        ContractExpression::Negate(inner) => {
+        ContractExpression::Negate(inner) | ContractExpression::Exact(inner) => {
             collect_contract_expression_referenced_bindings(inner, names);
         }
         ContractExpression::AlgebraicVariable { name, .. } => {
@@ -3059,6 +3065,11 @@ impl SubstitutionSourceMap for BinderMap<ContractExpression> {
         self.get(name)
     }
 }
+impl SubstitutionSourceMap for PersistentBinderMap<ContractExpression> {
+    fn replacement(&self, name: &crate::kernel::BindingName) -> Option<&ContractExpression> {
+        self.get(name)
+    }
+}
 impl SubstitutionSourceMap for BTreeMap<&str, ContractExpression> {
     fn replacement(&self, name: &crate::kernel::BindingName) -> Option<&ContractExpression> {
         name.named().and_then(|name| self.get(name))
@@ -3407,6 +3418,7 @@ pub(in crate::surface) fn contract_expression_has_explicit_program_result_refere
             ContractExpression::CUnary { operand, .. }
             | ContractExpression::Field { base: operand, .. }
             | ContractExpression::Negate(operand)
+            | ContractExpression::Exact(operand)
             | ContractExpression::BitwiseNot(operand) => pending.push(operand),
             ContractExpression::ArrayIndex { base, indexes, .. } => {
                 pending.push(base);
@@ -3964,6 +3976,9 @@ fn substitute_contract_expression_node(
         ContractExpression::Negate(inner) => Ok(ContractExpression::Negate(Box::new(
             substitute_contract_expression_in(inner, substitutions)?,
         ))),
+        ContractExpression::Exact(inner) => Ok(ContractExpression::Exact(Box::new(
+            substitute_contract_expression_in(inner, substitutions)?,
+        ))),
         ContractExpression::AlgebraicVariable { name, .. } => Ok(substitutions
             .value(name)
             .cloned()
@@ -4097,6 +4112,7 @@ fn substitute_contract_expression_node(
                 &substituted_base,
                 ContractExpression::Old(_)
                     | ContractExpression::At { .. }
+                    | ContractExpression::Exact(_)
                     | ContractExpression::RegionParameter { .. }
             ) || super::annotations::region_parameter_read(&substituted_base)
                 .is_some();
@@ -4888,6 +4904,8 @@ pub(in crate::surface) fn contract_expression_as_program_expression_resolving_fi
         ContractExpression::ResourceWildcard => None,
         ContractExpression::Old(_) => None,
         ContractExpression::At { .. } => None,
+        // An exact read names a state; it has no C spelling.
+        ContractExpression::Exact(_) => None,
         ContractExpression::Add(left, right) => Some(ProgramExpression::Add(
             Box::new(contract_expression_as_program_expression(left)?),
             Box::new(contract_expression_as_program_expression(right)?),
@@ -5025,6 +5043,8 @@ pub(in crate::surface) fn contract_expression_to_program_expression(
         ContractExpression::ResourceWildcard => None,
         ContractExpression::Old(_) => None,
         ContractExpression::At { .. } => None,
+        // An exact read names a state; it has no C spelling.
+        ContractExpression::Exact(_) => None,
         ContractExpression::Add(left, right) => Some(ProgramExpression::Add(
             Box::new(contract_expression_to_program_expression(left)?),
             Box::new(contract_expression_to_program_expression(right)?),

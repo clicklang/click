@@ -751,6 +751,7 @@ pub(super) fn syntactic_expression_type(
             crate::kernel::BindingName::SliceLength(_),
         )) => Some(ClickType::Program(InterfaceType::UInt64(LongRank::Long))),
         ContractExpression::Old(inner)
+        | ContractExpression::Exact(inner)
         | ContractExpression::At {
             expression: inner, ..
         } => syntactic_expression_type(inner, variables),
@@ -1216,6 +1217,22 @@ fn instantiate_proof_tactic(
                 ),
             },
         },
+        ProofTactic::All(all) => ProofTactic::All(ProofAll {
+            arms: all
+                .arms
+                .iter()
+                .map(|arm| {
+                    Ok(ProofAllArm {
+                        proposition: proposition(&arm.proposition)?,
+                        tactics: instantiate_proof_tactics(
+                            &arm.tactics,
+                            substitution,
+                            algebraic_parameters,
+                        )?,
+                    })
+                })
+                .collect::<Result<_, String>>()?,
+        }),
         ProofTactic::Both(both) => ProofTactic::Both(ProofBoth {
             left_tactics: instantiate_proof_tactics(
                 &both.left_tactics,
@@ -1384,6 +1401,7 @@ fn instantiate_expression(
             ContractExpression::SequenceConcat(Box::new(recurse(left)?), Box::new(recurse(right)?))
         }
         ContractExpression::Old(inner) => ContractExpression::Old(Box::new(recurse(inner)?)),
+        ContractExpression::Exact(inner) => ContractExpression::Exact(Box::new(recurse(inner)?)),
         ContractExpression::At {
             selector,
             expression,

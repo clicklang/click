@@ -33,6 +33,7 @@ int32 shifted_copy_effect_uses_covering_separate(int32 dst[], int32 src[], int32
 } by {
     step();
     step();
+    have separate(memory((dst + 1)[0..n - 1]), memory(src[0..n])) by { solve(); }
     loop {
         decreases n - i;
         invariant i >= 1;

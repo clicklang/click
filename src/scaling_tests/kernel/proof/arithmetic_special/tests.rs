@@ -208,7 +208,7 @@ fn intrinsic_alignment_known_work_ignores_other_blocks_and_related_facts() {
         let (results, work) = crate::instrumentation::measure_deterministic_work(|| {
             goals
                 .each_ref()
-                .map(|goal| crate::kernel::proof::fact_reasoning::computes_leaf(goal))
+                .map(crate::kernel::proof::fact_reasoning::computes_leaf)
         });
         assert_eq!(results, [true, true, false]);
         samples.push(work);

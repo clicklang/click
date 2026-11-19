@@ -27,13 +27,27 @@ radix prefixes, underscore separators, and the suffixes described under
 [Rust integer literals](../rust.md#integer-literals).
 Character literals use single quotes, including
 the ordinary C escapes accepted by the parser. String literals occur in source
-locations and other explicitly documented string positions; Click doesn't
-have a first-class string type.
+locations and other explicitly documented string positions. The
+[byte string syntax](#byte-string-literals) is available in specifications.
 
 Call-style proof tactics require parentheses, including the no-argument
 call `solve()`. A single tactic call can follow `by` directly; braces enclose
 a sequence and may also enclose one call. An omitted proof runs the whole
 proof by automation.
+
+## Byte string literals
+
+`b"..."` denotes a `List<uint8>` in a Click expression. Printable ASCII
+characters supply their byte values. The escapes `\0`, `\n`, `\r`, `\t`,
+`\"`, `\'`, and `\\` supply individual bytes, and `\xNN` takes exactly
+two hexadecimal digits. The list contains exactly those bytes, in order.
+For example, `b"a\0b"` has three elements, and `b""` is
+`List<uint8>::Nil`. A literal may contain up to 64 bytes after decoding.
+
+The spelling has the same meaning in a C, C++, or Rust sidecar. The source
+language supplies the encoding and terminator rules for its own literals.
+
+<!-- verified-example: mdtests/byte_string_literals.md -->
 
 ## Exact float bit literals
 
@@ -99,14 +113,16 @@ documentation inventory keep the following accepted words synchronized.
 | `prop` | Proposition value: `prop { P }`. |
 | `defined`, `viewable`, `same_object`, `separate`, `aligned`, `little_endian` | Definedness, readable-memory, pointer-provenance, resource-separation, pointer-alignment, and target-byte-order propositions. |
 | `old`, `at`, `program` | Point-reading and program-binding forms: `program::name` names a program binding where a Click name has the same name. |
+| `exact` | `exact(place)` reads `place` named by the state in scope itself, with no version walk ([`exact(...)`](index.md#exact)). |
 | `float32_from_bits`, `float64_from_bits` | Literal-only IEEE bit-pattern expressions; see [exact float bit literals](#exact-float-bit-literals). |
 | `sizeof`, `byte_offset`, `address` | Supported scalar, pointer, and struct-layout sizes, byte-granularity pointer-offset expressions, and the LP64 integer representation of an object pointer. |
 | `load_int32`, `load_uint8`, `load_uint16`, `load_uint32`, `load_int64`, `load_uint64`, `load_int32_pointer`, `load_uint8_pointer`, `load_uint16_pointer`, `load_int32_pointer_pointer`, `load_uint8_pointer_pointer`, `load_uint16_pointer_pointer` | Typed memory-load expressions used by checked expansion when no higher-level source form is available. |
 | `by`, `using` | Proof introduction and exact-premise syntax. |
 | `mark`, `step`, `step_until` | Execution tactics. |
 | `unfold`, `fold`, `observe`, `construct`, `open` | Predicate and resource tactics. |
-| Indexed `unfold` and `fold`, `gather`, `scatter` | Expose or restore an iterated ownership slot, or form or dissolve the whole iterated fact. `forall` inside a resource body starts the iterated clause itself. |
-| `apply`, `have`, `if`, `cases`, `both`, `branch`, `outcomes`, `loop` | Theorem application and structural proof tactics. |
+| `unfold` and `fold` with `[i]` or `[..]` | Expose or restore an iterated ownership slot, or form or dissolve the whole iterated fact. `forall` inside a resource body starts the iterated clause itself. |
+| `apply`, `have`, `if`, `cases`, `all`, `branch`, `outcomes`, `loop` | Theorem application and structural proof tactics. |
+| `both` | Retired conjunction tactic. Use `all { P => { ... } Q => { ... } }`. |
 | `witness`, `obtain` | Existential introduction and elimination. `let` binds what an operation produces. |
 | `known`, `normalize`, `intro`, `enumerate`, `contradiction` | Explicit proposition tactics. |
 | `sorry` | Dev-only proof hole `sorry()`. It parses only under `click verify --allow-sorry`; see [Dev-only proof hole](../cli/verify.md#dev-only-proof-hole). A user-defined tactic may not take the name. |

@@ -45,6 +45,9 @@ pub(super) struct WorkerCompletion {
     plan: StableViewTransferPlan,
     outputs: ResourceContext,
     memory: SymbolicMemory,
+    /// The point the worker's post state stood at, which `memory` is the
+    /// memory of: the creator continues from it on success.
+    point: crate::kernel::ProgramPoint,
     effects: Vec<MemoryRange>,
     facts: crate::kernel::ExecutionFacts,
     mutex_ledger: Option<super::mutexes::MutexLedger>,
@@ -85,7 +88,7 @@ impl WorkerCompletion {
     pub(super) fn checked(
         plan: StableViewTransferPlan,
         outputs: ResourceContext,
-        memory: SymbolicMemory,
+        post_state: &ExecutionState,
         effects: Vec<MemoryRange>,
         facts: crate::kernel::ExecutionFacts,
         mutex_ledger: Option<super::mutexes::MutexLedger>,
@@ -95,7 +98,8 @@ impl WorkerCompletion {
             entry_partition: None,
             plan,
             outputs,
-            memory,
+            memory: post_state.memory.clone(),
+            point: post_state.program_point(),
             effects,
             facts,
             mutex_ledger,
@@ -185,6 +189,9 @@ struct PendingThreadCreateStorage {
     handle_slot: Address,
     handle_value: ProgramValue,
     success_memory: SymbolicMemory,
+    /// Where the success memory was made: the point a created thread's
+    /// outcome continues from when the status is decided to be success.
+    success_point: crate::kernel::ProgramPoint,
     success: PendingCreateAuthority,
     failure: PendingCreateAuthority,
     deltas: PersistentMap<u64, PendingThreadMemoryDelta>,
@@ -225,6 +232,7 @@ impl PendingThreadCreate {
                 handle_slot,
                 handle_value,
                 success_memory: success.memory.clone(),
+                success_point: success.program_point(),
                 success: PendingCreateAuthority::from_state(success),
                 failure: PendingCreateAuthority::from_state(failure),
                 deltas: PersistentMap::default(),
@@ -242,6 +250,7 @@ impl PendingThreadCreate {
                 handle_slot: storage.handle_slot.clone(),
                 handle_value: storage.handle_value.clone(),
                 success_memory: storage.success_memory.clone(),
+                success_point: storage.success_point.clone(),
                 success: PendingCreateAuthority {
                     resources: storage.success.resources.clone(),
                     loan_ledger: storage.success.loan_ledger.clone(),
@@ -279,6 +288,7 @@ impl PendingThreadCreate {
         memory: impl Fn(&SymbolicMemory) -> SymbolicMemory,
     ) -> Self {
         let storage = &self.storage;
+        let success_memory = memory(&storage.success_memory);
         let map_authority = |authority: &PendingCreateAuthority| PendingCreateAuthority {
             resources: resources(&authority.resources),
             loan_ledger: authority.loan_ledger.clone(),
@@ -315,7 +325,10 @@ impl PendingThreadCreate {
                 status: status(&storage.status),
                 handle_slot: pointer(&storage.handle_slot),
                 handle_value: value(&storage.handle_value),
-                success_memory: memory(&storage.success_memory),
+                success_memory: success_memory.clone(),
+                success_point: storage
+                    .success_point
+                    .with_renamed_memory(crate::kernel::intern_memory(success_memory)),
                 success: map_authority(&storage.success),
                 failure: map_authority(&storage.failure),
                 deltas,
@@ -355,7 +368,12 @@ impl PendingThreadCreate {
                         ),
                 };
             }
-            selected.set_memory(memory);
+            // The success memory is the create's other outcome: continue from
+            // the point it was made at, through the steps replayed since.
+            selected.set_memory_continuing(
+                &ExecutionState::at_point(&self.storage.success_point),
+                memory,
+            );
             if let Some(name) = selected
                 .locals
                 .slots
@@ -895,7 +913,12 @@ impl PreparedThreadCreate<'_> {
                     .caller_view_bindings_after_requirements()
                     .clone(),
             )
-            .with_memory(self.completion.memory.clone());
+            // The worker's memory came from its post state: continue that
+            // state's path rather than jump to its memory.
+            .with_memory_continuing(
+                &ExecutionState::at_point(&self.completion.point),
+                self.completion.memory.clone(),
+            );
         if let Some(creation) = &self.completion.creation {
             Arc::make_mut(&mut next.parent.population_effects).creation =
                 Some(creation.parent_after_create.clone());
@@ -923,6 +946,29 @@ impl PreparedThreadCreate<'_> {
         );
         (next, handle, effect)
     }
+}
+
+#[cfg(test)]
+fn test_entry_evidence(assumptions: &PureFactContext, proposition: &Proposition) -> bool {
+    use super::Resource;
+
+    // The unit-test driver has no Surface proof script. Apply the
+    // separation-conjunction law to its explicit loan footprint and use
+    // ordinary atomic checks for the leaves.
+    fn separates(assumptions: &PureFactContext, left: &Resource, right: &Resource) -> bool {
+        match right {
+            Resource::Star(parts) => {
+                separates(assumptions, left, &parts.0) && separates(assumptions, left, &parts.1)
+            }
+            _ => assumptions.proves_resource_separate(left, right),
+        }
+    }
+
+    assumptions.proves_atomic_without_search(proposition)
+        || matches!(
+            proposition,
+            Proposition::ResourceSeparate { left, right } if separates(assumptions, left, right)
+        )
 }
 
 /// One parent path. Clones share immutable roots, just like ordinary C state;
@@ -976,11 +1022,11 @@ impl ThreadContext {
         assumptions: &PureFactContext,
         environment: &ExecutionEnvironment,
         budget: &mut ExecutionBudget,
-    ) -> ExecutionResult<Result<PreparedThreadCreate<'a>, String>> {
+    ) -> ExecutionResult<Result<PreparedThreadCreate<'a>, super::RuntimeError>> {
         if termination.is_none_or(|termination| termination.function != worker.function) {
-            return Ok(Err(
-                "spawn requires termination evidence for the exact worker".to_string(),
-            ));
+            return Ok(Err(super::RuntimeError::FunctionContract(
+                "spawn requires termination evidence for the exact worker".into(),
+            )));
         }
         let (completion, obligations) = match suspend_verified_worker(
             &self.parent,
@@ -996,16 +1042,18 @@ impl ThreadContext {
         if completion.plan.caller_participant()
             != self.parent.loan_participant().expect("parent participant")
         {
-            return Ok(Err(
-                "worker partition belongs to a different parent".to_string()
-            ));
+            return Ok(Err(super::RuntimeError::FunctionContract(
+                "worker partition belongs to a different parent".into(),
+            )));
         }
         if completion
             .plan
             .recheck_entry(self.parent.loan_ledger().expect("parent ledger"))
             .is_err()
         {
-            return Ok(Err("invalid worker entry evidence".to_string()));
+            return Ok(Err(super::RuntimeError::FunctionContract(
+                "invalid worker entry evidence".into(),
+            )));
         }
         let retained_names = if let Some(named) = &self.parent.named_mutex_authorities {
             let target = self
@@ -1021,9 +1069,9 @@ impl ThreadContext {
             match named.apply_checked_mutex_updates(&updates, &target) {
                 Ok(names) => Some(Arc::new(names)),
                 Err(_) => {
-                    return Ok(Err(
-                        "retained mutex authority cannot transport its proof name".to_string(),
-                    ));
+                    return Ok(Err(super::RuntimeError::FunctionContract(
+                        "retained mutex authority cannot transport its proof name".into(),
+                    )));
                 }
             }
         } else {
@@ -1056,7 +1104,18 @@ impl ThreadContext {
                 environment,
                 budget,
             )?
-            .map(PreparedThreadCreate::success))
+            .map_err(|error| super::api::describe_certification_runtime_error(&error))
+            .and_then(|mut prepared| {
+                if prepared
+                    .take_obligations()
+                    .iter()
+                    .all(|obligation| test_entry_evidence(assumptions, obligation.proposition()))
+                {
+                    Ok(prepared.success())
+                } else {
+                    Err("worker create requires entry evidence".to_string())
+                }
+            }))
     }
 
     pub(super) fn join(

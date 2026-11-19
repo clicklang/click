@@ -590,7 +590,6 @@ impl<'a> Proof<'a> {
             &mut facts,
             None,
             join_next_kernel_variable,
-            false,
         )
         .map_err(|error| {
             let error = add_proof_branch_path(error, &execution.presentation.branch_path);
@@ -824,19 +823,22 @@ impl<'a> Proof<'a> {
         // proof `match` arm's fields, `let` names, call-result binders. Its
         // entries name them as a `have` goal here would, so they are
         // resolved before anything is lowered.
-        let proof_locals = self.proof_local_values();
+        let proof_locals =
+            crate::surface::lowering::ContractSubstitutions::new(&self.state().locals().values);
         let assertions = written_assertions
             .iter()
             .map(|assertion| match assertion {
-                ProofAssertion::Fact(fact) => substitute_click_proposition(fact, &proof_locals)
-                    .map(ProofAssertion::Fact)
-                    .map_err(|message| {
-                        self.step_error(format!(
-                            "could not resolve the names in an `ensuring` fact: {message}"
-                        ))
-                    }),
+                ProofAssertion::Fact(fact) => {
+                    crate::surface::lowering::substitute_click_proposition_in(fact, &proof_locals)
+                        .map(ProofAssertion::Fact)
+                        .map_err(|message| {
+                            self.step_error(format!(
+                                "could not resolve the names in an `ensuring` fact: {message}"
+                            ))
+                        })
+                }
                 ProofAssertion::Resource(resource) => {
-                    crate::surface::verification::substitute_resource_clause_for_summary(
+                    crate::surface::verification::substitute_resource_clause_for_summary_in(
                         resource,
                         &proof_locals,
                     )
@@ -984,16 +986,21 @@ impl<'a> Proof<'a> {
                 &mut execution,
                 context,
                 &mut facts,
-                Some(&sibling_join_states),
+                Some(crate::surface::proof::cursor_execution::BranchInterfaceJoinInputs {
+                    sibling_states: &sibling_join_states,
+                    recorded_states: &common_states,
+                    proof: self,
+                    entry_facts: parent_facts,
+                }),
                 join_next_kernel_variable,
-                true)
+            )
             .map_err(|error| {
-            let error = add_proof_branch_path(error, &execution.presentation.branch_path);
-            match self.focus_branch(arm.branch_id) {
-                Ok(focused) => focused.attach_step_diagnostic(error),
-                Err(_) => error,
-            }
-        })?;
+                let error = add_proof_branch_path(error, &execution.presentation.branch_path);
+                match self.focus_branch(arm.branch_id) {
+                    Ok(focused) => focused.attach_step_diagnostic(error),
+                    Err(_) => error,
+                }
+            })?;
             Ok((execution, facts))
         };
         let (then_abstract, then_interface_facts) = abstract_arm(&arms[0])?;

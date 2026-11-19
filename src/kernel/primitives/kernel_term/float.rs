@@ -104,18 +104,11 @@ impl<'a> FloatOperandView<'a> {
         match self {
             Self::Native(_, term) => Some(term),
             Self::Shared(root) => match root.node() {
-                KernelTermNode::FloatRead(_) => root.float_read_native(),
-                KernelTermNode::FloatLiteral { carrier, bits } => {
-                    Some(root.0.machine_leaf.get_or_init(|| MachineTerm::Constant {
-                        format: *carrier,
-                        bits: *bits,
-                    }))
+                KernelTermNode::FloatRead(_)
+                | KernelTermNode::FloatLiteral { .. }
+                | KernelTermNode::Variable(_) => {
+                    Self::from_value(root.float_native_value()?)?.native_compat()
                 }
-                KernelTermNode::Variable(variable) => Some(
-                    root.0
-                        .machine_leaf
-                        .get_or_init(|| MachineTerm::Variable(*variable)),
-                ),
                 KernelTermNode::Legacy(value) => Self::from_value(match value.value() {
                     PureFunctionArgument::Value(value) => value,
                     _ => return None,
@@ -299,14 +292,39 @@ impl KernelTerm {
     /// Selected compatibility reading for native value keys and APIs. Ordinary
     /// execution handoffs retain the root without requesting this view.
     pub(crate) fn float_native_value(&self) -> Option<&ProgramValue> {
-        FloatOperandView::from_shared(self)?;
+        let format = FloatOperandView::from_shared(self)?.format();
+        if let KernelTermNode::Legacy(legacy) = self.node()
+            && let PureFunctionArgument::Value(value) = legacy.value()
+        {
+            return FloatOperandView::from_value(value).map(|_| value);
+        }
         let PureFunctionArgument::Value(value) = self
             .0
             .argument_leaf
             .get_or_init(|| {
-                Box::new(PureFunctionArgument::Value(
-                    KernelTermExport::float(self).expect("float value output"),
-                ))
+                // Build native leaves directly. The compound exporter reads
+                // its child leaves through this same slot.
+                let value = match self.node() {
+                    KernelTermNode::FloatLiteral { carrier, bits } => {
+                        format.value(MachineTerm::Constant {
+                            format: *carrier,
+                            bits: *bits,
+                        })
+                    }
+                    KernelTermNode::Variable(variable) => {
+                        format.value(MachineTerm::Variable(*variable))
+                    }
+                    KernelTermNode::FloatRead(read) => {
+                        let (point, address) = read.parts();
+                        format.value(MachineTerm::MemoryLoad(
+                            point.clone(),
+                            Box::new(address.export().expect("float read address")),
+                            format.load_kind(),
+                        ))
+                    }
+                    _ => KernelTermExport::float(self).expect("float value output"),
+                };
+                Box::new(PureFunctionArgument::Value(value))
             })
             .as_ref()
         else {

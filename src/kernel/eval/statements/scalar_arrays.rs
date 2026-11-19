@@ -137,7 +137,13 @@ pub(super) fn execute(
             }
             let write_refusal = if bytes == 0 {
                 None
-            } else if !fresh {
+            } else if fresh && target.base.is_local_block() {
+                memory_write_storage_outcome(state, target, bytes, &selected).or_else(|| {
+                    state
+                        .automatic_storage_loan_refusal(&target.base)
+                        .map(StatementOutcome::RuntimeError)
+                })
+            } else {
                 let destination = MemoryRange::from_pointer_value(
                     &target_pointer,
                     0u32.into(),
@@ -152,8 +158,6 @@ pub(super) fn execute(
                     &selected,
                     &mut obligations,
                 )
-            } else {
-                memory_write_permission_outcome(state, target, bytes, &selected)
             };
             if let Some(outcome) = write_refusal {
                 paths.push(path(outcome, facts, obligations));

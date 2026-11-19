@@ -972,7 +972,7 @@ impl SurfacePropositionMap {
                             right: b,
                         },
                         _,
-                    )) = (&resolved).condition_native()
+                    )) = resolved.condition_native()
                     {
                         for (expression, term) in qualified.into_iter().zip([a, b]) {
                             if let Some(expression) = expression
@@ -1355,7 +1355,8 @@ fn qualified_object_access(side: &ContractExpression) -> Option<&ContractExpress
     while let ContractExpression::At {
         expression: inner, ..
     }
-    | ContractExpression::Old(inner) = expression
+    | ContractExpression::Old(inner)
+    | ContractExpression::Exact(inner) = expression
     {
         expression = inner;
     }

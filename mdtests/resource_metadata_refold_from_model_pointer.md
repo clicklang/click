@@ -51,8 +51,8 @@ void metadata() {
                     let { metadata: m } = unfold(t);
                     unfold(m);
                     let m = fold(size_metadata(leaf), { value: value });
-                    let t = fold(tree(base), { model: Shape::One(leaf, value) }, { metadata: m });
-                    let o = fold(outer(), { model: Outer::Root(base, Shape::One(leaf, value)) }, { inner: t });
+                    let t = fold(tree(base), { model: Shape::One(leaf, value), metadata: m });
+                    let o = fold(outer(), { model: Outer::Root(base, Shape::One(leaf, value)), inner: t });
                     step_until(function.exit); known(); normalize();
                 },
             }

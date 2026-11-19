@@ -911,11 +911,11 @@ fn lower_function(
         declaration_sites: Vec::new(),
         shared_array_iterators: BTreeMap::new(),
         ranges: BTreeMap::new(),
-        enumerated: BTreeSet::new(),
+        enumerate_fields: BTreeMap::new(),
         shared_array_options: BTreeMap::new(),
         shared_scalar_slices,
-        mir_chunk_iterators: BTreeSet::new(),
-        chunk_options: BTreeSet::new(),
+        mir_chunk_iterators: BTreeMap::new(),
+        chunk_options: BTreeMap::new(),
         local_arrays: BTreeSet::new(),
         owned_locals: BTreeSet::new(),
         addressable_locals: BTreeSet::new(),
@@ -945,7 +945,7 @@ fn lower_function(
     };
     let (body, region_sites) = match &f.mir {
         Some(mir) if f.body.is_empty() => {
-            let lowered = moves::lower(&mut cx, f, mir)?;
+            let lowered = moves::lower(&mut cx, f, mir, &owner)?;
             (lowered.statement, Some(lowered.sites))
         }
         Some(_) => return Err("Rust function must select exactly one body representation".into()),
@@ -1001,15 +1001,15 @@ struct Context<'a> {
     /// Where each of those is declared: its binding and source statement
     /// (`Function::sites`), so `statement(i).local(word)` names it.
     declaration_sites: Vec<(BindingName, u32)>,
-    shared_array_iterators: BTreeMap<String, ProgramType>,
+    shared_array_iterators: BTreeMap<String, shared_arrays::SliceIteratorStorage>,
     /// The range locals, with their element type.
     ranges: BTreeMap<String, (Type, bool)>,
-    /// The enumerated slice iterators and their `Option` locals.
-    enumerated: BTreeSet<String>,
-    shared_array_options: BTreeMap<String, ProgramType>,
+    /// The count of each enumerated slice iterator and the index of each yielded Option.
+    enumerate_fields: BTreeMap<String, BindingName>,
+    shared_array_options: BTreeMap<String, shared_arrays::SliceIteratorOptionStorage>,
     shared_scalar_slices: BTreeMap<String, (BindingName, ProgramType)>,
-    mir_chunk_iterators: BTreeSet<String>,
-    chunk_options: BTreeSet<String>,
+    mir_chunk_iterators: BTreeMap<String, crate::languages::interface::ChunkIteratorFields>,
+    chunk_options: BTreeMap<String, chunks::ChunkOptionFields>,
     local_arrays: BTreeSet<String>,
     owned_locals: BTreeSet<String>,
     /// Integer and `bool` locals, which a borrow takes the address of.
@@ -1627,7 +1627,7 @@ impl Context<'_> {
                 return Err("shared scalar slice assignment element mismatch".into());
             }
             return Ok(program_seq(
-                program_assign(self.binding(&name), pointer),
+                program_assign(self.binding(name), pointer),
                 program_assign(length, source_length),
             ));
         }
@@ -1642,7 +1642,7 @@ impl Context<'_> {
                 checks,
                 program_seq(
                     program_assign(
-                        self.binding(&name),
+                        self.binding(name),
                         reference_view(pointer, ProgramType::UInt8Pointer, false, constant),
                     ),
                     program_assign(length, length_value),
@@ -1663,7 +1663,7 @@ impl Context<'_> {
                 _ => return Err("unsupported fixed array element".into()),
             };
             return Ok(program_assign(
-                self.binding(&name),
+                self.binding(name),
                 reference_view(pointer, pointer_type, false, constant),
             ));
         }
@@ -1680,7 +1680,7 @@ impl Context<'_> {
             }
             _ => {
                 let (checks, value) = self.prepared_expr(e)?;
-                let mut assignment = program_assign(self.binding(&name), value);
+                let mut assignment = program_assign(self.binding(name), value);
                 if let (
                     Some(import_identity),
                     Some(point),
@@ -1757,7 +1757,7 @@ impl Context<'_> {
                     return Err("owned call operand has no local storage".into());
                 }
                 values.push(crate::kernel::program_expression::variable(
-                    self.binding(&name),
+                    self.binding(name),
                 ));
                 pieces.push((checks, values, None));
                 continue;
@@ -1892,19 +1892,11 @@ impl Context<'_> {
         match e {
             E::EnumerateOptionIndex { option } => self.enumerate_option_index(option),
             E::SharedArrayOptionElement { option } => {
-                if !self.shared_array_options.contains_key(option) {
-                    return Err("unknown shared iterator Option".into());
-                }
+                use crate::kernel::program_expression::{equal, int32_literal, variable};
+                let option = self.shared_array_option(option)?;
                 Ok((
-                    program_assert(crate::kernel::program_expression::equal(
-                        crate::kernel::program_expression::variable(
-                            self.binding(&format!("{option}_some")),
-                        ),
-                        crate::kernel::program_expression::int32_literal(1),
-                    )),
-                    crate::kernel::program_expression::variable(
-                        self.binding(&format!("{option}_pointer")),
-                    ),
+                    program_assert(equal(variable(&option.tag), int32_literal(1))),
+                    variable(&option.pointer),
                 ))
             }
             E::Call {
@@ -2277,15 +2269,9 @@ impl Context<'_> {
 
     fn slice_parts(&mut self, e: &E) -> Result<(ProgramExpression, ProgramExpression), String> {
         if let E::ChunkOptionSlice { option } = e {
-            if !self.chunk_options.contains(option) {
-                return Err("unknown chunk Option".into());
-            }
-            return Ok((
-                crate::kernel::program_expression::variable(
-                    self.binding(&format!("{option}_pointer")),
-                ),
-                crate::kernel::program_expression::variable(self.binding(&format!("{option}_len"))),
-            ));
+            use crate::kernel::program_expression::variable;
+            let fields = self.chunk_option(option)?;
+            return Ok((variable(&fields.pointer), variable(&fields.length)));
         }
         if let E::Borrow {
             place,
@@ -2301,16 +2287,11 @@ impl Context<'_> {
             return self.slice_parts(place);
         }
         if let E::ChunkRemainder { iterator } = e {
-            if !self.mir_chunk_iterators.contains(iterator) {
-                return Err("unknown Rust chunk iterator".into());
-            }
+            use crate::kernel::program_expression::variable;
+            let fields = self.chunk_iterator(iterator)?;
             return Ok((
-                crate::kernel::program_expression::variable(
-                    self.binding(&format!("{iterator}_rem")),
-                ),
-                crate::kernel::program_expression::variable(
-                    self.binding(&format!("{iterator}_rem_len")),
-                ),
+                variable(fields.remainder.clone()),
+                variable(fields.remainder_length.clone()),
             ));
         }
         if let E::ArrayToSlice { array, mutable } = e {
@@ -2332,7 +2313,7 @@ impl Context<'_> {
             .get(name)
             .ok_or("unknown Rust slice reference")?;
         Ok((
-            crate::kernel::program_expression::variable(self.binding(&name)),
+            crate::kernel::program_expression::variable(self.binding(name)),
             crate::kernel::program_expression::variable(length.clone()),
         ))
     }
@@ -2382,7 +2363,7 @@ impl Context<'_> {
             E::Local { name } if self.shared_scalar_slices.contains_key(name) => {
                 let (length, element) = self.shared_scalar_slices[name].clone();
                 Ok((
-                    crate::kernel::program_expression::variable(self.binding(&name)),
+                    crate::kernel::program_expression::variable(self.binding(name)),
                     crate::kernel::program_expression::variable(length),
                     element,
                 ))
@@ -2435,7 +2416,7 @@ impl Context<'_> {
             _ => return Err("unsupported fixed array element".into()),
         };
         Ok(reference_view(
-            crate::kernel::program_expression::variable(self.binding(&name)),
+            crate::kernel::program_expression::variable(self.binding(name)),
             pointer_type,
             false,
             *constant,
@@ -2498,13 +2479,13 @@ impl Context<'_> {
             }
             E::Local { name } if self.owned_locals.contains(name) => {
                 Ok(crate::kernel::program_expression::cast(
-                    crate::kernel::program_expression::variable(self.binding(&name)),
+                    crate::kernel::program_expression::variable(self.binding(name)),
                     ProgramType::Int32Pointer,
                 ))
             }
             E::Local { name } if self.addressable_locals.contains(name) => {
                 Ok(ProgramExpression::AddressOf(Box::new(
-                    crate::kernel::program_expression::variable(self.binding(&name)),
+                    crate::kernel::program_expression::variable(self.binding(name)),
                 )))
             }
             E::Local { name } if self.memory_values.contains_key(name) => {
@@ -2514,7 +2495,7 @@ impl Context<'_> {
                     );
                 };
                 Ok(crate::kernel::program_expression::cast(
-                    crate::kernel::program_expression::variable(self.binding(&name)),
+                    crate::kernel::program_expression::variable(self.binding(name)),
                     ProgramType::ParameterPointer(value_type),
                 ))
             }
@@ -2551,14 +2532,9 @@ impl Context<'_> {
             }),
             E::SharedArrayHasNext { iterator } => self.shared_array_has_next(iterator),
             E::RangeHasNext { iterator } => self.range_has_next(iterator),
-            E::SharedArrayOptionTag { option } => {
-                if !self.shared_array_options.contains_key(option) {
-                    return Err("unknown shared iterator Option".into());
-                }
-                Ok(crate::kernel::program_expression::variable(
-                    self.binding(&format!("{option}_some")),
-                ))
-            }
+            E::SharedArrayOptionTag { option } => Ok(crate::kernel::program_expression::variable(
+                &self.shared_array_option(option)?.tag,
+            )),
             E::SharedArrayOptionElement { .. } => {
                 Err("shared Option payload requires checked preparation".into())
             }
@@ -2566,14 +2542,9 @@ impl Context<'_> {
                 Err("enumerated Option index requires checked preparation".into())
             }
             E::ChunkHasNext { iterator } => self.chunk_has_next(iterator),
-            E::ChunkOptionTag { option } => {
-                if !self.chunk_options.contains(option) {
-                    return Err("unknown chunk Option".into());
-                }
-                Ok(crate::kernel::program_expression::variable(
-                    self.binding(&format!("{option}_some")),
-                ))
-            }
+            E::ChunkOptionTag { option } => Ok(crate::kernel::program_expression::variable(
+                &self.chunk_option(option)?.tag,
+            )),
             E::VariantIs { value, variant } => Ok(ProgramExpression::EnumIs {
                 value: Box::new(self.expr(value)?),
                 variant: variant.clone(),
@@ -2704,7 +2675,7 @@ impl Context<'_> {
                     return Err(format!("unknown Rust local `{name}`"));
                 }
                 Ok(crate::kernel::program_expression::variable(
-                    self.binding(&name),
+                    self.binding(name),
                 ))
             }
             E::Not { value } => Ok(crate::kernel::program_expression::bool_value(

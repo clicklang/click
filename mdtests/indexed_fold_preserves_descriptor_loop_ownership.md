@@ -91,6 +91,7 @@ resource arena_clear_window(
 verifying "probe.c";
 void release_run(struct arena* arena, int32 start, int32 end) {
     views arena->data; views arena->occupied; views arena->capacity;
+    requires separate(memory(arena->data[0..arena->capacity]), memory(*arena));
     consumes w: arena_clear_window(arena->data, arena->occupied, arena->capacity, start, end);
     requires w.next == start;
     requires arena->capacity <= 536870911;
@@ -122,6 +123,20 @@ void release_run(struct arena* arena, int32 start, int32 end) {
             separate(memory(arena->occupied[0..arena->capacity]), memory(*arena));
             contains(memory(arena->occupied[0..arena->capacity]), memory(arena->occupied[0..arena->capacity]));
             contains(memory(*arena), memory(arena->capacity));
+        };
+    }
+    have 0 <= initial_next by { solve(); }
+    have contains(memory(arena->data[0..arena->capacity]), memory(arena->data[initial_next..end])) by {
+        apply(separation::contains_subrange(arena->data, 0, arena->capacity, initial_next, end)) using {
+            0 <= initial_next; initial_next <= end; end <= arena->capacity;
+        };
+    }
+    have contains(memory(*arena), memory(*arena)) by { normalize(); }
+    have separate(memory(arena->data[initial_next..end]), memory(*arena)) by {
+        apply(separation::separate_restrict(memory(arena->data[0..arena->capacity]), memory(*arena), memory(arena->data[initial_next..end]), memory(*arena))) using {
+            separate(memory(arena->data[0..arena->capacity]), memory(*arena));
+            contains(memory(arena->data[0..arena->capacity]), memory(arena->data[initial_next..end]));
+            contains(memory(*arena), memory(*arena));
         };
     }
     let w = fold(arena_clear_window(arena->data, arena->occupied, arena->capacity, start, end), { next: initial_next });

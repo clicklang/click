@@ -2,7 +2,7 @@
 
 ```c filename=mutex_use_mixed.c
 #include <pthread.h>
-struct holder { pthread_mutex_t mu; };
+struct holder { int prefix; pthread_mutex_t mu; };
 void inner(struct holder *holder, int *out, int *value) { *out = *value; }
 void outer(struct holder *holder, int *out, int *value) { inner(holder, out, value); }
 int run(struct holder *holder, int *out, int *value) {
@@ -30,15 +30,27 @@ void outer(struct holder *holder, int32 *out, int32 *value) {
     owns out[0..1];
     views value[0..1];
     requires separate(memory(out[0..1]), memory(holder->mu));
+    requires separate(memory(((&holder->mu) as (uint8 *))[0..40]), memory(value[0..1]));
     ensures *out == *value;
+} by {
+    step() {
+        requires separate(memory(((&holder->mu) as (uint8 *))[0..40]), memory(value[0..1])) by { known(); }
+    }
 }
 int32 run(struct holder *holder, int32 *out, int32 *value) {
     owns holder->mu;
     owns out[0..1];
     views value[0..1];
     requires separate(memory(out[0..1]), memory(holder->mu));
+    requires separate(memory(((&holder->mu) as (uint8 *))[0..40]), memory(value[0..1]));
     requires aligned(&holder->mu, 8);
     ensures result == *value;
+} by {
+    step() by { known(); }
+    step();
+    step();
+    step() by { known(); }
+    step();
 }
 ```
 

@@ -1657,6 +1657,7 @@ impl LocalEnvironment {
                 layout,
                 slot,
                 constant,
+                proof_input_for: None,
             },
         );
     }
@@ -1998,6 +1999,18 @@ impl LocalEnvironment {
 
     pub(in crate::kernel) fn slots(&self) -> impl Iterator<Item = &Address> {
         self.slots.keys()
+    }
+
+    pub(in crate::kernel) fn is_proof_input_slot(&self, slot: &Address) -> bool {
+        self.name_for_slot(slot).is_some_and(|name| {
+            matches!(
+                self.bindings.get(name),
+                Some(LocalBinding::AggregateObject {
+                    proof_input_for: Some(_),
+                    ..
+                })
+            )
+        })
     }
 
     pub(crate) fn name_for_slot(&self, pointer: &Address) -> Option<&BindingName> {
@@ -3991,9 +4004,13 @@ impl SymbolicMemory {
                 )
             },
         );
-        std::sync::Arc::make_mut(&mut memory.forgotten)
-            .ended_local_blocks
-            .insert(block.clone());
+        let forgotten = std::sync::Arc::make_mut(&mut memory.forgotten);
+        forgotten.ended_local_blocks.insert(block.clone());
+        if !block_is_never_address_taken_local(block) {
+            forgotten
+                .ended_addressable_local_blocks
+                .insert(block.clone());
+        }
         // A later object is uninitialized until written; the tombstone
         // already refuses every access to this one.
         if own.any_entry(memory.heap.initialized.as_map(), |_, _| true)
@@ -5043,6 +5060,12 @@ impl SymbolicMemory {
                 .iter()
                 .map(|memory| &memory.forgotten.ended_local_blocks),
         );
+        let ended_addressable_local_blocks = union_of_arm_sets(
+            &first.forgotten.ended_addressable_local_blocks,
+            others
+                .iter()
+                .map(|memory| &memory.forgotten.ended_addressable_local_blocks),
+        );
         let live_allocations = union_of_arm_maps(
             &first.heap.live_allocations,
             others.iter().map(|memory| &memory.heap.live_allocations),
@@ -5295,6 +5318,7 @@ impl SymbolicMemory {
         self.blocks = std::sync::Arc::new(blocks);
         let forgotten = std::sync::Arc::make_mut(&mut self.forgotten);
         forgotten.ended_local_blocks = ended_local_blocks;
+        forgotten.ended_addressable_local_blocks = ended_addressable_local_blocks;
         // A forget mark says this state is some earlier one with cached
         // values dropped and the memory itself unchanged. The joined memory
         // is no arm's memory: it is their abstraction, named by its own
@@ -6869,6 +6893,42 @@ impl SymbolicMemory {
         self.cells.get(pointer)
     }
 
+    /// Check the exact typed cell or a fully initialized declared word
+    /// without evaluating a load, resolving aliases, or walking history.
+    pub(in crate::kernel) fn indexed_read_is_defined(
+        &self,
+        pointer: &Address,
+        value_type: ProgramType,
+    ) -> bool {
+        crate::instrumentation::record_deterministic_work(1);
+        if !self.heap.deallocated_allocations.is_empty()
+            || self.heap.uninitialized_allocations.len() != 0
+            || !self.heap.zeroed_prefix_allocations.is_empty()
+            || self.is_ended_local_address(pointer)
+        {
+            return false;
+        }
+        if let Some(value) = self.cells.explicitly_stored_value(pointer) {
+            return value_type.accepts(value) || value_type.read_cell(value).is_some();
+        }
+        match self.cells.exact_run_slot_type(pointer) {
+            Ok(Some(stored_type)) => stored_type == value_type,
+            Err(()) => false,
+            // The whole representation of a declared uint32 is valid once
+            // all its bytes are initialized, including after character writes.
+            Ok(None) => {
+                value_type == ProgramType::UInt32
+                    && pointer.base.is_local_block()
+                    && pointer.offset == AddressOffset::Constant(0)
+                    && self.blocks.get(&pointer.base).is_some_and(|block| {
+                        block.declared_scalar_type == Some(value_type)
+                            && block.size().as_const() == Some(value_type.byte_width())
+                    })
+                    && self.has_initialized_bytes_at(pointer, value_type.byte_width())
+            }
+        }
+    }
+
     /// The integer terms held by the concrete cells this memory changed
     /// since `earlier`, or by every concrete cell when there is no earlier
     /// memory: what a recorded point newly names in memory. The walk visits
@@ -6899,6 +6959,17 @@ impl SymbolicMemory {
 
     pub(in crate::kernel) fn has_known_cell_at(&self, pointer: &Address) -> bool {
         self.cells.contains_key(pointer) || self.has_union_overlay_at(pointer)
+    }
+
+    pub(in crate::kernel) fn join_cell_width(&self, pointer: &Address) -> u32 {
+        self.union_views_at(pointer)
+            .map(|((_, ty), _)| {
+                crate::instrumentation::record_deterministic_work(1);
+                ty.byte_width()
+            })
+            .chain(self.cells.get(pointer).map(|value| value.byte_width()))
+            .max()
+            .unwrap_or(0)
     }
 
     /// The typed union views recorded at exactly `pointer`: one key range,
@@ -8865,7 +8936,7 @@ impl ExecutionState {
         };
         if authority_quantity.as_const() != Some(1)
             || name != description.family()
-            || arguments.as_ref() != description.arguments()
+            || arguments != description.arguments()
             || !self.resources.contains_exact_representation(authority)
             || !self.resources.contains_exact_representation(member)
         {
@@ -9301,7 +9372,7 @@ impl ExecutionState {
             let ResourceFact::Own(Resource::Composite { arguments, .. }, _) = selected else {
                 return Err("Requires owns control resource".into());
             };
-            if arguments.as_ref() != description.arguments() || definition.parameters().len() != 1 {
+            if arguments != description.arguments() || definition.parameters().len() != 1 {
                 return Err("control and authority need the same pointer argument".into());
             }
             let parameter = definition.parameters()[0].name();
@@ -9333,6 +9404,7 @@ impl ExecutionState {
                     point: SpecPoint::Current,
                     pointer,
                     value_type: ProgramType::Int32,
+                    exact: false,
                 } = expression
                 else {
                     return false;
@@ -9820,10 +9892,11 @@ impl ExecutionState {
             {
                 return Err("member private memory exceeds live storage".into());
             }
-            if let Some(ledger) = self.loan_ledger() {
-                ledger
-                    .permits_memory_access_with_assumptions(range, assumptions)
-                    .map_err(|_| "member private memory has an active borrow")?;
+            if self
+                .loan_ledger()
+                .is_some_and(|ledger| !ledger.rewrite_separates_from_loans(range, assumptions))
+            {
+                return Err("member private memory requires separation from active loans".into());
             }
         }
         if produce && !definition.facts().is_empty() {
@@ -10138,16 +10211,25 @@ impl ExecutionState {
         self
     }
 
-    /// Use a view that only names cells at this state's observation
-    /// point. Settle the source's pending steps first, then discard the naming
-    /// entries from the new view's path log.
+    /// Install a proof-only view at the current point. Settle genuine source
+    /// steps first. Keep the path's versions available through a certified
+    /// naming suffix without turning those cache entries into execution steps.
     pub(crate) fn with_materialized_memory_at_current_point(
         mut self,
         mut memory: SymbolicMemory,
     ) -> Self {
+        let source = super::intern_memory_ref(&self.memory);
+        let view = super::intern_memory_ref(&memory);
+        let verified = super::program_point::StepLog::materializes_from(
+            &source,
+            self.memory.pending_steps.as_ref(),
+            &view,
+            memory.pending_steps.as_ref(),
+        );
         if self.memory.pending_steps.is_some() {
             self.point = self.program_point().path_link().clone();
         }
+        self.point = self.point.with_materialized_view(&source, &view, verified);
         memory.pending_steps = None;
         self.with_materialized_memory(memory)
     }
@@ -10211,6 +10293,24 @@ impl ExecutionState {
     pub(crate) fn set_memory_continuing(&mut self, from: &Self, memory: SymbolicMemory) {
         let base = from.program_point();
         self.replace_memory(memory, false);
+        self.record_memory_continuation(&base);
+    }
+
+    /// Resume the caller with the callee's memory and the checked return
+    /// partition together. Resource recovery has already constructed the new
+    /// frame, so there is no old-frame projection to invalidate here.
+    pub(in crate::kernel) fn with_call_return(
+        mut self,
+        callee: &Self,
+        resources: ResourceContext,
+    ) -> Self {
+        let base = callee.program_point();
+        self.memory = callee.memory.clone();
+        self.record_memory_continuation(&base);
+        self.with_resource_context(resources)
+    }
+
+    fn record_memory_continuation(&mut self, base: &super::ProgramPoint) {
         let steps = self.memory.pending_steps.take();
         let shared = super::intern_memory_ref(&self.memory);
         self.point = if steps.is_none() && base.shared_memory() == &shared {
@@ -10301,8 +10401,10 @@ impl ExecutionState {
             .after(super::intern_memory_ref(&self.memory), steps);
     }
 
-    /// Keep `before`'s memory, and so stand where `before` stood: a state
-    /// rebuilt around unchanged memory has not moved.
+    /// Take `before`'s memory and stand where `before` stood, without the
+    /// resource invalidation of [`Self::set_memory_of`]: for a state rebuilt
+    /// around unchanged memory, or one taking the memory a transition that
+    /// already accounted for its resources produced.
     pub(crate) fn keep_memory_of(&mut self, before: &Self) {
         self.memory = before.memory.clone();
         self.point = before.point.clone();
@@ -10405,19 +10507,6 @@ impl ExecutionState {
             .clone()
             .with_loan_dependency_state(self.loan_view_bindings.state());
         self
-    }
-
-    /// The bounded explanation of a refused access, or `None` when the
-    /// access is permitted or no ledger is active.
-    pub(crate) fn stable_loan_memory_access_refusal(
-        &self,
-        range: &MemoryRange,
-        assumptions: &PureFactContext,
-        operation: crate::kernel::LoanRefusalOperation,
-    ) -> Option<crate::kernel::LoanRefusalDiagnostic> {
-        self.loan_ledger
-            .as_ref()
-            .and_then(|ledger| ledger.memory_access_refusal(range, assumptions, operation))
     }
 
     pub(in crate::kernel) fn automatic_storage_loan_refusal(

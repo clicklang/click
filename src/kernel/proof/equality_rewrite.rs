@@ -275,8 +275,8 @@ pub(crate) fn reverse_equality(equality: &Proposition) -> Option<Proposition> {
     let reversed = match equality {
         Proposition::Equal(Term::Algebraic(a), Term::Algebraic(b)) => {
             return Some(Proposition::Equal(
-                Term::Algebraic(b.clone()),
-                Term::Algebraic(a.clone()),
+                Term::Algebraic(b.clone().into()),
+                Term::Algebraic(a.clone().into()),
             ));
         }
         condition_source_0 @ Proposition::ConditionIs(_, true)
@@ -1612,7 +1612,8 @@ fn rewrite_atomic_proposition_by_exact_equality(
     }
 
     if let Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) = equality {
-        let mut rewrite = super::term_rewrite::TermRewrite::new(left, right);
+        let mut rewrite =
+            super::term_rewrite::TermRewrite::new(left.native_compat(), right.native_compat());
         let rewritten = match goal {
             Proposition::Equal(a, b) => Proposition::Equal(rewrite.term(a), rewrite.term(b)),
             Proposition::ConditionIs(c, expected) => {
@@ -1950,18 +1951,24 @@ fn rewrite_atomic_proposition_by_exact_equality(
                     .unwrap_or_else(|| value.clone())
                 };
                 Proposition::Equal(
-                    Term::Algebraic(rewrite_algebraic(
-                        goal_left,
-                        &rewrite_term,
-                        &rewrite_pointer,
-                        &rewrite_shared,
-                    )),
-                    Term::Algebraic(rewrite_algebraic(
-                        goal_right,
-                        &rewrite_term,
-                        &rewrite_pointer,
-                        &rewrite_shared,
-                    )),
+                    Term::Algebraic(
+                        rewrite_algebraic(
+                            goal_left.native_compat(),
+                            &rewrite_term,
+                            &rewrite_pointer,
+                            &rewrite_shared,
+                        )
+                        .into(),
+                    ),
+                    Term::Algebraic(
+                        rewrite_algebraic(
+                            goal_right.native_compat(),
+                            &rewrite_term,
+                            &rewrite_pointer,
+                            &rewrite_shared,
+                        )
+                        .into(),
+                    ),
                 )
             }
             _ => {
@@ -2280,18 +2287,24 @@ fn rewrite_atomic_proposition_by_exact_equality(
                     .unwrap_or_else(|| value.clone())
                 };
                 Proposition::Equal(
-                    Term::Algebraic(rewrite_algebraic(
-                        goal_left,
-                        &rewrite_term,
-                        &rewrite_pointer,
-                        &rewrite_shared,
-                    )),
-                    Term::Algebraic(rewrite_algebraic(
-                        goal_right,
-                        &rewrite_term,
-                        &rewrite_pointer,
-                        &rewrite_shared,
-                    )),
+                    Term::Algebraic(
+                        rewrite_algebraic(
+                            goal_left.native_compat(),
+                            &rewrite_term,
+                            &rewrite_pointer,
+                            &rewrite_shared,
+                        )
+                        .into(),
+                    ),
+                    Term::Algebraic(
+                        rewrite_algebraic(
+                            goal_right.native_compat(),
+                            &rewrite_term,
+                            &rewrite_pointer,
+                            &rewrite_shared,
+                        )
+                        .into(),
+                    ),
                 )
             }
             _ => {
@@ -2698,18 +2711,24 @@ fn rewrite_atomic_proposition_by_exact_equality(
             let rewrite_shared =
                 |value: &SharedMachineIntegerTerm| rewrite_pointer_index(value, left, right);
             Proposition::Equal(
-                Term::Algebraic(rewrite_algebraic(
-                    goal_left,
-                    &rewrite_term,
-                    &rewrite_pointer,
-                    &rewrite_shared,
-                )),
-                Term::Algebraic(rewrite_algebraic(
-                    goal_right,
-                    &rewrite_term,
-                    &rewrite_pointer,
-                    &rewrite_shared,
-                )),
+                Term::Algebraic(
+                    rewrite_algebraic(
+                        goal_left.native_compat(),
+                        &rewrite_term,
+                        &rewrite_pointer,
+                        &rewrite_shared,
+                    )
+                    .into(),
+                ),
+                Term::Algebraic(
+                    rewrite_algebraic(
+                        goal_right.native_compat(),
+                        &rewrite_term,
+                        &rewrite_pointer,
+                        &rewrite_shared,
+                    )
+                    .into(),
+                ),
             )
         }
         _ => {
@@ -2813,7 +2832,7 @@ mod tests {
             };
             assert!(matches!(left.as_ref(), MachineTerm::MemoryLoad(..)));
             let observed = crate::kernel::eval::scalar_read_observation(
-                crate::kernel::MachineOperandView::Legacy(&left),
+                crate::kernel::MachineOperandView::Legacy(left),
             )
             .unwrap();
             assert_eq!(observed.bytes, bytes);
@@ -3719,10 +3738,13 @@ mod tests {
             MachineIntegerType::Int128,
         ] {
             let cast = |value: IntegerTerm| {
-                Term::Bitvector32(MachineTerm::IntegerToMachine {
-                    value: value.into(),
-                    destination,
-                })
+                Term::Bitvector32(
+                    MachineTerm::IntegerToMachine {
+                        value: value.into(),
+                        destination,
+                    }
+                    .into(),
+                )
             };
             let native_goal = Proposition::Equal(cast(x.clone()), cast(y.clone()));
             assert_eq!(

@@ -137,8 +137,8 @@ fn signed_match_definedness_does_not_scan_constructor_facts() {
                     constructor.clone()
                 };
                 context = context.assume_proposition(Proposition::Equal(
-                    Term::Algebraic(maybe_variable(Variable(1_000 + index))),
-                    Term::Algebraic(right),
+                    Term::Algebraic(maybe_variable(Variable(1_000 + index)).into()),
+                    Term::Algebraic(right.into()),
                 ));
             }
             let expression = signed_value_or_match(Variable(1_000 + size - 1));
@@ -338,5 +338,82 @@ fn algebraic_constructor_handoffs_do_not_export_growing_fields() {
             exports
         );
         assert!(work < 100, "size={size} work={work}");
+    }
+}
+
+#[test]
+fn algebraic_proposition_handoffs_keep_growing_scrutinees_without_export() {
+    for size in [8, 32, 128] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let ty = maybe_type();
+        let plain = KernelTerm::variable(KernelType::Algebraic(ty.clone()), Variable(998_310));
+        let guard = KernelTerm::variable(KernelType::Bool, Variable(998_311));
+        let mut shared = plain.clone();
+        for _ in 0..size {
+            shared =
+                KernelTerm::algebraic_if_raw(ty.clone(), [guard.clone(), shared.clone(), shared]);
+        }
+        let state = ExecutionState::new();
+        let mut values = crate::persistent::PersistentMap::default();
+        values.insert("adt".into(), shared.clone());
+        let scope = SpecScope {
+            values: Some(&values),
+            ..SpecScope::unbound(&state, None)
+        };
+        let left = SpecAlgebraicExpression {
+            algebraic_type: ty.clone(),
+            node: SpecAlgebraicExpressionNode::Binding("adt".into()),
+        };
+        let right = SpecAlgebraicExpression {
+            algebraic_type: ty.clone(),
+            node: SpecAlgebraicExpressionNode::Variable(Variable(998_310)),
+        };
+        let exports = KernelTermExport::algebraic_export_count();
+        let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+            let mut execution = ExecutionBudget::new();
+            let paths = lower_spec_algebraic_comparison_at_state_in(
+                scope,
+                &left,
+                true,
+                &right,
+                &PureFactContext::new(),
+                &mut SpecEvaluation::logical(&mut execution),
+            )
+            .unwrap();
+            let [path] = paths.as_slice() else {
+                panic!("one equality path")
+            };
+            let Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) =
+                &path.proposition
+            else {
+                panic!("evaluated algebraic equality")
+            };
+            assert_eq!(left.root(), Some(&shared));
+            assert_eq!(right.root(), Some(&plain));
+
+            let mut execution = ExecutionBudget::new();
+            let cases = algebraic_case_paths_in(
+                &AlgebraicResult::Shared(shared.clone()),
+                &mut SpecEvaluation::logical(&mut execution),
+            )
+            .unwrap();
+            assert_eq!(cases.len(), ty.variants.len());
+            for case in cases {
+                assert_eq!(case.facts.len(), 1);
+                let fact = &case.facts[0];
+                let Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) =
+                    fact.proposition()
+                else {
+                    panic!("algebraic case equation")
+                };
+                assert_eq!(left.root(), Some(&shared));
+                assert!(
+                    matches!(right.root().unwrap().node(), KernelTermNode::Constructor(constructor) if constructor.variant == case.variant)
+                );
+            }
+        });
+        assert_eq!(KernelTermExport::algebraic_export_count(), exports);
+        assert!(!shared.has_cached_native_argument());
+        assert!(work <= 24 * size + 512, "size={size} work={work}");
     }
 }

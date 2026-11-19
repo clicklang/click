@@ -2,6 +2,29 @@
 //! written in Rust syntax.
 
 use super::*;
+use crate::languages::interface::RustLoopIterator;
+
+#[derive(Default)]
+pub(super) struct RustLoopSpelling {
+    iterators: std::sync::Arc<[Option<RustLoopIterator>]>,
+    chunk_fields: std::collections::BTreeSet<crate::kernel::BindingName>,
+}
+
+impl RustLoopSpelling {
+    pub(super) fn of(signature: &super::FunctionSignature) -> Self {
+        let iterators = signature.rust_loop_iterators().clone();
+        let chunk_fields = iterators
+            .iter()
+            .flatten()
+            .filter_map(|iterator| iterator.chunk_fields.as_ref())
+            .flat_map(|fields| fields.bindings().into_iter().cloned())
+            .collect();
+        Self {
+            iterators,
+            chunk_fields,
+        }
+    }
+}
 
 thread_local! {
     /// The slice parameters of the function being checked when its
@@ -9,9 +32,8 @@ thread_local! {
     static RUST_SPELLING: std::cell::RefCell<Option<std::rc::Rc<[String]>>> =
         const { std::cell::RefCell::new(None) };
     /// The iterator each loop of that function advances.
-    static RUST_LOOP_ITERATORS: std::cell::RefCell<
-        std::sync::Arc<[Option<crate::languages::interface::RustLoopIterator>]>,
-    > = std::cell::RefCell::new(std::sync::Arc::from([]));
+    static RUST_LOOP_SPELLING: std::cell::RefCell<RustLoopSpelling> =
+        std::cell::RefCell::new(RustLoopSpelling::default());
     /// The loop whose phases are being checked, whose iterator a proof
     /// there names bare `iter`.
     static CURRENT_LOOP: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
@@ -244,10 +266,8 @@ pub(crate) fn enter_rust_spelling(signature: Option<&super::FunctionSignature>) 
         .and_then(super::FunctionSignature::rust_slice_parameters)
         .map(std::rc::Rc::<[String]>::from);
     RUST_SPELLING.with(|slot| *slot.borrow_mut() = spelling);
-    let iterators = signature
-        .map(|signature| signature.rust_loop_iterators().clone())
-        .unwrap_or_else(|| std::sync::Arc::from([]));
-    RUST_LOOP_ITERATORS.with(|slot| *slot.borrow_mut() = iterators);
+    let loops = signature.map(RustLoopSpelling::of).unwrap_or_default();
+    RUST_LOOP_SPELLING.with(|slot| *slot.borrow_mut() = loops);
 }
 
 /// The slice parameters of the function whose places are printed, when its
@@ -269,6 +289,21 @@ pub(crate) fn rust_spelling() -> bool {
     rust_slice_parameters().is_some()
 }
 
+/// The iterator metadata of the function whose proof is being printed.
+fn with_rust_loop_spelling<T>(read: impl FnOnce(&RustLoopSpelling) -> T) -> T {
+    REFERENCE_CARRIERS.with(|scopes| {
+        let scopes = scopes.borrow();
+        if let Some(loops) = scopes
+            .iter()
+            .rev()
+            .find_map(|scope| scope.rust_loop_spelling.as_ref())
+        {
+            return read(loops);
+        }
+        RUST_LOOP_SPELLING.with(|slot| read(&slot.borrow()))
+    })
+}
+
 /// The spelling of the program variable `name` where its bare name is not
 /// its own, such as `program::iterations` for a variable named like a loop's pass count,
 /// which the bare name means wherever it is written. A variable named
@@ -278,13 +313,44 @@ pub(crate) fn rust_variable_spelling(name: &str) -> Option<String> {
     if name == crate::surface::LOOP_ITERATIONS_NAME {
         return Some(format!("program::{name}"));
     }
-    RUST_LOOP_ITERATORS.with(|slot| {
+    with_rust_loop_spelling(|loops| {
         crate::surface::rust_iterator_spelling(
-            &slot.borrow(),
+            &loops.iterators,
+            CURRENT_LOOP.with(std::cell::Cell::get),
+            &name.into(),
+        )
+    })
+}
+
+/// Render a program binding through its existing iterator or slice accessors.
+pub(crate) fn rust_binding_spelling(name: &crate::kernel::BindingName) -> Option<String> {
+    if let Some(name) = name.named() {
+        return rust_variable_spelling(name);
+    }
+    if !name
+        .local_id()
+        .is_some_and(crate::kernel::LocalBindingId::is_iterator_field)
+    {
+        return None;
+    }
+    with_rust_loop_spelling(|loops| {
+        crate::surface::rust_iterator_spelling(
+            &loops.iterators,
             CURRENT_LOOP.with(std::cell::Cell::get),
             name,
         )
     })
+}
+
+/// Only the loop's iterator fields have selectors. Raise the values held
+/// by iterator copies and the private Option fields structurally.
+pub(crate) fn has_surface_iterator_binding(name: &crate::kernel::BindingName) -> bool {
+    let Some(id) = name.local_id() else {
+        return true;
+    };
+    !id.is_iterator_option_field()
+        && (!id.is_chunk_iterator_field()
+            || with_rust_loop_spelling(|loops| loops.chunk_fields.contains(name)))
 }
 
 /// The Rust name of the scalar type `interface_type`, `u32` for `uint32`.

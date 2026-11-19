@@ -29,10 +29,9 @@ use crate::kernel::{
     SpecPredicateArgument, SpecProposition, SpecResource, StatementOutcome, SymbolicExecution,
     SymbolicMemory, Term, TerminationRefusal, Theorem, UnsuitableCallback, Variable,
     VerifiedLoopRule, VerifiedPureTheorem as KernelVerifiedPureTheorem,
-    abstract_execution_state_for_join, assume_universally_quantified_pure_implication,
-    contract_refinement_context, int32, loop_invariants_hold_at_entry, program_assign,
-    program_condition_fact_memories, program_declare,
-    program_do_while_with_invariant_and_effect_checks, program_function,
+    assume_universally_quantified_pure_implication, contract_refinement_context, int32,
+    loop_invariants_hold_at_entry, program_assign, program_condition_fact_memories,
+    program_declare, program_do_while_with_invariant_and_effect_checks, program_function,
     program_function_contract_entry_state, program_function_contract_refinement_arguments,
     program_function_contract_refinement_context, program_function_entry_state,
     program_function_termination_plan, program_if, program_pointer_offsets_proven_equal_for_effect,
@@ -245,6 +244,7 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "entry",
     "enum",
     "enumerate",
+    "exact",
     "execute",
     "execute_until",
     "exists",
@@ -256,7 +256,6 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "forall",
     "fn",
     "function",
-    "gather",
     "have",
     "if",
     "import",
@@ -302,7 +301,6 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "rewrite",
     "same_object",
     "little_endian",
-    "scatter",
     "separate",
     "float32_from_bits",
     "float64_from_bits",
@@ -356,6 +354,7 @@ pub const SURFACE_CLICK_FORMS: &[&str] = &[
     "any",
     "at",
     "at-expression",
+    "exact-expression",
     "region-allocation",
     "region-footprint",
     "region-parameter",
@@ -509,9 +508,23 @@ pub(crate) fn rust_iterator_method(
         // A slice iterator is the slice it still covers: `iter.as_slice()`
         // reads as a slice parameter does, its data, and `iter.len()` is
         // its length. An enumeration also counts what it has yielded.
-        (K::Slice | K::Enumerate, "len()") => variable("len"),
-        (K::Slice | K::Enumerate, "as_slice()") => variable("ptr"),
-        (K::Enumerate, "count") => variable("count"),
+        (K::Slice | K::Enumerate, "len()" | "as_slice()") => {
+            let fields = iterator
+                .slice_fields
+                .as_ref()
+                .ok_or("missing slice iterator fields")?;
+            ProgramExpression::Variable(if accessor == "len()" {
+                fields.length.clone()
+            } else {
+                fields.pointer.clone()
+            })
+        }
+        (K::Enumerate, "count") => ProgramExpression::Variable(
+            iterator
+                .count_binding
+                .clone()
+                .ok_or("missing count binding for enumerated iterator")?,
+        ),
         (K::Range, "start") => variable("start"),
         (K::Range, "end") => variable("end"),
         (K::RangeInclusive, "start()") => variable("start"),
@@ -528,15 +541,28 @@ pub(crate) fn rust_iterator_method(
         }
         // A slice field reads as a slice parameter does: `iter.v` is its
         // data and `iter.v.len()` its length.
-        (K::Chunks, "v") => variable("v"),
-        (K::Chunks, "v.len()") => variable("v_len"),
-        (K::Chunks, "rem") => variable("rem"),
-        (K::Chunks, "rem.len()") => variable("rem_len"),
-        (K::Chunks, "chunk_size") => variable("chunk_size"),
-        (K::Chunks, "len()") => ProgramExpression::Divide(
-            Box::new(variable("v_len")),
-            Box::new(variable("chunk_size")),
-        ),
+        (K::Chunks, "v" | "v.len()" | "rem" | "rem.len()" | "chunk_size" | "len()") => {
+            let fields = iterator
+                .chunk_fields
+                .as_ref()
+                .ok_or("missing chunk iterator fields")?;
+            let field = match accessor {
+                "v" => &fields.remaining,
+                "v.len()" => &fields.remaining_length,
+                "rem" => &fields.remainder,
+                "rem.len()" => &fields.remainder_length,
+                "chunk_size" => &fields.size,
+                _ => {
+                    return Ok(ContractExpression::ProgramExpression(
+                        ProgramExpression::Divide(
+                            Box::new(ProgramExpression::Variable(fields.remaining_length.clone())),
+                            Box::new(ProgramExpression::Variable(fields.size.clone())),
+                        ),
+                    ));
+                }
+            };
+            ProgramExpression::Variable(field.clone())
+        }
         _ => {
             return Err(format!(
                 "`iter.{accessor}` is not an accessor of this loop's {} iterator{}",
@@ -573,25 +599,25 @@ pub(crate) fn rust_iterator_method(
 pub(crate) fn rust_iterator_spelling(
     iterators: &[Option<crate::languages::interface::RustLoopIterator>],
     current: Option<usize>,
-    name: &str,
+    name: &crate::kernel::BindingName,
 ) -> Option<String> {
-    iterators.iter().enumerate().find_map(|(index, iterator)| {
-        let iterator = iterator.as_ref()?;
+    let variable = ContractExpression::ProgramExpression(ProgramExpression::Variable(name.clone()));
+    let accessor_of = |iterator: &crate::languages::interface::RustLoopIterator| {
         rust_iterator_accessors(iterator.kind)
             .iter()
-            .find_map(|accessor| {
-                (rust_iterator_method(iterator, accessor).ok()?
-                    == ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                        (name.to_string()).into(),
-                    )))
-                .then(|| {
-                    if current == Some(index) {
-                        format!("iter.{accessor}")
-                    } else {
-                        format!("loop({index}).iter.{accessor}")
-                    }
-                })
+            .find(|accessor| {
+                rust_iterator_method(iterator, accessor).ok().as_ref() == Some(&variable)
             })
+    };
+    if let Some(index) = current
+        && let Some(Some(iterator)) = iterators.get(index)
+        && let Some(accessor) = accessor_of(iterator)
+    {
+        return Some(format!("iter.{accessor}"));
+    }
+    iterators.iter().enumerate().find_map(|(index, iterator)| {
+        let accessor = accessor_of(iterator.as_ref()?)?;
+        Some(format!("loop({index}).iter.{accessor}"))
     })
 }
 
@@ -668,7 +694,6 @@ const CLICK_LIBRARY_MODULES: &[(&str, &str)] = &[
         "library/bytes.click",
         include_str!("../library/bytes.click"),
     ),
-    ("library/cstr.click", include_str!("../library/cstr.click")),
     (
         "library/c/builtins.click",
         include_str!("../library/c/builtins.click"),
@@ -682,8 +707,12 @@ const CLICK_LIBRARY_MODULES: &[(&str, &str)] = &[
         include_str!("../library/integer.click"),
     ),
     (
-        "library/format.click",
-        include_str!("../library/format.click"),
+        "library/c/stdio.click",
+        include_str!("../library/c/stdio.click"),
+    ),
+    (
+        "library/cpp/span_state.click",
+        include_str!("../library/cpp/span_state.click"),
     ),
     (
         "library/rust/i8.click",
@@ -724,6 +753,14 @@ const CLICK_LIBRARY_MODULES: &[(&str, &str)] = &[
     (
         "library/rust/usize.click",
         include_str!("../library/rust/usize.click"),
+    ),
+    (
+        "library/rust/option.click",
+        include_str!("../library/rust/option.click"),
+    ),
+    (
+        "library/rust/result.click",
+        include_str!("../library/rust/result.click"),
     ),
     (
         "library/rust/vec.click",
@@ -2181,32 +2218,24 @@ pub enum ResourceClause {
 /// A proof step on iterated guarded ownership.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum IteratedTactic {
-    /// `unfold(resource(args)[i]);` opens one slot of an exposed clause.
-    UnfoldSlot(Box<IteratedSlot>),
-    /// `fold(resource(args)[i]);` restores that slot.
-    FoldSlot(Box<IteratedSlot>),
-    /// `gather(resource(...));` forms the named resource's iterated fact.
-    Gather(ResourceClause),
-    /// `scatter(resource(...));` dissolves it.
-    Scatter(ResourceClause),
+    Unfold(Box<IteratedTarget>),
+    Fold(Box<IteratedTarget>),
 }
 
-/// One index in a resource's exposed iterated clause. A saved point selects
-/// the resource arguments only; the index and guard use the current state.
+/// An index or the whole (`[..]`) iterated clause of a resource. A saved
+/// point selects the resource arguments only; guards use the current state.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct IteratedSlot {
+pub struct IteratedTarget {
     resource: ResourceClause,
     point: Option<ProgramPointSelector>,
-    index: ContractExpression,
+    index: Option<ContractExpression>,
 }
 
 impl IteratedTactic {
     pub fn name(&self) -> &'static str {
         match self {
-            Self::UnfoldSlot(_) => "unfold",
-            Self::FoldSlot(_) => "fold",
-            Self::Gather(_) => "gather",
-            Self::Scatter(_) => "scatter",
+            Self::Unfold(_) => "unfold",
+            Self::Fold(_) => "fold",
         }
     }
 }
@@ -2241,11 +2270,6 @@ pub struct ResourceInstanceBinding {
     /// Explicit child slot, surface name, and instance identity. Shared to
     /// keep recursive tactic syntax small.
     child_bindings: Option<std::sync::Arc<[(String, String, Variable)]>>,
-    /// On a `fold` construction, the child slots its map left out that an
-    /// in-scope resource of the same name could fill, as slot, name and
-    /// identity. The fold step keeps the ones its selected arm owns and
-    /// hands the kernel the explicit map; the rest are dropped.
-    default_child_bindings: Option<std::sync::Arc<[(String, String, Variable)]>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -3107,7 +3131,9 @@ pub(crate) fn collect_current_contract_expression_variables(
         ContractExpression::BitwiseNot(inner) => {
             collect_current_contract_expression_variables(inner, names);
         }
-        ContractExpression::CUnary { operand: inner, .. } | ContractExpression::Negate(inner) => {
+        ContractExpression::CUnary { operand: inner, .. }
+        | ContractExpression::Negate(inner)
+        | ContractExpression::Exact(inner) => {
             collect_current_contract_expression_variables(inner, names);
         }
         crate::surface::binary_contract_expression!(left, right) => {
@@ -3353,6 +3379,11 @@ pub enum SurfaceTerm {
         selector: ProgramPointSelector,
         expression: Box<ContractExpression>,
     },
+    /// `exact(place)`: the read of `place` named by the state in scope
+    /// itself, with no version walk (`design/exact-reads.md`). It applies to
+    /// the outermost read only; reads computing the place's address stay
+    /// ordinary. It grants no access and adds no facts.
+    Exact(Box<ContractExpression>),
     Negate(Box<ContractExpression>),
     Add(Box<ContractExpression>, Box<ContractExpression>),
     Subtract(Box<ContractExpression>, Box<ContractExpression>),
@@ -3617,6 +3648,9 @@ struct RecordedStates {
         >,
     >,
     version: std::sync::Arc<RecordedStateVersion>,
+    /// A temporary interface lowering scope reads marks from the common
+    /// tree without exposing its incidental program points.
+    interface_marks: Option<std::sync::Arc<RecordedInterfaceMarks>>,
     /// The labels the proof gave loops on this path. A program point is
     /// recorded once, under its loop's first label when it has one and as
     /// `loop(N)` otherwise; a lookup by either spelling, or by another label
@@ -3721,6 +3755,11 @@ struct RecordedStateVersion {
     origin: std::sync::Arc<()>,
 }
 
+struct RecordedInterfaceMarks {
+    root: Option<std::sync::Arc<RecordedStateNode>>,
+    call_result_snapshots: imbl::OrdMap<ProgramPointSelector, RecordedCallResults>,
+}
+
 impl Default for RecordedStates {
     fn default() -> Self {
         Self {
@@ -3735,6 +3774,7 @@ impl Default for RecordedStates {
                 history: None,
                 origin: std::sync::Arc::new(()),
             }),
+            interface_marks: None,
             loop_labels: None,
             source_layout: None,
             point_names: imbl::HashMap::new(),
@@ -3942,6 +3982,44 @@ impl RecordedStates {
 
     fn new() -> Self {
         Self::default()
+    }
+
+    /// The abstract interface can read its target and shared proof marks.
+    /// Its target is only a lowering input. Publication at the continuation
+    /// adds the checked successor to the ordinary indexes once.
+    fn for_branch_interface(
+        &self,
+        common: &Self,
+        target: &ProgramPointRef,
+        state: &ExecutionState,
+    ) -> Self {
+        let selector = self.recorded_spelling(target.clone().into());
+        let mut records = Self {
+            version: std::sync::Arc::new(RecordedStateVersion {
+                root: Some(recorded_state_node(
+                    selector.clone(),
+                    Some(state.clone()),
+                    None,
+                    None,
+                )),
+                history: None,
+                origin: std::sync::Arc::new(()),
+            }),
+            interface_marks: Some(std::sync::Arc::new(RecordedInterfaceMarks {
+                root: common.version.root.clone(),
+                call_result_snapshots: common.call_result_snapshots.clone(),
+            })),
+            loop_labels: self.loop_labels.clone(),
+            source_layout: self.source_layout.clone(),
+            loop_iterations: self.loop_iterations.clone(),
+            loop_iteration_variables: self.loop_iteration_variables.clone(),
+            ..Self::new()
+        };
+        records.effect_offsets.insert(selector.clone(), 0);
+        if records.records_call_snapshots() {
+            records.set_call_result_snapshot(&selector, Some(RecordedCallResults::default()));
+        }
+        records
     }
 
     fn get<K: RecordedStateKey + ?Sized>(&self, key: &K) -> Option<&ExecutionState> {
@@ -4180,8 +4258,13 @@ impl RecordedStates {
 
     fn call_results_at(&self, selector: &ProgramPointSelector) -> Option<&RecordedCallResults> {
         crate::instrumentation::record_deterministic_work(1);
-        self.call_result_snapshots
-            .get(&self.recorded_spelling(selector.clone()))
+        let selector = self.recorded_spelling(selector.clone());
+        if matches!(selector, ProgramPointSelector::Mark(_))
+            && let Some(marks) = &self.interface_marks
+        {
+            return marks.call_result_snapshots.get(&selector);
+        }
+        self.call_result_snapshots.get(&selector)
     }
 
     fn records_call_snapshots(&self) -> bool {
@@ -4715,7 +4798,13 @@ impl RecordedStates {
     }
 
     fn get_exact<K: RecordedStateKey + ?Sized>(&self, key: &K) -> Option<&ExecutionState> {
-        let mut node = self.version.root.as_deref();
+        let root = match &self.interface_marks {
+            Some(marks) if matches!(key.to_selector(), ProgramPointSelector::Mark(_)) => {
+                &marks.root
+            }
+            _ => &self.version.root,
+        };
+        let mut node = root.as_deref();
         while let Some(current) = node {
             match key.compare(&current.selector) {
                 std::cmp::Ordering::Less => node = current.left.as_deref(),
@@ -5325,32 +5414,6 @@ impl RecordedStates {
             .take_while(|(selector, _)| matches!(selector, ProgramPointSelector::Mark(_)))
             .take(limit)
             .collect()
-    }
-
-    fn retain(&mut self, mut keep: impl FnMut(&ProgramPointSelector, &mut ExecutionState) -> bool) {
-        let mut retained = Self::new();
-        retained.loop_labels = self.loop_labels.clone();
-        retained.source_layout = self.source_layout.clone();
-        retained.loop_iterations = self.loop_iterations.clone();
-        retained.loop_iteration_variables = self.loop_iteration_variables.clone();
-        for (selector, state) in self.iter() {
-            let mut state = state.clone();
-            if keep(selector, &mut state) {
-                retained.insert(selector.clone(), state);
-                retained.set_call_result_snapshot(
-                    selector,
-                    self.call_result_snapshots.get(selector).cloned(),
-                );
-                if let ProgramPointSelector::ProgramPoint(ProgramPointRef {
-                    region: CodeRegionRef::Region(index),
-                    kind: ProgramPointKind::Exit,
-                }) = selector
-                {
-                    retained.record_read_event_values(*index, self.read_event_values(*index));
-                }
-            }
-        }
-        *self = retained;
     }
 }
 
@@ -6035,6 +6098,7 @@ pub enum ProofTactic {
     Match(std::sync::Arc<ProofMatch>),
     Cases(ProofCases),
     Both(ProofBoth),
+    All(ProofAll),
     Branch(ProofBranch),
     CallOutcomes(ProofCallOutcomes),
     Loop(StructuralClause),
@@ -6358,13 +6422,13 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
         class: "simple",
     },
     PublicTacticForm {
-        id: "gather-resource",
-        syntax: "gather(resource(args))",
+        id: "fold-iterated-clause",
+        syntax: "fold(resource(args)[..])",
         class: "simple",
     },
     PublicTacticForm {
-        id: "scatter-resource",
-        syntax: "scatter(resource(args))",
+        id: "unfold-iterated-clause",
+        syntax: "unfold(resource(args)[..])",
         class: "simple",
     },
     PublicTacticForm {
@@ -6433,8 +6497,8 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
         class: "control",
     },
     PublicTacticForm {
-        id: "both",
-        syntax: "both",
+        id: "all",
+        syntax: "all {",
         class: "control",
     },
     PublicTacticForm {
@@ -6625,6 +6689,11 @@ impl ProofTactic {
                 .iter()
                 .map(|arm| Continuing(Script(&arm.tactics)))
                 .collect(),
+            Self::All(all) => all
+                .arms
+                .iter()
+                .map(|arm| Continuing(Script(&arm.tactics)))
+                .collect(),
             Self::Both(both) => vec![
                 Continuing(Script(&both.left_tactics)),
                 Continuing(Script(&both.right_tactics)),
@@ -6716,7 +6785,7 @@ impl ProofTactic {
             Self::If(_) => TacticClass::Control(ControlTactic::If),
             Self::Match(_) => TacticClass::Control(ControlTactic::Match),
             Self::Cases(_) => TacticClass::Control(ControlTactic::Cases),
-            Self::Both(_) => TacticClass::Control(ControlTactic::Both),
+            Self::Both(_) | Self::All(_) => TacticClass::Control(ControlTactic::Both),
             Self::Branch(_) => TacticClass::Control(ControlTactic::Branch),
             Self::CallOutcomes(_) => TacticClass::Control(ControlTactic::CallOutcomes),
             Self::Loop(_) => TacticClass::Control(ControlTactic::Loop),
@@ -6837,6 +6906,18 @@ pub struct CertificateInductionArm {
 pub struct ProofBoth {
     pub left_tactics: Vec<ProofTactic>,
     pub right_tactics: Vec<ProofTactic>,
+}
+
+/// Proofs of the conjuncts of the focused goal, in goal order.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProofAll {
+    pub(crate) arms: Vec<ProofAllArm>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ProofAllArm {
+    pub(crate) proposition: ClickProposition,
+    pub(crate) tactics: Vec<ProofTactic>,
 }
 
 /// Explicit elimination of a disjunctive fact: proof checking requires the
@@ -8103,6 +8184,7 @@ fn contract_expression_reads_memory(
         | ContractExpression::Index(_, _)
         | ContractExpression::ArrayIndex { .. }
         | ContractExpression::Old(_)
+        | ContractExpression::Exact(_)
         | ContractExpression::At { .. } => true,
         ContractExpression::AlgebraicConstructor { arguments, .. }
         | ContractExpression::SequenceLiteral(arguments) => arguments
@@ -8452,7 +8534,26 @@ pub struct VerifiedProgramTheorem {
     /// The entry the proof that issued this theorem was built from, shared
     /// by every theorem of that proof.
     pub(in crate::surface) entry_context: Option<std::sync::Arc<proof::ProofEntryContext>>,
+    /// The checked function's source layout, which spells the certificate's
+    /// step results when it is rendered after checking.
+    pub(in crate::surface) source_layout: TheoremSourceLayout,
 }
+
+/// The source layout a verified theorem's certificate is spelled by. It is
+/// presentation, not what the theorem states, so it never makes two
+/// theorems unequal.
+#[derive(Clone, Default)]
+pub(in crate::surface) struct TheoremSourceLayout(
+    pub(in crate::surface) Option<lowering::SourceExecutionLayout>,
+);
+
+impl PartialEq for TheoremSourceLayout {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl Eq for TheoremSourceLayout {}
 
 // Retained executions and proof states share large graphs. Formatting a
 // verification result (notably unwrap_err's unexpected-success panic) must
@@ -10271,7 +10372,19 @@ impl VerifiedProgramTheorem {
         })
     }
 
+    /// Spells this theorem's step results by its function's source layout
+    /// while alive, as checking did.
+    pub(in crate::surface) fn step_result_spelling_scope(
+        &self,
+    ) -> Option<diagnostics::StepResultSpellingScope> {
+        self.source_layout
+            .0
+            .as_ref()
+            .map(diagnostics::StepResultSpellingScope::enter)
+    }
+
     pub fn expanded_proof_source(&self) -> Result<String, ClickError> {
+        let _spelling = self.step_result_spelling_scope();
         let _reference_result_source = diagnostics::ReferenceResultSourceScope::enter(
             self.function_block.signature().returns_reference(),
         );

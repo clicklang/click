@@ -3,11 +3,11 @@
 //!
 //! A preprocessed kernel translation unit carries thousands of header
 //! declarations that the functions it defines never use. The projection
-//! keeps the function definitions written in the unit's own source file
-//! and, transitively, every file-scope declaration that defines a name they
-//! mention. Everything kept is parsed and lowered as usual, so an
-//! unsupported construct inside the closure is still rejected with its
-//! original location. Declarations outside the closure are not parsed and
+//! starts with the selected function definitions in the unit's own source
+//! file (all its functions when no roots are specified) and transitively
+//! keeps every file-scope declaration that defines a name they mention.
+//! Everything kept is parsed and lowered as usual. An unsupported construct
+//! inside the closure is still rejected with its original location. Declarations outside the closure are not parsed and
 //! nothing is claimed about them.
 //!
 //! The projection is deliberately narrow. It works on file-scope items: a
@@ -23,7 +23,7 @@
 //! Omitted items are blanked in place, preserving every line break, so
 //! physical line numbers and the compiler source map stay valid.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use super::source_map::CSourceMap;
 use crate::source::SourcePosition;
@@ -58,15 +58,18 @@ struct Item<'a> {
     /// The physical line of the item's first token.
     line: usize,
     tokens: Vec<Token<'a>>,
-    function_definition: bool,
+    /// Number of tokens before the opening brace of a function body.
+    function_header: Option<usize>,
 }
 
 /// Projects `source`, the marker-free preprocessed text whose compiler
 /// line markers `map` decodes, onto the dependency closure of the function
-/// definitions in its primary source file.
+/// definitions in its primary source file. Nonempty `functions` explicitly
+/// selects which of those definitions are roots.
 pub(crate) fn project_dependency_closure(
     source: &str,
     map: &CSourceMap,
+    functions: &[String],
 ) -> Result<Projection, String> {
     let primary = map
         .primary_file()
@@ -89,10 +92,45 @@ pub(crate) fn project_dependency_closure(
 
     let mut kept = vec![false; items.len()];
     let mut worklist = Vec::new();
+    let requested: HashSet<&str> = functions.iter().map(String::as_str).collect();
+    let mut found = HashSet::new();
     for (index, item) in items.iter().enumerate() {
-        if item.function_definition && origin_file(map, item.line).as_deref() == Some(primary) {
-            kept[index] = true;
-            worklist.push(index);
+        let Some(header_len) = item.function_header else {
+            continue;
+        };
+        if origin_file(map, item.line).as_deref() != Some(primary) {
+            continue;
+        }
+        if !requested.is_empty() {
+            // Match declarators in the function header. Parameter names, tags,
+            // and the identifiers declared or used in its body are ineligible.
+            let header = &item.tokens[..header_len];
+            work += header.len();
+            let mut names = BTreeSet::new();
+            declarator_names(header, |name| {
+                names.insert(name);
+            });
+            let mut names = names.into_iter();
+            let Some(name) = names.next() else {
+                continue;
+            };
+            if names.next().is_some() || !requested.contains(name) {
+                continue;
+            }
+            if !found.insert(name) {
+                return Err(format!(
+                    "function root `{name}` has more than one definition in `{primary}`"
+                ));
+            }
+        }
+        kept[index] = true;
+        worklist.push(index);
+    }
+    for name in functions {
+        if !found.contains(name.as_str()) {
+            return Err(format!(
+                "function root `{name}` has no recognized definition in `{primary}`"
+            ));
         }
     }
     if worklist.is_empty() {
@@ -104,7 +142,11 @@ pub(crate) fn project_dependency_closure(
     while let Some(index) = worklist.pop() {
         for key in referenced_names(&items[index].tokens) {
             work += 1;
-            if defined_by_item[index].contains(&key) || !followed.insert(key) {
+            // A selected definition can depend on its own redeclarations for
+            // attributes or linkage, even if its body never calls itself.
+            if (requested.is_empty() && defined_by_item[index].contains(&key))
+                || !followed.insert(key)
+            {
                 continue;
             }
             for &definer in definers.get(&key).map(Vec::as_slice).unwrap_or(&[]) {
@@ -120,6 +162,22 @@ pub(crate) fn project_dependency_closure(
     let mut cursor = 0;
     let mut omitted = 0;
     for (index, item) in items.iter().enumerate() {
+        if !requested.is_empty() {
+            // File-scope assembly and asm labels can bind symbols through
+            // strings. The name index cannot represent those links.
+            let header_len = item.function_header.unwrap_or(item.tokens.len());
+            let header = &item.tokens[..header_len];
+            work += header.len();
+            if header
+                .iter()
+                .any(|token| matches!(token, Token::Ident("asm" | "__asm__" | "__asm")))
+            {
+                return Err(format!(
+                    "{}: function-root projection does not support file-scope assembly or asm labels",
+                    map.lookup(SourcePosition::new(item.line, 1))
+                ));
+            }
+        }
         if kept[index] {
             continue;
         }
@@ -170,7 +228,7 @@ fn file_scope_items(source: &str) -> Result<(Vec<Item<'_>>, usize), String> {
     let mut line = 1usize;
     let mut item_line: Option<usize> = None;
     let mut last_significant = b' ';
-    let mut function_body = false;
+    let mut function_header = None;
     while index < bytes.len() {
         let byte = bytes[index];
         if byte == b'\n' {
@@ -228,7 +286,7 @@ fn file_scope_items(source: &str) -> Result<(Vec<Item<'_>>, usize), String> {
             }
             b'{' => {
                 if depth == 0 {
-                    function_body = last_significant == b')';
+                    function_header = (last_significant == b')').then(|| tokens.len() - 1);
                 }
                 depth += 1;
             }
@@ -236,16 +294,15 @@ fn file_scope_items(source: &str) -> Result<(Vec<Item<'_>>, usize), String> {
                 depth = depth
                     .checked_sub(1)
                     .ok_or("unbalanced braces in preprocessed C")?;
-                if depth == 0 && function_body {
+                if depth == 0 && function_header.is_some() {
                     items.push(Item {
                         start,
                         end: index + 1,
                         line: item_line.take().unwrap_or(line),
                         tokens: std::mem::take(&mut tokens),
-                        function_definition: true,
+                        function_header: function_header.take(),
                     });
                     start = index + 1;
-                    function_body = false;
                 }
             }
             b';' if depth == 0 => {
@@ -254,7 +311,7 @@ fn file_scope_items(source: &str) -> Result<(Vec<Item<'_>>, usize), String> {
                     end: index + 1,
                     line: item_line.take().unwrap_or(line),
                     tokens: std::mem::take(&mut tokens),
-                    function_definition: false,
+                    function_header: None,
                 });
                 start = index + 1;
             }
@@ -407,8 +464,15 @@ fn defined_names<'a>(tokens: &[Token<'a>]) -> BTreeSet<(bool, &'a str)> {
         }
         index += 1;
     }
-    // Declarators: at file scope, the last ordinary identifier before `=`,
-    // `,`, `;`, `[`, or a parameter list, or the name in `(*name)`.
+    declarator_names(tokens, |name| {
+        defined.insert((false, name));
+    });
+    defined
+}
+
+/// Visits the declarators at file scope: the last ordinary identifier before
+/// `=`, `,`, `;`, `[`, or a parameter list, or the name in `(*name)`.
+fn declarator_names<'a>(tokens: &[Token<'a>], mut found: impl FnMut(&'a str)) {
     let mut depth = 0usize;
     let mut last: Option<&'a str> = None;
     let mut index = 0;
@@ -426,7 +490,7 @@ fn defined_names<'a>(tokens: &[Token<'a>]) -> BTreeSet<(bool, &'a str)> {
             Token::Punct(b'(') if depth == 0 => {
                 if let Some(name) = last.take() {
                     // A parameter list follows the declared name.
-                    defined.insert((false, name));
+                    found(name);
                     index = skip_parenthesized(tokens, index);
                     continue;
                 }
@@ -435,7 +499,7 @@ fn defined_names<'a>(tokens: &[Token<'a>]) -> BTreeSet<(bool, &'a str)> {
                 | [Token::Ident(name), Token::Punct(b')'), ..] = &tokens[index + 1..]
                     && !is_keyword(name)
                 {
-                    defined.insert((false, *name));
+                    found(name);
                 }
                 index = skip_parenthesized(tokens, index);
                 continue;
@@ -448,7 +512,7 @@ fn defined_names<'a>(tokens: &[Token<'a>]) -> BTreeSet<(bool, &'a str)> {
             }
             Token::Punct(b'=' | b',' | b';' | b'[') if depth == 0 => {
                 if let Some(name) = last.take() {
-                    defined.insert((false, name));
+                    found(name);
                 }
                 if token == Token::Punct(b'=') {
                     // Skip the initializer to the next declarator.
@@ -474,7 +538,6 @@ fn defined_names<'a>(tokens: &[Token<'a>]) -> BTreeSet<(bool, &'a str)> {
         }
         index += 1;
     }
-    defined
 }
 
 /// Skips a balanced `(...)` or `[...]` group starting at or after `index`.
@@ -542,7 +605,16 @@ mod tests {
 
     fn project(source: &str) -> Result<Projection, String> {
         let (text, map) = CSourceMap::decode(source).expect("line markers");
-        project_dependency_closure(&text, &map)
+        project_dependency_closure(&text, &map, &[])
+    }
+
+    fn project_roots(source: &str, names: &[&str]) -> Result<Projection, String> {
+        let (text, map) = CSourceMap::decode(source).expect("line markers");
+        let functions = names
+            .iter()
+            .map(|name| (*name).to_owned())
+            .collect::<Vec<_>>();
+        project_dependency_closure(&text, &map, &functions)
     }
 
     const HEADER: &str = "# 1 \"lib/unit.c\"\n# 1 \"include/h.h\" 1\n";
@@ -577,6 +649,45 @@ mod tests {
         assert_eq!(kept.lines().count(), source.lines().count());
         assert_eq!(projection.kept, 6);
         assert_eq!(projection.omitted, 5);
+    }
+
+    #[test]
+    fn function_roots_keep_their_own_redeclarations_and_named_dependencies() {
+        let source = format!(
+            "{HEADER}int root(int argument) __attribute__((weak));\n{BODY}\
+             int extra(void) {{ return 3; }}\n\
+             int sibling(void) {{ return 4; }}\n\
+             int root(int argument) {{ int local = argument; return local + extra(); }}\n\
+             int second(void) {{ return 5; }}\n"
+        );
+        let kept = project_roots(&source, &["root", "second"]).unwrap().text;
+        assert!(kept.contains("__attribute__((weak))"), "{kept}");
+        assert!(kept.contains("int root(int argument) {"), "{kept}");
+        assert!(kept.contains("int second(void)"), "{kept}");
+        assert!(kept.contains("int extra(void)"), "{kept}");
+        assert!(!kept.contains("int sibling(void)"), "{kept}");
+        for unknown in ["argument", "local", "missing"] {
+            let error = project_roots(&source, &["root", unknown]).unwrap_err();
+            assert!(
+                error.contains(&format!("function root `{unknown}`")),
+                "{error}"
+            );
+        }
+    }
+
+    #[test]
+    fn function_roots_refuse_file_scope_assembly() {
+        for declaration in [
+            r#"__extension__ __asm__(".section x");"#,
+            r#"extern int root(void) __asm__("other");"#,
+        ] {
+            let source = format!("{HEADER}{BODY}{declaration}\nint root(void) {{ return 1; }}\n");
+            let error = project_roots(&source, &["root"]).unwrap_err();
+            assert!(
+                error.contains("file-scope assembly or asm labels"),
+                "{error}"
+            );
+        }
     }
 
     #[test]
@@ -621,16 +732,18 @@ mod tests {
             source.push_str("return x; }\n");
             source
         };
-        let work = |copies: usize| project(&unit(copies)).expect("project").work;
-        let base = work(250);
-        for factor in [2, 4, 8] {
-            let scaled = work(250 * factor);
-            // Longer generated names make the text grow a little faster
-            // than the item count; a tenth of headroom covers that.
-            assert!(
-                scaled <= base * factor * 11 / 10,
-                "work {scaled} at {factor}x exceeds linear growth from {base}"
-            );
+        for roots in [&[][..], &["run"][..]] {
+            let work = |copies: usize| project_roots(&unit(copies), roots).expect("project").work;
+            let base = work(250);
+            for factor in [2, 4, 8] {
+                let scaled = work(250 * factor);
+                // Longer generated names make the text grow a little faster
+                // than the item count; a tenth of headroom covers that.
+                assert!(
+                    scaled <= base * factor * 11 / 10,
+                    "work {scaled} at {factor}x exceeds linear growth from {base}"
+                );
+            }
         }
     }
 }

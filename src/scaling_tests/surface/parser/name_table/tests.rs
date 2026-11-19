@@ -10,7 +10,6 @@ fn target(name: &str, identity: u64, argument: u32) -> ResourceClause {
             fields: None,
             fold_fields: None,
             child_bindings: None,
-            default_child_bindings: None,
         },
         resource: Box::new(ResourceClause::Declared {
             type_schema: None,

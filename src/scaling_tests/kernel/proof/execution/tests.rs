@@ -249,8 +249,8 @@ fn concrete_constructor_payload_spelling_is_checked_and_indexed() {
                 .all(|(variable, _)| variable.0 > 4_131_072)
         );
         let spelled = Proposition::Equal(
-            Term::Algebraic(value.clone()),
-            Term::Algebraic(value.clone()),
+            Term::Algebraic(value.clone().into()),
+            Term::Algebraic(value.clone().into()),
         );
         assert!(partition.facts_for_case(0).unwrap().contains(&spelled));
         samples.push(work);
@@ -913,6 +913,7 @@ fn interface_aliased_wide_read_preserves_scope_history_and_scales() {
             ProgramType::UInt64Pointer,
         )))),
         value_type: ProgramType::UInt64,
+        exact: false,
     };
     let spec = SpecProposition::Comparison {
         left: load.clone(),
@@ -1154,6 +1155,153 @@ fn constructing_an_instance_fold_pays_for_its_body_once() {
         samples.iter().all(|(direct, total)| *total <= direct + 128),
         "[direct derivation, construction and recording]: {samples:?}"
     );
+}
+
+#[test]
+fn an_interface_owned_export_normalizes_only_its_neighbors() {
+    use crate::kernel::{MemorySegment, program_expression::int32_literal};
+
+    use crate::kernel::primitives::take_whole_normalization_facts;
+
+    let mut samples = Vec::new();
+    for count in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer = ProgramExpression::Value(ProgramValue::typed_pointer(
+            Address {
+                base: AddressBase::ExternalArgument,
+                offset: AddressOffset::Constant(0),
+            },
+            ProgramType::Int32Pointer,
+        ));
+        let spec_at = |start, end| {
+            ResourceSpec::owned_memory(MemorySegment::new(
+                pointer.clone(),
+                int32_literal(start),
+                int32_literal(end),
+            ))
+        };
+        let facts = PureFactStore::default();
+        let state = ExecutionState::new();
+        let fact_at = |start, end| {
+            evaluate_interface_resource_spec(&spec_at(start, end), &state, &facts)
+                .expect("the footprint lowers")
+        };
+        let exported = fact_at(0, 1);
+        let adjacent = fact_at(1, 2);
+        let merged = fact_at(0, 2);
+        let frame = (0..count)
+            .map(|index| fact_at(4 + 2 * index, 5 + 2 * index))
+            .collect::<Vec<_>>();
+        let resources = ResourceContext::new_with_equalities(facts.assumptions())
+            .unchecked_with_facts(frame.iter().cloned().chain([exported, adjacent]));
+        let parent = ExecutionProofCore::at_entry(
+            state.clone().with_resource_context(resources.clone()),
+            ExecutionFrontier::default(),
+        );
+        take_whole_normalization_facts();
+        let (joined, work) = crate::instrumentation::measure_deterministic_work(|| {
+            interface_join_resources(
+                &parent,
+                [&parent, &parent],
+                [&facts, &facts],
+                &[spec_at(0, 1)],
+                &state,
+                &facts,
+            )
+        });
+        assert_eq!(take_whole_normalization_facts(), 0);
+        let successor = joined
+            .expect("both arms supply the export")
+            .expected_resources;
+        assert_eq!(successor.fact_count(), frame.len() + 1);
+        assert!(successor.contains_exact_representation(&merged));
+        for fact in &frame {
+            assert_eq!(
+                successor.owned_occurrences_for_fact(fact),
+                resources.owned_occurrences_for_fact(fact)
+            );
+        }
+        samples.push(work);
+    }
+    // Allow the indexed lookups to cost a little more in a deeper tree.
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 32),
+        "one export did too much work beside the disjoint frame: {samples:?}"
+    );
+}
+
+#[test]
+fn an_interface_view_check_ignores_unrelated_owned_ranges() {
+    use crate::kernel::primitives::take_whole_normalization_facts;
+    use crate::kernel::{MemorySegment, program_expression::int32_literal};
+
+    let mut samples = Vec::new();
+    for count in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer = ProgramExpression::Value(ProgramValue::typed_pointer(
+            Address {
+                base: AddressBase::ExternalArgument,
+                offset: AddressOffset::Constant(0),
+            },
+            ProgramType::Int32Pointer,
+        ));
+        let segment = |start, end| {
+            MemorySegment::new(pointer.clone(), int32_literal(start), int32_literal(end))
+        };
+        let facts = PureFactStore::default();
+        let state = ExecutionState::new();
+        let evaluate = |spec: ResourceSpec| {
+            evaluate_interface_resource_spec(&spec, &state, &facts).expect("the range lowers")
+        };
+        let held = evaluate(ResourceSpec::owned_memory(segment(0, 2)));
+        let view = evaluate(ResourceSpec::viewed_memory(segment(2, 3)));
+        let frame = (0..count).map(|index| {
+            evaluate(ResourceSpec::owned_memory(segment(
+                4 + 2 * index,
+                5 + 2 * index,
+            )))
+        });
+        let resources = ResourceContext::new_with_equalities(facts.assumptions())
+            .unchecked_with_facts([held, view].into_iter().chain(frame));
+        let parent = ExecutionProofCore::at_entry(
+            state.clone().with_resource_context(resources.clone()),
+            ExecutionFrontier::default(),
+        );
+        // An exact held view, a subrange of an owner, and an unheld gap.
+        for (start, end, exists) in [(2, 3, true), (1, 2, true), (3, 4, false)] {
+            take_whole_normalization_facts();
+            let spec = ResourceSpec::viewed_memory(segment(start, end));
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                interface_join_resources(
+                    &parent,
+                    [&parent, &parent],
+                    [&facts, &facts],
+                    &[spec],
+                    &state,
+                    &facts,
+                )
+            });
+            assert_eq!(take_whole_normalization_facts(), 0);
+            if exists {
+                let successor = result
+                    .expect("the view is already available")
+                    .expected_resources;
+                assert!(successor.shares_storage_with(&resources));
+            } else {
+                assert_eq!(
+                    result.err(),
+                    Some("an interface resource is not owned by one concrete arm")
+                );
+            }
+            samples.push(work);
+        }
+    }
+    for (index, work) in samples.iter().enumerate() {
+        assert!(
+            *work <= samples[index % 3] + 32,
+            "view checking visited the disjoint frame: {samples:?}"
+        );
+    }
 }
 
 #[test]

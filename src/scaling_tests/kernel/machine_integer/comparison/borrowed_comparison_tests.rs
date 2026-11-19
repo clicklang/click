@@ -64,6 +64,17 @@ fn conditional_atom_reads_fixed_roots_without_exporting_arithmetic() {
                 })
                 .collect::<Vec<_>>();
             let flag = KernelTerm::variable(KernelType::Bool, Variable(999741));
+            let conditional =
+                |arm| KernelTerm::machine_if_shared(format, [flag.clone(), arm, literal(3)]);
+            let inner = conditional(variable.clone());
+            let shallow = conditional(inner.clone());
+            let nested_arithmetic = conditional(conditional(arithmetic.clone()));
+            let mut deep = inner;
+            for _ in 0..size {
+                deep = conditional(deep);
+            }
+            cases.push((shallow, nested_arithmetic, true));
+            cases.push((deep, conditional(arithmetic.clone()), false));
             let mut compound = flag.clone();
             for index in 0..size {
                 compound = KernelTerm::boolean_if([
@@ -72,7 +83,15 @@ fn conditional_atom_reads_fixed_roots_without_exporting_arithmetic() {
                     KernelTerm::variable(KernelType::Bool, Variable(999742 + index)),
                 ]);
             }
-            for (guard, expected) in [(flag, true), (compound, false)] {
+            let other_flag = KernelTerm::variable(KernelType::Bool, Variable(999739));
+            let equal_variables = KernelTerm::boolean_equal_raw([flag.clone(), other_flag.clone()]);
+            let compound_equality = KernelTerm::boolean_equal_raw([compound.clone(), other_flag]);
+            for (guard, expected) in [
+                (flag, true),
+                (equal_variables, true),
+                (compound, false),
+                (compound_equality, false),
+            ] {
                 let hit = KernelTerm::machine_if_shared(
                     format,
                     [guard.clone(), variable.clone(), literal(3)],
@@ -274,11 +293,21 @@ fn machine_comparison_and_guard_reads_are_bounded_on_hits_and_misses() {
                     let shift =
                         |left, count| KernelTerm::machine_binary_shared(format, op, [left, count]);
                     let width = u64::from(format.format().bits());
+                    let variable_shift = shift(variable.clone(), other.clone());
+                    assert!(
+                        bounded_comparison_operand(format, V::Shared(&variable_shift), false)
+                            .is_none()
+                    );
                     [
                         (
                             shift(variable.clone(), literal(1)),
                             shift(arithmetic.clone(), literal(1)),
-                            shift(variable.clone(), other.clone()),
+                            shift(variable.clone(), arithmetic.clone()),
+                        ),
+                        (
+                            variable_shift,
+                            shift(arithmetic.clone(), other.clone()),
+                            shift(variable.clone(), arithmetic.clone()),
                         ),
                         (
                             shift(variable.clone(), literal(width - 1)),
@@ -289,15 +318,17 @@ fn machine_comparison_and_guard_reads_are_bounded_on_hits_and_misses() {
                 })
                 .collect::<Vec<_>>();
             if format.format().is_signed() {
-                let signed_left_shift = KernelTerm::machine_binary_shared(
-                    format,
-                    O::ShiftLeft,
-                    [variable.clone(), literal(1)],
-                );
-                assert!(
-                    bounded_comparison_operand(format, V::Shared(&signed_left_shift), true)
-                        .is_none()
-                );
+                for count in [literal(1), other.clone()] {
+                    let signed_left_shift = KernelTerm::machine_binary_shared(
+                        format,
+                        O::ShiftLeft,
+                        [variable.clone(), count],
+                    );
+                    assert!(
+                        bounded_comparison_operand(format, V::Shared(&signed_left_shift), true)
+                            .is_none()
+                    );
+                }
             }
             let wrapping_cases = [O::Add, O::Subtract, O::Multiply].map(|op| {
                 let word_encoding = if format == MachineIntegerType::UInt32 {
@@ -339,31 +370,70 @@ fn machine_comparison_and_guard_reads_are_bounded_on_hits_and_misses() {
                     |left, right| KernelTerm::machine_binary_shared(format, op, [left, right]);
                 let zero = operation(variable.clone(), literal(0));
                 assert!(bounded_comparison_operand(format, V::Shared(&zero), true).is_none());
+                if format.format().is_signed() {
+                    let minus_one =
+                        crate::kernel::machine_integer::range::constant_word(format, &(-1).into())
+                            .unwrap();
+                    let minus_one = KernelTerm::retained_native_machine_operand(format, &minus_one);
+                    let exceptional = operation(variable.clone(), minus_one);
+                    assert!(
+                        bounded_comparison_operand(format, V::Shared(&exceptional), true).is_none()
+                    );
+                }
                 let hit = operation(variable.clone(), literal(3));
                 assert!(bounded_comparison_operand(format, V::Shared(&hit), false).is_none());
                 (
                     hit,
                     operation(arithmetic.clone(), literal(3)),
-                    operation(variable.clone(), other.clone()),
+                    operation(variable.clone(), arithmetic.clone()),
                 )
             });
-            let division_hits = if format.format().is_signed() {
-                for (signed, ..) in &division_cases {
+            let variable_divisors = [O::Divide, O::Remainder].map(|op| {
+                let operation =
+                    |left, right| KernelTerm::machine_binary_shared(format, op, [left, right]);
+                let hit = operation(variable.clone(), other.clone());
+                assert!(bounded_comparison_operand(format, V::Shared(&hit), false).is_none());
+                (
+                    hit,
+                    operation(arithmetic.clone(), other.clone()),
+                    operation(variable.clone(), arithmetic.clone()),
+                )
+            });
+            let variable_divisor_hits = if format.format().is_signed() {
+                for (signed, ..) in &variable_divisors {
                     assert!(bounded_comparison_operand(format, V::Shared(signed), true).is_none());
                 }
-                &division_cases[..0]
+                &variable_divisors[..0]
             } else {
-                &division_cases[..]
+                &variable_divisors[..]
             };
+            use crate::kernel::MachineCastSpelling as C;
             let mut cast_cases = Vec::new();
-            for spelling in [
-                crate::kernel::MachineCastSpelling::Int64From32,
-                crate::kernel::MachineCastSpelling::Int64FromUInt32,
-                crate::kernel::MachineCastSpelling::UInt64FromInt32,
-                crate::kernel::MachineCastSpelling::UInt64From32,
-                crate::kernel::MachineCastSpelling::UInt32From64,
-            ] {
+            for (spelling, source, destination) in [
+                C::Int64From32,
+                C::Int64FromUInt32,
+                C::UInt64FromInt32,
+                C::UInt64From32,
+                C::UInt32From64,
+                C::UInt64FromInt64,
+            ]
+            .map(|spelling| {
                 let (source, destination) = spelling.legacy_formats().unwrap();
+                (spelling, source, destination)
+            })
+            .into_iter()
+            .chain([
+                (
+                    C::Generic,
+                    MachineIntegerType::Int32,
+                    MachineIntegerType::UInt32,
+                ),
+                (
+                    C::Generic,
+                    MachineIntegerType::UInt32,
+                    MachineIntegerType::Int32,
+                ),
+            ]) {
                 if destination != format {
                     continue;
                 }
@@ -388,7 +458,8 @@ fn machine_comparison_and_guard_reads_are_bounded_on_hits_and_misses() {
                     .chain(std::iter::once(&unary_case))
                     .chain(&shift_cases)
                     .chain(wrapping_hits)
-                    .chain(division_hits)
+                    .chain(&division_cases)
+                    .chain(variable_divisor_hits)
                     .chain(&cast_cases)
                 {
                     for operands in [

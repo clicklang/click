@@ -3834,6 +3834,13 @@ impl ConditionTerm {
     }
 
     pub(crate) fn pointer_equal(left: Pointer, right: Pointer) -> Self {
+        // A pointer equal to the null pointer is null: a comparison with null
+        // states address equality, as `p == 0` lowers
+        // (`surface::lowering::comparison_proposition`). Every producer
+        // builds that one term.
+        if left.is_null() || right.is_null() {
+            return Self::address_equal(left.address().clone(), right.address().clone());
+        }
         if (left.provenance() == right.provenance()
             && left.bounds() == right.bounds()
             && left.bounds_are_known() == right.bounds_are_known()
@@ -4534,6 +4541,17 @@ impl ProgramValue {
         })
     }
 
+    /// Canonicalize the C object-pointer conversions a resource's declared
+    /// parameter type admits, preserving the pointer's provenance and bounds.
+    pub(crate) fn resource_argument_at_type(self, expected: ProgramType) -> Self {
+        match self {
+            Self::Pointer(pointer) if pointer.program_type().pointer_types_compatible(expected) => {
+                Self::Pointer(pointer.with_type(expected))
+            }
+            value => value,
+        }
+    }
+
     /// Mathematical observation, deliberately without a representation record.
     pub(crate) fn numeric_value(&self) -> &Self {
         match self {
@@ -4977,10 +4995,18 @@ impl Address {
     /// term. Unlike [`Self::canonical_loaded_value`], a stored pointer does
     /// not replace the read.
     pub(crate) fn canonical_read(memory: &SharedMemory, address: &Address) -> Self {
+        // A pointer read covers the whole pointer cell. Record that width
+        // before the walk, so a write to any of its bytes stops the walk even
+        // when an earlier narrower read of the cell recorded a smaller one.
+        crate::kernel::eval::record_load_access_width(
+            memory.memory(),
+            address,
+            crate::kernel::C_POINTER_BYTE_WIDTH,
+        );
         let read = MachineTerm::MemoryLoad(
             ProgramPoint::at(memory),
             Box::new(address.clone()),
-            LoadKind::Int32,
+            LoadKind::Bits64,
         );
         named_pointer_read(
             canonical_pointer_read(&read).expect("a memory load has a canonical read"),
@@ -4994,10 +5020,15 @@ impl Address {
         if let Some(ProgramValue::Pointer(stored)) = memory.memory().known_value(address) {
             return stored.address().clone();
         }
+        crate::kernel::eval::record_load_access_width(
+            memory.memory(),
+            address,
+            crate::kernel::C_POINTER_BYTE_WIDTH,
+        );
         let read = MachineTerm::MemoryLoad(
             ProgramPoint::at(memory),
             Box::new(address.clone()),
-            LoadKind::Int32,
+            LoadKind::Bits64,
         );
         match canonical_pointer_read(&read) {
             Some(named) => named_pointer_read(named),

@@ -139,6 +139,11 @@ impl KernelTerm {
         }))
     }
 
+    #[cfg(test)]
+    pub(crate) fn has_cached_machine_leaf(&self) -> bool {
+        self.0.machine_leaf.0.get().is_some()
+    }
+
     pub(crate) fn scalar_read_descriptor(
         format: MachineIntegerType,
         point: &ProgramPoint,

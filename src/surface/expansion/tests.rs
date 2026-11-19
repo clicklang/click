@@ -555,7 +555,7 @@ int produce(struct root* root, const struct callbacks* augment) {
     ensures out_value(out.model) == old(cell.model);
 } by {
     step_until(function.exit);
-    let out = fold(out_at(root, 0), { model: Out::Done(cell.model) }, { whole: cell });
+    let out = fold(out_at(root, 0), { model: Out::Done(cell.model), whole: cell });
     solve();
 }
 
@@ -2617,14 +2617,14 @@ int32 increment(int32 x) {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_api_batch_11")]
 fn expanded_post_execution_apply_retains_its_facts_for_the_closer() {
     let c_source = "int32 inspect(uint8 p[], uint64 len) { return 0; }";
-    let click_source = r#"import click::cstr;
+    let click_source = r#"import click::c::string;
 verifying "inspect.c";
 int32 inspect(uint8 p[], uint64 len) {
     requires viewable(p[0..len + 1u64]);
-    requires cstr::len(p, len);
+    requires string::len(p, len);
     ensures p[len] == '\0' by {
         step_until(function.exit);
-        apply(cstr::len_has_terminator(p, len));
+        apply(string::len_has_terminator(p, len));
         solve();
     }
 }"#;
@@ -2638,7 +2638,7 @@ int32 inspect(uint8 p[], uint64 len) {
     )
     .expect("post-execution apply should expand");
 
-    assert!(expanded.contains("apply(cstr::len_has_terminator(p, len)) using"));
+    assert!(expanded.contains("apply(string::len_has_terminator(p, len)) using"));
     verify_c_sources(&expanded, &[("inspect.c", c_source)])
         .expect("explicit apply conclusions should remain available to the trailing solve");
 }
@@ -3601,7 +3601,7 @@ fn a_parsed_source_index_holds_only_proof_blocks() {
 
 #[test]
 fn trace_source_index_preserves_nested_locations_and_containment() {
-    let source = "// αβ UTF-8\nresource cell(p: int32*) { owns *p; }\nvoid f(int32* p) {\n    owns r: cell(p);\n} by {\n  have true by { open(cell(p)) { known(); } }\n  if true { normalize(); } else { solve(); }\n  cases { true => { step(); } false => { normalize(); } }\n  both { left => { normalize(); } right => { solve(); } }\n  outcomes { threw => { step(); } returned => { solve(); } }\n  branch ensuring { fact true; } { true => { step(); } false => { solve(); } }\n  normalize();\n}\n";
+    let source = "// αβ UTF-8\nresource cell(p: int32*) { owns *p; }\nvoid f(int32* p) {\n    owns r: cell(p);\n} by {\n  have true by { open(cell(p)) { known(); } }\n  if true { normalize(); } else { solve(); }\n  cases { true => { step(); } false => { normalize(); } }\n  all { true => { normalize(); } true => { solve(); } }\n  outcomes { threw => { step(); } returned => { solve(); } }\n  branch ensuring { fact true; } { true => { step(); } false => { solve(); } }\n  normalize();\n}\n";
     let index = ProofSourceIndex::new(source).unwrap();
     // A `branch` shares its line only with its own arms' tactics, which are
     // inside it, so the line names it alone.
@@ -3623,8 +3623,8 @@ fn trace_source_index_preserves_nested_locations_and_containment() {
     // Each second arm's first tactic.
     for (kind, inner) in [
         ("if", "solve(); }\n  cases"),
-        ("cases", "normalize(); } }\n  both"),
-        ("both", "solve(); } }\n  outcomes"),
+        ("cases", "normalize(); } }\n  all"),
+        ("all", "solve(); } }\n  outcomes"),
     ] {
         let outer = position_at_offset(source, source.find(kind).unwrap());
         assert_eq!(
@@ -4443,12 +4443,12 @@ function tally(end: int32) -> Integer { (0..end).fold(0, |acc, k| { acc + 1 }) }
 theorem fold_case(end: int32) {
     requires end <= 0;
     ensures tally(end) == 0 and 0 <= tally(end) by {
-        both {
-            left => {
+        all {
+            tally(end) == 0 => {
                 unfold(tally(end));
                 normalize();
             }
-            right => {
+            0 <= tally(end) => {
                 unfold(tally(end));
                 normalize();
             }

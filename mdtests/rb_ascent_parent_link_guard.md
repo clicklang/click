@@ -218,8 +218,9 @@ struct rb_node* rb_up_while_right_child(struct rb_node* node, struct rb_node* pa
                     step();
                     step();
                     let lifted = fold(rb_at(node, parent), {
-                        model: RbTree::Node(identity, color, t.model, sibling_model)
-                    }, { left: t, right: s });
+                        model: RbTree::Node(identity, color, t.model, sibling_model),
+                        left: t, right: s
+                    });
                 },
                 Context::Right(identity, grandparent, color, sibling_model, up_model) => {
                     have plug(up_model,
@@ -238,8 +239,9 @@ struct rb_node* rb_up_while_right_child(struct rb_node* node, struct rb_node* pa
                     step();
                     step();
                     let lifted = fold(rb_at(node, parent), {
-                        model: RbTree::Node(identity, color, sibling_model, t.model)
-                    }, { left: s, right: t });
+                        model: RbTree::Node(identity, color, sibling_model, t.model),
+                        left: s, right: t
+                    });
                 },
             }
         }

@@ -49,61 +49,8 @@ impl IntegerResult {
         ]))
     }
 
-    // IntegerTerm's equality is structural, with its existing observation and
-    // application identities at scalar leaves. Compare common connectives
-    // directly; never export a whole arithmetic/conditional prefix merely to
-    // decide the equal-arm construction rule.
     fn same_native_syntax(&self, other: &Self) -> bool {
-        let mut pending = vec![(&self.0, &other.0)];
-        let mut seen = std::collections::HashSet::new();
-        while let Some((left, right)) = pending.pop() {
-            if left == right || !seen.insert((left.id(), right.id())) {
-                continue;
-            }
-            crate::instrumentation::record_deterministic_work(1);
-            match (left.node(), right.node()) {
-                (
-                    KernelTermNode::IntegerOperation {
-                        operator: a,
-                        arguments: aa,
-                    },
-                    KernelTermNode::IntegerOperation {
-                        operator: b,
-                        arguments: ba,
-                    },
-                ) if a == b => {
-                    pending.extend(aa.iter().zip(ba));
-                }
-                (
-                    KernelTermNode::IntegerIf { arguments: a },
-                    KernelTermNode::IntegerIf { arguments: b },
-                ) => {
-                    if a[0].condition_storage_key() != b[0].condition_storage_key() {
-                        return false;
-                    }
-                    pending.extend(a[1..].iter().zip(&b[1..]));
-                }
-                // These leaves retain their separate compatibility contracts.
-                // The machine case reconstructs only an observation handle;
-                // call/fold/match payload migration remains separately scoped.
-                (
-                    KernelTermNode::MachineObservation { .. },
-                    KernelTermNode::MachineObservation { .. },
-                )
-                | (KernelTermNode::Call { .. }, KernelTermNode::Call { .. })
-                | (KernelTermNode::Fold(_), KernelTermNode::Fold(_))
-                | (KernelTermNode::Match(_), KernelTermNode::Match(_)) => {
-                    let mut export = KernelTermExport::default();
-                    if export.integer(left).expect("Integer equality leaf")
-                        != export.integer(right).expect("Integer equality leaf")
-                    {
-                        return false;
-                    }
-                }
-                _ => return false,
-            }
-        }
-        true
+        self.0.integer_native_syntax_equal(&other.0)
     }
 
     pub(super) fn range_fold(
@@ -154,6 +101,65 @@ impl IntegerResult {
         }
     }
 }
+impl KernelTerm {
+    // IntegerTerm's equality is structural, with its existing observation and
+    // application identities at scalar leaves. Compare common connectives
+    // directly; never export a whole arithmetic/conditional prefix merely to
+    // decide the equal-arm construction rule.
+    pub(in crate::kernel) fn integer_native_syntax_equal(&self, other: &Self) -> bool {
+        let mut pending = vec![(self, other)];
+        let mut seen = std::collections::HashSet::new();
+        while let Some((left, right)) = pending.pop() {
+            if left == right || !seen.insert((left.id(), right.id())) {
+                continue;
+            }
+            crate::instrumentation::record_deterministic_work(1);
+            match (left.node(), right.node()) {
+                (
+                    KernelTermNode::IntegerOperation {
+                        operator: a,
+                        arguments: aa,
+                    },
+                    KernelTermNode::IntegerOperation {
+                        operator: b,
+                        arguments: ba,
+                    },
+                ) if a == b => {
+                    pending.extend(aa.iter().zip(ba));
+                }
+                (
+                    KernelTermNode::IntegerIf { arguments: a },
+                    KernelTermNode::IntegerIf { arguments: b },
+                ) => {
+                    if a[0].condition_storage_key() != b[0].condition_storage_key() {
+                        return false;
+                    }
+                    pending.extend(a[1..].iter().zip(&b[1..]));
+                }
+                // These leaves retain their separate compatibility contracts.
+                // The machine case reconstructs only an observation handle;
+                // call/fold/match payload migration remains separately scoped.
+                (
+                    KernelTermNode::MachineObservation { .. },
+                    KernelTermNode::MachineObservation { .. },
+                )
+                | (KernelTermNode::Call { .. }, KernelTermNode::Call { .. })
+                | (KernelTermNode::Fold(_), KernelTermNode::Fold(_))
+                | (KernelTermNode::Match(_), KernelTermNode::Match(_)) => {
+                    let mut export = KernelTermExport::default();
+                    if export.integer(left).expect("Integer equality leaf")
+                        != export.integer(right).expect("Integer equality leaf")
+                    {
+                        return false;
+                    }
+                }
+                _ => return false,
+            }
+        }
+        true
+    }
+}
+
 impl PartialEq for IntegerResult {
     fn eq(&self, other: &Self) -> bool {
         self.same_native_syntax(other)
@@ -259,7 +265,7 @@ mod conditional_contract_tests {
             "producer payloads remain distinct"
         );
         let var = IntegerTerm::var(Variable(1009891));
-        let values = vec![
+        let values = [
             IntegerTerm::constant_i64(0),
             var.clone(),
             IntegerTerm::Add(var.clone().into(), IntegerTerm::constant_i64(1).into()),

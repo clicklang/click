@@ -6,7 +6,7 @@ fn fact(index: u64, related: bool) -> Proposition {
             format!("fact_{index}")
         },
         arguments: vec![crate::kernel::Term::Bitvector32(
-            crate::kernel::MachineTerm::constant(index as u32),
+            crate::kernel::MachineTerm::constant(index as u32).into(),
         )],
     }
 }
@@ -19,12 +19,10 @@ fn statement_store_views_only_index_their_delta() {
     for related in [false, true] {
         let mut samples = Vec::new();
         for size in [32, 128, 512] {
-            let root = PureFactStore::from_statement_facts(
+            let root = PureFactStore::from_ordered(
                 &(0..size)
                     .map(|index| fact(index, related))
                     .collect::<Vec<_>>(),
-                None,
-                None,
             );
             let before_lists = fact_list_entry_counts();
             let _ = crate::kernel::proof::take_fact_entry_counts();
@@ -63,11 +61,10 @@ fn statement_store_views_only_index_their_delta() {
     }
 }
 
-/// The local view reserves the enclosing store's names without walking the
-/// memory contents again. Growing unrelated cells must not grow the number
-/// of variables collected by one statement-local fact.
+/// A restricted scope keeps the enclosing store's name reservations
+/// without walking a retained fact's memory again.
 #[test]
-fn statement_local_reservations_share_ambient_memory() {
+fn restricted_facts_keep_ambient_memory_reservations() {
     use crate::kernel::{
         Address, AddressBase, AddressOffset, MachineTerm, ProgramValue, SymbolicMemory, Variable,
     };
@@ -89,24 +86,17 @@ fn statement_local_reservations_share_ambient_memory() {
             bytes: (MachineTerm::constant(4)).into(),
             wide: false,
         };
-        let ambient = PureFactStore::from_ordered(std::slice::from_ref(&selected));
+        let discarded = fact(0, false);
+        let ambient = PureFactStore::from_ordered(&[selected.clone(), discarded.clone()]);
         let before = crate::kernel::proof::reserved_fact_variable_entries();
-        let local = PureFactStore::from_statement_facts(
-            std::slice::from_ref(&selected),
-            Some(ambient.assumptions().clone()),
-            Some(&ambient),
-        );
+        let local = ambient.retaining(|fact| fact == &selected);
         let collected = crate::kernel::proof::reserved_fact_variable_entries() - before;
         assert!(
             collected <= 4,
             "size {size}: recollected {collected} variables from ambient memory"
         );
         assert!(local.reserves_variable(Variable(9_200_000 + size - 1)));
-        assert!(
-            local
-                .assumptions()
-                .shares_fact_storage_with(ambient.assumptions())
-        );
+        assert!(!local.contains_top_level(&discarded));
         assert!(local.contains_top_level(&selected));
     }
 }

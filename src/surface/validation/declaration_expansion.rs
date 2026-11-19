@@ -344,6 +344,10 @@ impl LibrarySelection {
         self.file.function_blocks()
     }
 
+    pub(in crate::surface) fn resource_definitions(&'static self) -> &'static [ResourceDefinition] {
+        self.file.resource_definitions()
+    }
+
     pub(in crate::surface) fn theorem_definitions(&'static self) -> &'static [TheoremDefinition] {
         self.file.theorem_definitions()
     }
@@ -690,6 +694,7 @@ fn empty_library_file() -> Result<ClickFile, ClickError> {
         &BTreeSet::new(),
         &BTreeMap::new(),
         Default::default(),
+        None,
     )
 }
 
@@ -729,6 +734,7 @@ fn load_library_modules(modules: &[(&str, &str)]) -> Result<Vec<LibraryModule>, 
             &BTreeSet::new(),
             &BTreeMap::new(),
             Default::default(),
+            None,
         )?;
         if !module.verifying_sources().is_empty()
             || !module.imports().is_empty()
@@ -876,7 +882,7 @@ fn expand_declared_resource_clauses_with_rules(
     // follow them. The standard library's own expansion has its resources in
     // `file` already.
     let library_resources = if family_rules {
-        file_library(&file)?.file.resource_definitions()
+        file_library(&file)?.resource_definitions()
     } else {
         &[]
     };
@@ -1646,7 +1652,9 @@ fn expand_declared_resource_tactic(
         | ProofTactic::Loop(_)) => {
             expand_declared_resource_tactic_with_nested_proofs(tactic, resource_definitions)
         }
-        tactic @ (ProofTactic::Both(_) | ProofTactic::CloseInvariantsBy(_)) => {
+        tactic @ (ProofTactic::All(_)
+        | ProofTactic::Both(_)
+        | ProofTactic::CloseInvariantsBy(_)) => {
             expand_declared_resource_tactic_with_plain_scripts(tactic, resource_definitions)
         }
         ProofTactic::StepProved { step, proof } => {
@@ -1712,12 +1720,16 @@ fn expand_declared_resource_tactic_with_plain_scripts(
     enum Frame {
         Visit(ProofTactic),
         Script(Vec<ProofTactic>),
+        AllArm(Box<ProofAllArm>),
+        FinishArm(Box<ClickProposition>, usize),
+        All(usize),
         RestoreHypotheses(PersistentBinderMap<()>),
         Both { left: usize, right: usize },
         Close { count: usize },
     }
     let mut pending = vec![Frame::Visit(tactic)];
     let mut expanded = Vec::new();
+    let mut expanded_arms = Vec::new();
     while let Some(frame) = pending.pop() {
         match frame {
             Frame::Script(tactics) => {
@@ -1728,6 +1740,55 @@ fn expand_declared_resource_tactic_with_plain_scripts(
             }
             Frame::RestoreHypotheses(outer) => {
                 *resource_definitions.local_hypotheses.borrow_mut() = outer;
+            }
+            Frame::Visit(ProofTactic::All(all)) => {
+                pending.push(Frame::All(all.arms.len()));
+                pending.extend(
+                    all.arms
+                        .into_iter()
+                        .rev()
+                        .map(|arm| Frame::AllArm(Box::new(arm))),
+                );
+            }
+            Frame::AllArm(arm) => {
+                let proposition =
+                    expand_declared_resource_proposition(arm.proposition, resource_definitions)?;
+                if arm.tactics.iter().any(|tactic| {
+                    matches!(
+                        tactic,
+                        ProofTactic::LetSatisfy(_)
+                            | ProofTactic::Intro
+                            | ProofTactic::IntroAs(_)
+                            | ProofTactic::IntroBinder(_)
+                    )
+                }) {
+                    let SourceProof::Script(tactics) = expand_declared_resource_proof_of(
+                        SourceProof::Script(arm.tactics),
+                        Some(&proposition),
+                        resource_definitions,
+                    )?
+                    else {
+                        unreachable!("expansion retains proof scripts");
+                    };
+                    expanded_arms.push(ProofAllArm {
+                        proposition,
+                        tactics,
+                    });
+                } else {
+                    pending.push(Frame::FinishArm(Box::new(proposition), arm.tactics.len()));
+                    pending.push(Frame::Script(arm.tactics));
+                }
+            }
+            Frame::FinishArm(proposition, count) => {
+                let tactics = expanded.split_off(expanded.len() - count);
+                expanded_arms.push(ProofAllArm {
+                    proposition: *proposition,
+                    tactics,
+                });
+            }
+            Frame::All(count) => {
+                let arms = expanded_arms.split_off(expanded_arms.len() - count);
+                expanded.push(ProofTactic::All(ProofAll { arms }));
             }
             Frame::Visit(ProofTactic::Both(both)) => {
                 pending.push(Frame::Both {
@@ -1996,10 +2057,12 @@ fn expand_declared_resource_tactic_with_resources(
     tactic: ProofTactic,
     resource_definitions: &DeclaredResourceScope,
 ) -> Result<ProofTactic, ClickError> {
-    let expand_slot = |mut slot: Box<IteratedSlot>| -> Result<Box<IteratedSlot>, ClickError> {
-        slot.resource = expand_resource_application(slot.resource, resource_definitions, true)?;
-        Ok(slot)
-    };
+    let expand_target =
+        |mut target: Box<IteratedTarget>| -> Result<Box<IteratedTarget>, ClickError> {
+            target.resource =
+                expand_resource_application(target.resource, resource_definitions, true)?;
+            Ok(target)
+        };
     match tactic {
         ProofTactic::UnfoldResource(resource) => Ok(ProofTactic::UnfoldResource(
             expand_declared_resource_clause(resource, resource_definitions)?,
@@ -2017,21 +2080,11 @@ fn expand_declared_resource_tactic_with_resources(
         ProofTactic::ConstructResource(resource) => Ok(ProofTactic::ConstructResource(
             expand_declared_resource_clause(resource, resource_definitions)?,
         )),
-        ProofTactic::Iterated(IteratedTactic::Gather(resource)) => {
-            Ok(ProofTactic::Iterated(IteratedTactic::Gather(
-                expand_declared_resource_clause(resource, resource_definitions)?,
-            )))
-        }
-        ProofTactic::Iterated(IteratedTactic::Scatter(resource)) => {
-            Ok(ProofTactic::Iterated(IteratedTactic::Scatter(
-                expand_declared_resource_clause(resource, resource_definitions)?,
-            )))
-        }
-        ProofTactic::Iterated(IteratedTactic::UnfoldSlot(slot)) => Ok(ProofTactic::Iterated(
-            IteratedTactic::UnfoldSlot(expand_slot(slot)?),
+        ProofTactic::Iterated(IteratedTactic::Unfold(target)) => Ok(ProofTactic::Iterated(
+            IteratedTactic::Unfold(expand_target(target)?),
         )),
-        ProofTactic::Iterated(IteratedTactic::FoldSlot(slot)) => Ok(ProofTactic::Iterated(
-            IteratedTactic::FoldSlot(expand_slot(slot)?),
+        ProofTactic::Iterated(IteratedTactic::Fold(target)) => Ok(ProofTactic::Iterated(
+            IteratedTactic::Fold(expand_target(target)?),
         )),
         tactic @ ProofTactic::ObserveSavedMemory { .. } => Ok(tactic),
         _ => unreachable!("tactic dispatched to the wrong declaration-expansion helper"),
@@ -2373,7 +2426,7 @@ fn expand_declared_resource_clause(
                     if let Some((_, field_type)) = fields.get(slot) {
                         if construction {
                             return Err(ClickError::new(format!(
-                                "`{slot}` is a field of `{parent}`, not a child slot; supply it in the fold's field map"
+                                "`{slot}` is a field of `{parent}`, not a child slot; supply a field initializer in the fold map"
                             )));
                         }
                         if !matches!(field_type, ClickType::Program(_)) {
@@ -2410,28 +2463,6 @@ fn expand_declared_resource_clause(
                         Some(_) => {}
                     }
                 }
-            }
-            // A child a fold's map left out defaults to the in-scope
-            // resource of the slot's name only when that resource is of the
-            // family the slot owns; any other candidate is dropped, and the
-            // fold then reports the slot as missing.
-            if let Some(defaults) = binding.default_child_bindings.take() {
-                let slots = resource_definitions
-                    .get(&parent)
-                    .map(|info| info.child_slots.clone())
-                    .unwrap_or_default();
-                let kept = defaults
-                    .iter()
-                    .filter(|(slot, _, identity)| match slots.get(slot) {
-                        Some(Some(declared)) => resource_definitions
-                            .instance_resource(*identity)
-                            .is_none_or(|actual| actual == *declared),
-                        Some(None) => true,
-                        None => false,
-                    })
-                    .cloned()
-                    .collect::<Vec<_>>();
-                binding.default_child_bindings = (!kept.is_empty()).then(|| kept.into());
             }
             if let Some(fields) = binding.fold_fields.take() {
                 binding.fold_fields = Some(
@@ -3765,7 +3796,7 @@ pub(in crate::surface) fn combined_click_function_definitions(
 pub(in crate::surface) fn combined_resource_definitions(
     file: &ClickFile,
 ) -> Result<Vec<ResourceDefinition>, ClickError> {
-    let mut definitions = file_library(file)?.file.resource_definitions().to_vec();
+    let mut definitions = file_library(file)?.resource_definitions().to_vec();
     definitions.extend(file.resource_definitions().iter().cloned());
     Ok(definitions)
 }

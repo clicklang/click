@@ -59,8 +59,9 @@ void drain(int32 n) {
                 }
             }
             let out = fold(root(), {
-                model: RootModel::Has(LeafModel::Unit)
-            }, { child: child });
+                model: RootModel::Has(LeafModel::Unit),
+                child: child
+            });
             step();
             solve();
         },

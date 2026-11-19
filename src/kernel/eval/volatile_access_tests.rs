@@ -35,8 +35,10 @@ fn predicate_spelling_and_uncertified_records_do_not_supply_read_results() {
     let legacy = ExecutionPureFact::certified(Proposition::Predicate {
         name: "__click_volatile_read_0".into(),
         arguments: vec![
-            Term::ProgramValue(ProgramValue::pointer(Address::symbolic(Variable(800_001)))),
-            Term::ProgramValue(ProgramValue::Int32(MachineTerm::constant(7))),
+            Term::ProgramValue(
+                (ProgramValue::pointer(Address::symbolic(Variable(800_001)))).into(),
+            ),
+            Term::ProgramValue((ProgramValue::Int32(MachineTerm::constant(7))).into()),
         ],
     });
     assert!(legacy.volatile_read_result().is_none());

@@ -413,7 +413,7 @@ fn constant_memory_span(key: &ImmutableMemoryKey) -> Option<(ConstantMemoryBase,
                 value.as_const().map(|value| i128::from(value as i32))
             }
             ProgramExpression::Value(ProgramValue::Int64(value)) => {
-                value.int64_as_const().map(|value| i128::from(value as i64))
+                value.int64_as_const().map(i128::from)
             }
             ProgramExpression::Value(ProgramValue::UInt64(value)) => {
                 value.uint64_as_const().map(i128::from)
@@ -586,6 +586,7 @@ fn post_program_expression(expression: &SpecExpression) -> Option<ProgramExpress
             point: SpecPoint::Current,
             pointer,
             value_type,
+            exact: false,
         } => ProgramExpression::TypedLoad {
             pointer: Box::new(post_program_expression(pointer)?),
             value_type: *value_type,

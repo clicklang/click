@@ -602,7 +602,7 @@ struct SharedMachineIntegerNode {
 enum MachineIntegerOperand {
     Shared {
         term: KernelTerm,
-        boxed: OnceLock<MachineTerm>,
+        native_source: OnceLock<MachineIntegerNativeSource>,
         structural: OnceLock<MachineTerm>,
     },
     Legacy(MachineTerm),
@@ -612,6 +612,13 @@ enum MachineIntegerOperand {
         value: MachineTerm,
         _identity: SharedMachineIntegerTerm,
     },
+}
+
+/// The observation may use the exact spelling supplied by its caller. When
+/// there is no such spelling, both native readers borrow the structural value.
+enum MachineIntegerNativeSource {
+    Written(MachineTerm),
+    Structural,
 }
 
 impl Clone for SharedMachineIntegerTerm {
@@ -774,11 +781,11 @@ impl SharedMachineIntegerTerm {
             // A graph lookup may have memoized only the shared identity.
             // This constructor receives an explicit boxed input, so retain
             // that input rather than exporting the shared DAG on a later read.
-            if let MachineIntegerOperand::Shared { boxed, .. } = &found.0.operand
-                && boxed.get().is_none()
+            if let MachineIntegerOperand::Shared { native_source, .. } = &found.0.operand
+                && native_source.get().is_none()
                 && let MachineIntegerKey::Legacy { value, .. } = &key
             {
-                let _ = boxed.set(value.clone());
+                let _ = native_source.set(MachineIntegerNativeSource::Written(value.clone()));
             }
             return found;
         }
@@ -793,10 +800,10 @@ impl SharedMachineIntegerTerm {
                     Self::from_shared(ty, term)
                 }
                 .expect("arithmetic storage fragment");
-            let MachineIntegerOperand::Shared { boxed, .. } = &shared.0.operand else {
+            let MachineIntegerOperand::Shared { native_source, .. } = &shared.0.operand else {
                 unreachable!()
             };
-            let _ = boxed.set(value.clone());
+            let _ = native_source.set(MachineIntegerNativeSource::Written(value.clone()));
             shared.remember_explicit_import(key);
             return shared;
         }
@@ -808,8 +815,8 @@ impl SharedMachineIntegerTerm {
         {
             let root = KernelTerm::retained_machine_operand(ty, view);
             let shared = Self::observe_shared(ty, root).expect("retained machine observation");
-            if let MachineIntegerOperand::Shared { boxed, .. } = &shared.0.operand {
-                let _ = boxed.set(value.clone());
+            if let MachineIntegerOperand::Shared { native_source, .. } = &shared.0.operand {
+                let _ = native_source.set(MachineIntegerNativeSource::Written(value.clone()));
             }
             shared.remember_explicit_import(key);
             return shared;
@@ -903,8 +910,13 @@ impl SharedMachineIntegerTerm {
     pub(crate) fn retained_written_operand(&self) -> Option<&MachineTerm> {
         match &self.0.operand {
             MachineIntegerOperand::Shared {
-                boxed, structural, ..
-            } => boxed.get().or_else(|| structural.get()),
+                native_source,
+                structural,
+                ..
+            } => match native_source.get() {
+                Some(MachineIntegerNativeSource::Written(value)) => Some(value),
+                Some(MachineIntegerNativeSource::Structural) | None => structural.get(),
+            },
             MachineIntegerOperand::Legacy(value)
             | MachineIntegerOperand::ExactLegacy { value, .. } => Some(value),
         }
@@ -912,12 +924,7 @@ impl SharedMachineIntegerTerm {
 
     #[cfg(test)]
     pub(crate) fn has_boxed_operand(&self) -> bool {
-        match &self.0.operand {
-            MachineIntegerOperand::Shared {
-                boxed, structural, ..
-            } => boxed.get().is_some() || structural.get().is_some(),
-            MachineIntegerOperand::Legacy(_) | MachineIntegerOperand::ExactLegacy { .. } => true,
-        }
+        self.retained_written_operand().is_some()
     }
 
     pub fn id(&self) -> u64 {
@@ -944,13 +951,22 @@ impl SharedMachineIntegerTerm {
         match &self.0.operand {
             MachineIntegerOperand::Shared {
                 term,
-                boxed,
+                native_source,
                 structural,
-            } => boxed.get_or_init(|| {
-                structural.get().cloned().unwrap_or_else(|| {
-                    KernelTermExport::machine(term).expect("shared machine operand")
-                })
-            }),
+            } => {
+                match native_source.get_or_init(|| {
+                    if structural.get().is_some() {
+                        MachineIntegerNativeSource::Structural
+                    } else {
+                        MachineIntegerNativeSource::Written(
+                            KernelTermExport::machine(term).expect("shared machine operand"),
+                        )
+                    }
+                }) {
+                    MachineIntegerNativeSource::Written(value) => value,
+                    MachineIntegerNativeSource::Structural => self.structural_value(),
+                }
+            }
             MachineIntegerOperand::Legacy(value)
             | MachineIntegerOperand::ExactLegacy { value, .. } => value,
         }
@@ -1138,7 +1154,7 @@ impl MachineIntegerInterner {
                 *ty,
                 MachineIntegerOperand::Shared {
                     term: term.clone(),
-                    boxed: OnceLock::new(),
+                    native_source: OnceLock::new(),
                     structural: OnceLock::new(),
                 },
             ),
@@ -2639,8 +2655,7 @@ mod tests {
             &replacement,
         )
         .expect("the application occurs on the arithmetic spine");
-        let Some((ConditionTerm::IntegerLessEqual(_, right), true)) =
-            (&rewritten).condition_native()
+        let Some((ConditionTerm::IntegerLessEqual(_, right), true)) = rewritten.condition_native()
         else {
             unreachable!()
         };
@@ -3137,6 +3152,25 @@ mod tests {
 #[cfg(test)]
 mod explicit_input_after_lookup_tests {
     use super::*;
+
+    #[test]
+    fn default_observation_output_borrows_the_existing_structural_value() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let ty = MachineIntegerType::Int32;
+        let native = MachineTerm::Binary {
+            format: ty,
+            op: MachineBinaryOp::Multiply,
+            left: Box::new(MachineTerm::Variable(Variable(993273))),
+            right: Box::new(MachineTerm::Variable(Variable(993274))),
+        };
+        let observation = SharedMachineIntegerTerm::index(ty, native.clone());
+        let structural = observation.structural_value();
+        assert_eq!(structural, &native);
+        assert!(std::ptr::eq(structural, observation.value()));
+        let supplied = SharedMachineIntegerTerm::intern(ty, native);
+        assert_eq!(supplied, observation);
+        assert!(std::ptr::eq(structural, supplied.value()));
+    }
 
     #[test]
     fn native_lookup_keeps_shared_storage_until_a_boxed_input_is_supplied() {

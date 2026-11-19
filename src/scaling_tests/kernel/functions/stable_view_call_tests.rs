@@ -1,6 +1,161 @@
 // Full-call controls for local-storage classification and escrow restoration.
 use super::*;
 
+/// Reuse the selected call reservation beside a growing folded caller frame.
+/// A view of cell(p) borrows wide(p), even when unrelated folds were
+/// inserted first. Supplier selection must not open their bodies.
+#[test]
+fn folded_view_preparation_uses_the_indexed_owner() {
+    let cell = cell_definition(1, Vec::new());
+    let wide = wide_definition(2);
+    let decoy = CompositeResourceDefinition::new(
+        "decoy",
+        vec![program_parameter("k", ProgramType::Int32)],
+        None,
+        false,
+        Vec::new(),
+        Vec::new(),
+    );
+    let function = adapter_reader("indexed_adapter_reader", cell.clone(), wide.clone())
+        .with_composite_resource_definitions(vec![cell, decoy, wide]);
+    let samples = [4, 16, 64].map(|count| {
+        let _session = crate::kernel::VerificationSession::enter();
+        let assumptions = PureFactContext::new();
+        let pointer = Address::symbolic(Variable(890_001));
+        let owner = ResourceFact::own_composite(
+            "wide".into(),
+            vec![ProgramValue::pointer(pointer.clone())],
+        );
+        let frame = ResourceContext::new()
+            .unchecked_with_facts(
+                (0..count).map(|i| ResourceFact::own_composite("decoy".into(), vec![int32(i)])),
+            )
+            .unchecked_with_fact(owner);
+        let caller = adapter_caller(&pointer).with_resource_context(frame);
+        let callee = bind_program_function_arguments(
+            &caller,
+            &function,
+            &[ProgramValue::pointer(pointer.clone())],
+        )
+        .expect("bind arguments");
+        let (transfer, work) = crate::instrumentation::measure_deterministic_work(|| {
+            prepare_function_resource_transfer(
+                &caller,
+                &callee,
+                &function,
+                &assumptions,
+                &mut ExecutionBudget::new(),
+                false,
+                ResourceTransitionPurpose::CallSite,
+            )
+            .expect("prepare call")
+            .expect("held wide range supplies the cell view")
+        });
+
+        assert!(!caller.resources().facts_are_materialized());
+        let plan = transfer.stable_view_plan.expect("one checked loan");
+        assert_eq!(plan.stable_views().len(), 1);
+        let tail = MemoryRange::new(pointer, 1u32.into(), 2u32.into());
+        assert_eq!(
+            plan.ledger.permits_memory_access(&tail),
+            Err(LoanRefusal::ActiveDependency)
+        );
+        work
+    });
+    assert_eq!(samples, [samples[0]; 3]);
+}
+
+#[test]
+fn preparing_a_reserved_fold_leaves_unrelated_caller_heads_unmaterialized() {
+    use crate::kernel::program_expression::{int32_literal, variable};
+
+    let function = program_function(
+        ProgramType::Void,
+        "accept_cell",
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
+        program_return(program_void_value()),
+    )
+    .with_resource_summary(
+        vec![ResourceSpec::composite(
+            ResourceAccessMode::Own,
+            "cell".into(),
+            vec![variable("p")],
+            vec![ProgramType::Int32Pointer],
+        )],
+        vec![],
+    )
+    .with_composite_resource_definitions(vec![CompositeResourceDefinition::new(
+        "cell",
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
+        None,
+        false,
+        vec![ResourceSpec::owned_memory(MemorySegment::new(
+            variable("p"),
+            int32_literal(0),
+            int32_literal(1),
+        ))],
+        vec![],
+    )]);
+    let heap = |id| Address {
+        base: AddressBase::Heap(id),
+        offset: AddressOffset::Constant(0),
+    };
+    let cell =
+        |id| ResourceFact::own_composite("cell".into(), vec![ProgramValue::pointer(heap(id))]);
+    let samples = [16, 64, 256].map(|extras| {
+        let _session = crate::kernel::VerificationSession::enter();
+        let facts = PureFactContext::new();
+        let mut resources = ResourceContext::new_with_equalities(&facts);
+        let mut memory = SymbolicMemory::new();
+        for id in 0..=extras {
+            memory = memory
+                .with_heap_allocation_claim(
+                    heap(id),
+                    AllocationSize::int32(MachineTerm::constant(4)),
+                )
+                .expect("distinct live cell");
+            resources = resources.unchecked_with_fact(cell(id));
+        }
+        let caller = ExecutionState::new()
+            .with_memory(memory)
+            .with_resource_context(resources);
+        let callee = caller
+            .clone()
+            .with_local("p", ProgramValue::pointer(heap(0)));
+        let (transfer, work) = crate::instrumentation::measure_deterministic_work(|| {
+            prepare_function_resource_transfer(
+                &caller,
+                &callee,
+                &function,
+                &facts,
+                &mut ExecutionBudget::new(),
+                false,
+                ResourceTransitionPurpose::CallSite,
+            )
+            .expect("prepare call")
+            .expect("caller supplies the exact declared fold")
+        });
+        assert!(!caller.resources().facts_are_materialized());
+        assert!(
+            transfer
+                .callee_resources
+                .contains_exact_representation(&cell(0))
+        );
+        assert!(
+            !transfer
+                .caller_resources_after_requirements
+                .contains_exact_representation(&cell(0))
+        );
+        assert!(
+            transfer
+                .caller_resources_after_requirements
+                .contains_exact_representation(&cell(1))
+        );
+        work
+    });
+    assert_eq!(samples, [samples[0]; 3]);
+}
+
 #[test]
 fn verified_call_loan_requirement_building_does_not_visit_live_loans() {
     let effects = [MemoryRange::new(pointer(), 0u32.into(), 1u32.into())];

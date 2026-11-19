@@ -202,7 +202,7 @@ mod tests {
                     );
                     assert_eq!(expected == number, min <= number && number <= max);
                 }
-                let Some((ConditionTerm::IntegerEqual(a, b), true)) = (&goal).condition_native()
+                let Some((ConditionTerm::IntegerEqual(a, b), true)) = goal.condition_native()
                 else {
                     unreachable!()
                 };

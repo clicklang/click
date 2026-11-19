@@ -32,6 +32,7 @@ pub(crate) struct MutexUseCallTransfer {
     pub(crate) usage: MutexUseBinding,
     source: ResourceFact,
     selected_alias: Option<Variable>,
+    pub(crate) mutex_storage: Option<Arc<MemoryRange>>,
     interface: Option<Arc<crate::kernel::mutexes::InitializedMutexInterface>>,
     required_type: Option<ResourceDescription>,
     loan: MutexUseLoan,
@@ -100,9 +101,8 @@ impl MutexUseCallTransfer {
             .without_fact_delaying_normalization(source, assumptions)
             .ok_or_else(|| MutexUseCallError::MissingResource(source.clone()))?;
         let use_fact = ledger.mutex_use_resource(loan.usage, callee)?;
-        let callee_resources = ResourceContext::new()
-            .try_compose_with_facts_delaying_normalization([use_fact], assumptions)
-            .map_err(MutexUseCallError::InvalidResources)?;
+        let callee_resources =
+            ResourceContext::new_with_equalities(assumptions).unchecked_with_fact(use_fact);
         Ok(Self {
             caller_resources,
             callee_resources,
@@ -110,6 +110,7 @@ impl MutexUseCallTransfer {
             usage: loan.usage,
             source: source.clone(),
             selected_alias: None,
+            mutex_storage: None,
             interface: None,
             required_type: None,
             loan,
@@ -176,17 +177,10 @@ impl MutexUseCallTransfer {
             .clone()
             .without_fact_delaying_normalization(source, assumptions)
             .ok_or_else(|| MutexUseCallError::MissingResource(source.clone()))?
-            .try_compose_with_facts_delaying_normalization(
-                [ledger.mutex_use_resource(retained, caller)?],
-                assumptions,
-            )
+            .insert_checked_mutex_authority(ledger.mutex_use_resource(retained, caller)?)
             .map_err(MutexUseCallError::InvalidResources)?;
-        let callee_resources = ResourceContext::new()
-            .try_compose_with_facts_delaying_normalization(
-                [ledger.mutex_use_resource(loan.usage, callee)?],
-                assumptions,
-            )
-            .map_err(MutexUseCallError::InvalidResources)?;
+        let callee_resources = ResourceContext::new_with_equalities(assumptions)
+            .unchecked_with_fact(ledger.mutex_use_resource(loan.usage, callee)?);
         let retained_resource = Some(ledger.mutex_use_resource(retained, caller)?);
         Ok(Self {
             caller_resources,
@@ -199,6 +193,7 @@ impl MutexUseCallTransfer {
             usage: loan.usage,
             source: source.clone(),
             selected_alias: None,
+            mutex_storage: None,
             interface: None,
             required_type: None,
             loan,
@@ -344,7 +339,7 @@ impl MutexUseCallTransfer {
             })
             .collect();
         caller_resources = caller_resources
-            .try_compose_with_facts_delaying_normalization([restored], assumptions)
+            .insert_checked_mutex_authority(restored)
             .map_err(MutexUseCallError::InvalidResources)?;
         Ok(MutexUseCallReturn {
             ledger,
@@ -419,8 +414,8 @@ impl MutexUseCallTransfer {
                     .all(|(left, right)| {
                         left == right
                             || crate::kernel::resource_field_values_proven_equal(
-                                (left).into(),
-                                (right).into(),
+                                left,
+                                right,
                                 assumptions,
                             )
                     })
@@ -552,7 +547,7 @@ impl MutexUseCallTransfer {
         let caller_resources = self
             .caller_resources
             .clone()
-            .try_compose_with_facts_delaying_normalization([restored], assumptions)
+            .insert_checked_mutex_authority(restored)
             .map_err(MutexUseCallError::InvalidResources)?;
         Ok(MutexUseCallReturn {
             ledger,
@@ -781,6 +776,7 @@ mod tests {
             clause_position: None,
             section_index: Some(0),
             selected_mutex_source: None,
+            mutex_storage: None,
         };
         let second = plan_stable_view_transfer_with_bindings_and_composites_for_worker(
             &first.caller_resources,
@@ -1129,6 +1125,7 @@ mod tests {
             clause_position: None,
             section_index: Some(0),
             selected_mutex_source: Some(Arc::new((Variable(500), second_fact.clone()))),
+            mutex_storage: None,
         };
         // A generic lookup is ambiguous here. The selected proof name picks
         // the second share even when the evaluated clause picked its sibling.

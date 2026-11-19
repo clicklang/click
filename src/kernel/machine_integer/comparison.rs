@@ -237,7 +237,7 @@ fn logical_comparison(
     in_conditional: bool,
 ) -> ConditionTerm {
     retained_comparison_for_operand_views(format, relation, operands, in_conditional)
-        .unwrap_or_else(|| condition_for_operand_views(format, relation, operands))
+        .unwrap_or_else(|| condition_for_operand_views_in(format, relation, operands, true))
 }
 
 fn retained_comparison_for_operand_views(
@@ -274,6 +274,16 @@ fn retained_comparison_for_operand_views(
             right.or_else(|| comparison_leaf_operand(operands[1]))?,
         ]
     };
+    Some(retained_compare(format, relation, left, right))
+}
+
+/// The native comparison of two retained operands, without deciding it.
+fn retained_compare(
+    format: MachineIntegerType,
+    relation: crate::kernel::CompareRelation,
+    left: MachineTerm,
+    right: MachineTerm,
+) -> ConditionTerm {
     // Native 32-bit comparisons read sign-free words; their format carries
     // the signedness. Keep the same operand representation as exact rewriting.
     let [left, right] = if format.format().bits() == 32 {
@@ -290,12 +300,12 @@ fn retained_comparison_for_operand_views(
         } else {
             format
         };
-    Some(ConditionTerm::Compare {
+    ConditionTerm::Compare {
         format,
         relation,
         left: Box::new(left),
         right: Box::new(right),
-    })
+    }
 }
 
 /// Whether logical lowering retained a comparison containing a bounded machine
@@ -367,14 +377,17 @@ fn bounded_comparison_operand(
     if in_conditional
         && let Some((spelling, source, destination, child)) = operand.cast()
         && observation.format().bits() == destination.format().bits()
-        && matches!(
+        && (matches!(
             spelling,
             crate::kernel::MachineCastSpelling::Int64From32
                 | crate::kernel::MachineCastSpelling::Int64FromUInt32
                 | crate::kernel::MachineCastSpelling::UInt64FromInt32
                 | crate::kernel::MachineCastSpelling::UInt64From32
                 | crate::kernel::MachineCastSpelling::UInt32From64
-        )
+        ) || (child.variable().is_some()
+            && (spelling == crate::kernel::MachineCastSpelling::UInt64FromInt64
+                || (spelling == crate::kernel::MachineCastSpelling::Generic
+                    && crate::kernel::is_sign_cast32(source, destination)))))
     {
         crate::instrumentation::record_deterministic_work(1);
         return Some(MachineTerm::cast_node(
@@ -403,21 +416,29 @@ fn bounded_comparison_operand(
                 _ => return None,
             }
         }
+        // Read the literal in the operator's format. Signed -1 can overflow
+        // for the minimum dividend, while an unsigned all-ones word is valid.
         O::Divide | O::Remainder
             if in_conditional
-                && !format.format().is_signed()
                 && arguments[0].variable().is_some()
-                && arguments[1]
-                    .literal()
-                    .and_then(|literal| format.constant_from_term(&literal))
-                    .is_some_and(|constant| constant.bits() != 0) =>
+                && ((!format.format().is_signed() && arguments[1].variable().is_some())
+                    || arguments[1]
+                        .literal()
+                        .and_then(|literal| format.constant_from_term(&literal))
+                        .and_then(|constant| constant.to_i128())
+                        .is_some_and(|divisor| !matches!(divisor, 0 | -1))) =>
         {
             false
         }
         O::ShiftRight | O::ShiftLeft
             if operator == O::ShiftRight || !format.format().is_signed() =>
         {
-            if super::bounds::constant_shift_count(arguments[1])? >= width {
+            let variable_shift = in_conditional
+                && arguments
+                    .iter()
+                    .all(|argument| argument.variable().is_some());
+            // Evaluation checks the shift domain before a fact may use it.
+            if !variable_shift && super::bounds::constant_shift_count(arguments[1])? >= width {
                 return None;
             }
             false
@@ -444,10 +465,28 @@ fn bounded_comparison_operand(
     })
 }
 
-/// A conditional with a Boolean variable or atomic comparison guard is a
-/// fixed-size native comparison atom. Never traverse an arithmetic DAG.
+/// Read a fixed-size native conditional, including an immediate conditional
+/// in either arm. The inner reader accepts only bounded operands.
 fn conditional_atom(root: &crate::kernel::KernelTerm) -> Option<MachineTerm> {
-    use crate::kernel::{KernelTermNode as N, MachineOperandView as V};
+    read_conditional_atom(root, |format, arm| {
+        conditional_operand_atom(format, arm)
+            .or_else(|| read_conditional_atom(arm, conditional_operand_atom))
+    })
+}
+
+fn conditional_operand_atom(
+    format: MachineIntegerType,
+    root: &crate::kernel::KernelTerm,
+) -> Option<MachineTerm> {
+    let operand = crate::kernel::MachineOperandView::Shared(root);
+    comparison_leaf_operand(operand).or_else(|| bounded_comparison_operand(format, operand, true))
+}
+
+fn read_conditional_atom(
+    root: &crate::kernel::KernelTerm,
+    arm: impl Fn(MachineIntegerType, &crate::kernel::KernelTerm) -> Option<MachineTerm>,
+) -> Option<MachineTerm> {
+    use crate::kernel::KernelTermNode as N;
     let N::MachineIf { arguments } = root.node() else {
         return None;
     };
@@ -460,19 +499,26 @@ fn conditional_atom(root: &crate::kernel::KernelTerm) -> Option<MachineTerm> {
         _ => return None,
     };
     crate::instrumentation::record_deterministic_work(1);
-    let atom = |format, root: &crate::kernel::KernelTerm| {
-        comparison_leaf_operand(V::Shared(root))
-            .or_else(|| bounded_comparison_operand(format, V::Shared(root), true))
-    };
     let condition = match arguments[0].node() {
         N::Variable(variable) => ConditionTerm::Variable(*variable),
+        N::BoolEqual {
+            arguments: [left, right],
+        } => {
+            let (N::Variable(left), N::Variable(right)) = (left.node(), right.node()) else {
+                return None;
+            };
+            ConditionTerm::BoolEqual(
+                Box::new(ConditionTerm::Variable(*left)),
+                Box::new(ConditionTerm::Variable(*right)),
+            )
+        }
         N::BoolCompare {
             format,
             relation,
             arguments: guard,
         } if matches!(format.format().bits(), 32 | 64) => {
-            let mut left = atom(*format, &guard[0])?;
-            let mut right = atom(*format, &guard[1])?;
+            let mut left = conditional_operand_atom(*format, &guard[0])?;
+            let mut right = conditional_operand_atom(*format, &guard[1])?;
             if format.format().bits() == 32 {
                 left = left.into_word32();
                 right = right.into_word32();
@@ -488,8 +534,8 @@ fn conditional_atom(root: &crate::kernel::KernelTerm) -> Option<MachineTerm> {
     };
     Some(MachineTerm::If {
         condition: Box::new(condition),
-        then_term: Box::new(atom(result_format, &arguments[1])?),
-        else_term: Box::new(atom(result_format, &arguments[2])?),
+        then_term: Box::new(arm(result_format, &arguments[1])?),
+        else_term: Box::new(arm(result_format, &arguments[2])?),
     })
 }
 
@@ -500,6 +546,20 @@ pub(crate) fn condition_for_operand_views(
     format: MachineIntegerType,
     relation: crate::kernel::CompareRelation,
     operands: [crate::kernel::MachineOperandView<'_>; 2],
+) -> ConditionTerm {
+    condition_for_operand_views_in(format, relation, operands, false)
+}
+
+/// [`condition_for_operand_views`]. Under logical lowering (`structural`)
+/// a comparison of two atoms the native constructor would decide because
+/// they are the same atom or both literals keeps its comparison:
+/// lowering `address(p) + 3u64 == address(p) + 3u64` or `(0 + 1) == 2`
+/// does not compute its truth; checking does.
+fn condition_for_operand_views_in(
+    format: MachineIntegerType,
+    relation: crate::kernel::CompareRelation,
+    operands: [crate::kernel::MachineOperandView<'_>; 2],
+    structural: bool,
 ) -> ConditionTerm {
     use crate::kernel::{CompareRelation as R, MachineOperandView as V};
     // Calls and pointer addresses remain native comparison atoms, as before producer migration.
@@ -592,7 +652,21 @@ pub(crate) fn condition_for_operand_views(
             .unwrap_or(operands[index])
     });
     if let [V::Legacy(left), V::Legacy(right)] = operands {
-        return ConditionTerm::machine_compare(format, relation, left.clone(), right.clone());
+        let condition =
+            ConditionTerm::machine_compare(format, relation, left.clone(), right.clone());
+        // Only identical or literal operands: a comparison the operands'
+        // type range decides, such as `0u64 <= k`, keeps its established
+        // decision.
+        if structural
+            && matches!(condition, ConditionTerm::Constant(_))
+            && matches!(format.format().bits(), 32 | 64)
+            && (left == right
+                || (format.constant_from_term(left).is_some()
+                    && format.constant_from_term(right).is_some()))
+        {
+            return retained_compare(format, relation, left.clone(), right.clone());
+        }
+        return condition;
     }
     let [left, right] = operands.map(|operand| {
         if let Some(literal) = operand.literal() {

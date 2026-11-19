@@ -171,12 +171,26 @@ pub(crate) const ARRAY_LIBRARY: &str = include_str!("../../../library/cpp/array.
 pub(crate) const AS_WRITABLE_BYTES_LIBRARY: &str =
     include_str!("../../../library/cpp/as_writable_bytes.click");
 
-/// The standard function templates outside a class that the Click library
-/// states: each instance's qualified name and canonical signature as Clang
+/// Logical descriptor contracts, currently selected for dynamic `std::span<int>`.
+const SPAN_STATE_CONTRACTS: &str = include_str!("../../../library/cpp/span_state_contracts.click");
+
+/// The exact standard signatures that the Click library maps to templates: each instance's qualified name and canonical signature as Clang
 /// spells them, the library template's path, and its file. An axiom
 /// matching one is an instance of that template, written out at the
 /// template arguments its own path names.
 const LIBRARY_FUNCTIONS: &[(&str, &str, &[&str], &str)] = &[
+    (
+        "std::span<int>::span",
+        "void (const class std::span<int> &) noexcept",
+        &["std", "span<T>", "span"],
+        SPAN_STATE_CONTRACTS,
+    ),
+    (
+        "std::span<int>::empty",
+        "_Bool (void) const noexcept",
+        &["std", "span<T>", "empty"],
+        SPAN_STATE_CONTRACTS,
+    ),
     (
         "std::as_writable_bytes",
         "class std::span<enum std::byte> (class std::span<int>) noexcept",
@@ -315,12 +329,16 @@ fn library_method(axiom: &super::schema::CppAxiom) -> Option<(String, &'static s
     } else {
         class.dynamic
     }?;
-    // The pointer/count constructor is a member template. Restrict this
-    // model to dynamic extent; static extent has a different state shape.
+    // [span.cons] specifies that the pointer/count constructor throws
+    // nothing. Both forms of the declaration use the same contract.
     if class.class == "span"
         && extent.is_none()
         && method == "span"
-        && axiom.signature == format!("void ({} *, unsigned long) noexcept", element.signature)
+        && axiom
+            .signature
+            .strip_suffix(" noexcept")
+            .unwrap_or(&axiom.signature)
+            == format!("void ({} *, unsigned long)", element.signature)
     {
         return Some((
             super::names::path_name(&["std", "span<T>", "span<T *>"]),
@@ -339,6 +357,11 @@ fn library_method(axiom: &super::schema::CppAxiom) -> Option<(String, &'static s
                 class.library,
             )
         })
+}
+
+/// The selected catalog contracts have no exceptional outcome.
+pub(super) fn has_nonthrowing_contract(axiom: &super::schema::CppAxiom) -> bool {
+    library_method(axiom).is_some()
 }
 
 /// The library method an axiom is an instance of, by importer name
@@ -508,6 +531,13 @@ mod tests {
         assert_eq!(
             crate::languages::cpp::names::cpp_display_name(&generic).unwrap(),
             "std::span<T>::span<T *>"
+        );
+        assert_eq!(
+            library_generic(&axiom(
+                "std::span<std::byte>::span",
+                "void (enum std::byte *, unsigned long)",
+            )),
+            Some(generic)
         );
         for (name, signature) in [
             (

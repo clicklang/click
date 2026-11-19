@@ -336,14 +336,9 @@ pub(super) fn common_variables(
                             summaries,
                         );
                         if collecting_connection_variables() {
-                            let ConditionTerm::BoolLoad(_, pointer) =
-                                term.boolean_read_native().expect("Boolean read")
-                            else {
-                                unreachable!();
-                            };
                             collect_stored_load_connection_variables(
                                 memory,
-                                pointer,
+                                address.exact_cell_key(),
                                 &mut leaf_variables,
                             );
                         }
@@ -430,12 +425,19 @@ pub(super) fn common_variables(
                     );
                 }
                 FoldVariableRead::IntegerBinders | FoldVariableRead::MachineBinders => {}
-                FoldVariableRead::ExpressionFree => collect_machine_leaf(
-                    term.float_read_native().expect("float read"),
-                    mode,
-                    &mut leaf_variables,
-                    &mut SeenTerms::default(),
-                ),
+                FoldVariableRead::ExpressionFree => {
+                    let (point, address) = read.parts();
+                    let kind = crate::kernel::FloatOperandView::from_shared(term)
+                        .expect("float read")
+                        .format()
+                        .load_kind();
+                    collect_machine_read_variables(
+                        point.shared_memory(),
+                        address.exact_cell_key(),
+                        kind,
+                        &mut leaf_variables,
+                    );
+                }
             },
             KernelTermNode::AlgebraicRead(read) => match mode {
                 FoldVariableRead::IntegerFree | FoldVariableRead::MachineCapture => {
@@ -447,12 +449,17 @@ pub(super) fn common_variables(
                     );
                 }
                 FoldVariableRead::IntegerBinders | FoldVariableRead::MachineBinders => {}
-                FoldVariableRead::ExpressionFree => collect_machine_leaf(
-                    term.algebraic_read_carrier().expect("algebraic read"),
-                    mode,
-                    &mut leaf_variables,
-                    &mut SeenTerms::default(),
-                ),
+                FoldVariableRead::ExpressionFree => {
+                    let (point, address) = read.parts();
+                    // The native algebraic collector uses the Bits64 read
+                    // kind to follow registered origins for havoc framing.
+                    collect_machine_read_variables(
+                        point.shared_memory(),
+                        address.exact_cell_key(),
+                        LoadKind::Bits64,
+                        &mut leaf_variables,
+                    );
+                }
             },
             KernelTermNode::MemoryLoad { address, .. } => match mode {
                 FoldVariableRead::IntegerFree | FoldVariableRead::MachineCapture => {
@@ -672,6 +679,59 @@ mod tests {
     }
 
     #[test]
+    fn retained_boolean_read_connections_use_the_exact_stored_cell() {
+        use crate::kernel::BooleanOperandView;
+
+        let _session = crate::kernel::VerificationSession::enter();
+        let base = Variable(999941);
+        let coordinate = Variable(999942);
+        let stored = Variable(999943);
+        let unrelated = Variable(999944);
+        let address = Address {
+            base: AddressBase::Symbolic(base),
+            offset: AddressOffset::Variable(coordinate),
+        };
+        let memory = intern_memory(
+            SymbolicMemory::new()
+                .store(
+                    address.clone(),
+                    ProgramValue::Bool(MachineTerm::Variable(stored)),
+                )
+                .store(
+                    Address::symbolic(base),
+                    ProgramValue::Bool(MachineTerm::Variable(unrelated)),
+                ),
+        );
+        let native = ConditionTerm::BoolLoad(ProgramPoint::at(&memory), Box::new(address));
+        let root = KernelTermImport::default().condition(&native);
+        let KernelTermNode::BoolRead(read) = root.node() else {
+            panic!("retained Boolean read");
+        };
+        for (connections, frame) in [(false, false), (true, false), (true, true), (true, false)] {
+            let expected = condition_variables_in_scope(
+                BooleanOperandView::Native(&native),
+                FoldVariableRead::ExpressionFree,
+                connections,
+                frame,
+            );
+            let actual = condition_variables_in_scope(
+                BooleanOperandView::Shared(&root),
+                FoldVariableRead::ExpressionFree,
+                connections,
+                frame,
+            );
+            assert_eq!(actual, expected);
+            if connections {
+                assert!(actual.contains(&stored));
+                assert!(!actual.contains(&unrelated));
+            }
+        }
+        let (_, work) =
+            crate::instrumentation::measure_deterministic_work(|| read.parts().1.exact_cell_key());
+        assert_eq!(work, 0, "the connection query prepared the exact address");
+    }
+
+    #[test]
     fn minted_scalar_comparisons_preserve_registered_load_reader_scope() {
         use crate::kernel::{
             BooleanOperandView, CompareRelation, KernelTermExport, StoredConditionTerm,
@@ -873,6 +933,7 @@ mod tests {
                     .collect::<BTreeSet<_>>();
                 assert_eq!(actual, expected, "{format:?} {mode:?}");
             }
+            assert!(!root.has_cached_native_argument());
         }
     }
 

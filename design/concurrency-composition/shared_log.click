@@ -958,7 +958,7 @@ void* producer(void* argument) {
         to_integer(cap) + to_integer(slack) <= 536870910;
     };
     let pushed = fold(allocated_vector(log->items), { cap: log->items->cap });
-    let restored = fold(log_state(log), { cap: pushed_cap, slack: slack - 1 }, { items: pushed });
+    let restored = fold(log_state(log), { cap: pushed_cap, slack: slack - 1, items: pushed });
     step(pthread_mutex_unlock, {
         access: access, guard: guard, state: restored
     });
@@ -987,7 +987,7 @@ int32 run_two_producers(struct shared_log* log) {
         to_integer(536870908) == 536870908;
         to_integer(2) == 2;
     };
-    let state = fold(log_state(log), { cap: before.cap, slack: 2 }, { items: before });
+    let state = fold(log_state(log), { cap: before.cap, slack: 2, items: before });
     let { lifetime: lifetime } = step(pthread_mutex_init, { state: state });
     branch {
         true => {

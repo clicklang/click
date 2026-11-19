@@ -298,7 +298,8 @@ impl Comparison {
                     ]);
                 }
                 (MachineTerm::MemoryLoad(am, ap, ak), MachineTerm::MemoryLoad(bm, bp, bk)) => {
-                    if am.shared_memory().arena_id() != bm.shared_memory().arena_id()
+                    if am.read_version_id() != bm.read_version_id()
+                        || am.shared_memory().arena_id() != bm.shared_memory().arena_id()
                         || ak != bk
                         || !self.pointer(ap, bp)
                     {
@@ -706,7 +707,7 @@ mod tests {
         ] {
             let right = KernelTerm::algebraic_read(
                 ty.clone(),
-                crate::kernel::ProgramPoint::at(&state),
+                crate::kernel::ProgramPoint::at(state),
                 SharedAddress::import(address),
             );
             let native = AlgebraicTerm {
@@ -958,7 +959,10 @@ mod tests {
         // generic argument wrapper separates these identical producers.
         assert_eq!(left, right);
         let claim = |value: AlgebraicTerm| {
-            Proposition::Equal(Term::Algebraic(value), Term::Algebraic(variable.clone()))
+            Proposition::Equal(
+                Term::Algebraic(value.into()),
+                Term::Algebraic(variable.clone().into()),
+            )
         };
         let exports = KernelTermExport::machine_export_count();
         assert!(algebraic_equal(&left, &right));

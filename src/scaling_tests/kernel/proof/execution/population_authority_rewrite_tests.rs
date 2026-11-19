@@ -243,3 +243,36 @@ fn authority_count_observation_rejects_unchecked_deltas_and_scales() {
         "count observation scanned unrelated state: {work:?}"
     );
 }
+
+#[test]
+fn authority_replay_keeps_the_constructed_successor_beside_growing_frames() {
+    let samples = [4, 16, 64].map(|size| {
+        let (state, authority) = source_state();
+        let resources = state.resources().clone().unchecked_with_facts(
+            (0..size).map(|index| ResourceFact::own_token(format!("frame_{index}"), vec![])),
+        );
+        let before = state.with_resource_context(resources);
+        let event = CheckedPopulationAuthorityRewrite::construct(
+            &before,
+            &authority,
+            true,
+            &PureFactContext::new(),
+        )
+        .unwrap();
+        let (replayed, work) =
+            crate::instrumentation::measure_deterministic_work(|| event.advance_checked(&before));
+        let replayed = replayed.unwrap();
+        assert!(
+            replayed
+                .resources()
+                .shares_storage_with(event.after_state.resources())
+        );
+        assert!(
+            replayed
+                .resources()
+                .contains_exact_representation(&authority)
+        );
+        work
+    });
+    assert_eq!(samples, [samples[0]; 3]);
+}

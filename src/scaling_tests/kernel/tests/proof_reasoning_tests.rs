@@ -88,16 +88,12 @@ fn algebraic_constructor_injectivity_ignores_unrelated_facts() {
     let right = MachineTerm::Variable(Variable(89_101));
     let goal = Proposition::condition_is(ConditionTerm::equal(left.clone(), right.clone()), true);
     let source = Proposition::Equal(
-        Term::Algebraic(maybe_constructor(
-            &algebraic_type,
-            "Some",
-            vec![ProgramValue::Int32(left)],
-        )),
-        Term::Algebraic(maybe_constructor(
-            &algebraic_type,
-            "Some",
-            vec![ProgramValue::Int32(right)],
-        )),
+        Term::Algebraic(
+            maybe_constructor(&algebraic_type, "Some", vec![ProgramValue::Int32(left)]).into(),
+        ),
+        Term::Algebraic(
+            maybe_constructor(&algebraic_type, "Some", vec![ProgramValue::Int32(right)]).into(),
+        ),
     );
     let samples = [16, 64, 256]
         .into_iter()
@@ -131,10 +127,13 @@ fn function_contract_lookup_ignores_unrelated_pointer_facts() {
             name: FunctionContract::predicate_name_for(name),
             arguments: vec![
                 Term::ExecutionState(Box::new(ExecutionState::new())),
-                Term::ProgramValue(ProgramValue::typed_pointer(
-                    pointer,
-                    ProgramType::FunctionPointer(CallbackSignature::from_encoded(90_000)),
-                )),
+                Term::ProgramValue(
+                    (ProgramValue::typed_pointer(
+                        pointer,
+                        ProgramType::FunctionPointer(CallbackSignature::from_encoded(90_000)),
+                    ))
+                    .into(),
+                ),
             ],
         }
     }
@@ -175,7 +174,7 @@ fn callback_contract_availability_uses_scoped_pointer_equality() {
         name: FunctionContract::predicate_name_for(name),
         arguments: vec![
             Term::ExecutionState(Box::new(state)),
-            Term::ProgramValue(ProgramValue::typed_pointer(pointer, interface_type)),
+            Term::ProgramValue((ProgramValue::typed_pointer(pointer, interface_type)).into()),
         ],
     };
     let target = Address::function("callback-target");
@@ -574,8 +573,8 @@ fn forall_integer_instantiation_preserves_repeated_squaring_as_a_shared_expressi
             var: binder,
             sort: Sort::Integer,
             body: Box::new(Proposition::Equal(
-                Term::Integer(term),
-                Term::Integer(IntegerTerm::constant_i64(0)),
+                Term::Integer(term.into()),
+                Term::Integer(IntegerTerm::constant_i64(0).into()),
             )),
         };
         let (instance, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -590,7 +589,7 @@ fn forall_integer_instantiation_preserves_repeated_squaring_as_a_shared_expressi
         let Proposition::Equal(Term::Integer(term), _) = &instance else {
             panic!("equality")
         };
-        let mut current = term;
+        let mut current = term.native_compat();
         for _ in 0..depth {
             let IntegerTerm::Multiply(left, right) = current else {
                 panic!("instantiation must not evaluate repeated squares")
@@ -618,8 +617,8 @@ fn forall_integer_instantiation_charges_shared_replacement_only_once() {
             replacement = IntegerTerm::Add(child.clone(), child);
             body = Proposition::And(
                 Box::new(Proposition::Equal(
-                    Term::Integer(IntegerTerm::var(binder)),
-                    Term::Integer(IntegerTerm::constant_i64(0)),
+                    Term::Integer(IntegerTerm::var(binder).into()),
+                    Term::Integer(IntegerTerm::constant_i64(0).into()),
                 )),
                 Box::new(body),
             );
@@ -1694,8 +1693,10 @@ fn restricting_model_support_ignores_unselected_scalar_graph_edges() {
             algebraic_type: ty.clone(),
             node: AlgebraicTermNode::Variable(Variable(id)),
         };
-        let equality =
-            Proposition::Equal(Term::Algebraic(model(97600)), Term::Algebraic(model(97601)));
+        let equality = Proposition::Equal(
+            Term::Algebraic(model(97600).into()),
+            Term::Algebraic(model(97601).into()),
+        );
         let mut context = PureFactContext::new().assume_proposition(equality.clone());
         for i in 0..size {
             context = context.assume_condition(
@@ -1847,10 +1848,13 @@ fn equality_aware_pointer_fact_queries_ignore_unrelated_facts_and_old_states() {
         name: FunctionContract::predicate_name_for("Selected"),
         arguments: vec![
             Term::ExecutionState(Box::new(state)),
-            Term::ProgramValue(ProgramValue::typed_pointer(
-                pointer,
-                ProgramType::FunctionPointer(CallbackSignature::from_encoded(122_000)),
-            )),
+            Term::ProgramValue(
+                (ProgramValue::typed_pointer(
+                    pointer,
+                    ProgramType::FunctionPointer(CallbackSignature::from_encoded(122_000)),
+                ))
+                .into(),
+            ),
         ],
     };
     let goal = fact(alias.clone(), ExecutionState::new());
@@ -2171,14 +2175,19 @@ fn integer_match_rewrite_lookup_scales_with_its_selected_sources() {
             let sources = (0..size)
                 .map(|index| {
                     Proposition::Equal(
-                        Term::Algebraic(model(if related { 90_000 } else { 90_000 + index })),
-                        Term::Algebraic(maybe_constructor(
-                            &ty,
-                            "Some",
-                            vec![ProgramValue::Int32(MachineTerm::Variable(Variable(
-                                100_000 + index,
-                            )))],
-                        )),
+                        Term::Algebraic(
+                            model(if related { 90_000 } else { 90_000 + index }).into(),
+                        ),
+                        Term::Algebraic(
+                            maybe_constructor(
+                                &ty,
+                                "Some",
+                                vec![ProgramValue::Int32(MachineTerm::Variable(Variable(
+                                    100_000 + index,
+                                )))],
+                            )
+                            .into(),
+                        ),
                     )
                 })
                 .collect::<Vec<_>>();

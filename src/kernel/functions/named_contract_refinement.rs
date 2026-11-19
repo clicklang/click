@@ -498,8 +498,9 @@ pub(in crate::kernel) fn prepare_contract_refinement_obligations(
         None,
     );
     let result = symbolic_call_result(source.return_type(), context.result_variable);
-    let mut post = entry.clone().with_memory(memory.clone());
-    let mut source_post = source_entry.clone().with_memory(memory);
+    let mut post = entry.clone().with_memory(memory);
+    // The post memory is a step from `entry`: the source's post stands there.
+    let mut source_post = source_entry.clone().with_memory_of(&post);
     if source.return_type() != ProgramType::Void {
         set_contract_result(&mut post, target, result.clone());
         set_contract_result(&mut source_post, source, result);
@@ -771,11 +772,7 @@ pub(super) fn forced_refinement_instance_bindings(
                 .iter()
                 .zip(implementation.arguments.iter())
                 .all(|(left, right)| {
-                    crate::kernel::resource_field_values_proven_equal(
-                        (left).into(),
-                        (right).into(),
-                        assumptions,
-                    )
+                    crate::kernel::resource_field_values_proven_equal(left, right, assumptions)
                 })
         {
             return Ok(None);
@@ -888,8 +885,8 @@ pub(super) fn refinement_bindings_at_post(
                         .zip(implementation.iter())
                         .all(|(left, right)| {
                             crate::kernel::resource_field_values_proven_equal(
-                                (left).into(),
-                                (right).into(),
+                                left,
+                                right,
                                 assumptions,
                             )
                         })
@@ -1213,8 +1210,11 @@ pub(super) fn function_refines_named_contract_in_case(
     // The post states carry the post instances, so a guarantee written over
     // `t.model` reads the fields the call produced while `old(t.model)` still
     // reads the entry fields through the entry state passed alongside.
-    let contract_post_frame = contract_frame.clone().with_memory(post_memory.clone());
-    let function_post_frame = function_frame.clone().with_memory(post_memory);
+    // The post memory is a step from `contract_entry`; both frames stand
+    // where that step reached, keeping their own locals.
+    let post_source = contract_entry.clone().with_memory(post_memory);
+    let contract_post_frame = contract_frame.clone().with_memory_of(&post_source);
+    let function_post_frame = function_frame.clone().with_memory_of(&post_source);
     if !state_independent {
         let Some(at_post) = refinement_bindings_at_post(
             &instances,

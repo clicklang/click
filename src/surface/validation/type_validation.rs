@@ -710,6 +710,7 @@ fn integer_expression_kind(
         }
         ContractExpression::Negate(inner)
         | ContractExpression::Old(inner)
+        | ContractExpression::Exact(inner)
         | ContractExpression::At {
             expression: inner, ..
         } => integer_expression_kind(inner, integer_bindings, click_functions, locals),
@@ -958,6 +959,7 @@ fn contains_scoped_expression_shape(
         | ContractExpression::CUnary { operand: base, .. }
         | ContractExpression::Negate(base)
         | ContractExpression::Old(base)
+        | ContractExpression::Exact(base)
         | ContractExpression::At {
             expression: base, ..
         }
@@ -1030,6 +1032,7 @@ fn contains_integer_expression_signal(
         }
         ContractExpression::Negate(inner)
         | ContractExpression::Old(inner)
+        | ContractExpression::Exact(inner)
         | ContractExpression::At {
             expression: inner, ..
         } => contains_integer_expression_signal(inner, integer_bindings, click_functions, locals),
@@ -2009,6 +2012,7 @@ pub(super) fn infer_scoped_spec_value_type(
             })
         }
         ContractExpression::Old(inner)
+        | ContractExpression::Exact(inner)
         | ContractExpression::At {
             expression: inner, ..
         } => infer_scoped_spec_value_type(
@@ -2741,6 +2745,7 @@ pub(super) fn validate_to_nat_argument_type(
         ContractExpression::Binding(name) => !variables.contains_key(name),
         ContractExpression::Negate(inner)
         | ContractExpression::Old(inner)
+        | ContractExpression::Exact(inner)
         | ContractExpression::At {
             expression: inner, ..
         } => {
@@ -2962,6 +2967,7 @@ fn infer_spec_value_type(
             Ok(SpecValueType::Sequence(left.or(right)))
         }
         ContractExpression::Old(inner)
+        | ContractExpression::Exact(inner)
         | ContractExpression::At {
             expression: inner, ..
         } => infer_spec_value_type(inner, variables, click_functions, context),
@@ -3301,6 +3307,11 @@ fn validate_pure_theorem_tactics(
                 validate_pure_theorem_tactics(theorem_name, &proof_if.then_tactics)?;
                 validate_pure_theorem_tactics(theorem_name, &proof_if.else_tactics)?;
             }
+            ProofTactic::All(all) => {
+                for arm in &all.arms {
+                    validate_pure_theorem_tactics(theorem_name, &arm.tactics)?;
+                }
+            }
             ProofTactic::Both(both) => {
                 validate_pure_theorem_tactics(theorem_name, &both.left_tactics)?;
                 validate_pure_theorem_tactics(theorem_name, &both.right_tactics)?;
@@ -3380,15 +3391,12 @@ pub(in crate::surface) fn tactic_name(tactic: &ProofTactic) -> &'static str {
         ProofTactic::Open(_) => "open",
         ProofTactic::If(_) => "if",
         ProofTactic::Cases(_) => "cases",
-        ProofTactic::Both(_) => "both",
+        ProofTactic::Both(_) | ProofTactic::All(_) => "all",
         ProofTactic::Branch(_) => "branch",
         ProofTactic::CallOutcomes(_) => "outcomes",
         ProofTactic::Loop(_) => "loop",
         ProofTactic::ObserveResource(_) | ProofTactic::ObserveSavedMemory { .. } => "observe",
-        ProofTactic::Iterated(IteratedTactic::UnfoldSlot(_)) => "unfold",
-        ProofTactic::Iterated(IteratedTactic::FoldSlot(_)) => "fold",
-        ProofTactic::Iterated(IteratedTactic::Gather(_)) => "gather",
-        ProofTactic::Iterated(IteratedTactic::Scatter(_)) => "scatter",
+        ProofTactic::Iterated(tactic) => tactic.name(),
         ProofTactic::Witness(_) => "witness",
         ProofTactic::LetSatisfy(_) => "obtain",
         ProofTactic::Sorry => "sorry",
@@ -3660,7 +3668,7 @@ pub(crate) fn array_ref_elements_compatible(
 
 /// [`click_types_compatible`] for an argument of a predicate or pure
 /// function, which also passes a signed character pointer as `uint8` bytes, so a
-/// specification such as `cstr::readable(s)` reads a C string's bytes. Under
+/// specification such as `string::readable(s)` reads a C string's bytes. Under
 /// either signedness of `char` this reads the same objects: the kernel
 /// lets a character type read a one-byte cell of the other signedness as the
 /// same eight bits (C11 6.5p7), so `bytes[k] == '\0'` holds exactly when the
@@ -4025,7 +4033,9 @@ pub(super) fn infer_contract_expression_type(
         ContractExpression::ResourceWildcard => Err(ClickError::new(
             "`_` is only valid inside a `count(...)` resource pattern",
         )),
-        ContractExpression::Old(expression) | ContractExpression::At { expression, .. } => {
+        ContractExpression::Old(expression)
+        | ContractExpression::Exact(expression)
+        | ContractExpression::At { expression, .. } => {
             infer_contract_expression_type(expression, variables, click_functions, context)
         }
         ContractExpression::Add(left, right) => {
@@ -5381,7 +5391,7 @@ fn validate_contract_expression_calls(
             validate_contract_expression_calls(base, click_functions, context)?;
             Ok(())
         }
-        ContractExpression::Old(body) => {
+        ContractExpression::Old(body) | ContractExpression::Exact(body) => {
             validate_contract_expression_calls(body, click_functions, context)
         }
         ContractExpression::At { expression, .. } => {

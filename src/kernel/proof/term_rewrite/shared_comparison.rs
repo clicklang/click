@@ -86,6 +86,10 @@ impl TermRewrite<'_> {
             if self.checked_work_exhausted() {
                 return None;
             }
+            let KernelType::Program(ty) = term.ty() else {
+                return None;
+            };
+            let format = MachineIntegerType::from_program_type(*ty)?;
             if get(&term).is_some() {
                 continue;
             }
@@ -104,10 +108,6 @@ impl TermRewrite<'_> {
                 local.borrow_mut().insert(term.id(), term.clone());
                 continue;
             }
-            let KernelType::Program(ty) = term.ty() else {
-                return None;
-            };
-            let format = MachineIntegerType::from_program_type(*ty)?;
             // Exact machine replacement precedes descent, as in `bits`.
             // Import each selected source/replacement once per interpretation,
             // rather than rebuilding it at every shared occurrence.
@@ -1507,7 +1507,7 @@ mod tests {
                     let Proposition::ConditionIs(condition, true) = normalized else {
                         unreachable!()
                     };
-                    facts.decide((&condition).native_compat())
+                    facts.decide(condition.native_compat())
                 },
                 expected,
                 "{left:?} == {right:?}"

@@ -536,9 +536,13 @@ impl Printer<'_> {
                         // Each array argument is a (memory, pointer) pair.
                         // Its state is part of the argument's identity.
                         Term::Memory(memory) => {
-                            let pointer @ Term::ProgramValue(crate::kernel::ProgramValue::Pointer(
-                                _,
-                            )) = arguments.next()?
+                            let pointer @ term_source_0 @ Term::ProgramValue(_) =
+                                arguments.next()?
+                            else {
+                                return None;
+                            };
+                            let (Some(crate::kernel::ProgramValue::Pointer(_)),) =
+                                (term_source_0.program_value_native(),)
                             else {
                                 return None;
                             };
@@ -1366,13 +1370,19 @@ impl Printer<'_> {
             return elided;
         }
         match term {
-            Term::Bitvector32(value) => self.bitvector(value, None, depth + 1),
-            Term::Integer(value) => self.integer(value, depth + 1),
-            Term::Condition(ConditionTerm::Constant(value)) => Some(atom(value.to_string())),
-            Term::ProgramValue(value) => self.cvalue(value, depth + 1),
-            Term::Algebraic(value) => self.algebraic(value, depth + 1),
+            Term::Bitvector32(value) => self.bitvector(value.native_compat(), None, depth + 1),
+            Term::Integer(value) => self.integer(value.native_compat(), depth + 1),
+            term_source_0 @ Term::Condition(_)
+                if let Some(ConditionTerm::Constant(value)) = term_source_0.condition_native() =>
+            {
+                Some(atom(value.to_string()))
+            }
+            Term::ProgramValue(value) => self.cvalue(value.native_compat(), depth + 1),
+            Term::Algebraic(value) => self.algebraic(value.native_compat(), depth + 1),
             _ if !self.source_mode() => None,
-            Term::Condition(condition) => self.condition(condition, true, depth + 1),
+            Term::Condition(condition) => {
+                self.condition(condition.native_compat(), true, depth + 1)
+            }
             Term::PointerOffset(offset) => Some(atom(self.offset(offset, depth + 1))),
             Term::Memory(memory) => Some(atom(self.state_phrase(memory))),
             Term::ExecutionState(state) => Some(atom(self.state_phrase(state.memory()))),
@@ -3083,8 +3093,8 @@ mod tests {
             ))],
         );
         let fact = Proposition::Equal(
-            Term::Integer(IntegerTerm::PureFunctionApplication(application)),
-            Term::Integer(IntegerTerm::from(3)),
+            Term::Integer(IntegerTerm::PureFunctionApplication(application).into()),
+            Term::Integer(IntegerTerm::from(3).into()),
         );
         assert_eq!(render(&fact, &mut labels), Some("size(r) == 3".into()));
     }
@@ -3349,7 +3359,7 @@ mod tests {
                 .chain(memories.into_iter().flat_map(|memory| {
                     [
                         Term::Memory(memory.clone()),
-                        Term::ProgramValue(pointer.clone()),
+                        Term::ProgramValue(pointer.clone().into()),
                     ]
                 }))
                 .collect(),
@@ -3385,14 +3395,17 @@ mod tests {
         let fact = |name: String, arguments: Vec<Term>| Proposition::Predicate { name, arguments };
         let same = fact(
             crate::kernel::SAME_OBJECT_PREDICATE_NAME.into(),
-            vec![Term::ProgramValue(cell("m")), Term::ProgramValue(cell("p"))],
+            vec![
+                Term::ProgramValue((cell("m")).into()),
+                Term::ProgramValue((cell("p")).into()),
+            ],
         );
         assert_eq!(source(&same, &mut labels), "same_object(m, p)");
         let contract = fact(
             crate::kernel::FunctionContract::predicate_name_for("ordered"),
             vec![
                 Term::ExecutionState(Box::new(state.clone())),
-                Term::ProgramValue(cell("p")),
+                Term::ProgramValue((cell("p")).into()),
             ],
         );
         assert_eq!(source(&contract, &mut labels), "ordered(p)");

@@ -8,14 +8,14 @@ prints the proposition that was not proved as `goal:`, whether it is a claim's
 remaining goal or a requirement of a C statement, which is a goal at that
 statement's pre-state. The goal and recent premises provide bounded context,
 not an exhaustive list of everything derivable from the proof state. Repair a
-proof error by the [tracing procedure](tracing.md).
+proof error by the [proof repair procedure](tracing.md).
 
 These labels describe what the CLI observed. The rest of this guide diagnoses
 why a proof error happened. A rejected proof may need an available explicit
 step, expose a missing capability, or reveal a bug in a documented rule.
 
 Parsing errors in the embedded Click library name the module file, such as
-`library/cstr.click`, and the line within that file. An enclosing module-checking context names the
+`library/c/string.click`, and the line within that file. An enclosing module-checking context names the
 verification being attempted; it does not change the error's source location.
 
 A failed proof is evidence, but it does not by itself identify a Click bug.
@@ -100,12 +100,12 @@ search-candidate details use the goal's source and recorded-point names. They ar
 as propositions and named when the report is rendered.
 
 A `--trace-proof` run adds the checked steps on the failing path and the facts
-each one added. [Tracing a failed proof](tracing.md#reading-trace-output)
+each one added. [Reading trace output](tracing.md#reading-trace-output)
 describes its notation.
 
 ## Repairing a proof from its trace
 
-Repair a failed proof by the [tracing procedure](tracing.md): record the goal
+Repair a failed proof by the [proof repair procedure](tracing.md): record the goal
 that failed, write the argument for it as a chain of `have` goals, and refine
 the first link that does not close by identifying its primitive rule and
 writing that rule's premises. Each
@@ -309,7 +309,7 @@ A failing proof step names where it was written:
 tactic for expansion. Each further segment descends into a block the user
 wrote: `have body tactic 2` is the second tactic of that `have`'s `by { ... }`
 block, and `open body tactic 2` is the second tactic of an `open` body. Inside
-a block, the arms of a proof `if`, `cases`, or `both` are blocks of their own:
+a block, the arms of a proof `if`, `cases`, or `all` are blocks of their own:
 `else arm tactic 1` is the first tactic of the `if`'s `else` arm (`then`,
 `else`, `left`, and `right` name the arms), so a tactic written after the
 `if` keeps its own position in the enclosing block even though each arm

@@ -2,6 +2,121 @@
 use super::*;
 use crate::surface::proof::driver::ProofDriver;
 
+use crate::kernel::proof::{
+    PropositionIdentityKey, proposition_identity_key, proposition_with_canonical_binders,
+    propositions_are_alpha_equal,
+};
+use std::collections::{HashMap, VecDeque};
+
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
+enum ConjunctKey {
+    Indexed(PropositionIdentityKey),
+    Structural(Box<Proposition>),
+}
+
+impl ConjunctKey {
+    fn of(proposition: &Proposition) -> Self {
+        match proposition_identity_key(proposition) {
+            Some(key) => Self::Indexed(key),
+            None => Self::Structural(Box::new(proposition_with_canonical_binders(proposition))),
+        }
+    }
+}
+
+struct ConjunctArms<'proof, 'a, 'source> {
+    parent: &'proof Proof<'a>,
+    arms: &'source [ProofAllArm],
+    written: HashMap<&'source ClickProposition, VecDeque<usize>>,
+    lowered: Option<BTreeMap<ConjunctKey, VecDeque<(usize, Proposition)>>>,
+    used: Vec<bool>,
+    grouped: usize,
+}
+
+impl<'proof, 'a, 'source> ConjunctArms<'proof, 'a, 'source> {
+    fn new(parent: &'proof Proof<'a>, arms: &'source [ProofAllArm]) -> Self {
+        let mut written = HashMap::<_, VecDeque<_>>::new();
+        let mut grouped = 0;
+        for (index, arm) in arms.iter().enumerate() {
+            crate::instrumentation::record_deterministic_work(1);
+            written
+                .entry(&arm.proposition)
+                .or_default()
+                .push_back(index);
+            grouped += usize::from(matches!(arm.proposition, ClickProposition::And(..)));
+        }
+        Self {
+            parent,
+            arms,
+            written,
+            lowered: None,
+            used: vec![false; arms.len()],
+            grouped,
+        }
+    }
+
+    fn take(
+        &mut self,
+        proof: &Proof<'a>,
+        goal: &Proposition,
+    ) -> Option<(usize, &'source ProofAllArm)> {
+        let written = proof.surface_goal().and_then(|surface| {
+            let candidates = self.written.get_mut(surface)?;
+            while candidates.front().is_some_and(|&index| self.used[index]) {
+                candidates.pop_front();
+            }
+            candidates.pop_front()
+        });
+        let index = written.or_else(|| self.take_lowered(goal))?;
+        self.used[index] = true;
+        let arm = &self.arms[index];
+        self.grouped -= usize::from(matches!(arm.proposition, ClickProposition::And(..)));
+        Some((index, arm))
+    }
+
+    fn take_lowered(&mut self, goal: &Proposition) -> Option<usize> {
+        let grouped = matches!(goal, Proposition::And(..));
+        if grouped && self.grouped == 0 {
+            return None;
+        }
+        // All sibling obligations inherit the same bindings and assumptions.
+        // Only labels that need structural comparison are lowered, once per
+        // written arm against the scope shared by the children.
+        let lowered = self.lowered.get_or_insert_with(|| {
+            let mut lowered = BTreeMap::<_, VecDeque<_>>::new();
+            for (index, arm) in self
+                .arms
+                .iter()
+                .enumerate()
+                .filter(|(index, _)| !self.used[*index])
+            {
+                crate::instrumentation::record_deterministic_work(1);
+                if let Ok(label) = self.parent.lower_conjunct_label(&arm.proposition) {
+                    lowered
+                        .entry(ConjunctKey::of(&label))
+                        .or_default()
+                        .push_back((index, label));
+                }
+            }
+            lowered
+        });
+        let candidates = lowered.get_mut(&ConjunctKey::of(goal))?;
+        while candidates
+            .front()
+            .is_some_and(|(index, _)| self.used[*index])
+        {
+            candidates.pop_front();
+        }
+        // The identity indexes the labels in this explicit block. The
+        // ordinary check also compares the non-memory storage of predicates.
+        let matching = candidates.iter().position(|(index, label)| {
+            !self.used[*index]
+                && (!grouped || matches!(self.arms[*index].proposition, ClickProposition::And(..)))
+                && propositions_are_alpha_equal(label, goal)
+        })?;
+        candidates.remove(matching).map(|(index, _)| index)
+    }
+}
+
 impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
     /// Checks source whose caller has already selected this Proof driver as
     /// the semantic authority. Explicit operation failures propagate instead
@@ -237,6 +352,57 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             return Ok(None);
         };
         done.join_focused_both(&marker, split, ids).map(Some)
+    }
+
+    /// Keep the kernel's binary splits and joins in goal order. Source sites
+    /// retain the written arm index even when its proof runs earlier or later.
+    fn run_conjunct_proofs(
+        &self,
+        arms: &mut ConjunctArms<'_, 'a, '_>,
+        site: &ProofStepSite,
+        mut unfinished: Option<&mut Option<Proof<'a>>>,
+        at_root: bool,
+    ) -> Result<Option<(Proof<'a>, Option<Arc<ClickProposition>>)>, ClickError> {
+        let proof = self.proof;
+        let Some(goal) = proof.goal() else {
+            return Err(proof.step_error("`all` requires a conjunction goal"));
+        };
+        if !at_root && let Some((index, arm)) = arms.take(proof, goal) {
+            let sites = (0..arm.tactics.len())
+                .map(|position| site.in_arm(index, "conjunct", position))
+                .collect::<Vec<_>>();
+            return Ok(proof
+                .driver()
+                .run_addressed_linear_script(&arm.tactics, &sites, &mut None, unfinished)?
+                .map(|done| (done, Some(Arc::new(arm.proposition.clone())))));
+        }
+        if !matches!(goal, Proposition::And(..)) {
+            return Err(proof.step_error(if at_root {
+                "`all` requires a conjunction goal"
+            } else {
+                "`all` is missing an arm for this conjunct"
+            }));
+        }
+        let (split_proof, split, ids) = proof.split_focused_both()?;
+        let Some((left, left_label)) = split_proof
+            .focus_branch(ids[0])?
+            .driver()
+            .run_conjunct_proofs(arms, site, unfinished.as_deref_mut(), false)?
+        else {
+            return Ok(None);
+        };
+        let Some((right, right_label)) = left
+            .restore_induction_scope_from(&split_proof)
+            .focus_branch(ids[1])?
+            .driver()
+            .run_conjunct_proofs(arms, site, unfinished, false)?
+        else {
+            return Ok(None);
+        };
+        let marker = split_proof
+            .checkpoint()
+            .with_conjunct_labels([left_label, right_label]);
+        Ok(Some((right.join_focused_both(&marker, split, ids)?, None)))
     }
 
     pub(in crate::surface::proof) fn run_addressed_linear_script(
@@ -523,6 +689,26 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                         .note_trace_join_continuation_arm((index + 1 < tactics.len()).then_some(0));
                     return Ok(finish(proof, unfinished));
                 }
+                ProofTactic::All(all) => {
+                    let mut arms = ConjunctArms::new(&proof, &all.arms);
+                    let Some((done, _)) = proof.driver().run_conjunct_proofs(
+                        &mut arms,
+                        &sites[index],
+                        unfinished.as_deref_mut(),
+                        true,
+                    )?
+                    else {
+                        *declined = Some(LinearScriptDecline::Step(index));
+                        return Ok(None);
+                    };
+                    if let Some(extra) = arms.used.iter().position(|used| !used) {
+                        return Err(proof.step_error(format!(
+                            "`all` arm {} has no corresponding conjunct",
+                            extra + 1
+                        )));
+                    }
+                    proof = done.at_site(&sites[index]);
+                }
                 ProofTactic::Both(both) => {
                     // A `both` arm proves one conjunct and continues nothing.
                     let own_arm_sites = |arm: usize, name: &'static str, written: usize| {
@@ -533,7 +719,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     let left_sites = own_arm_sites(0, "left", both.left_tactics.len());
                     let right_sites = own_arm_sites(1, "right", both.right_tactics.len());
                     let (split_proof, split, ids) = proof.split_focused_both()?;
-                    let marker = split_proof.checkpoint();
+                    let marker = split_proof.conjunction_checkpoint(ids)?;
                     let Some(left_done) = split_proof
                         .focus_branch(ids[0])?
                         .driver()
