@@ -521,11 +521,13 @@ pub(super) fn parse_file_items_for_module(
     imported_pointer_functions: &BTreeSet<String>,
     imported_integer_parameters: &BTreeMap<String, Vec<usize>>,
     layouts: ProgramLayouts,
+    catalog: Option<&str>,
 ) -> Result<ClickFile, ClickError> {
-    let mut parser = Parser::with_program_layouts(
+    let mut parser = Parser::with_program_layouts_and_catalog(
         source,
         layouts,
         Some(&crate::source::SourceContainer::new(identity, line_offset)),
+        catalog,
     )?;
     parser.symbols.import_declarations(imported_declarations)?;
     let imported_tactics = parser
@@ -1633,6 +1635,7 @@ impl Parser {
             None,
             &BTreeMap::new(),
             &BTreeMap::new(),
+            None,
         )
     }
 
@@ -1641,6 +1644,15 @@ impl Parser {
         source: &str,
         layouts: ProgramLayouts,
         container: Option<&crate::source::SourceContainer>,
+    ) -> Result<Self, ClickError> {
+        Self::with_program_layouts_and_catalog(source, layouts, container, None)
+    }
+
+    fn with_program_layouts_and_catalog(
+        source: &str,
+        layouts: ProgramLayouts,
+        container: Option<&crate::source::SourceContainer>,
+        catalog: Option<&str>,
     ) -> Result<Self, ClickError> {
         let mut parser = Self::new_with_layouts_and_aggregate_objects(
             source,
@@ -1652,6 +1664,7 @@ impl Parser {
             container,
             &layouts.rust_trait_instances,
             &layouts.record_spellings,
+            catalog,
         )
         .map_err(|error| error.with_kind(ClickErrorKind::Syntax))?;
         parser.local_bindings = layouts.local_bindings;
@@ -1836,8 +1849,18 @@ impl Parser {
         container: Option<&crate::source::SourceContainer>,
         rust_trait_instances: &BTreeMap<String, BTreeSet<Vec<String>>>,
         record_spellings: &BTreeMap<String, String>,
+        catalog: Option<&str>,
     ) -> Result<Self, ClickError> {
         let (tokens, positions) = tokenize(source, container)?;
+        let (tokens, positions) = if let Some(catalog) = catalog {
+            let source = crate::source::SourceContainer::new("C++ catalog", 0);
+            let (mut catalog_tokens, mut catalog_positions) = tokenize(catalog, Some(&source))?;
+            catalog_tokens.extend(tokens);
+            catalog_positions.extend(positions);
+            (catalog_tokens, catalog_positions)
+        } else {
+            (tokens, positions)
+        };
         let (tokens, positions) = rewrite_model_accessors(tokens, positions, &struct_layouts);
         let names::ResolvedLibraryTokens {
             tokens,

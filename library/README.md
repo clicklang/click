@@ -20,9 +20,10 @@ imports with `import click::...;`, and the modules those import:
 | `c/stream_output.click.in` | for checked literal `printf` and `fprintf` calls | One C stream-write contract, instantiated for the requested bytes |
 | `integer.click` | `import click::integer;` | `integer::` order, increment and definedness lemmas over native integer widths, `to_integer` bridges for native arithmetic, unsigned wrapping operations, and `Integer` division laws |
 | `rust/i8.click` ... `rust/usize.click` | `import click::rust::u32;`; the integer-method contracts of `rust/integers.click` name them by path | One module per Rust integer type: `u32::min`, `u32::checked_add` and the other core methods the importer specifies, and the Rust names of the lemmas a Rust proof applies (`u32::multiply_to_integer`) |
-| `cpp/span.click` | appended to a C++ sidecar when an import calls one of its methods | `std::span<T>` and static-extent `std::span<T, N>` contracts, as template methods written out at each called element type and extent |
-| `cpp/array.click` | appended to a C++ sidecar when an import calls one of its methods | `std::array<T, N>` contracts, with each element accessor's `const` and mutable overload as two template methods |
-| `cpp/as_writable_bytes.click` | appended to a C++ sidecar when an import calls it | The `std::as_writable_bytes<T, N>` contract, a function template written out at each called instance |
+| `cpp/span.click` | selected when a C++ import calls one of its methods | `std::span<T>` and static-extent `std::span<T, N>` contracts, as template methods written out at each called element type and extent |
+| `cpp/span_state.click` and `cpp/span_state_contracts.click` | `import click::cpp::span_state::{span_state};` | Logical state, copy construction, and `empty()` for dynamic `std::span<int>` |
+| `cpp/array.click` | selected when a C++ import calls one of its methods | `std::array<T, N>` contracts, with each element accessor's `const` and mutable overload as two template methods |
+| `cpp/as_writable_bytes.click` | selected when a C++ import calls it | The `std::as_writable_bytes<T, N>` contract, a function template written out at each called instance |
 | `rust/option.click` | `import click::rust::option;` | Rust's `Option::unwrap_or` proof helper |
 | `rust/result.click` | `import click::rust::result;` | Rust's `Result::unwrap_or` proof helper |
 | `rust/vec.click` | `import click::rust::vec;` | The primitive type `Vec<T>`, its bodyless operations and their trusted axioms |

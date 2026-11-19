@@ -181,6 +181,7 @@ pub(in crate::surface) fn kernel_law_index_types(
         "click::separation::contains_subrange"
         | "click::separation::contains_element"
         | "click::separation::contains_rebase"
+        | "click::separation::contains_joined_ranges"
         | "click::separation::separate_adjacent_ranges" => vec![
             InterfaceType::Int32,
             InterfaceType::UInt64(crate::languages::c::syntax::LongRank::Long),
@@ -2208,6 +2209,7 @@ pub(in crate::surface) fn is_kernel_standard_theorem_name(name: &str) -> bool {
                 "click::separation::contains_subrange"
                     | "click::separation::contains_element"
                     | "click::separation::contains_rebase"
+                    | "click::separation::contains_joined_ranges"
                     | "click::separation::separate_adjacent_ranges"
                     | "click::separation::separate_elements"
                     | "click::separation::distinct_elements"
@@ -2249,7 +2251,14 @@ fn verify_kernel_standard_theorem_axiom(
         name if name.split("::<").next() == Some("click::separation::contains_subrange") => (5, 3),
         name if name.split("::<").next() == Some("click::separation::contains_element") => (4, 2),
         name if name.split("::<").next() == Some("click::separation::contains_rebase") => (3, 2),
-        name if name.split("::<").next() == Some("click::separation::separate_adjacent_ranges") => {
+        name if matches!(
+            name.split("::<").next(),
+            Some(
+                "click::separation::separate_adjacent_ranges"
+                    | "click::separation::contains_joined_ranges"
+            )
+        ) =>
+        {
             (4, 2)
         }
         name if matches!(
@@ -2342,6 +2351,7 @@ fn verify_kernel_standard_theorem_axiom(
             "click::separation::contains_subrange"
                 | "click::separation::contains_element"
                 | "click::separation::contains_rebase"
+                | "click::separation::contains_joined_ranges"
                 | "click::separation::separate_adjacent_ranges"
         )
     ) {
@@ -2375,8 +2385,14 @@ fn verify_kernel_standard_theorem_axiom(
                 "interval law bounds must have the same type",
             ));
         }
-        if theorem.name().split("::<").next() == Some("click::separation::separate_adjacent_ranges")
-        {
+        let law = theorem.name().split("::<").next();
+        if matches!(
+            law,
+            Some(
+                "click::separation::separate_adjacent_ranges"
+                    | "click::separation::contains_joined_ranges"
+            )
+        ) {
             crate::kernel::prove_separation_adjacent_ranges(
                 pointer.clone(),
                 width,
@@ -2384,6 +2400,7 @@ fn verify_kernel_standard_theorem_axiom(
                 bounds[0].1.clone(),
                 bounds[1].1.clone(),
                 bounds[2].1.clone(),
+                law == Some("click::separation::contains_joined_ranges"),
             )
         } else if theorem.name().split("::<").next() == Some("click::separation::contains_rebase") {
             crate::kernel::prove_separation_rebase(

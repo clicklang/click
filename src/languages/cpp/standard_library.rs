@@ -171,12 +171,26 @@ pub(crate) const ARRAY_LIBRARY: &str = include_str!("../../../library/cpp/array.
 pub(crate) const AS_WRITABLE_BYTES_LIBRARY: &str =
     include_str!("../../../library/cpp/as_writable_bytes.click");
 
-/// The standard function templates outside a class that the Click library
-/// states: each instance's qualified name and canonical signature as Clang
+/// Logical descriptor contracts, currently selected for dynamic `std::span<int>`.
+const SPAN_STATE_CONTRACTS: &str = include_str!("../../../library/cpp/span_state_contracts.click");
+
+/// The exact standard signatures that the Click library maps to templates: each instance's qualified name and canonical signature as Clang
 /// spells them, the library template's path, and its file. An axiom
 /// matching one is an instance of that template, written out at the
 /// template arguments its own path names.
 const LIBRARY_FUNCTIONS: &[(&str, &str, &[&str], &str)] = &[
+    (
+        "std::span<int>::span",
+        "void (const class std::span<int> &) noexcept",
+        &["std", "span<T>", "span"],
+        SPAN_STATE_CONTRACTS,
+    ),
+    (
+        "std::span<int>::empty",
+        "_Bool (void) const noexcept",
+        &["std", "span<T>", "empty"],
+        SPAN_STATE_CONTRACTS,
+    ),
     (
         "std::as_writable_bytes",
         "class std::span<enum std::byte> (class std::span<int>) noexcept",
