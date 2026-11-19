@@ -1009,6 +1009,13 @@ impl ProgramPoint {
         }
     }
 
+    pub(in crate::kernel) fn observation_key(&self) -> ReadKey {
+        match self.id() {
+            Some(id) => self.read_key_at(id),
+            None => ReadKey::Memory(self.memory.arena_id()),
+        }
+    }
+
     fn read_key_at(&self, id: ProgramPointId) -> ReadKey {
         if self.path.matches_indexed_view(&self.memory) {
             ReadKey::Point(id)
@@ -1094,14 +1101,22 @@ impl ProgramPoint {
 
     /// The recorded value of this indexed read's defining store.
     pub(crate) fn indexed_integer_store_bits(&self) -> Option<&MachineTerm> {
-        integer_store_bits(self.indexed_write.as_deref()?).map(|(_, bits)| bits)
+        integer_store_bits(self.indexed_write()?).map(|(_, bits)| bits)
     }
 
     pub(in crate::kernel) fn indexed_stored_value(&self) -> Option<&StoredMemoryValue> {
-        let MemoryDerivation::Store { value, .. } = self.indexed_write.as_deref()? else {
+        let MemoryDerivation::Store { value, .. } = self.indexed_write()? else {
             return None;
         };
         Some(value)
+    }
+
+    fn indexed_write(&self) -> Option<&MemoryDerivation> {
+        if self.path.matches_indexed_view(&self.memory) {
+            self.indexed_write.as_deref()
+        } else {
+            None
+        }
     }
 
     /// The identities of the points this one was reached from.

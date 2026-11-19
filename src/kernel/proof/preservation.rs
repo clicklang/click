@@ -328,8 +328,8 @@ fn observation_equality(
     kind: ReadType,
     comparison: ReadType,
 ) -> Option<Proposition> {
-    let after = typed_reads::get_at(&footprint.after_point, &footprint.after, &address, kind)?;
-    let before = typed_reads::get_at(&footprint.before_point, &footprint.before, &address, kind)?;
+    let after = typed_reads::get_at(&footprint.after_point, &address, kind)?;
+    let before = typed_reads::get_at(&footprint.before_point, &address, kind)?;
     // A promoted comparison compares the narrow reads' widenings.
     if let (ReadType::Integer(narrow), ReadType::Integer(MachineIntegerType::Int32)) =
         (kind, comparison)
@@ -961,6 +961,27 @@ mod tests {
                 .apply(|_| true)
                 .unwrap_err()
                 .contains("constructed result")
+        );
+    }
+
+    #[test]
+    fn an_observation_does_not_transfer_to_an_equal_memory_at_another_point() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let memory = SymbolicMemory::new();
+        let first = ExecutionState::new().with_memory(memory.clone());
+        let second = ExecutionState::new().with_memory(memory);
+        assert_eq!(first.memory(), second.memory());
+        assert_ne!(first.program_point_id(), second.program_point_id());
+        let address = Address::symbolic(Variable(8_399_011));
+        let read = ProgramValue::bool_constant(true);
+        let _scope = typed_reads::ReadScope::enter();
+        typed_reads::record_at(&first.program_point(), &address, &read);
+        assert_eq!(
+            typed_reads::get_at(&first.program_point(), &address, ReadType::Boolean),
+            Some(read)
+        );
+        assert!(
+            typed_reads::get_at(&second.program_point(), &address, ReadType::Boolean).is_none()
         );
     }
 

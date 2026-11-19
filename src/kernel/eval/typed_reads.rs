@@ -31,25 +31,10 @@ impl ReadType {
     }
 }
 
-use crate::kernel::program_point::ProgramPointId;
+use crate::kernel::program_point::ReadKey;
 
-#[derive(Clone, Eq, PartialEq, Hash)]
-enum ReadPoint {
-    Point(ProgramPointId),
-    Memory(SharedMemory),
-}
-
-impl ReadPoint {
-    fn of(memory: &SymbolicMemory, point: Option<ProgramPointId>) -> Self {
-        match point {
-            Some(point) => Self::Point(point),
-            None => Self::Memory(crate::kernel::intern_memory_ref(memory)),
-        }
-    }
-}
-
-type ReadKey = (ReadPoint, Address, ReadType);
-type Reads = imbl::HashMap<ReadKey, ProgramValue>;
+type Read = (ReadKey, Address, ReadType);
+type Reads = imbl::HashMap<Read, ProgramValue>;
 thread_local! {
     static READS: std::cell::RefCell<Option<Reads>> = const { std::cell::RefCell::new(None) };
 }
@@ -75,17 +60,21 @@ pub(in crate::kernel) fn is_active() -> bool {
 #[cfg(test)]
 pub(super) fn record(memory: &SymbolicMemory, address: &Address, value: &ProgramValue) {
     if is_active() {
-        record_read(ReadPoint::of(memory, None), address, value);
+        record_read(
+            ReadKey::Memory(crate::kernel::intern_memory_ref(memory).arena_id()),
+            address,
+            value,
+        );
     }
 }
 
 pub(in crate::kernel) fn record_at(point: &ProgramPoint, address: &Address, value: &ProgramValue) {
     if is_active() {
-        record_read(ReadPoint::of(point.memory(), point.id()), address, value);
+        record_read(point.observation_key(), address, value);
     }
 }
 
-fn record_read(point: ReadPoint, address: &Address, value: &ProgramValue) {
+fn record_read(point: ReadKey, address: &Address, value: &ProgramValue) {
     let value = value.numeric_value();
     let kind = match value {
         ProgramValue::Pointer(p) => ReadType::Pointer(p.program_type()),
@@ -108,7 +97,7 @@ fn record_read(point: ReadPoint, address: &Address, value: &ProgramValue) {
     READS.with(|reads| {
         let mut slot = reads.borrow_mut();
         let reads = slot.as_mut().expect("active typed read scope");
-        reads.insert((point.clone(), address.clone(), kind), value.clone());
+        reads.insert((point, address.clone(), kind), value.clone());
         if matches!(kind, ReadType::Pointer(_)) {
             reads.insert(
                 (point, address.clone(), ReadType::IntegerAddress),
@@ -127,30 +116,28 @@ pub(in crate::kernel) fn get(
     address: &Address,
     kind: ReadType,
 ) -> Option<ProgramValue> {
-    get_version(memory, address, kind, None)
+    get_read(
+        ReadKey::Memory(crate::kernel::intern_memory_ref(memory).arena_id()),
+        address,
+        kind,
+    )
 }
 
 pub(in crate::kernel) fn get_at(
     point: &ProgramPoint,
-    memory: &SymbolicMemory,
     address: &Address,
     kind: ReadType,
 ) -> Option<ProgramValue> {
-    get_version(memory, address, kind, point.id())
+    get_read(point.observation_key(), address, kind)
 }
 
-fn get_version(
-    memory: &SymbolicMemory,
-    address: &Address,
-    kind: ReadType,
-    version: Option<ProgramPointId>,
-) -> Option<ProgramValue> {
+fn get_read(point: ReadKey, address: &Address, kind: ReadType) -> Option<ProgramValue> {
     crate::instrumentation::record_deterministic_work(1);
     READS.with(|reads| {
         reads
             .borrow()
             .as_ref()?
-            .get(&(ReadPoint::of(memory, version), address.clone(), kind.key()))
+            .get(&(point, address.clone(), kind.key()))
             .cloned()
     })
 }

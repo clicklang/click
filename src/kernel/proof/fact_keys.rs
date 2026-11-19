@@ -4590,7 +4590,7 @@ mod memory_state_alpha_tests {
                 .values()
                 .flat_map(|bucket| bucket.iter())
                 .filter_map(|candidate| candidate.upgrade())
-                .map(|record| record.retained_state.identity)
+                .map(|record| record.retained_state._state.arena_id())
                 .collect()
         })
     }
