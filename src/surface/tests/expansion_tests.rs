@@ -17544,6 +17544,44 @@ fn expansion_names_a_resource_witness_through_the_checked_return_pointer() {
 
 #[test]
 fn omitted_preservation_over_two_sibling_c_ifs_expands_and_reverifies() {
+    // Unknown inputs keep both sibling branches and their four paths reachable.
+    let c_source = r#"
+        int32 two_ifs(int32 x, int32 y) {
+            int32 i = 0;
+            while (i == 0) {
+                if (x == 0) {
+                    x = 1;
+                }
+                if (y == 0) {
+                    y = 1;
+                }
+                i = 1;
+            }
+            return i;
+        }
+    "#;
+    let click_source = r#"
+        verifying "two_ifs.c";
+
+        int32 two_ifs(int32 x, int32 y) {
+            ensures result >= 0;
+        } by {
+            step();
+            step();
+            loop {
+                decreases 1 - i;
+                invariant i >= 0;
+            }
+            step();
+            solve();
+        }
+    "#;
+    check_sibling_if_preservation_expansion(click_source, c_source);
+}
+
+#[test]
+#[ignore = "nightly: symbolic countdown plus four preservation paths took 11.6s in the parallel gate"]
+fn omitted_preservation_over_two_sibling_c_ifs_with_symbolic_bound() {
     // The automatic preservation the `loop` keyword owns walks this body as
     // a function's implicit tail does: each of the two sibling C `if`s
     // splits into its own proof case, so the rest of the body runs on four
@@ -17589,10 +17627,11 @@ fn omitted_preservation_over_two_sibling_c_ifs_expands_and_reverifies() {
             solve();
         }
     "#;
-    let sources = [("two_ifs.c", c_source)];
-    verify_c_sources(click_source, &sources)
-        .expect("an omitted-phase preservation over two sibling `if`s should verify");
+    check_sibling_if_preservation_expansion(click_source, c_source);
+}
 
+fn check_sibling_if_preservation_expansion(click_source: &str, c_source: &str) {
+    let sources = [("two_ifs.c", c_source)];
     let loop_offset = click_source
         .find("loop {")
         .expect("the proof should contain the loop tactic");
@@ -19419,42 +19458,65 @@ int64 identity(int64 x, int64 y) {
 
 #[test]
 fn symbolic_upper_difference_expands_and_cold_rechecks() {
-    check_symbolic_upper_expansion("difference", "to_integer(a) <= to_integer(1000 - b)", "");
+    check_symbolic_upper_expansion(
+        "difference",
+        "to_integer(a) <= to_integer(1000 - b)",
+        &["b <= 1000"],
+    );
 }
 
 #[test]
 fn symbolic_upper_equality_expands_and_cold_rechecks() {
-    check_symbolic_upper_expansion("equality", "to_integer(a) == to_integer(1000 - b)", "");
+    check_symbolic_upper_expansion(
+        "equality",
+        "to_integer(a) == to_integer(1000 - b)",
+        &["b <= 1000"],
+    );
 }
 
 #[test]
 fn symbolic_upper_sum_expands_and_cold_rechecks() {
+    // Supply the machine sum's definedness directly so the replay focuses on
+    // isolating a symbolic operand from the sum bound.
+    check_symbolic_upper_expansion("sum", "to_integer(a + b) <= 1000", &["defined(a + b)"]);
+}
+
+#[test]
+#[ignore = "nightly: the sum replay also derives machine-addition definedness from four range bounds"]
+fn symbolic_upper_sum_with_range_bounds_expands_and_cold_rechecks() {
     check_symbolic_upper_expansion(
         "sum",
         "to_integer(a + b) <= 1000",
-        "requires a >= 0; requires a <= 1000;",
+        &["b <= 1000", "a >= 0", "a <= 1000"],
     );
 }
 
 #[test]
+#[ignore = "nightly: the combined two-root replay took 9.1s in the parallel gate"]
 fn symbolic_upper_both_roots_expand_and_cold_recheck() {
     check_symbolic_upper_expansion(
         "both_roots",
         "to_integer(a + b) <= to_integer(999 + b)",
-        "requires a >= 0; requires a <= 1000;",
+        &["b <= 1000", "a >= 0", "a <= 1000"],
     );
 }
 
-fn check_symbolic_upper_expansion(name: &str, premise: &str, extra: &str) {
-    let extra_using = if extra.is_empty() {
-        ""
-    } else {
-        "a >= 0; a <= 1000;"
-    };
+fn check_symbolic_upper_expansion(name: &str, premise: &str, extra: &[&str]) {
+    let bounds = ["b >= 1"].into_iter().chain(extra.iter().copied());
+    let requirements = bounds
+        .clone()
+        .chain([premise])
+        .map(|fact| format!("requires {fact};"))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let listed = std::iter::once(premise)
+        .chain(bounds)
+        .collect::<Vec<_>>()
+        .join("; ");
     let source = format!(
         "theorem {name}(a: int32, b: int32) {{
-        requires b >= 1; requires b <= 1000; {extra} requires {premise};
-        ensures a <= 999 by {{ solve() using {{ {premise}; b >= 1; b <= 1000; {extra_using} }} }}
+        {requirements}
+        ensures a <= 999 by {{ solve() using {{ {listed}; }} }}
     }}"
     );
     // Expansion verifies this source's sole theorem and claim.
@@ -24639,12 +24701,51 @@ fn integer_fold_zero_contribution_expansion_replays_without_search() {
 
 #[test]
 fn whole_iterated_clause_expands_and_rechecks() {
+    // Supply the map fact at entry to isolate whole-clause fold and unfold.
+    let source = r#"
+        verifying "cells.c";
+
+        resource arena_cells(data: int32*, occupied: int32*, capacity: int32) {
+            owns occupied[0..capacity];
+            forall (k: int32) where 0 <= k and k < capacity {
+                if occupied[k] == 0 {
+                    owns data[k..k + 1];
+                }
+            }
+        }
+
+        void init_cells(int32* data, int32* occupied, int32 capacity) {
+            requires 0 <= capacity;
+            requires forall (k: int32) { 0 <= k and k < capacity implies occupied[k] == 0 };
+            consumes occupied[0..capacity];
+            consumes data[0..capacity];
+            produces arena_cells(data, occupied, capacity);
+        } by {
+            step();
+            fold(arena_cells(data, occupied, capacity)[..]);
+            mark clause_args;
+            unfold(at(clause_args, arena_cells(data, occupied, capacity))[..]);
+            fold(arena_cells(data, occupied, capacity)[..]);
+            fold(arena_cells(data, occupied, capacity));
+        }
+    "#;
+    let c_source = "void init_cells(int32* data, int32* occupied, int32 capacity) {}";
+    check_whole_iterated_clause_expansion(source, &[("cells.c", c_source)]);
+}
+
+#[test]
+#[ignore = "nightly: deriving the map through a loop before replay took 11.2s in the parallel gate"]
+fn whole_iterated_clause_expands_and_rechecks_after_initialization_loop() {
     let (source, sources) = mdtest_sources("mdtests/iterated_ownership_whole_clause.md");
     let sources = sources
         .iter()
         .map(|(name, body)| (name.as_str(), body.as_str()))
         .collect::<Vec<_>>();
-    let expanded = expand_c_claim_source_by_label(&source, &sources, "init_cells.contract")
+    check_whole_iterated_clause_expansion(&source, &sources);
+}
+
+fn check_whole_iterated_clause_expansion(source: &str, sources: &[(&str, &str)]) {
+    let expanded = expand_c_claim_source_by_label(source, sources, "init_cells.contract")
         .unwrap_or_else(|error| panic!("{}", error.report()));
     assert!(
         expanded.contains("fold(arena_cells(data, occupied, capacity)[..]);")
@@ -24653,7 +24754,7 @@ fn whole_iterated_clause_expands_and_rechecks() {
         "{expanded}"
     );
     without_implicit_solve_for_claim("init_cells.contract", || {
-        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        verify_c_sources(&expanded, sources).map_err(|error| error.report())
     })
     .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
 }
