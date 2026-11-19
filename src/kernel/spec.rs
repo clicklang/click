@@ -7866,18 +7866,21 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 // `exact(place)` names the read by the selected state itself;
                 // an ordinary read names its version point.
                 if !*exact
-                    && matches!(value_type, ProgramType::Int32 | ProgramType::UInt32)
-                    && ProgramPoint::supports_indexed_local_word32_version(&pointer)
+                    && matches!(
+                        value_type,
+                        ProgramType::UInt8 | ProgramType::Int32 | ProgramType::UInt32
+                    )
+                    && ProgramPoint::supports_indexed_local_integer_version(&pointer)
                 {
                     let selected_point = match memory {
                         SpecPoint::At(point) => point.clone(),
                         _ => selected_state.expect("selected read state").program_point(),
                     };
-                    let kind = LoadKind::of_type(*value_type).expect("32-bit integer read");
+                    let kind = LoadKind::of_type(*value_type).expect("indexed integer read");
                     if let Some(version) =
-                        selected_point.indexed_local_word32_version(&pointer, kind)
+                        selected_point.indexed_local_integer_version(&pointer, kind)
                     {
-                        let read = crate::kernel::eval::evaluate_indexed_word32_read(
+                        let read = crate::kernel::eval::evaluate_indexed_integer_read(
                             memory_view,
                             version,
                             pointer,

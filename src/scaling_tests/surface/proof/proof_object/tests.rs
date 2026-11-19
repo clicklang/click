@@ -333,7 +333,7 @@ fn both_and_scopes_are_isolated_check_lineage_and_scale() {
             })
             .collect::<Vec<_>>();
         let root = Proof::for_pure_goal(
-            "both",
+            "all",
             &facts,
             goal.clone(),
             &context,

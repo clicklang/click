@@ -1461,7 +1461,8 @@ pub(super) fn local_naming_tables(
 /// step's `<call>.result`, or `at(<assignment>.entry, x)` for the value an
 /// assignment step replaced in `x`.
 pub(in crate::surface) fn step_result_expression(step: u32) -> Option<ContractExpression> {
-    let layout = spelling_layout()?;
+    let layout =
+        spelling_layout().or_else(|| STEP_RESULT_LAYOUT.with(|slot| slot.borrow().clone()))?;
     let region = layout.step_region(step)?;
     match layout.prior_step_local(step) {
         Some(local) => {
@@ -6106,6 +6107,12 @@ pub(super) fn describe_program_expression(expression: &ProgramExpression) -> Str
             rust_binding_spelling(name).unwrap_or_else(|| name.to_string())
         }
         ProgramExpression::FunctionAddress(name) => format!("&{name}"),
+        // A step's result is spelled by its step, as lowering reads it back.
+        ProgramExpression::StepResult { step, .. }
+            if let Some(spelled) = step_result_expression(*step) =>
+        {
+            describe_contract_expression(&spelled)
+        }
         ProgramExpression::StepResult {
             origin: crate::kernel::StepOrigin::Call(function_name),
             ..
@@ -7470,6 +7477,18 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
             format!("{}.{field}", describe_contract_expression(base))
         }
         ContractExpression::Field { base, field, .. } => match base.as_ref() {
+            // A static struct's declaration reference names the object, so
+            // its fields are read with `.`, as `"file.c"::static(0).field`.
+            ContractExpression::ProgramExpression(ProgramExpression::Variable(binding))
+                if binding
+                    .static_id()
+                    .and_then(|id| id.metadata())
+                    .is_some_and(|metadata| {
+                        metadata.aggregate && metadata.array_shape.is_none()
+                    }) =>
+            {
+                format!("{}.{field}", describe_contract_expression(base))
+            }
             // A member of an embedded struct member is reached with `.`:
             // the inner member is an object, which lowers to its address
             // rather than to a load of a pointer.
@@ -7889,6 +7908,33 @@ thread_local! {
     /// the path through the statements as written that names it.
     static SPELLING_LAYOUT: std::cell::RefCell<Option<crate::surface::lowering::SourceExecutionLayout>> =
         const { std::cell::RefCell::new(None) };
+    /// The layout that spells step results while a [`StepResultSpellingScope`]
+    /// is alive, without changing how points print.
+    static STEP_RESULT_LAYOUT: std::cell::RefCell<Option<crate::surface::lowering::SourceExecutionLayout>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Spells step results by a checked function's layout while alive, for a
+/// certificate rendered after its check ended. Points keep the spelling the
+/// certificate recorded.
+pub(in crate::surface) struct StepResultSpellingScope(
+    Option<crate::surface::lowering::SourceExecutionLayout>,
+);
+
+impl StepResultSpellingScope {
+    pub(in crate::surface) fn enter(
+        layout: &crate::surface::lowering::SourceExecutionLayout,
+    ) -> Self {
+        Self(STEP_RESULT_LAYOUT.with(|slot| slot.replace(Some(layout.clone()))))
+    }
+}
+
+impl Drop for StepResultSpellingScope {
+    fn drop(&mut self) {
+        STEP_RESULT_LAYOUT.with(|slot| {
+            slot.replace(self.0.take());
+        });
+    }
 }
 
 /// The source layout of the function whose proof is being checked, if any.

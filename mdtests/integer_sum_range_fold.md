@@ -198,7 +198,7 @@ int32 sum(int32 a[], int32 n) {
             }
             have defined((total + a[i])) by {
                 have defined(total + a[i]);
-                both {
+                all positional {
                     left => {
                         known();
                     }

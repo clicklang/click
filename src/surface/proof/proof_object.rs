@@ -3524,6 +3524,7 @@ impl<'a> Proof<'a> {
     /// execution state.
     pub(super) fn checkpoint(&self) -> ProofCheckpoint<'a> {
         ProofCheckpoint {
+            conjuncts: [None, None],
             context: self.context.clone(),
             node: self.node.clone(),
         }
@@ -3868,7 +3869,7 @@ impl Drop for NestedTacticCaptureGuard<'_> {
 fn proof_step_source_name(step: &ProofStep) -> &'static str {
     match step {
         ProofStep::Match { .. } => "match",
-        ProofStep::Both { .. } => "both",
+        ProofStep::Both { .. } | ProofStep::All(_) => "all",
         ProofStep::CheckTerminationLocal(_) => "check_termination_local",
         ProofStep::CheckTerminationComponent { .. } => "check_termination_component",
         ProofStep::CheckTerminationCallbacks => "check_termination_callbacks",

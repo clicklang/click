@@ -674,6 +674,13 @@ impl ResourceContextIndex {
                 );
             }
         }
+        for block in prepared_argument_resource_blocks(fact) {
+            result.prepared_argument_resources = insert_resource_index_entry(
+                &result.prepared_argument_resources,
+                block.clone(),
+                entry,
+            );
+        }
         let hash = resource_fact_content_hash(fact);
         result.fact_hash = result.fact_hash.wrapping_add(hash);
         result.canonical = result.canonical.with_inserted(fact, hash);
@@ -1074,6 +1081,10 @@ impl ResourceContextIndex {
                     );
                 }
             }
+        }
+        for block in prepared_argument_resource_blocks(fact) {
+            result.prepared_argument_resources =
+                remove_resource_index_entry(&result.prepared_argument_resources, block, entry);
         }
         if let Resource::Iterated(iterated) = fact.resource() {
             let [first, second] = iterated.blocks();
@@ -3286,6 +3297,21 @@ impl ResourceContext {
         });
         self.observable_projection = Default::default();
         self.rebuild_paired_memory_entries();
+    }
+
+    /// Selects one remaining logical resource for a retiring prepared argument.
+    pub(in crate::kernel) fn prepared_argument_resource_name(
+        &self,
+        block: &AddressBase,
+    ) -> Option<&str> {
+        crate::instrumentation::record_deterministic_work(1);
+        let entries = self.storage.index.prepared_argument_resources.get(block)?;
+        let entry = entries.iter().next()?;
+        match self.fact(*entry).resource() {
+            Resource::Instance(instance) => Some(instance.name()),
+            Resource::Composite { name, .. } | Resource::Token { name, .. } => Some(name),
+            _ => unreachable!("only logical resources are indexed by prepared argument"),
+        }
     }
 
     /// The owned instances of this context with a C pointer argument equal
@@ -9684,6 +9710,21 @@ impl ResourceNormalizationIndex {
         }
         candidates.into_iter().collect()
     }
+}
+
+fn prepared_argument_resource_blocks(fact: &ResourceFact) -> impl Iterator<Item = &AddressBase> {
+    let arguments = match fact.resource() {
+        Resource::Instance(instance) => Some(&instance.arguments),
+        Resource::Composite { arguments, .. } | Resource::Token { arguments, .. } => {
+            Some(arguments)
+        }
+        _ => None,
+    };
+    arguments
+        .into_iter()
+        .flat_map(algebraic_pointer_arguments)
+        .map(|pointer| &pointer.base)
+        .filter(|block| block.prepared_argument_binding().is_some())
 }
 
 /// The C pointer arguments of an instance, as its index keys them.

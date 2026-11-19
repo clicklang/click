@@ -2295,7 +2295,9 @@ private:
                                      "and caller return types");
             return std::nullopt;
           }
-          auto lowered = lower_call_operation(call, function, true);
+          auto lowered = lower_call_operation(
+              call, function, true, {}, reference_return == nullptr &&
+                  !call->getCallReturnType(context_)->isReferenceType());
           auto value_type = lower_type(reference_return != nullptr ? function->getReturnType() : returned->getRetValue()->getType(),
                                        returned->getRetValue()->getExprLoc(),
                                        direct_source_alias(function->getTypeSourceInfo()));
@@ -2440,7 +2442,7 @@ private:
 
   std::optional<Json> lower_call(const clang::CallExpr *call,
                                  const clang::FunctionDecl *caller) {
-    auto lowered = lower_call_operation(call, caller, true);
+    auto lowered = lower_call_operation(call, caller, true, {}, true);
     if (!lowered) {
       return std::nullopt;
     }
@@ -2990,7 +2992,8 @@ private:
              "C++ call capture requires matching final initializer and local types");
         return std::nullopt;
       }
-      auto lowered = lower_call_operation(call, function, true);
+      auto lowered = lower_call_operation(
+          call, function, true, {}, !call->getCallReturnType(context_)->isReferenceType());
       if (!lowered) {
         return std::nullopt;
       }
@@ -3441,7 +3444,8 @@ private:
   lower_call_operation(const clang::CallExpr *call,
                        const clang::FunctionDecl *caller,
                        bool allow_nested = false,
-                       clang::SourceLocation default_use = {}) {
+                       clang::SourceLocation default_use = {},
+                       bool prepare_opaque_copies = false) {
     const clang::FunctionDecl *callee = call->getDirectCallee();
     // A value of an abstract type argument is passed only to a method of a
     // template at abstract arguments, which is that template's method at
@@ -3630,8 +3634,9 @@ private:
         value["span"] = std::move(operation->span);
         argument = Json(std::move(value));
       } else {
-        argument = lower_call_argument(source_argument,
-                                       definition->getParamDecl(index), caller);
+        const auto *parameter = definition->getParamDecl(index);
+        argument = lower_call_argument(source_argument, parameter->getType(),
+                                       parameter->getLocation(), caller, prepare_opaque_copies);
       }
       if (!argument) {
         return std::nullopt;
@@ -3725,7 +3730,7 @@ private:
   std::optional<Json>
   lower_call_argument(const clang::Expr *argument, clang::QualType parameter_type,
                       clang::SourceLocation parameter_location,
-                      const clang::FunctionDecl *caller) {
+                      const clang::FunctionDecl *caller, bool prepare_opaque_copies = false) {
     if (std_function_prototype(parameter_type) != nullptr)
       return lower_std_function_argument(argument, parameter_type, parameter_location,
                                          caller);
@@ -3739,7 +3744,13 @@ private:
       const auto *construction = llvm::dyn_cast<clang::CXXConstructExpr>(operand);
       const auto *constructor = construction == nullptr ? nullptr : construction->getConstructor();
       const auto *record = parameter_type->getAsCXXRecordDecl();
-      if (constructor != nullptr && !constructor->isCopyOrMoveConstructor() &&
+      const bool opaque_copy =
+          prepare_opaque_copies && constructor != nullptr && constructor->isCopyConstructor() &&
+          constructor->isTrivial() && is_axiom(constructor) &&
+          archetype_name(parameter_type) == nullptr && construction->getNumArgs() == 1 &&
+          construction->getArg(0)->isLValue();
+      if (constructor != nullptr &&
+          (!constructor->isCopyOrMoveConstructor() || opaque_copy) &&
           construction->isPRValue() && !constructor->isDeleted() &&
           record->isTriviallyCopyable() && record->hasTrivialDestructor() &&
           context_.hasSameUnqualifiedType(construction->getType(), parameter_type)) {
@@ -3753,7 +3764,7 @@ private:
         for (unsigned index = 0; index < construction->getNumArgs(); ++index) {
           auto value = lower_call_argument(construction->getArg(index), definition->getParamDecl(index), caller);
           if (!value) return std::nullopt;
-          if (value->getAsObject()->getString("kind") != "value") {
+          if (!opaque_copy && value->getAsObject()->getString("kind") != "value") {
             fail(argument->getExprLoc(), "C++ temporary constructor arguments require pure values");
             return std::nullopt;
           }
@@ -3767,6 +3778,7 @@ private:
         callee["name"] = constructor_name(constructor);
         callee["span"] = span(construction->getSourceRange());
         result["kind"] = "construct";
+        if (opaque_copy) result["opaque_copy"] = true;
         result["callee"] = std::move(callee);
         result["arguments"] = std::move(arguments);
         result["value_type"] = std::move(*value_type);

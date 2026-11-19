@@ -1477,10 +1477,13 @@ fn conjunction_leaf_preservation_steps(
     let mut built = Vec::new();
     for node in shape {
         if let Some(index) = node {
-            built.push(proofs[index].take()?);
+            built.push((
+                Some(std::sync::Arc::new(leaves[index].1.clone())),
+                proofs[index].take()?,
+            ));
         } else {
-            let right = built.pop()?;
-            let left = built.pop()?;
+            let (right_label, right) = built.pop()?;
+            let (left_label, left) = built.pop()?;
             // Children were constructed above from ordinary steps. Do not walk
             // their entire certificate trees again at every enclosing `both`.
             let certificate = |steps| {
@@ -1489,13 +1492,17 @@ fn conjunction_leaf_preservation_steps(
                         .expect("ordinary conjunction proof"),
                 )
             };
-            built.push(vec![ProofStep::Both {
-                left_proof: certificate(left),
-                right_proof: certificate(right),
-            }]);
+            built.push((
+                None,
+                vec![ProofStep::Both {
+                    conjuncts: [left_label, right_label],
+                    left_proof: certificate(left),
+                    right_proof: certificate(right),
+                }],
+            ));
         }
     }
-    built.pop()
+    built.pop().map(|(_, steps)| steps)
 }
 
 #[derive(Eq, PartialEq, Hash)]

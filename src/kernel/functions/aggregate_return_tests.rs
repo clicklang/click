@@ -65,7 +65,7 @@ fn raw_construction_allocation_owns_storage_without_initializing_values() {
     assert!(!state.memory.has_initialized_bytes_at(&destination, 16));
     assert!(state.memory.known_value(&destination).is_none());
     assert!(
-        crate::kernel::eval::memory_write_permission_outcome(
+        crate::kernel::eval::memory_write_storage_outcome(
             &state,
             &destination,
             16,
@@ -215,6 +215,63 @@ fn construction_return_rejects_missing_binding_authority_and_partial_values() {
         path.outcome,
         FunctionOutcome::UndefinedBehavior(UndefinedBehavior::UninitializedRead)
     )));
+}
+
+#[test]
+fn construction_binding_retains_the_full_destination_loan_requirement() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let state = allocate_destination(&ExecutionState::new(), "node");
+    let destination = state.locals.slot("node").unwrap().clone();
+    let view = ResourceFact::view_memory(MemoryRange::new_with_element_width(
+        destination.clone(),
+        0u32.into(),
+        8u32.into(),
+        1,
+    ));
+    let (_, occurrences) =
+        ResourceContext::new().unchecked_with_facts_and_occurrences([view.clone()]);
+    let ledger = LoanLedger::new();
+    let holder = ledger.fresh_participant().unwrap();
+    let opening = ledger
+        .borrowed_contract_input(holder, occurrences[0].1, view, None)
+        .unwrap();
+    let ledger = ledger.apply(&opening.transition).unwrap();
+    let caller = state
+        .with_aggregate_return_destination(destination.clone(), node_layout())
+        .with_loan_ledger(Some(ledger.clone()))
+        .with_loan_participant(Some(holder));
+    let function = construction_function("loaned_destination", node_construction_body());
+    let mut callee = ExecutionState::new();
+    let mut obligations = Vec::new();
+    assert!(
+        construction_return::bind(
+            &caller,
+            function.contract_interface(),
+            &mut callee,
+            Some(&mut obligations),
+        )
+        .is_some()
+    );
+    let [obligation] = obligations.as_slice() else {
+        panic!("expected the complete destination's write prerequisite");
+    };
+    assert!(obligation.requires_statement_entry());
+    let bytes = node_layout().size_bytes();
+    let range = MemoryRange::new_with_element_width(destination, 0u32.into(), 1u32.into(), bytes);
+    assert_eq!(
+        obligation.proposition(),
+        &ledger.memory_access_requirement(&range).unwrap(),
+    );
+    assert!(!PureFactContext::new().proves_atomic_without_search(obligation.proposition()));
+    assert!(
+        construction_return::bind(
+            &caller,
+            function.contract_interface(),
+            &mut ExecutionState::new(),
+            None,
+        )
+        .is_none()
+    );
 }
 
 #[test]

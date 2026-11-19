@@ -4581,7 +4581,37 @@ test_batches! {
         child_argument_goal_reports_scalar_indices,
         a_failing_tactic_on_an_opened_claim_reports_its_own_source,
         an_open_callback_obligation_through_a_static_object_reads_back,
+        a_static_struct_field_goal_reads_back_with_a_dot,
     ],
+}
+
+#[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_24")]
+fn a_static_struct_field_goal_reads_back_with_a_dot() {
+    // A static's declaration reference names the object, so a refused goal
+    // about its field is written `"file.c"::static(0).b`, which lowers back
+    // to the same read; `->` would take the object for a pointer.
+    let fixture = crate::cli::read_mdtest(
+        &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("mdtests/static_struct_fields_by_declaration_reference.md"),
+    )
+    .unwrap();
+    let source = fixture.click_source.as_deref().unwrap();
+    let inputs = fixture
+        .c_sources
+        .iter()
+        .map(|(name, body)| (name.as_str(), body.as_str()))
+        .collect::<Vec<_>>();
+    let written = r#"ensures result == "static_fields.c"::static(0).b;"#;
+    assert!(source.contains(written), "{source}");
+    let false_claim = source.replace(written, r#"ensures "static_fields.c"::static(0).b == 6;"#);
+    let error = verify_c_sources(&false_claim, &inputs).expect_err("the field holds 5");
+    let report = error.report();
+    assert!(
+        report.contains(r#""static_fields.c"::static(0).b == 6"#),
+        "{report}"
+    );
+    assert!(!report.contains("static(0)->b"), "{report}");
 }
 
 #[test]

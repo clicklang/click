@@ -1128,7 +1128,7 @@ fn conjunction_projection_transport_expands_only_the_selected_leaf() {
         resource,
     ] {
         let expanded = expand_c_claim_source_by_label(&source, &files, "keep.contract").unwrap();
-        assert!(!expanded.contains("both {"), "{expanded}");
+        assert!(!expanded.contains("all {"), "{expanded}");
         assert!(!expanded.contains("transport("), "{expanded}");
         assert!(!expanded.contains("transport_certificate"), "{expanded}");
         without_implicit_solve(|| verify_c_sources(&expanded, &files)).unwrap();

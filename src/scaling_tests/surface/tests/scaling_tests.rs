@@ -391,7 +391,9 @@ fn nested_conjunction_body_parsing_uses_small_frames_and_linear_work() {
             let samples = [2, 4, 8, 16].map(|depth| {
                 let mut body = "have 0 == 0 by { normalize(); } normalize();".to_string();
                 for _ in 0..depth {
-                    body = format!("both {{ left => {{ {body} }} right => {{ normalize(); }} }}");
+                    body = format!(
+                        "all positional {{ left => {{ {body} }} right => {{ normalize(); }} }}"
+                    );
                 }
                 let source = format!("theorem nested() {{ ensures 0 == 0 by {{ {body} }} }}");
                 let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -2979,6 +2981,7 @@ fn certificate_step_count(steps: &[ProofStep]) -> usize {
             ProofStep::Both {
                 left_proof,
                 right_proof,
+                ..
             }
             | ProofStep::Cases {
                 left_proof,
@@ -10458,7 +10461,7 @@ fn nested_conjunction_transport_scaling(balanced: bool) {
         });
         let expanded = expanded.unwrap();
         planning.push(work);
-        assert_eq!(expanded.matches("both {").count(), size - 1);
+        assert_eq!(expanded.matches("all {").count(), 1);
         assert_eq!(expanded.matches("preserve(").count(), size);
         assert!(!expanded.contains("transport("));
         assert!(!expanded.contains("transport_certificate"));
@@ -10528,7 +10531,7 @@ fn conjunction_projection_transport_scales_with_written_source() {
         let expanded = expanded.unwrap();
         expansion.push(work);
         assert_eq!(expanded.matches("preserve(").count(), 1);
-        assert!(!expanded.contains("both {"));
+        assert!(!expanded.contains("all {"));
         assert!(!expanded.contains("transport("));
         assert!(!expanded.contains("transport_certificate"));
         let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -10601,7 +10604,7 @@ fn conjunction_selection_transport_scales_with_sources_targets_and_premises() {
         });
         let expanded = expanded.unwrap();
         expansion.push(work);
-        assert_eq!(expanded.matches("both {").count(), size / 2 - 1);
+        assert_eq!(expanded.matches("all {").count(), 1);
         assert_eq!(expanded.matches("preserve(").count(), size / 2);
         assert!(!expanded.contains("transport("));
         assert!(!expanded.contains("transport_certificate"));

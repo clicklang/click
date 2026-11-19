@@ -574,9 +574,8 @@ pub(in crate::surface) fn initial_call_state(
         .any(|parameter| parameter.is_struct_value())
     {
         // A by-value argument is an already-evaluated C value. Materialize its
-        // aggregate image using the same typed copy operation as C calls,
-        // before resource clauses follow any pointer fields. This image is
-        // caller storage; the callee still receives its own fresh copy.
+        // parameter object before resource clauses name its address or follow
+        // its pointer fields.
         state = crate::kernel::program_function_input_objects_state(&state, function, &arguments)
             .ok_or_else(|| {
             ClickError::new("could not materialize aggregate argument values")
@@ -640,6 +639,9 @@ pub(in crate::surface) fn initial_call_state(
     let mut state = crate::kernel::execution_state_with_assumed_mutex_inputs(
         state.with_resource_context(resources),
     );
+    if !aggregate_parameters.is_empty() {
+        state = crate::kernel::with_resource_keyed_aggregate_proof_inputs(state, function);
+    }
     {
         // A standalone helper is proved for an arbitrary population supplied
         // by its caller. Import only the explicitly declared ownership, with

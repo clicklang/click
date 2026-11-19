@@ -1060,7 +1060,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             else {
                 return Ok(None);
             };
-            let marker = split_proof.checkpoint();
+            let marker = split_proof.conjunction_checkpoint(ids)?;
             let Some(left) =
                 crate::kernel::search::ProofSearch::try_direct_structural_closure_inner(
                     &(split_proof.focus_branch(ids[0])?),
@@ -1998,7 +1998,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let before_product = proof.clone();
             let conversion =
                 crate::kernel::machine_integer::conversion::integer_conversion(observed).is_some();
-            let (spelled_observed, spelled_value) = match value {
+            let (spelled_observed, spelled_value, signed_operation) = match value {
                 // The conversion's operand as the observation itself writes
                 // it, `E` of `to_integer(to_T(E))`: lowering is fact-stable,
                 // so `E` lowers to the operand `z`, and the kernel checks it.
@@ -2026,7 +2026,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     if name != "to_integer" {
                         return Ok(Err(failed.clone()));
                     }
-                    (spelled_observed.clone(), operand.clone())
+                    (spelled_observed.clone(), operand.clone(), None)
                 }
                 IntegerTerm::Add(left, right)
                 | IntegerTerm::Subtract(left, right)
@@ -2069,20 +2069,25 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                             Box::new(native(&spelled_right)),
                         ),
                     };
+                    let operation = ContractExpression::Call {
+                        name: "to_integer".into(),
+                        arguments: vec![native(&operation)],
+                    };
                     let observed = sources
                         .entry(observed.value_read().clone())
-                        .or_insert_with(|| ContractExpression::Call {
-                            name: "to_integer".into(),
-                            arguments: vec![native(&operation)],
-                        })
+                        .or_insert_with(|| operation.clone())
                         .clone();
+                    let signed_operation = (machine.ty() == MachineIntegerType::Int32
+                        && matches!(value, IntegerTerm::Add(..) | IntegerTerm::Subtract(..))
+                        && observed != operation)
+                        .then_some(operation);
                     let (left, right) = (Box::new(spelled_left), Box::new(spelled_right));
                     let value = match value {
                         IntegerTerm::Subtract(..) => ContractExpression::Subtract(left, right),
                         IntegerTerm::Multiply(..) => ContractExpression::Multiply(left, right),
                         _ => ContractExpression::Add(left, right),
                     };
-                    (observed, value)
+                    (observed, value, signed_operation)
                 }
                 IntegerTerm::Machine(_) => {
                     let Some(spelled) = search_input.spell_integer_observation(value, &written)
@@ -2093,7 +2098,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     else {
                         return Ok(Err(failed.clone()));
                     };
-                    (observed, spelled)
+                    (observed, spelled, None)
                 }
                 _ => return Ok(Err(failed.clone())),
             };
@@ -2207,16 +2212,44 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
             let identity_surface = identity.clone();
             let scope = proof.driver().open_have(identity.clone())?;
-            // Written operators use the local observation rule. A retained
-            // read can still require the legacy read-over-write adapter;
-            // keep that selected normalizer until memory transport is explicit.
-            let closed = match scope.driver().apply_step(ProofStep::Known).or_else(|_| {
+            // Prove the operation observation from the established range.
+            // A retained read of the stored result can then use the checked
+            // fact through its read-over-write comparison form.
+            let closed = if let Some(closed) =
+                attempt::candidate_outcome(scope.driver().apply_step(ProofStep::Known))?
+            {
+                closed
+            } else if let Some(operation) = signed_operation
+                && scope
+                    .body()
+                    .goal()
+                    .and_then(crate::kernel::comparison_form)
+                    .is_some()
+                && let Some(closed) = attempt::candidate_outcome((|| {
+                    let operation_identity = ClickProposition::Comparison {
+                        left: operation,
+                        operator: ComparisonOperator::Equal,
+                        right: spelled_value,
+                    };
+                    let scope = scope
+                        .driver()
+                        .apply_step(super::super::wide_arithmetic::have(
+                            operation_identity,
+                            vec![ProofStep::Known],
+                        ))?;
+                    scope.driver().apply_step(ProofStep::Known)
+                })())?
+                && closed.is_complete()
+            {
+                closed
+            } else if let Some(closed) = attempt::candidate_outcome(
                 scope
                     .driver()
-                    .apply_step(ProofStep::NormalizeUsing(vec![lower, upper]))
-            }) {
-                Ok(closed) => closed,
-                Err(_) => return Ok(Err(failed.clone())),
+                    .apply_step(ProofStep::NormalizeUsing(vec![lower, upper])),
+            )? {
+                closed
+            } else {
+                return Ok(Err(failed.clone()));
             };
             proof = closed.join()?;
             established.extend(
@@ -6766,7 +6799,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_structural_and_solve_closure");
         let (split_proof, split, ids) = search_input.split_focused_both()?;
-        let marker = split_proof.checkpoint();
+        let marker = split_proof.conjunction_checkpoint(ids)?;
         let Some(left) = crate::kernel::search::ProofSearch::try_solve_closure_with_surfaces(
             &(split_proof.focus_branch(ids[0])?),
             introduced_surfaces,

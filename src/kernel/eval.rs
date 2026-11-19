@@ -122,7 +122,7 @@ pub(in crate::kernel) use memory_loads::{
 };
 pub(crate) use memory_loads::{canonical_cell_load, canonical_form_of_load};
 pub(super) use memory_loads::{
-    canonical_offset_term, evaluate_exact_logical_memory_load_paths, evaluate_indexed_word32_read,
+    canonical_offset_term, evaluate_exact_logical_memory_load_paths, evaluate_indexed_integer_read,
     evaluate_logical_memory_load_paths, evaluate_retained_memory_load_paths,
     evaluate_spec_memory_load_paths, symbolic_load_value,
 };
@@ -149,7 +149,7 @@ pub(super) use operators::pointer_offset_by_bytes_paths;
 pub(super) use operators::*;
 #[cfg(test)]
 pub(super) use statements::execute_execution_statement;
-pub(super) use statements::memory_write_permission_outcome;
+pub(super) use statements::memory_write_storage_outcome;
 #[cfg(test)]
 pub(super) use statements::paths_after_scope_exit;
 #[cfg(test)]

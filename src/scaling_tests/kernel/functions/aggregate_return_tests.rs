@@ -32,6 +32,7 @@ fn construction_destination_binding_work_ignores_unrelated_caller_objects() {
                 &caller,
                 function.contract_interface(),
                 &mut ExecutionState::new().with_population_creation_tracking(),
+                None,
             )
             .unwrap();
         });
@@ -122,7 +123,7 @@ fn construction_completion_work_scales_with_value_fields() {
                     "destination",
                     ProgramValue::typed_pointer(at.clone(), ProgramType::Int32Pointer),
                 );
-                construction_return::bind(&caller, function.contract_interface(), &mut state)
+                construction_return::bind(&caller, function.contract_interface(), &mut state, None)
                     .unwrap();
                 construction_return::initialize_summary(&mut state, &caller);
                 if parameter {

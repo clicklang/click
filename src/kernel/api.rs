@@ -3758,6 +3758,50 @@ pub fn program_function_input_objects_state(
     program_function_entry_state_with(caller_state, function, arguments, true)
 }
 
+/// Keeps the identity of each aggregate proof input explicitly named by a
+/// logical resource. Select by the materialized slot's exact pointer key.
+pub(crate) fn with_resource_keyed_aggregate_proof_inputs(
+    mut state: ExecutionState,
+    function: &ProgramFunction,
+) -> ExecutionState {
+    let mut owner = None;
+    for parameter in function.parameters() {
+        crate::instrumentation::record_deterministic_work(1);
+        if parameter.aggregate_layout().is_none() {
+            continue;
+        }
+        let name = parameter.binding_name();
+        let Some(LocalBinding::AggregateObject {
+            layout,
+            slot,
+            constant,
+            ..
+        }) = state.locals.binding(name)
+        else {
+            continue;
+        };
+        if state
+            .resources
+            .owned_instances_with_pointer_argument(slot)
+            .next()
+            .is_none()
+        {
+            continue;
+        }
+        let owner = owner.get_or_insert_with(|| Arc::<str>::from(function.name()));
+        state.locals.insert_binding(
+            name.clone(),
+            LocalBinding::AggregateObject {
+                layout: layout.clone(),
+                slot: slot.clone(),
+                constant: *constant,
+                proof_input_for: Some(owner.clone()),
+            },
+        );
+    }
+    state
+}
+
 fn program_function_entry_state_with(
     caller_state: &ExecutionState,
     function: &ProgramFunction,

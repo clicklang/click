@@ -309,15 +309,10 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         }
         // A certificate checked step by step, such as an obligation proof in
         // a `step` or `fold` `by` body, carries `both` as its checked arms.
-        if let ProofStep::Both {
-            left_proof,
-            right_proof,
-        } = &step
-        {
-            return driver_proof.driver().apply_both_source(&ProofBoth {
-                left_tactics: left_proof.to_proof_tactics(),
-                right_tactics: right_proof.to_proof_tactics(),
-            });
+        if matches!(step, ProofStep::Both { .. } | ProofStep::All(_)) {
+            return driver_proof
+                .driver()
+                .apply_all_source(&step.to_proof_tactic());
         }
         // A bare `fold` is checked as a bare step is: its fast path, then the
         // implicit `solve` for each body fact it leaves open.

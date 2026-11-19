@@ -30,9 +30,9 @@ These names describe different things:
   The kernel represents points with `ProgramPoint`. A read's address, type,
   and version point determine its identity.
 
-For an ordinary `int32` or `uint32` read at the start of an automatic object, a lookup
-keyed by the object can select a write of the read's type on the current
-execution path. Writes to other independently identified automatic objects preserve this
+For an ordinary `uint8`, `int32`, or `uint32` read at the start of an
+automatic object, a lookup keyed by the object can select a write of the
+read's type on the current execution path. Writes to other independently identified automatic objects preserve this
 index entry. The read retains the write's point, and its value equation
 comes from the recorded store. Other cases still use the existing version
 selection, including across joins and unclassified effects.

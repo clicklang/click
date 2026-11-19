@@ -970,7 +970,30 @@ mod tests {
     }
 
     #[test]
-    fn preserve_uses_the_uint32_version_of_each_selected_endpoint() {
+    fn preserve_uses_the_indexed_integer_version_of_each_selected_endpoint() {
+        check_indexed_preservation(
+            LoadKind::UInt32,
+            MachineIntegerType::UInt32,
+            4,
+            ProgramValue::UInt32(MachineTerm::uint32_constant(0x8000_0000)),
+        );
+        check_indexed_preservation(
+            LoadKind::UInt8,
+            MachineIntegerType::UInt8,
+            1,
+            ProgramValue::UInt8(MachineTerm::narrow_constant(
+                MachineIntegerType::UInt8,
+                0x80,
+            )),
+        );
+    }
+
+    fn check_indexed_preservation(
+        load_kind: LoadKind,
+        format: MachineIntegerType,
+        bytes: u32,
+        stored: ProgramValue,
+    ) {
         let _session = crate::kernel::VerificationSession::enter();
         let _reads = typed_reads::ReadScope::enter();
         let address = |name: &str| Address {
@@ -981,13 +1004,12 @@ mod tests {
         let other = address("local:signed");
         let start = ExecutionState::new().with_memory(
             SymbolicMemory::new()
-                .with_block("local:unsigned", 4)
+                .with_block("local:unsigned", bytes)
                 .with_block("local:signed", 4),
         );
-        let before = start.clone().with_memory(start.memory().clone().store(
-            slot.clone(),
-            ProgramValue::UInt32(MachineTerm::uint32_constant(0x8000_0000)),
-        ));
+        let before = start
+            .clone()
+            .with_memory(start.memory().clone().store(slot.clone(), stored));
         let after = before.clone().with_memory(
             before
                 .memory()
@@ -997,20 +1019,20 @@ mod tests {
         let read = |state: &ExecutionState| {
             let version = state
                 .program_point()
-                .indexed_local_word32_version(&slot, LoadKind::UInt32)
+                .indexed_local_integer_version(&slot, load_kind)
                 .unwrap();
-            let path = crate::kernel::eval::evaluate_indexed_word32_read(
+            let path = crate::kernel::eval::evaluate_indexed_integer_read(
                 state.memory(),
                 version,
                 slot.clone(),
-                LoadKind::UInt32,
+                load_kind,
                 Default::default(),
                 Vec::new(),
             );
-            let ExpressionOutcome::Value(ProgramValue::UInt32(bits)) = path.outcome else {
+            let ExpressionOutcome::Value(value) = path.outcome else {
                 panic!("expected an unsigned read");
             };
-            bits
+            integer_bits(value).unwrap()
         };
         let before_read = read(&before);
         let after_read = read(&after);
@@ -1021,11 +1043,24 @@ mod tests {
             &after,
             &Vec::<ExecutionPureFact>::new(),
         );
-        let kind = ReadType::Integer(MachineIntegerType::UInt32);
+        let comparison = if format == MachineIntegerType::UInt8 {
+            MachineIntegerType::Int32
+        } else {
+            format
+        };
+        let comparison_type = ReadType::Integer(comparison);
+        let observed = observation_type(comparison_type, bytes).unwrap();
+        assert_eq!(observed, ReadType::Integer(format));
+        let operand = |bits| MachineTerm::machine_integer_cast(format, comparison, bits);
         assert_eq!(
-            observation_equality(&footprint, slot, kind, kind),
+            observation_equality(&footprint, slot, observed, comparison_type),
             Some(Proposition::condition_is(
-                ConditionTerm::uint32_equal(after_read, before_read),
+                ConditionTerm::machine_compare(
+                    comparison,
+                    CompareRelation::Equal,
+                    operand(after_read),
+                    operand(before_read),
+                ),
                 true,
             )),
         );
