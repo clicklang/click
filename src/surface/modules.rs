@@ -64,6 +64,7 @@ pub(in crate::surface) fn resolve_click_project_with_layouts(
     }
 
     let mut locals = BTreeMap::<String, ClickFile>::new();
+    let mut model_modules = BTreeMap::<String, parser::ObjectModels>::new();
     let mut entry_combined = None;
     for identity in &order {
         let module = modules[identity];
@@ -161,7 +162,11 @@ pub(in crate::surface) fn resolve_click_project_with_layouts(
         let catalog = library_contracts
             .as_deref()
             .filter(|_| identity == project.entry());
-        let mut local = parser::parse_file_items_for_module(
+        let mut imported_models = parser::ObjectModels::default();
+        for models in imported_ids.iter().filter_map(|id| model_modules.get(id)) {
+            imported_models.import(models);
+        }
+        let (mut local, models) = parser::parse_file_items_for_module(
             module.source(),
             identity,
             module.line_offset(),
@@ -175,6 +180,7 @@ pub(in crate::surface) fn resolve_click_project_with_layouts(
             &imported_integer_parameters,
             layouts.clone(),
             catalog,
+            &imported_models,
         )?;
         if local.imports().len() != module.imports().len() {
             return Err(ClickError::new(format!(
@@ -185,6 +191,7 @@ pub(in crate::surface) fn resolve_click_project_with_layouts(
         }
         assign_local_owners(&mut local, identity)?;
         locals.insert(identity.clone(), local);
+        model_modules.insert(identity.clone(), models);
 
         // Validate now, before an importer can contribute names. This is the
         // capture boundary: a module can use its own declarations, its import
