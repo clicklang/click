@@ -1,5 +1,5 @@
 apply_bare_statement_step
-apply_both_source
+apply_all_source
 apply_close_invariants_body
 apply_execution_statement_step
 apply_execution_steps_within
@@ -34,6 +34,7 @@ prepare_loop_invariant_bundle
 prove_cases_disjunction
 prove_obligations_by_solve_or_name_the_first_missed
 run_addressed_linear_script
+run_conjunct_proofs
 run_case_arms
 run_pure_match_group
 spell_applied_conclusions

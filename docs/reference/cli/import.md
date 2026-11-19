@@ -626,6 +626,16 @@ keep their original backing allocation and do not grant access to it. Moves,
 prvalue arguments, user-defined copy bodies, and nontrivial destruction remain
 refused. Artifact schema 57 requires refreshing older locks.
 
+For a direct nonthrowing statement call or a direct call supplying a scalar
+initializer or return, an opaque trivial copy constructor can initialize the
+by-value parameter through its Click contract. The constructor's destination
+and the callee's parameter are the same private object. The call can select the
+constructor's produced resource using its parameter's address, with no raw
+field reads or new authority over backing memory. Logical resources keyed by
+the parameter's address must be discharged by the end of the full expression,
+such as through a callee's `consumes` clause. Click then retires the parameter's
+storage. Refresh an existing import lock to retain this constructor call.
+
 Contracts cannot observe a modified private parameter object as though it were
 the caller's original object. Entry-state pointer values can still name
 backing effects: `load_int32(old(value.data))` reads current memory through the

@@ -3445,6 +3445,9 @@ fn execute_verified_function_applications_with_suspension(
                 mutex_storage_effects.push(range);
             }
         }
+        // A protocol summary retains the storage coordinates from the
+        // selected authority. Until those coordinates have a checked
+        // caller-side spelling, keep the conservative guard for this effect.
         if let Some(diagnostic) = mutex_storage_effects.iter().find_map(|range| {
             transfer
                 .stable_view_plan
@@ -3457,11 +3460,13 @@ fn execute_verified_function_applications_with_suspension(
                     )
                 })
                 .or_else(|| {
-                    entry_state.stable_loan_memory_access_refusal(
-                        range,
-                        &effective_assumptions,
-                        LoanRefusalOperation::MemoryAccess,
-                    )
+                    entry_state.loan_ledger().and_then(|ledger| {
+                        ledger.memory_access_refusal(
+                            range,
+                            &effective_assumptions,
+                            LoanRefusalOperation::MemoryAccess,
+                        )
+                    })
                 })
         }) {
             paths.push(FunctionPath::new(
@@ -3686,7 +3691,8 @@ fn execute_verified_function_applications_with_suspension(
                             .into_certified(),
                         );
                     }
-                    post_state.set_memory_directly(successor.memory.clone());
+                    // The helper's successor made this memory: stand where it stands.
+                    post_state.keep_memory_of(&successor);
                     post_state.mutex_ledger = successor.mutex_ledger.clone();
                     post_state.opaque_mutex_acquisitions =
                         successor.opaque_mutex_acquisitions.clone();
@@ -5354,7 +5360,8 @@ fn exceptional_direct_function_path(
             }
         };
     let mut throw_state = caller_state.clone();
-    throw_state.set_memory(memory);
+    // The thrown memory is the post state's: continue its path.
+    throw_state.set_memory_of(&post_state);
     refresh_call_written_locals(
         &mut throw_state,
         &transfer.memory_effects,
@@ -5750,7 +5757,7 @@ fn prepare_verified_function_call<'a>(
                         .is_some_and(KernelTerm::is_shared_machine_operand)
             });
     crate::instrumentation::record_deterministic_work(parameters.len());
-    let (argument_values, argument_obligations) = if retains_words {
+    let (argument_values, mut argument_obligations) = if retains_words {
         (
             VerifiedCallArguments::BoundWords,
             arguments_path.obligations.clone(),
@@ -5773,6 +5780,7 @@ fn prepare_verified_function_call<'a>(
         &argument_values,
         application.storage,
         &arguments_path.values,
+        &mut argument_obligations,
     ) else {
         return Ok(Err(FunctionPath::new(
             FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(
@@ -11609,14 +11617,23 @@ fn with_private_aggregate_parameter_owners(
     interface: &FunctionContractInterface,
 ) -> ResourceContext {
     // Only the selected parameters, never the caller's unrelated frame.
-    // Argument binding has already allocated each slot independently.
+    // Prepared C++ arguments already belong to the full expression.
+    // Their original owner remains in the caller's transfer frame unless
+    // explicitly selected by the resource interface.
     for parameter in interface.parameters() {
         crate::instrumentation::record_deterministic_work(1);
         if let Some(layout) = parameter.aggregate_layout()
-            && let Some(slot) = callee.locals.slot(parameter.binding_name().clone())
+            && let Some(LocalBinding::AggregateObject {
+                slot,
+                proof_input_for,
+                ..
+            }) = callee.locals.binding(parameter.binding_name())
+            && slot.base.prepared_argument_binding().is_none()
         {
-            resources = resources
-                .unchecked_with_fact(private_aggregate_storage_owner(slot.clone(), layout));
+            let owner = private_aggregate_storage_owner(slot.clone(), layout);
+            if proof_input_for.is_none() || resources.exact_count(&owner) == 0 {
+                resources = resources.unchecked_with_fact(owner);
+            }
         }
     }
     resources
@@ -20850,7 +20867,7 @@ fn end_function_body_automatic_lifetimes(
         if slot.base.is_local_block()
             && !(function.return_aggregate_layout().is_some()
                 && matches!(returned, Some(ProgramValue::Pointer(pointer)) if pointer.address().base == slot.base))
-            && !caller.has_block(&slot.base)
+            && (!caller.has_block(&slot.base) || state.locals.is_proof_input_slot(slot))
             && memory.has_block(&slot.base)
         {
             if !selected.insert(slot.base.clone()) {
@@ -20919,7 +20936,11 @@ pub(in crate::kernel) fn function_exit_memory(
     match value.pointer() {
         Some(pointer)
             if pointer.address().base.is_local_block()
-                && !caller_state.memory.has_block(&pointer.address().base) =>
+                && (!caller_state.memory.has_block(&pointer.address().base)
+                    || callee_state.locals.is_proof_input_slot(&Address {
+                        base: pointer.address().base.clone(),
+                        offset: AddressOffset::Constant(0),
+                    })) =>
         {
             let block = &pointer.address().base;
             if let Some(error) = callee_state.automatic_storage_loan_refusal(block) {

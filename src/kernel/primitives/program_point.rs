@@ -103,11 +103,11 @@ struct PointNode {
     predecessors: Box<[PathLink]>,
     /// For a branch join, the point where its arms split.
     split: Option<PathLink>,
-    /// The direct 32-bit integer write at this point, if there was one.
-    local_word32_write: Option<AddressBase>,
-    /// Older direct 32-bit integer writes to independent locals. The predecessor chain
+    /// The direct integer write at this point, if there was one.
+    local_integer_write: Option<AddressBase>,
+    /// Older direct integer writes to independent locals. The predecessor chain
     /// owns these points, so the index need not retain another history.
-    local_word32_versions: PersistentMap<AddressBase, Weak<PointNode>>,
+    local_integer_versions: PersistentMap<AddressBase, Weak<PointNode>>,
 }
 
 impl Drop for PointNode {
@@ -181,16 +181,16 @@ impl PathLink {
             .into_iter()
             .filter(|point| point.0.is_some())
             .collect::<Box<[_]>>();
-        let (local_word32_versions, local_word32_write) =
-            local_word32_versions(&predecessors, steps.as_deref());
+        let (local_integer_versions, local_integer_write) =
+            local_integer_versions(&predecessors, steps.as_deref());
         Self(Some(Arc::new(PointNode {
             id: ProgramPointId::fresh(),
             memory,
             steps,
             predecessors,
             split: split.filter(|point| point.0.is_some()),
-            local_word32_write,
-            local_word32_versions,
+            local_integer_write,
+            local_integer_versions,
         })))
     }
 
@@ -242,7 +242,7 @@ fn indexed_local(block: &AddressBase) -> bool {
 
 /// Classify just the newly produced transition. Until batches, joins and
 /// other effects have indexed rules, they end this stretch of known versions.
-fn local_word32_versions(
+fn local_integer_versions(
     predecessors: &[PathLink],
     steps: Option<&StepLog>,
 ) -> (
@@ -253,8 +253,8 @@ fn local_word32_versions(
         return Default::default();
     };
     let continued = || {
-        let mut versions = before.local_word32_versions.clone();
-        if let Some(written) = &before.local_word32_write {
+        let mut versions = before.local_integer_versions.clone();
+        if let Some(written) = &before.local_integer_write {
             versions.insert(written.clone(), Arc::downgrade(before));
         }
         (versions, None)
@@ -263,13 +263,11 @@ fn local_word32_versions(
         return Default::default();
     }
     match step.step.as_ref() {
-        MemoryDerivation::Store { pointer, value, .. } if indexed_local(&pointer.base) => {
+        MemoryDerivation::Store { pointer, .. } if indexed_local(&pointer.base) => {
             let (mut versions, _) = continued();
             let written = if matches!(pointer.offset, AddressOffset::Constant(0))
-                && matches!(
-                    value.native(),
-                    ProgramValue::Int32(_) | ProgramValue::UInt32(_)
-                ) {
+                && integer_store_bits(step).is_some()
+            {
                 Some(pointer.base.clone())
             } else {
                 versions.remove(&pointer.base);
@@ -284,11 +282,12 @@ fn local_word32_versions(
     }
 }
 
-fn word32_store_bits(step: &StepLog) -> Option<(LoadKind, &MachineTerm)> {
+fn integer_store_bits(step: &StepLog) -> Option<(LoadKind, &MachineTerm)> {
     let MemoryDerivation::Store { value, .. } = step.step.as_ref() else {
         return None;
     };
     match value.native() {
+        ProgramValue::UInt8(bits) => Some((LoadKind::UInt8, bits)),
         ProgramValue::Int32(bits) => Some((LoadKind::Int32, bits)),
         ProgramValue::UInt32(bits) => Some((LoadKind::UInt32, bits)),
         _ => None,
@@ -324,7 +323,7 @@ impl Ord for PathLink {
 /// back to which the recorded steps show the cell unchanged, and holds that
 /// point.
 ///
-/// Indexed local 32-bit integer reads include their version point in the term key.
+/// Indexed local integer reads include their version point in the term key.
 /// Other callers still use the interned memory as their key.
 #[derive(Clone)]
 pub struct ProgramPoint {
@@ -481,18 +480,18 @@ impl ProgramPoint {
         if self.key_by_path { self.id() } else { None }
     }
 
-    pub(crate) fn supports_indexed_local_word32_version(pointer: &Address) -> bool {
+    pub(crate) fn supports_indexed_local_integer_version(pointer: &Address) -> bool {
         matches!(pointer.offset, AddressOffset::Constant(0)) && indexed_local(&pointer.base)
     }
 
-    /// A direct 32-bit integer cell's version, if this path has a recorded direct write
+    /// A direct integer cell's version, if this path has a recorded direct write
     /// and the transitions after it preserve the object by construction.
-    pub(crate) fn indexed_local_word32_version(
+    pub(crate) fn indexed_local_integer_version(
         &self,
         pointer: &Address,
         kind: LoadKind,
     ) -> Option<Self> {
-        if !Self::supports_indexed_local_word32_version(pointer) {
+        if !Self::supports_indexed_local_integer_version(pointer) {
             return None;
         }
         let node = self.path.0.as_ref()?;
@@ -500,12 +499,12 @@ impl ProgramPoint {
             // A substituted view has not replayed the stores on this path.
             return None;
         }
-        let version = if node.local_word32_write.as_ref() == Some(&pointer.base) {
+        let version = if node.local_integer_write.as_ref() == Some(&pointer.base) {
             node.clone()
         } else {
-            node.local_word32_versions.get(&pointer.base)?.upgrade()?
+            node.local_integer_versions.get(&pointer.base)?.upgrade()?
         };
-        let (store_kind, _) = word32_store_bits(version.steps.as_deref()?)?;
+        let (store_kind, _) = integer_store_bits(version.steps.as_deref()?)?;
         if store_kind != kind {
             return None;
         }
@@ -519,9 +518,9 @@ impl ProgramPoint {
     /// The recorded value of this indexed read's defining store. The
     /// equation comes from the authored step, even if its view shares
     /// storage with another point.
-    pub(crate) fn indexed_word32_store_bits(&self) -> Option<&MachineTerm> {
+    pub(crate) fn indexed_integer_store_bits(&self) -> Option<&MachineTerm> {
         self.read_version_id()?;
-        word32_store_bits(self.path.steps()?).map(|(_, bits)| bits)
+        integer_store_bits(self.path.steps()?).map(|(_, bits)| bits)
     }
 
     /// The identities of the points this one was reached from.

@@ -1458,7 +1458,7 @@ pub(super) enum PostExecutionTactic {
     /// `ProofStep::from_leaf_tactic` gives it, exactly as in every other
     /// context that admits it.
     Leaf(ProofTactic),
-    Both(ProofBoth),
+    Both(ProofTactic),
     /// `fold(resource) by { ... }` or with `requires` entries: the fold and
     /// the proofs of the body facts its fast path leaves open.
     FoldProved(ProofTactic),
@@ -1843,7 +1843,7 @@ pub(super) fn post_execution_tactic_timing(
     post_tactic: &PostExecutionTactic,
 ) -> (&'static str, &'static str) {
     match post_tactic {
-        PostExecutionTactic::Both(_) => ("both", "control"),
+        PostExecutionTactic::Both(_) => ("all", "control"),
         PostExecutionTactic::Apply(_) => ("apply", "smart"),
         PostExecutionTactic::Have(have) => (
             "have",

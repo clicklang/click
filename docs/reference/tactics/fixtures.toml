@@ -8,9 +8,9 @@ path = "mdtests/proof_match_resource.md"
 needle = "match c.model {"
 
 [[form]]
-id = "both"
+id = "all"
 path = "mdtests/proof_both_and.md"
-needle = "left => { normalize(); }"
+needle = "x <= x => { normalize(); }"
 
 [[form]]
 id = "mark"

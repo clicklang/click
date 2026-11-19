@@ -229,8 +229,7 @@ pub(crate) fn contract_resource_condition_cases(
         if definition.parameters().len() != resource_arguments.len() {
             return None;
         }
-        let mut condition_state = ExecutionState::new()
-            .with_memory(entry_state.memory().clone())
+        let mut condition_state = ExecutionState::at_state(&entry_state)
             .with_resource_context(required_resources.clone());
         for (parameter, value) in definition
             .parameters()

@@ -665,6 +665,7 @@ fn is_tactic_name(name: &str) -> bool {
 /// The refusal of a removed tactic spelling, naming what replaced it.
 fn removed_tactic_refusal(name: &str) -> Option<&'static str> {
     Some(match name {
+        "both" => "`both` is retired: write `all { P => { ... } Q => { ... } }`",
         "assumption" => {
             "`assumption()` is now `known()`; use `known()` to close a goal from available facts"
         }
@@ -10207,7 +10208,11 @@ impl Parser {
         let name = self.expect_ident("tactic")?;
         match name.as_str() {
             "let" => self.parse_let_proof_tactic(),
-            "both" => self.parse_both_proof_tactic(),
+            "all" if self.peek_ident() == Some("positional") => {
+                self.position += 1;
+                self.parse_both_proof_tactic()
+            }
+            "all" => self.parse_all_proof_tactic(),
             "if" => self.parse_if_proof_tactic(),
             _ => self.parse_other_proof_tactic(name),
         }
@@ -10601,6 +10606,30 @@ impl Parser {
     }
 
     #[inline(never)]
+    fn parse_all_proof_tactic(&mut self) -> Result<ProofTactic, ClickError> {
+        self.expect(Token::LBrace)?;
+        let mut arms = Vec::new();
+        while self.peek() != Some(&Token::RBrace) {
+            let proposition = self.parse_proposition()?;
+            self.expect(Token::FatArrow)?;
+            let tactics = self.parse_possibly_empty_tactic_block()?;
+            arms.push(ProofAllArm {
+                proposition,
+                tactics,
+            });
+            if self.peek() == Some(&Token::Comma) {
+                self.position += 1;
+            }
+        }
+        self.expect(Token::RBrace)?;
+        if arms.len() < 2 {
+            return Err(self.error("`all` needs at least two conjunct proofs"));
+        }
+        self.skip_redundant_semicolon();
+        Ok(ProofTactic::All(ProofAll { arms }))
+    }
+
+    #[inline(never)]
     fn parse_both_proof_tactic(&mut self) -> Result<ProofTactic, ClickError> {
         // The first-written blocks that hold only a nested `both`,
         // outermost first. Keep this descent iterative for deep proofs.
@@ -10617,18 +10646,22 @@ impl Parser {
             first_is_left = match self.peek_ident() {
                 Some("left") => true,
                 Some("right") => false,
-                _ => return Err(self.error("`both` expects a `left` or `right` arm")),
+                _ => return Err(self.error("`all positional` expects a `left` or `right` arm")),
             };
             self.position += 1;
             self.expect(Token::FatArrow)?;
             self.expect(Token::LBrace)?;
-            if self.peek_ident() == Some("both") {
+            if self.peek_ident() == Some("all")
+                && self.tokens.get(self.position + 1).is_some_and(
+                    |token| matches!(token, Token::Ident(name) if name == "positional"),
+                )
+            {
                 nested_blocks.push((
                     first_is_left,
                     self.positions[self.position - 1].clone(),
                     self.positions[self.position].clone(),
                 ));
-                self.position += 1;
+                self.position += 2;
             } else {
                 break self.parse_tactics_until_rbrace()?;
             }
@@ -17834,15 +17867,15 @@ fn validate_parenthesis_nesting(
                 let proof = pending_proof_blocks != 0 || parent_is_proof;
                 pending_proof_blocks = pending_proof_blocks.saturating_sub(1);
                 let preceding = index.checked_sub(1).and_then(|i| tokens.get(i));
-                // The outer `both` braces group the labeled arms. Only
-                // the arm bodies add proof nesting.
-                let both_container = matches!(preceding, Some(Token::Ident(name)) if name == "both")
-                    && matches!(tokens.get(index + 1..index + 4),
-                        Some([Token::Ident(label), Token::FatArrow, Token::LBrace]) if label == "left");
+                // An `all` container groups its arms. Only their
+                // bodies contribute to proof nesting.
+                let all_container = matches!(preceding, Some(Token::Ident(name)) if name == "all")
+                    || matches!(index.checked_sub(2).and_then(|i| tokens.get(i..index)),
+                        Some([Token::Ident(tactic), Token::Ident(mode)]) if tactic == "all" && mode == "positional");
                 // Proof `if` else blocks are read by the iterative spine
                 // parser. They retain a scope, but no recursive parser frame.
                 let recursive_proof = proof
-                    && !both_container
+                    && !all_container
                     && !matches!(preceding, Some(Token::Ident(name)) if name == "else");
                 brace_kinds.push((quantifier, proof, recursive_proof));
                 if quantifier {
@@ -18374,8 +18407,8 @@ mod tactic_classification_tests {
             "cases { x == 1 => { normalize(); } x != 1 => { normalize(); } }",
         ),
         (
-            "both",
-            "both { left => { normalize(); } right => { normalize(); } }",
+            "all",
+            "all { x == 1 => { known(); } x <= 1 => { known(); } }",
         ),
         (
             "branch",

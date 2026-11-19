@@ -1448,6 +1448,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 domain_proofs.push(have(
                     domain.clone(),
                     vec![ProofStep::Both {
+                        conjuncts: [None, None],
                         left_proof: Box::new(ProofCertificate::from_validated_steps(vec![
                             ProofStep::Known,
                         ])),
@@ -1817,7 +1818,7 @@ mod tests {
     #[test]
     #[ignore = "nightly: two composed branches and replay"]
     fn integer_composition_closes_its_focused_conjunction_branch() {
-        let source = "theorem composition(x: Integer) { requires x <= 3; ensures 2 * x <= 6 and 3 * x <= 9 by { both { left => { solve() using { x <= 3; }; } right => { solve() using { x <= 3; }; } } } }";
+        let source = "theorem composition(x: Integer) { requires x <= 3; ensures 2 * x <= 6 and 3 * x <= 9 by { all positional { left => { solve() using { x <= 3; }; } right => { solve() using { x <= 3; }; } } } }";
         let expanded =
             expand_c_claim_source_by_label(source, &[], "composition.ensures_0").unwrap();
         without_implicit_solve(|| verify_c_sources(&expanded, &[])).unwrap();

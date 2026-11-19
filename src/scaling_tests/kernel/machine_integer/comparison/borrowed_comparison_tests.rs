@@ -64,6 +64,17 @@ fn conditional_atom_reads_fixed_roots_without_exporting_arithmetic() {
                 })
                 .collect::<Vec<_>>();
             let flag = KernelTerm::variable(KernelType::Bool, Variable(999741));
+            let conditional =
+                |arm| KernelTerm::machine_if_shared(format, [flag.clone(), arm, literal(3)]);
+            let inner = conditional(variable.clone());
+            let shallow = conditional(inner.clone());
+            let nested_arithmetic = conditional(conditional(arithmetic.clone()));
+            let mut deep = inner;
+            for _ in 0..size {
+                deep = conditional(deep);
+            }
+            cases.push((shallow, nested_arithmetic, true));
+            cases.push((deep, conditional(arithmetic.clone()), false));
             let mut compound = flag.clone();
             for index in 0..size {
                 compound = KernelTerm::boolean_if([

@@ -239,6 +239,66 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         done.join_focused_both(&marker, split, ids).map(Some)
     }
 
+    /// Check written conjuncts against the focused goal in order, using the
+    /// usual isolated binary splits and joins. A written label can name an
+    /// entire child goal, so its proof can introduce guards before splitting it.
+    fn run_conjunct_proofs<'source>(
+        &self,
+        arms: &mut std::iter::Enumerate<std::slice::Iter<'source, ProofAllArm>>,
+        next: &mut Option<(usize, &'source ProofAllArm)>,
+        site: &ProofStepSite,
+        mut unfinished: Option<&mut Option<Proof<'a>>>,
+        at_root: bool,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        let proof = self.proof;
+        let Some((index, arm)) = *next else {
+            return Err(proof.step_error("`all` is missing an arm for a conjunct"));
+        };
+        let is_conjunction = matches!(proof.goal(), Some(Proposition::And(..)));
+        let matches_written = proof.surface_goal() == Some(&arm.proposition);
+        if is_conjunction && (at_root || !matches_written) {
+            let (split_proof, split, ids) = proof.split_focused_both()?;
+            let marker = split_proof.conjunction_checkpoint(ids)?;
+            let Some(left) = split_proof
+                .focus_branch(ids[0])?
+                .driver()
+                .run_conjunct_proofs(arms, next, site, unfinished.as_deref_mut(), false)?
+            else {
+                return Ok(None);
+            };
+            let Some(right) = left
+                .restore_induction_scope_from(&split_proof)
+                .focus_branch(ids[1])?
+                .driver()
+                .run_conjunct_proofs(arms, next, site, unfinished, false)?
+            else {
+                return Ok(None);
+            };
+            return right.join_focused_both(&marker, split, ids).map(Some);
+        }
+        if at_root {
+            return Err(proof.step_error("`all` requires a conjunction goal"));
+        }
+        if !matches_written {
+            let label = proof.lower_surface_proposition(&arm.proposition, "`all` arm label")?;
+            if !proof.goal().is_some_and(|goal| {
+                crate::kernel::proof::propositions_are_alpha_equal(&label, goal)
+            }) {
+                return Err(proof.step_error(format!(
+                    "`all` arm {} must name its conjunct in goal order",
+                    index + 1
+                )));
+            }
+        }
+        *next = arms.next();
+        let sites = (0..arm.tactics.len())
+            .map(|position| site.in_arm(index, "conjunct", position))
+            .collect::<Vec<_>>();
+        proof
+            .driver()
+            .run_addressed_linear_script(&arm.tactics, &sites, &mut None, unfinished)
+    }
+
     pub(in crate::surface::proof) fn run_addressed_linear_script(
         &self,
         tactics: &[ProofTactic],
@@ -523,6 +583,28 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                         .note_trace_join_continuation_arm((index + 1 < tactics.len()).then_some(0));
                     return Ok(finish(proof, unfinished));
                 }
+                ProofTactic::All(all) => {
+                    let mut arms = all.arms.iter().enumerate();
+                    let mut next = arms.next();
+                    let Some(done) = proof.driver().run_conjunct_proofs(
+                        &mut arms,
+                        &mut next,
+                        &sites[index],
+                        unfinished.as_deref_mut(),
+                        true,
+                    )?
+                    else {
+                        *declined = Some(LinearScriptDecline::Step(index));
+                        return Ok(None);
+                    };
+                    if let Some((extra, _)) = next {
+                        return Err(proof.step_error(format!(
+                            "`all` arm {} has no corresponding conjunct",
+                            extra + 1
+                        )));
+                    }
+                    proof = done.at_site(&sites[index]);
+                }
                 ProofTactic::Both(both) => {
                     // A `both` arm proves one conjunct and continues nothing.
                     let own_arm_sites = |arm: usize, name: &'static str, written: usize| {
@@ -533,7 +615,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     let left_sites = own_arm_sites(0, "left", both.left_tactics.len());
                     let right_sites = own_arm_sites(1, "right", both.right_tactics.len());
                     let (split_proof, split, ids) = proof.split_focused_both()?;
-                    let marker = split_proof.checkpoint();
+                    let marker = split_proof.conjunction_checkpoint(ids)?;
                     let Some(left_done) = split_proof
                         .focus_branch(ids[0])?
                         .driver()

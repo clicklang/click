@@ -3201,6 +3201,14 @@ impl AddressBase {
         name.starts_with(STATIC_BLOCK_PREFIX)
     }
 
+    /// A frontend-created C++ parameter object, allocated in its caller.
+    pub(crate) fn prepared_argument_binding(&self) -> Option<&LocalBindingId> {
+        match self {
+            Self::AutomaticLocal { binding, .. } if binding.is_prepared_argument() => Some(binding),
+            _ => None,
+        }
+    }
+
     /// Automatic storage: a local, parameter, frame or lifetime object.
     pub(crate) fn is_local_block(&self) -> bool {
         self.starts_with(LOCAL_BLOCK_PREFIX)
@@ -8585,6 +8593,8 @@ pub(super) enum LocalBinding {
         layout: AggregateLayout,
         slot: Address,
         constant: bool,
+        /// Set only on the parameter object materialized for a standalone proof.
+        proof_input_for: Option<std::sync::Arc<str>>,
     },
 }
 
@@ -11213,6 +11223,9 @@ pub(super) struct ResourceContextIndex {
     /// the other instances of the context
     /// (`functions::store_opened_instance_composition`).
     pub(super) owned_instances_by_pointer_argument: PersistentMap<Address, ResourceEntryIds>,
+    /// Logical resource occurrences whose pointer arguments name a C++
+    /// prepared argument object. Its lifetime end queries only this block.
+    pub(super) prepared_argument_resources: PersistentMap<AddressBase, ResourceEntryIds>,
     /// Owned folded composites keyed by each C pointer argument they name,
     /// and by the block of each. A call's kept memory answers a question
     /// about one address from the composites whose arguments can spell it,

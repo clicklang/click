@@ -292,6 +292,7 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "owns",
     "predicate",
     "prop",
+    "positional",
     "preserve",
     "produces",
     "read",
@@ -6035,6 +6036,7 @@ pub enum ProofTactic {
     Match(std::sync::Arc<ProofMatch>),
     Cases(ProofCases),
     Both(ProofBoth),
+    All(ProofAll),
     Branch(ProofBranch),
     CallOutcomes(ProofCallOutcomes),
     Loop(StructuralClause),
@@ -6433,8 +6435,8 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
         class: "control",
     },
     PublicTacticForm {
-        id: "both",
-        syntax: "both",
+        id: "all",
+        syntax: "all {",
         class: "control",
     },
     PublicTacticForm {
@@ -6625,6 +6627,11 @@ impl ProofTactic {
                 .iter()
                 .map(|arm| Continuing(Script(&arm.tactics)))
                 .collect(),
+            Self::All(all) => all
+                .arms
+                .iter()
+                .map(|arm| Continuing(Script(&arm.tactics)))
+                .collect(),
             Self::Both(both) => vec![
                 Continuing(Script(&both.left_tactics)),
                 Continuing(Script(&both.right_tactics)),
@@ -6716,7 +6723,7 @@ impl ProofTactic {
             Self::If(_) => TacticClass::Control(ControlTactic::If),
             Self::Match(_) => TacticClass::Control(ControlTactic::Match),
             Self::Cases(_) => TacticClass::Control(ControlTactic::Cases),
-            Self::Both(_) => TacticClass::Control(ControlTactic::Both),
+            Self::Both(_) | Self::All(_) => TacticClass::Control(ControlTactic::Both),
             Self::Branch(_) => TacticClass::Control(ControlTactic::Branch),
             Self::CallOutcomes(_) => TacticClass::Control(ControlTactic::CallOutcomes),
             Self::Loop(_) => TacticClass::Control(ControlTactic::Loop),
@@ -6837,6 +6844,18 @@ pub struct CertificateInductionArm {
 pub struct ProofBoth {
     pub left_tactics: Vec<ProofTactic>,
     pub right_tactics: Vec<ProofTactic>,
+}
+
+/// Proofs of the conjuncts of the focused goal, in goal order.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProofAll {
+    pub(crate) arms: Vec<ProofAllArm>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ProofAllArm {
+    pub(crate) proposition: ClickProposition,
+    pub(crate) tactics: Vec<ProofTactic>,
 }
 
 /// Explicit elimination of a disjunctive fact: proof checking requires the
@@ -8439,7 +8458,26 @@ pub struct VerifiedProgramTheorem {
     /// The entry the proof that issued this theorem was built from, shared
     /// by every theorem of that proof.
     pub(in crate::surface) entry_context: Option<std::sync::Arc<proof::ProofEntryContext>>,
+    /// The checked function's source layout, which spells the certificate's
+    /// step results when it is rendered after checking.
+    pub(in crate::surface) source_layout: TheoremSourceLayout,
 }
+
+/// The source layout a verified theorem's certificate is spelled by. It is
+/// presentation, not what the theorem states, so it never makes two
+/// theorems unequal.
+#[derive(Clone, Default)]
+pub(in crate::surface) struct TheoremSourceLayout(
+    pub(in crate::surface) Option<lowering::SourceExecutionLayout>,
+);
+
+impl PartialEq for TheoremSourceLayout {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl Eq for TheoremSourceLayout {}
 
 // Retained executions and proof states share large graphs. Formatting a
 // verification result (notably unwrap_err's unexpected-success panic) must
@@ -10242,7 +10280,19 @@ impl VerifiedProgramTheorem {
         })
     }
 
+    /// Spells this theorem's step results by its function's source layout
+    /// while alive, as checking did.
+    pub(in crate::surface) fn step_result_spelling_scope(
+        &self,
+    ) -> Option<diagnostics::StepResultSpellingScope> {
+        self.source_layout
+            .0
+            .as_ref()
+            .map(diagnostics::StepResultSpellingScope::enter)
+    }
+
     pub fn expanded_proof_source(&self) -> Result<String, ClickError> {
+        let _spelling = self.step_result_spelling_scope();
         let _reference_result_source = diagnostics::ReferenceResultSourceScope::enter(
             self.function_block.signature().returns_reference(),
         );
