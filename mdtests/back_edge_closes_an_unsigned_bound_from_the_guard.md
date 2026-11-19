@@ -1,11 +1,10 @@
 # The back edge closes an unsigned bound from the loop guard
 
 After `i = i + 1` under the guard `i < n`, the invariant `i <= n` holds at
-the back edge. For a `uint64` counter the signed arithmetic planner does not
-apply, so the closer cites the loop's named premises, the guard among them,
-in one `normalize() using` for the member. The `preserve` script needs no
-`have i <= n;` restating it; here it is a single `step()`, and the back edge
-closes implicitly.
+the back edge. The guard proves that the increment fits in `uint64`. The
+expanded proof applies `integer::uint64_increment_upper_bound` to the guard
+at the recorded program point. The `preserve` script needs only the `step()`
+that executes the increment.
 
 ```c filename=count.c
 #include <stdint.h>
