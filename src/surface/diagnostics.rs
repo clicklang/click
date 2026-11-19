@@ -41,9 +41,10 @@ pub(in crate::surface) use cpp_model::{CapturedModelAccessors, ModelAccessorScop
 pub(crate) use object_fields::{clear_ambient_object_fields, enter_ambient_object_fields};
 use rust_spelling::rust_scalar_spelling;
 pub(crate) use rust_spelling::{
-    LoopPhaseSpelling, enter_rust_spelling, has_surface_chunk_binding, record_pure_function_slices,
-    rust_binding_spelling, rust_spelling, rust_variable_spelling, slice_call_arguments,
-    slice_call_spelling, slice_type_spelling, subslice_of_length, subslice_spelling,
+    LoopPhaseSpelling, enter_rust_spelling, has_surface_iterator_binding,
+    record_pure_function_slices, rust_binding_spelling, rust_spelling, rust_variable_spelling,
+    slice_call_arguments, slice_call_spelling, slice_type_spelling, subslice_of_length,
+    subslice_spelling,
 };
 
 const MAX_DIAGNOSTIC_ITEMS: usize = 12;
@@ -1416,7 +1417,7 @@ fn local_naming_entries(
             !name
                 .local_id()
                 .is_some_and(crate::kernel::LocalBindingId::is_temporary)
-                && has_surface_chunk_binding(name)
+                && has_surface_iterator_binding(name)
                 && !name.named().is_some_and(|name| name.starts_with("__rust_"))
         })
         .filter_map(|(name, value)| {

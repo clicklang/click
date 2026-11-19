@@ -87,7 +87,7 @@ enum LocalBindingKind {
     SliceIteratorPointer,
     SliceIteratorLength,
     ChunkIterator(ChunkIteratorField),
-    ChunkOption(ChunkOptionField),
+    IteratorOption(IteratorOptionField),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -100,10 +100,11 @@ enum ChunkIteratorField {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-enum ChunkOptionField {
+enum IteratorOptionField {
     Tag,
     Pointer,
     Length,
+    Index,
 }
 
 #[derive(Debug)]
@@ -197,23 +198,43 @@ impl LocalBindingId {
             (Size, ProgramType::UInt64),
         ]
         .map(|(field, ty)| {
-            Self::chunk_field(&owner, ordinal, LocalBindingKind::ChunkIterator(field), ty)
+            Self::iterator_field(&owner, ordinal, LocalBindingKind::ChunkIterator(field), ty)
         })
     }
 
-    pub(crate) fn chunk_option_fields(owner: &LocalFunctionId, ordinal: u32) -> [Self; 3] {
-        use ChunkOptionField::*;
+    pub(crate) fn iterator_option_fields(
+        owner: &LocalFunctionId,
+        ordinal: u32,
+        pointer_type: ProgramType,
+    ) -> [Self; 2] {
         [
-            (Tag, ProgramType::Int32),
-            (Pointer, ProgramType::UInt8Pointer),
-            (Length, ProgramType::UInt64),
+            (IteratorOptionField::Tag, ProgramType::Int32),
+            (IteratorOptionField::Pointer, pointer_type),
         ]
         .map(|(field, ty)| {
-            Self::chunk_field(owner, ordinal, LocalBindingKind::ChunkOption(field), ty)
+            Self::iterator_field(owner, ordinal, LocalBindingKind::IteratorOption(field), ty)
         })
     }
 
-    fn chunk_field(
+    pub(crate) fn iterator_option_length(owner: &LocalFunctionId, ordinal: u32) -> Self {
+        Self::iterator_field(
+            owner,
+            ordinal,
+            LocalBindingKind::IteratorOption(IteratorOptionField::Length),
+            ProgramType::UInt64,
+        )
+    }
+
+    pub(crate) fn iterator_option_index(owner: &LocalFunctionId, ordinal: u32) -> Self {
+        Self::iterator_field(
+            owner,
+            ordinal,
+            LocalBindingKind::IteratorOption(IteratorOptionField::Index),
+            ProgramType::UInt64,
+        )
+    }
+
+    fn iterator_field(
         owner: &LocalFunctionId,
         ordinal: u32,
         kind: LocalBindingKind,
@@ -266,11 +287,12 @@ impl LocalBindingId {
         )
     }
 
-    pub(crate) fn is_chunk_storage_field(&self) -> bool {
-        matches!(
-            self.0.kind,
-            LocalBindingKind::ChunkIterator(_) | LocalBindingKind::ChunkOption(_)
-        )
+    pub(crate) fn is_chunk_iterator_field(&self) -> bool {
+        matches!(self.0.kind, LocalBindingKind::ChunkIterator(_))
+    }
+
+    pub(crate) fn is_iterator_option_field(&self) -> bool {
+        matches!(self.0.kind, LocalBindingKind::IteratorOption(_))
     }
 
     pub fn is_temporary(&self) -> bool {
@@ -386,7 +408,7 @@ impl Hash for LocalBindingId {
             LocalBindingKind::ChunkIterator(field) => {
                 (&self.0.owner, 9u8, self.0.ordinal, field).hash(state)
             }
-            LocalBindingKind::ChunkOption(field) => {
+            LocalBindingKind::IteratorOption(field) => {
                 (&self.0.owner, 10u8, self.0.ordinal, field).hash(state)
             }
         }
@@ -455,15 +477,16 @@ impl std::fmt::Display for CanonicalLocalBinding<'_> {
                 id.ordinal()
             );
         }
-        if let LocalBindingKind::ChunkOption(field) = id.0.kind {
+        if let LocalBindingKind::IteratorOption(field) = id.0.kind {
             let field = match field {
-                ChunkOptionField::Tag => "tag",
-                ChunkOptionField::Pointer => "pointer",
-                ChunkOptionField::Length => "length",
+                IteratorOptionField::Tag => "tag",
+                IteratorOptionField::Pointer => "pointer",
+                IteratorOptionField::Length => "length",
+                IteratorOptionField::Index => "index",
             };
             return write!(
                 f,
-                "<chunk option {field} of {:?}::{}.local({})>",
+                "<iterator option {field} of {:?}::{}.local({})>",
                 id.source(),
                 id.function(),
                 id.ordinal()
