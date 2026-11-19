@@ -3305,6 +3305,73 @@ pub(super) fn integer_typed_expression(value: ContractExpression) -> ContractExp
     ContractExpression::IntegerContext(Box::new(value))
 }
 
+/// Spell compound word comparisons as Integer observations in an arm label.
+/// Written arithmetic can otherwise be elaborated as mathematical arithmetic
+/// before the comparison sees its native operand type.
+pub(super) fn spell_conjunct_observations(goal: &Proposition, surface: &mut ClickProposition) {
+    match (goal, surface) {
+        (Proposition::And(a, b), ClickProposition::And(left, right))
+        | (Proposition::Or(a, b), ClickProposition::Or(left, right))
+        | (Proposition::Implies(a, b), ClickProposition::Implies(left, right)) => {
+            spell_conjunct_observations(a, left);
+            spell_conjunct_observations(b, right);
+        }
+        (Proposition::Not(body), ClickProposition::Not(surface_body))
+        | (
+            Proposition::ForAll { body, .. },
+            ClickProposition::ForAll {
+                body: surface_body, ..
+            },
+        )
+        | (
+            Proposition::Exists { body, .. },
+            ClickProposition::Exists {
+                body: surface_body, ..
+            },
+        ) => {
+            spell_conjunct_observations(body, surface_body);
+        }
+        (goal @ Proposition::ConditionIs(..), ClickProposition::Not(surface_body)) => {
+            spell_conjunct_observations(goal, surface_body);
+        }
+        (goal, ClickProposition::Comparison { left, right, .. }) => {
+            if let Some((
+                ConditionTerm::Compare {
+                    format,
+                    left: a,
+                    right: b,
+                    ..
+                },
+                _,
+            )) = goal.condition_native()
+                && matches!(
+                    format,
+                    MachineIntegerType::Int32 | MachineIntegerType::Int64
+                )
+                && [a.as_ref(), b.as_ref()].iter().any(|operand| {
+                    matches!(
+                        operand,
+                        MachineTerm::Binary {
+                            op: MachineBinaryOp::Add
+                                | MachineBinaryOp::Subtract
+                                | MachineBinaryOp::Multiply,
+                            ..
+                        }
+                    )
+                })
+            {
+                for expression in [left, right] {
+                    *expression = ContractExpression::Call {
+                        name: "to_integer".into(),
+                        arguments: vec![expression.clone()],
+                    };
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
 /// An Integer arithmetic term over machine observations, spelled with
 /// `to_integer` around each observation and named truncating operations.
 /// Opaque specification applications retain their source boundary.

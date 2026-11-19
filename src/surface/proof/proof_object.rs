@@ -3241,6 +3241,18 @@ impl<'a> Proof<'a> {
             .map(|_| candidate)
     }
 
+    pub(in crate::surface::proof) fn conjunct_goal_spelling(
+        &self,
+        goal: &Proposition,
+    ) -> Option<ClickProposition> {
+        let mut candidate = self.structural_proposition_candidate(goal)?;
+        super::surface_synthesis::spell_conjunct_observations(goal, &mut candidate);
+        self.lower_conjunct_label(&candidate)
+            .ok()
+            .filter(|lowered| crate::kernel::proof::propositions_are_alpha_equal(lowered, goal))
+            .map(|_| candidate)
+    }
+
     fn refinement_outcome(&self) -> Option<Arc<OutcomeProofData>> {
         match self.focused_obligation() {
             Some(Obligation::Proposition(goal)) => goal.outcome.clone(),
@@ -3528,6 +3540,7 @@ impl<'a> Proof<'a> {
     pub(super) fn checkpoint(&self) -> ProofCheckpoint<'a> {
         ProofCheckpoint {
             conjuncts: [None, None],
+            unspelled_conjuncts: None,
             context: self.context.clone(),
             node: self.node.clone(),
         }

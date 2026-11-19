@@ -62,11 +62,18 @@ theorem increment_is_positive_step() {
         have input <= 1000 by {
             solve() using { input <= 100; };
         }
-        all positional {
-            left => {
-                known();
-            }
-            right => {
+        all {
+            -100 <= to_integer(input) => { known(); }
+            input <= 1000 => { known(); }
+            (
+                (to_integer(input) + 1 <= 2147483647 and
+                 to_integer(input) + 1 >= -2147483648 and
+                 to_integer(result) == to_integer(input + 1) and input < result)
+                implies
+                (to_integer(input) + 1 <= 2147483647 and
+                 to_integer(input) + 1 >= -2147483648 and
+                 to_integer(result) == to_integer(input + 1) and 0 < result)
+            ) => {
                 intro();
                 have 0 < result by {
                     solve() using { 0 <= input; input < result; };

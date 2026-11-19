@@ -71,9 +71,9 @@ theorem zlib_block_lane(bytes: uint8[], total: uint64, remaining: uint64, lane: 
    to_integer(total - remaining) <= 5535;
    to_integer(lane) <= 15;
   };
-  all positional {
-   left => { known(); }
-   right => { solve() using { to_integer(zlib_prefix_count(total, remaining) + lane) <= 5550; }; }
+  all {
+      0 <= to_integer((zlib_prefix_count(total, remaining) + lane)) => { known(); }
+      to_integer((zlib_prefix_count(total, remaining) + lane)) < 5552 => { solve() using { to_integer(zlib_prefix_count(total, remaining) + lane) <= 5550; }; }
   }
  }
  ensures (bytes + (total - remaining))[lane] == bytes[zlib_prefix_count(total, remaining) + lane] by {

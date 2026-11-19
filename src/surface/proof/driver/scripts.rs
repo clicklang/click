@@ -256,9 +256,21 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         };
         let is_conjunction = matches!(proof.goal(), Some(Proposition::And(..)));
         let matches_written = proof.surface_goal() == Some(&arm.proposition);
-        if is_conjunction && (at_root || !matches_written) {
+        let matches_group = !at_root
+            && is_conjunction
+            && matches!(arm.proposition, ClickProposition::And(..))
+            && proof
+                .lower_conjunct_label(&arm.proposition)
+                .is_ok_and(|label| {
+                    proof.goal().is_some_and(|goal| {
+                        crate::kernel::proof::propositions_are_alpha_equal(&label, goal)
+                    })
+                });
+        if is_conjunction && (at_root || !(matches_written || matches_group)) {
+            let end_index = index + arms.len() + 1;
             let (split_proof, split, ids) = proof.split_focused_both()?;
-            let marker = split_proof.conjunction_checkpoint(ids)?;
+            let mut marker = split_proof.checkpoint();
+            let left_arm = *next;
             let Some(left) = split_proof
                 .focus_branch(ids[0])?
                 .driver()
@@ -266,6 +278,8 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             else {
                 return Ok(None);
             };
+            marker.retain_written_conjunct(0, left_arm, *next, end_index);
+            let right_arm = *next;
             let Some(right) = left
                 .restore_induction_scope_from(&split_proof)
                 .focus_branch(ids[1])?
@@ -274,13 +288,14 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             else {
                 return Ok(None);
             };
+            marker.retain_written_conjunct(1, right_arm, *next, end_index);
             return right.join_focused_both(&marker, split, ids).map(Some);
         }
         if at_root {
             return Err(proof.step_error("`all` requires a conjunction goal"));
         }
-        if !matches_written {
-            let label = proof.lower_surface_proposition(&arm.proposition, "`all` arm label")?;
+        if !(matches_written || matches_group) {
+            let label = proof.lower_conjunct_label(&arm.proposition)?;
             if !proof.goal().is_some_and(|goal| {
                 crate::kernel::proof::propositions_are_alpha_equal(&label, goal)
             }) {

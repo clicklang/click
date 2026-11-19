@@ -82,7 +82,7 @@ theorem zlib_batch_empty_components(bytes: uint8[]) {
   unfold(adler_spec_a(bytes, 0, 1));
   unfold(adler_spec_b(bytes, 0, 1, 0));
   rewrite(adler_byte_sum(bytes, 0), 0);
-  rewrite(adler_weighted_sum(bytes, 0, 0), 0); all positional { left => { normalize(); } right => { normalize(); } }
+  rewrite(adler_weighted_sum(bytes, 0, 0), 0); all { (0 : Integer) == 0 => { normalize(); } (0 : Integer) == 0 => { normalize(); } }
  }
 }
 theorem zlib_batch_predecessor(n: uint32) {
@@ -155,9 +155,9 @@ theorem zlib_batch_lane(n: uint32, lane: int32) {
    to_integer(zlib_batch_count(n) + lane) == to_integer(zlib_batch_count(n)) + to_integer(lane);
    to_integer(zlib_batch_count(n)) <= 5536; to_integer(lane) <= 15;
   };
-  all positional {
-   left => { known(); }
-   right => { solve() using { to_integer(zlib_batch_count(n) + lane) <= 5551; }; }
+  all {
+   0 <= to_integer(zlib_batch_count(n) + lane) => { known(); }
+   to_integer(zlib_batch_count(n) + lane) < 5552 => { solve() using { to_integer(zlib_batch_count(n) + lane) <= 5551; }; }
   }
  }
 }

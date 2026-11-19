@@ -3601,7 +3601,7 @@ fn a_parsed_source_index_holds_only_proof_blocks() {
 
 #[test]
 fn trace_source_index_preserves_nested_locations_and_containment() {
-    let source = "// αβ UTF-8\nresource cell(p: int32*) { owns *p; }\nvoid f(int32* p) {\n    owns r: cell(p);\n} by {\n  have true by { open(cell(p)) { known(); } }\n  if true { normalize(); } else { solve(); }\n  cases { true => { step(); } false => { normalize(); } }\n  all positional { left => { normalize(); } right => { solve(); } }\n  outcomes { threw => { step(); } returned => { solve(); } }\n  branch ensuring { fact true; } { true => { step(); } false => { solve(); } }\n  normalize();\n}\n";
+    let source = "// αβ UTF-8\nresource cell(p: int32*) { owns *p; }\nvoid f(int32* p) {\n    owns r: cell(p);\n} by {\n  have true by { open(cell(p)) { known(); } }\n  if true { normalize(); } else { solve(); }\n  cases { true => { step(); } false => { normalize(); } }\n  all { true => { normalize(); } true => { solve(); } }\n  outcomes { threw => { step(); } returned => { solve(); } }\n  branch ensuring { fact true; } { true => { step(); } false => { solve(); } }\n  normalize();\n}\n";
     let index = ProofSourceIndex::new(source).unwrap();
     // A `branch` shares its line only with its own arms' tactics, which are
     // inside it, so the line names it alone.
@@ -4443,12 +4443,12 @@ function tally(end: int32) -> Integer { (0..end).fold(0, |acc, k| { acc + 1 }) }
 theorem fold_case(end: int32) {
     requires end <= 0;
     ensures tally(end) == 0 and 0 <= tally(end) by {
-        all positional {
-            left => {
+        all {
+            tally(end) == 0 => {
                 unfold(tally(end));
                 normalize();
             }
-            right => {
+            0 <= tally(end) => {
                 unfold(tally(end));
                 normalize();
             }

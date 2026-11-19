@@ -1384,6 +1384,9 @@ fn unparseable_expansion_error_for_file(
     parse_error: ClickError,
     file: Option<&ClickFile>,
 ) -> ClickError {
+    if replacement.contains(super::printing::UNRAISED_CONJUNCT) {
+        return ClickError::new("the expansion could not raise a checked `all` arm label");
+    }
     if !UNRAISABLE_POINTER_FORMS
         .iter()
         .any(|form| replacement.contains(form))

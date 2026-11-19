@@ -4,13 +4,32 @@ use super::*;
 
 /// An opaque position in one `Proof` derivation.
 ///
-/// This retains no semantic state. Structured joins use it to extract only the
-/// already-checked descendant steps for an arm.
+/// Structured joins use it to extract the already-checked descendant steps.
+/// A conjunction can also retain its split state to name a grouped arm.
 #[derive(Clone)]
 pub(in crate::surface::proof) struct ProofCheckpoint<'a> {
     pub(super) context: Arc<ProofContext<'a>>,
     pub(super) node: Arc<ProofNode>,
     pub(super) conjuncts: [Option<Arc<ClickProposition>>; 2],
+    pub(super) unspelled_conjuncts: Option<Arc<Proof<'a>>>,
+}
+
+impl ProofCheckpoint<'_> {
+    /// A checked child that used one written arm keeps that arm's label.
+    /// Children split further keep their labels on their own certificates.
+    pub(in crate::surface::proof) fn retain_written_conjunct(
+        &mut self,
+        child: usize,
+        first: Option<(usize, &ProofAllArm)>,
+        next: Option<(usize, &ProofAllArm)>,
+        end_index: usize,
+    ) {
+        if let Some((index, arm)) = first
+            && next.map_or(end_index, |(next_index, _)| next_index) == index + 1
+        {
+            self.conjuncts[child] = Some(Arc::new(arm.proposition.clone()));
+        }
+    }
 }
 
 #[derive(Clone, Copy)]

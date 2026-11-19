@@ -3024,6 +3024,31 @@ pub(super) fn lower_pure_theorem_proposition_recording_introductions(
     memory: &SymbolicMemory,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<(Proposition, crate::kernel::LoweringIntroductions), String> {
+    lower_pure_theorem_proposition_for_proof(
+        theorem_name,
+        proposition,
+        assumptions,
+        contract_environment,
+        algebraic_values,
+        integer_values,
+        memory,
+        spec_definitions,
+        false,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn lower_pure_theorem_proposition_for_proof(
+    theorem_name: &str,
+    proposition: &ClickProposition,
+    assumptions: &PureFactContext,
+    contract_environment: ContractEnvironment<'_>,
+    algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
+    integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
+    memory: &SymbolicMemory,
+    spec_definitions: SpecDefinitions<'_>,
+    is_conjunct_label: bool,
+) -> Result<(Proposition, crate::kernel::LoweringIntroductions), String> {
     let state = ExecutionState::new().with_memory(memory.clone());
     lower_fixed_state_proposition_through_kernel_with_introductions(
         proposition,
@@ -3032,6 +3057,7 @@ pub(super) fn lower_pure_theorem_proposition_recording_introductions(
         FixedStateFrame::new(&state, &state, None, &RecordedStates::new()),
         spec_definitions,
         FixedStateLoweringOptions {
+            is_conjunct_label,
             algebraic_values: Some(algebraic_values),
             integer_values: Some(integer_values),
             obligation_assumptions: Some(assumptions),

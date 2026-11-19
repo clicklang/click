@@ -7,6 +7,9 @@ use super::*;
 
 /// Click source that parses back. Every spelling is chosen by its caller;
 /// no output depends on who else is printing.
+/// Diagnostic spelling for a kernel conjunction without complete Surface labels.
+pub(super) const UNRAISED_CONJUNCT: &str = "<unraised conjunct>";
+
 pub(in crate::surface) fn source_click_proposition(proposition: &ClickProposition) -> String {
     print_proposition(proposition, PropositionSpelling::Source)
 }
@@ -930,17 +933,7 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
             }
             line(output, &prefix, "}");
         }
-        ProofTactic::Both(both) => {
-            let arm_prefix = "    ".repeat(indent + 1);
-            line(output, &prefix, "all positional {");
-            line(output, &arm_prefix, "left => {");
-            write_tactics(output, &both.left_tactics, indent + 2);
-            line(output, &arm_prefix, "}");
-            line(output, &arm_prefix, "right => {");
-            write_tactics(output, &both.right_tactics, indent + 2);
-            line(output, &arm_prefix, "}");
-            line(output, &prefix, "}");
-        }
+        ProofTactic::Both(_) => line(output, &prefix, UNRAISED_CONJUNCT),
         ProofTactic::Cases(proof_cases) => {
             line(output, &prefix, "cases {");
             let arm_prefix = "    ".repeat(indent + 1);

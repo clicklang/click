@@ -500,19 +500,22 @@ impl<'a> Proof<'a> {
         let mut marker = self.checkpoint();
         for (slot, id) in marker.conjuncts.iter_mut().zip(ids) {
             let focused = self.focus_branch(id)?;
-            *slot = focused.proposition_obligation().and_then(|goal| {
-                // Lowering can create a conjunct without a written child
-                // clause. Raise its kernel term directly from the branch's
-                // source names. A conjunction is split into leaves by its
-                // certificate, so raising it here would rewalk its subtree.
-                goal.presentation.surface.clone().or_else(|| {
-                    let kernel = focused.goal()?;
-                    if matches!(kernel, Proposition::And(..)) {
-                        return None;
-                    }
-                    focused.structural_goal_spelling(kernel).map(Arc::new)
-                })
-            });
+            *slot = focused
+                .proposition_obligation()
+                .and_then(|goal| goal.presentation.surface.clone());
+            if slot.is_none()
+                && let Some(kernel) = focused.goal()
+            {
+                if matches!(kernel, Proposition::And(..)) {
+                    // Raise this subtree only if its certificate keeps the
+                    // whole child as one arm. Flat certificates name leaves.
+                    marker
+                        .unspelled_conjuncts
+                        .get_or_insert_with(|| Arc::new(self.clone()));
+                } else {
+                    *slot = focused.conjunct_goal_spelling(kernel).map(Arc::new);
+                }
+            }
         }
         Ok(marker)
     }
@@ -523,10 +526,24 @@ impl<'a> Proof<'a> {
         split: SplitId,
         ids: [BranchId; 2],
     ) -> Result<Self, ClickError> {
-        self.join_focused_branch(marker, split, ids, |left, right| ProofStep::Both {
-            conjuncts: marker.conjuncts.clone(),
-            left_proof: Box::new(left),
-            right_proof: Box::new(right),
+        self.join_focused_branch(marker, split, ids, |left, right| {
+            let mut conjuncts = marker.conjuncts.clone();
+            if let Some(origin) = &marker.unspelled_conjuncts {
+                for ((label, proof), id) in conjuncts.iter_mut().zip([&left, &right]).zip(ids) {
+                    if label.is_none()
+                        && !matches!(proof.steps(), [ProofStep::Both { .. }])
+                        && let Ok(focused) = origin.focus_branch(id)
+                        && let Some(goal @ Proposition::And(..)) = focused.goal()
+                    {
+                        *label = focused.conjunct_goal_spelling(goal).map(Arc::new);
+                    }
+                }
+            }
+            ProofStep::Both {
+                conjuncts,
+                left_proof: Box::new(left),
+                right_proof: Box::new(right),
+            }
         })
     }
 

@@ -42,23 +42,28 @@ theorem increment_is_guarded_progress() {
     ensures GuardedProgress(&increment) by {
         unfold(GuardedProgress(&increment));
         intro();
-        all positional {
-            left => {
+        all {
+            old(cell[0]) < 1000 => {
                 solve() using {
                     old(cell[0]) < 100;
                 };
             }
-            right => {
+            (
+                to_integer(old(cell[0])) + 1 <= 2147483647 and
+                to_integer(old(cell[0])) + 1 >= -2147483648 and
+                to_integer(cell[0]) == to_integer(old(cell[0]) + 1)
+                implies (old(cell[0]) < 0 implies cell[0] == old(cell[0])) and old(cell[0]) < cell[0]
+            ) => {
                 intro();
-                all positional {
-                    left => {
+                all {
+                    (old(cell[0]) < 0 implies cell[0] == old(cell[0])) => {
                         have not (old(cell[0]) < 0) by {
                             solve() using { 0 <= old(cell[0]); };
                         }
                         intro();
                         contradiction(not (old(cell[0]) < 0));
                     }
-                    right => {
+                    old(cell[0]) < cell[0] => {
                         solve();
                     }
                 }
