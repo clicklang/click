@@ -1449,10 +1449,11 @@ impl CheckedResourceRewrite {
             if !folded.memory().access_in_bounds(&base, bytes) && !imported_control_cell {
                 return Err("authority control body exceeds live storage".into());
             }
-            if let Some(ledger) = folded.loan_ledger() {
-                ledger
-                    .permits_memory_access_with_assumptions(range, assumptions)
-                    .map_err(|_| "authority control body has an active borrow")?;
+            if folded
+                .loan_ledger()
+                .is_some_and(|ledger| !ledger.rewrite_separates_from_loans(range, assumptions))
+            {
+                return Err("authority control body requires separation from active loans".into());
             }
         }
         let expected_resources = if exposing {
@@ -2147,10 +2148,12 @@ impl CheckedResourceRewrite {
                     {
                         return Err("member private body exceeds live storage".into());
                     }
-                    if let Some(ledger) = before_state.loan_ledger() {
-                        ledger
-                            .permits_memory_access_with_assumptions(range, assumptions)
-                            .map_err(|_| "member private body has an active borrow")?;
+                    if before_state.loan_ledger().is_some_and(|ledger| {
+                        !ledger.rewrite_separates_from_loans(range, assumptions)
+                    }) {
+                        return Err(
+                            "member private body requires separation from active loans".into()
+                        );
                     }
                 }
                 let child_context = ResourceContext::new_with_equalities(assumptions)

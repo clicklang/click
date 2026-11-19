@@ -9803,10 +9803,11 @@ impl ExecutionState {
             {
                 return Err("member private memory exceeds live storage".into());
             }
-            if let Some(ledger) = self.loan_ledger() {
-                ledger
-                    .permits_memory_access_with_assumptions(range, assumptions)
-                    .map_err(|_| "member private memory has an active borrow")?;
+            if self
+                .loan_ledger()
+                .is_some_and(|ledger| !ledger.rewrite_separates_from_loans(range, assumptions))
+            {
+                return Err("member private memory requires separation from active loans".into());
             }
         }
         if produce && !definition.facts().is_empty() {

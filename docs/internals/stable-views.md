@@ -226,6 +226,12 @@ abstracts also needs separation from the shared exit loan footprint. Its
 proof belongs at loop entry, where it cannot depend on the joined state's
 fresh values or exit equations.
 
+Population member exchanges and opening or closing a private body or an
+authority wrapper check each owned memory range in the selected body against
+the live loan footprint. State the separation before the rewrite with
+`have separate(...)`. The rewrite checks the same premise when validating
+the ownership exchange.
+
 Direct scalar assignments to address-taken locals and stores through their
 addresses require separation from the ledger's live memory footprint,
 including same-value writes. A nested reader reborrows the local loan through

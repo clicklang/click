@@ -6331,6 +6331,17 @@ impl LoanLedger {
         })
     }
 
+    /// A proof-only ownership exchange may expose writable authority. Use
+    /// the exact separation established before the exchange.
+    pub(crate) fn rewrite_separates_from_loans(
+        &self,
+        range: &MemoryRange,
+        assumptions: &PureFactContext,
+    ) -> bool {
+        self.memory_access_requirement(range)
+            .is_none_or(|goal| assumptions.proves_exact(&goal))
+    }
+
     /// Whole-object retirement uses the backing identities retained when
     /// loans were opened. Select one live loan directly for the refusal.
     pub(super) fn automatic_storage_retirement_refusal(
