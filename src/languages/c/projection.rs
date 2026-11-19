@@ -49,6 +49,7 @@ pub(crate) struct Projection {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Token<'a> {
     Ident(&'a str),
+    String(&'a str),
     Punct(u8),
 }
 
@@ -70,6 +71,16 @@ pub(crate) fn project_dependency_closure(
     source: &str,
     map: &CSourceMap,
     functions: &[String],
+) -> Result<Projection, String> {
+    project_dependency_closure_with_options(source, map, functions, false, false)
+}
+
+pub(crate) fn project_dependency_closure_with_options(
+    source: &str,
+    map: &CSourceMap,
+    functions: &[String],
+    native_roots: bool,
+    hidden_visibility: bool,
 ) -> Result<Projection, String> {
     let primary = map
         .primary_file()
@@ -168,12 +179,38 @@ pub(crate) fn project_dependency_closure(
             let header_len = item.function_header.unwrap_or(item.tokens.len());
             let header = &item.tokens[..header_len];
             work += header.len();
-            if header
+            if let Some(asm) = header
                 .iter()
-                .any(|token| matches!(token, Token::Ident("asm" | "__asm__" | "__asm")))
+                .position(|token| matches!(token, Token::Ident("asm" | "__asm__" | "__asm")))
+            {
+                let isolated_alias =
+                    native_roots && !kept[index] && unused_asm_label(header, asm, &followed);
+                if !isolated_alias {
+                    return Err(format!(
+                        "{}: function-root projection does not support file-scope assembly or asm labels that may bind a retained symbol",
+                        map.lookup(SourcePosition::new(item.line, 1))
+                    ));
+                }
+            }
+            if hidden_visibility
+                && kept[index]
+                && !matches!(header.first(), Some(Token::Ident("typedef" | "static")))
+                && !header.windows(6).any(|tokens| {
+                    matches!(
+                        tokens,
+                        [
+                            Token::Ident("__attribute__"),
+                            Token::Punct(b'('),
+                            Token::Punct(b'('),
+                            Token::Ident("visibility" | "__visibility__"),
+                            Token::Punct(b'('),
+                            Token::String("default"),
+                        ]
+                    )
+                })
             {
                 return Err(format!(
-                    "{}: function-root projection does not support file-scope assembly or asm labels",
+                    "{}: a retained declaration under `-fvisibility=hidden` needs explicit default visibility",
                     map.lookup(SourcePosition::new(item.line, 1))
                 ));
             }
@@ -210,6 +247,38 @@ pub(crate) fn project_dependency_closure(
     })
 }
 
+// GNU declarator labels in native headers are commonly composed of adjacent
+// string literals. Only accept a simple identifier target, and only where
+// neither the declaration nor anything it can rename is needed by the proof.
+fn unused_asm_label(header: &[Token<'_>], asm: usize, followed: &BTreeSet<(bool, &str)>) -> bool {
+    let mut named = false;
+    declarator_names(&header[..asm], |_| named = true);
+    if !named || header.get(asm + 1) != Some(&Token::Punct(b'(')) {
+        return false;
+    }
+    let mut symbol = String::new();
+    for token in &header[asm + 2..] {
+        match token {
+            Token::String(piece)
+                if piece
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'_') =>
+            {
+                symbol.push_str(piece);
+            }
+            Token::Punct(b')') => {
+                return symbol
+                    .as_bytes()
+                    .first()
+                    .is_some_and(|b| b.is_ascii_alphabetic() || *b == b'_')
+                    && !followed.contains(&(false, symbol.as_str()));
+            }
+            _ => return false,
+        }
+    }
+    false
+}
+
 fn origin_file(map: &CSourceMap, line: usize) -> Option<String> {
     map.lookup(SourcePosition::new(line, 1))
         .origin
@@ -239,6 +308,7 @@ fn file_scope_items(source: &str) -> Result<(Vec<Item<'_>>, usize), String> {
         match byte {
             b'"' | b'\'' => {
                 index += 1;
+                let content_start = index;
                 while index < bytes.len() && bytes[index] != byte {
                     if bytes[index] == b'\\' {
                         index += 1;
@@ -247,6 +317,9 @@ fn file_scope_items(source: &str) -> Result<(Vec<Item<'_>>, usize), String> {
                 }
                 if index >= bytes.len() {
                     return Err("unterminated literal in preprocessed C".into());
+                }
+                if byte == b'"' {
+                    tokens.push(Token::String(&source[content_start..index]));
                 }
                 last_significant = byte;
                 index += 1;
@@ -673,6 +746,33 @@ mod tests {
                 "{error}"
             );
         }
+    }
+
+    #[test]
+    fn native_roots_check_symbol_visibility_and_omitted_asm_aliases() {
+        let root = ["root".to_string()];
+        let project = |source: &str| {
+            let (clean, map) = CSourceMap::decode_native_roots(source).unwrap();
+            project_dependency_closure_with_options(&clean, &map, &root, true, true)
+        };
+        let text = format!(
+            "{HEADER}extern int alias(void) __asm__(\"\" \"external_symbol\");\n{BODY}\
+             __attribute__((visibility(\"default\"))) int root(void) {{ return 42; }}\n"
+        );
+        let kept = project(&text).unwrap().text;
+        assert!(kept.contains("int root(void)"));
+        assert!(!kept.contains("extern int alias"));
+        let collision = project(&text.replace("external_symbol", "root")).unwrap_err();
+        assert!(
+            collision.contains("may bind a retained symbol"),
+            "{collision}"
+        );
+        let hidden =
+            project(&text.replace(r#"__attribute__((visibility("default"))) "#, "")).unwrap_err();
+        assert!(
+            hidden.contains("needs explicit default visibility"),
+            "{hidden}"
+        );
     }
 
     #[test]

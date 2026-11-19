@@ -2745,6 +2745,25 @@ The dependency calculation is conservative. Its name-based analysis can
 keep additional declarations with the same spelling. The prepared artifact
 and lock still cover the entire preprocessed translation unit and its inputs.
 
+### C89 compilation with native headers
+
+On x86-64 Linux in userspace, an explicit `-std=c89` uses GCC's C89
+preprocessor mode and its native feature-test macros. Supply the build's
+include directories with `-isystem`; Click inventories the opened headers.
+The retained source still uses Click's supported C subset. The C89 profile
+also accepts `-fPIC` and `-fstack-protector-strong`.
+
+For explicit function roots in that mode, Click reads balanced GCC
+`visibility push(default)` and `visibility pop` directives and GCC
+diagnostic push, pop, and ignored-warning directives. A declaration with an
+assembler label can leave the projection only if its plain symbol name is
+outside the retained dependencies. File-scope assembly is still refused.
+
+At `-O0`, this rooted import also accepts `-fvisibility=hidden`. Retained
+external declarations then need explicit default visibility. This preserves
+the source-level linkage of the projected definitions. See the unchanged
+[cJSON integration](../../../integrations/cjson/README.md).
+
 ## Locations and trust boundary
 
 Structured compiler line markers preserve original filenames and line numbers

@@ -23,16 +23,22 @@ impl CSourceMap {
     /// Recognized markers are replaced by blank lines, so physical line
     /// numbers in diagnostics remain those of the compiler artifact.
     pub fn decode(source: &str) -> Result<(String, Self), String> {
-        Self::decode_internal(source, None)
+        Self::decode_internal(source, false, None)
+    }
+
+    /// Decode GCC's narrow native directive subset for explicit function roots.
+    pub(crate) fn decode_native_roots(source: &str) -> Result<(String, Self), String> {
+        Self::decode_internal(source, true, None)
     }
 
     #[cfg(test)]
     fn decode_with_stats(source: &str, stats: &mut DecodeStats) -> Result<(String, Self), String> {
-        Self::decode_internal(source, Some(stats))
+        Self::decode_internal(source, false, Some(stats))
     }
 
     fn decode_internal(
         source: &str,
+        native_roots: bool,
         #[cfg(test)] mut stats: Option<&mut DecodeStats>,
         #[cfg(not(test))] _stats: Option<()>,
     ) -> Result<(String, Self), String> {
@@ -40,6 +46,7 @@ impl CSourceMap {
         let mut segments = Vec::new();
         let mut names = BTreeMap::<String, Arc<str>>::new();
         let mut current: Option<(Arc<str>, usize)> = None;
+        let mut visibility_depth: usize = 0;
 
         for (index, raw_line) in source.split_inclusive('\n').enumerate() {
             #[cfg(test)]
@@ -79,6 +86,16 @@ impl CSourceMap {
                             output.push('\n');
                         }
                     }
+                    None if native_roots && gcc_default_directive(line, &mut visibility_depth)? => {
+                        if let Some((_, source_line)) = &mut current {
+                            *source_line = source_line.checked_add(1).ok_or_else(|| {
+                                format!("logical line overflow at physical line {physical_line}")
+                            })?;
+                        }
+                        if raw_line.ends_with('\n') {
+                            output.push('\n');
+                        }
+                    }
                     None => {
                         return Err(format!(
                             "unsupported preprocessor directive at physical line {physical_line}: {}",
@@ -97,6 +114,9 @@ impl CSourceMap {
             output.push_str(raw_line);
         }
 
+        if visibility_depth != 0 {
+            return Err("unbalanced GCC visibility push(default)".into());
+        }
         Ok((output, Self { segments }))
     }
 
@@ -145,6 +165,26 @@ impl CSourceMap {
             line,
         )
     }
+}
+
+/// A default-visibility push adds no source-level restrictions. The rooted
+/// projection independently requires explicitly default-visible retained symbols
+/// when the compiler's ambient visibility is hidden.
+fn gcc_default_directive(line: &str, visibility_depth: &mut usize) -> Result<bool, String> {
+    let words = line.split_ascii_whitespace().collect::<Vec<_>>();
+    match words.as_slice() {
+        ["#pragma", "GCC", "visibility", "push(default)"] => *visibility_depth += 1,
+        ["#pragma", "GCC", "visibility", "pop"] => {
+            *visibility_depth = visibility_depth
+                .checked_sub(1)
+                .ok_or("GCC visibility pop without a matching push(default)")?;
+        }
+        ["#pragma", "GCC", "diagnostic", "push" | "pop"] => {}
+        ["#pragma", "GCC", "diagnostic", "ignored", warning]
+            if warning.starts_with("\"-W") && warning.ends_with('"') => {}
+        _ => return Ok(false),
+    }
+    Ok(true)
 }
 
 fn bounded_directive(line: &str) -> String {
@@ -316,6 +356,33 @@ fn parse_quoted_filename(input: &str, physical_line: usize) -> Result<(String, u
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_root_directives_preserve_locations_and_limit_visibility() {
+        let source = "# 12 \"main.c\"\n#pragma GCC visibility push(default)\nint f(void);\n#pragma GCC visibility pop\n";
+        let (clean, map) = CSourceMap::decode_native_roots(source).unwrap();
+        assert_eq!(
+            clean.lines().collect::<Vec<_>>(),
+            ["", "", "int f(void);", ""]
+        );
+        assert_eq!(
+            map.lookup(SourcePosition::new(3, 1)).origin.unwrap().line,
+            13
+        );
+        assert!(CSourceMap::decode(source).is_err());
+        assert!(CSourceMap::decode_native_roots(&source.replace("default", "hidden")).is_err());
+        assert!(
+            CSourceMap::decode_native_roots(
+                source
+                    .lines()
+                    .take(3)
+                    .collect::<Vec<_>>()
+                    .join("\n")
+                    .as_str()
+            )
+            .is_err()
+        );
+    }
 
     #[test]
     fn decodes_nested_markers_and_escapes() {

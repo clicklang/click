@@ -9809,6 +9809,15 @@ impl Parser {
                         always_inline = true;
                         self.static_inline_attribute = "always-inline";
                     }
+                    "visibility" | "__visibility__" => {
+                        self.expect(Token::LParen)?;
+                        if self.next() != Some(Token::StringLiteral(b"default".to_vec())) {
+                            return Err(self.error_at_previous(
+                                "only explicit default GNU function visibility is supported",
+                            ));
+                        }
+                        self.expect(Token::RParen)?;
+                    }
                     // On a `static inline` function `gnu_inline` selects
                     // nothing: it changes only when a non-static inline
                     // definition is emitted. It is refused anywhere else.
@@ -9914,7 +9923,7 @@ impl Parser {
                         }
                     }
                     _ => return Err(self.error_at_previous(format!(
-                        "unsupported GNU function attribute `{attribute}`; only `always_inline`, `gnu_inline`, `nothrow`, `leaf`, `const`, `nonnull`, `noreturn`, `deprecated`, `unused`, `no_instrument_function`, `weak`, `returns_twice`, `access`, `cold`, `warn_unused_result`, and declaration-only `pure`, `malloc`, `alloc_size`, `alloc_align` are supported in this slice"
+                        "unsupported GNU function attribute `{attribute}`; only `always_inline`, `gnu_inline`, `visibility(\"default\")`, `nothrow`, `leaf`, `const`, `nonnull`, `noreturn`, `deprecated`, `unused`, `no_instrument_function`, `weak`, `returns_twice`, `access`, `cold`, `warn_unused_result`, and declaration-only `pure`, `malloc`, `alloc_size`, `alloc_align` are supported in this slice"
                     ))),
                 }
                 if self.peek() != Some(&Token::Comma) {

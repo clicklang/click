@@ -212,6 +212,23 @@ struct SourceConfig {
     functions: Vec<String>,
 }
 
+/// Match switches at argument positions, excluding operands of paired options.
+fn has_switch(args: &[String], flag: &str) -> bool {
+    let mut args = args.iter();
+    while let Some(arg) = args.next() {
+        if arg == flag {
+            return true;
+        }
+        if matches!(
+            arg.as_str(),
+            "-D" | "-U" | "-I" | "-iquote" | "-isystem" | "-include"
+        ) {
+            args.next();
+        }
+    }
+    false
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Lock {
@@ -690,9 +707,25 @@ fn load_locked(config: &Config, lock: &Lock) -> Result<Vec<PreparedCImport>, Str
         }
         let text = std::str::from_utf8(&existing)
             .map_err(|e| format!("compiler output is not UTF-8: {e}"))?;
-        let (mut clean, map) = CSourceMap::decode(text)?;
+        let native_roots = has_switch(&source.args, "-std=c89") && !source.functions.is_empty();
+        let (mut clean, map) = if native_roots {
+            CSourceMap::decode_native_roots(text)?
+        } else {
+            CSourceMap::decode(text)?
+        };
         if source.projection.is_some() {
-            clean = super::projection::project_dependency_closure(&clean, &map, &source.functions)
+            let projection = if native_roots {
+                super::projection::project_dependency_closure_with_options(
+                    &clean,
+                    &map,
+                    &source.functions,
+                    true,
+                    has_switch(&source.args, "-fvisibility=hidden"),
+                )
+            } else {
+                super::projection::project_dependency_closure(&clean, &map, &source.functions)
+            };
+            clean = projection
                 .map_err(|reason| {
                     format!(
                         "dependency-closure projection of `{}`: {reason}",
@@ -839,6 +872,16 @@ fn preprocess(context: &Context<'_>, source: &SourceConfig) -> Result<Preprocess
     let dep_path = unique_temp_path("click-import-deps", ".d")?;
     let _cleanup = RemoveFile(dep_path.clone());
     let mut args = fixed_args(context.config.c_target(), context.config.optimization);
+    if has_switch(&source.args, "-std=c89") {
+        // Use the dialect passed by the build and its native feature-test
+        // macros. The old modeled-header profile synthesizes POSIX and pthread.
+        args.retain(|arg| {
+            !matches!(
+                arg.as_str(),
+                "-std=c11" | "-pthread" | "-D_POSIX_C_SOURCE=200809L"
+            )
+        });
+    }
     append_user_args(&mut args, source, context.config)?;
     // Click's headers take the C library's place in GCC's search order:
     // after every `-iquote`, `-I`, and `-isystem` directory the project
@@ -1440,6 +1483,12 @@ fn validate_config(config: &Config, use_for: ConfigUse) -> Result<(), String> {
 }
 
 fn validate_source_args(source: &SourceConfig, config: &Config) -> Result<(), String> {
+    if has_switch(&source.args, "-fvisibility=hidden") && source.functions.is_empty() {
+        return Err(format!(
+            "source `{}`: `-fvisibility=hidden` requires explicit function roots",
+            source.logical_source
+        ));
+    }
     validate_args(
         &source.args,
         config.c_target(),
@@ -1460,7 +1509,21 @@ fn validate_args(
     {
         return Err("compiler argument list exceeds bounds".into());
     }
-    let profile_args = fixed_args(target, optimization);
+    let mut profile_args = fixed_args(target, optimization);
+    let c89 = target == CTarget::X86_64LinuxUserspace && has_switch(args, "-std=c89");
+    if c89 {
+        if has_switch(args, "-std=c11") {
+            return Err("conflicting C standard flags `-std=c89` and `-std=c11`".into());
+        }
+        profile_args.extend([
+            "-std=c89".into(),
+            "-fPIC".into(),
+            "-fstack-protector-strong".into(),
+        ]);
+        if optimization == COptimization::O0 {
+            profile_args.push("-fvisibility=hidden".into());
+        }
+    }
     let mut i = 0;
     while i < args.len() {
         let arg = &args[i];
@@ -1526,10 +1589,10 @@ fn validate_args(
                 return Err(format!("missing value after `{arg}`"));
             }
             if matches!(arg.as_str(), "-D" | "-U") {
-                reject_profile_define(&args[i], target)?;
+                reject_profile_define(&args[i], target, c89)?;
             }
         } else if arg.starts_with("-D") || arg.starts_with("-U") {
-            reject_profile_define(&arg[2..], target)?;
+            reject_profile_define(&arg[2..], target, c89)?;
         }
         i += 1;
     }
@@ -1539,18 +1602,16 @@ fn validate_args(
     Ok(())
 }
 
-fn reject_profile_define(value: &str, target: CTarget) -> Result<(), String> {
+fn reject_profile_define(value: &str, target: CTarget, c89: bool) -> Result<(), String> {
     let name = value.split(['=', '(']).next().unwrap_or(value).trim();
     if target == CTarget::X86_64LinuxUserspace
         && matches!(
             name,
-            "__KERNEL__"
-                | "__STDC__"
-                | "__STDC_VERSION__"
-                | "__STRICT_ANSI__"
-                | "_POSIX_C_SOURCE"
-                | "_REENTRANT"
+            "__KERNEL__" | "__STDC__" | "__STDC_VERSION__" | "__STRICT_ANSI__"
         )
+        || (!c89
+            && target == CTarget::X86_64LinuxUserspace
+            && matches!(name, "_POSIX_C_SOURCE" | "_REENTRANT"))
     {
         return Err(format!("cannot override user-space profile macro {name}"));
     }
