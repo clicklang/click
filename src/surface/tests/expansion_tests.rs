@@ -1,6 +1,41 @@
 use super::*;
 
 #[test]
+#[ignore = "nightly: expands and cold-verifies three linked-pointer C programs"]
+fn linked_pointer_viewability_expands_without_normalize() {
+    for (fixture, guards, rewrites) in [
+        (
+            "a_linked_pointer_array_initializer_names_a_private_object_of_its_defining_file",
+            1,
+            0,
+        ),
+        (
+            "a_linked_pointer_initializer_names_a_private_object_of_its_defining_file",
+            1,
+            1,
+        ),
+        (
+            "same_named_private_objects_behind_linked_pointers_stay_distinct",
+            2,
+            2,
+        ),
+    ] {
+        let (source, sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+        let sources = crate::cli::source_refs(&sources);
+        let label = "main.contract";
+        let expanded = expand_c_claim_source_by_label(&source, &sources, label)
+            .unwrap_or_else(|error| panic!("{}", error.report()));
+        assert!(!expanded.contains("normalize()"), "{expanded}");
+        assert_eq!(expanded.matches("observe(").count(), guards, "{expanded}");
+        assert_eq!(expanded.matches("rewrite(").count(), rewrites, "{expanded}");
+        without_implicit_solve_for_claim(label, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+    }
+}
+
+#[test]
 #[ignore = "nightly: expands and cold-verifies two automatic-storage separation proofs"]
 fn automatic_object_separation_expands_without_normalize() {
     for (fixture, label) in [
