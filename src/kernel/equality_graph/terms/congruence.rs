@@ -1216,12 +1216,12 @@ impl TermClasses {
                         };
                         Node::MachineNarrow(MachineAtom::new(canonical, atom))
                     } else if wide {
-                        if let Some((memory, pointer)) = uint64_read(term) {
+                        if let Some((point, pointer)) = uint64_read(term) {
                             let address =
                                 self.address(pointer.base.clone(), pointer.offset.clone()).0;
                             let numeric = self.read_address(address);
                             // Values enter through explicit equations, never cell-cache lookups.
-                            Node::UInt64Read(memory.read_identity(), numeric)
+                            Node::UInt64Read(point.congruence_read_key(), numeric)
                         } else if let Some(pointer) = term.address_pointer() {
                             values.push(self.numeric_address(pointer));
                             continue;

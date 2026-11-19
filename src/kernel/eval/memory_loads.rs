@@ -283,6 +283,7 @@ pub(in crate::kernel) fn evaluate_logical_memory_load_paths(
 /// A logical integer read whose version was selected from the execution path.
 pub(in crate::kernel) fn evaluate_indexed_read(
     version: ProgramPoint,
+    origin: &ProgramPoint,
     pointer: Address,
     value_type: ProgramType,
     mut facts: ExecutionFacts,
@@ -341,6 +342,13 @@ pub(in crate::kernel) fn evaluate_indexed_read(
         .clone();
     let kind = LoadKind::of_type(value_type).expect("indexed integer read");
     let format = MachineIntegerType::from_program_type(value_type).expect("indexed integer read");
+    read_observations::record_at(
+        &version,
+        &pointer,
+        kind,
+        origin.shared_memory(),
+        value_type.byte_width(),
+    );
     let read = MachineTerm::MemoryLoad(version, Box::new(pointer.clone()), kind);
     let value = match value_type {
         ProgramType::Int8 => ProgramValue::Int8(read.clone()),
@@ -438,11 +446,15 @@ fn exact_logical_read_value(
             pointer.clone(),
         ))
     } else {
-        let bits = MachineTerm::MemoryLoad(
-            point.clone(),
-            Box::new(pointer.clone()),
-            LoadKind::of_type(value_type)?,
+        let kind = LoadKind::of_type(value_type)?;
+        read_observations::record_at(
+            &point,
+            pointer,
+            kind,
+            point.shared_memory(),
+            value_type.byte_width(),
         );
+        let bits = MachineTerm::MemoryLoad(point.clone(), Box::new(pointer.clone()), kind);
         ProgramValue::from_bitvector_term(value_type, bits)?
     };
     Some(complete_loaded_word(value, point.memory(), pointer))
@@ -3297,7 +3309,7 @@ pub(crate) fn registered_scalar_read_term(
 
 /// A selected read's observation data, distinct from its immutable value.
 pub(crate) struct ScalarReadObservation {
-    pub memory: SharedMemory,
+    pub point: ProgramPoint,
     pub pointer: Address,
     pub kind: LoadKind,
     pub bytes: u32,
@@ -3316,11 +3328,11 @@ pub(crate) fn scalar_read_observation(
 }
 
 pub(in crate::kernel) fn scalar_read_origin_for_cell(
-    memory: &SharedMemory,
+    point: &ProgramPoint,
     address: &Address,
     kind: LoadKind,
 ) -> Option<SharedMemory> {
-    read_observations::origin_for_cell(memory, address, kind)
+    read_observations::origin_for_cell(point, address, kind)
 }
 
 /// Build an exact read and publish its typed observation. This does not
@@ -3332,17 +3344,35 @@ pub(crate) fn scalar_read_for_exact_cell(
     kind: LoadKind,
     bytes: u32,
 ) -> MachineTerm {
-    let id = read_observations::record(memory, pointer, kind, memory, bytes);
+    scalar_read_for_exact_cell_at(&ProgramPoint::at(memory), pointer, kind, bytes)
+}
+
+pub(crate) fn scalar_read_for_exact_cell_at(
+    point: &ProgramPoint,
+    pointer: &Address,
+    kind: LoadKind,
+    bytes: u32,
+) -> MachineTerm {
+    let id = read_observations::record_at(point, pointer, kind, point.shared_memory(), bytes);
     read_observations::select(id);
-    MachineTerm::memory_read(memory.clone(), pointer.clone(), kind)
+    MachineTerm::MemoryLoad(point.clone(), Box::new(pointer.clone()), kind)
 }
 
 pub(crate) fn is_selected_scalar_read(
-    memory: &SharedMemory,
+    point: &ProgramPoint,
     pointer: &Address,
     kind: LoadKind,
 ) -> bool {
-    read_observations::selected(memory, pointer, kind)
+    read_observations::selected(point, pointer, kind)
+}
+
+/// The access width registered by a typed producer for this exact descriptor.
+pub(in crate::kernel) fn observed_scalar_read_width(
+    point: &ProgramPoint,
+    pointer: &Address,
+    kind: LoadKind,
+) -> Option<u32> {
+    read_observations::existing_at(point, pointer, kind).and_then(read_observations::bytes)
 }
 
 /// Existing observation metadata is evidence of an access width too. Merely
@@ -3729,7 +3759,7 @@ pub(crate) fn record_pointer_load_source(identity: PointerLoadId, read: &Machine
     let MachineTerm::MemoryLoad(memory, address, kind) = read else {
         return;
     };
-    if let Some(observation) = read_observations::existing(memory.shared_memory(), address, *kind) {
+    if let Some(observation) = read_observations::existing_at(memory, address, *kind) {
         POINTER_LOAD_SOURCES.with(|sources| {
             sources.borrow_mut().entry(identity).or_insert(observation);
         });
@@ -4217,8 +4247,7 @@ fn select_scalar_reads_impl(term: &MachineTerm, retain_selected: bool) -> Machin
                     MachineTerm::MemoryLoad(memory, pointer, kind) => {
                         term_results.push(if memory.is_exact_read() {
                             comparison_identity_of_exact_read(memory, pointer, *kind)
-                        } else if retain_selected
-                            && is_selected_scalar_read(memory.shared_memory(), pointer, *kind)
+                        } else if retain_selected && is_selected_scalar_read(memory, pointer, *kind)
                         {
                             term.clone()
                         } else {

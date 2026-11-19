@@ -85,14 +85,15 @@ For each read slice, test which point it selects, its raise/lower round trip,
 and bounded work as unrelated history grows. Use `cell_version_on_path` for
 diagnostic comparisons in tests. Keep production selection indexed.
 
-Snapshot-keyed callers still to migrate include the scalar load observation
-registry, resource cell reads through `canonical_cell_load`, and array and
-algebraic argument raising by memory. Read selection for writes through
-unrelated symbolic addresses also needs a checked way to identify the
-affected storage. Byte initialization through a modular call still publishes
-its representation equation from the returned memory view. Admit ordinary
-pointer reads through parameters once checked stores publish a complete
-pointer equation that raises and lowers at the same version point.
+The scalar observation registry and read congruence use the retained version
+when a read has one. Reads produced from a bare memory view still use legacy
+identity. The remaining producers include resource cell reads through
+`canonical_cell_load`, array and algebraic arguments, and the representation
+equation for bytes initialized by a modular call. Ordinary pointer reads
+through parameters also need checked stores to publish a complete pointer
+equation that raises and lowers at the same version point. Read selection
+through unrelated symbolic addresses needs a checked way to identify the
+affected storage.
 
 ## Reading the inventory
 

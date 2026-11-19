@@ -7880,6 +7880,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 let read_paths = if let Some(version) = version {
                     vec![crate::kernel::eval::evaluate_indexed_read(
                         version,
+                        &read_point(),
                         pointer,
                         *value_type,
                         pointer_path.facts,

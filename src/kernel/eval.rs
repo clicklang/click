@@ -92,6 +92,7 @@ pub(crate) use memory_loads::load_variable_for_cell_with_origin;
 pub(crate) use memory_loads::load_variable_for_exact_cell;
 pub(crate) use memory_loads::load_variable_for_term;
 pub(crate) use memory_loads::loaded_pointer_predates_block;
+pub(in crate::kernel) use memory_loads::observed_scalar_read_width;
 pub(crate) use memory_loads::offsets_have_same_canonical_form;
 pub(crate) use memory_loads::proposition_mentions_scalar_read;
 pub(crate) use memory_loads::read_over_write_program_value;
@@ -131,7 +132,7 @@ pub(super) use memory_loads::{
 };
 pub(crate) use memory_loads::{
     is_selected_scalar_read, latest_scalar_read_observation, registered_scalar_read_term,
-    scalar_read_for_exact_cell, scalar_read_observation,
+    scalar_read_for_exact_cell, scalar_read_for_exact_cell_at, scalar_read_observation,
 };
 pub(crate) use memory_loads::{latest_pointer_read_observation, latest_wide_load_observation};
 #[cfg(test)]

@@ -1142,6 +1142,7 @@ mod tests {
                 .unwrap();
             let path = crate::kernel::eval::evaluate_indexed_read(
                 version,
+                &state.program_point(),
                 slot.clone(),
                 format.program_type(),
                 Default::default(),

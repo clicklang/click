@@ -401,7 +401,7 @@ pub(super) fn common_variables(
                         .format()
                         .load_kind();
                     collect_machine_read_variables(
-                        point.shared_memory(),
+                        point,
                         address.exact_cell_key(),
                         kind,
                         &mut leaf_variables,
@@ -423,7 +423,7 @@ pub(super) fn common_variables(
                     // The native algebraic collector uses the Bits64 read
                     // kind to follow registered origins for havoc framing.
                     collect_machine_read_variables(
-                        point.shared_memory(),
+                        point,
                         address.exact_cell_key(),
                         LoadKind::Bits64,
                         &mut leaf_variables,
