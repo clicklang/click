@@ -284,7 +284,7 @@ pub(in crate::kernel) fn evaluate_indexed_integer_read(
     memory: &SymbolicMemory,
     version: ProgramPoint,
     pointer: Address,
-    kind: LoadKind,
+    value_type: ProgramType,
     mut facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
 ) -> ExpressionPath {
@@ -292,20 +292,18 @@ pub(in crate::kernel) fn evaluate_indexed_integer_read(
         .indexed_integer_store_bits()
         .expect("an indexed integer version comes from a direct store")
         .clone();
+    let kind = LoadKind::of_type(value_type).expect("indexed integer read");
+    let format = MachineIntegerType::from_program_type(value_type).expect("indexed integer read");
     let read = MachineTerm::MemoryLoad(version, Box::new(pointer.clone()), kind);
-    let (format, value) = match kind {
-        LoadKind::Int8 => (MachineIntegerType::Int8, ProgramValue::Int8(read.clone())),
-        LoadKind::UInt8 => (MachineIntegerType::UInt8, ProgramValue::UInt8(read.clone())),
-        LoadKind::Int16 => (MachineIntegerType::Int16, ProgramValue::Int16(read.clone())),
-        LoadKind::UInt16 => (
-            MachineIntegerType::UInt16,
-            ProgramValue::UInt16(read.clone()),
-        ),
-        LoadKind::Int32 => (MachineIntegerType::Int32, ProgramValue::Int32(read.clone())),
-        LoadKind::UInt32 => (
-            MachineIntegerType::UInt32,
-            ProgramValue::UInt32(read.clone()),
-        ),
+    let value = match value_type {
+        ProgramType::Int8 => ProgramValue::Int8(read.clone()),
+        ProgramType::UInt8 => ProgramValue::UInt8(read.clone()),
+        ProgramType::Int16 => ProgramValue::Int16(read.clone()),
+        ProgramType::UInt16 => ProgramValue::UInt16(read.clone()),
+        ProgramType::Int32 => ProgramValue::Int32(read.clone()),
+        ProgramType::UInt32 => ProgramValue::UInt32(read.clone()),
+        ProgramType::Int64 => ProgramValue::Int64(read.clone()),
+        ProgramType::UInt64 => ProgramValue::UInt64(read.clone()),
         _ => unreachable!("indexed integer read"),
     };
     // Retain the read and publish its exact store equation separately.

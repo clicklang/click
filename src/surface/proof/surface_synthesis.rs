@@ -4912,20 +4912,12 @@ fn synthesis_states_share_program_point(entry: &ExecutionState, state: &Executio
 fn synthesize_indexed_integer_read(
     version: &crate::kernel::ProgramPoint,
     pointer: &Address,
-    kind: crate::kernel::LoadKind,
+    value_type: ProgramType,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<ContractExpression> {
-    let value_type = match kind {
-        crate::kernel::LoadKind::Int8 => ProgramType::Int8,
-        crate::kernel::LoadKind::UInt8 => ProgramType::UInt8,
-        crate::kernel::LoadKind::Int16 => ProgramType::Int16,
-        crate::kernel::LoadKind::UInt16 => ProgramType::UInt16,
-        crate::kernel::LoadKind::Int32 => ProgramType::Int32,
-        crate::kernel::LoadKind::UInt32 => ProgramType::UInt32,
-        _ => return None,
-    };
+    let kind = crate::kernel::LoadKind::of_type(value_type)?;
     let expression = |state: &ExecutionState| {
         let address = synthesize_surface_pointer_expression(
             pointer,
@@ -5176,6 +5168,16 @@ fn synthesize_typed_word_read(
     let MachineTerm::MemoryLoad(memory, pointer, kind) = read else {
         return None;
     };
+    if memory.read_version_id().is_some() {
+        return synthesize_indexed_integer_read(
+            memory,
+            pointer,
+            value_type,
+            parameter_binding,
+            state,
+            bound_variables,
+        );
+    }
     let read = crate::kernel::canonical_form_of_load(
         memory.shared_memory().clone(),
         pointer.as_ref().clone(),
@@ -5497,10 +5499,20 @@ fn synthesize_surface_bitvector(
         }
         MachineTerm::MemoryLoad(memory, kernel_pointer, kind) => {
             if memory.read_version_id().is_some() {
+                let value_type = match kind {
+                    crate::kernel::LoadKind::Int8 => ProgramType::Int8,
+                    crate::kernel::LoadKind::UInt8 => ProgramType::UInt8,
+                    crate::kernel::LoadKind::Int16 => ProgramType::Int16,
+                    crate::kernel::LoadKind::UInt16 => ProgramType::UInt16,
+                    crate::kernel::LoadKind::Int32 => ProgramType::Int32,
+                    crate::kernel::LoadKind::UInt32 => ProgramType::UInt32,
+                    crate::kernel::LoadKind::Bits64 => ProgramType::Int64,
+                    _ => return None,
+                };
                 return synthesize_indexed_integer_read(
                     memory,
                     kernel_pointer,
-                    *kind,
+                    value_type,
                     parameter_binding,
                     state,
                     bound_variables,

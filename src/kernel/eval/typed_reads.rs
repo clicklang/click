@@ -77,7 +77,9 @@ pub(super) fn record(memory: &SymbolicMemory, address: &Address, value: &Program
         | ProgramValue::Int16(MachineTerm::MemoryLoad(point, _, LoadKind::Int16))
         | ProgramValue::UInt16(MachineTerm::MemoryLoad(point, _, LoadKind::UInt16))
         | ProgramValue::Int32(MachineTerm::MemoryLoad(point, _, LoadKind::Int32))
-        | ProgramValue::UInt32(MachineTerm::MemoryLoad(point, _, LoadKind::UInt32)) => {
+        | ProgramValue::UInt32(MachineTerm::MemoryLoad(point, _, LoadKind::UInt32))
+        | ProgramValue::Int64(MachineTerm::MemoryLoad(point, _, LoadKind::Bits64))
+        | ProgramValue::UInt64(MachineTerm::MemoryLoad(point, _, LoadKind::Bits64)) => {
             point.read_version_id()
         }
         _ => None,
@@ -124,7 +126,9 @@ pub(in crate::kernel) fn get_at(
             | MachineIntegerType::Int16
             | MachineIntegerType::UInt16
             | MachineIntegerType::Int32
-            | MachineIntegerType::UInt32),
+            | MachineIntegerType::UInt32
+            | MachineIntegerType::Int64
+            | MachineIntegerType::UInt64),
         ) => {
             let load_kind = LoadKind::of_type(format.program_type()).expect("indexed integer read");
             point

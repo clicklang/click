@@ -981,6 +981,18 @@ mod tests {
     #[test]
     fn preserve_uses_the_indexed_integer_version_of_each_selected_endpoint() {
         check_indexed_preservation(
+            LoadKind::Bits64,
+            MachineIntegerType::Int64,
+            8,
+            ProgramValue::Int64(MachineTerm::int64_constant(i64::MIN)),
+        );
+        check_indexed_preservation(
+            LoadKind::Bits64,
+            MachineIntegerType::UInt64,
+            8,
+            ProgramValue::UInt64(MachineTerm::uint64_constant(1u64 << 63)),
+        );
+        check_indexed_preservation(
             LoadKind::UInt32,
             MachineIntegerType::UInt32,
             4,
@@ -1058,7 +1070,7 @@ mod tests {
                 state.memory(),
                 version,
                 slot.clone(),
-                load_kind,
+                format.program_type(),
                 Default::default(),
                 Vec::new(),
             );
@@ -1076,24 +1088,32 @@ mod tests {
             &after,
             &Vec::<ExecutionPureFact>::new(),
         );
-        let comparison = if format.format().bits() < 32 {
-            MachineIntegerType::Int32
-        } else {
-            format
+        let comparison = match bytes {
+            1 | 2 => MachineIntegerType::Int32,
+            8 => MachineIntegerType::Int64,
+            _ => format,
         };
         let comparison_type = ReadType::Integer(comparison);
         let operand = |bits| MachineTerm::machine_integer_cast(format, comparison, bits);
-        let expected = Proposition::condition_is(
+        let condition = if bytes == 8 {
+            ConditionTerm::Compare {
+                format: comparison,
+                relation: CompareRelation::Equal,
+                left: Box::new(after_read.clone()),
+                right: Box::new(before_read.clone()),
+            }
+        } else {
             ConditionTerm::machine_compare(
                 comparison,
                 CompareRelation::Equal,
                 operand(after_read.clone()),
                 operand(before_read.clone()),
-            ),
-            true,
-        );
+            )
+        };
+        let expected = Proposition::condition_is(condition, true);
         let observed = observation_type(comparison_type, bytes, &expected).unwrap();
-        assert_eq!(observed, ReadType::Integer(format));
+        let observed_format = if bytes == 8 { comparison } else { format };
+        assert_eq!(observed, ReadType::Integer(observed_format));
         let separation = Proposition::ResourceSeparate {
             left: Box::new(Resource::Footprint(footprint)),
             right: Box::new(Resource::Memory(MemoryRange::new_with_element_width(

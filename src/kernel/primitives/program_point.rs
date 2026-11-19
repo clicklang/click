@@ -293,6 +293,7 @@ fn integer_store_bits(step: &StepLog) -> Option<(LoadKind, &MachineTerm)> {
         ProgramValue::UInt16(bits) => Some((LoadKind::UInt16, bits)),
         ProgramValue::Int32(bits) => Some((LoadKind::Int32, bits)),
         ProgramValue::UInt32(bits) => Some((LoadKind::UInt32, bits)),
+        ProgramValue::Int64(bits) | ProgramValue::UInt64(bits) => Some((LoadKind::Bits64, bits)),
         _ => None,
     }
 }
