@@ -9,20 +9,20 @@ fn aliased_byte_output_lookup_ignores_unrelated_memory_and_alias_history() {
         let mut facts = ExecutionFacts::new();
         let mut budget = ExecutionBudget::new();
         budget.install_program_byte_order(ByteOrder::Little);
-        let (memory, work) = crate::instrumentation::measure_deterministic_work(|| {
-            produced_memory_initialization(
+        let mut post_state = state.clone();
+        let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+            initialize_produced_memory(
                 &state,
                 &state,
                 function.contract_interface(),
-                state.memory().clone(),
+                &mut post_state,
                 &assumptions,
                 &mut facts,
                 &mut budget,
             )
-            .unwrap()
-            .unwrap()
         });
-        assert!(memory.has_initialized_bytes_at(&word, 4));
+        result.unwrap().unwrap();
+        assert!(post_state.memory().has_initialized_bytes_at(&word, 4));
         assert_eq!(facts.len(), 1);
         samples.push(work);
     }

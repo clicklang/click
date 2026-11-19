@@ -701,7 +701,11 @@ fn declared_word_assembly_requires_four_complete_indexed_bytes() {
 
 #[test]
 fn declared_word_read_representation_is_typed_live_and_state_specific() {
-    use crate::kernel::eval::declared_uint32_read_representation as representation;
+    use crate::kernel::{ProgramPoint, eval::declared_uint32_read_representation};
+
+    let representation = |memory: &SymbolicMemory, address: &Address, order| {
+        declared_uint32_read_representation(&ProgramPoint::of_memory(memory), address, order)
+    };
     let _session = crate::kernel::VerificationSession::enter();
     let memory =
         SymbolicMemory::new().with_declared_scalar_block(word(0).base, 4, ProgramType::UInt32);
