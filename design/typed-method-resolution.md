@@ -103,11 +103,11 @@ holds for a slice bound to a theorem's parameter.
 A slice parameter is still lowered as a pointer and a length
 (`design/first-class-slices.md`, "Representation by position"). Where it is
 read as a slice, in a subslice `bytes[a..b]`, the parser writes the slice
-value it stands for, `Slice::Slice(bytes, bytes_len)`, as the receiver, and
+value it stands for, `Slice::Slice(bytes, bytes.len())`, as the receiver, and
 resolution's constructor rule reduces its methods to the pair. A slice value
 passed to a slice parameter of a pure function is spread into its methods
 `as_ptr()` and `len()`, resolved the same way. `bytes.len()` and `bytes[i]`
-on a parameter keep their direct spellings, the length variable and the read
+on a parameter keep their direct spellings, the length component and the read
 through the pointer, which are the same values.
 
 ### Printing

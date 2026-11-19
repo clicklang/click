@@ -6984,7 +6984,7 @@ mod local_descent_tests {
             loop_evidence: opening.loop_evidence,
             required_assumptions: PureFactContext::new(),
             paths: Vec::new(),
-            composite_resource_definitions: Vec::new(),
+            composite_resource_definitions: Default::default(),
             recursion_anchor: anchor.map(Arc::new),
             variable_index: Default::default(),
         }

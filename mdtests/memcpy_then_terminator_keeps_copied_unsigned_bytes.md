@@ -1,15 +1,14 @@
 # Copied `unsigned char` bytes survive the terminator store
 
-The reduction of `label_copy` over `unsigned char` buffers with a constant
-count: `memcpy(dst, src, 4); dst[4] = 0;` and then the copied bytes. The
-`src[k]` reads under the postcondition's guard `k < 4u64` are an unsigned
-64-bit index into the 32-bit-bounded range `src[0..4]` of the `separate`
-requirement, so typed range membership places them by the exact guard fact
-before the separation keeps them apart from the store at `dst[4]`. The
-written proof states the destination frame with a single-statement footprint
-preservation step, then transports the copied-byte equality. The omitted proof of
-`copy_u_smart` also verifies. The explicit frame avoids relying on the legacy
-quantified read-history route to bridge the store and cached-cell forgetting.
+The copy uses a `uint64` index to read the `uint8` bytes, while the
+contract uses 32-bit range bounds. The guard `k < 4u64` makes the source
+byte available within `src[0..4]` and distinguishes the destination byte
+from the terminator at `dst[4]`.
+
+Both proofs name the preserved reads across the call and store and
+instantiate the saved `memcpy` postcondition. `copy_u` composes the
+equalities with rewrites. `copy_u_smart` supplies the same byte facts to
+`solve()` for the final equality.
 
 ```c filename=copy.c
 #include <string.h>
@@ -19,6 +18,7 @@ void copy_u_smart(unsigned char *dst, const unsigned char *src) { memcpy(dst, sr
 
 ```click
 import click::bytes;
+import click::separation;
 verifying "copy.c";
 void copy_u(uint8* dst, const uint8* src) {
     views src[0..4];
@@ -30,22 +30,46 @@ void copy_u(uint8* dst, const uint8* src) {
     step();
     mark copied;
     step();
-    have forall (k: uint64) { k < 4u64 implies dst[0u64 + k] == at(copied, dst[0u64 + k]) } by {
-        intro();
-        intro();
-        have separate(memory(dst[4]), memory(dst[0u64 + k])) by {
-            known();
-        }
-        have separate(statement(1).footprint, memory(dst[0u64 + k])) by {
-            normalize() using { separate(memory(dst[4]), memory(dst[0u64 + k])); };
-        }
-        preserve(memory(dst[0u64 + k]), statement(1));
-    }
     have bytes::equal(dst, 0u64, src, 0u64, 4u64) by {
-        transport(
-            at(copied, (0u64..4u64).all(|k| { dst[0u64 + k] == old(src[0u64 + k]) })),
-            (0u64..4u64).all(|k| { dst[0u64 + k] == src[0u64 + k] })
-        );
+        unfold(bytes::equal(dst, 0u64, src, 0u64, 4u64));
+        intro(); intro();
+        have separate(memory(dst[4u64]), memory(dst[k])) by {
+            apply(separation::separate_elements(dst, 4u64, k));
+        }
+        have separate(statement(1).footprint, memory(dst[k])) by {
+            normalize() using { separate(memory(dst[4u64]), memory(dst[k])); };
+        }
+        have dst[k] == at(copied, dst[k]) by {
+            preserve(memory(dst[k]), statement(1));
+        }
+        instantiate(at(copied, (0u64..4u64).all(|j| {
+            dst[0u64 + j] == old(src[0u64 + j])
+        })), k);
+        have separate(memory(dst[0..4]), memory(src[k])) by { known(); }
+        have contains(memory(dst[0..4]), statement(0).footprint) by { known(); }
+        apply(separation::contains_refl(memory(src[k]))) using {};
+        apply(separation::separate_restrict(
+            memory(dst[0..4]), memory(src[k]),
+            statement(0).footprint, memory(src[k])
+        )) using {
+            separate(memory(dst[0..4]), memory(src[k]));
+            contains(memory(dst[0..4]), statement(0).footprint);
+            contains(memory(src[k]), memory(src[k]));
+        };
+        have at(copied, src[k]) == old(src[k]) by {
+            preserve(memory(src[k]), statement(0));
+        }
+        have separate(memory(dst[4u64]), memory(src[k])) by { known(); }
+        have separate(statement(1).footprint, memory(src[k])) by {
+            normalize() using { separate(memory(dst[4u64]), memory(src[k])); };
+        }
+        have src[k] == at(copied, src[k]) by {
+            preserve(memory(src[k]), statement(1));
+        }
+        rewrite(src[k], at(copied, src[k]));
+        rewrite(at(copied, src[k]), old(src[k]));
+        rewrite(dst[k], at(copied, dst[k]));
+        known();
     }
 }
 void copy_u_smart(uint8* dst, const uint8* src) {
@@ -53,7 +77,51 @@ void copy_u_smart(uint8* dst, const uint8* src) {
     owns dst[0..5];
     requires separate(memory(dst[0..5]), memory(src[0..4]));
     ensures bytes::equal(dst, 0u64, src, 0u64, 4u64);
+} by {
+    unfold(bytes::equal(dst, 0u64, src, 0u64, 4u64));
+    step();
+    mark copied;
+    step();
+    have bytes::equal(dst, 0u64, src, 0u64, 4u64) by {
+        unfold(bytes::equal(dst, 0u64, src, 0u64, 4u64));
+        intro(); intro();
+        have separate(memory(dst[4u64]), memory(dst[k])) by {
+            apply(separation::separate_elements(dst, 4u64, k));
+        }
+        have separate(statement(1).footprint, memory(dst[k])) by {
+            normalize() using { separate(memory(dst[4u64]), memory(dst[k])); };
+        }
+        have dst[k] == at(copied, dst[k]) by {
+            preserve(memory(dst[k]), statement(1));
+        }
+        instantiate(at(copied, (0u64..4u64).all(|j| {
+            dst[0u64 + j] == old(src[0u64 + j])
+        })), k);
+        have separate(memory(dst[0..4]), memory(src[k])) by { known(); }
+        have contains(memory(dst[0..4]), statement(0).footprint) by { known(); }
+        apply(separation::contains_refl(memory(src[k]))) using {};
+        apply(separation::separate_restrict(
+            memory(dst[0..4]), memory(src[k]),
+            statement(0).footprint, memory(src[k])
+        )) using {
+            separate(memory(dst[0..4]), memory(src[k]));
+            contains(memory(dst[0..4]), statement(0).footprint);
+            contains(memory(src[k]), memory(src[k]));
+        };
+        have at(copied, src[k]) == old(src[k]) by {
+            preserve(memory(src[k]), statement(0));
+        }
+        have separate(memory(dst[4u64]), memory(src[k])) by { known(); }
+        have separate(statement(1).footprint, memory(src[k])) by {
+            normalize() using { separate(memory(dst[4u64]), memory(src[k])); };
+        }
+        have src[k] == at(copied, src[k]) by {
+            preserve(memory(src[k]), statement(1));
+        }
+        solve();
+    }
 }
+
 ```
 
 ```expect

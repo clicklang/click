@@ -8,7 +8,7 @@ use crate::kernel::{
 };
 
 impl KernelLegacyTerm {
-    pub(super) fn machine_operand(&self) -> Option<&MachineTerm> {
+    pub(in crate::kernel) fn machine_operand(&self) -> Option<&MachineTerm> {
         if !matches!(
             self.identity,
             LegacyIdentity::Machine(_) | LegacyIdentity::MachineObservation(_)

@@ -81,8 +81,7 @@ pub(crate) fn slice_call_arguments(name: &str, mut arguments: Vec<String>) -> Ve
             })
             .and_then(|inner| inner.strip_suffix(')'))
             .unwrap_or(pointer);
-        let own_length = [format!("{parameter}.len()"), format!("{parameter}_len")];
-        if !own_length.contains(&length) {
+        if length != format!("{parameter}.len()") {
             // The parser spreads this back into the same pointer and length.
             arguments[position] =
                 format!("click::rust::slice::from_raw_parts({pointer}, {length})");
@@ -204,9 +203,7 @@ fn slice_with_data(pointer: &str) -> Option<(String, Vec<String>)> {
     let lengths = vec![
         format!("{pointer}.len()"),
         wrap(&format!("{name}.len()")),
-        wrap(&format!("{name}_len")),
         format!("{name}.len()"),
-        format!("{name}_len"),
     ];
     Some((pointer.to_string(), lengths))
 }
@@ -308,8 +305,7 @@ fn with_rust_loop_spelling<T>(read: impl FnOnce(&RustLoopSpelling) -> T) -> T {
 }
 
 /// The spelling of the program variable `name` where its bare name is not
-/// its own: `bytes.len()` for the length of the Rust slice parameter `bytes`,
-/// and `program::iterations` for a variable named like a loop's pass count,
+/// its own, such as `program::iterations` for a variable named like a loop's pass count,
 /// which the bare name means wherever it is written. A variable named
 /// `result` is not rewritten here: the same name also carries the contract
 /// result, so raising decides at the binding's origin.
@@ -317,20 +313,13 @@ pub(crate) fn rust_variable_spelling(name: &str) -> Option<String> {
     if name == crate::surface::LOOP_ITERATIONS_NAME {
         return Some(format!("program::{name}"));
     }
-    if let Some(spelling) = with_rust_loop_spelling(|loops| {
+    with_rust_loop_spelling(|loops| {
         crate::surface::rust_iterator_spelling(
             &loops.iterators,
             CURRENT_LOOP.with(std::cell::Cell::get),
             &name.into(),
         )
-    }) {
-        return Some(spelling);
-    }
-    let slice = name.strip_suffix("_len")?;
-    rust_slice_parameters()?
-        .iter()
-        .any(|known| known == slice)
-        .then(|| format!("{slice}.len()"))
+    })
 }
 
 /// Render a program binding through its existing iterator or slice accessors.

@@ -1307,7 +1307,7 @@ pub(in crate::surface) fn synthesize_surface_value(
     {
         return synthesize_materialized_result(pointer.address());
     }
-    if matches!(value, ProgramValue::Pointer(pointer) if matches!(pointer.address().base, AddressBase::ContractResult | AddressBase::ContractException | AddressBase::AggregateReturn { .. } | AddressBase::StringLiteral { .. } | AddressBase::AutomaticLocal { .. } | AddressBase::ReferenceCarrier { .. } | AddressBase::StaticObject { .. }))
+    if matches!(value, ProgramValue::Pointer(pointer) if matches!(pointer.address().base, AddressBase::ContractResult | AddressBase::ContractException | AddressBase::AggregateReturn { .. } | AddressBase::StringLiteral { .. } | AddressBase::AutomaticLocal { .. } | AddressBase::ReferenceCarrier { .. } | AddressBase::SliceLength { .. } | AddressBase::StaticObject { .. }))
     {
         return Some(ContractExpression::ProgramExpression(
             ProgramExpression::Value(value.clone()),
@@ -3244,14 +3244,15 @@ fn synthesize_surface_atomic_proposition(
             )
         {
             synthesize_uint32_operand(expression)
-        } else if signed_order
-            && (bitvector_spells_uint32(term, parameter_binding, state, bound_variables)
-                || matches!(
-                    expression,
-                    ContractExpression::Add(..)
-                        | ContractExpression::Subtract(..)
-                        | ContractExpression::Multiply(..)
-                ))
+        } else if (signed_word && is_signed_variable_arithmetic32(term, &expression))
+            || (signed_order
+                && (bitvector_spells_uint32(term, parameter_binding, state, bound_variables)
+                    || matches!(
+                        expression,
+                        ContractExpression::Add(..)
+                            | ContractExpression::Subtract(..)
+                            | ContractExpression::Multiply(..)
+                    )))
         {
             synthesize_int32_operand(expression)
         } else {
@@ -3281,6 +3282,21 @@ fn synthesize_surface_atomic_proposition(
     } else {
         Some(ClickProposition::Not(Box::new(comparison)))
     }
+}
+
+fn is_signed_variable_arithmetic32(term: &MachineTerm, expression: &SurfaceTerm) -> bool {
+    matches!(
+        term,
+        MachineTerm::Binary {
+            format: MachineIntegerType::Int32,
+            op: MachineBinaryOp::Add | MachineBinaryOp::Subtract | MachineBinaryOp::Multiply,
+            left,
+            right,
+        } if matches!((left.as_ref(), right.as_ref()), (MachineTerm::Variable(_), MachineTerm::Variable(_)))
+    ) && matches!(
+        expression,
+        SurfaceTerm::Add(..) | SurfaceTerm::Subtract(..) | SurfaceTerm::Multiply(..)
+    )
 }
 
 /// The low-word node carries no destination signedness. Retarget its cast
@@ -3931,14 +3947,14 @@ fn raise_integer_operation(
 }
 
 // A printed comparison operand or conditional arm can reparse arithmetic as
-// Integer. Keep the machine context of the bounded unsigned operation there.
-fn spell_bounded_uint64_operand(
+// Integer. Keep the machine context of the bounded operation there.
+fn spell_bounded_wide_arithmetic_operand(
     term: &crate::kernel::KernelTerm,
     expression: SurfaceTerm,
 ) -> Option<SurfaceTerm> {
     use crate::kernel::KernelTermNode as Node;
     if let Node::MachineBinary {
-        format: MachineIntegerType::UInt64,
+        format: format @ (MachineIntegerType::Int64 | MachineIntegerType::UInt64),
         operator,
         arguments,
     } = term.node()
@@ -3950,10 +3966,14 @@ fn spell_bounded_uint64_operand(
                         Node::Variable(_),
                         Node::Variable(_) | Node::MachineLiteral(_)
                     ] | [Node::MachineLiteral(_), Node::Variable(_)]
-                )
+                ) && (*format == MachineIntegerType::UInt64
+                    || arguments
+                        .iter()
+                        .all(|child| matches!(child.node(), Node::Variable(_))))
             }
             MachineBinaryOp::Divide | MachineBinaryOp::Remainder => {
-                matches!(arguments[0].node(), Node::Variable(_))
+                *format == MachineIntegerType::UInt64
+                    && matches!(arguments[0].node(), Node::Variable(_))
                     && (matches!(arguments[1].node(), Node::Variable(_))
                         || crate::kernel::MachineOperandView::Shared(&arguments[1])
                             .uint64_constant()
@@ -3970,7 +3990,7 @@ fn spell_bounded_uint64_operand(
                 | SurfaceTerm::Remainder(..)
         )
     {
-        synthesize_observation_operand(expression, ProgramType::UInt64)
+        synthesize_observation_operand(expression, format.program_type())
     } else {
         Some(expression)
     }
@@ -4079,7 +4099,7 @@ fn raise_kernel_term_dispatch(
         Node::BoolIf { arguments } | Node::MachineIf { arguments } => {
             let arm = |index: usize| {
                 let term = &arguments[index];
-                let expression = spell_bounded_uint64_operand(term, recurse(term)?)?;
+                let expression = spell_bounded_wide_arithmetic_operand(term, recurse(term)?)?;
                 // The signed 64-bit reading of an unsigned variable retains
                 // the word, so its name needs the arm's type on the surface.
                 if term.ty() == &KernelType::Program(ProgramType::Int64)
@@ -4159,7 +4179,7 @@ fn raise_kernel_term_dispatch(
                     .copied()
                     .all(|operand| unsigned_cast(operand) || operand.variable().is_some());
             let operand = |term| {
-                let expression = spell_bounded_uint64_operand(term, recurse(term)?)?;
+                let expression = spell_bounded_wide_arithmetic_operand(term, recurse(term)?)?;
                 if unsigned_literal || (unsigned_word && unsigned_cast(V::Shared(term))) {
                     Some(expression)
                 } else {
@@ -6008,26 +6028,27 @@ fn synthesize_surface_bitvector(
             condition,
             then_term,
             else_term,
-        } => Some(ContractExpression::If {
-            condition: Box::new(synthesize_surface_proposition_with_bound_variables(
-                &Proposition::condition_is((**condition).clone(), true),
-                parameter_binding,
-                state,
-                bound_variables,
-            )?),
-            then_branch: Box::new(synthesize_surface_bitvector(
-                then_term,
-                parameter_binding,
-                state,
-                bound_variables,
-            )?),
-            else_branch: Box::new(synthesize_surface_bitvector(
-                else_term,
-                parameter_binding,
-                state,
-                bound_variables,
-            )?),
-        }),
+        } => {
+            let arm = |term: &MachineTerm| {
+                let expression =
+                    synthesize_surface_bitvector(term, parameter_binding, state, bound_variables)?;
+                if is_signed_variable_arithmetic32(term, &expression) {
+                    synthesize_int32_operand(expression)
+                } else {
+                    Some(expression)
+                }
+            };
+            Some(ContractExpression::If {
+                condition: Box::new(synthesize_surface_proposition_with_bound_variables(
+                    &Proposition::condition_is((**condition).clone(), true),
+                    parameter_binding,
+                    state,
+                    bound_variables,
+                )?),
+                then_branch: Box::new(arm(then_term)?),
+                else_branch: Box::new(arm(else_term)?),
+            })
+        }
         MachineTerm::RangeFold { .. } => {
             folds::raise_machine_fold(term, parameter_binding, state, bound_variables)
         }
@@ -6966,6 +6987,7 @@ fn synthesize_surface_pointer(
             | AddressBase::AggregateReturn { .. }
             | AddressBase::StringLiteral { .. }
             | AddressBase::AutomaticLocal { .. }
+            | AddressBase::SliceLength { .. }
             | AddressBase::ReferenceCarrier { .. }
             | AddressBase::StaticObject { .. }
     ) {

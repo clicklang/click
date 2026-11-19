@@ -1100,9 +1100,10 @@ the operands themselves
 
 Shared `&[u8]` and mutable `&mut [u8]` parameters, local copies and reborrows,
 builtin `.len()`, indexed reads and writes, and direct slice calls are supported.
-Slice references lower to paired parameters: `bytes: &[u8]` becomes
-`const uint8* bytes, uint64 bytes_len`; a mutable slice uses `uint8*`.
-The generated `<parameter>_len` name must not collide with another parameter.
+Slice references pass a pointer and a length. A shared slice has a shared
+pointer and a mutable slice has a mutable pointer. Proofs use `bytes.len()`
+for a slice parameter or local named `bytes`. After a local is reassigned,
+`at(point, bytes.len())` reads the length it held at the selected point.
 On the pinned target, `usize` is a 64-bit unsigned value, including lengths,
 index literals, comparisons, casts, returns, and general scalar arithmetic.
 Addition, subtraction, and multiplication require checked overflow freedom at
@@ -1138,9 +1139,9 @@ values, wildcard patterns, direct array receivers, mutable slice receivers,
 and `split_at_mut` remain unsupported.
 
 The receiver's pointer and length are captured before evaluating the midpoint,
-which is evaluated once. Execution checks `mid <= bytes_len` at the full
+which is evaluated once. Execution checks `mid <= bytes.len()` at the full
 64-bit `usize` width. The left slice keeps the original pointer and length
-`mid`; the right starts at `bytes + mid` and has length `bytes_len - mid`.
+`mid`; the right starts at `bytes + mid` and has length `bytes.len() - mid`.
 No bytes are copied and no write authority is created. Subsequent reads use
 the original input's `views` authority; the compiler rejects writes through
 either shared result. Both results work with existing slice aliases,
@@ -1298,8 +1299,8 @@ General iterators remain unsupported; the slice, array, range and `enumerate`
 [`examples/rust-loops/loops.rs`](https://github.com/clicklang/click/blob/master/examples/rust-loops/loops.rs)
 and its [sidecar](https://github.com/clicklang/click/blob/master/examples/rust-loops/loops.click)
 verify a scalar counter, checked accumulation, and a byte-slice walk with a
-full-width `usize` counter. The walk uses `invariant i <= bytes_len` and
-`decreases bytes_len - i`; slice access requires `views` authority.
+full-width `usize` counter. The walk uses `invariant i <= bytes.len()` and
+`decreases bytes.len() - i`; slice access requires `views` authority.
 Full-width range endpoints retain the target’s `usize` width; contracts using
 signed indices must separately justify their conversions. The accumulator contract fixes the added value
 to one. These are synthetic loop regressions, not a checksum-library proof.

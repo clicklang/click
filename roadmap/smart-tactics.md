@@ -46,6 +46,45 @@ justify eager derived facts or cache rebuilding by calling them output: the
 delta must be required by the selected rule. Amortized claims need a total-work
 argument across repeated steps and persistent forks, as well as cold misses.
 
+## Program-point memory migration
+
+Execution history supplies point identities and records the effects between
+them. A memory view exposes what is available at a point in a proof context.
+Naming cells during a proof can extend that view at the same point. An ordinary
+read can select an earlier version point, while an exact read retains its
+selected point. See the [memory model](../docs/concepts/memory-model.md).
+
+The work sequence is:
+
+1. Recheck proof-only materialization after #3424. Reduce an actual disagreement
+   between the point walk and the legacy walk and repair any missing producer
+   evidence.
+2. Thread the caller's point through `materialize_composite_resource_memory`.
+3. Migrate `instantiate_composite_resource_body_resources`, using the caller's
+   point for a held resource and a setup root for standalone validation.
+4. Attach initialized access-segment cells to the function's entry root.
+5. Attach uninitialized ranges to that root and retain the definedness refusal.
+6. Maintain version indexes through straight-line batches of recorded effects.
+7. Carry versions through joins when both arms preserve the selected cell.
+8. Carry versions through calls using their checked effects, starting with a
+   disjoint write footprint.
+9. Construct point-based loop views, starting with one invariant-held cell.
+10. Carry the point selected by an exact read through lowering, keys and raising.
+11. Migrate other fixed-offset scalar reads, starting with Booleans. Check the
+    float lowering rule separately.
+12. Migrate pointer and function-pointer reads with provenance, bounds and
+    callability intact.
+13. Extend address coverage to parameter and heap storage, starting with fixed
+    offsets. Handle symbolic offsets in a separate slice.
+14. Handle reads assembled from bytes and establish their Click spelling.
+15. Migrate the remaining snapshot-keyed equality, observation, preservation and
+    raising paths. Remove each legacy route after its last production caller
+    moves.
+
+For each read slice, test which point it selects, its raise/lower round trip,
+and bounded work as unrelated history grows. Use `cell_version_on_path` for
+diagnostic comparisons in tests. Keep production selection indexed.
+
 ## Reading the inventory
 
 - **Scoped evidence:** named tests cover particular routes and growth axes;

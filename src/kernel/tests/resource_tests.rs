@@ -3343,17 +3343,17 @@ fn declared_resource_quantities_are_part_of_context_equality() {
 
     assert!(!resource_contexts_definitionally_equal_with_definitions(
         &[],
-        &SymbolicMemory::new(),
+        &crate::kernel::ProgramPoint::starting_at(&SymbolicMemory::new()),
         &one,
-        &SymbolicMemory::new(),
+        &crate::kernel::ProgramPoint::starting_at(&SymbolicMemory::new()),
         &two,
         &PureFactContext::new(),
     ));
     assert!(resource_contexts_definitionally_equal_with_definitions(
         &[],
-        &SymbolicMemory::new(),
+        &crate::kernel::ProgramPoint::starting_at(&SymbolicMemory::new()),
         &two_uncompacted,
-        &SymbolicMemory::new(),
+        &crate::kernel::ProgramPoint::starting_at(&SymbolicMemory::new()),
         &two,
         &PureFactContext::new(),
     ));
@@ -3406,9 +3406,9 @@ fn definitional_equality_reassembles_a_composite_only_where_its_facts_hold() {
     let equal = |stored: u32| {
         resource_contexts_definitionally_equal_with_definitions(
             std::slice::from_ref(&definition),
-            &memory(0),
+            &crate::kernel::ProgramPoint::starting_at(&memory(0)),
             &folded,
-            &memory(stored),
+            &crate::kernel::ProgramPoint::starting_at(&memory(stored)),
             &pieces,
             &PureFactContext::new(),
         )

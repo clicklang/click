@@ -9506,7 +9506,7 @@ impl AnnotationLowerer<'_> {
             });
         }
 
-        if name.local_id().is_some()
+        if (name.local_id().is_some() || matches!(name, crate::kernel::BindingName::SliceLength(_)))
             && let Some(state) = environment.reference_state.as_ref().or_else(|| {
                 (environment.at_function_entry && !environment.function_contract)
                     .then_some(self.entry_state)
@@ -9675,12 +9675,17 @@ impl AnnotationLowerer<'_> {
 
         if let ProgramExpression::AddressOf(target)
         | ProgramExpression::CheckedObjectAddress(target) = expression
-            && matches!(
-                target.as_ref(),
-                ProgramExpression::Variable(crate::kernel::BindingName::Generated(_))
-            )
+            && let ProgramExpression::Variable(binding) = target.as_ref()
         {
-            return Err("a specification binder has no C storage address".into());
+            match binding {
+                crate::kernel::BindingName::Generated(_) => {
+                    return Err("a specification binder has no C storage address".into());
+                }
+                crate::kernel::BindingName::SliceLength(_) => {
+                    return Err("a slice length has no program storage address".into());
+                }
+                _ => {}
+            }
         }
 
         if let ProgramExpression::AddressOf(target)

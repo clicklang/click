@@ -356,15 +356,14 @@ fn machine_comparison_and_guard_reads_are_bounded_on_hits_and_misses() {
                     ),
                 ]
             });
-            let wrapping_cases = wrapping_cases.as_flattened();
-            let wrapping_hits = if format.format().is_signed() {
-                for (signed, ..) in wrapping_cases {
-                    assert!(bounded_comparison_operand(format, V::Shared(signed), true).is_none());
+            let signed = format.format().is_signed();
+            if signed {
+                for [literal, _] in &wrapping_cases {
+                    assert!(
+                        bounded_comparison_operand(format, V::Shared(&literal.0), true).is_none()
+                    );
                 }
-                &wrapping_cases[..0]
-            } else {
-                wrapping_cases
-            };
+            }
             let division_cases = [O::Divide, O::Remainder].map(|op| {
                 let operation =
                     |left, right| KernelTerm::machine_binary_shared(format, op, [left, right]);
@@ -457,7 +456,11 @@ fn machine_comparison_and_guard_reads_are_bounded_on_hits_and_misses() {
                     .iter()
                     .chain(std::iter::once(&unary_case))
                     .chain(&shift_cases)
-                    .chain(wrapping_hits)
+                    .chain(wrapping_cases.iter().flat_map(|[literal, variables]| {
+                        [(!signed).then_some(literal), Some(variables)]
+                            .into_iter()
+                            .flatten()
+                    }))
                     .chain(&division_cases)
                     .chain(variable_divisor_hits)
                     .chain(&cast_cases)

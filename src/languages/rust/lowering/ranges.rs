@@ -20,49 +20,44 @@ fn one(element: &Type) -> Result<E, String> {
     })
 }
 
+pub(super) struct RangeStorage {
+    element: Type,
+    pub(super) inclusive: bool,
+    pub(super) bounds: [BindingName; 2],
+}
+
 impl Context<'_> {
     pub(super) fn range_storage(
         &mut self,
         name: &str,
         element: &Type,
         inclusive: bool,
+        owner: &LocalFunctionId,
+        ordinal: u32,
     ) -> Result<ProgramStatement, String> {
         if !element.is_integer() {
             return Err("a Rust range requires an integer element".into());
         }
-        if self
-            .ranges
-            .insert(name.into(), (element.clone(), inclusive))
-            .is_some()
-        {
+        let ty = scalar_type(element)?.to_kernel_type();
+        let [start, end] =
+            LocalBindingId::range_bounds(owner.clone(), ordinal, ty).map(BindingName::from);
+        let storage = RangeStorage {
+            element: element.clone(),
+            inclusive,
+            bounds: [start.clone(), end.clone()],
+        };
+        if self.ranges.insert(name.into(), storage).is_some() {
             return Err("range state identity collision".into());
         }
-        let interface_type = scalar_type(element)?.to_kernel_type();
-        let mut result = program_skip();
-        for bound in ["start", "end"] {
-            let local = format!("{name}_{bound}");
-            if !self.locals.insert(local.clone()) {
-                return Err("range bound identity collision".into());
-            }
-            result = program_seq(
-                result,
-                program_declare(self.binding(&local), interface_type),
-            );
-        }
-        Ok(result)
+        Ok(program_seq(
+            program_declare(start, ty),
+            program_declare(end, ty),
+        ))
     }
 
-    fn range_element(&self, range: &str) -> Result<Type, String> {
+    fn range(&self, name: &str) -> Result<&RangeStorage, String> {
         self.ranges
-            .get(range)
-            .map(|(element, _)| element.clone())
-            .ok_or_else(|| "unknown Rust range".into())
-    }
-
-    fn inclusive(&self, range: &str) -> Result<bool, String> {
-        self.ranges
-            .get(range)
-            .map(|(_, inclusive)| *inclusive)
+            .get(name)
             .ok_or_else(|| "unknown Rust range".into())
     }
 
@@ -72,10 +67,12 @@ impl Context<'_> {
         start: &E,
         end: &E,
     ) -> Result<ProgramStatement, String> {
-        self.range_element(target)?;
+        let [start_binding, end_binding] = self.range(target)?.bounds.clone();
+        let (start_checks, start) = self.prepared_expr(start)?;
+        let (end_checks, end) = self.prepared_expr(end)?;
         Ok(program_seq(
-            self.assign(&format!("{target}_start"), start)?,
-            self.assign(&format!("{target}_end"), end)?,
+            program_seq(start_checks, program_assign(start_binding, start)),
+            program_seq(end_checks, program_assign(end_binding, end)),
         ))
     }
 
@@ -84,36 +81,30 @@ impl Context<'_> {
         target: &str,
         source: &str,
     ) -> Result<ProgramStatement, String> {
+        use crate::kernel::program_expression::variable;
+        let (destination, origin) = (self.range(target)?, self.range(source)?);
         if target == source
-            || self.range_element(target)? != self.range_element(source)?
-            || self.inclusive(target)? != self.inclusive(source)?
+            || destination.element != origin.element
+            || destination.inclusive != origin.inclusive
         {
             return Err("invalid Rust range move".into());
         }
+        let [start, end] = destination.bounds.clone();
+        let [source_start, source_end] = origin.bounds.clone().map(variable);
         Ok(program_seq(
-            program_assign(
-                self.binding(&format!("{target}_start")),
-                crate::kernel::program_expression::variable(
-                    self.binding(&format!("{source}_start")),
-                ),
-            ),
-            program_assign(
-                self.binding(&format!("{target}_end")),
-                crate::kernel::program_expression::variable(self.binding(&format!("{source}_end"))),
-            ),
+            program_assign(start, source_start),
+            program_assign(end, source_end),
         ))
     }
 
     pub(super) fn range_has_next(&self, iterator: &str) -> Result<ProgramExpression, String> {
-        self.range_element(iterator)?;
-        let start =
-            crate::kernel::program_expression::variable(self.binding(&format!("{iterator}_start")));
-        let end =
-            crate::kernel::program_expression::variable(self.binding(&format!("{iterator}_end")));
-        Ok(if self.inclusive(iterator)? {
-            crate::kernel::program_expression::less_equal(start, end)
+        use crate::kernel::program_expression as e;
+        let range = self.range(iterator)?;
+        let [start, end] = range.bounds.clone().map(e::variable);
+        Ok(if range.inclusive {
+            e::less_equal(start, end)
         } else {
-            crate::kernel::program_expression::less_than(start, end)
+            e::less_than(start, end)
         })
     }
 
@@ -125,38 +116,37 @@ impl Context<'_> {
         payload: Option<&str>,
         taken: Option<bool>,
     ) -> Result<ProgramStatement, String> {
-        let element = self.range_element(iterator)?;
-        let start = format!("{iterator}_start");
-        let local = |name: &str| E::Local { name: name.into() };
-        let construct = |variant: &str, fields| E::EnumConstruct {
-            name: option_type.into(),
-            variant: variant.into(),
-            fields,
-        };
-        // `start + 1` cannot overflow below `end`; its panic check is
-        // decided by the guard, and an inclusive range's by `start < end`.
-        let advance = self.assign(
-            &start,
-            &E::Binary {
-                operator: "add".into(),
-                left_type: element.clone(),
-                right_type: element.clone(),
-                left: Box::new(local(&start)),
-                right: Box::new(one(&element)?),
-            },
+        use crate::kernel::program_expression as e;
+        let range = self.range(iterator)?;
+        let element = range.element.clone();
+        let inclusive = range.inclusive;
+        let [start, end] = range.bounds.clone();
+        let start_value = e::variable(start.clone());
+        let unit = self.expr(&one(&element)?)?;
+        // `start + 1` cannot overflow below `end`. Retain the ordinary
+        // Rust arithmetic checks for this advance.
+        let (_, start_operand, _) = self.read_operand(start_value.clone(), &element, true)?;
+        let (_, unit_operand, _) = self.read_operand(unit.clone(), &element, true)?;
+        let checks = binary_checks(
+            program_skip(),
+            "add",
+            &element,
+            &element,
+            &start_operand,
+            &unit_operand,
         )?;
+        let next = binary_value("add", &element, &element, start_value.clone(), unit)?;
+        let advance = program_seq(checks, program_assign(start.clone(), next));
         // Rust leaves the bounds unspecified after exhaustion. Both 0 and
         // 1 fit every supported element type, so use the same empty bounds
         // at every endpoint, including the integer type's minimum and maximum.
-        let advance = if self.inclusive(iterator)? {
-            use crate::kernel::program_expression as e;
-            let end = format!("{iterator}_end");
+        let advance = if inclusive {
             let exhausted = program_seq(
-                program_assign(self.binding(&start), e::int32_literal(1)),
-                program_assign(self.binding(&end), e::int32_literal(0)),
+                program_assign(start, e::int32_literal(1)),
+                program_assign(end.clone(), e::int32_literal(0)),
             );
             program_if(
-                e::less_than(e::variable(&start), e::variable(&end)),
+                e::less_than(start_value.clone(), e::variable(end)),
                 advance,
                 exhausted,
             )
@@ -164,7 +154,7 @@ impl Context<'_> {
             advance
         };
         let none = match option {
-            Some(option) => self.assign(option, &construct("None", vec![]))?,
+            Some(option) => self.bind_local(option, enum_construct(option_type, "None", [])?)?,
             None => program_skip(),
         };
         if taken == Some(false) {
@@ -173,8 +163,11 @@ impl Context<'_> {
         // The yielded value is the loop variable's, when the loop reads only
         // that; otherwise the `Option` holds it.
         let yielded = match (payload, option) {
-            (Some(payload), _) => self.assign(payload, &local(&start))?,
-            (None, Some(option)) => self.assign(option, &construct("Some", vec![local(&start)]))?,
+            (Some(payload), _) => self.bind_local(payload, start_value)?,
+            (None, Some(option)) => self.bind_local(
+                option,
+                enum_construct(option_type, "Some", [Ok(start_value)])?,
+            )?,
             (None, None) => {
                 return Err("Rust range next binds neither its Option nor its value".into());
             }
@@ -184,5 +177,39 @@ impl Context<'_> {
             Some(_) => some,
             None => program_if(self.range_has_next(iterator)?, some, none),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::languages::rust::schema::Place;
+
+    #[test]
+    fn range_bounds_are_distinct_from_source_locals() {
+        let mut export = crate::languages::rust::charon::decode(
+            include_bytes!("../../../../design/charon-trial/ranges/.click/ranges/ranges.rs.ullbc"),
+            "ranges.rs",
+            include_bytes!("../../../../design/charon-trial/ranges/ranges.rs"),
+        )
+        .unwrap();
+        let function = export
+            .functions
+            .iter_mut()
+            .find(|f| f.name == "count_to")
+            .unwrap();
+        let mir = function.mir.as_mut().unwrap();
+        let range = mir
+            .locals
+            .iter()
+            .find(|local| matches!(local.value_type, Type::Range { .. }))
+            .unwrap();
+        let colliding = ["start", "end"].map(|field| Place {
+            name: format!("{}_{field}", range.name),
+            value_type: Type::U32,
+            span: range.span.clone(),
+        });
+        mir.locals.extend(colliding);
+        super::super::lower(&export).unwrap();
     }
 }

@@ -1624,7 +1624,7 @@ fn opaque_word_call_frame(size: u32) -> (SymbolicMemory, PureFactContext, Addres
         crate::kernel::primitives::CallKeptRanges::new(
             ResourceContext::new(),
             vec![],
-            Some(std::sync::Arc::new(vec![definition])),
+            Some([definition].into()),
         ),
         &context,
     );

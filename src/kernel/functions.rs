@@ -3534,10 +3534,15 @@ fn execute_verified_function_applications_with_suspension(
                 .caller_resources_after_requirements
                 .clone()
                 .unchecked_with_facts(escrowed_owners(&transfer).iter().cloned());
-            let kept = call_kept_ownership(
-                &caller_frame,
-                interface.composite_resource_definitions(),
-                &entry_state,
+            let kept = CallKeptOwnership::new(
+                caller_frame.clone(),
+                CallKeptRanges::new(
+                    ResourceContext::new_with_equalities(&effective_assumptions),
+                    vec![],
+                    (!caller_frame.owned_composite_facts().is_empty()
+                        && !interface.composite_resource_definitions.is_empty())
+                    .then(|| interface.composite_resource_definitions.clone()),
+                ),
                 &effective_assumptions,
             )
             .with_caller_before_transfer(caller_state.resources());
@@ -22304,7 +22309,7 @@ pub(super) fn function_outcome_from_body(
             };
 
             let original_creation = caller_state.population_effects.creation.clone();
-            let mut caller_state = caller_state.clone();
+            let incoming_memory = caller_state.memory();
             let retired_memory = if function.has_inline_body() {
                 end_inline_frame_automatic_lifetimes(&state)
             } else {
@@ -22315,14 +22320,17 @@ pub(super) fn function_outcome_from_body(
                     value.native_payload(),
                 )
             };
-            let retired_creation_blocks = match retired_memory {
-                Ok(memory) => {
-                    let blocks = retired_automatistorage_creation_blocks(&state, &memory);
-                    caller_state.set_memory_continuing(&state, memory);
-                    blocks
-                }
+            let memory = match retired_memory {
+                Ok(memory) => memory,
                 Err(error) => return (FunctionOutcome::RuntimeError(error), obligations),
             };
+            let retired_creation_blocks = retired_automatistorage_creation_blocks(&state, &memory);
+            let resources = return_resources
+                .cloned()
+                .unwrap_or_else(|| state.resources.clone());
+            let mut caller_state = caller_state
+                .clone()
+                .with_memory_and_resources_continuing(&state, memory, resources);
             let retired_creation =
                 match state.retired_population_creation_for_blocks(&retired_creation_blocks) {
                     Ok(creation) => creation,
@@ -22334,8 +22342,7 @@ pub(super) fn function_outcome_from_body(
                 // synchronize their named bindings during body execution.
                 // Reconcile those bindings from the shared caller memory
                 // before the caller resumes evaluating its next statement.
-                let memory = caller_state.memory.clone();
-                caller_state.sync_scalar_locals_from_memory(&memory);
+                caller_state.sync_changed_scalar_locals(incoming_memory);
             }
             // The body ran on its entry ledger and may have projected viewed
             // composite children into it (or, for an inline body, made calls
@@ -22352,8 +22359,6 @@ pub(super) fn function_outcome_from_body(
             if return_resources.is_none() {
                 caller_state.instance_field_scope = state.instance_field_scope;
             }
-            caller_state = caller_state
-                .with_resource_context(return_resources.cloned().unwrap_or(state.resources));
             for block in &retired_creation_blocks {
                 let Some(bytes) = state.memory.block_size(block).cloned() else {
                     continue;
@@ -22399,20 +22404,23 @@ pub(super) fn function_outcome_from_body(
                 );
             }
             let original_creation = caller_state.population_effects.creation.clone();
-            let mut caller_state = caller_state.clone();
+            let incoming_memory = caller_state.memory();
             let retired_memory = if function.has_inline_body() {
                 end_inline_frame_automatic_lifetimes(&state)
             } else {
                 end_function_body_automatic_lifetimes(&state, function, caller_state.memory(), None)
             };
-            let retired_creation_blocks = match retired_memory {
-                Ok(memory) => {
-                    let blocks = retired_automatistorage_creation_blocks(&state, &memory);
-                    caller_state.set_memory_continuing(&state, memory);
-                    blocks
-                }
+            let memory = match retired_memory {
+                Ok(memory) => memory,
                 Err(error) => return (FunctionOutcome::RuntimeError(error), obligations),
             };
+            let retired_creation_blocks = retired_automatistorage_creation_blocks(&state, &memory);
+            let resources = return_resources
+                .cloned()
+                .unwrap_or_else(|| state.resources.clone());
+            let mut caller_state = caller_state
+                .clone()
+                .with_memory_and_resources_continuing(&state, memory, resources);
             let retired_creation =
                 match state.retired_population_creation_for_blocks(&retired_creation_blocks) {
                     Ok(creation) => creation,
@@ -22424,8 +22432,7 @@ pub(super) fn function_outcome_from_body(
             caller_state.opaque_mutex_acquisitions = state.opaque_mutex_acquisitions.clone();
             caller_state.named_mutex_authorities = state.named_mutex_authorities.clone();
             if function.has_inline_body() {
-                let memory = caller_state.memory.clone();
-                caller_state.sync_scalar_locals_from_memory(&memory);
+                caller_state.sync_changed_scalar_locals(incoming_memory);
             }
             caller_state = caller_state
                 .with_loan_ledger(state.loan_ledger().cloned())
@@ -22433,8 +22440,6 @@ pub(super) fn function_outcome_from_body(
             if return_resources.is_none() {
                 caller_state.instance_field_scope = state.instance_field_scope;
             }
-            caller_state = caller_state
-                .with_resource_context(return_resources.cloned().unwrap_or(state.resources));
             for block in &retired_creation_blocks {
                 let Some(bytes) = state.memory.block_size(block).cloned() else {
                     continue;

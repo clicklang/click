@@ -2489,7 +2489,7 @@ pub(in crate::surface) fn collect_contract_expression_referenced_names(
     names.extend(
         bindings
             .iter()
-            .filter_map(|binding| binding.unresolved_name().map(str::to_owned)),
+            .filter_map(|binding| binding.metadata_name().map(str::to_owned)),
     );
 }
 
@@ -2502,7 +2502,7 @@ pub(in crate::surface) fn collect_click_proposition_referenced_names(
     names.extend(
         bindings
             .iter()
-            .filter_map(|binding| binding.unresolved_name().map(str::to_owned)),
+            .filter_map(|binding| binding.metadata_name().map(str::to_owned)),
     );
 }
 

@@ -209,15 +209,29 @@ pub(in crate::surface) fn instantiate_predicate_definition(
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Proposition, String> {
     let (state, values, array_refs) = decode_predicate_arguments(definition, arguments)?;
+    // The body is lowered at the first array argument's memory. Another
+    // array argument read in a different memory, `old(p)` beside `p`, keeps
+    // its own: without it, `b[0]` would read the frame's memory and the
+    // body would equate two reads of the same array.
+    let frame_point = crate::kernel::ProgramPoint::of_memory(state.memory());
+    let bound_array_memories = array_refs
+        .iter()
+        .filter(|(_, array_ref)| array_ref.point != frame_point)
+        .map(|(name, array_ref)| (name.clone(), SpecPoint::At(array_ref.point.clone())))
+        .collect::<BTreeMap<_, _>>();
     // The body takes the route every proof-side proposition takes:
     // elaborated with the parameters bound to the decoded arguments and
     // lowered by the kernel at the decoded state.
-    crate::surface::proof::lower_fixed_state_proposition_through_kernel(
+    crate::surface::proof::lower_fixed_state_proposition_through_kernel_with(
         definition.body(),
         assumptions,
         ContractEnvironment::new(&values, &array_refs),
         FixedStateFrame::new(&state, &state, None, &RecordedStates::new()),
         spec_definitions,
+        crate::surface::proof::FixedStateLoweringOptions {
+            bound_array_memories: Some(&bound_array_memories),
+            ..Default::default()
+        },
     )
 }
 

@@ -154,6 +154,11 @@ pub(super) fn bind(
         return None;
     }
     let assumptions = PureFactContext::new();
+    // Rebinding a construction result at a proof frontier names the object
+    // without writing to it. The body checks its stores, and a nested call
+    // that constructs into the slot must retain the write prerequisite.
+    let check_loan_write =
+        loan_obligations.is_some() || interface.construction_parameter().is_some();
     let mut pending = Vec::new();
     let mut writable = |pointer: &Address, bytes| {
         if caller
@@ -169,6 +174,9 @@ pub(super) fn bind(
             .is_some()
         {
             return false;
+        }
+        if !check_loan_write {
+            return true;
         }
         let Some(ledger) = caller
             .loan_ledger()
@@ -211,8 +219,8 @@ pub(super) fn bind(
     if !authorized {
         return None;
     }
-    // Entry reconstruction does not publish obligations. Such a caller can
-    // only reconstruct a destination that needs no additional evidence.
+    // Native constructor entry reconstruction still validates its explicit
+    // destination parameter without publishing obligations.
     if let Some(obligations) = loan_obligations {
         obligations.extend(pending);
     } else if !pending.is_empty() {

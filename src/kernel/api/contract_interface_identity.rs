@@ -282,6 +282,7 @@ impl Names {
             Variable(name) => match name {
                 BindingName::Named(source) => self.reference(source),
                 BindingName::ReferenceCarrier(_)
+                | BindingName::SliceLength(_)
                 | BindingName::Local(_)
                 | BindingName::Generated(_)
                 | BindingName::Static(_)
@@ -427,6 +428,7 @@ impl Names {
                 match parameter {
                     BindingName::Named(name) => self.reference(name),
                     BindingName::ReferenceCarrier(_)
+                    | BindingName::SliceLength(_)
                     | BindingName::Local(_)
                     | BindingName::Static(_)
                     | BindingName::ContractResult

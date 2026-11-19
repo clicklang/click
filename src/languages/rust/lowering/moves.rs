@@ -197,7 +197,14 @@ pub(super) fn lower(
         if let Type::Range { element, inclusive } = &local.value_type {
             declarations = program_seq(
                 declarations,
-                cx.range_storage(&local.name, element, *inclusive)?,
+                cx.range_storage(
+                    &local.name,
+                    element,
+                    *inclusive,
+                    owner,
+                    u32::try_from(index - owned_parameter_count)
+                        .map_err(|_| "MIR local index exceeds u32")?,
+                )?,
             );
             continue;
         }
@@ -252,10 +259,7 @@ pub(super) fn lower(
                     pointee: element.clone(),
                 })?
                 .to_kernel_type();
-                let length = format!("{}_len", local.name);
-                if !cx.locals.insert(length.clone()) {
-                    return Err("MIR scalar slice length collision".into());
-                }
+                let length = cx.declare_slice_length(&local.name)?;
                 cx.shared_scalar_slices
                     .insert(local.name.clone(), (length.clone(), element_type));
                 program_seq(
@@ -267,14 +271,11 @@ pub(super) fn lower(
                         false,
                         !mutable,
                     ),
-                    program_declare(cx.binding(&length), ProgramType::UInt64),
+                    program_declare(length, ProgramType::UInt64),
                 )
             }
             Type::ByteSlice { mutable } => {
-                let length = format!("{}_len", local.name);
-                if !cx.locals.insert(length.clone()) {
-                    return Err("MIR slice local length collision".into());
-                }
+                let length = cx.declare_slice_length(&local.name)?;
                 cx.slices
                     .insert(local.name.clone(), (length.clone(), !mutable));
                 program_seq(
@@ -286,7 +287,7 @@ pub(super) fn lower(
                         false,
                         !mutable,
                     ),
-                    program_declare(cx.binding(&length), ProgramType::UInt64),
+                    program_declare(length, ProgramType::UInt64),
                 )
             }
             Type::Reference { mutable, pointee }
@@ -1224,6 +1225,7 @@ fn loop_iterator(
                 local,
                 kind: K::User,
                 count_binding: None,
+                range_bounds: None,
             });
         }
     }
@@ -1239,16 +1241,7 @@ fn loop_iterator(
                 S::EnumerateNext { iterator, .. } => (iterator, K::Enumerate),
                 S::ChunkNext { iterator, .. } => (iterator, K::Chunks),
                 S::RangeNext { iterator, .. } => {
-                    let inclusive = mir.locals.iter().any(|local| {
-                        local.name == *iterator
-                            && matches!(
-                                local.value_type,
-                                Type::Range {
-                                    inclusive: true,
-                                    ..
-                                }
-                            )
-                    });
+                    let inclusive = cx.ranges.get(iterator)?.inclusive;
                     (
                         iterator,
                         if inclusive {
@@ -1268,6 +1261,7 @@ fn loop_iterator(
                     .map(|iter| iter.fields.clone()),
                 local: local.clone(),
                 kind,
+                range_bounds: cx.ranges.get(local).map(|range| range.bounds.clone()),
                 count_binding: if kind == K::Enumerate {
                     cx.enumerate_fields.get(local).cloned()
                 } else {
@@ -1843,6 +1837,8 @@ mod tests {
                 import_identity: None,
                 mir_point: None,
                 mir_nodes: BTreeMap::new(),
+                slice_local_owner: LocalFunctionId::new(None, "test".into()),
+                next_slice_local: 0,
                 next_result_step: std::cell::Cell::new(0),
                 loop_iterators: Vec::new(),
                 locals: BTreeSet::new(),

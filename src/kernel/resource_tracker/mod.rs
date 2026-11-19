@@ -616,11 +616,14 @@ fn point_leaves_cell(
                 step_effect::StepEffect::Separate(step_effect::Separation::Cell(_))
             )
         }),
-        // Reached with no recorded step: unchanged only if nothing changed.
-        None => point
-            .predecessors()
-            .iter()
-            .all(|predecessor| predecessor.memory() == point.memory()),
+        // An unchanged continuation can start from a proof-local view of
+        // its predecessor. Use the view that was carried along this edge.
+        None => point.memory().is_some_and(|memory| {
+            point
+                .predecessors()
+                .iter()
+                .all(|predecessor| predecessor.matches_indexed_view(memory))
+        }),
     }
 }
 
