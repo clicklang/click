@@ -893,7 +893,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have separate(memory(gparent->__rb_parent_color), memory(parent->rb_left)) by { known(); }
                                                         have gparent->rb_left == parent by { rewrite(gparent, uid); rewrite(parent, cid); known(); }
                                                         let read_focus_link = fold(insert_left_link(gparent), { link: InsertLink::To(parent) });
-                                                        let read_tag = fold(insert_parent_tag(gparent, ugp), { color: ucolor });
+                                                        let rotation_tag = fold(insert_parent_tag(gparent, ugp), { color: ucolor });
                                                         have gparent->rb_right == uid->rb_right by { rewrite(gparent, uid); normalize(); }
                                                         have separate(memory(((&tmp) as (uint8 *))[0..8]), memory(gparent->rb_right)) by known();
                                                         have parent->rb_left == cid->rb_left by { rewrite(parent, cid); normalize(); }
@@ -914,7 +914,6 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                             preserve(memory(parent->rb_left), statement(1).statement(3));
                                                         }
                                                         unfold(read_focus_link);
-                                                        unfold(read_tag);
                                                     mark before_uncle_pointer_changes;
                                                     have at(before_uncle_pointer_changes, gparent->rb_right == at(before_uncle_pointer_changes, tmp)) by { known(); }
                                                     have at(before_uncle_pointer_changes, parent->rb_left == node) by { known(); }
@@ -1082,7 +1081,6 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                             let t = fold(rb_at(node), { model: RbTree::Node(nid, cid, Color::Red, nleft, nright), left: nl_at, right: nr_at });
                                                             let held_uncle_link = fold(insert_right_link(gparent), { link: InsertLink::To(at(before_uncle_pointer_changes, tmp)) });
                                                             let held_focus_link = fold(insert_left_link(parent), { link: InsertLink::To(node) });
-                                                            let rotation_tag = fold(insert_parent_tag(gparent, ugp), { color: ucolor });
                                                         match cs.model ensuring {
                                                             owns sn: rb_at(tmp);
                                                                 owns rotation_tag: insert_parent_tag(gparent, ugp);
@@ -1257,6 +1255,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                         step();
                                                         step();
                                                     } else {
+                                                        unfold(rotation_tag);
                                                         match us.model {
                                                             RbTree::Node(unid, unp, uncolor, unl, unr) => {
                                                                 let { left: ul, right: ur } = unfold(us);
@@ -1456,7 +1455,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                         have gparent->rb_right == parent by { rewrite(gparent, uid); rewrite(parent, cid); known(); }
                                                         let triangle_uncle_link = fold(insert_left_link(gparent), { link: InsertLink::To(uid->rb_left) });
                                                         let triangle_parent_link = fold(insert_right_link(gparent), { link: InsertLink::To(parent) });
-                                                        let triangle_focus_link = fold(insert_left_link(parent), { link: InsertLink::To(node) });
+                                                        let triangle_focus_link = fold(insert_left_link(parent), { link: InsertLink::To(node) }) by { rewrite(parent, cid); known(); }
                                                         let triangle_tag = fold(insert_parent_tag(gparent, ugp), { color: ucolor });
                                                     step();
                                                         unfold(triangle_parent_link);
@@ -1754,13 +1753,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
 
                                                                             have separate(memory(parent->rb_left), memory(tmp->__rb_parent_color)) by { known(); }
                                                                             have at(before_inner_child_links, tmp->rb_left == bx->rb_left) by { known(); }
-                                                                            have at(before_inner_child_links, separate(memory(tmp->rb_left), memory(parent->rb_left))) by { known(); }
-                                                                            have at(before_inner_child_links, separate(memory(tmp->rb_left), memory(node->rb_right))) by { known(); }
-                                                                            have at(before_inner_child_links, separate(memory(tmp->rb_left), memory(tmp->__rb_parent_color))) by { known(); }
                                                                             have at(before_inner_child_links, tmp->rb_right == bx->rb_right) by { known(); }
-                                                                            have at(before_inner_child_links, separate(memory(tmp->rb_right), memory(parent->rb_left))) by { known(); }
-                                                                            have at(before_inner_child_links, separate(memory(tmp->rb_right), memory(node->rb_right))) by { known(); }
-                                                                            have at(before_inner_child_links, separate(memory(tmp->rb_right), memory(tmp->__rb_parent_color))) by { known(); }
                                                                             have rb_root_black(RbTree::Node(bx, bp, bcol, bl, br)) == 1 by {
                                                                                 rewrite(RbTree::Node(bx, bp, bcol, bl, br), nright);
                                                                                 known();
@@ -1775,24 +1768,18 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                                 rewrite(nright, RbTree::Node(bx, bp, bcol, bl, br));
                                                                                 unfold(rb_reparent(RbTree::Node(bx, bp, bcol, bl, br), cid)); normalize();
                                                                             }
+                                                                            let middle_left = fold(insert_left_link(tmp), { link: InsertLink::To(at(before_inner_child_links, bx->rb_left)) }) by { known(); }
+                                                                            let middle_right = fold(insert_right_link(tmp), { link: InsertLink::To(at(before_inner_child_links, bx->rb_right)) }) by { known(); }
                                                                             step();
                                                                             let inner_new_parent_focus = fold(insert_left_link(parent), { link: InsertLink::To(tmp) });
                                                                             step();
                                                                             let inner_new_node_focus = fold(insert_right_link(node), { link: InsertLink::To(parent) });
                                                                             step();
                                                                             step();
-                                                                            transport(at(before_inner_child_links, tmp->rb_left == bx->rb_left), tmp->rb_left == at(before_inner_child_links, bx->rb_left)) using {
-                                                                                at(before_inner_child_links, tmp->rb_left == bx->rb_left);
-                                                                                at(before_inner_child_links, separate(memory(tmp->rb_left), memory(parent->rb_left)));
-                                                                                at(before_inner_child_links, separate(memory(tmp->rb_left), memory(node->rb_right)));
-                                                                                at(before_inner_child_links, separate(memory(tmp->rb_left), memory(tmp->__rb_parent_color)));
-                                                                            };
-                                                                            transport(at(before_inner_child_links, tmp->rb_right == bx->rb_right), tmp->rb_right == at(before_inner_child_links, bx->rb_right)) using {
-                                                                                at(before_inner_child_links, tmp->rb_right == bx->rb_right);
-                                                                                at(before_inner_child_links, separate(memory(tmp->rb_right), memory(parent->rb_left)));
-                                                                                at(before_inner_child_links, separate(memory(tmp->rb_right), memory(node->rb_right)));
-                                                                                at(before_inner_child_links, separate(memory(tmp->rb_right), memory(tmp->__rb_parent_color)));
-                                                                            };
+                                                                            unfold(middle_right);
+                                                                            have tmp->rb_right == at(before_inner_child_links, bx->rb_right) by { known(); }
+                                                                            unfold(middle_left);
+                                                                            have tmp->rb_left == at(before_inner_child_links, bx->rb_left) by { known(); }
                                                                             unfold(inner_parent_other);
                                                                             have parent->rb_right == at(before_inner_parent_right, parent->rb_right) by known();
                                                                             unfold(inner_new_parent_focus);
@@ -1828,22 +1815,59 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     have separate(memory(parent->rb_left), memory(parent->__rb_parent_color)) by { known(); }
                                                                     step();
 
-                                                                    transport(at(before_inner_parent_color, parent->rb_left == tmp), parent->rb_left == tmp) using {
-                                                                        at(before_inner_parent_color, parent->rb_left == tmp);
+                                                                    have contains(memory(parent->__rb_parent_color), statement(1).statement(4).statement(12).statement(4).footprint) by { known(); }
+                                                                    apply(separation::contains_refl(memory(parent->rb_left))) using {};
+                                                                    apply(separation::separate_restrict(memory(parent->rb_left), memory(parent->__rb_parent_color), memory(parent->rb_left), statement(1).statement(4).statement(12).statement(4).footprint)) using {
                                                                         separate(memory(parent->rb_left), memory(parent->__rb_parent_color));
+                                                                        contains(memory(parent->rb_left), memory(parent->rb_left));
+                                                                        contains(memory(parent->__rb_parent_color), statement(1).statement(4).statement(12).statement(4).footprint);
                                                                     };
-                                                                    transport(at(before_inner_parent_color, parent->rb_right == at(before_inner_parent_right, parent->rb_right)), parent->rb_right == at(before_inner_parent_right, parent->rb_right)) using {
-                                                                        at(before_inner_parent_color, parent->rb_right == at(before_inner_parent_right, parent->rb_right));
+                                                                    have parent->rb_left == at(before_inner_parent_color, parent->rb_left) by {
+                                                                        preserve(memory(parent->rb_left), statement(1).statement(4).statement(12).statement(4));
+                                                                    }
+                                                                    have parent->rb_left == tmp by {
+                                                                        rewrite(parent->rb_left, at(before_inner_parent_color, parent->rb_left));
+                                                                        known();
+                                                                    }
+                                                                    apply(separation::contains_refl(memory(parent->rb_right))) using {};
+                                                                    apply(separation::separate_restrict(memory(parent->rb_right), memory(parent->__rb_parent_color), memory(parent->rb_right), statement(1).statement(4).statement(12).statement(4).footprint)) using {
                                                                         separate(memory(parent->rb_right), memory(parent->__rb_parent_color));
+                                                                        contains(memory(parent->rb_right), memory(parent->rb_right));
+                                                                        contains(memory(parent->__rb_parent_color), statement(1).statement(4).statement(12).statement(4).footprint);
                                                                     };
-                                                                    transport(at(before_inner_parent_color, gparent->rb_left == at(triangle_uncle_pointer, tmp)), gparent->rb_left == at(triangle_uncle_pointer, tmp)) using {
-                                                                        at(before_inner_parent_color, gparent->rb_left == at(triangle_uncle_pointer, tmp));
+                                                                    have parent->rb_right == at(before_inner_parent_color, parent->rb_right) by {
+                                                                        preserve(memory(parent->rb_right), statement(1).statement(4).statement(12).statement(4));
+                                                                    }
+                                                                    have parent->rb_right == at(before_inner_parent_right, parent->rb_right) by {
+                                                                        rewrite(parent->rb_right, at(before_inner_parent_color, parent->rb_right));
+                                                                        known();
+                                                                    }
+                                                                    apply(separation::contains_refl(memory(gparent->rb_left))) using {};
+                                                                    apply(separation::separate_restrict(memory(gparent->rb_left), memory(parent->__rb_parent_color), memory(gparent->rb_left), statement(1).statement(4).statement(12).statement(4).footprint)) using {
                                                                         separate(memory(gparent->rb_left), memory(parent->__rb_parent_color));
+                                                                        contains(memory(gparent->rb_left), memory(gparent->rb_left));
+                                                                        contains(memory(parent->__rb_parent_color), statement(1).statement(4).statement(12).statement(4).footprint);
                                                                     };
-                                                                    transport(at(before_inner_parent_color, node->rb_right == parent), node->rb_right == parent) using {
-                                                                        at(before_inner_parent_color, node->rb_right == parent);
+                                                                    have gparent->rb_left == at(before_inner_parent_color, gparent->rb_left) by {
+                                                                        preserve(memory(gparent->rb_left), statement(1).statement(4).statement(12).statement(4));
+                                                                    }
+                                                                    have gparent->rb_left == at(triangle_uncle_pointer, tmp) by {
+                                                                        rewrite(gparent->rb_left, at(before_inner_parent_color, gparent->rb_left));
+                                                                        known();
+                                                                    }
+                                                                    apply(separation::contains_refl(memory(node->rb_right))) using {};
+                                                                    apply(separation::separate_restrict(memory(node->rb_right), memory(parent->__rb_parent_color), memory(node->rb_right), statement(1).statement(4).statement(12).statement(4).footprint)) using {
                                                                         separate(memory(node->rb_right), memory(parent->__rb_parent_color));
+                                                                        contains(memory(node->rb_right), memory(node->rb_right));
+                                                                        contains(memory(parent->__rb_parent_color), statement(1).statement(4).statement(12).statement(4).footprint);
                                                                     };
+                                                                    have node->rb_right == at(before_inner_parent_color, node->rb_right) by {
+                                                                        preserve(memory(node->rb_right), statement(1).statement(4).statement(12).statement(4));
+                                                                    }
+                                                                    have node->rb_right == parent by {
+                                                                        rewrite(node->rb_right, at(before_inner_parent_color, node->rb_right));
+                                                                        known();
+                                                                    }
                                                                     have rb_parent_is(rb_reparent(nright, cid), cid) == 1 by {
                                                                         apply(rb_reparent_parent_is(nright, cid));
                                                                         known();
@@ -2773,22 +2797,59 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                                     have separate(memory(parent->rb_right), memory(parent->__rb_parent_color)) by { known(); }
                                                                     step();
 
-                                                                    transport(at(before_inner_parent_color, parent->rb_right == tmp), parent->rb_right == tmp) using {
-                                                                        at(before_inner_parent_color, parent->rb_right == tmp);
+                                                                    have contains(memory(parent->__rb_parent_color), statement(1).statement(4).statement(2).statement(4).footprint) by { known(); }
+                                                                    apply(separation::contains_refl(memory(parent->rb_right))) using {};
+                                                                    apply(separation::separate_restrict(memory(parent->rb_right), memory(parent->__rb_parent_color), memory(parent->rb_right), statement(1).statement(4).statement(2).statement(4).footprint)) using {
                                                                         separate(memory(parent->rb_right), memory(parent->__rb_parent_color));
+                                                                        contains(memory(parent->rb_right), memory(parent->rb_right));
+                                                                        contains(memory(parent->__rb_parent_color), statement(1).statement(4).statement(2).statement(4).footprint);
                                                                     };
-                                                                    transport(at(before_inner_parent_color, parent->rb_left == at(before_inner_parent_right, parent->rb_left)), parent->rb_left == at(before_inner_parent_right, parent->rb_left)) using {
-                                                                        at(before_inner_parent_color, parent->rb_left == at(before_inner_parent_right, parent->rb_left));
+                                                                    have parent->rb_right == at(before_inner_parent_color, parent->rb_right) by {
+                                                                        preserve(memory(parent->rb_right), statement(1).statement(4).statement(2).statement(4));
+                                                                    }
+                                                                    have parent->rb_right == tmp by {
+                                                                        rewrite(parent->rb_right, at(before_inner_parent_color, parent->rb_right));
+                                                                        known();
+                                                                    }
+                                                                    apply(separation::contains_refl(memory(parent->rb_left))) using {};
+                                                                    apply(separation::separate_restrict(memory(parent->rb_left), memory(parent->__rb_parent_color), memory(parent->rb_left), statement(1).statement(4).statement(2).statement(4).footprint)) using {
                                                                         separate(memory(parent->rb_left), memory(parent->__rb_parent_color));
+                                                                        contains(memory(parent->rb_left), memory(parent->rb_left));
+                                                                        contains(memory(parent->__rb_parent_color), statement(1).statement(4).statement(2).statement(4).footprint);
                                                                     };
-                                                                    transport(at(before_inner_parent_color, gparent->rb_right == at(triangle_uncle_pointer, tmp)), gparent->rb_right == at(triangle_uncle_pointer, tmp)) using {
-                                                                        at(before_inner_parent_color, gparent->rb_right == at(triangle_uncle_pointer, tmp));
+                                                                    have parent->rb_left == at(before_inner_parent_color, parent->rb_left) by {
+                                                                        preserve(memory(parent->rb_left), statement(1).statement(4).statement(2).statement(4));
+                                                                    }
+                                                                    have parent->rb_left == at(before_inner_parent_right, parent->rb_left) by {
+                                                                        rewrite(parent->rb_left, at(before_inner_parent_color, parent->rb_left));
+                                                                        known();
+                                                                    }
+                                                                    apply(separation::contains_refl(memory(gparent->rb_right))) using {};
+                                                                    apply(separation::separate_restrict(memory(gparent->rb_right), memory(parent->__rb_parent_color), memory(gparent->rb_right), statement(1).statement(4).statement(2).statement(4).footprint)) using {
                                                                         separate(memory(gparent->rb_right), memory(parent->__rb_parent_color));
+                                                                        contains(memory(gparent->rb_right), memory(gparent->rb_right));
+                                                                        contains(memory(parent->__rb_parent_color), statement(1).statement(4).statement(2).statement(4).footprint);
                                                                     };
-                                                                    transport(at(before_inner_parent_color, node->rb_left == parent), node->rb_left == parent) using {
-                                                                        at(before_inner_parent_color, node->rb_left == parent);
+                                                                    have gparent->rb_right == at(before_inner_parent_color, gparent->rb_right) by {
+                                                                        preserve(memory(gparent->rb_right), statement(1).statement(4).statement(2).statement(4));
+                                                                    }
+                                                                    have gparent->rb_right == at(triangle_uncle_pointer, tmp) by {
+                                                                        rewrite(gparent->rb_right, at(before_inner_parent_color, gparent->rb_right));
+                                                                        known();
+                                                                    }
+                                                                    apply(separation::contains_refl(memory(node->rb_left))) using {};
+                                                                    apply(separation::separate_restrict(memory(node->rb_left), memory(parent->__rb_parent_color), memory(node->rb_left), statement(1).statement(4).statement(2).statement(4).footprint)) using {
                                                                         separate(memory(node->rb_left), memory(parent->__rb_parent_color));
+                                                                        contains(memory(node->rb_left), memory(node->rb_left));
+                                                                        contains(memory(parent->__rb_parent_color), statement(1).statement(4).statement(2).statement(4).footprint);
                                                                     };
+                                                                    have node->rb_left == at(before_inner_parent_color, node->rb_left) by {
+                                                                        preserve(memory(node->rb_left), statement(1).statement(4).statement(2).statement(4));
+                                                                    }
+                                                                    have node->rb_left == parent by {
+                                                                        rewrite(node->rb_left, at(before_inner_parent_color, node->rb_left));
+                                                                        known();
+                                                                    }
                                                                     have rb_parent_is(rb_reparent(nleft, cid), cid) == 1 by {
                                                                         apply(rb_reparent_parent_is(nleft, cid));
                                                                         known();
@@ -3198,7 +3259,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                         have gparent->rb_right == parent by { rewrite(gparent, uid); rewrite(parent, cid); known(); }
                                                         let triangle_uncle_link = fold(insert_left_link(gparent), { link: InsertLink::To(uid->rb_left) });
                                                         let triangle_parent_link = fold(insert_right_link(gparent), { link: InsertLink::To(parent) });
-                                                        let triangle_focus_link = fold(insert_right_link(parent), { link: InsertLink::To(node) });
+                                                        let triangle_focus_link = fold(insert_right_link(parent), { link: InsertLink::To(node) }) by { rewrite(parent, cid); known(); }
                                                         let triangle_tag = fold(insert_parent_tag(gparent, ugp), { color: ucolor });
                                                     step();
                                                         unfold(triangle_parent_link);
