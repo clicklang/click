@@ -123,7 +123,7 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
                 instantiate(forall (k: int32) {
                     0 <= k and k < p implies occupied[k] == 1
                 }, i);
-                known();
+                apply(0 <= i and i < p implies occupied[i] == 1) using { 0 <= i and i < p; };
             }
             contradiction(occupied[i] == 1);
         } else {
