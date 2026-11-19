@@ -3131,10 +3131,10 @@ fn a_conditional_produces_clause_is_located_in_its_place() {
 }
 
 /// A `solve()` closing an `initialize` script that several invariants share
-/// expands to one step per invariant, each holding the whole script. Those
-/// steps stand for the tactics written before the closer too, so the rewrite
-/// replaces from the first of them: left in place, the leading `unfold` ran
-/// before every generated step and the phase no longer closed its goal.
+/// expands to one step per invariant. A predicate `unfold` is local to its
+/// application: it adds the definition's equivalence as a fact, so the
+/// leading `unfold` stays written once before the generated steps, and each
+/// step closes from it instead of unfolding again.
 #[test]
 #[ignore = "nightly: 1.0s in the parallel gate"]
 fn shared_initialize_closer_expansion_replaces_the_script_before_it() {
@@ -3145,15 +3145,18 @@ fn shared_initialize_closer_expansion_replaces_the_script_before_it() {
         anchor.len(),
     );
     assert!(
-        expanded.contains("initialize by { have 0 <= box[0] by {"),
+        expanded.contains("initialize by { unfold(head(box)); have 0 <= box[0] by {"),
         "{expanded}"
     );
     assert!(
         expanded.contains("have head(box) == box[0] by {"),
         "{expanded}"
     );
-    assert!(
-        !expanded.contains("initialize by { unfold(head(box)); have"),
+    let initialize = &expanded
+        [expanded.find("initialize by {").unwrap()..expanded.find("preserve by {").unwrap()];
+    assert_eq!(
+        initialize.matches("unfold(head(box))").count(),
+        1,
         "{expanded}"
     );
 }
@@ -15871,8 +15874,11 @@ fn source_expander_derives_separation_from_call_postconditions() {
         .expect("bounded call ranges should verify before expansion");
     let expanded = expand_c_tactic_source_at(click_source, &c_sources, line, column)
         .expect("call postconditions should expand into an explicit separation derivation");
+    // The separation is closed from the call's postconditions: `known`
+    // equates `left->data` with `data` and `left->len` with `length`, so the
+    // derivation needs no written rewrite. Removing either postcondition
+    // below makes it fail.
     assert!(!expanded.contains("transport("), "{expanded}");
-    assert!(expanded.contains("rewrite("), "{expanded}");
     assert!(!expanded.contains("load_int32_pointer"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_c_sources(&expanded, &c_sources)
@@ -15892,7 +15898,7 @@ fn source_expander_derives_separation_from_call_postconditions() {
         assert_ne!(without_postcondition, expanded);
         assert!(
             verify_c_sources(&without_postcondition, &c_sources).is_err(),
-            "the generated rewrite must require {missing}"
+            "the generated derivation must require {missing}"
         );
     }
 }
