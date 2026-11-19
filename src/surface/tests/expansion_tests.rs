@@ -24318,7 +24318,7 @@ fn bit_field_pointer_and_value_capture_expand_and_replay() {
 }
 
 #[test]
-fn bit_field_pointer_keeps_later_local_ordinals() {
+fn bit_field_declarations_keep_later_local_ordinals() {
     let c = r#"
         struct flags { unsigned int ready : 1; };
         int answer(void) {
@@ -24338,6 +24338,29 @@ fn bit_field_pointer_keeps_later_local_ordinals() {
         }
     "#;
     verify_c_sources(click, &[("fields.c", c)]).unwrap();
+}
+
+#[test]
+#[ignore = "nightly: partially initialized bit-field copy expansion and replay"]
+fn bit_field_record_storage_expands_and_replays() {
+    let (source, sources) = mdtest_sources("mdtests/c_bit_field_memcpy_roundtrip.md");
+    let sources = sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let source = format!(
+        "{source}\nby {{ step_until(statement(3)); have &source != 0; step_until(function.exit); solve(); }}"
+    );
+    let claim = "answer.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, claim)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert_ne!(expanded, source);
+    assert!(expanded.contains("&source"), "{expanded}");
+    assert!(!expanded.contains("__click_bit_field_word_"), "{expanded}");
+    without_implicit_solve_for_claim(claim, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
 }
 
 #[test]

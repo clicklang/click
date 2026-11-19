@@ -15,7 +15,7 @@ fn bit_field_lookup_work_is_independent_of_other_bindings_and_words() {
         let f = parser.declare_name("f").unwrap();
         let object = LocalBitFields {
             record,
-            word: BindingName::from("private"),
+            storage: f.clone(),
             pointer: None,
             read_only: false,
         };
