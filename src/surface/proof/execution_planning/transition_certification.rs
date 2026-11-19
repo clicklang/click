@@ -381,6 +381,9 @@ pub(in crate::surface::proof) fn certified_condition_transitions(
             let mut successor_facts = pure_facts.clone();
             successor_facts.extend(path.facts().iter().map(|fact| fact.proposition().clone()));
             let prerequisite_assumptions = match context {
+                // The checked step's presentation already extends the
+                // incoming proof graph with this outcome's facts.
+                _ if pure_facts.is_statement_view() => successor_facts.context(),
                 // The successor facts beyond `pure_facts` are the path's.
                 Some(context) => path
                     .facts()
@@ -712,6 +715,9 @@ fn certified_transitions_from_execution(
             successor_facts.extend(statement_facts.iter().cloned());
             let execution_facts = path.execution_facts();
             let prerequisite_assumptions = match context {
+                // The checked step's presentation already extends the
+                // incoming proof graph with this outcome's facts.
+                _ if pure_facts.is_statement_view() => successor_facts.context(),
                 Some(context) => statement_facts
                     .iter()
                     .fold(context.clone(), |assumptions, fact| {

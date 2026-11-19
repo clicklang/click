@@ -91,11 +91,9 @@ pub(super) struct SurfaceRecord {
     pub(super) last_call_parameters: Option<ProgramPointRef>,
     pub(super) path_choices: Vec<SurfacePathChoice>,
     pub(super) blocker: Option<String>,
-    /// Exact facts established by ordinary checked `have` nodes on this
-    /// execution path. This separate persistent index lets a strict statement
-    /// retry recognize an explicitly retained prerequisite leaf without
-    /// scanning the ambient proof context.
-    pub(super) retained_have_facts: PureFactStore,
+    /// Source facts recorded by checked `have` nodes on this path. A prepared
+    /// step carries the suffix added while its prerequisites were proved.
+    pub(super) retained_have_facts: PersistentSequence<std::sync::Arc<Proposition>>,
 }
 
 #[derive(Clone, PartialEq, Eq)]

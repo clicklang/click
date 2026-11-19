@@ -875,12 +875,10 @@ impl<'a> Proof<'a> {
             .cloned()
             .ok_or_else(|| self.step_error("execution-frontier proof lost its semantic state"))?;
         // Every statement step executes in the whole proof context.
-        let fact_context = Some(self.facts().assumptions());
         let mut checked = check_statement_step_with_policy(
             &mut execution,
             context,
             self.facts(),
-            fact_context,
             prerequisite_policy,
         )?;
         // A fact the statement introduces (a callee's `ensures`, a store's
@@ -1354,7 +1352,7 @@ impl<'a> Proof<'a> {
             .presentation
             .surface_record
             .retained_have_facts
-            .introduced_since(&original.presentation.surface_record.retained_have_facts)
+            .suffix_since(&original.presentation.surface_record.retained_have_facts)
             .expect("obligation proofs append retained facts");
         for fact in retained {
             execution
@@ -1364,11 +1362,11 @@ impl<'a> Proof<'a> {
                     proven.presentation.surface_propositions.surface(&fact)?,
                     &fact,
                 )?;
-            execution.presentation.surface_record.retained_have_facts = execution
+            execution
                 .presentation
                 .surface_record
                 .retained_have_facts
-                .with_kernel_checked_fact(fact);
+                .push(fact);
         }
         if prepared_fold {
             candidate.state = candidate
