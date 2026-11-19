@@ -53,6 +53,17 @@ indexed write comes from an execution store. The point after the loop keeps
 the indexed versions common to every checked exit.
 Signed and unsigned 64-bit reads share a version of the same 64 bits.
 Signed and unsigned 128-bit reads retain their distinct load kinds.
+The same index serves ordinary Boolean and complete typed pointer reads of
+automatic objects. A Boolean read denotes the logical value of its cell.
+An object-pointer read names its address, provenance and bounds owner by
+the same read, and the recorded store can supply its complete typed value.
+A function-pointer read has its declared callback signature and the store
+can supply the call target. Floating-point lowering still uses its existing
+rule, which preserves stored bits, including signed zeros and NaNs.
+
+`exact(place)` keys the read by the selected program point when one is
+available. Raising uses `exact` at that point, even if another point has
+equal memory. Ordinary reads continue to select the version of the place.
 
 Naming existing cells during a resource proof can change the view at a
 point. The producer records which suffix only names cells and where it

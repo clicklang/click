@@ -983,6 +983,7 @@ enum AlphaAlgebraicValueKey {
 struct AlphaStateKey {
     identity: (u32, u32),
     read_version: Option<crate::kernel::program_point::ProgramPointId>,
+    pointer_read_type: Option<(ProgramType, bool)>,
     _state: SharedMemory,
 }
 
@@ -991,6 +992,7 @@ impl AlphaStateKey {
         Self {
             identity: retained_state.arena_id(),
             read_version: None,
+            pointer_read_type: None,
             _state: retained_state.clone(),
         }
     }
@@ -1003,13 +1005,18 @@ impl fmt::Debug for AlphaStateKey {
         if let Some(version) = self.read_version {
             key.field(&version);
         }
+        if let Some(kind) = self.pointer_read_type {
+            key.field(&kind);
+        }
         key.finish()
     }
 }
 
 impl PartialEq for AlphaStateKey {
     fn eq(&self, other: &Self) -> bool {
-        self.identity == other.identity && self.read_version == other.read_version
+        self.identity == other.identity
+            && self.read_version == other.read_version
+            && self.pointer_read_type == other.pointer_read_type
     }
 }
 
@@ -1023,7 +1030,11 @@ impl PartialOrd for AlphaStateKey {
 
 impl Ord for AlphaStateKey {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        (self.identity, self.read_version).cmp(&(other.identity, other.read_version))
+        (self.identity, self.read_version, self.pointer_read_type).cmp(&(
+            other.identity,
+            other.read_version,
+            other.pointer_read_type,
+        ))
     }
 }
 
@@ -1032,6 +1043,9 @@ impl Hash for AlphaStateKey {
         self.identity.hash(state);
         if let Some(version) = self.read_version {
             version.hash(state);
+        }
+        if let Some(kind) = self.pointer_read_type {
+            kind.hash(state);
         }
     }
 }
@@ -2113,8 +2127,11 @@ fn alpha_pointer_load_with_bindings<const ALLOW_LOADS: bool>(
         return None;
     }
     let result = (|| {
-        let (memory, address) = crate::kernel::eval::registered_pointer_load(identity)?;
-        let retained_state = alpha_retained_state_key(&memory, bindings)?;
+        let (point, address, value_type) =
+            crate::kernel::eval::registered_pointer_load_point(identity)?;
+        let mut retained_state = alpha_retained_state_key(point.shared_memory(), bindings)?;
+        retained_state.read_version = point.read_version_id();
+        retained_state.pointer_read_type = value_type.map(|ty| (ty, point.is_exact_read()));
         let address =
             alpha_pointer_key_with_bindings::<ALLOW_LOADS>(&address, bindings, next_binder)?;
         let interner = match bindings.load_interner.clone() {
@@ -3816,6 +3833,7 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
                     memory: AlphaStateKey {
                         identity: retained_state.local_read_definedness_identity(pointer),
                         read_version: None,
+                        pointer_read_type: None,
                         _state: retained_state.clone(),
                     },
                     pointer: alpha_pointer_key_with_bindings::<ALLOW_LOADS>(

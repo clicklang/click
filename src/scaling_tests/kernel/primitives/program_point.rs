@@ -199,3 +199,85 @@ fn sealing_checked_footprints_ignores_cells_in_untouched_objects() {
         "{samples:?}"
     );
 }
+
+#[test]
+fn boolean_and_complete_pointer_reads_keep_their_stores_across_sibling_writes() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let flag = slot();
+    let object = flag.offset_by_bytes(8);
+    let callback = flag.offset_by_bytes(16);
+    let sibling = flag.offset_by_bytes(24);
+    let target = Address::symbolic(Variable(38_143));
+    let pointer = Pointer::new(target.clone(), ProgramType::Int32Pointer)
+        .with_bounds(Some(SubobjectBounds::constant(target, 4)));
+    let function = Pointer::new(
+        Address::function("callback_target"),
+        ProgramType::FunctionPointer(CallbackSignature::UNSPECIFIED),
+    );
+    let start =
+        ExecutionState::new().with_memory(SymbolicMemory::new().with_block(flag.base.clone(), 28));
+    let written = start.clone().with_memory(
+        start
+            .memory()
+            .clone()
+            .store(flag.clone(), ProgramValue::bool_constant(true))
+            .store(object.clone(), ProgramValue::Pointer(pointer.clone()))
+            .store(callback.clone(), ProgramValue::Pointer(function.clone())),
+    );
+    let mut samples = Vec::new();
+    for count in [4, 64, 1024] {
+        let mut state = written.clone();
+        for value in 0..count {
+            state = state.clone().with_memory(state.memory().clone().store(
+                sibling.clone(),
+                ProgramValue::Int32(MachineTerm::constant(value)),
+            ));
+        }
+        let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+            let point = state.program_point();
+            let flag_version = point
+                .indexed_local_typed_version(&flag, ProgramType::Bool)
+                .unwrap();
+            assert_eq!(flag_version.read_version_id(), written.program_point_id());
+            assert!(
+                point
+                    .indexed_local_integer_version(&flag, LoadKind::UInt8)
+                    .is_none()
+            );
+            for (cell, stored) in [(&object, &pointer), (&callback, &function)] {
+                let version = point
+                    .indexed_local_typed_version(cell, stored.program_type())
+                    .unwrap();
+                let read = Pointer::from_point_read(version, stored.program_type(), cell);
+                assert_eq!(
+                    read.address()
+                        .as_loaded_value()
+                        .unwrap()
+                        .point
+                        .read_version_id(),
+                    written.program_point_id()
+                );
+                assert_eq!(
+                    crate::kernel::eval::pointer_read_over_write_program_value(read.address())
+                        .as_ref(),
+                    Some(stored)
+                );
+            }
+        });
+        samples.push((count, work));
+    }
+    assert!(
+        samples.iter().all(|&(_, work)| work <= samples[0].1 + 8),
+        "{samples:?}"
+    );
+    let partial = written.clone().with_memory(written.memory().clone().store(
+        object.offset_by_bytes(4),
+        ProgramValue::UInt8(MachineTerm::narrow_constant(MachineIntegerType::UInt8, 0)),
+    ));
+    assert!(
+        partial
+            .program_point()
+            .indexed_local_typed_version(&object, ProgramType::Int32Pointer)
+            .is_none()
+    );
+}

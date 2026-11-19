@@ -2276,6 +2276,16 @@ fn synthesize_surface_bool(
         synthesize_surface_bool(condition, parameter_binding, state, bound_variables)
     };
     match condition {
+        ConditionTerm::BoolLoad(point, address) if point.read_version_id().is_some() => {
+            synthesize_point_read(
+                point,
+                address,
+                ProgramType::Bool,
+                parameter_binding,
+                state,
+                bound_variables,
+            )
+        }
         ConditionTerm::Constant(value) => Some(bool_literal(*value)),
         ConditionTerm::Variable(variable) => {
             if let Some(name) = folds::binder_name(false, *variable)
@@ -5121,7 +5131,7 @@ fn synthesis_states_share_program_point(entry: &ExecutionState, state: &Executio
 
 /// Spell a read whose version is indexed by its program point. A matching
 /// current or entry state can name it; otherwise use the version's selector.
-fn synthesize_indexed_integer_read(
+fn synthesize_point_read(
     version: &crate::kernel::ProgramPoint,
     pointer: &Address,
     value_type: ProgramType,
@@ -5129,10 +5139,13 @@ fn synthesize_indexed_integer_read(
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<ContractExpression> {
-    let kind = crate::kernel::LoadKind::of_type(value_type)?;
-    let expression = |state: &ExecutionState| {
-        if pointer.offset != AddressOffset::Constant(0)
-            && let Some(field) = synthesize_owned_field_at_address(pointer, value_type, state)
+    let place = |state: &ExecutionState| {
+        if let Some(field) = synthesize_owned_field_at_address(pointer, value_type, state) {
+            return Some(field);
+        }
+        if version.is_exact_read()
+            && let Some(field) =
+                synthesize_struct_field_load(pointer, value_type, parameter_binding, state)
         {
             return Some(field);
         }
@@ -5154,12 +5167,24 @@ fn synthesize_indexed_integer_read(
             },
         })
     };
+    let expression = |state: &ExecutionState| {
+        let expression = place(state)?;
+        Some(if version.is_exact_read() {
+            ContractExpression::Exact(Box::new(expression))
+        } else {
+            expression
+        })
+    };
     let selects_version = |state: &ExecutionState| {
-        state
-            .program_point()
-            .indexed_local_integer_version(pointer, kind)
-            .as_ref()
-            == Some(version)
+        let point = state.program_point();
+        if version.is_exact_read() {
+            point.id() == version.read_version_id()
+        } else {
+            point
+                .indexed_local_typed_version(pointer, value_type)
+                .as_ref()
+                == Some(version)
+        }
     };
     if selects_version(state) {
         return expression(state);
@@ -5386,7 +5411,7 @@ fn synthesize_typed_word_read(
         return None;
     };
     if memory.read_version_id().is_some() {
-        return synthesize_indexed_integer_read(
+        return synthesize_point_read(
             memory,
             pointer,
             value_type,
@@ -5728,7 +5753,7 @@ fn synthesize_surface_bitvector(
                     crate::kernel::LoadKind::UInt128 => ProgramType::UInt128,
                     _ => return None,
                 };
-                return synthesize_indexed_integer_read(
+                return synthesize_point_read(
                     memory,
                     kernel_pointer,
                     value_type,
@@ -7406,6 +7431,19 @@ fn synthesize_pointer_equality_operand(
             ProgramExpression::Variable(name.into()),
         ));
     }
+    if let Some(read) = value.address().as_loaded_value()
+        && let Some(value_type) = read.value_type
+        && read.displacement == AddressOffset::Constant(0)
+    {
+        return synthesize_point_read(
+            &read.point,
+            &read.defining_address,
+            value_type,
+            parameter_binding,
+            state,
+            bound_variables,
+        );
+    }
     // An address can survive a later store while the complete pointer's
     // provenance still names the earlier read. Spell that value at the
     // state that introduced its domain, rather than naming only its address
@@ -7526,6 +7564,33 @@ fn synthesize_surface_pointer_expression(
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<ContractExpression> {
     let _frame = SurfaceSynthesisFrame::enter("pointer-expression")?;
+    if let Some(read) = pointer.as_loaded_value()
+        && let Some(value_type) = read.value_type
+    {
+        let base = synthesize_point_read(
+            &read.point,
+            &read.defining_address,
+            value_type,
+            parameter_binding,
+            state,
+            bound_variables,
+        )?;
+        if read.displacement == AddressOffset::Constant(0) {
+            return Some(base);
+        }
+        let origin = Address {
+            base: pointer.base.clone(),
+            offset: AddressOffset::Constant(0),
+        };
+        let width = value_type.pointee_type()?.byte_width();
+        if width == 0 {
+            return None;
+        }
+        let index = pointer.element_index_from_base_with_width(&origin, width)?;
+        let index =
+            synthesize_surface_bitvector(&index, parameter_binding, state, bound_variables)?;
+        return Some(ContractExpression::Add(Box::new(base), Box::new(index)));
+    }
     if let Some(region) = SYNTHESIS_RECORDED_POINTS
         .with(|points| points.borrow().as_ref()?.read_event_naming_pointer(pointer))
     {

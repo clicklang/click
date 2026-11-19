@@ -3242,6 +3242,9 @@ pub(in crate::kernel) fn complete_pointer_carrier_read_retained_value(
     assumptions: &PureFactContext,
 ) -> Option<ExecutionValue> {
     let read = origin.as_loaded_value()?;
+    if let Some(stored) = read.point.indexed_stored_value() {
+        return Some(stored.value().clone());
+    }
     // A copied value uses the same whole-byte frame premises as a read
     // retained in place. In particular, an explicit separation of the
     // enclosing header can protect this complete pointer field.
