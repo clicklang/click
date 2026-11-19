@@ -69,10 +69,30 @@ fn conditional_atom_reads_fixed_roots_without_exporting_arithmetic() {
             let inner = conditional(variable.clone());
             let shallow = conditional(inner.clone());
             let nested_arithmetic = conditional(conditional(arithmetic.clone()));
-            let mut deep = inner;
+            let mut deep = inner.clone();
             for _ in 0..size {
                 deep = conditional(deep);
             }
+            let guarded = |operands| {
+                KernelTerm::machine_if_shared(
+                    format,
+                    [
+                        KernelTerm::boolean_comparison_raw(format, R::LessThan, operands),
+                        variable.clone(),
+                        literal(3),
+                    ],
+                )
+            };
+            cases.push((
+                guarded([inner.clone(), literal(8)]),
+                guarded([deep.clone(), literal(8)]),
+                true,
+            ));
+            cases.push((
+                guarded([literal(8), inner]),
+                guarded([literal(8), deep.clone()]),
+                true,
+            ));
             cases.push((shallow, nested_arithmetic, true));
             cases.push((deep, conditional(arithmetic.clone()), false));
             let mut compound = flag.clone();

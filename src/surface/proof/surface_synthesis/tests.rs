@@ -8775,3 +8775,38 @@ fn identical_word_comparisons_keep_their_comparison_through_lowering() {
         "{range:?}"
     );
 }
+
+#[test]
+fn pure_machine_conditional_operands_round_trip_after_rewrite() {
+    use MachineIntegerType as T;
+    for (format, spelling) in [
+        (T::Int32, "int32"),
+        (T::UInt32, "uint32"),
+        (T::Int64, "int64"),
+        (T::UInt64, "uint64"),
+    ] {
+        let mut fixture = ConditionalRoundTrip::new(format, spelling);
+        fixture.state = fixture.state.with_local(
+            "inner",
+            ProgramValue::of_bool(ConditionTerm::Variable(Variable(999712))),
+        );
+        for replacement in [
+            "y",
+            "if inner { y } else { z }",
+            "if y < z { y } else { z }",
+        ] {
+            let equality = fixture.lower(&format!("x == ({replacement})"));
+            for (guards, arm) in [
+                (&["flag", "not flag"][..], "x"),
+                (&["x < y", "y <= x", "x == y", "y != x"][..], "z"),
+            ] {
+                for guard in guards {
+                    for reverse in [false, true] {
+                        let original = fixture.goal(guard, reverse, arm);
+                        fixture.check(&original, &equality, guard, reverse);
+                    }
+                }
+            }
+        }
+    }
+}

@@ -466,7 +466,8 @@ guards, or same-variable 32/64-bit comparison guards retain their `if` node and
 guard during logical lowering. Their arm domains remain guarded, including
 unselected reads and invalid shifts. Checking selects the arm when needed.
 The comparison boundary recognizes fixed-size native conditionals, including
-one immediate conditional in either arm. A guard can be a Boolean variable, an
+one immediate conditional in either arm or on either side of a machine
+comparison guard. A guard can be a Boolean variable, an
 equality of two Boolean variables, or a 32/64-bit comparison. Machine comparison
 operands and innermost arms can be literal or variable leaves, one bitwise
 operation (`&`, `|`, `^`, `~`)
