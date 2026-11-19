@@ -90,7 +90,9 @@ registry, resource cell reads through `canonical_cell_load`, and array and
 algebraic argument raising by memory. Read selection for writes through
 unrelated symbolic addresses also needs a checked way to identify the
 affected storage. Byte initialization through a modular call still publishes
-its representation equation from the returned memory view.
+its representation equation from the returned memory view. Admit ordinary
+pointer reads through parameters once checked stores publish a complete
+pointer equation that raises and lowers at the same version point.
 
 ## Reading the inventory
 

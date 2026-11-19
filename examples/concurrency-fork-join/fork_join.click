@@ -261,7 +261,6 @@ int fill_parallel(int output[4]) {
                 rewrite(first_job.value, 11);
                 known();
             }
-            have range_filled(&first_job) by { unfold(range_filled(&first_job)); known(); }
             have first_job.output[0] == first_job.value by {
                 have first_job.begin <= 0 and 0 < first_job.end;
                 instantiate(forall (j: int32) { first_job.begin <= j and j < first_job.end implies first_job.output[j] == first_job.value }, 0);
@@ -298,7 +297,6 @@ int fill_parallel(int output[4]) {
         rewrite(first_job.value, 11);
         known();
     }
-    have range_filled(&first_job) by { unfold(range_filled(&first_job)); known(); }
     have first_job.output[0] == first_job.value by {
         have first_job.begin <= 0 and 0 < first_job.end;
         instantiate(forall (j: int32) { first_job.begin <= j and j < first_job.end implies first_job.output[j] == first_job.value }, 0);

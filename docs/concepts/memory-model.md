@@ -68,7 +68,9 @@ For indexed parameter and heap addresses, byte displacements from one
 symbolic origin can be compared directly. A write with a different origin
 retires that storage bucket. Parameter bases share one bucket because
 different parameters can alias. A freshly allocated heap object has its
-own bucket. Unclassified writes retire all buckets.
+own bucket. Unclassified writes retire all buckets. Ordinary pointer reads
+through parameters still use the projected source view of the complete
+pointer equation recorded by the store.
 
 A declared little-endian `uint32` can be read as four complete indexed byte
 reads. Each byte uses its own version. Click spells it with the bitwise OR
