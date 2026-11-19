@@ -3954,9 +3954,10 @@ fn spell_bounded_uint64_operand(
             }
             MachineBinaryOp::Divide | MachineBinaryOp::Remainder => {
                 matches!(arguments[0].node(), Node::Variable(_))
-                    && crate::kernel::MachineOperandView::Shared(&arguments[1])
-                        .uint64_constant()
-                        .is_some_and(|divisor| divisor != 0)
+                    && (matches!(arguments[1].node(), Node::Variable(_))
+                        || crate::kernel::MachineOperandView::Shared(&arguments[1])
+                            .uint64_constant()
+                            .is_some_and(|divisor| divisor != 0))
             }
             _ => false,
         }

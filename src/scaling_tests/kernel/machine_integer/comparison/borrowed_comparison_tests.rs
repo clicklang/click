@@ -385,9 +385,28 @@ fn machine_comparison_and_guard_reads_are_bounded_on_hits_and_misses() {
                 (
                     hit,
                     operation(arithmetic.clone(), literal(3)),
-                    operation(variable.clone(), other.clone()),
+                    operation(variable.clone(), arithmetic.clone()),
                 )
             });
+            let variable_divisors = [O::Divide, O::Remainder].map(|op| {
+                let operation =
+                    |left, right| KernelTerm::machine_binary_shared(format, op, [left, right]);
+                let hit = operation(variable.clone(), other.clone());
+                assert!(bounded_comparison_operand(format, V::Shared(&hit), false).is_none());
+                (
+                    hit,
+                    operation(arithmetic.clone(), other.clone()),
+                    operation(variable.clone(), arithmetic.clone()),
+                )
+            });
+            let variable_divisor_hits = if format.format().is_signed() {
+                for (signed, ..) in &variable_divisors {
+                    assert!(bounded_comparison_operand(format, V::Shared(signed), true).is_none());
+                }
+                &variable_divisors[..0]
+            } else {
+                &variable_divisors[..]
+            };
             use crate::kernel::MachineCastSpelling as C;
             let mut cast_cases = Vec::new();
             for (spelling, source, destination) in [
@@ -440,6 +459,7 @@ fn machine_comparison_and_guard_reads_are_bounded_on_hits_and_misses() {
                     .chain(&shift_cases)
                     .chain(wrapping_hits)
                     .chain(&division_cases)
+                    .chain(variable_divisor_hits)
                     .chain(&cast_cases)
                 {
                     for operands in [
