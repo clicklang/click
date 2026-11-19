@@ -1577,6 +1577,20 @@ pub fn loop_invariants_hold_at_entry(
 pub struct StateJoinAbstraction {
     pub state: ExecutionState,
     pub next_kernel_variable: u64,
+    memory_requirements: Vec<Proposition>,
+}
+
+impl StateJoinAbstraction {
+    /// The abstraction may be published only if every changed span separates
+    /// from the live loan footprint at the split, before any arm runs.
+    pub(crate) fn unproved_memory_separation(
+        &self,
+        entry_facts: &crate::kernel::proof::PureFactStore,
+    ) -> Option<&Proposition> {
+        self.memory_requirements
+            .iter()
+            .find(|goal| !crate::kernel::proof::checked_branch_fact_is_available(entry_facts, goal))
+    }
 }
 
 /// Builds a branch-independent symbolic state for a proof join.
@@ -2012,13 +2026,15 @@ fn abstract_execution_state_for_join_across_with_policy(
         && sibling_states
             .iter()
             .all(|sibling| state.memory.differs_only_within(&sibling.memory, preserved));
+    let mut memory_requirements = BTreeSet::new();
     if !common_memory {
         if let Some(ledger) = abstract_state.loan_ledger() {
             for sibling in sibling_states {
-                validate_branch_memory_delta_against_loans(
+                branch_memory_delta_requirements(
                     &abstract_state.memory,
                     &sibling.memory,
                     ledger,
+                    &mut memory_requirements,
                 )?;
             }
         }
@@ -2108,6 +2124,7 @@ fn abstract_execution_state_for_join_across_with_policy(
         // separately by the checked interface, not inserted into this placeholder.
         state: abstract_state.with_resource_context(ResourceContext::new()),
         next_kernel_variable: budget.next_kernel_variable(),
+        memory_requirements: memory_requirements.into_iter().collect(),
     })
 }
 
@@ -2124,10 +2141,11 @@ fn join_variable(
     })
 }
 
-fn validate_branch_memory_delta_against_loans(
+fn branch_memory_delta_requirements(
     base: &SymbolicMemory,
     sibling: &SymbolicMemory,
     ledger: &crate::kernel::loans::LoanLedger,
+    requirements: &mut BTreeSet<Proposition>,
 ) -> Result<(), String> {
     if !ledger.has_active_memory_loans() {
         return Ok(());
@@ -2139,28 +2157,10 @@ fn validate_branch_memory_delta_against_loans(
         return Err("branch memory join has an unsupported allocation or block delta while a stable-view loan is active".to_string());
     }
     for pointer in base.differing_cell_pointers(sibling) {
-        let mut byte_width = base
-            .cells
-            .get(&pointer)
-            .map(|value| value.byte_width())
-            .unwrap_or(0)
-            .max(
-                sibling
-                    .cells
-                    .get(&pointer)
-                    .map(|value| value.byte_width())
-                    .unwrap_or(0),
-            );
-        for (union_pointer, program_type) in base.union_cells.keys() {
-            if union_pointer == &pointer {
-                byte_width = byte_width.max(program_type.byte_width());
-            }
-        }
-        for (union_pointer, program_type) in sibling.union_cells.keys() {
-            if union_pointer == &pointer {
-                byte_width = byte_width.max(program_type.byte_width());
-            }
-        }
+        crate::instrumentation::record_deterministic_work(1);
+        let byte_width = base
+            .join_cell_width(&pointer)
+            .max(sibling.join_cell_width(&pointer));
         if byte_width == 0 {
             return Err(
                 "branch memory join has an unknown changed cell width while a stable-view loan is active".to_string(),
@@ -2172,11 +2172,7 @@ fn validate_branch_memory_delta_against_loans(
             MachineTerm::constant(byte_width),
             1,
         );
-        if let Err(error) = ledger.permits_memory_access(&range) {
-            return Err(format!(
-                "branch memory join changes an active stable-view footprint: {error}"
-            ));
-        }
+        requirements.extend(ledger.memory_access_requirement(&range));
     }
     Ok(())
 }
@@ -5957,15 +5953,18 @@ mod proof_case_evidence_tests {
             offset: AddressOffset::Constant(1),
         };
         let changed = base.clone().store(later_byte, int32(1));
-        assert!(validate_branch_memory_delta_against_loans(&base, &changed, &ledger).is_err());
-        let disjoint = base.clone().store(
+        let mut requirements = BTreeSet::new();
+        branch_memory_delta_requirements(&base, &changed, &ledger, &mut requirements).unwrap();
+        let changed_range = MemoryRange::new_with_element_width(
             Address {
                 base: AddressBase::ExternalArgument,
-                offset: AddressOffset::Constant(4),
+                offset: AddressOffset::Constant(1),
             },
-            int32(1),
+            0u32.into(),
+            4u32.into(),
+            1,
         );
-        assert!(validate_branch_memory_delta_against_loans(&base, &disjoint, &ledger).is_ok());
+        assert!(requirements.contains(&ledger.memory_access_requirement(&changed_range).unwrap()));
     }
 
     #[test]

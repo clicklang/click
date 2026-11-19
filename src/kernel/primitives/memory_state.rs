@@ -6940,6 +6940,17 @@ impl SymbolicMemory {
         self.cells.contains_key(pointer) || self.has_union_overlay_at(pointer)
     }
 
+    pub(in crate::kernel) fn join_cell_width(&self, pointer: &Address) -> u32 {
+        self.union_views_at(pointer)
+            .map(|((_, ty), _)| {
+                crate::instrumentation::record_deterministic_work(1);
+                ty.byte_width()
+            })
+            .chain(self.cells.get(pointer).map(|value| value.byte_width()))
+            .max()
+            .unwrap_or(0)
+    }
+
     /// The typed union views recorded at exactly `pointer`: one key range,
     /// since `(Pointer, ProgramType)` keys order by pointer first.
     fn union_views_at<'a>(

@@ -983,7 +983,12 @@ impl<'a> Proof<'a> {
                 &mut execution,
                 context,
                 &mut facts,
-                Some((&sibling_join_states, &common_states)),
+                Some(crate::surface::proof::cursor_execution::BranchInterfaceJoinInputs {
+                    sibling_states: &sibling_join_states,
+                    recorded_states: &common_states,
+                    proof: self,
+                    entry_facts: parent_facts,
+                }),
                 join_next_kernel_variable,
             )
             .map_err(|error| {
