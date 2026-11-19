@@ -619,7 +619,7 @@ pub(in crate::surface) fn initial_call_state(
     // a second pointer from the raw memory-load term for the pointer slot.
     let memory =
         materialize_symbolic_access_resource_cells(memory, &state, requires, parameter_binding)?;
-    let memory = mark_uninitialized_resource_memory(memory, requires, parameter_binding)?;
+    let memory = mark_uninitialized_resource_memory(memory, &state, requires, parameter_binding)?;
     let state = state.with_function_entry_memory(memory);
     // Resource endpoints are named under the entry's declared pure premises.
     // Calls still discharge these requirements before transferring ownership.
@@ -986,9 +986,12 @@ fn materialize_symbolic_access_resource_cells(
 /// or `defined` evidence first, as for a fresh local.
 fn mark_uninitialized_resource_memory(
     mut memory: SymbolicMemory,
+    state: &ExecutionState,
     requires: &[Requirement],
     parameter_binding: ParameterBinding<'_>,
 ) -> Result<SymbolicMemory, ClickError> {
+    let mut entry_frame = ExecutionState::new();
+    entry_frame.keep_memory_of(state);
     for requirement in requires {
         let Requirement::Resource(resource) = requirement else {
             continue;
@@ -999,7 +1002,9 @@ fn mark_uninitialized_resource_memory(
             _ => continue,
         };
         for segment in segments.iter().filter(|segment| segment.is_uninitialized()) {
-            let state = ExecutionState::new().with_memory(memory.clone());
+            let state = entry_frame
+                .clone()
+                .with_function_entry_memory(memory.clone());
             let element_width =
                 contract_segment_element_width(parameter_binding.parameters, segment);
             let (start, span) =
