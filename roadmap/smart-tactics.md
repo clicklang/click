@@ -85,6 +85,13 @@ For each read slice, test which point it selects, its raise/lower round trip,
 and bounded work as unrelated history grows. Use `cell_version_on_path` for
 diagnostic comparisons in tests. Keep production selection indexed.
 
+Snapshot-keyed callers still to migrate include the scalar load observation
+registry, resource cell reads through `canonical_cell_load`, and array and
+algebraic argument raising by memory. Read selection for writes through
+unrelated symbolic addresses also needs a checked way to identify the
+affected storage. Byte initialization through a modular call still publishes
+its representation equation from the returned memory view.
+
 ## Reading the inventory
 
 - **Scoped evidence:** named tests cover particular routes and growth axes;
