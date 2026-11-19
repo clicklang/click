@@ -16093,7 +16093,11 @@ fn qualified_static_struct_startup_and_expansion() {
     let state = parsed["main"].1.program_entry_state.as_ref().unwrap();
     assert_eq!(
         state.memory().load(&SymbolicMemory::global_pointer(
-            "state#file-static:counter.c"
+            crate::kernel::BindingName::Static(crate::kernel::StaticBindingId::new(
+                crate::kernel::StaticBindingOwner::File(Some("counter.c".into())),
+                0,
+                "state".into(),
+            ))
         )),
         ExpressionOutcome::Value(ProgramValue::UInt64(MachineTerm::uint64_constant(7)))
     );
