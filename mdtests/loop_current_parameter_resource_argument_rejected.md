@@ -26,7 +26,7 @@ void advance(int32* rb, int32* stop) {
         owns cell: Cell(rb);
         invariant cell.value == old(cell.value);
         initialize by solve();
-        preserve by {
+        maintain by {
             step();
         }
     }

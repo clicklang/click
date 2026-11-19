@@ -41,7 +41,7 @@ void mark_all(struct arena* arena) {
         owns arena->data[0..arena->capacity];
         invariant 0 <= i and i <= arena->capacity;
         initialize by solve();
-        preserve by {
+        maintain by {
             have separate(memory(*arena), memory(arena->data[0..arena->capacity])) by solve();
             have contains(memory(arena->data[0..arena->capacity]), memory(arena->data[i])) by {
                 apply(click::separation::contains_element(arena->data, 0, arena->capacity, i)) using { 0 <= i; i < arena->capacity; };

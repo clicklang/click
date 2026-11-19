@@ -52,7 +52,7 @@ void tag_then_count(struct node *p) {
         owns c: cell(p);
         decreases 0;
         initialize by solve();
-        preserve by {
+        maintain by {
             match c.model {
                 Identity::At(identity) => {
                     unfold(c);

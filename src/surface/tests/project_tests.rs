@@ -168,7 +168,7 @@ int32 count_to(int32 n) {
         invariant i <= n;
 
         initialize by solve();
-        preserve by {
+        maintain by {
             step();
         }
     }
@@ -1299,7 +1299,7 @@ int32 caller(int32 x) {
     loop {
         invariant 0 == 0;
         initialize by solve();
-        preserve by {
+        maintain by {
             step();
         }
     }
@@ -1356,7 +1356,7 @@ int32 wait_for_zero(int32 x) diverges {
     loop diverges {
         invariant 0 == 0;
         initialize by solve();
-        preserve by {
+        maintain by {
             step();
         }
     }
@@ -1456,7 +1456,7 @@ int32 drain(int32 n) {
         decreases n;
         invariant n >= 0;
         initialize by solve();
-        preserve by {
+        maintain by {
             have 0 <= to_integer(n - 1) by {
                 solve() using { n > 0; }
             }

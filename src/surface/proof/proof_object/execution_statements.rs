@@ -43,7 +43,7 @@ pub(super) fn describe_invariant_closure_error(error: ClickError) -> ClickError 
 }
 
 /// Names the ranking members a ranked loop's bundle carries, so an explicit
-/// `preserve by` body written before the `decreases` clause existed reports
+/// `maintain by` body written before the `decreases` clause existed reports
 /// what it now has to close instead of only that the bundle stayed open.
 fn ranking_member_diagnostic(bundle: &InvariantBodyContext) -> String {
     if bundle.ranking_measures.is_empty() {

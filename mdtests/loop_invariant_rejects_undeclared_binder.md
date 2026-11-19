@@ -37,7 +37,7 @@ int32 spin(int32 n) {
         invariant b.mark == old(b.mark);
 
         initialize by solve();
-        preserve by {
+        maintain by {
             step();
         }
     }

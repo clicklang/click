@@ -18,7 +18,7 @@ so the proof cites no chunk contract and names no generated local.
   `iter.v == bytes + (bytes.len() - bytes.len() % 4u64 - iter.v.len())`,
   with `iter.chunk_size == 4u64`. `decreases iter.v.len()` ranks the loop.
 - A pass's `next()` yields `v`'s first four bytes as `chunk` and moves `v`
-  on by four. The `preserve` script splits on `4u64 <= iter.v.len()`, the
+  on by four. The `maintain` script splits on `4u64 <= iter.v.len()`, the
   test `next` makes.
 - Moving `v` on owes its offset's bound in the forms the step reads,
   `to_integer(k) + 4 <= to_integer(bytes.len())` and

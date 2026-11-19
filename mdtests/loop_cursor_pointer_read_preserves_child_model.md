@@ -44,7 +44,7 @@ void inspect(struct node* root) {
         invariant parent == root;
         decreases 0;
         initialize by solve();
-        preserve by {
+        maintain by {
             match tree.model {
                 Parent::At(pid, child_model) => {
                     let { child: sub } = unfold(tree);

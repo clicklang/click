@@ -20,7 +20,7 @@ int32 wait_for_zero(int32 x) {
     loop diverges {
         invariant x == x;
         initialize by solve();
-        preserve by {
+        maintain by {
             step();
         }
     }

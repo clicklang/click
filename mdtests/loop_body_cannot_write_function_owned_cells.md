@@ -41,7 +41,7 @@ void fill(struct box* b, int32* a, int32 n) {
         invariant b->x == 3;
         decreases n - i;
         initialize by solve();
-        preserve by {
+        maintain by {
             step();
             step();
             step();

@@ -36,7 +36,7 @@ int32 evens(int32 n) {
         invariant 0 <= i and i <= n;
         invariant i == iterations;
         invariant 0 <= e and e <= iterations;
-        preserve by {
+        maintain by {
             step();
             if i % 2 == 1 {
                 step();

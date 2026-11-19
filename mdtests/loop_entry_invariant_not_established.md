@@ -27,7 +27,7 @@ int32 loop_entry_invariant_not_established(int32 n) {
     loop {
         invariant i >= 1;
         initialize by solve();
-        preserve by solve();
+        maintain by solve();
     }
     step();
     solve();

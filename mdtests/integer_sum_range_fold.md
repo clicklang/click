@@ -144,7 +144,7 @@ int32 sum(int32 a[], int32 n) {
                 };
             }
         }
-        preserve by {
+        maintain by {
             mark iter;
             have -1000 <= a[i] and a[i] <= 1000 by {
                 instantiate(forall (k: int32) { 0 <= k and k < n implies -1000 <= a[k] and a[k] <= 1000 }, i);

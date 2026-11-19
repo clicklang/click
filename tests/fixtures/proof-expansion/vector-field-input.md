@@ -52,7 +52,7 @@ int32 composite_resource_vector_fill_loop_state(
         owns vector(owner);
 
         initialize by solve();
-        preserve by {
+        maintain by {
             unfold(vector(owner));
             have i < owner->cap;
             step();

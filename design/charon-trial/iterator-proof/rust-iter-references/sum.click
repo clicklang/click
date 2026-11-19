@@ -39,7 +39,7 @@ fn sum(bytes: &[u8]) -> i32 {
         invariant iter.as_slice() == bytes + (bytes.len() - iter.len());
         invariant 0 <= to_integer(total) and to_integer(total) <= 255 * to_integer(bytes.len() - iter.len());
         invariant to_integer(total) == prefix(bytes, bytes.len() - iter.len());
-        preserve by {
+        maintain by {
             step(); step();
             if 0u64 < iter.len() {
                 mark iteration;

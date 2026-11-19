@@ -44,7 +44,7 @@ int32 count(struct cell* p) {
         owns flat(p);
 
         initialize by solve();
-        preserve by {
+        maintain by {
             step();
         }
     }

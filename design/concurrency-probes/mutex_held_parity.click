@@ -71,7 +71,7 @@ int32 alternate_mutex(struct parity_mutex *object, int32 n) {
             invariant 0 <= i and i <= n;
             invariant guard.parity == i % 2;
             initialize by solve();
-            preserve by {
+            maintain by {
                 have i < 2147483647 by { solve() using { i < n; }; }
                 if i % 2 == 0 {
                     have (i + 1) % 2 == 1 by { apply(even_successor(i)); }

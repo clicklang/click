@@ -1,7 +1,7 @@
 # An automatically closed loop closes each arm of its C `if`
 
 The arms of the C `if` store different values to `x`, and the increment
-follows. With no written `preserve` proof, the loop closer walks the body as a
+follows. With no written `maintain` proof, the loop closer walks the body as a
 function's implicit tail walks a function: it splits at the `if`, runs each
 arm on through the increment to the back edge, and closes the invariants on
 each path with what that arm established. Each arm sets `x` to 0 or 1, so

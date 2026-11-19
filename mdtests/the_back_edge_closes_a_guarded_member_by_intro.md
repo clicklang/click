@@ -56,7 +56,7 @@ int32 count_run(int32 n) {
         invariant (i <= 2 and run == 0) or (2 <= i and to_integer(2 + run) == to_integer(i));
 
         initialize by solve();
-        preserve by {
+        maintain by {
             mark iteration;
             if i < 2 {
                 branch { true => { step(); } false => { contradiction(not (i < 2)); } }

@@ -25,7 +25,7 @@ int32 count_to_n(int32 n) {
         invariant i >= 0;
         invariant i <= n;
         initialize by solve();
-        preserve by {
+        maintain by {
             step();
         }
     }

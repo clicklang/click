@@ -83,7 +83,7 @@ int32 looped(int32 value, int32 selector) {
         decreases 0;
         invariant box.left == value;
         initialize by solve();
-        preserve by {
+        maintain by {
             have box.left == at(saved, box.left) by known();
             step(); step();
         }

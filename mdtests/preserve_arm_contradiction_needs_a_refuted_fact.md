@@ -69,7 +69,7 @@ void bump_n(struct cell* node, int32 n) {
         invariant node != 0;
 
         initialize by solve();
-        preserve by {
+        maintain by {
             match l.model {
                 CellList::Nil => {
                     have n >= 0;

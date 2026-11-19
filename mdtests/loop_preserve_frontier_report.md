@@ -1,7 +1,7 @@
-# An unfinished `preserve` whose rest does not run reports its frontier
+# An unfinished `maintain` whose rest does not run reports its frontier
 
 A preservation script may stop before the body does: the rest of the body
-then runs as an omitted `preserve` runs a whole one, and each path it reaches
+then runs as an omitted `maintain` runs a whole one, and each path it reaches
 closes its back edge
 ([`preserve_runs_the_rest_of_the_body.md`](preserve_runs_the_rest_of_the_body.md)).
 When the rest does not run, refusing the script with only "must execute
@@ -52,7 +52,7 @@ int32 walk(int32 n) {
         invariant i >= 0;
 
         initialize by solve();
-        preserve by {
+        maintain by {
             if i == 3 {
                 step();
                 step();

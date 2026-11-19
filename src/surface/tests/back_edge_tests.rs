@@ -9,7 +9,7 @@ int32 count(int32 n) {
  loop {
   decreases n-i;
   invariant 0 <= i and i <= n;
-  preserve by { step_until(back_edge());  }
+  maintain by { step_until(back_edge());  }
  }
  step_until(function.exit); solve();
 }"#;

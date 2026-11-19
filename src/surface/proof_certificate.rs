@@ -340,7 +340,7 @@ impl ProofCertificate {
             // A loop's back edge closes as a function's exit does: a bundle
             // closed member by member, `have m by { ... }` for each and then
             // the bundle from those facts, is written as those `have`s, and
-            // the end of the `preserve` script closes each member from them.
+            // the end of the `maintain` script closes each member from them.
             if let ProofStep::CloseInvariantsBy(body) = step
                 && let Some(members) = body.invariant_member_tactics()
             {
@@ -1137,7 +1137,7 @@ impl CertificateError {
                 CertificatePathSegment::LeftCase => "left case".to_string(),
                 CertificatePathSegment::RightCase => "right case".to_string(),
                 CertificatePathSegment::LoopInitialize => "loop `initialize`".to_string(),
-                CertificatePathSegment::LoopPreserve => "loop `preserve`".to_string(),
+                CertificatePathSegment::LoopPreserve => "loop `maintain`".to_string(),
                 CertificatePathSegment::StepBody => "step `by` body".to_string(),
                 CertificatePathSegment::StepRequirement(index) => {
                     format!("step `requires` entry {index}")

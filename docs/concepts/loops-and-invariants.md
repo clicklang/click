@@ -13,7 +13,7 @@ forever.
 
 When a sidecar is parsed against its C or Rust source, an unbound value name
 in a loop specification is a type error naming the clause. This includes
-invariants, decreases, resources, and initialize/preserve proofs; C locals and
+invariants, decreases, resources, and initialize and maintain proofs; C locals and
 lexically scoped proof binders remain valid names
 (`mdtests/loop_unknown_name_in_invariant.md`).
 
@@ -247,7 +247,7 @@ loop {
     invariant i <= n;
 
     initialize by solve();
-    preserve by {
+    maintain by {
         step();
         solve();
     }
@@ -259,12 +259,12 @@ script may use exactly `unfold(predicate(args))`, `apply(theorem(args))`, `have`
 `known()`, `normalize()`, `rewrite(...)`, `solve()`, `all`, `cases`, and
 proof-level `if`;
 anything else is rejected with `` `initialize` is a pure proof and cannot use
-`<tactic>` ``. `preserve` assumes all invariants and the loop condition,
+`<tactic>` ``. `maintain` assumes all invariants and the loop condition,
 executes one complete body iteration, and proves all invariants again. Either
 proof may be omitted; bounded automation owned by the `loop` keyword supplies
 an omitted phase. Expanding that keyword writes all omitted phases explicitly.
 
-An omitted `preserve` walks the body as a function's implicit tail walks a
+An omitted `maintain` walks the body as a function's implicit tail walks a
 function. At a C `if` whose condition the path does not decide, it splits, and
 each arm runs on as its own path to the back edge, a `break`, a `continue` or
 a `return`, where it closes the invariants with everything it established
@@ -318,7 +318,7 @@ own `have` expands to the same `have` with a checked body, left where it was
 written; a trailing `solve()` that stands for the rest of the phase expands to
 one `have` per invariant, and the helpers above it are not copied into them. A
 `solve()` written after the invariants are already named contributes nothing,
-so expanding it removes it. `preserve by solve();` is the same whole-phase shape
+so expanding it removes it. `maintain by solve();` is the same whole-phase shape
 one phase over, and expands to the planned preservation proof.
 
 ## What invariants do
@@ -340,7 +340,7 @@ does not prove that such an iteration is eventually reached. The loop's
 
 `iterations` names the passes a loop has completed, as a mathematical
 `Integer`. It is in scope in the loop's `invariant` clauses and its
-`initialize` and `preserve` proofs, so an invariant can state a local over it
+`initialize` and `maintain` proofs, so an invariant can state a local over it
 instead of over another counter:
 
 <!-- verified-example: mdtests/a_loop_pass_count_names_the_passes_after_the_loop.md -->
@@ -402,7 +402,7 @@ start an iteration, and the body is proved once against every entry path. So
 the entry paths export their join too: everything they all state, plus the
 disjunction of what each one states alone, here `a > 0 or b > 0`, in the
 guard's short-circuit order rather than the order the paths were enumerated.
-Each entry path checks the written `preserve` body under its own guard facts.
+Each entry path checks the written `maintain` body under its own guard facts.
 Its tactics may produce different certificates on different paths; retained
 proofs and expansions keep those certificates under the corresponding entry
 guards. A proof can also use `cases` over the common entry disjunction:
@@ -422,7 +422,7 @@ have 0 < to_integer(a + b) by {
 ```
 
 As at the exit, the first disjunct alone is not assumed: the loop really is
-entered with `a` zero and `b` nonzero, and a `preserve` body that cites the
+entered with `a` zero and `b` nonzero, and a `maintain` body that cites the
 first operand's fact on its own is refused
 (`mdtests/loop_disjunctive_guard_entry_join_is_a_disjunction.md`).
 
@@ -433,7 +433,7 @@ a `break`, or that returns from the function. A path that stops anywhere else
 has not been proved and the loop is refused — but a body that merely is not
 written yet is refused with a *report* of where it got to rather than with the
 bare rule; see
-[the frontier of an unfinished `preserve`](#the-frontier-of-an-unfinished-preserve).
+[the frontier of an unfinished `maintain`](#the-frontier-of-an-unfinished-maintain).
 
 A `continue` transfers to the loop's shared continuation: a C `for` runs its
 update, and a `do ... while` reaches its post-test, including any calls in that
@@ -449,7 +449,7 @@ declared measure must have descended there.
 
 <!-- verified-example: mdtests/loop_body_continue_back_edge.md -->
 ```click
-preserve by {
+maintain by {
     step();
     step();
 }
@@ -807,7 +807,7 @@ void bump_n(struct cell* p, int32 n) {
         invariant c.count == old(c.count) + i;
 
         initialize by solve();
-        preserve by {
+        maintain by {
             have c.count == i by { solve() using { c.count == old(c.count) + i; old(c.count) == 0; }; }
             unfold(c);
             step();
@@ -959,12 +959,12 @@ zero, leaves its member open
 
 Arm selection publishes the selected arm's cells, but `unfold(c)` needs the
 constructor itself, and at an arbitrary loop head the binder's model is a
-fresh symbolic value. A proof `match` on that model inside `preserve` supplies
+fresh symbolic value. A proof `match` on that model inside `maintain` supplies
 it:
 
 <!-- verified-example: mdtests/loop_body_proof_match_concise_proof.md -->
 ```click
-preserve by {
+maintain by {
     match c.model {
         Maybe::None => { contradiction(c.model == Maybe::None); },
         Maybe::Some(value) => {
@@ -1073,7 +1073,7 @@ term the arm writes: an invariant, a declared resource's arguments, and a
 and the clause is read with them resolved exactly as a `have` goal at the
 loop's frontier is. The clause keeps its source text, which is what
 expansion prints (`mdtests/loop_clause_reads_arm_bindings.md`). The same scope
-reaches the loop's `initialize` and `preserve` bodies, at any nesting depth: a
+reaches the loop's `initialize` and `maintain` bodies, at any nesting depth: a
 `have` goal, a theorem argument, or an `unfold` target written in a phase body
 may name the arm's bindings exactly as one written beside the `loop` may
 (`mdtests/loop_phase_body_reads_arm_bindings.md`). Each phase is checked as its
@@ -1162,7 +1162,7 @@ per statement. In a proof-level `if`, `step()` enters a C branch from an exact
 condition fact. Initialization
 is non-executing because its point is already the first loop entry.
 
-### What a `preserve` script accepts
+### What a `maintain` script accepts
 
 A preservation script is the ordinary execution grammar: `step()` and the
 other linear execution tactics, `have`, the resource operations, a proof-level
@@ -1177,7 +1177,7 @@ chooses which link to write — and refuses when they cannot, because an arm
 
 <!-- verified-example: mdtests/loop_preserve_branch_tactic.md -->
 ```click
-preserve by {
+maintain by {
     branch ensuring {
         fact t >= 0;
         fact t <= 100;
@@ -1202,16 +1202,16 @@ so is a path that stops anywhere but the body's end, a `continue`, a `break`,
 or a function `return`.
 
 A body path that reaches `return` closes the function contract in that
-`preserve` arm. Tactics written after the returning step, such as
+`maintain` arm. Tactics written after the returning step, such as
 `have result == 7 by solve();`, apply only to that returned outcome.
 The tactics after `loop` apply only to the continuing exit. A returning arm
 is finished by the implicit closer, owned by `loop`, including when
 preservation is automatically generated. Every returned outcome still
 owes the function's postcondition and resource obligations. Expansion writes
-its checked closing steps into the returning `preserve` arm, including for
+its checked closing steps into the returning `maintain` arm, including for
 natural cycles and nested loops.
 
-A `preserve` script works like a function proof: when it ends, the loop's
+A `maintain` script works like a function proof: when it ends, the loop's
 back edge owes the whole invariant bundle, and each member is closed by
 `solve()`, as a function's exit closes each `ensures`. There is no tactic to
 write for it; the retired `close_invariants` is rejected by the parser
@@ -1219,17 +1219,17 @@ write for it; the retired `close_invariants` is rejected by the parser
 
 <!-- verified-example: mdtests/c_decreases_count_up.md -->
 ```click
-preserve by {
+maintain by {
     step();
 }
 ```
 
 `click expand` prints the closure as one `have <member> by { ... }` per
-member at the end of the `preserve` script, omitting members already
+member at the end of the `maintain` script, omitting members already
 available as facts.
 
 Stepping to the back edge is optional too. A path whose tactics run out
-inside the body runs the rest of it as an omitted `preserve` runs a whole
+inside the body runs the rest of it as an omitted `maintain` runs a whole
 body: straight-line statements are stepped, and a C `if` the path does not
 decide splits into separate paths, as the implicit tail splits it. A statement whose successors are path cases,
 such as a comparison stored in a local, splits on their condition as
@@ -1282,7 +1282,7 @@ expansion. Omitted phase automation is attributed to the `loop` keyword.
 Most simple proofs avoid these details. Larger proofs need them whenever
 the loop summary is the central part of the proof.
 
-### The frontier of an unfinished `preserve`
+### The frontier of an unfinished `maintain`
 
 A long body is written a few tactics at a time. A path whose tactics stop
 inside the body runs the rest of it implicitly, as above; when that rest
@@ -1308,7 +1308,7 @@ by why the rest did not run:
 ```text
 `walk.contract` stopped inside the loop body: the frontier is at statement 5,
 `i = (i - 1)`, after tactic 1 `step`; still ahead on this path: the body's end.
-Already complete: 1 at a `break`. Every path a `preserve` opens must end at the
+Already complete: 1 at a `break`. Every path a `maintain` opens must end at the
 body's end, a `continue`, or a `break`
 ```
 

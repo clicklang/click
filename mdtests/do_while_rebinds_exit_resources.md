@@ -47,7 +47,7 @@ void walk(struct Node* p) {
         decreases t;
         invariant p != 0;
         initialize by solve();
-        preserve by {
+        maintain by {
             match t.model {
                 Chain::Empty => { unfold(t); contradiction(p == 0); },
                 Chain::Node(identity, rest) => {

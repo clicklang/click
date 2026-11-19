@@ -85,7 +85,7 @@ void fill(struct arena *arena, int32 start, int32 end) {
         invariant arena->data == old(arena->data);
         invariant arena->occupied == old(arena->occupied);
         initialize by solve();
-        preserve by {
+        maintain by {
             let { next: m } = unfold(w);
             have m == i;
             have i < end;

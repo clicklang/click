@@ -159,7 +159,7 @@ void inner(struct rb_node* node) {
                 invariant old(state.phase) == InnerPhase::Before(g, p);
                 decreases 0;
                 initialize by solve();
-                preserve by {
+                maintain by {
                     let { gs: gs, parent_tree: parent_tree, ns: ns } = unfold(state);
                     let { ps: ps } = unfold(parent_tree);
                     have g->rb_left == p by { known(); }

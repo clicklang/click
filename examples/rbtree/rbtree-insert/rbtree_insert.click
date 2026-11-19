@@ -571,7 +571,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                 invariant rb_tree_parent_consistent(plug(c.model, t.model)) == 1;
 
                 initialize by solve();
-                preserve by {
+                maintain by {
                     match t.model {
                         RbTree::Empty => { contradiction(t.model == RbTree::Empty); },
                         RbTree::Node(nid, nparent, ncolor, nleft, nright) => {

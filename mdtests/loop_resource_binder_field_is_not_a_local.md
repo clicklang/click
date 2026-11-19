@@ -52,7 +52,7 @@ int32 spin(struct cell* node, int32 n) {
         invariant c.rank == old(c.rank);
 
         initialize by solve();
-        preserve by {
+        maintain by {
             have c.rank == i;
             have i == 0 by { solve() using { c.rank == i; c.rank == old(c.rank); old(c.rank) == 0; }; }
             have 0 <= n - i - 1 by { solve() using { i < n; 0 <= i; }; }

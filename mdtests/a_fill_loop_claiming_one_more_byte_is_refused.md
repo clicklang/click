@@ -27,7 +27,7 @@ void fill(uint8* bytes, uint64 length, uint8 value) {
         owns bytes[0..length];
         invariant i <= length;
         invariant forall (k: uint64) { k < i implies bytes[k] == value };
-        preserve by {
+        maintain by {
             mark before;
             step();
             step();

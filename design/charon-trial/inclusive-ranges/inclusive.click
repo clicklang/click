@@ -11,7 +11,7 @@ fn count_through(n: u32) -> u32 {
         invariant total <= n + 1;
         invariant iter.is_empty() == false implies iter.end() == n;
         invariant to_integer(total) == (if iter.is_empty() { to_integer(n) + 1 } else { to_integer(iter.start()) });
-        preserve by {
+        maintain by {
             mark iteration;
             have iter.is_empty() == false;
             have iter.end() == n;
@@ -63,7 +63,7 @@ fn every_byte() -> u32 {
         invariant iter.is_empty() == false implies iter.end() == 255u8;
         invariant iter.is_empty() == false implies total == (iter.start() as u32);
         invariant iter.is_empty() implies total == 256u32;
-        preserve by {
+        maintain by {
             mark iteration;
             have iter.is_empty() == false;
             have total == (iter.start() as u32);

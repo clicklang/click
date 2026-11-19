@@ -124,7 +124,7 @@ const CONTRACT_LET_RECURSION_LIMIT: usize = 8;
 /// `guarded_by` associated a resource with a mutex field by declaration. A
 /// mutex's protected resource now comes from its checked initialization, so
 /// the spelling is refused with that direction.
-const RETIRED_CLOSE_INVARIANTS: &str = "`close_invariants` is retired: a `preserve` script closes the loop's invariants and `decreases` when it reaches the back edge, as a function proof closes its `ensures` at the exit, each by `solve()`; prove one that needs help with `have <invariant> by { ... }` before the back edge";
+const RETIRED_CLOSE_INVARIANTS: &str = "`close_invariants` is retired: a `maintain` script closes the loop's invariants and `decreases` when it reaches the back edge, as a function proof closes its `ensures` at the exit, each by `solve()`; prove one that needs help with `have <invariant> by { ... }` before the back edge";
 const RETIRED_GUARDED_BY: &str = "`guarded_by` is retired: a mutex protects the resource its checked `pthread_mutex_init` step deposits, so remove the clause and pass the resource to that step";
 /// The index shape and scalar element type of a C global or static array
 /// visible to one function's contract. Resource lowering only knows parameter
@@ -355,7 +355,7 @@ pub(in crate::surface) struct ProofClauseSpan {
     /// default clause's `;`.
     pub(in crate::surface) last: SourcePosition,
     /// The keyword the clause proves, where its reader named one: a loop's
-    /// `initialize` or `preserve`.
+    /// `initialize` or `maintain`.
     pub(in crate::surface) owner: Option<SourcePosition>,
 }
 
@@ -8688,7 +8688,7 @@ impl Parser {
                 let proposition = self.parse_proposition()?;
                 if self.peek_ident() == Some("by") {
                     return Err(self.error(
-                        "invariant proofs belong to the loop; use `initialize by ...` and `preserve by ...`",
+                        "invariant proofs belong to the loop; use `initialize by ...` and `maintain by ...`",
                     ));
                 }
                 self.expect(Token::Semicolon)?;
@@ -11231,10 +11231,13 @@ impl Parser {
                     continue;
                 }
                 if self.peek_ident() == Some("preserve") {
+                    return Err(self.error("the loop phase is now `maintain by ...`"));
+                }
+                if self.peek_ident() == Some("maintain") {
                     self.proof_clause_owner = self.here();
                     self.position += 1;
                     if preserve_proof.is_some() {
-                        return Err(self.error("duplicate `preserve` proof"));
+                        return Err(self.error("duplicate `maintain` proof"));
                     }
                     preserve_proof = Some(self.parse_loop_phase_proof(&items)?);
                     continue;
@@ -18594,7 +18597,7 @@ mod tactic_classification_tests {
         ),
         (
             "loop",
-            "loop { invariant x == 1; initialize by { normalize(); } preserve by { normalize(); } }",
+            "loop { invariant x == 1; initialize by { normalize(); } maintain by { normalize(); } }",
         ),
         ("observe-resource", "observe(reference(p));"),
         ("witness", "witness(1);"),
@@ -18778,8 +18781,8 @@ mod loop_name_tests {
             ("owns p[0..bogus];", "owns"),
             ("owns bogus[0..1];", "owns"),
             (
-                "invariant i <= n; preserve by { have bogus == i; }",
-                "preserve",
+                "invariant i <= n; maintain by { have bogus == i; }",
+                "maintain",
             ),
             (
                 "invariant i <= n; initialize by { have bogus == i; }",
@@ -18787,8 +18790,8 @@ mod loop_name_tests {
             ),
             ("if bogus == 0 { views p[0..1]; }", "if"),
             (
-                "invariant i <= n; preserve by { if i == 0 { let { result: bogus } = step(); } else { step(); } have bogus == n; }",
-                "preserve",
+                "invariant i <= n; maintain by { if i == 0 { let { result: bogus } = step(); } else { step(); } have bogus == n; }",
+                "maintain",
             ),
         ] {
             let error = parse_loop(body).unwrap_err();
@@ -18803,35 +18806,45 @@ mod loop_name_tests {
     }
 
     #[test]
+    fn retired_loop_phase_names_its_replacement() {
+        let error = parse_loop("invariant i <= n; preserve by { step(); }").unwrap_err();
+        assert!(
+            error
+                .message()
+                .contains("the loop phase is now `maintain by ...`")
+        );
+    }
+
+    #[test]
     fn loop_names_keep_program_locals_quantifiers_and_phase_binders() {
-        parse_loop("decreases n - i; invariant forall (k: int32) { k == k }; invariant i <= n; views p[0..n]; preserve by { have forall (saved: int32) { saved == saved } by { intro(); have saved == saved; } }").unwrap();
+        parse_loop("decreases n - i; invariant forall (k: int32) { k == k }; invariant i <= n; views p[0..n]; maintain by { have forall (saved: int32) { saved == saved } by { intro(); have saved == saved; } }").unwrap();
     }
 
     #[test]
     fn loop_range_binders_and_invariant_proof_binders_are_recognized() {
-        parse_loop("invariant (0..n).all(|k| { k >= 0 }); invariant (0..n).fold(0, |acc, k| { acc + k }) >= 0; invariant forall (v: int32) { v == v }; preserve by { intro(); have v == v; }").unwrap();
+        parse_loop("invariant (0..n).all(|k| { k >= 0 }); invariant (0..n).fold(0, |acc, k| { acc + k }) >= 0; invariant forall (v: int32) { v == v }; maintain by { intro(); have v == v; }").unwrap();
     }
 
     #[test]
     fn loop_phase_proofs_recognize_binders_from_predicate_goals() {
-        parse_loop("invariant alias(); initialize by { intro(); have introduced == introduced; } preserve by { have alias() by { intro(); have introduced == introduced; } }").unwrap();
+        parse_loop("invariant alias(); initialize by { intro(); have introduced == introduced; } maintain by { have alias() by { intro(); have introduced == introduced; } }").unwrap();
     }
 
     #[test]
     fn loop_proof_values_remain_visible_in_nested_blocks() {
-        parse_loop("invariant i <= n; preserve by { let { result: saved } = step(); if i == 0 { have forall (k: int32) { saved == saved } by { intro(); have saved == saved; } } else { have saved == n; } }").unwrap();
+        parse_loop("invariant i <= n; maintain by { let { result: saved } = step(); if i == 0 { have forall (k: int32) { saved == saved } by { intro(); have saved == saved; } } else { have saved == n; } }").unwrap();
     }
 
     #[test]
     fn nested_loop_restores_the_enclosing_phase_name_context() {
         let error = parse_loop(
-            "invariant i <= n; preserve by { loop { invariant i <= n; } have bogus == i; }",
+            "invariant i <= n; maintain by { loop { invariant i <= n; } have bogus == i; }",
         )
         .unwrap_err();
         assert!(
             error
                 .message()
-                .contains("unknown name `bogus` in loop preserve clause"),
+                .contains("unknown name `bogus` in loop maintain clause"),
             "{error}"
         );
     }

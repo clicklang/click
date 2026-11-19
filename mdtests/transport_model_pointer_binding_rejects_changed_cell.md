@@ -34,7 +34,7 @@ int32 update(int32* p) {
                 invariant state.model == old(state.model);
                 invariant state.model == View::At(alias);
                 initialize by solve();
-                preserve by {
+                maintain by {
                     unfold(state);
                     step();
                     have alias[0] == 7 by { solve(); }

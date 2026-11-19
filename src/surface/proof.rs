@@ -1653,7 +1653,7 @@ fn source_tactic_width(tactic: &ProofTactic) -> usize {
 }
 
 /// Whether `wanted` names this linear tactic or a source tactic nested inside
-/// it. A `loop` is one linear tactic whose `initialize` and `preserve` proofs
+/// it. A `loop` is one linear tactic whose `initialize` and `maintain` proofs
 /// number their own source tactics directly after it, so an expansion site
 /// inside a loop body is contained by the loop tactic's source span. The span
 /// is measured only when `wanted` lies after this tactic, so the walk costs

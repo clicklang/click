@@ -31,7 +31,7 @@ void clear(int32* values) {
         invariant x <= 4u32;
         owns values[0..4];
         initialize by { solve(); }
-        preserve by {
+        maintain by {
             step();
             step();
         }

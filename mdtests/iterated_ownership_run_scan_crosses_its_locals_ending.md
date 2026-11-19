@@ -78,7 +78,7 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
         invariant 0 <= run_length and run_length <= i;
 
         initialize by solve();
-        preserve by {
+        maintain by {
             mark iteration;
             let { lo: lo, hi: hi } = unfold(run);
             have hi == i by {

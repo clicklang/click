@@ -1068,7 +1068,7 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
             }
             if let Some(proof) = loop_clause.preserve_proof() {
                 output.push_str(&body_prefix);
-                output.push_str("preserve ");
+                output.push_str("maintain ");
                 write_proof(output, proof, indent + 1);
                 output.push('\n');
             }

@@ -1287,7 +1287,7 @@ exit as a C `return` does, so the loop's invariants are not owed on that path
 and the contract is checked there. A labeled `break 'outer` or `continue
 'outer` from an inner loop leaves each loop it crosses: the inner loop exits
 and the enclosing loop takes the corresponding `break` or `continue` path.
-Click keeps the routing state private. In a written `preserve`, a body branch that returns is a proof-level `if` whose
+Click keeps the routing state private. In a written `maintain`, a body branch that returns is a proof-level `if` whose
 returning arm steps to
 `function.exit`
 ([`design/charon-trial/early-exits`](https://github.com/clicklang/click/blob/master/design/charon-trial/early-exits/exits.click)).
@@ -1370,7 +1370,7 @@ to_integer(bytes.len())` and `to_integer(k + 1u64) <= to_integer(bytes.len())`,
 and the invariant is carried by regrouping `(bytes + k) + 1u64` as
 `bytes + (k + 1u64)` from `to_integer(k) + 1 <= 18446744073709551615`
 ([full-width pointer association](tactics/index.md#normalization-with-selected-premises)).
-A `preserve` script splits on `0u64 < iter.len()` with a proof `if`; the
+A `maintain` script splits on `0u64 < iter.len()` with a proof `if`; the
 empty arm steps to the exit
 ([`examples/rust-iterators/sum.click`](https://github.com/clicklang/click/blob/master/examples/rust-iterators/sum.click)).
 
@@ -1510,7 +1510,7 @@ and `iter.chunk_size`, and `iter.len()` is `iter.v.len() / iter.chunk_size`,
 Rust's `ExactSizeIterator::len`. `loop(i).iter` names them outside the loop.
 Inside a loop, `iter` is the loop's iterator even where the function has a
 local of that name. A pass's `next()` splits on `iter.chunk_size <=
-iter.v.len()`, so a `preserve` script splits the same way with a proof `if`;
+iter.v.len()`, so a `maintain` script splits the same way with a proof `if`;
 the other arm takes the exit with three `step()`s. A chunk is still `chunk`
 and `chunk_len`, and the remainder `tail` and `tail_len`.
 
@@ -1551,7 +1551,7 @@ loop's iterator, and that `next` is the crate's local, non-generic
 The `Option` that `next` returns is no local. The loop tests the call's
 result for `Some` without ending it, and the `Some` arm's payload read binds
 the loop variable and ends it. A pass is decided by `next`'s contract. When
-the contract's cases are stated over the iterator's fields, a `preserve`
+the contract's cases are stated over the iterator's fields, a `maintain`
 script splits on the same fields with a proof `if` and states the case's
 premise in the contract's own form before the call:
 
@@ -1563,7 +1563,7 @@ fn count(n: u32) -> u32 {
     loop {
         decreases iter.n;
         invariant to_integer(passes) + to_integer(iter.n) == to_integer(n);
-        preserve by {
+        maintain by {
             if 0u32 < iter.n {
                 mark iteration;
                 have iter.n != 0u32;

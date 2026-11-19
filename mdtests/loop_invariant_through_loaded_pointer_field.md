@@ -81,7 +81,7 @@ int32 probe_contract(struct job *j) {
                 contradiction(j->lo <= k and k < i);
             }
         }
-        preserve by {
+        maintain by {
             step();
             have forall (k: int32) { j->lo <= k and k <= i implies j->p[k] == j->v } by {
                 intro();

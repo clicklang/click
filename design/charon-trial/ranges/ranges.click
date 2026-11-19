@@ -69,7 +69,7 @@ fn grid(n: u32, m: u32) -> u32 {
         invariant iter.end == n;
         invariant iter.start <= n;
         invariant cells <= 1000u32 * iter.start;
-        preserve by {
+        maintain by {
             step_until(loop(1));
             loop {
                 decreases iter.end - iter.start;

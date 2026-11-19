@@ -44,7 +44,7 @@ unsigned count(int n) {
         decreases to_integer(n) - to_integer(c);
         invariant left >= 0;
         invariant to_integer(c) + to_integer(left) == to_integer(n);
-        preserve by {
+        maintain by {
             step();
             have statement(2).call(take, 0).result
                 == (if at(statement(2).call(take, 0).entry, left) == 0 { 0 } else { 1 }) by solve();

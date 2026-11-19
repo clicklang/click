@@ -42,7 +42,7 @@ void loop_owns_composite_rejects_outside_write(struct cell* node, int32 q[], int
         invariant i <= n;
 
         initialize by solve();
-        preserve by {
+        maintain by {
             unfold(cell(node));
             step();
             step();

@@ -23,7 +23,7 @@ fn guarded_walk(value: &mut i32, n: i32) -> i32 {
     step_until(loop(0));
     loop {
         decreases n - i;
-        preserve by {
+        maintain by {
             apply(integer::int32_nonnegative_subtract_within_value_is_defined(n, i)) using {
                 0 <= i;
                 i <= n;
@@ -51,7 +51,7 @@ fn final_header(n: i32) -> i32 {
     step_until(loop(0));
     loop {
         decreases n - i;
-        preserve by {
+        maintain by {
             apply(integer::int32_nonnegative_subtract_within_value_is_defined(n, i)) using {
                 0 <= i;
                 i <= n;

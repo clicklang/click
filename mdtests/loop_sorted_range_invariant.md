@@ -73,7 +73,7 @@ int32 loop_sorted_range_invariant(int32 p[3]) {
                 known();
             }
         }
-        preserve by {
+        maintain by {
             unfold(sorted(old(p), 3));
             unfold(sorted_range(p, 0, 3));
         }

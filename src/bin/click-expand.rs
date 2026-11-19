@@ -1318,12 +1318,12 @@ int32 f(int32 a, int32 b) {
         assert_eq!(fs::read_to_string(output).unwrap(), by_label);
 
         let insertion = click_source.find("}\n    step();").unwrap();
-        let omitted = expand("f.loop(0).preserve".to_string())
+        let omitted = expand("f.loop(0).maintain".to_string())
             .expect("the omitted phase should expand and check");
         assert!(omitted.starts_with(&click_source[..insertion]), "{omitted}");
         assert!(omitted.ends_with(&click_source[insertion..]), "{omitted}");
         assert!(
-            omitted[insertion..].starts_with("    preserve by {\n"),
+            omitted[insertion..].starts_with("    maintain by {\n"),
             "{omitted}"
         );
         fs::remove_dir_all(directory).unwrap();

@@ -3546,7 +3546,7 @@ fn loop_diverges_round_trips_through_expansion() {
                 return 0;
             }
         "#;
-    let body = "loop diverges { invariant 0 == 0; initialize by solve(); preserve by { step(); } } solve();";
+    let body = "loop diverges { invariant 0 == 0; initialize by solve(); maintain by { step(); } } solve();";
     let click_source = format!(
         r#"verifying "spin.c";
 
@@ -3619,7 +3619,7 @@ fn a_diverges_function_never_yields_termination_evidence() {
                     decreases n;
                     invariant n >= 0;
                     initialize by solve();
-                    preserve by {
+                    maintain by {
                         have 0 <= to_integer(n - 1) by {
                             solve() using { n > 0; }
                         }
@@ -3629,7 +3629,7 @@ fn a_diverges_function_never_yields_termination_evidence() {
                 loop diverges {
                     invariant n == 0;
                     initialize by solve();
-                    preserve by {
+                    maintain by {
                         step();
                     }
                 }

@@ -12,7 +12,7 @@ Slice iterator loops): each pass's `next()` yields the element at
 observes the iterator through Rust's own methods, `iter.len()` and
 `iter.as_slice()`, and carries where it stands as an invariant,
 `iter.as_slice() == bytes + (bytes.len() - iter.len())`. The
-`preserve` script splits on `0u64 < iter.len()`; the copied pattern reads the
+`maintain` script splits on `0u64 < iter.len()`; the copied pattern reads the
 yielded address, and an exhausted iterator performs no read.
 
 The sidecar uses Integer specification arithmetic,

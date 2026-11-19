@@ -30,7 +30,7 @@ int32 late(int32 flag) {
     loop {
         decreases 0;
 
-        preserve by {
+        maintain by {
             if flag == 0 {
                 step();
                 step();

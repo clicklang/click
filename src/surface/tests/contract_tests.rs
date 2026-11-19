@@ -2912,7 +2912,7 @@ uint64 nested(uint64 total) {
   invariant remaining <= total;
   invariant total <= 64u64;
   initialize by solve();
-  preserve by {
+  maintain by {
    have 16u64 <= remaining by solve();
    have to_integer(remaining - 16u64) == to_integer(remaining) - 16;
    mark before_subtract;
@@ -2932,7 +2932,7 @@ uint64 nested(uint64 total) {
      have 16u64 <= total by solve() using { 16u64 <= at(before_subtract, remaining); at(before_subtract, remaining) <= total; };
      solve();
     }
-    preserve by {
+    maintain by {
      have remaining <= total - 16u64 by known();
      have 1u32 <= n by solve() using { n > 0u32; n <= 2u32; };
      have to_integer(n - 1u32) == to_integer(n) - 1;

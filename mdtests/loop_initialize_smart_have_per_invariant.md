@@ -9,7 +9,7 @@ source tactic N", and the one expansion that was retained replaced the first
 `have` with the certificate of the entire phase.
 
 Each `have` below is now planned from its own body, so it expands to the same
-`have` with a checked body, printed where it was written. `preserve by solve();`
+`have` with a checked body, printed where it was written. `maintain by solve();`
 is the same shape one phase over: a single smart tactic standing for the whole
 phase, whose expansion is the planned preservation certificate.
 
@@ -43,7 +43,7 @@ int spin(int n) {
             have i <= n;
             known();
         }
-        preserve by solve();
+        maintain by solve();
     }
     step();
     solve();

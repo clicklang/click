@@ -32,7 +32,7 @@ int32 drain(int32 box[4]) {
         decreases old(head(box));
         invariant 0 <= box[0];
         initialize by solve();
-        preserve by {
+        maintain by {
             step();
             solve();
         }

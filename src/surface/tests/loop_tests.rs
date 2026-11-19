@@ -21,7 +21,7 @@ fn separately_declared_guarded_invariants_close_at_the_back_edge() {
                 invariant x == 0 or x == 1;
                 invariant y == 0 or y == 1;
                 initialize by solve();
-                preserve by {
+                maintain by {
                     step();
                     have x == 0 or x == 1 by { known(); }
                     have y == 0 or y == 1 by { known(); }
@@ -50,7 +50,7 @@ fn loop_metadata_sees_address_escape_after_the_loop() {
             decreases n - i;
             invariant i >= 0;
             initialize by solve();
-            preserve by { step(); }
+            maintain by { step(); }
         }
         solve();
     }"#;
@@ -95,7 +95,7 @@ fn loop_clauses_in(tactics: &[ProofTactic], clauses: &mut Vec<StructuralClause>)
 }
 
 /// A loop's retained phase proofs are certificates: expanding a loop fixture
-/// must leave `initialize` and `preserve` bodies that contain no smart tactic,
+/// must leave `initialize` and `maintain` bodies that contain no smart tactic,
 /// so nothing in them is a leaf `ProofCertificate` refuses. In particular the
 /// automatic preservation planner's own closer is expanded before the phase is
 /// retained; a trailing `solve()` would be rejected here exactly as
@@ -106,9 +106,9 @@ fn expanded_loop_phase_proofs_are_certificates() {
     for (filename, function) in [
         // Automatically planned initialization and preservation.
         ("count_to_n_loop_invariant", "count_to_n_loop_invariant"),
-        // A ranked loop whose explicit `preserve by` ends at the back edge.
+        // A ranked loop whose explicit `maintain by` ends at the back edge.
         ("c_decreases_count_up", "count_to_n"),
-        // A `preserve by` that proves a member in a `have` first.
+        // A `maintain by` that proves a member in a `have` first.
         ("loop_invariant_body", "count"),
         // Guarded entry judgments survive more than two declarations.
         ("loop_three_invariant_initialization", "probe_fill"),
@@ -167,7 +167,7 @@ fn assert_loop_phase_expansion_replays(filename: &str, function: &str) {
     for clause in &clauses {
         for (phase, proof) in [
             ("initialize", clause.initialize_proof()),
-            ("preserve", clause.preserve_proof()),
+            ("maintain", clause.preserve_proof()),
         ] {
             let proof = proof.unwrap_or_else(|| panic!("{filename}: `{phase}` was not expanded"));
             let tactics = proof.tactics().unwrap_or_else(|| {
@@ -334,7 +334,7 @@ fn smart_ranking_closure_expands_to_explicit_bundle_members() {
     let expanded = expand_function_proof_source(&click, &sources, "count_to_n")
         .unwrap_or_else(|error| panic!("count-up expansion failed: {}", error.message()));
     let closer = expanded
-        .find("preserve by {")
+        .find("maintain by {")
         .expect("the expansion spells the preservation proof");
     let closer = &expanded[closer..];
     assert!(
@@ -391,7 +391,7 @@ fn promoted_integer_ranking_expands_without_search() {
 fn smart_ranking_closure_expands_its_pivot_arm() {
     let (click, sources) = loop_fixture("c_decreases_nested_loop");
     let sources = borrowed_sources(&sources);
-    // The fixture's `preserve` scripts end at the back edge, where the
+    // The fixture's `maintain` scripts end at the back edge, where the
     // implicit closer, the smart ranking closure, closes each member.
     let expanded = expand_function_proof_source(&click, &sources, "nested_count")
         .unwrap_or_else(|error| panic!("nested-loop expansion failed: {}", error.message()));
@@ -769,7 +769,7 @@ fn explicit_swap_loop_fixture(include_entry_bounds: bool) -> (&'static str, Stri
                 invariant p[0] <= p[2];
                 invariant p[1] <= p[2];
                 initialize by solve();
-                preserve by {{
+                maintain by {{
                     have j == 0 by {{
                         solve() using {{ j < 1; j >= 0; }}
                     }}
@@ -908,7 +908,7 @@ fn frontier_local_loop_verifies_and_advances_to_exit() {
                     invariant i >= 0;
                     invariant i <= 3;
                     initialize by solve();
-                    preserve by {
+                    maintain by {
                         step();
                     }
                 }
@@ -950,7 +950,7 @@ fn individual_loop_proof_has_no_whole_claim_acceptance_check() {
                     invariant i >= 0;
                     invariant i <= 3;
                     initialize by solve();
-                    preserve by {
+                    maintain by {
                         step();
                     }
                 }
@@ -1025,7 +1025,7 @@ fn loop_initialization_theorem_search_retains_checked_fixed_state_proof() {
                         apply(nonnegative_is_acceptable(x));
                         solve();
                     }
-                    preserve by {
+                    maintain by {
                         step();
                         apply(nonnegative_is_acceptable(x));
                         solve();
@@ -1091,7 +1091,7 @@ fn loop_initialization_solve_retains_checked_fixed_state_proof() {
                 loop diverges {
                     invariant x >= 0;
                     initialize by solve();
-                    preserve by {
+                    maintain by {
                         step();
                     }
                 }
@@ -1237,7 +1237,7 @@ fn frontier_loop_preservation_reports_a_rest_that_does_not_run() {
                 step();
                 loop {
                     invariant i >= 0;
-                    preserve by {
+                    maintain by {
                         step();
                     }
                 }
@@ -1280,7 +1280,7 @@ fn frontier_local_loop_verifies_a_lowered_c_for_loop() {
                     invariant i >= 0;
                     invariant i <= 3;
                     initialize by solve();
-                    preserve by {
+                    maintain by {
                         step();
                         step();
                     }
@@ -1327,7 +1327,7 @@ fn frontier_local_loop_verifies_at_a_branch_local_frontier() {
                         invariant i >= 0;
                         invariant i <= 2;
                         initialize by solve();
-                        preserve by {
+                        maintain by {
                             step();
                         }
                     }
@@ -1357,7 +1357,7 @@ fn frontier_loop_binding_replaces_scope_without_merging_declarations() {
                 invariant i >= bound;
                 invariant i >= bound;
                 initialize by solve();
-                preserve by solve();
+                maintain by solve();
             }
         }
     "#,
@@ -1435,14 +1435,14 @@ fn frontier_local_loop_verifies_nested_loops_at_their_respective_frontiers() {
                     invariant i >= 0;
                     invariant i <= 2;
                     initialize by solve();
-                    preserve by {
+                    maintain by {
                         step();
                         loop {
                             decreases 2 - j;
                             invariant j >= 0;
                             invariant j <= 2;
                             initialize by solve();
-                            preserve by {
+                            maintain by {
                                 step();
                             }
                         }
@@ -1494,7 +1494,7 @@ fn frontier_loop_step_expansion_uses_the_current_invariant_lowering() {
                     decreases n - i;
                     invariant i >= 0 and i <= n;
                     initialize by solve();
-                    preserve by {
+                    maintain by {
                         step();
                         step();
                     }
@@ -1504,7 +1504,7 @@ fn frontier_loop_step_expansion_uses_the_current_invariant_lowering() {
             }
         "#;
     let preserve_step = click_source
-        .find("preserve by {")
+        .find("maintain by {")
         .and_then(|offset| {
             click_source[offset..]
                 .find("step();")
@@ -1560,7 +1560,7 @@ fn frontier_local_loop_checks_an_optional_decreases_measure() {
                     decreases n;
                     invariant n >= 0;
                     initialize by solve();
-                    preserve by {
+                    maintain by {
                         have 0 <= to_integer(n - 1) by {
                             solve() using { n > 0; }
                         }
@@ -1628,7 +1628,7 @@ fn frontier_local_loop_keyword_expands_omitted_phases() {
             .expect("the loop keyword should expand all omitted phase automation");
 
     assert!(expanded.contains("initialize by {"), "{expanded}");
-    assert!(expanded.contains("preserve by {"), "{expanded}");
+    assert!(expanded.contains("maintain by {"), "{expanded}");
     verify_c_sources(&expanded, &[("count_to_n.c", c_source)]).unwrap_or_else(|error| {
         panic!(
             "the expanded frontier-local loop should freshly check: {}\n{expanded}",
@@ -1793,7 +1793,7 @@ fn frontier_local_loop_expands_an_explicit_nested_tactic_at_its_own_location() {
                     invariant i >= 0;
                     invariant i <= 3;
                     initialize by solve();
-                    preserve by {
+                    maintain by {
                         step();
                     }
                 }
@@ -1842,7 +1842,7 @@ fn frontier_local_loop_expands_an_explicit_nested_tactic_at_its_own_location() {
     .expect("explicit initialization tactic should expand at its own source location");
 
     assert!(!expanded.contains("initialize by solve()"), "{expanded}");
-    assert!(expanded.contains("preserve by {"), "{expanded}");
+    assert!(expanded.contains("maintain by {"), "{expanded}");
     verify_c_sources(&expanded, &[("count_to_three.c", c_source)])
         .expect("expanded explicit initialization tactic should freshly check");
 }
@@ -1870,7 +1870,7 @@ fn frontier_local_loop_at_function_entry_keeps_initialization_capture_separate()
                     decreases n;
                     invariant n >= 0;
                     initialize by solve();
-                    preserve by {
+                    maintain by {
                         have 0 <= to_integer(n - 1) by {
                             solve() using { n > 0; }
                         }
@@ -1928,7 +1928,7 @@ fn frontier_local_loop_expands_a_tactic_inside_preservation_at_its_own_location(
                     invariant i >= 0;
                     invariant i <= 3;
                     initialize by solve();
-                    preserve by {
+                    maintain by {
                         step();
                     }
                 }
@@ -1937,7 +1937,7 @@ fn frontier_local_loop_expands_a_tactic_inside_preservation_at_its_own_location(
             }
         "#;
     let preserve_step = click_source
-        .find("preserve by {")
+        .find("maintain by {")
         .and_then(|offset| {
             click_source[offset..]
                 .find("step();")
@@ -1997,7 +1997,7 @@ fn explicit_loop_closer_cannot_bypass_proof_owned_bundle_check() {
                     invariant i >= 0;
                     invariant i <= 1;
                     initialize by solve();
-                    preserve by {
+                    maintain by {
                         step();
                     }
                 }
@@ -2066,7 +2066,7 @@ fn body_final_branch_preservation_completes_at_typed_back_edge_boundary() {
         "#;
     let explicit = template.replace(
         "{preserve}",
-        r#"preserve by {
+        r#"maintain by {
                         step();
                         branch ensuring { fact parity >= 0 and parity <= 1; } { true => { step(); } false => { step(); } }
                     }"#,
@@ -2087,7 +2087,7 @@ fn body_final_branch_preservation_completes_at_typed_back_edge_boundary() {
 
     let broken = template.replace(
         "{preserve}",
-        r#"preserve by {
+        r#"maintain by {
                         step();
                         branch ensuring { fact parity >= 0 and parity <= 1; } { true => { step(); } false => { step(); } }
                     }"#,
@@ -2136,7 +2136,7 @@ fn frontier_local_loop_exit_bound_weakens_to_a_looser_ensures() {
                     invariant i >= 0;
                     invariant i <= 3;
                     initialize by solve();
-                    preserve by {
+                    maintain by {
                         step();
                     }
                 }
@@ -2188,7 +2188,7 @@ fn whole_claim_expansion_reconstructs_nested_decided_branch_and_loop_match() {
                         invariant x >= 1;
                         invariant x <= 2;
                         initialize by solve();
-                        preserve by {
+                        maintain by {
                             have marker() != Marker::Inactive by {
                                 unfold(marker());
                                 normalize();
@@ -2437,9 +2437,9 @@ int32 f(int32 n) {
     ensures result == 7;
 } by {
     loop { decreases 1; invariant n == 5;
-        preserve by {
+        maintain by {
             loop { decreases 1; invariant n == 5;
-                preserve by { step(); have result == 7 by solve(); solve(); }
+                maintain by { step(); have result == 7 by solve(); solve(); }
             }
         }
     }

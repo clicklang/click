@@ -48,7 +48,7 @@ void clear(struct region* region) {
         invariant w.next == i;
         invariant separate(memory(*region), memory(arena->occupied[0..arena->capacity]));
         initialize by solve();
-        preserve by {
+        maintain by {
             let { next: m } = unfold(w);
             have m == i;
             have 0 <= i;

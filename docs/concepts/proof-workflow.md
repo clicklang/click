@@ -163,10 +163,10 @@ expansion output.
   `read(N)`, `back_edge()`, `loop(i).back_edge()`, and `function.exit`. The
   target must be forward and reachable on the current execution path.
 - `loop { ... }`: verify the loop exactly at the current frontier and advance
-  to its checked abstract exit. Its nested `initialize`, `preserve`, invariant,
+  to its checked abstract exit. Its nested `initialize`, `maintain`, invariant,
   invariant, and resource clauses construct the kernel rule; it never seeks to a
   numbered source loop.
-- The back edge of a `preserve by { ... }` script closes each member of the
+- The back edge of a `maintain by { ... }` script closes each member of the
   loop's invariant bundle with `solve()`, as a function's exit closes each
   `ensures`; prove a member `solve()` misses with `have` before the back edge.
   The retired `close_invariants` tactic is rejected.
@@ -531,7 +531,7 @@ The mark names the point the path is at now. It does not advance or rewind the
 frontier and cannot be passed to `step_until`.
 
 `loop_name.entry` is available in invariants on that loop and in its explicit
-`preserve` proof. Once the loop tactic succeeds, `loop_name.exit` is available
+`maintain` proof. Once the loop tactic succeeds, `loop_name.exit` is available
 to the enclosing proof.
 
 Statement entry and exit points are currently recorded by deterministic
@@ -541,7 +541,7 @@ memory, reassigned parameters, and declared scalar, pointer, or array locals
 at the selected point. `at(point, proposition)` instead reads the complete
 proposition there; use this form for state-relative facts such as
 `viewable(...)`, where wrapping only the segment expression would leave the
-memory component at the current point. A branch entry can be a recorded point. An explicit loop `preserve` proof binds
+memory component at the current point. A branch entry can be a recorded point. An explicit loop `maintain` proof binds
 `at(loop_name.entry, ...)` to its fresh arbitrary iteration state. Executing a
 verified loop records its unique abstract exit as `at(loop_name.exit, ...)`.
 Earlier concrete iterations have no point of their own: a path checks a loop
@@ -549,7 +549,7 @@ once, as one abstract iteration.
 
 `invariant` declarations generate obligations at loop points. The
 loop-level `initialize` proof establishes the complete invariant set before the
-first iteration. The `preserve` proof assumes that set and the loop condition,
+first iteration. The `maintain` proof assumes that set and the loop condition,
 executes one body iteration, and reestablishes the set:
 
 <!-- verified-example: mdtests/count_to_loop_initialize_by_solve_and_preserve.md -->
@@ -559,7 +559,7 @@ loop {
     invariant i >= 0;
     invariant i <= n;
 
-    preserve by {
+    maintain by {
         step();
         solve();
     }
@@ -585,7 +585,7 @@ enclosing execution proof with the loop's abstract exit rule. Later and nested
 loops are therefore checked in their actual enclosing proof context; Click does not
 reconstruct their entry states by executing the function prefix again.
 
-Explicit `initialize` and `preserve` proofs directly supply the two premises for
+Explicit `initialize` and `maintain` proofs directly supply the two premises for
 that abstract exit rule. After initialization establishes every entry invariant
 and every preservation branch reaches the back edge with the invariants and
 effects reestablished, the kernel constructs the loop exit without proving

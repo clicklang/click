@@ -119,7 +119,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         invariant state.context == SizedContext::Left(a, above, shade, count, sibling_model, up_model);
                         invariant color_bit(shade) == 1;
                         initialize by solve();
-                        preserve by {
+                        maintain by {
                             let { tree: tree, path: path } = unfold(state);
                             have root->rb_node == old(root->rb_node) by known();
                             let { metadata: parent_size, sibling: sibling, up: up } = unfold(path);
@@ -225,7 +225,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         invariant state.context == SizedContext::Right(a, above, shade, count, sibling_model, up_model);
                         invariant color_bit(shade) == 1;
                         initialize by solve();
-                        preserve by {
+                        maintain by {
                             let { tree: tree, path: path } = unfold(state);
                             have root->rb_node == old(root->rb_node) by known();
                             let { metadata: parent_size, sibling: sibling, up: up } = unfold(path);

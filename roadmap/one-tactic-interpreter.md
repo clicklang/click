@@ -15,7 +15,7 @@ maintainability, not a known wrong verdict.
 ## Done
 
 - The linear execution continuation, a focused execution arm and a loop's
-  `preserve` body apply written frontier tactics through one function,
+  `maintain` body apply written frontier tactics through one function,
   `apply_frontier_source_tactic`
   (`src/surface/proof/checked_drivers/proof_execution.rs`). A written
   `transport` and `step_until` mean the same thing in each.
@@ -68,7 +68,7 @@ These still interpret written tactics on their own:
   `finish_ordered_proof`.
 
 `solve` in an execution arm is refused before the function exit, while a
-`preserve` body has its own `solve` handler.
+`maintain` body has its own `solve` handler.
 
 The largest remaining piece is the grouped `solve` closer in
 `close_post_execution_claims_with_solve`. It focuses a grouped proof's claims

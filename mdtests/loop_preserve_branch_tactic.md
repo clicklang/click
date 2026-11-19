@@ -1,6 +1,6 @@
-# A `branch` decides a body `if` inside `preserve`
+# A `branch` decides a body `if` inside `maintain`
 
-A ranked loop's `preserve` runs one certified iteration. When the body contains
+A ranked loop's `maintain` runs one certified iteration. When the body contains
 an `if`, `branch` is the spelling that consumes it: each arm runs the source the
 guard selects and the two rejoin at the statement after the `if`, so the back
 edge sees one path and the measure is compared once. The proof-level `if` is the
@@ -106,7 +106,7 @@ int32 loop_branch_body(int32 n) {
         invariant t <= 100;
 
         initialize by solve();
-        preserve by {
+        maintain by {
             branch ensuring {
                 fact t >= 0;
                 fact t <= 100;
@@ -132,7 +132,7 @@ void chain_countdown(int32 n) {
         invariant n >= 0;
 
         initialize by solve();
-        preserve by {
+        maintain by {
             match c.model {
                 Chain::Nil => { contradiction(c.model == Chain::Nil); },
                 Chain::Link(rest_model) => {
@@ -159,7 +159,7 @@ void chain_countdown_decided(int32 n) {
         invariant n >= 0;
 
         initialize by solve();
-        preserve by {
+        maintain by {
             match c.model {
                 Chain::Nil => { contradiction(c.model == Chain::Nil); },
                 Chain::Link(rest_model) => {

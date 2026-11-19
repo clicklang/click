@@ -7425,7 +7425,7 @@ pub(in crate::surface) fn validate_region_proof_clause(
     }
 
     validate_loop_phase_proof("initialize", region_proof_clause.initialize_proof())?;
-    validate_loop_phase_proof("preserve", region_proof_clause.preserve_proof())
+    validate_loop_phase_proof("maintain", region_proof_clause.preserve_proof())
 }
 
 pub(in crate::surface) fn validate_loop_phase_proof(
@@ -7435,7 +7435,7 @@ pub(in crate::surface) fn validate_loop_phase_proof(
     let Some(SourceProof::Script(tactics)) = proof else {
         return Ok(());
     };
-    if phase == "preserve" {
+    if phase == "maintain" {
         return Ok(());
     }
     validate_loop_initialization_tactics(tactics)

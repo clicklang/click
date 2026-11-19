@@ -33,7 +33,7 @@ void caller(int32* p, int32* q) {
         invariant c.model == old(c.model);
         invariant c.model != Model::Empty;
         initialize by solve();
-        preserve by { step(); step(); }
+        maintain by { step(); step(); }
     }
 }
 ```

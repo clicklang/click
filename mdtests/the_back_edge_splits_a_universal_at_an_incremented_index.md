@@ -35,7 +35,7 @@ int32 zero3(int32 p[3]) {
         decreases 3 - j;
         invariant j >= 0 and j <= 3;
         invariant forall (k: int32) { 0 <= k and k < j implies p[k] == 0 };
-        preserve by {
+        maintain by {
             step();
             step();
         }

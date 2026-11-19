@@ -28,7 +28,7 @@ int32 f(int32 n) {
         decreases n - i;
         invariant i >= 0;
         invariant i <= n;
-        preserve by {
+        maintain by {
             step(); step();
             loop { decreases 2-j; invariant j >= 0; invariant j <= 2; invariant i >= 0; invariant i < n; }
             step();

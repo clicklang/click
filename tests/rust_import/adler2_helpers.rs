@@ -2249,7 +2249,7 @@ const STORED_GUARD_PROOF: &str = r#"int adler_stored_guard(int remaining, uint64
   invariant 0 <= remaining;
   invariant remaining % 22208 == 0;
   invariant size == 22208u64;
-  preserve by {
+  maintain by {
    have 0 < remaining;
    apply(adler_outer_nonempty_remaining(remaining)) using { 0 < remaining; remaining % 22208 == 0; }
    mark head;

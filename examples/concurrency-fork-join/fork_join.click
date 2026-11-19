@@ -89,7 +89,7 @@ void *fill_range(void *argument) {
                 contradiction(job->begin <= k and k < index);
             }
         }
-        preserve by {
+        maintain by {
             have separate(memory(*job), memory(job->output[job->begin..job->end]));
             have job->begin <= index;
             have contains(memory(*job), memory(job->output)) by { normalize(); }

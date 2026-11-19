@@ -1808,7 +1808,7 @@ struct rb_node* rb_prev(struct rb_node* node) {
                                         entry_right, entry_left));
 
                                 initialize by solve();
-                                preserve by {
+                                maintain by {
                                     match t.model {
                                         RbTree::Empty => { contradiction(t.model
                                                 == RbTree::Empty); },
@@ -2064,7 +2064,7 @@ struct rb_node* rb_prev(struct rb_node* node) {
                         invariant plug(c.model, t.model) == plug(old(c.model), old(t.model));
 
                         initialize by solve();
-                        preserve by {
+                        maintain by {
                             match t.model {
                                 RbTree::Empty => { contradiction(t.model == RbTree::Empty); },
                                 RbTree::Node(identity, par, color, right_model, left_model) => {

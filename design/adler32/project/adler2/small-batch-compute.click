@@ -394,7 +394,7 @@ impl adler2::Adler32 {
       invariant to_integer(b_vec.0[2]) <= adler_lane_b_ceiling(adler_lane_vectors_consumed(old((((bytes.len() - bytes.len() % 4u64) as uint32) as int32)), ((adler_chunk_bytes(iter.len()) as uint32) as int32)));
       invariant to_integer(a_vec.0[3]) <= adler_lane_a_ceiling(adler_lane_vectors_consumed(old((((bytes.len() - bytes.len() % 4u64) as uint32) as int32)), ((adler_chunk_bytes(iter.len()) as uint32) as int32)));
       invariant to_integer(b_vec.0[3]) <= adler_lane_b_ceiling(adler_lane_vectors_consumed(old((((bytes.len() - bytes.len() % 4u64) as uint32) as int32)), ((adler_chunk_bytes(iter.len()) as uint32) as int32)));
-      preserve by {
+      maintain by {
        step(); step(); step(); step();
        if 0u64 < iter.len() {
        have chunks_exact::chunks_exact(Slice<u8>::Slice(bytes, bytes.len() - bytes.len() % 4u64), 4u64).len() == (bytes.len() - bytes.len() % 4u64) / 4u64 by {
@@ -1334,7 +1334,7 @@ impl adler2::Adler32 {
       invariant truncating_remainder(to_integer(b), 65521) == adler_spec_b(bytes, (((bytes.len() as u32) as i32) - ((__rust_mir_138_remaining as u32) as i32)), old(to_integer((self.a as u32))), old(to_integer((self.b as u32))));
       invariant 0 <= to_integer(a) and to_integer(a) <= adler_tail_a_ceiling(adler_tail_consumed(((remainder_len as u32) as i32), ((__rust_mir_138_remaining as u32) as i32)));
       invariant 0 <= to_integer(b) and to_integer(b) <= adler_tail_b_ceiling(adler_tail_consumed(((remainder_len as u32) as i32), ((__rust_mir_138_remaining as u32) as i32)));
-      preserve by {
+      maintain by {
         have 0u64 < __rust_mir_138_remaining;
         have 1u64 <= __rust_mir_138_remaining by solve() using { 0u64 < __rust_mir_138_remaining; };
         have __rust_mir_138_remaining <= 22208u64 by solve() using { __rust_mir_138_remaining <= remainder_len; remainder_len <= 3u64; };

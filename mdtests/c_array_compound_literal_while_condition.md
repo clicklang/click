@@ -15,7 +15,7 @@ int32 answer() { ensures result == 2; } by {
     loop {
         decreases 2 - i;
         invariant 0 <= i and i <= 2;
-        preserve by {
+        maintain by {
             step(); step();
             if i < 2 {
                 step();

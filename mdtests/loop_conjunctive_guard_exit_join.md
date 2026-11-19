@@ -47,7 +47,7 @@ int32 uses_exit_disjunction(int32 a, int32* p) {
         invariant a <= 10;
 
         initialize by solve();
-        preserve by {
+        maintain by {
             have a > 0 by {
                 if a > 0 {
                     known();

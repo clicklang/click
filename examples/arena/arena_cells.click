@@ -269,7 +269,7 @@ int32 arena_init(struct arena* arena, int32 capacity) {
         owns occupied[0..capacity];
 
         initialize by solve();
-        preserve by {
+        maintain by {
             mark iteration;
             step();
             step();
@@ -781,7 +781,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 normalize();
             }
         }
-        preserve by {
+        maintain by {
             mark iteration;
             let { lo: lo, hi: hi } = unfold(run);
             have hi == i by {
@@ -1406,7 +1406,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     normalize();
                 }
             }
-            preserve by {
+            maintain by {
                 let { next: m } = unfold(w);
                 have m == i by {
                     known();
@@ -2459,7 +2459,7 @@ void arena_free(struct region* region) {
                 normalize();
             }
         }
-        preserve by {
+        maintain by {
             let { next: m } = unfold(w);
             have m == i by {
                 known();

@@ -1,6 +1,6 @@
 # a `return` inside an explicitly preserved loop body is a function exit
 
-The explicit `preserve by { ... }` form of
+The explicit `maintain by { ... }` form of
 [`a_return_inside_a_summarized_loop_body_is_a_function_exit.md`](a_return_inside_a_summarized_loop_body_is_a_function_exit.md):
 the `if i == 2` arm steps to the `return 7`, the other arm closes the
 invariants. The returned arm is a function exit of `f`, so `ensures result ==
@@ -33,7 +33,7 @@ int32 f(int32 n) {
         invariant i >= 0;
         invariant i <= n;
         initialize by solve();
-        preserve by {
+        maintain by {
             if i == 2 {
                 step();
                 step();

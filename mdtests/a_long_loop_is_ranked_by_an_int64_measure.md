@@ -35,7 +35,7 @@ uint8 last(const uint8* bytes, int64 length) {
         invariant 0i64 <= i;
         invariant i <= length;
         invariant i <= 2147483647i64;
-        preserve by {
+        maintain by {
             have to_integer(i + 2i64) <= to_integer(length) by {
                 solve() using { 0i64 <= i; i <= length; to_integer(i + 1i64) < to_integer(length); length <= 2147483647i64; };
             }

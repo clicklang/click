@@ -159,7 +159,7 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                 arena->occupied[k] == at(clear_occupied.entry, arena->occupied[k])
         };
         initialize by solve();
-        preserve by {
+        maintain by {
             let { next: m } = unfold(w);
             have m == i;
             have 0 <= start;

@@ -36,7 +36,7 @@ void inspect(struct node *p) {
  ensures 1 == 1;
 } by {
  step_until(loop(0));
- loop { owns t: parent(root); invariant p == tree_identity(t.model); decreases 0; initialize by solve(); preserve by {
+ loop { owns t: parent(root); invariant p == tree_identity(t.model); decreases 0; initialize by solve(); maintain by {
  match t.model { Tree::At(pid, cm) => {
  have p == tree_identity(Tree::At(pid, cm)) by { rewrite(Tree::At(pid, cm), t.model); known(); }
  have p == pid by { unfold(tree_identity(Tree::At(pid, cm))); solve(); }

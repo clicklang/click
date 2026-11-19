@@ -75,7 +75,7 @@ void *fill_range(void *argument) {
                 contradiction(job->begin <= k and k < index);
             }
         }
-        preserve by {
+        maintain by {
             mark iteration;
             step();
             step();

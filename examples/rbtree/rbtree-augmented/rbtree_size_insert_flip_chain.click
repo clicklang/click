@@ -146,7 +146,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                 invariant parent == sized_flip_parent(state.chain);
                 invariant sized_flip_result(state.chain, state.model) == sized_flip_result(old(state.chain), old(state.model));
                 initialize by solve();
-                preserve by {
+                maintain by {
                     mark iteration;
                     match state.model {
                         SizedTree::Empty => { unfold(state); contradiction(false); },

@@ -68,7 +68,7 @@ int32 count_down(int32 n) {
         decreases k;
         invariant k >= 0;
         invariant k == n;
-        preserve by {
+        maintain by {
             mark iteration;
             step_until(back_edge());
         }
