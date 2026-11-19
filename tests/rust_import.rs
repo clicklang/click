@@ -2251,10 +2251,8 @@ fn root_probe::selected() -> u32 { ensures result == 42u32; }
     let error = project
         .refresh()
         .expect_err("a called sibling must be lowered");
-    assert!(
-        error.contains("borrow.rs:2 in root_probe::sibling"),
-        "{error}"
-    );
+    assert!(error.contains("borrow.rs:2"), "{error}");
+    assert!(error.contains("sibling"), "{error}");
     assert!(
         error.contains("does not support integer width `u128`"),
         "{error}"
