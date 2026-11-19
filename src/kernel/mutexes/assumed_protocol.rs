@@ -127,7 +127,7 @@ impl AssumedMutexProtocol {
         state: &ExecutionState,
         assumptions: &PureFactContext,
         definition: Option<&crate::kernel::CompositeResourceDefinition>,
-        output: Option<crate::kernel::Variable>,
+        output: Option<crate::kernel::InstanceId>,
         budget: &mut crate::kernel::ExecutionBudget,
     ) -> Result<(AssumedMutexTransition, AssumedMutexGuard), MutexTransitionError> {
         let loans = self.loans(state)?;
@@ -198,7 +198,7 @@ impl AssumedMutexProtocol {
         &self,
         state: &ExecutionState,
         definition: Option<&crate::kernel::CompositeResourceDefinition>,
-        output: Option<crate::kernel::Variable>,
+        output: Option<crate::kernel::InstanceId>,
         budget: &mut crate::kernel::ExecutionBudget,
     ) -> Result<
         (
@@ -247,7 +247,7 @@ impl AssumedMutexProtocol {
         state: &ExecutionState,
         guard: &AssumedMutexGuard,
         assumptions: &PureFactContext,
-        selected: Option<crate::kernel::Variable>,
+        selected: Option<crate::kernel::InstanceId>,
         definitions: &Arc<[crate::kernel::CompositeResourceDefinition]>,
         budget: &mut crate::kernel::ExecutionBudget,
     ) -> Result<AssumedMutexTransition, MutexTransitionError> {
@@ -442,7 +442,7 @@ pub(in crate::kernel) fn opaque_runtime_transition_with_payload(
     assumptions: &PureFactContext,
     definition: Option<&crate::kernel::CompositeResourceDefinition>,
     definitions: &Arc<[crate::kernel::CompositeResourceDefinition]>,
-    payload_identity: Option<crate::kernel::Variable>,
+    payload_identity: Option<crate::kernel::InstanceId>,
     budget: &mut crate::kernel::ExecutionBudget,
 ) -> Result<(ExecutionState, CheckedLoanCallEvidenceSequence), MutexTransitionError> {
     opaque_runtime_transition_with_selected_use(
@@ -465,7 +465,7 @@ pub(super) fn opaque_runtime_transition_with_selected_use(
     assumptions: &PureFactContext,
     definition: Option<&crate::kernel::CompositeResourceDefinition>,
     definitions: &Arc<[crate::kernel::CompositeResourceDefinition]>,
-    payload_identity: Option<crate::kernel::Variable>,
+    payload_identity: Option<crate::kernel::InstanceId>,
     budget: &mut crate::kernel::ExecutionBudget,
     selected_use: Option<&ResourceFact>,
 ) -> Result<(ExecutionState, CheckedLoanCallEvidenceSequence), MutexTransitionError> {
@@ -586,7 +586,7 @@ pub(super) fn opaque_runtime_transition_with_selected_use(
 pub(super) fn mint_protected_instance(
     description: &crate::kernel::ResourceDescription,
     definition: Option<&crate::kernel::CompositeResourceDefinition>,
-    output: Option<crate::kernel::Variable>,
+    output: Option<crate::kernel::InstanceId>,
     budget: &mut crate::kernel::ExecutionBudget,
 ) -> Result<crate::kernel::ResourceInstance, MutexTransitionError> {
     use crate::kernel::{ResourceInstance, functions::ModelFieldMintSite, model_fields::ModelMint};
@@ -605,9 +605,11 @@ pub(super) fn mint_protected_instance(
     }
     let identity = match output {
         Some(identity) => identity,
-        None => budget
-            .allocate_kernel_variable()
-            .map_err(|_| "protected resource identity allocation exceeded its budget")?,
+        None => crate::kernel::InstanceId::from_variable(
+            budget
+                .allocate_kernel_variable()
+                .map_err(|_| "protected resource identity allocation exceeded its budget")?,
+        ),
     };
     let fields = crate::kernel::functions::arbitrary_resource_instance_fields(
         description.schema(),
@@ -680,7 +682,7 @@ pub(super) fn fresh_protected_payload(
     assumptions: &PureFactContext,
     description: &crate::kernel::ResourceDescription,
     definition: Option<&crate::kernel::CompositeResourceDefinition>,
-    output: Option<crate::kernel::Variable>,
+    output: Option<crate::kernel::InstanceId>,
     budget: &mut crate::kernel::ExecutionBudget,
 ) -> Result<
     (
@@ -706,9 +708,11 @@ pub(super) fn fresh_protected_payload(
     // Resource types do not promise that an observed model controls a stable
     // footprint. This bounded interface accepts only footprints unchanged
     // under an independent arbitrary model instantiation.
-    let other_identity = budget
-        .allocate_kernel_variable()
-        .map_err(|_| "protected footprint checking exceeded its budget")?;
+    let other_identity = crate::kernel::InstanceId::from_variable(
+        budget
+            .allocate_kernel_variable()
+            .map_err(|_| "protected footprint checking exceeded its budget")?,
+    );
     let other_fields = crate::kernel::functions::arbitrary_resource_instance_fields(
         description.schema(),
         ModelFieldMintSite {
@@ -856,7 +860,7 @@ mod tests {
                 &state,
                 &assumptions,
                 Some(&definition),
-                Some(Variable(810)),
+                Some(crate::kernel::InstanceId::from_variable(Variable(810))),
                 &mut budget,
             )
             .unwrap();
@@ -878,7 +882,7 @@ mod tests {
             .unwrap();
         assert!(protocol.release(&missing, &guard, &assumptions).is_err());
         let replacement = crate::kernel::ResourceInstance::new(
-            Variable(812),
+            crate::kernel::InstanceId::from_variable(Variable(812)),
             payload.name().into(),
             payload.arguments().to_vec().into(),
             payload.schema().clone(),
@@ -907,7 +911,7 @@ mod tests {
                 .is_none()
         );
         let wrong = crate::kernel::ResourceInstance::new(
-            Variable(813),
+            crate::kernel::InstanceId::from_variable(Variable(813)),
             "different_type".into(),
             payload.arguments().to_vec().into(),
             payload.schema().clone(),
@@ -952,7 +956,7 @@ mod tests {
                 &released.state,
                 &assumptions,
                 Some(&definition),
-                Some(Variable(811)),
+                Some(crate::kernel::InstanceId::from_variable(Variable(811))),
                 &mut budget,
             )
             .unwrap();

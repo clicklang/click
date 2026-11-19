@@ -8099,7 +8099,7 @@ fn recorded_value_names_index_only_the_locals_each_point_changes() {
                     .unchecked_with_fact(crate::kernel::ResourceFact::own(
                         crate::kernel::Resource::Instance(
                             crate::kernel::ResourceInstance::new(
-                                Variable(900_000 + index as u64),
+                                InstanceId::from_variable(Variable(900_000 + index as u64)),
                                 "object".into(),
                                 vec![].into(),
                                 schema.clone(),
@@ -10104,7 +10104,8 @@ fn recorded_algebraic_field_names_use_changed_instances_and_direct_lookups() {
         let mut state = ExecutionState::new();
         for index in 0..size {
             let variable = Variable(900_000 + index as u64);
-            let identity = Variable(800_000 + index as u64);
+            let identity =
+                crate::kernel::InstanceId::from_variable(Variable(800_000 + index as u64));
             register_model_field_variable(
                 variable,
                 ModelFieldOrigin {

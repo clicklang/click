@@ -370,7 +370,7 @@ mod tests {
     }
     fn instance(fields: ResourceFieldValues, ty: ProgramType) -> ResourceInstance {
         ResourceInstance::new(
-            Variable(10993301),
+            InstanceId::from_variable(Variable(10993301)),
             "FieldBox".into(),
             vec![].into(),
             schema(ty),
@@ -463,7 +463,7 @@ mod tests {
         );
         let expression = SpecExpression::ResourceField {
             projection: ResourceFieldProjection {
-                identity: Variable(10993301),
+                identity: InstanceId::from_variable(Variable(10993301)),
                 children: vec![],
                 field_index: 0,
                 at_entry: false,

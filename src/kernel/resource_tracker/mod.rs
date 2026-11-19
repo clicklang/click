@@ -157,7 +157,7 @@ pub(crate) enum TrackedResource<'a> {
     /// survived a call keeps its identity and gets fresh field variables, so
     /// the stored value already distinguishes the versions.
     ModelField {
-        identity: Variable,
+        identity: InstanceId,
         children: &'a [String],
         field_index: usize,
     },
@@ -216,7 +216,7 @@ pub(crate) enum OwnedResource {
     Ranges(Vec<MemoryRange>),
     AnyMemory,
     ModelField {
-        identity: Variable,
+        identity: InstanceId,
         children: Vec<String>,
         field_index: usize,
     },

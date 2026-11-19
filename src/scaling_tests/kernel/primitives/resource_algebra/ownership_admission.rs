@@ -441,7 +441,7 @@ fn selected_unfold_frame_restoration_does_not_visit_unrelated_owners() {
         let _session = crate::kernel::VerificationSession::enter();
         let facts = PureFactContext::new();
         let instance = ResourceInstance::new(
-            Variable(8_798_950),
+            InstanceId::from_variable(Variable(8_798_950)),
             "framed_body".into(),
             vec![].into(),
             ResourceFieldSchema::new(vec![(

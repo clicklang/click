@@ -2645,7 +2645,8 @@ fn selected_call_binder_application(
     let mut inferred = BTreeMap::new();
     for parameter in &parameters {
         crate::instrumentation::record_deterministic_work(1);
-        let Some(identity) = parameter.instance_identity() else {
+        // The binding map is keyed by binder number; see `binding_identity`.
+        let Some(identity) = parameter.instance_identity().map(InstanceId::variable) else {
             continue;
         };
         if written
@@ -2671,7 +2672,7 @@ fn selected_call_binder_application(
         else {
             continue;
         };
-        inferred.insert(identity, only.identity());
+        inferred.insert(identity, only.identity().variable());
     }
     // An instance the call only produces, which the proof does not name,
     // is the caller's under a fresh identity: it binds nothing the caller
@@ -2683,7 +2684,7 @@ fn selected_call_binder_application(
             .collect::<BTreeSet<_>>();
         for produced in interface.resource_ensures() {
             crate::instrumentation::record_deterministic_work(1);
-            let Some(identity) = produced.instance_identity() else {
+            let Some(identity) = produced.instance_identity().map(InstanceId::variable) else {
                 continue;
             };
             if required.contains(&identity)
@@ -2766,7 +2767,8 @@ pub(crate) fn exit_with_unheld_produced_binders_adopted(
             .into_iter()
             .filter(|instance| {
                 !binders.contains(&instance.identity())
-                    && instance.identity().0 >= crate::kernel::ExecutionBudget::KERNEL_VARIABLE_BASE
+                    && instance.identity().variable().0
+                        >= crate::kernel::ExecutionBudget::KERNEL_VARIABLE_BASE
             })
             .collect::<Vec<_>>()[..]
         else {
@@ -3671,7 +3673,7 @@ fn execute_verified_function_applications_with_suspension(
                 .and_then(|formal| {
                     selected_bindings
                         .as_ref()
-                        .and_then(|bindings| bindings.get(&formal).copied())
+                        .and_then(|bindings| bound_instance(bindings, formal))
                 });
             let definition = match helper.required.resource() {
                 Resource::MutexUse(usage) => usage.protected.as_ref().and_then(|description| {
@@ -3820,7 +3822,7 @@ fn execute_verified_function_applications_with_suspension(
             }
             let Some(produced) = selected_bindings
                 .as_ref()
-                .and_then(|bindings| bindings.get(&identity).copied())
+                .and_then(|bindings| bound_instance(bindings, identity))
             else {
                 continue;
             };
@@ -6697,9 +6699,9 @@ fn prepare_verified_function_call<'a>(
                 let passed = contract_interface
                     .resource_binder_identity(binder)
                     .and_then(|formal| {
-                        resource_application.and_then(|call| call.bindings.get(&formal))
+                        resource_application.and_then(|call| bound_instance(&call.bindings, formal))
                     })
-                    .and_then(|actual| caller_state.resources().owned_instance(*actual));
+                    .and_then(|actual| caller_state.resources().owned_instance(actual));
                 match passed {
                     None => Some(format!(
                         "the call to `{}` passes no owned instance for its measured binder \
@@ -7213,7 +7215,7 @@ fn execute_named_contract_applications_paths(
             }
             let mut bindings = BTreeMap::new();
             for (parameter, argument) in contract.proof_parameters().iter().zip(arguments) {
-                let Some(identity) = parameter.instance_identity() else {
+                let Some(identity) = parameter.instance_identity().map(InstanceId::variable) else {
                     return Ok(vec![resource_call_failure(
                         "resource proof parameter must be an exclusive instance",
                     )]);
@@ -7301,7 +7303,9 @@ impl ResourceCallApplication {
                     .resolve_named_mutex_authority(*actual)
                     .is_some()
             } else {
-                caller_state.owned_resource_instance(*actual).is_some()
+                caller_state
+                    .owned_resource_instance(InstanceId::from_variable(*actual))
+                    .is_some()
             };
             if !owned {
                 return Err("resource proof argument is not owned");
@@ -8847,7 +8851,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
         // Interpret logical parent fields without granting body ownership.
         if let Some(values) = fields.iter().cloned().collect::<Option<Vec<_>>>()
             && let Some(instance) = ResourceInstance::new(
-                Variable(u64::MAX),
+                InstanceId::from_variable(Variable(u64::MAX)),
                 definition.name().to_string(),
                 arguments.iter().cloned().collect(),
                 schema.clone(),
@@ -8937,7 +8941,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
             definition.instance_schema.as_ref(),
             fields.iter().cloned().collect::<Option<Vec<_>>>(),
         ) && let Some(instance) = ResourceInstance::new(
-            Variable(u64::MAX),
+            InstanceId::from_variable(Variable(u64::MAX)),
             definition.name().to_string(),
             arguments.iter().cloned().collect(),
             schema.clone(),
@@ -11827,8 +11831,7 @@ fn prepare_contract_resource_transfer_unexplained(
             let actual = input_evaluation_state
                 .resource_bindings
                 .as_ref()
-                .and_then(|bindings| bindings.get(identity))
-                .copied()
+                .and_then(|bindings| bound_instance(bindings, *identity))
                 .unwrap_or(*identity);
             let Some(instance) = events.consumed_imported_instance(&description, actual) else {
                 continue;
@@ -15009,7 +15012,7 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
     definitions: &[CompositeResourceDefinition],
     assumptions: &PureFactContext,
     unfold: bool,
-    selected_children: Option<&[(String, Variable)]>,
+    selected_children: Option<&[(String, InstanceId)]>,
 ) -> Result<ResourceInstanceRewriteResult, ResourceRewriteRefusal> {
     let _timing = (!unfold).then(|| {
         crate::instrumentation::OperationTiming::new(
@@ -15054,7 +15057,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
     definitions: &[CompositeResourceDefinition],
     assumptions: &PureFactContext,
     unfold: bool,
-    selected_children: Option<&[(String, Variable)]>,
+    selected_children: Option<&[(String, InstanceId)]>,
 ) -> Result<ResourceInstanceRewriteResult, ResourceRewriteRefusal> {
     if definition.name() != instance.name()
         || definition.instance_schema.as_ref() != Some(instance.schema())
@@ -15469,7 +15472,8 @@ fn rewrite_resource_instance_selecting_children_unspelled(
     let mut child_evaluation = evaluation.clone();
     child_evaluation.resources = body.clone();
     let child_assumptions = assumptions.clone().require_owned_expression_loads();
-    let mut resource_bindings = BTreeMap::from([(Variable(u64::MAX), instance.identity)]);
+    let mut resource_bindings =
+        BTreeMap::from([(Variable(u64::MAX), instance.identity.variable())]);
     let mut introduced_children: Vec<ResourceInstance> = Vec::new();
     let mut child_read_definitions = Vec::new();
     for child in body_children {
@@ -15652,7 +15656,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
             }
             child_instance = actual.clone();
         }
-        resource_bindings.insert(child.binding, identity);
+        resource_bindings.insert(child.binding.variable(), identity.variable());
         introduced_children.push(child_instance.clone());
         body = body
             .try_compose_into_valid_context_delaying_normalization(

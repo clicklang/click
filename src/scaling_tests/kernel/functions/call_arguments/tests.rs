@@ -268,7 +268,7 @@ fn proof_input_rebinding_retains_storage_without_reusing_it_for_calls() {
     let model = |id: u64, address: Address| {
         ResourceFact::own(Resource::Instance(
             ResourceInstance::new(
-                Variable(id),
+                InstanceId::from_variable(Variable(id)),
                 "model".into(),
                 vec![ProgramValue::typed_pointer(address, ProgramType::UInt8Pointer).into()].into(),
                 schema.clone(),

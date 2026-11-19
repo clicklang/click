@@ -66,7 +66,7 @@ fn logical_field_handoffs_keep_integer_dags_and_algebraic_children_shared() {
                 StoredResourceField::Algebraic(algebraic.clone()),
             ]);
             let instance = ResourceInstance::new(
-                Variable(10993505),
+                InstanceId::from_variable(Variable(10993505)),
                 "LogicalFields".into(),
                 vec![].into(),
                 schema,

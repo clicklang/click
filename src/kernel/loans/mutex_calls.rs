@@ -573,7 +573,7 @@ mod tests {
 
     fn protected_type(argument: u32) -> ResourceDescription {
         let instance = crate::kernel::ResourceInstance::new(
-            Variable(800),
+            crate::kernel::InstanceId::from_variable(Variable(800)),
             "counter_state".into(),
             vec![crate::kernel::int32(argument).into()].into(),
             crate::kernel::ResourceFieldSchema::new(vec![(

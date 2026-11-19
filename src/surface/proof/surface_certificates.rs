@@ -1508,7 +1508,7 @@ fn conjunction_leaf_preservation_steps(
 #[derive(Eq, PartialEq, Hash)]
 enum TransportReadSubject {
     Cell(ProgramExpression),
-    Resource(crate::kernel::Variable),
+    Resource(crate::kernel::InstanceId),
 }
 
 fn transport_read_subject(read: &ContractExpression) -> Option<TransportReadSubject> {

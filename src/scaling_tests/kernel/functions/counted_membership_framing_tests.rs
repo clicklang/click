@@ -270,7 +270,7 @@ fn call_frame_preparation_ignores_unrelated_retained_instances() {
         let residual = (0..size).fold(ResourceContext::new(), |resources, index| {
             resources.unchecked_with_fact(ResourceFact::own(Resource::Instance(
                 ResourceInstance::new(
-                    Variable(8_600_000 + index),
+                    InstanceId::from_variable(Variable(8_600_000 + index)),
                     "boxed".into(),
                     vec![
                         ProgramValue::pointer(Address::symbolic(Variable(8_610_000 + index)))

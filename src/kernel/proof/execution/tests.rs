@@ -617,7 +617,7 @@ fn instance_rewrite_refusal_retains_rejected_and_allowed_facts() {
     )])
     .unwrap();
     let instance = ResourceInstance::new(
-        Variable(901_001),
+        InstanceId::from_variable(Variable(901_001)),
         "cell".into(),
         vec![].into(),
         schema.clone(),
@@ -1259,7 +1259,7 @@ fn return_resource_observations_construct_successors_and_reject_other_paths() {
     )])
     .unwrap();
     let instance = ResourceInstance::new(
-        Variable(1),
+        InstanceId::from_variable(Variable(1)),
         "cell".into(),
         vec![].into(),
         schema.clone(),
@@ -1401,7 +1401,7 @@ fn return_exchange_keeps_the_published_body_state() {
     )])
     .unwrap();
     let instance = ResourceInstance::new(
-        Variable(810_001),
+        InstanceId::from_variable(Variable(810_001)),
         "observed".into(),
         vec![].into(),
         schema.clone(),
@@ -1519,7 +1519,7 @@ fn return_instance_guard_and_body_cannot_use_sibling_assumptions() {
     ])
     .unwrap();
     let instance = ResourceInstance::new(
-        Variable(1),
+        InstanceId::from_variable(Variable(1)),
         "cell".into(),
         vec![].into(),
         schema.clone(),

@@ -46,7 +46,7 @@ fn wide_resource_body_loadability_preserves_native_span() {
     )
     .with_instance_schema(Some(schema.clone()));
     let instance = ResourceInstance::new(
-        Variable(984_011),
+        InstanceId::from_variable(Variable(984_011)),
         "wide".into(),
         vec![].into(),
         schema,

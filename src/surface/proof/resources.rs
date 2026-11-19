@@ -905,7 +905,7 @@ pub(in crate::surface) fn pair_instance_body_clause_presentations(
         "__body".to_owned(),
         crate::surface::lowering::InstanceRename {
             name: instance_name.to_string(),
-            identity: Variable(u64::MAX),
+            identity: InstanceId::from_variable(Variable(u64::MAX)),
             target_identity: Some(instance.identity()),
         },
     )]);
@@ -6491,7 +6491,7 @@ mod guarded_unmatched_materialization_tests {
         };
         let pointer = Address::symbolic(crate::kernel::Variable(88_024));
         let instance = ResourceInstance::new(
-            crate::kernel::Variable(88_025),
+            crate::kernel::InstanceId::from_variable(crate::kernel::Variable(88_025)),
             "cell".into(),
             vec![AlgebraicValue::Program(ProgramValue::typed_pointer(
                 pointer.clone(),
@@ -6658,7 +6658,7 @@ resource cell(p: int32*) {
             ),
         ] {
             let instance = ResourceInstance::new(
-                crate::kernel::Variable(88_002),
+                crate::kernel::InstanceId::from_variable(crate::kernel::Variable(88_002)),
                 "cell".to_string(),
                 vec![AlgebraicValue::Program(ProgramValue::typed_pointer(
                     pointer.clone(),

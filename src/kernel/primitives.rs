@@ -4555,7 +4555,7 @@ pub enum SpecAlgebraicExpressionNode {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct ResourceFieldProjection {
-    pub identity: Variable,
+    pub identity: InstanceId,
     pub children: Vec<String>,
     pub field_index: usize,
     /// Select the explicit entry state supplied to spec evaluation. There is
@@ -5609,7 +5609,7 @@ pub enum SequenceTermNode {
 pub enum SpecResource {
     Star(Box<SpecResource>, Box<SpecResource>),
     Instance {
-        identity: Variable,
+        identity: InstanceId,
         at_entry: bool,
     },
     Value(Resource),
@@ -7035,7 +7035,7 @@ pub struct ResourceChildSpec {
     /// definition or another declared resource; the rewrite resolves it and
     /// checks the child's arguments and fields against that definition.
     pub resource: String,
-    pub binding: Variable,
+    pub binding: InstanceId,
     pub arguments: Vec<SpecExpression>,
     /// Where each of the child's fields comes from, in the child schema's
     /// order. A same-family child's matched model field must be a proper
@@ -10918,7 +10918,7 @@ impl ResourceOccurrenceId {
 pub struct ResourceContext {
     /// Diagnostic path state, omitted from semantic equality, hashing and ordering.
     /// A shared persistent root keeps clones constant-work and never copies facts.
-    instance_consumptions: Option<std::sync::Arc<PersistentMap<Variable, InstanceConsumption>>>,
+    instance_consumptions: Option<std::sync::Arc<PersistentMap<InstanceId, InstanceConsumption>>>,
     /// Derived trusted-kernel index. It never supplies ownership evidence.
     memory_equalities: std::sync::Mutex<memory_equality_index::MemoryPairings>,
     pub(super) storage: std::sync::Arc<ResourceContextStorage>,
@@ -10961,13 +10961,16 @@ impl Clone for ResourceContext {
 
 impl ResourceContext {
     /// Diagnostic metadata only; this never grants ownership or supplies a fact.
-    pub(crate) fn instance_consumption(&self, identity: Variable) -> Option<&InstanceConsumption> {
+    pub(crate) fn instance_consumption(
+        &self,
+        identity: InstanceId,
+    ) -> Option<&InstanceConsumption> {
         self.instance_consumptions.as_ref()?.get(&identity)
     }
 
     pub(super) fn record_instance_consumption(
         &mut self,
-        identity: Variable,
+        identity: InstanceId,
         cause: Option<InstanceConsumption>,
     ) {
         let Some(map) = self.instance_consumptions.as_deref() else {
@@ -11192,7 +11195,7 @@ pub(super) struct ResourceContextStorage {
 pub(crate) enum InstanceConsumption {
     Unfold,
     FoldChild {
-        parent: Variable,
+        parent: InstanceId,
         slot: std::sync::Arc<str>,
     },
 }
@@ -11236,17 +11239,17 @@ pub(super) struct ResourceContextIndex {
     owned_composite_count: usize,
     /// Exclusive occurrence identities: named instances and conditional loop
     /// guard custody. Shape/pointer indexes below contain only named instances.
-    pub(super) instances: PersistentMap<Variable, ResourceEntryIds>,
+    pub(super) instances: PersistentMap<InstanceId, ResourceEntryIds>,
     /// Only duplicated or malformed mutex authority atoms need a validity check.
     pub(super) suspect_mutex_authorities: PersistentMap<Resource, ()>,
     pub(super) invalid_mutex_authority_access: PersistentMap<Resource, usize>,
     /// Instance identities with an entry whose access is not one owned unit.
     /// With `instances`, these select the identities that can fail a
     /// validity check without visiting every instance.
-    pub(super) invalid_instance_access: PersistentMap<Variable, usize>,
+    pub(super) invalid_instance_access: PersistentMap<InstanceId, usize>,
     /// The identities held more than once or held with invalid access: the
     /// only ones whose entries can fail `exclusive_validity_error`.
-    pub(super) suspect_instances: PersistentMap<Variable, ()>,
+    pub(super) suspect_instances: PersistentMap<InstanceId, ()>,
     /// Owned instances keyed by the resource family and arity they name. A
     /// loop binder selects its instance by family and arguments, so that
     /// selection costs the instances of one family rather than the whole
@@ -11812,7 +11815,7 @@ pub struct MutexIdentity {
 /// this resource: only checked entry/backedge ownership exchanges do.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct ConditionalMutexGuard {
-    pub(in crate::kernel) identity: Variable,
+    pub(in crate::kernel) identity: InstanceId,
     pub(in crate::kernel) guard: MutexIdentity,
     pub(in crate::kernel) initialization: MutexIdentity,
     pub(in crate::kernel) held: StoredConditionTerm,
@@ -11885,6 +11888,46 @@ impl Resource {
     }
 }
 
+/// The identity of one resource instance: a held atom's own name, never a
+/// value. It is not interchangeable with a value [`Variable`].
+#[derive(Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct InstanceId(Variable);
+
+/// Prints as the number it is carried as, so diagnostics and debug output
+/// that spelled an instance identity before this type existed are unchanged.
+impl std::fmt::Debug for InstanceId {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(formatter)
+    }
+}
+
+impl InstanceId {
+    /// An instance identity from the number it is carried as. Migration
+    /// constructor: later work will require an origin here.
+    pub const fn from_variable(variable: Variable) -> Self {
+        Self(variable)
+    }
+
+    /// The number this identity is carried as, for registries still keyed by it.
+    pub const fn variable(self) -> Variable {
+        self.0
+    }
+}
+
+/// The instance a binder names in a resource binding map. A binding map is
+/// keyed by binder number because it also carries named mutex-authority
+/// binders (see [`ResourceSpec::binding_identity`]); this is the one place an
+/// instance binder is looked up in it.
+pub(crate) fn bound_instance(
+    bindings: &BTreeMap<Variable, Variable>,
+    binder: InstanceId,
+) -> Option<InstanceId> {
+    bindings
+        .get(&binder.variable())
+        .copied()
+        .map(InstanceId::from_variable)
+}
+
 /// A proof-only, exclusive resource instance. Identity is independent of its
 /// field state; equal fields do not identify distinct instances. This is an
 /// opaque ownership atom: its arguments and fields grant no memory authority.
@@ -11892,7 +11935,7 @@ impl Resource {
 /// definition's body holds.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct ResourceInstance {
-    pub(super) identity: Variable,
+    pub(super) identity: InstanceId,
     pub(super) name: String,
     pub(super) arguments: ResourceArguments,
     pub(super) schema: ResourceFieldSchema,
@@ -11902,7 +11945,7 @@ pub struct ResourceInstance {
 
 impl ResourceInstance {
     pub fn new(
-        identity: Variable,
+        identity: InstanceId,
         name: String,
         arguments: ResourceArguments,
         schema: ResourceFieldSchema,
@@ -11914,7 +11957,7 @@ impl ResourceInstance {
     /// Construct an exclusive atom with proof-only arguments. As for `new`, a
     /// countable schema is rejected; references do not change countability.
     pub fn new_with_resource_arguments(
-        identity: Variable,
+        identity: InstanceId,
         name: String,
         arguments: ResourceArguments,
         schema: ResourceFieldSchema,
@@ -11937,7 +11980,7 @@ impl ResourceInstance {
         })
     }
 
-    pub fn identity(&self) -> Variable {
+    pub fn identity(&self) -> InstanceId {
         self.identity
     }
     /// Attach proof-only references. This constructs an opaque atom, not
@@ -12273,7 +12316,7 @@ pub enum ResourceTerm {
         parameter_types: Vec<ProgramType>,
     },
     Instance {
-        identity: Variable,
+        identity: InstanceId,
         /// The spelling the declaration gave this binder. The identity is the
         /// semantic key; this is the name a binder or proof-parameter map is
         /// written with, retained the same way [`ResourceChildSpec::name`]
@@ -12348,7 +12391,7 @@ pub enum ResourceStateSource {
 pub struct ResourceSpec {
     /// Actual resource-reference binders, separate from C-valued arguments.
     /// Naming a binder here grants no ownership of its occurrence.
-    resource_arguments: Arc<[Variable]>,
+    resource_arguments: Arc<[InstanceId]>,
     term: ResourceTerm,
     /// A proof binder for one raw mutex authority. This does not change the
     /// resource family or turn the authority into a composite instance.
@@ -12435,7 +12478,7 @@ impl ResourceTerm {
         }
     }
 
-    pub fn instance_identity(&self) -> Option<Variable> {
+    pub fn instance_identity(&self) -> Option<InstanceId> {
         match self {
             Self::Instance { identity, .. } => Some(*identity),
             _ => None,
@@ -12631,7 +12674,7 @@ impl ResourceSpec {
     }
 
     pub fn instance(
-        identity: Variable,
+        identity: InstanceId,
         binder: String,
         schema: ResourceFieldSchema,
         resource: ResourceSpec,
@@ -12775,6 +12818,7 @@ impl ResourceSpec {
 
     pub fn binding_identity(&self) -> Option<Variable> {
         self.instance_identity()
+            .map(InstanceId::variable)
             .or_else(|| self.mutex_authority_binding().map(|(identity, _)| identity))
     }
 
@@ -12819,12 +12863,12 @@ impl ResourceSpec {
         self.clause_position
     }
 
-    pub fn with_resource_arguments(mut self, arguments: Vec<Variable>) -> Self {
+    pub fn with_resource_arguments(mut self, arguments: Vec<InstanceId>) -> Self {
         self.resource_arguments = arguments.into();
         self
     }
 
-    pub fn resource_arguments(&self) -> &[Variable] {
+    pub fn resource_arguments(&self) -> &[InstanceId] {
         &self.resource_arguments
     }
 
@@ -12885,7 +12929,7 @@ impl ResourceSpec {
         matches!(self.term, ResourceTerm::Instance { .. })
     }
 
-    pub fn instance_identity(&self) -> Option<Variable> {
+    pub fn instance_identity(&self) -> Option<InstanceId> {
         self.term.instance_identity()
     }
 

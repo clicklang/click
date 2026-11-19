@@ -896,7 +896,7 @@ fn imported_named_consumption_counts_identities_and_ignores_unrelated_state() {
     );
     let member = |identity| {
         ResourceInstance::new(
-            Variable(identity),
+            InstanceId::from_variable(Variable(identity)),
             "ticket".into(),
             vec![anchor.clone().into()].into(),
             schema.clone(),
@@ -1003,7 +1003,7 @@ fn imported_named_lifecycle_keeps_entry_bounds_and_scales_with_unrelated_imports
                 arguments.push(int32(tag).into());
             }
             ResourceInstance::new(
-                Variable(identity),
+                InstanceId::from_variable(Variable(identity)),
                 "ticket".into(),
                 arguments.into(),
                 schema.clone(),
@@ -1130,7 +1130,7 @@ fn imported_named_death_receipts_are_indexed_beside_growing_related_members() {
     );
     let member = |identity| {
         ResourceInstance::new(
-            Variable(identity),
+            InstanceId::from_variable(Variable(identity)),
             "ticket".into(),
             vec![anchor.clone().into()].into(),
             schema.clone(),
@@ -1159,8 +1159,11 @@ fn imported_named_death_receipts_are_indexed_beside_growing_related_members() {
             size as u32 + 1
         );
         assert!(
-            next.consumed_imported_instance(&description, Variable(999_001))
-                .is_some()
+            next.consumed_imported_instance(
+                &description,
+                InstanceId::from_variable(Variable(999_001))
+            )
+            .is_some()
         );
         work
     });

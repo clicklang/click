@@ -998,7 +998,7 @@ impl FunctionContractInterface {
     }
 
     /// The identity of a resource requirement's named instance binder.
-    pub(crate) fn resource_binder_identity(&self, binder: &str) -> Option<Variable> {
+    pub(crate) fn resource_binder_identity(&self, binder: &str) -> Option<InstanceId> {
         self.resource_requires
             .iter()
             .find_map(|requirement| match requirement.term() {

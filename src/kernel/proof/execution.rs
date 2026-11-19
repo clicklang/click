@@ -18,7 +18,7 @@ use crate::kernel::{
     PureFactContext, Resource, ResourceContext, ResourceFact, ResourceSpec, RuntimeError,
     SpecProposition, StatementOutcome, SymbolicMemory, Theorem, Variable, VerifiedLoopRule,
 };
-use crate::kernel::{BindingName, CompareRelation, MachineIntegerType};
+use crate::kernel::{BindingName, CompareRelation, InstanceId, MachineIntegerType};
 use crate::kernel::{ExecutionFactSource, ExecutionFacts};
 use crate::kernel::{LoadKind, StoredExecutionValue};
 use crate::persistent::PersistentSet;
@@ -762,7 +762,7 @@ pub(crate) struct CheckedResourceRewrite {
     consumption_contract: Option<Arc<CheckedFunctionEntry>>,
     return_context: Option<Arc<CheckedReturnContext>>,
     instance: Option<crate::kernel::ResourceInstance>,
-    selected_children: Option<Arc<[(String, Variable)]>>,
+    selected_children: Option<Arc<[(String, InstanceId)]>>,
     return_observation: Option<Arc<ReturnResourceObservation>>,
     return_presentation: Option<Arc<CheckedReturnPresentation>>,
 }
@@ -1374,7 +1374,7 @@ impl CheckedResourceRewrite {
         after_state: &ExecutionState,
         after_facts: &PureFactStore,
         definition: &CompositeResourceDefinition,
-        selected_children: Option<Arc<[(String, Variable)]>>,
+        selected_children: Option<Arc<[(String, InstanceId)]>>,
     ) -> Result<Self, String> {
         let ResourceFact::Own(Resource::Composite { name, arguments }, quantity) = selected else {
             return Err("authority control requires one owned composite".into());
@@ -1636,7 +1636,7 @@ impl CheckedResourceRewrite {
         after_state: &ExecutionState,
         after_facts: &PureFactStore,
         definition: &CompositeResourceDefinition,
-        selected_children: Option<Arc<[(String, Variable)]>>,
+        selected_children: Option<Arc<[(String, InstanceId)]>>,
     ) -> Result<Self, String> {
         let ResourceFact::Own(Resource::Composite { name, arguments }, quantity) = selected else {
             return Err("transfer wrapper requires one owned resource".into());
@@ -1828,7 +1828,7 @@ impl CheckedResourceRewrite {
         after_state: &ExecutionState,
         after_facts: &PureFactStore,
         call_events: &CheckedCallEvents,
-        selected_children: Option<Arc<[(String, Variable)]>>,
+        selected_children: Option<Arc<[(String, InstanceId)]>>,
     ) -> Result<Self, String> {
         Self::check_with_children_diagnostic(
             function,
@@ -1853,7 +1853,7 @@ impl CheckedResourceRewrite {
         after_state: &ExecutionState,
         after_facts: &PureFactStore,
         call_events: &CheckedCallEvents,
-        selected_children: Option<Arc<[(String, Variable)]>>,
+        selected_children: Option<Arc<[(String, InstanceId)]>>,
         loan_holds: &[crate::kernel::CheckedLoanTransition],
     ) -> Result<Self, ResourceRewriteCheckError> {
         Self::check_with_return_observation(
@@ -1916,7 +1916,7 @@ impl CheckedResourceRewrite {
         after_state: &ExecutionState,
         after_facts: &PureFactStore,
         call_events: &CheckedCallEvents,
-        selected_children: Option<Arc<[(String, Variable)]>>,
+        selected_children: Option<Arc<[(String, InstanceId)]>>,
         return_observation: Option<Arc<ReturnResourceObservation>>,
         loan_holds: &[crate::kernel::CheckedLoanTransition],
     ) -> Result<Self, ResourceRewriteCheckError> {
@@ -1949,7 +1949,7 @@ impl CheckedResourceRewrite {
         after_state: &ExecutionState,
         after_facts: &PureFactStore,
         call_events: &CheckedCallEvents,
-        selected_children: Option<Arc<[(String, Variable)]>>,
+        selected_children: Option<Arc<[(String, InstanceId)]>>,
         rejected_fact: &mut Option<Arc<RejectedResourceRewriteFact>>,
         return_observation: Option<Arc<ReturnResourceObservation>>,
         loan_holds: &[crate::kernel::CheckedLoanTransition],
@@ -10674,7 +10674,7 @@ impl ExecutionProofCore {
         arguments: &[ProgramExpression],
         before_facts: &PureFactStore,
         instance: &crate::kernel::ResourceInstance,
-        selected_children: Option<Arc<[(String, Variable)]>>,
+        selected_children: Option<Arc<[(String, InstanceId)]>>,
     ) -> Result<
         (
             crate::kernel::functions::ResourceInstanceRewriteResult,
@@ -10701,7 +10701,7 @@ impl ExecutionProofCore {
         arguments: &[ProgramExpression],
         before_facts: &PureFactStore,
         instance: &crate::kernel::ResourceInstance,
-        selected_children: Option<Arc<[(String, Variable)]>>,
+        selected_children: Option<Arc<[(String, InstanceId)]>>,
         assumptions: &PureFactContext,
     ) -> Result<
         (
@@ -10909,7 +10909,7 @@ impl ExecutionProofCore {
         selected: &ResourceFact,
         after_state: &ExecutionState,
         after_facts: &PureFactStore,
-        selected_children: Option<Arc<[(String, Variable)]>>,
+        selected_children: Option<Arc<[(String, InstanceId)]>>,
     ) -> Result<(), ResourceRewriteCheckError> {
         self.record_resource_rewrite_with_loan_holds(
             function,
@@ -10936,7 +10936,7 @@ impl ExecutionProofCore {
         selected: &ResourceFact,
         after_state: &ExecutionState,
         after_facts: &PureFactStore,
-        selected_children: Option<Arc<[(String, Variable)]>>,
+        selected_children: Option<Arc<[(String, InstanceId)]>>,
         loan_holds: &[crate::kernel::CheckedLoanTransition],
         defer: bool,
     ) -> Result<(), ResourceRewriteCheckError> {
@@ -11127,7 +11127,7 @@ impl ExecutionProofCore {
         before_facts: &PureFactStore,
         instance: &crate::kernel::ResourceInstance,
         unfold: bool,
-        selected_children: Option<Arc<[(String, Variable)]>>,
+        selected_children: Option<Arc<[(String, InstanceId)]>>,
     ) -> Result<
         (
             crate::kernel::functions::ResourceInstanceRewriteResult,
@@ -11154,7 +11154,7 @@ impl ExecutionProofCore {
         before_facts: &PureFactStore,
         instance: &crate::kernel::ResourceInstance,
         unfold: bool,
-        selected_children: Option<Arc<[(String, Variable)]>>,
+        selected_children: Option<Arc<[(String, InstanceId)]>>,
         assumptions: &PureFactContext,
     ) -> Result<
         (
@@ -11231,7 +11231,7 @@ impl ExecutionProofCore {
         selected: &ResourceFact,
         after_facts: &PureFactStore,
         unfold: bool,
-        selected_children: Option<Arc<[(String, Variable)]>>,
+        selected_children: Option<Arc<[(String, InstanceId)]>>,
         observed: Option<(
             &ExecutionState,
             &crate::kernel::functions::ResourceInstanceRewriteResult,

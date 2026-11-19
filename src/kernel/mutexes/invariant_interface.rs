@@ -62,7 +62,7 @@ mod tests {
 
     fn instance(identity: u64, value: u32) -> ResourceInstance {
         ResourceInstance::new(
-            Variable(identity),
+            crate::kernel::InstanceId::from_variable(Variable(identity)),
             "counter_state".into(),
             vec![ProgramValue::pointer(Address::symbolic(Variable(70))).into()].into(),
             ResourceFieldSchema::new(vec![(
@@ -464,7 +464,7 @@ mod tests {
         let republished = destroyed
             .publish_declared(
                 &address(),
-                crate::kernel::Variable(1),
+                crate::kernel::InstanceId::from_variable(crate::kernel::Variable(1)),
                 &definitions(),
                 &assumptions,
                 40,

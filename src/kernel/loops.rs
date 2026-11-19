@@ -602,12 +602,14 @@ fn execute_modeled_pthread_mutex_paths(
                     .binder_by_role(MutexResourceRole::State)
                     .expect("initialization declares its optional state input");
                 let state_identity = selected
-                    .and_then(|transport| transport.bindings.get(&Variable(state_binder.identity)));
+                    .and_then(|transport| transport.bindings.get(&Variable(state_binder.identity)))
+                    .copied()
+                    .map(InstanceId::from_variable);
                 let context = if let Some(identity) = state_identity {
                     super::mutexes::MutexContext::new(state.clone())
                         .publish_declared(
                             mutex.address(),
-                            *identity,
+                            identity,
                             &environment.modeled_mutex_definitions,
                             &current,
                             binding.mutex_storage_bytes,
@@ -709,7 +711,7 @@ fn execute_modeled_pthread_mutex_paths(
                         &current,
                         definition,
                         &environment.modeled_mutex_definition_list,
-                        selected_role(MutexResourceRole::State),
+                        selected_role(MutexResourceRole::State).map(InstanceId::from_variable),
                         budget,
                     )
                     .map_err(|error| error.into_runtime_error(mutex.address()))
@@ -6359,7 +6361,7 @@ pub(super) fn prepare_loop_top_state(
     let mut direct_mutexes = Vec::new();
     for spec in resource_specs {
         if spec.guard().is_some() && matches!(spec.term(), ResourceTerm::MutexGuard { .. }) {
-            let identity = variables.next_in(budget)?;
+            let identity = InstanceId::from_variable(variables.next_in(budget)?);
             match super::mutexes::prepare_direct_loop_guard(
                 &entry_state,
                 &top_state,
@@ -6926,7 +6928,7 @@ fn resource_spec_is_view(spec: &ResourceSpec) -> bool {
 /// and the instance identity it binds.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LoopBinder {
-    identity: Variable,
+    identity: InstanceId,
     name: String,
     /// The declared resource the binder names. The back edge re-evaluates its
     /// arguments in the state the body reached (D5), so a body that advances
@@ -6970,7 +6972,7 @@ fn rebind_loop_binder_instances(
         return Ok(Ok(state.clone()));
     }
     let mut state = state.clone();
-    let mut claimed: BTreeSet<Variable> = BTreeSet::new();
+    let mut claimed: BTreeSet<InstanceId> = BTreeSet::new();
     for spec in resource_specs {
         let Some(identity) = spec.instance_identity() else {
             continue;
@@ -7040,7 +7042,7 @@ pub(crate) fn loop_state_with_loop_binders_rebound(
         return Ok(state.clone());
     }
     let mut rebound = state.clone();
-    let mut claimed: BTreeSet<Variable> = BTreeSet::new();
+    let mut claimed: BTreeSet<InstanceId> = BTreeSet::new();
     for binder in binders {
         // D5: the back edge selects the instance the same way the head did,
         // with the clause's arguments re-evaluated in the current state. A
@@ -7098,14 +7100,14 @@ pub(crate) fn loop_state_with_loop_binders_rebound(
 /// instances of that family rather than the whole resource context.
 fn rebind_one_loop_binder_instance(
     state: &ExecutionState,
-    identity: Variable,
+    identity: InstanceId,
     binder: &str,
     resource: (
         &str,
         &ResourceArguments,
         &[crate::kernel::ResourceReference],
     ),
-    claimed: &mut BTreeSet<Variable>,
+    claimed: &mut BTreeSet<InstanceId>,
     assumptions: &PureFactContext,
 ) -> Result<ExecutionState, String> {
     let (name, arguments, references) = resource;

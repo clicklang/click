@@ -415,7 +415,7 @@ fn resource_instance_int32_field_uses_graph_with_state_scope() {
     let instance = |value| {
         Resource::Instance(
             ResourceInstance::new(
-                Variable(6100),
+                InstanceId::from_variable(Variable(6100)),
                 "instance-value".into(),
                 vec![ProgramValue::Int32(MachineTerm::constant(3)).into()].into(),
                 schema.clone(),
