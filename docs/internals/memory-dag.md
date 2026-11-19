@@ -214,9 +214,10 @@ its arms split.
 read is made at, it asks the step rules about each point's steps, newest
 first, with the empty naming context, and stops at the first point a step may
 have changed the cell at. It crosses a branch join only when both arms leave
-the cell alone back to their split, and a point reached with no recorded step
-only when its memory is its predecessor's. The answer is a point on the
-reader's own path. Reads are not yet named by it.
+the cell alone back to their split. A continuation with no recorded step
+can be crossed when it carries its predecessor's execution view or a
+proof-only view certified at that point. The answer is a point on the
+reader's own path. This walk is used for tests and diagnostic comparisons.
 
 An interface join retains the identities of all incoming states in
 `join_inputs`, including through read projections. Two joins with empty cell

@@ -1739,6 +1739,34 @@ fn a_path_version_is_the_point_after_the_last_store_to_the_cell() {
     );
 }
 
+#[test]
+fn a_path_version_crosses_an_unchanged_continuation_from_a_named_cell_view() {
+    let start = start_with(&["slot"]);
+    let state = &path_of_stores(&start, &[("slot", 7)])[0];
+    let source = state.program_point().id();
+    let external = Address::symbolic(Variable(999_351));
+    let memory = state.memory().clone().materialize_cell_from_source(
+        external,
+        ProgramType::Int32,
+        intern_memory_ref(state.memory()),
+    );
+    let named = state
+        .clone()
+        .with_materialized_memory_at_current_point(memory);
+    assert_eq!(named.program_point_id(), source);
+
+    // The continuation records no writes. Its predecessor's execution node
+    // still holds the original memory, while this edge uses the named view.
+    let continued = named.clone().with_memory(named.memory().clone());
+    assert_ne!(continued.program_point_id(), source);
+    let pointer = at(block("slot"), 0);
+    assert_eq!(
+        cell_last_same_version_point(continued.program_point().shared_memory(), &pointer, 4),
+        Some(intern_memory_ref(state.memory())),
+    );
+    assert_eq!(version_on_path(&continued, "slot"), source);
+}
+
 /// Two paths that end in one interned memory are each named on their own
 /// path, where the arena keeps only the first path's history.
 #[test]

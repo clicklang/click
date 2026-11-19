@@ -212,7 +212,7 @@ enum IndexedView {
 }
 
 impl PathLink {
-    fn matches_indexed_view(&self, memory: &SharedMemory) -> bool {
+    pub(in crate::kernel) fn matches_indexed_view(&self, memory: &SharedMemory) -> bool {
         match self.1 {
             IndexedView::Recorded => self
                 .0
