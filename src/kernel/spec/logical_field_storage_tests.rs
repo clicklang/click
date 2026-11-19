@@ -21,7 +21,7 @@ fn logical_resource_field_projections_keep_stored_roots_and_result_modes() {
         ("model".into(), ResourceFieldType::Algebraic(ty.clone())),
     ])
     .unwrap();
-    let identity = Variable(10993508);
+    let identity = InstanceId::from_variable(Variable(10993508));
     let instance = ResourceInstance::new(
         identity,
         "LogicalProjection".into(),

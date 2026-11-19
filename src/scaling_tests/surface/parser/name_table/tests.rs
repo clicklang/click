@@ -4,7 +4,7 @@ fn target(name: &str, identity: u64, argument: u32) -> ResourceClause {
     ResourceClause::Named {
         binding: ResourceInstanceBinding {
             name: name.into(),
-            identity: Variable(identity),
+            identity: InstanceId::from_variable(Variable(identity)),
             children: vec![],
             schema: None,
             fields: None,

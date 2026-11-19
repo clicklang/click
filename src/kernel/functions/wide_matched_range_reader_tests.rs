@@ -34,7 +34,7 @@ fn wide_matched_instance_projection_keeps_native_loadability() {
     )])
     .unwrap();
     let instance = ResourceInstance::new(
-        Variable(985_701),
+        InstanceId::from_variable(Variable(985_701)),
         "matched_wide".into(),
         vec![].into(),
         schema.clone(),

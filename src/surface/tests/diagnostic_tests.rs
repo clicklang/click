@@ -2064,7 +2064,7 @@ fn unheld_field_without_a_checked_consumption_does_not_invent_one() {
         left: ContractExpression::ResourceField(ResourceFieldAccess {
             owner: "absent".into(),
             resource_name: "cell".into(),
-            identity: Variable(999),
+            identity: InstanceId::from_variable(Variable(999)),
             children: vec![],
             field: "rank".into(),
             field_index: 0,

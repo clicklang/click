@@ -409,7 +409,7 @@ fn return_instance_folds_are_indexed_and_do_not_copy_sibling_traces() {
     )])
     .unwrap();
     let instance = ResourceInstance::new(
-        Variable(1),
+        InstanceId::from_variable(Variable(1)),
         "cell".into(),
         vec![].into(),
         schema.clone(),
@@ -639,7 +639,7 @@ fn instance_rewrite_certificate_rejects_unrelated_state_and_fact_changes() {
     )])
     .unwrap();
     let instance = ResourceInstance::new(
-        Variable(1),
+        InstanceId::from_variable(Variable(1)),
         "cell".into(),
         vec![].into(),
         schema.clone(),
@@ -735,7 +735,7 @@ fn instance_rewrite_certificate_rejects_unrelated_state_and_fact_changes() {
         let mut state = before.clone();
         for identity in 2..=size {
             let mut unrelated = instance.clone();
-            unrelated.identity = Variable(identity);
+            unrelated.identity = InstanceId::from_variable(Variable(identity));
             state.resources = state
                 .resources
                 .unchecked_with_fact(ResourceFact::own(Resource::Instance(unrelated)));
@@ -1092,7 +1092,7 @@ fn constructing_an_instance_fold_pays_for_its_body_once() {
         )])
         .unwrap();
         let instance = ResourceInstance::new(
-            Variable(995_800),
+            InstanceId::from_variable(Variable(995_800)),
             "cell".into(),
             vec![].into(),
             schema.clone(),

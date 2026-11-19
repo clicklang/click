@@ -11,7 +11,7 @@ pub(super) fn named(
     )])
     .unwrap();
     let instance = ResourceInstance::new(
-        Variable(identity),
+        InstanceId::from_variable(Variable(identity)),
         "named_box".into(),
         vec![ProgramValue::pointer(pointer).into()].into(),
         schema.clone(),
@@ -154,7 +154,7 @@ pub(super) fn matched(
     )])
     .unwrap();
     let instance = ResourceInstance::new(
-        Variable(identity),
+        InstanceId::from_variable(Variable(identity)),
         "matched_box".into(),
         vec![].into(),
         schema.clone(),
@@ -281,7 +281,7 @@ fn named_model_pointer_does_not_gain_parameter_borrow_custody() {
     )])
     .unwrap();
     let instance = ResourceInstance::new(
-        Variable(8_870_011),
+        InstanceId::from_variable(Variable(8_870_011)),
         "model_pointer".into(),
         vec![].into(),
         schema.clone(),
@@ -334,7 +334,7 @@ fn named_fixed_memory_preserves_the_consumed_input_selected_at_entry() {
         vec![ProgramType::Int32Pointer],
     );
     let output = ResourceSpec::instance(
-        Variable(8_870_022),
+        InstanceId::from_variable(Variable(8_870_022)),
         "named_box".into(),
         schema,
         inner,

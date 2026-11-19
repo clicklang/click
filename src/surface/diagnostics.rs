@@ -3936,7 +3936,7 @@ pub(super) fn describe_resource_version_mismatch(
 /// because a half-spelled field would read like source the reader could search
 /// for.
 fn describe_model_field_version_stop(
-    identity: Variable,
+    identity: InstanceId,
     children: &[String],
     field_index: usize,
     stop: &resource_tracker::Stop,

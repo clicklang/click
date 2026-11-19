@@ -3352,7 +3352,7 @@ fn a_model_field_value_its_instance_no_longer_holds_is_spelled_where_it_was_intr
         AlgebraicValue, Resource, ResourceContext, ResourceFact, ResourceFieldSchema,
         ResourceFieldType, ResourceInstance,
     };
-    let identity = Variable(930_001);
+    let identity = crate::kernel::InstanceId::from_variable(Variable(930_001));
     let (earlier, later) = (Variable(930_002), Variable(930_003));
     let schema = ResourceFieldSchema::new(vec![(
         "size".into(),

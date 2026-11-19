@@ -9,7 +9,7 @@ fn cloning_a_description_shares_storage_independently_of_argument_count() {
     let mut work = Vec::new();
     for size in [16, 64, 256] {
         let instance = ResourceInstance::new(
-            Variable(1),
+            InstanceId::from_variable(Variable(1)),
             "state".into(),
             (0..size)
                 .map(|index| int32(index).into())

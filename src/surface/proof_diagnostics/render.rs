@@ -2606,7 +2606,7 @@ impl Renderer<'_> {
             }
             Resource::Instance(instance) => {
                 self.push("{");
-                let identity = self.variable_name(instance.identity(), "instance");
+                let identity = self.variable_name(instance.identity().variable(), "instance");
                 self.push(&identity);
                 self.push(": ");
                 self.push(instance.name());
@@ -2901,7 +2901,7 @@ mod tests {
     #[test]
     fn shared_printer_distinguishes_successive_model_field_values() {
         let _session = crate::kernel::VerificationSession::enter();
-        let identity = Variable(988000);
+        let identity = crate::kernel::InstanceId::from_variable(Variable(988000));
         crate::kernel::model_fields::register_instance_spelling(identity, "c");
         for variable in [
             Variable(988001),

@@ -30,7 +30,7 @@ fn protocol_descriptors_keep_growing_shared_values_and_condition_dags() {
             );
             right.observed = Some(observed);
             let guard = ConditionalMutexGuard {
-                identity: Variable(10993648),
+                identity: InstanceId::from_variable(Variable(10993648)),
                 guard: MutexIdentity {
                     epoch: Some(1),
                     mutex: address.clone(),

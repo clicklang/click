@@ -5,8 +5,8 @@
 //! of ownership. Consumers must check an owned instance separately.
 
 use super::{
-    AlgebraicValue, PureFactContext, ResourceArguments, ResourceFieldSchema, ResourceInstance,
-    Variable,
+    AlgebraicValue, InstanceId, PureFactContext, ResourceArguments, ResourceFieldSchema,
+    ResourceInstance, Variable,
 };
 use std::sync::Arc;
 
@@ -29,7 +29,7 @@ struct ResourceDescriptionData {
 /// the same assertion.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct ResourceReference {
-    identity: Variable,
+    identity: InstanceId,
     description: ResourceDescription,
 }
 
@@ -41,7 +41,7 @@ impl ResourceReference {
         }
     }
 
-    pub fn identity(&self) -> Variable {
+    pub fn identity(&self) -> InstanceId {
         self.identity
     }
 
@@ -158,7 +158,7 @@ impl ResourceDescription {
 
     pub(crate) fn map_values(&self, map: impl FnMut(&AlgebraicValue) -> AlgebraicValue) -> Self {
         let reference = ResourceReference {
-            identity: Variable(0),
+            identity: InstanceId::from_variable(Variable(0)),
             description: self.clone(),
         };
         ResourceReference::map_captured_values(&[reference], map)[0]
@@ -168,7 +168,7 @@ impl ResourceDescription {
 
     pub(crate) fn visit_values(&self, visit: impl FnMut(&AlgebraicValue)) {
         let reference = ResourceReference {
-            identity: Variable(0),
+            identity: InstanceId::from_variable(Variable(0)),
             description: self.clone(),
         };
         ResourceReference::visit_captured_values(&[reference], visit);
@@ -263,7 +263,7 @@ mod tests {
 
     fn instance(identity: u64, family: &str, argument: u32, observed: u32) -> ResourceInstance {
         ResourceInstance::new(
-            Variable(identity),
+            InstanceId::from_variable(Variable(identity)),
             family.into(),
             vec![int32(argument).into()].into(),
             ResourceFieldSchema::new(vec![(
@@ -369,8 +369,10 @@ mod tests {
             ResourceStateSource::Current,
         )
         .unwrap();
-        let first = spec.clone().with_resource_arguments(vec![Variable(1)]);
-        let second = spec.with_resource_arguments(vec![Variable(2)]);
+        let first = spec
+            .clone()
+            .with_resource_arguments(vec![InstanceId::from_variable(Variable(1))]);
+        let second = spec.with_resource_arguments(vec![InstanceId::from_variable(Variable(2))]);
         assert!(
             ResourceSpec::quantified(
                 crate::kernel::ProgramExpression::Value(int32(1)),

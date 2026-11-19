@@ -6675,7 +6675,7 @@ fn resource_clause_to_resource_spec_with_metadata(
                     | crate::kernel::ResourceTerm::MutexUse { .. }
             ) {
                 return inner
-                    .with_mutex_authority_binding(binding.identity, binding.name.clone())
+                    .with_mutex_authority_binding(binding.identity.variable(), binding.name.clone())
                     .map_err(|error| ClickError::new(error.to_string()));
             }
             ResourceSpec::instance(

@@ -177,7 +177,7 @@ fn resource_instance_int32_argument_graph_queries_scale_without_fact_index() {
         let instance = |value| {
             Resource::Instance(
                 ResourceInstance::new(
-                    Variable(6200),
+                    InstanceId::from_variable(Variable(6200)),
                     "instance-value-scale".into(),
                     vec![ProgramValue::Int32(sum(value)).into()].into(),
                     schema.clone(),

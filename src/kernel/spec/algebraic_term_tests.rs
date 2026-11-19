@@ -1022,7 +1022,7 @@ fn model_argument_guard_query_does_not_materialize_stored_models() {
     let stored = SpecAlgebraicExpression {
         algebraic_type: ty.clone(),
         node: SpecAlgebraicExpressionNode::ResourceField(ResourceFieldProjection {
-            identity: Variable(90_000),
+            identity: InstanceId::from_variable(Variable(90_000)),
             children: vec![],
             field_index: 0,
             at_entry: false,

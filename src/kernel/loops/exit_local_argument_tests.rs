@@ -8,7 +8,7 @@ fn fixture(retained_state: ResourceStateSource) -> (LoopBinder, Vec<ResourceInst
     .unwrap();
     let spec = ResourceSpec::new(
         ResourceTerm::Instance {
-            identity: Variable(99),
+            identity: InstanceId::from_variable(Variable(99)),
             binder: "c".into(),
             schema: schema.clone(),
             resource: Box::new(ResourceTerm::Composite {
@@ -25,7 +25,7 @@ fn fixture(retained_state: ResourceStateSource) -> (LoopBinder, Vec<ResourceInst
     )
     .unwrap();
     let binder = LoopBinder {
-        identity: Variable(99),
+        identity: InstanceId::from_variable(Variable(99)),
         name: "c".into(),
         spec: Some(spec),
     };
@@ -33,7 +33,7 @@ fn fixture(retained_state: ResourceStateSource) -> (LoopBinder, Vec<ResourceInst
         .into_iter()
         .map(|value| {
             ResourceInstance::new(
-                Variable(99),
+                InstanceId::from_variable(Variable(99)),
                 "cursor".into(),
                 vec![AlgebraicValue::Program(int32(value))].into(),
                 schema.clone(),
@@ -116,7 +116,7 @@ fn exit_address_argument_tracks_only_the_declared_current_local() {
             .iter()
             .map(|pointer| {
                 ResourceInstance::new(
-                    Variable(99),
+                    InstanceId::from_variable(Variable(99)),
                     "cursor".into(),
                     vec![address(pointer)].into(),
                     schema.clone(),
@@ -127,7 +127,7 @@ fn exit_address_argument_tracks_only_the_declared_current_local() {
             .collect::<Vec<_>>();
         let spec = ResourceSpec::new(
             ResourceTerm::Instance {
-                identity: Variable(99),
+                identity: InstanceId::from_variable(Variable(99)),
                 binder: "c".into(),
                 schema,
                 resource: Box::new(ResourceTerm::Composite {
@@ -152,7 +152,7 @@ fn exit_address_argument_tracks_only_the_declared_current_local() {
         )
         .unwrap();
         let binder = LoopBinder {
-            identity: Variable(99),
+            identity: InstanceId::from_variable(Variable(99)),
             name: "c".into(),
             spec: Some(spec),
         };

@@ -182,7 +182,7 @@ pub(in crate::kernel) fn prepare_direct_loop_guard(
     entry: &ExecutionState,
     head: &ExecutionState,
     spec: &ResourceSpec,
-    identity: Variable,
+    identity: InstanceId,
     assumptions: &PureFactContext,
 ) -> Result<(ExecutionState, Address, ResourceFact), String> {
     let mutex = source_mutex(entry, spec, assumptions)?;

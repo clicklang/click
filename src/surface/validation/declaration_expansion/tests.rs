@@ -44,7 +44,7 @@ fn negated_resource_fields_receive_their_declared_metadata() {
             Box::new(ContractExpression::ResourceField(ResourceFieldAccess {
                 owner: "r".into(),
                 resource_name: "reference".into(),
-                identity: Variable(0),
+                identity: InstanceId::from_variable(Variable(0)),
                 children: vec![],
                 field: name.into(),
                 field_index: 0,
@@ -81,7 +81,11 @@ fn negated_resource_fields_receive_their_declared_metadata() {
 #[test]
 fn alternative_arms_join_the_resources_they_give_an_instance() {
     let scope = authority_test_scope(ResourceKind::Composite, InterfaceType::Int32Pointer, true);
-    let (agreed, partial, conflicting) = (Variable(0), Variable(1), Variable(2));
+    let (agreed, partial, conflicting) = (
+        InstanceId::from_variable(Variable(0)),
+        InstanceId::from_variable(Variable(1)),
+        InstanceId::from_variable(Variable(2)),
+    );
     let alternatives = scope.begin_alternatives();
     scope
         .arm(&alternatives, || {

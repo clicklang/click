@@ -9821,7 +9821,7 @@ mod resource_reference_substitution_tests {
         )])
         .unwrap();
         let leaf = ResourceInstance::new(
-            Variable(200),
+            InstanceId::from_variable(Variable(200)),
             "cell".into(),
             vec![
                 AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(Variable(100)))),
@@ -9836,7 +9836,7 @@ mod resource_reference_substitution_tests {
         )
         .unwrap();
         let middle = ResourceInstance::new(
-            Variable(201),
+            InstanceId::from_variable(Variable(201)),
             "middle".into(),
             vec![].into(),
             schema.clone(),
@@ -9846,7 +9846,7 @@ mod resource_reference_substitution_tests {
         .with_resource_arguments(vec![ResourceReference::from_instance(&leaf)]);
         Resource::Instance(
             ResourceInstance::new(
-                Variable(202),
+                InstanceId::from_variable(Variable(202)),
                 "wrapper".into(),
                 vec![].into(),
                 schema,
@@ -9870,11 +9870,14 @@ mod resource_reference_substitution_tests {
         let Resource::Instance(instance) = replaced else {
             unreachable!()
         };
-        assert_eq!(instance.identity(), Variable(202));
+        assert_eq!(
+            instance.identity(),
+            InstanceId::from_variable(Variable(202))
+        );
         let middle = &instance.resource_arguments()[0];
-        assert_eq!(middle.identity(), Variable(201));
+        assert_eq!(middle.identity(), InstanceId::from_variable(Variable(201)));
         let leaf = &middle.description().resource_arguments()[0];
-        assert_eq!(leaf.identity(), Variable(200));
+        assert_eq!(leaf.identity(), InstanceId::from_variable(Variable(200)));
         assert_eq!(
             leaf.description().arguments(),
             &[

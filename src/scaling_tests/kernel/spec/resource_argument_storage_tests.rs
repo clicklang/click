@@ -35,7 +35,7 @@ fn resource_argument_evaluation_and_description_handoffs_keep_growing_dags() {
                 panic!("composite")
             };
             let instance = ResourceInstance::new(
-                Variable(10993606),
+                InstanceId::from_variable(Variable(10993606)),
                 "SharedArgument".into(),
                 arguments.clone(),
                 ResourceFieldSchema::new(vec![("marker".into(), ResourceFieldType::Integer)])

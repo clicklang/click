@@ -57,7 +57,7 @@ fn check_resource_publication_work(
         )])
         .unwrap();
         let instance = ResourceInstance::new(
-            Variable(991_000),
+            InstanceId::from_variable(Variable(991_000)),
             "integer_box".into(),
             vec![].into(),
             schema.clone(),

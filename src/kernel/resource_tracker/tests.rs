@@ -774,7 +774,7 @@ mod saved_states {
 
     fn instance(identity: u64, rank: u32, mark: i64) -> ResourceInstance {
         ResourceInstance::new(
-            Variable(identity),
+            InstanceId::from_variable(Variable(identity)),
             "cell".into(),
             vec![ProgramValue::Int32(MachineTerm::constant(7)).into()].into(),
             schema(),
@@ -795,7 +795,7 @@ mod saved_states {
 
     fn rank() -> TrackedResource<'static> {
         TrackedResource::ModelField {
-            identity: Variable(1),
+            identity: InstanceId::from_variable(Variable(1)),
             children: &[],
             field_index: 0,
         }
@@ -872,7 +872,7 @@ mod saved_states {
         let entry = holding(1, 3, 0);
         let after = holding(1, 3, 0);
         let other = TrackedResource::ModelField {
-            identity: Variable(2),
+            identity: InstanceId::from_variable(Variable(2)),
             children: &[],
             field_index: 0,
         };
@@ -890,7 +890,7 @@ mod saved_states {
         let after = holding(1, 3, 0);
         let child = &["left".to_string()];
         let field = TrackedResource::ModelField {
-            identity: Variable(1),
+            identity: InstanceId::from_variable(Variable(1)),
             children: child,
             field_index: 0,
         };

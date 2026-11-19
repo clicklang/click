@@ -200,7 +200,7 @@ pub(super) mod tests {
             arm.children = vec![ResourceChildSpec {
                 name: "child".into(),
                 resource: "bound_cell".into(),
-                binding: Variable(identity + 10 + index as u64),
+                binding: InstanceId::from_variable(Variable(identity + 10 + index as u64)),
                 arguments: vec![SpecExpression::ProgramExpression(variable("p"))],
                 field_bindings: vec![],
             }];

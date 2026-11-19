@@ -579,7 +579,7 @@ impl<'a> Proof<'a> {
                         };
                         Ok((slot.clone(), identity))
                     })
-                    .collect::<Result<Arc<[(String, Variable)]>, ClickError>>()
+                    .collect::<Result<Arc<[(String, InstanceId)]>, ClickError>>()
             })
             .transpose()?;
         let instance_value = instance.clone();
