@@ -3422,17 +3422,39 @@ fn read_retained_lvalue_paths_without_ranges(
                 // `nodes(result.head)` does, before the caller copies it out.
                 let returned_aggregate = SpecificationAccessScope::is_active()
                     && matches!(pointer.base, AddressBase::Temporary(_));
+                // A value of an abstract type is read whole: its object.
+                let abstract_object = matches!(lvalue.value_type, ProgramType::Parameter(_));
                 let has_read_resource = (is_external || require_owned)
                     && (returned_aggregate
                         || (!require_owned && assumptions.should_allow_symbolic_contract_loads())
                         || crate::kernel::api::with_extended_dag_bridging(|| {
-                            state.resources().permits_designated_memory_read(
-                                pointer,
-                                lvalue.access_provenance(),
-                                lvalue.value_type.byte_width(),
-                                &effective_assumptions,
-                            )
+                            if abstract_object {
+                                state.resources().permits_object_access(
+                                    &MemoryRange::access(pointer.clone(), lvalue.value_type),
+                                    false,
+                                    &effective_assumptions,
+                                )
+                            } else {
+                                state.resources().permits_designated_memory_read(
+                                    pointer,
+                                    lvalue.access_provenance(),
+                                    lvalue.value_type.byte_width(),
+                                    &effective_assumptions,
+                                )
+                            }
                         }));
+                if (is_external || require_owned) && !has_read_resource && abstract_object {
+                    return Ok(vec![ExecutionValuePath {
+                        outcome: ExpressionOutcome::RuntimeError(RuntimeError::MissingResource {
+                            resource: Box::new(ResourceFact::view_memory(MemoryRange::access(
+                                pointer.clone(),
+                                lvalue.value_type,
+                            ))),
+                        }),
+                        facts,
+                        obligations,
+                    }]);
+                }
                 if (is_external || require_owned) && !has_read_resource {
                     return Ok(vec![ExecutionValuePath {
                         outcome: ExpressionOutcome::RuntimeError(RuntimeError::MissingResource {

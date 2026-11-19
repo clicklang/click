@@ -328,4 +328,5 @@ mod resource_scaling_tests;
 mod scalar_array_tests;
 
 mod heap_tests;
+mod object_cell_tests;
 mod loan_model_tests;

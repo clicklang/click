@@ -497,13 +497,17 @@ fn memory_write_ownership_outcome(
     assumptions: &PureFactContext,
 ) -> Option<StatementOutcome> {
     let pointer = range.base();
-    let bytes = range.element_width();
-    if state.memory.requires_explicit_scalar_ownership(pointer)
-        && state
+    let held = match range.single_element_width() {
+        Some(bytes) => state
             .resources()
             .memory_write_range(pointer, bytes, assumptions)
-            .is_none()
-    {
+            .is_some(),
+        // A value of an abstract type is written whole: its object.
+        None => state
+            .resources()
+            .permits_object_access(&range, true, assumptions),
+    };
+    if state.memory.requires_explicit_scalar_ownership(pointer) && !held {
         return Some(StatementOutcome::RuntimeError(
             RuntimeError::MissingResource {
                 resource: Box::new(ResourceFact::own_memory(range)),
@@ -912,7 +916,9 @@ fn write_program_lvalue_paths_for_initialization(
                     !effective_assumptions.provenance_equal(origin, &pointer.object_identity())
                         || !lvalue.bounds_known && lvalue.bounds_owner.is_some()
                 });
-            let authorized_range = is_external
+            // A value of an abstract type is written whole: its object.
+            let abstract_object = matches!(value.program_type(), ProgramType::Parameter(_));
+            let authorized_range = (is_external && !abstract_object)
                 .then(|| {
                     state.resources().designated_memory_write_range(
                         &pointer,
@@ -923,7 +929,16 @@ fn write_program_lvalue_paths_for_initialization(
                 })
                 .flatten()
                 .cloned();
-            let has_external_write_resource = is_external && authorized_range.is_some();
+            let has_external_write_resource = is_external
+                && if abstract_object {
+                    state.resources().permits_object_access(
+                        &MemoryRange::access(pointer.clone(), value.program_type()),
+                        true,
+                        &effective_assumptions,
+                    )
+                } else {
+                    authorized_range.is_some()
+                };
             // Keep the checked owner's base for a captured external address
             // without an explicit additive spine. Ordinary source addresses
             // retain their typed field/index coordinates, which subsequent
@@ -947,12 +962,7 @@ fn write_program_lvalue_paths_for_initialization(
                 .unwrap_or(pointer);
 
             if is_external && !has_external_write_resource {
-                let missing = MemoryRange::new_with_element_width(
-                    pointer.clone(),
-                    MachineTerm::constant(0),
-                    MachineTerm::constant(1),
-                    value.byte_width(),
-                );
+                let missing = MemoryRange::access(pointer.clone(), value.program_type());
                 // A live mutex holds storage its initialization consumed;
                 // name it rather than the missing ownership.
                 let error = crate::kernel::mutexes::consumed_storage_refusal(
@@ -971,12 +981,7 @@ fn write_program_lvalue_paths_for_initialization(
             }
             // Ownership was established above. Loan separation is a proof
             // obligation for the driver, not an alias search during the store.
-            let mut write_range = MemoryRange::new_with_element_width(
-                source_pointer,
-                0u32.into(),
-                1u32.into(),
-                value.byte_width(),
-            )
+            let mut write_range = MemoryRange::access(source_pointer, value.program_type())
             .with_bounds_owner(lvalue.bounds_owner.clone(), lvalue.bounds_known)
             .with_typed_carrier();
             if let Some(provenance) = &lvalue.provenance {

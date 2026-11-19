@@ -924,6 +924,10 @@ struct Parser {
     /// The slice parameters of the Rust signature being parsed. Each is one
     /// name in the sidecar and a pointer with a `name_len` length underneath.
     rust_slice_params: BTreeSet<String>,
+    /// The parameters of the declaration being parsed that point at a value
+    /// of an abstract type, `value: &T` or `p: *mut T`: `*value` is that
+    /// value's whole object, `sizeof(T)` bytes.
+    abstract_pointer_params: BTreeMap<String, crate::kernel::TypeParameterName>,
     /// The element type of each slice parameter read so far, by name: the
     /// latest parameter of that name, which is the current declaration's.
     rust_slice_elements: BinderMap<InterfaceType>,
@@ -1909,6 +1913,7 @@ impl Parser {
             int64_t_rank: LongRank::Long,
             exact_long_rank: false,
             rust_slice_params: BTreeSet::new(),
+            abstract_pointer_params: BTreeMap::new(),
             rust_slice_elements: BinderMap::new(),
             rust_vec_params: BTreeMap::new(),
             rust_loop_iterators: Vec::new(),
@@ -4124,6 +4129,20 @@ impl Parser {
         Ok(ResourceClause::Iterated(Box::new(clause)))
     }
 
+    /// Records which of a declaration's parameters point at a value of an
+    /// abstract type, for its clauses' `*p` (`abstract_pointer_params`).
+    fn record_abstract_pointer_params(&mut self, parameters: &[FunctionParameter]) {
+        self.abstract_pointer_params = parameters
+            .iter()
+            .filter_map(|parameter| match parameter.click_type {
+                ClickType::Program(InterfaceType::ParameterPointer(parameter_type)) => {
+                    Some((parameter.name.clone(), parameter_type))
+                }
+                _ => None,
+            })
+            .collect();
+    }
+
     fn parse_click_parameters(&mut self) -> Result<ParsedParameters, ClickError> {
         self.parse_parameters_with_resources(false)
             .map(|(parameters, _)| parameters)
@@ -4289,6 +4308,7 @@ impl Parser {
                     self.position += 1;
                 }
                 Some(Token::RParen) => {
+                    self.record_abstract_pointer_params(&parameters);
                     return Ok((
                         ParsedParameters {
                             parameters,
@@ -13050,6 +13070,32 @@ impl Parser {
                     },
                 }]);
             }
+            // `*p` of a value of an abstract type is its whole object: the
+            // `sizeof(T)` bytes from `p`, a size the type fixes and Click
+            // does not know.
+            if let ProgramExpression::Variable(crate::kernel::BindingName::Named(name)) = &base
+                && let Some(parameter) = self.abstract_pointer_params.get(name).copied()
+            {
+                let start = ProgramExpression::Value(ProgramValue::UInt64(
+                    crate::kernel::MachineTerm::uint64_constant(0),
+                ));
+                let end = ProgramExpression::Value(ProgramValue::UInt64(parameter.size_term()));
+                return Ok(vec![ContractSegment {
+                    uninitialized: false,
+                    state: ContractSegmentState::Current,
+                    base: crate::kernel::program_expression::cast(
+                        base,
+                        crate::kernel::ProgramType::UInt8Pointer,
+                    ),
+                    start: start.clone(),
+                    end: end.clone(),
+                    surface: ContractSegmentSurface::Range {
+                        base: surface_base,
+                        start: ContractExpression::ProgramExpression(start),
+                        end: ContractExpression::ProgramExpression(end),
+                    },
+                }]);
+            }
             let (start, end) = (
                 ProgramExpression::Value(int32(0)),
                 ProgramExpression::Value(int32(1)),
@@ -15793,19 +15839,12 @@ impl Parser {
                 if parsed_type.interface_type == InterfaceType::Void {
                     return Err(self.error("`sizeof(void)` is not supported"));
                 }
-                // An allocation's size, `allocation(p, sizeof(T))`, is the
-                // size of the object it holds: at the abstract `T`, the word
-                // a value of `T` takes in the generic layout, and at each
-                // instance the type argument's own. No other use may read
-                // the generic layout's number.
-                if let InterfaceType::Parameter(_) = parsed_type.interface_type {
-                    if !allocation_size {
-                        return Err(self.error(
-                            "the size of an abstract type is not the same at every type argument",
-                        ));
-                    }
+                // The size of an abstract type is the type's own, a number
+                // Click does not know: `sizeof(T)`, which each instance reads
+                // as its type argument's size.
+                if let InterfaceType::Parameter(parameter) = parsed_type.interface_type {
                     return Ok(ContractExpression::ProgramExpression(
-                        ProgramExpression::Value(int32(8)),
+                        ProgramExpression::Value(ProgramValue::UInt64(parameter.size_term())),
                     ));
                 }
                 match &parsed_type.struct_name {

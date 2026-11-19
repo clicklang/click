@@ -15939,6 +15939,18 @@ impl TypeParameterName {
         id
     }
 
+    /// The bytes a value of this type takes in memory, `sizeof(T)`: a
+    /// number the type fixes and Click does not know. Two uses of one type
+    /// name the same term; a proof learns of it only the facts the program's
+    /// language states for every type, and an instance reads it as its own
+    /// type's size.
+    pub fn size_term(self) -> MachineTerm {
+        MachineTerm::PureFunctionApplication {
+            name: format!("sizeof<{}>", self.name()),
+            arguments: Vec::new(),
+        }
+    }
+
     pub fn name(self) -> &'static str {
         &TYPE_PARAMETER_NAMES
             .lock()

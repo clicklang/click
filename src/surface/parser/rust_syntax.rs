@@ -292,6 +292,7 @@ impl Parser {
         } else {
             false
         };
+        self.record_abstract_pointer_params(&parameters);
         Ok(ParsedFunctionSignature {
             signature: FunctionSignature {
                 c_source: None,

@@ -7582,6 +7582,36 @@ impl ResourceContext {
         None
     }
 
+    /// Whether a held resource grants the whole object `required`, for a
+    /// write when `write` and a read otherwise: the owner its first byte
+    /// selects covers it, as an access of a value of an abstract type,
+    /// `[p, p + sizeof(T))`, needs ([`MemoryRange::access`]).
+    pub(in crate::kernel) fn permits_object_access(
+        &self,
+        required: &MemoryRange,
+        write: bool,
+        assumptions: &PureFactContext,
+    ) -> bool {
+        let pointer = required.base();
+        let entries = if write {
+            self.write_access(pointer, 1, assumptions)
+        } else {
+            self.read_access(pointer, 1, assumptions)
+        };
+        let Some(entries) = entries else {
+            return false;
+        };
+        crate::instrumentation::record_deterministic_work(1);
+        let resource = self.fact(entries.entry());
+        let held = if write {
+            resource.memory_own_range()
+        } else {
+            resource.memory_range()
+        };
+        (!write || resource.has_proven_positive_quantity(assumptions))
+            && held.is_some_and(|held| memory_range_covers(held, required, assumptions))
+    }
+
     pub(in crate::kernel) fn memory_write_range(
         &self,
         pointer: &Address,

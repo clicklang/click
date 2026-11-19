@@ -3070,6 +3070,26 @@ fn lower_resource_segment_with_values(
             "could not lower `{resource_name}` resource: segment {which} did not evaluate to an integer index"
         ))),
     };
+    // `*p` of a value of an abstract type is its whole object, `[p, p +
+    // sizeof(T))`, whose size is the type's and no number Click knows.
+    if let Some(ProgramType::Parameter(parameter)) = base_value.program_type().pointee_type() {
+        let index = |value: &ProgramValue| match value.numeric_value() {
+            ProgramValue::Int32(term) | ProgramValue::UInt64(term) | ProgramValue::Int64(term) => {
+                term.as_const()
+            }
+            _ => None,
+        };
+        if index(&start_value) != Some(0) || index(&end_value) != Some(1) {
+            return Err(ClickError::new(format!(
+                "could not lower `{resource_name}` resource: a range of more than one value of the abstract type `{}` is not supported; own each value as `*p`",
+                parameter.name()
+            )));
+        }
+        return Ok(MemoryRange::access_through(
+            &base_value,
+            ProgramType::Parameter(parameter),
+        ));
+    }
     // The same rule as the kernel's resource and proposition lowering.
     if let Some((start, end)) = crate::kernel::wide_range_bounds(&start_value, &end_value) {
         return refuse_past_bounds(MemoryRange::from_pointer_value_wide(

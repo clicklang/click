@@ -2940,6 +2940,40 @@ impl MemoryRange {
         })
     }
 
+    /// The bytes an access of a value of `program_type` at `pointer`
+    /// reaches: one element of the type's width, or, for a value of an
+    /// abstract type, its whole object, `[pointer, pointer + sizeof(T))`,
+    /// whose size is the type's and no number Click knows.
+    pub(crate) fn access(pointer: Address, program_type: ProgramType) -> Self {
+        match program_type {
+            ProgramType::Parameter(parameter) => Self::new_wide(
+                pointer,
+                MachineTerm::uint64_constant(0),
+                parameter.size_term(),
+                1,
+            ),
+            other => Self::new_with_element_width(
+                pointer,
+                MachineTerm::constant(0),
+                MachineTerm::constant(1),
+                other.byte_width(),
+            ),
+        }
+    }
+
+    /// [`Self::access`] through the pointer value `value`, keeping its
+    /// origin as a typed clause's range does.
+    pub(crate) fn access_through(value: &Pointer, program_type: ProgramType) -> Self {
+        Self::access(value.address().clone(), program_type).with_pointer_carrier(value)
+    }
+
+    /// The width of the one element this range is, when it is one element
+    /// of a known width at its base: not an object of abstract size.
+    pub(crate) fn single_element_width(&self) -> Option<u32> {
+        (self.constant_start() == Some(0) && self.constant_end() == Some(1))
+            .then_some(self.element_width)
+    }
+
     /// A range whose bounds are unsigned 64-bit element indices.
     pub(crate) fn new_wide(
         base: Address,
