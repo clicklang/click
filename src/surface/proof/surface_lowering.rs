@@ -269,7 +269,7 @@ impl<'a> Proof<'a> {
                     ),
                     &algebraic_values,
                     &integer_values,
-                    context.theorem_context.point.memory(),
+                    &context.theorem_context.point,
                     context.spec_definitions,
                 )
                 .map(|(proposition, _)| proposition)
@@ -468,7 +468,7 @@ impl<'a> Proof<'a> {
                     ),
                     &algebraic_values,
                     &integer_values,
-                    context.theorem_context.point.memory(),
+                    &context.theorem_context.point,
                     context.spec_definitions,
                     is_conjunct_label,
                 )
@@ -657,7 +657,7 @@ impl<'a> Proof<'a> {
                     ),
                     &algebraic_values,
                     &integer_values,
-                    context.theorem_context.point.memory(),
+                    &context.theorem_context.point,
                     context.spec_definitions,
                 )
                 .map(|(proposition, introductions)| (proposition, Some(introductions)))
