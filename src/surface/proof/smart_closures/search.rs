@@ -6290,6 +6290,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let Some(view) = search_input.premise_fixed_state_view() else {
             return Ok(None);
         };
+        // A covering range can be based on a pointer bound by an enclosing
+        // match or a value retained at a recorded program point.
+        let _binder_names = search_input.requirement_binder_name_scope();
+        let _recorded_points = super::surface_synthesis::SynthesisRecordedPointsScope::enter(
+            view.fixed_state.recorded_states,
+        );
         let mut candidates = search_input
             .facts()
             .assumptions()

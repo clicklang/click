@@ -22164,6 +22164,53 @@ fn machine_subtraction_fact_bridges_expand_without_implicit_search() {
     }
 }
 
+#[test]
+fn separation_restriction_raises_a_match_bound_cover() {
+    let c = "void stamp(int *p, int *q) { p[1] = 7; }";
+    let source = r#"verifying "restrict.c";
+spec enum Model { At(int*) }
+resource cell(p: int*) {
+    field model: Model;
+    match model {
+        Model::At(id) => {
+            owns id[0..4];
+            fact id == p;
+        },
+    }
+}
+
+void stamp(int* p, int* q) {
+    owns c: cell(p);
+    views q[0..1];
+    requires separate(c, memory(q[0..1]));
+    ensures c.model == old(c.model);
+} by {
+    match c.model {
+        Model::At(id) => {
+            unfold(c);
+            have separate(memory(p[1]), memory(q[0..1])) by { solve(); }
+            step();
+            let c = fold(cell(p), { model: old(c.model) });
+            step();
+            solve();
+        },
+    }
+}
+"#;
+    let sources = [("restrict.c", c)];
+    let label = "stamp.contract";
+    let expanded = expand_c_claim_source_by_label(source, &sources, label)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(
+        expanded.contains("separate_restrict(memory((id as (int32 *))[0..4])"),
+        "{expanded}"
+    );
+    without_implicit_solve_for_claim(label, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
 /// Expand one function's proof and replay it with that claim's implicit
 /// search off. `claim` is the label of the expanded claim.
 fn store_index_separation_replays(fixture: &str, function: &str, claim: &str) {
