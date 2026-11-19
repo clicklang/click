@@ -7039,6 +7039,13 @@ impl PureFactContext {
         self
     }
 
+    pub(in crate::kernel) fn with_reasoning_policy_of(mut self, source: &Self) -> Self {
+        self.content_fingerprint ^=
+            self.reasoning_policy.fingerprint() ^ source.reasoning_policy.fingerprint();
+        self.reasoning_policy = source.reasoning_policy;
+        self
+    }
+
     fn toggle_reasoning_policy(&mut self, choice: ReasoningPolicy) {
         self.reasoning_policy.toggle(choice);
         self.content_fingerprint ^= choice.fingerprint();
