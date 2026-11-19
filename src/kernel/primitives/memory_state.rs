@@ -3994,9 +3994,13 @@ impl SymbolicMemory {
                 )
             },
         );
-        std::sync::Arc::make_mut(&mut memory.forgotten)
-            .ended_local_blocks
-            .insert(block.clone());
+        let forgotten = std::sync::Arc::make_mut(&mut memory.forgotten);
+        forgotten.ended_local_blocks.insert(block.clone());
+        if !block_is_never_address_taken_local(block) {
+            forgotten
+                .ended_addressable_local_blocks
+                .insert(block.clone());
+        }
         // A later object is uninitialized until written; the tombstone
         // already refuses every access to this one.
         if own.any_entry(memory.heap.initialized.as_map(), |_, _| true)
@@ -5046,6 +5050,12 @@ impl SymbolicMemory {
                 .iter()
                 .map(|memory| &memory.forgotten.ended_local_blocks),
         );
+        let ended_addressable_local_blocks = union_of_arm_sets(
+            &first.forgotten.ended_addressable_local_blocks,
+            others
+                .iter()
+                .map(|memory| &memory.forgotten.ended_addressable_local_blocks),
+        );
         let live_allocations = union_of_arm_maps(
             &first.heap.live_allocations,
             others.iter().map(|memory| &memory.heap.live_allocations),
@@ -5298,6 +5308,7 @@ impl SymbolicMemory {
         self.blocks = std::sync::Arc::new(blocks);
         let forgotten = std::sync::Arc::make_mut(&mut self.forgotten);
         forgotten.ended_local_blocks = ended_local_blocks;
+        forgotten.ended_addressable_local_blocks = ended_addressable_local_blocks;
         // A forget mark says this state is some earlier one with cached
         // values dropped and the memory itself unchanged. The joined memory
         // is no arm's memory: it is their abstraction, named by its own
