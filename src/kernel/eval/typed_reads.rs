@@ -63,6 +63,7 @@ pub(super) fn record(memory: &SymbolicMemory, address: &Address, value: &Program
         ProgramValue::UInt16(_) => ReadType::Integer(MachineIntegerType::UInt16),
         ProgramValue::Int32(_) => ReadType::Integer(MachineIntegerType::Int32),
         ProgramValue::UInt32(_) => ReadType::Integer(MachineIntegerType::UInt32),
+        ProgramValue::Int8(_) => ReadType::Integer(MachineIntegerType::Int8),
         ProgramValue::UInt8(_) => ReadType::Integer(MachineIntegerType::UInt8),
         ProgramValue::Int64(_) => ReadType::Integer(MachineIntegerType::Int64),
         ProgramValue::UInt64(_) => ReadType::Integer(MachineIntegerType::UInt64),
@@ -71,7 +72,8 @@ pub(super) fn record(memory: &SymbolicMemory, address: &Address, value: &Program
     crate::instrumentation::record_deterministic_work(1);
     let kind = kind.key();
     let version = match value {
-        ProgramValue::UInt8(MachineTerm::MemoryLoad(point, _, LoadKind::UInt8))
+        ProgramValue::Int8(MachineTerm::MemoryLoad(point, _, LoadKind::Int8))
+        | ProgramValue::UInt8(MachineTerm::MemoryLoad(point, _, LoadKind::UInt8))
         | ProgramValue::Int16(MachineTerm::MemoryLoad(point, _, LoadKind::Int16))
         | ProgramValue::UInt16(MachineTerm::MemoryLoad(point, _, LoadKind::UInt16))
         | ProgramValue::Int32(MachineTerm::MemoryLoad(point, _, LoadKind::Int32))
@@ -117,7 +119,8 @@ pub(in crate::kernel) fn get_at(
 ) -> Option<ProgramValue> {
     let version = match kind {
         ReadType::Integer(
-            format @ (MachineIntegerType::UInt8
+            format @ (MachineIntegerType::Int8
+            | MachineIntegerType::UInt8
             | MachineIntegerType::Int16
             | MachineIntegerType::UInt16
             | MachineIntegerType::Int32

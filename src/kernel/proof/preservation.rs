@@ -282,24 +282,20 @@ fn preserve_field(
     Some(Proposition::condition_is(condition, true))
 }
 
-// A native comparison selects its own format. A promoted halfword
+// A native comparison selects its own format. A promoted byte or halfword
 // comparison must name two widenings of the same type, since the footprint's
 // width alone cannot distinguish signed from unsigned reads.
 fn observation_type(comparison: ReadType, bytes: u32, result: &Proposition) -> Option<ReadType> {
     match (comparison, bytes) {
-        (ReadType::Integer(MachineIntegerType::Int32), 1) => {
-            Some(ReadType::Integer(MachineIntegerType::UInt8))
-        }
-        (ReadType::Integer(MachineIntegerType::Int32), 2) => {
+        (ReadType::Integer(MachineIntegerType::Int32), 1 | 2) => {
             let (ConditionTerm::Compare { left, right, .. }, true) = result.condition_native()?
             else {
                 return None;
             };
             let (left, _) = left.narrow_widening32_operand()?;
             let (right, _) = right.narrow_widening32_operand()?;
-            (left == right
-                && matches!(left, MachineIntegerType::Int16 | MachineIntegerType::UInt16))
-            .then_some(ReadType::Integer(left))
+            (left == right && left.program_type().byte_width() == bytes)
+                .then_some(ReadType::Integer(left))
         }
         (kind, bytes) if kind.bytes() == bytes => Some(kind),
         _ => None,
@@ -1009,6 +1005,12 @@ mod tests {
             )),
         );
         check_indexed_preservation(
+            LoadKind::Int8,
+            MachineIntegerType::Int8,
+            1,
+            ProgramValue::Int8(MachineTerm::narrow_constant(MachineIntegerType::Int8, 0x80)),
+        );
+        check_indexed_preservation(
             LoadKind::UInt8,
             MachineIntegerType::UInt8,
             1,
@@ -1105,11 +1107,13 @@ mod tests {
             apply(&separation, None, &expected, |fact| fact == &separation),
             Ok(())
         );
-        if bytes == 2 {
-            let other_format = if format == MachineIntegerType::Int16 {
-                MachineIntegerType::UInt16
-            } else {
-                MachineIntegerType::Int16
+        if bytes < 4 {
+            let other_format = match format {
+                MachineIntegerType::Int8 => MachineIntegerType::UInt8,
+                MachineIntegerType::UInt8 => MachineIntegerType::Int8,
+                MachineIntegerType::Int16 => MachineIntegerType::UInt16,
+                MachineIntegerType::UInt16 => MachineIntegerType::Int16,
+                _ => unreachable!("narrow test format"),
             };
             let mixed = Proposition::condition_is(
                 ConditionTerm::equal(
