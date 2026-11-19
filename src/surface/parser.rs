@@ -1063,6 +1063,7 @@ struct Parser {
     /// The C type of the current function's `result`, which keeps its C
     /// meaning in a comparison when it is a pointer or a float.
     current_result_interface_type: Option<InterfaceType>,
+    current_aggregate_result: bool,
     /// The current function's locals of pointer type that no parameter
     /// shadows.
     current_local_pointers: BTreeSet<String>,
@@ -1317,6 +1318,7 @@ struct ParsedFunctionSignature {
     struct_array_params: BTreeSet<String>,
     reference_params: BTreeSet<String>,
     return_struct_name: Option<String>,
+    aggregate_result: bool,
 }
 
 impl ProgramLayouts {
@@ -1998,6 +2000,7 @@ impl Parser {
             local_struct_pointers_by_function: BTreeMap::new(),
             current_reference_result: false,
             current_result_interface_type: None,
+            current_aggregate_result: false,
             current_local_pointers: BTreeSet::new(),
             names: NameTable::default(),
             pure_function_slices: BTreeMap::new(),
@@ -4984,6 +4987,7 @@ impl Parser {
             struct_array_params,
             mut reference_params,
             return_struct_name,
+            aggregate_result,
         } = {
             let previous = std::mem::replace(&mut self.exact_long_rank, true);
             let signature = self.parse_function_signature();
@@ -5169,6 +5173,8 @@ impl Parser {
         let previous_result_c_type = self
             .current_result_interface_type
             .replace(signature.return_type());
+        let previous_aggregate_result =
+            std::mem::replace(&mut self.current_aggregate_result, aggregate_result);
         let local_pointers = self
             .local_struct_pointers_by_function
             .get(&table_name)
@@ -5691,6 +5697,7 @@ impl Parser {
             .replace(NameKind::ReferenceParameter, previous_reference_params);
         self.current_reference_result = previous_reference_result;
         self.current_result_interface_type = previous_result_c_type;
+        self.current_aggregate_result = previous_aggregate_result;
         self.current_local_pointers = previous_local_pointers;
         self.names
             .replace(NameKind::IntegerParameter, previous_integer_params);
@@ -5958,6 +5965,7 @@ impl Parser {
                 struct_array_params: parsed_parameters.struct_array_params,
                 reference_params: parsed_parameters.reference_params,
                 return_struct_name: None,
+                aggregate_result: false,
             });
         }
         self.rust_slice_params.clear();
@@ -6166,6 +6174,8 @@ impl Parser {
             struct_params,
             struct_array_params,
             reference_params,
+            aggregate_result: parsed_return_type.struct_name.is_some()
+                && !parsed_return_type.struct_pointer,
             return_struct_name: parsed_return_type.struct_name,
         };
         if self.verifies_rust() && !self.in_contract_definition {
@@ -14468,6 +14478,16 @@ impl Parser {
                         pointer: Box::new(base),
                         bytes: *offset_bytes,
                     },
+                ));
+            }
+            if self.current_aggregate_result
+                && matches!(&expression, ContractExpression::ProgramExpression(
+                    ProgramExpression::Variable(name)) if name.is_named("result"))
+            {
+                return Ok(ContractExpression::ProgramExpression(
+                    ProgramExpression::AddressOf(Box::new(ProgramExpression::Variable(
+                        crate::kernel::CONTRACT_RESULT,
+                    ))),
                 ));
             }
             let source_expression = expression.clone();

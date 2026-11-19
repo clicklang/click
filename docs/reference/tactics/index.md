@@ -694,6 +694,11 @@ and ranking closure are separate. `step_until(loop(i).back_edge())` does the
 same and is refused outside `loop(i)`'s preservation region
 (`mdtests/step_until_refuses_another_loop_s_back_edge.md`).
 
+A construction-return proof may use `&result` before the return to name the
+destination object. Its address alone supplies neither initialized field
+values nor permission to read them. A program variable named `result` is
+still available as `program::result`.
+
 `step_until(function.exit)` steps until the function returns, and the proof
 continues at exit, where `result` names the returned value. Where the C
 reaches an `if` the facts do not decide, it is refused and names the split
