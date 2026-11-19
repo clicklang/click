@@ -231,13 +231,13 @@ fn enum_construct(
 
 /// Lower the Rust panic checks for already prepared binary operands.
 fn binary_checks(
+    mut prefix: ProgramStatement,
     operator: &str,
     left_type: &Type,
     right_type: &Type,
     left_operand: &ProgramExpression,
     right_operand: &ProgramExpression,
 ) -> Result<ProgramStatement, String> {
-    let mut prefix = program_skip();
     if matches!(left_type, Type::Usize | Type::U64) {
         let l = left_operand.clone();
         let r = right_operand.clone();
@@ -2241,16 +2241,16 @@ impl Context<'_> {
                     program_seq(left_prefix, left_capture),
                     program_seq(right_prefix, right_capture),
                 );
-                let prefix = program_seq(
+                // Append checks to the existing sequence so a check-free
+                // expression does not acquire a new execution region.
+                let prefix = binary_checks(
                     prefix,
-                    binary_checks(
-                        operator,
-                        left_type,
-                        right_type,
-                        &left_operand,
-                        &right_operand,
-                    )?,
-                );
+                    operator,
+                    left_type,
+                    right_type,
+                    &left_operand,
+                    &right_operand,
+                )?;
                 Ok((
                     prefix,
                     binary_value(operator, left_type, right_type, left_read, right_read)?,

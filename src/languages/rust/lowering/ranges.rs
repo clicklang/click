@@ -127,7 +127,14 @@ impl Context<'_> {
         // Rust arithmetic checks for this advance.
         let (_, start_operand, _) = self.read_operand(start_value.clone(), &element, true)?;
         let (_, unit_operand, _) = self.read_operand(unit.clone(), &element, true)?;
-        let checks = binary_checks("add", &element, &element, &start_operand, &unit_operand)?;
+        let checks = binary_checks(
+            program_skip(),
+            "add",
+            &element,
+            &element,
+            &start_operand,
+            &unit_operand,
+        )?;
         let next = binary_value("add", &element, &element, start_value.clone(), unit)?;
         let advance = program_seq(checks, program_assign(start.clone(), next));
         // Rust leaves the bounds unspecified after exhaustion. Both 0 and
