@@ -5840,17 +5840,15 @@ fn synthesize_surface_bitvector(
                     value_type
                 };
                 let load = match value_type {
-                    _ if byte_view => {
-                        ProgramExpression::Load(Box::new(ProgramExpression::Cast {
-                            expression: Box::new(pointer.clone()),
-                            target_type: ProgramType::UInt8Pointer,
-                            integer_mode: crate::kernel::IntegerCastMode::Standard,
-                            pointee_struct: None,
-                            pointee_volatile: false,
-                            pointee_constant: false,
-                            explicit_qualification: false,
-                        }))
-                    }
+                    _ if byte_view => ProgramExpression::Load(Box::new(ProgramExpression::Cast {
+                        expression: Box::new(pointer.clone()),
+                        target_type: ProgramType::UInt8Pointer,
+                        integer_mode: crate::kernel::IntegerCastMode::Standard,
+                        pointee_struct: None,
+                        pointee_volatile: false,
+                        pointee_constant: false,
+                        explicit_qualification: false,
+                    })),
                     Some(value_type) if value_type == ProgramType::UInt8 || typed_word => {
                         ProgramExpression::TypedLoad {
                             pointer: Box::new(pointer.clone()),
