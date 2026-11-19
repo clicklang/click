@@ -837,9 +837,12 @@ fn call_payload_identity_key(fact: &Proposition) -> Option<CallPayloadKey> {
             CallPayloadKey::AlgebraicCondition(*truth, [algebraic(left)?, algebraic(right)?])
         }
         Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right))
-            if algebraic_call(left) || algebraic_call(right) =>
+            if algebraic_call(left.native_compat()) || algebraic_call(right.native_compat()) =>
         {
-            CallPayloadKey::AlgebraicEquation([algebraic(left)?, algebraic(right)?])
+            CallPayloadKey::AlgebraicEquation([
+                algebraic(left.native_compat())?,
+                algebraic(right.native_compat())?,
+            ])
         }
         _ => return None,
     })
@@ -951,8 +954,8 @@ impl PropositionSource for PureFactStore {
 fn is_constructor_clash(proposition: &Proposition) -> bool {
     matches!(proposition,
         Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right))
-            if left.algebraic_type == right.algebraic_type
-                && matches!((&left.node, &right.node), (
+            if left.native_compat().algebraic_type == right.native_compat().algebraic_type
+                && matches!((&left.native_compat().node, &right.native_compat().node), (
                     AlgebraicTermNode::Constructor { variant: left, .. },
                     AlgebraicTermNode::Constructor { variant: right, .. },
                 ) if left != right))
@@ -3292,14 +3295,16 @@ fn index_algebraic_equality_fact(
     let Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) = fact.as_ref() else {
         return index;
     };
-    for term in [left, right]
-        .into_iter()
-        .filter(|term| !matches!(term.node, AlgebraicTermNode::Constructor { .. }))
-    {
-        let mut bucket = index.get(term).cloned().unwrap_or_default();
+    for term in [left, right].into_iter().filter(|term| {
+        !matches!(
+            term.native_compat().node,
+            AlgebraicTermNode::Constructor { .. }
+        )
+    }) {
+        let mut bucket = index.get(term.native_compat()).cloned().unwrap_or_default();
         if !bucket.iter().any(|candidate| candidate == fact) {
             bucket.push(fact.clone());
-            index = index.with_inserted(term.clone(), bucket);
+            index = index.with_inserted(term.native_compat().clone(), bucket);
         }
     }
     index
@@ -3311,8 +3316,8 @@ fn collect_proposition_algebraic_terms(
 ) {
     match proposition {
         Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) => {
-            collect_algebraic_term_roots(left, terms);
-            collect_algebraic_term_roots(right, terms);
+            collect_algebraic_term_roots(left.native_compat(), terms);
+            collect_algebraic_term_roots(right.native_compat(), terms);
         }
         condition_source_0 @ Proposition::ConditionIs(_, _)
             if let Some((ConditionTerm::AlgebraicEqual(left, right), _)) =

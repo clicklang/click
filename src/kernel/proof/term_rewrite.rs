@@ -1127,8 +1127,8 @@ pub(in crate::kernel::proof) fn folded_machine_condition(
             // Restrict this constant-folding path to nullary constructors;
             // unknown fields still require their own checked evidence.
             let equality = Proposition::Equal(
-                Term::Algebraic(left.as_ref().clone()),
-                Term::Algebraic(right.as_ref().clone()),
+                Term::Algebraic(left.as_ref().clone().into()),
+                Term::Algebraic(right.as_ref().clone().into()),
             );
             crate::kernel::spec::constant_spec_condition_value(&equality)
                 .map(ConditionTerm::Constant)
@@ -1514,7 +1514,7 @@ fn collect_integer_substitution_term_variables(term: &Term, variables: &mut Carr
         }
         Term::Condition(value) => collect_condition_carriers(value, variables),
         Term::PointerOffset(value) => collect_pointer_offset_carriers(value, variables),
-        Term::Algebraic(value) => collect_algebraic_carriers(value, variables),
+        Term::Algebraic(value) => collect_algebraic_carriers(value.native_compat(), variables),
         _ => {}
     }
 }
@@ -1646,7 +1646,10 @@ fn exhausted_term(term: &Term) -> Term {
             }
         },
         Term::Sequence(value) => Term::Sequence(exhausted_sequence(value)),
-        Term::Algebraic(value) => Term::Algebraic(exhausted_algebraic(value)),
+        Term::Algebraic(value) if value.root().is_some() => term.clone(),
+        Term::Algebraic(value) => {
+            Term::Algebraic(exhausted_algebraic(value.native_compat()).into())
+        }
         _ => term.clone(),
     }
 }
@@ -3187,9 +3190,11 @@ impl<'a> TermRewrite<'a> {
                     collect_program_value_carriers(value.native_compat(), &mut variables);
                 }
                 Term::Sequence(value) => collect_sequence_carriers(value, &mut variables),
-                Term::Algebraic(value) => {
-                    collect_algebraic_carriers_seen(value, &mut variables, &mut seen)
-                }
+                Term::Algebraic(value) => collect_algebraic_carriers_seen(
+                    value.native_compat(),
+                    &mut variables,
+                    &mut seen,
+                ),
                 Term::Memory(_) | Term::ExecutionState(_) => {}
             }
             if variables.exhausted() {
@@ -3693,7 +3698,7 @@ impl<'a> TermRewrite<'a> {
             return exhausted_term(term);
         }
         let result = match term {
-            Term::Algebraic(v) => Term::Algebraic(self.algebraic(v)),
+            Term::Algebraic(v) => Term::Algebraic(self.algebraic(v.native_compat()).into()),
             Term::Bitvector32(v) => Term::Bitvector32(self.bits(v)),
             Term::Integer(v) => Term::Integer(self.integer(v)),
             Term::ProgramValue(v) => Term::ProgramValue(self.value(v.native_compat()).into()),

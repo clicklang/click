@@ -1795,7 +1795,7 @@ impl Renderer<'_> {
             Term::Memory(m) => self.memory(m),
             Term::ExecutionState(s) => self.state(s),
             Term::Sequence(_) => self.push("sequence(<bounded opaque value>)"),
-            Term::Algebraic(value) => self.algebraic(value),
+            Term::Algebraic(value) => self.algebraic(value.native_compat()),
         }
     }
 

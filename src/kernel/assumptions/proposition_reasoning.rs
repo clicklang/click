@@ -718,29 +718,30 @@ impl PureFactContext {
         else {
             return None;
         };
-        if left.algebraic_type != right.algebraic_type
-            || !left.is_well_formed()
-            || !right.is_well_formed()
+        if left.native_compat().algebraic_type != right.native_compat().algebraic_type
+            || !left.native_compat().is_well_formed()
+            || !right.native_compat().is_well_formed()
         {
             return None;
         }
-        let (variable, forbidden_variant) = match (&left.node, &right.node) {
-            (
-                AlgebraicTermNode::Variable(variable),
-                AlgebraicTermNode::Constructor { variant, .. },
-            ) => (*variable, variant),
-            (
-                AlgebraicTermNode::Constructor { variant, .. },
-                AlgebraicTermNode::Variable(variable),
-            ) => (*variable, variant),
-            _ => return None,
-        };
+        let (variable, forbidden_variant) =
+            match (&left.native_compat().node, &right.native_compat().node) {
+                (
+                    AlgebraicTermNode::Variable(variable),
+                    AlgebraicTermNode::Constructor { variant, .. },
+                ) => (*variable, variant),
+                (
+                    AlgebraicTermNode::Constructor { variant, .. },
+                    AlgebraicTermNode::Variable(variable),
+                ) => (*variable, variant),
+                _ => return None,
+            };
         self.algebraic_variable_constructors
             .get(&variable)?
             .iter()
             .inspect(|_| crate::instrumentation::record_deterministic_work(1))
             .find_map(|(source, known_constructor)| {
-                if known_constructor.algebraic_type != left.algebraic_type {
+                if known_constructor.algebraic_type != left.native_compat().algebraic_type {
                     return None;
                 }
                 let AlgebraicTermNode::Constructor {

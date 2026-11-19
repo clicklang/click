@@ -101,8 +101,8 @@ fn check_resource_publication_work(
                 .unchecked_with_fact(ResourceFact::own(Resource::Instance(instance.clone()))),
         );
         let assumptions = PureFactContext::new().assume_proposition(Proposition::Equal(
-            Term::Algebraic(model),
-            Term::Algebraic(constructor),
+            Term::Algebraic(model.into()),
+            Term::Algebraic(constructor.into()),
         ));
 
         let (opened, clauses) =

@@ -1250,6 +1250,7 @@ fn production_checked(fact: ResourceFact) -> CheckedResourceFact {
         clause_position: None,
         section_index: None,
         selected_mutex_source: None,
+        mutex_storage: None,
     }
 }
 

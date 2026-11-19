@@ -820,6 +820,16 @@ pub(super) fn acquisition_availability_refusal(
     None
 }
 
+/// The caller-facing byte extent keeps the origin of the evaluated pointer.
+pub(super) fn storage_write_range(pointer: &super::Pointer, bytes: u32) -> super::MemoryRange {
+    super::MemoryRange::from_pointer_value(
+        &pointer.clone().with_root_bounds(),
+        0u32.into(),
+        bytes.into(),
+        1,
+    )
+}
+
 /// Preconditions for the C initialization operation, before any invariant
 /// or lifecycle authority moves. Owning bytes does not require initialized
 /// byte values. Automatic objects have implicit storage ownership; all other
@@ -3803,6 +3813,7 @@ mod tests {
                 clause_position: None,
                 section_index: None,
                 selected_mutex_source: None,
+                mutex_storage: None,
             }],
             &assumptions,
         )

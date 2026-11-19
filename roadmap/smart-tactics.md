@@ -475,13 +475,12 @@ covers descriptor generation and persistent closes with 4/16/64/256 loans.
 These scoped controls do not certify every loan caller or proof-publication cost.
 
 Checked scalar and bulk writes, allocation retirement, exact call and worker
-effects, loop heads and exits, automatic mutex representation writes and modular
-construction destinations now retain separation obligations. Automatic
+effects, loop heads and exits, direct and modular mutex representation writes,
+and modular construction destinations now retain separation obligations. Automatic
 storage retirement and initialization use the object-identity index. A
 newly allocated aggregate result has no prior loan.
 
 Remaining uses of the legacy loan check cover unresolved call projections,
-external and modular mutex effects that lack a caller-side spelling,
 direct constructor execution without a modular proof boundary, ordinary
 branch memory joins, local-loan admission and resource or authority
 rewrites. These need their own evidence before the legacy path can be

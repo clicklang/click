@@ -959,7 +959,10 @@ mod tests {
         // generic argument wrapper separates these identical producers.
         assert_eq!(left, right);
         let claim = |value: AlgebraicTerm| {
-            Proposition::Equal(Term::Algebraic(value), Term::Algebraic(variable.clone()))
+            Proposition::Equal(
+                Term::Algebraic(value.into()),
+                Term::Algebraic(variable.clone().into()),
+            )
         };
         let exports = KernelTermExport::machine_export_count();
         assert!(algebraic_equal(&left, &right));

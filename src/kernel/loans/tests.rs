@@ -2799,6 +2799,7 @@ pub(super) fn checked(fact: ResourceFact) -> CheckedResourceFact {
         clause_position: None,
         section_index: None,
         selected_mutex_source: None,
+        mutex_storage: None,
     }
 }
 
@@ -3102,6 +3103,7 @@ fn composite_planner_rejects_an_owned_requirement_inside_the_viewed_frontier() {
                     clause_position: None,
                     section_index: None,
                     selected_mutex_source: None,
+                    mutex_storage: None,
                 },
                 checked(view.clone()),
             ],
@@ -4051,6 +4053,7 @@ fn joint_planner_rejects_view_and_mutable_transfer_of_same_authority() {
             clause_position: None,
             section_index: None,
             selected_mutex_source: None,
+            mutex_storage: None,
         },
     ];
     assert!(matches!(
@@ -4078,6 +4081,7 @@ fn joint_planner_partitions_disjoint_write_and_view_ranges_in_any_clause_order()
         clause_position: None,
         section_index: None,
         selected_mutex_source: None,
+        mutex_storage: None,
     };
     let read = checked(memory(0, 4, false));
     let left = plan_stable_view_transfer(
@@ -4139,6 +4143,7 @@ fn joint_planner_partitions_disjoint_write_and_view_ranges_in_any_clause_order()
         clause_position: None,
         section_index: None,
         selected_mutex_source: None,
+        mutex_storage: None,
     };
     let reverse_view = checked(memory(6, 8, false));
     let reverse = plan_stable_view_transfer(
@@ -4180,6 +4185,7 @@ fn rejected_joint_plan_leaves_caller_resources_and_ledger_unchanged() {
             clause_position: None,
             section_index: None,
             selected_mutex_source: None,
+            mutex_storage: None,
         },
     ];
     assert_eq!(

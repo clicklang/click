@@ -10010,8 +10010,8 @@ impl ExecutionProofCore {
         let environment_variables =
             crate::kernel::reasoning::execution_environment_variable_index(environment);
         let value_variables = crate::kernel::proposition_variables(&Proposition::Equal(
-            Term::Algebraic(value.clone()),
-            Term::Algebraic(value.clone()),
+            Term::Algebraic(value.clone().into()),
+            Term::Algebraic(value.clone().into()),
         ));
         let mut next = first_variable;
         let mut overflow = false;
@@ -10050,7 +10050,7 @@ impl ExecutionProofCore {
                 // result `c = a` matched at `c == None` gives `a == None`.
                 // Only the scrutinee's own index bucket is read.
                 if let Proposition::Equal(_, constructor) = case {
-                    let scrutinee = Term::Algebraic(value.clone());
+                    let scrutinee = Term::Algebraic(value.clone().into());
                     for equality in
                         facts.algebraic_equalities_mentioning(&Proposition::Equal(
                             scrutinee.clone(),
@@ -10069,7 +10069,7 @@ impl ExecutionProofCore {
                         };
                         if *other != scrutinee
                             && !matches!(other, Term::Algebraic(term)
-                                if matches!(term.node, crate::kernel::AlgebraicTermNode::Constructor { .. }))
+                                if matches!(term.native_compat().node, crate::kernel::AlgebraicTermNode::Constructor { .. }))
                         {
                             arm_facts = arm_facts
                                 .with_fact(Proposition::Equal(other.clone(), constructor.clone()));
@@ -10096,8 +10096,8 @@ impl ExecutionProofCore {
                     body_clauses = crate::kernel::functions::matched_resource_instance_case_clauses(
                         &self.state,
                         projection,
-                        model,
-                        constructor,
+                        model.native_compat(),
+                        constructor.native_compat(),
                         definitions,
                         arm_facts.assumptions(),
                     );
@@ -10115,7 +10115,7 @@ impl ExecutionProofCore {
                     crate::kernel::AlgebraicTermNode::Constructor { .. }
                 ) && let Proposition::Equal(left, Term::Algebraic(constructor)) = case
                     && let crate::kernel::AlgebraicTermNode::Constructor { variant, fields } =
-                        &constructor.node
+                        &constructor.native_compat().node
                 {
                     let spelled_fields = fields
                         .iter()
@@ -10136,14 +10136,14 @@ impl ExecutionProofCore {
                         .collect::<Vec<_>>();
                     if spelled_fields != *fields {
                         let spelled = crate::kernel::AlgebraicTerm {
-                            algebraic_type: constructor.algebraic_type.clone(),
+                            algebraic_type: constructor.native_compat().algebraic_type.clone(),
                             node: crate::kernel::AlgebraicTermNode::Constructor {
                                 variant: variant.clone(),
                                 fields: spelled_fields,
                             },
                         };
                         arm_facts = arm_facts
-                            .with_fact(Proposition::Equal(left.clone(), Term::Algebraic(spelled)));
+                            .with_fact(Proposition::Equal(left.clone(), Term::Algebraic(spelled.into())));
                     }
                 }
                 // A premise that reads the matched value holds of this arm's
@@ -10152,7 +10152,7 @@ impl ExecutionProofCore {
                 if let crate::kernel::AlgebraicTermNode::Variable(variable) = value.node
                     && let Proposition::Equal(_, Term::Algebraic(constructor)) = case
                 {
-                    for instance in matched_value_premise_instances(facts, variable, constructor) {
+                    for instance in matched_value_premise_instances(facts, variable, constructor.native_compat()) {
                         arm_facts = arm_facts.with_fact(instance);
                     }
                 }

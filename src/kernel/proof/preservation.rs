@@ -229,7 +229,10 @@ fn preserve_field(
             return Some(if a == b {
                 Proposition::condition_is(ConditionTerm::Constant(true), true)
             } else {
-                Proposition::Equal(Term::Algebraic(a.clone()), Term::Algebraic(b.clone()))
+                Proposition::Equal(
+                    Term::Algebraic(a.clone().into()),
+                    Term::Algebraic(b.clone().into()),
+                )
             });
         }
         (

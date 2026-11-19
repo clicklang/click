@@ -70,8 +70,8 @@ fn select(scrutinee: AlgebraicTerm, a: u64, b: u64, body: AlgebraicTerm) -> Alge
 }
 fn normalizes(a: AlgebraicTerm, b: AlgebraicTerm) -> bool {
     crate::kernel::proof::fact_reasoning::normalizes_context_free(&Proposition::Equal(
-        Term::Algebraic(a),
-        Term::Algebraic(b),
+        Term::Algebraic(a.into()),
+        Term::Algebraic(b.into()),
     ))
 }
 

@@ -3092,7 +3092,10 @@ pub(crate) fn propositions_alpha_equivalent(left: &Proposition, right: &Proposit
         (
             Proposition::Equal(Term::Algebraic(al), Term::Algebraic(ar)),
             Proposition::Equal(Term::Algebraic(bl), Term::Algebraic(br)),
-        ) => retained_syntax::algebraic_equal(al, bl) && retained_syntax::algebraic_equal(ar, br),
+        ) => {
+            retained_syntax::algebraic_equal(al.native_compat(), bl.native_compat())
+                && retained_syntax::algebraic_equal(ar.native_compat(), br.native_compat())
+        }
         (
             Proposition::MemoryLoadable {
                 memory: left_memory,

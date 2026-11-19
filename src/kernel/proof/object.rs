@@ -1772,8 +1772,8 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
             .focused_proposition()
             .ok_or("match requires a proposition goal")?;
         let equality = Proposition::Equal(
-            crate::kernel::Term::Algebraic(value.clone()),
-            crate::kernel::Term::Algebraic(value.clone()),
+            crate::kernel::Term::Algebraic(value.clone().into()),
+            crate::kernel::Term::Algebraic(value.clone().into()),
         );
         let reserved = crate::kernel::proposition_variables(goal.proposition())
             .into_iter()

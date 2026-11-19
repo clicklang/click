@@ -1378,7 +1378,7 @@ impl Printer<'_> {
                 Some(atom(value.to_string()))
             }
             Term::ProgramValue(value) => self.cvalue(value.native_compat(), depth + 1),
-            Term::Algebraic(value) => self.algebraic(value, depth + 1),
+            Term::Algebraic(value) => self.algebraic(value.native_compat(), depth + 1),
             _ if !self.source_mode() => None,
             Term::Condition(condition) => self.condition(condition, true, depth + 1),
             Term::PointerOffset(offset) => Some(atom(self.offset(offset, depth + 1))),

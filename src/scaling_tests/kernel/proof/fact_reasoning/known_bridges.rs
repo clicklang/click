@@ -226,12 +226,10 @@ fn non_numeric_arm_equations_use_only_the_written_guard() {
     };
     let a = constructor("A");
     let algebraic = Proposition::Equal(
-        Term::Algebraic(AlgebraicTerm::if_then_else(
-            guard.clone(),
-            a.clone(),
-            constructor("B"),
-        )),
-        Term::Algebraic(a),
+        Term::Algebraic(
+            AlgebraicTerm::if_then_else(guard.clone(), a.clone(), constructor("B")).into(),
+        ),
+        Term::Algebraic(a.into()),
     );
     let mut costs = Vec::new();
     for size in [8, 32, 128, 512] {

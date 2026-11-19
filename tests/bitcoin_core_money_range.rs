@@ -18,6 +18,8 @@ use click::surface::{
 use cpp_description::{load_import, lock_section_mut, lock_source_mut, refresh_import};
 #[path = "support/pinned_clang.rs"]
 mod pinned_clang;
+#[path = "support/span_by_value.rs"]
+mod span_by_value;
 use pinned_clang::{output, pinned_clang, sha256};
 
 const ARCHIVE: &[u8] =
@@ -1328,6 +1330,21 @@ fn pinned_span_fixture_with_exact_dependencies(
     fs::remove_file(exporter).unwrap();
     let import = load_import(&config_path).unwrap();
     (root, import)
+}
+
+#[test]
+#[ignore = "nightly: pinned libstdc++ by-value span proof and replay"]
+fn libstdcxx_span_by_value_caller_uses_the_verified_helper() {
+    let (root, import) = pinned_span_fixture_with_exact_dependencies(
+        "by-value-helper",
+        span_by_value::CPP,
+        &[
+            "sysroot/usr/include/c++/12/span",
+            "sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h",
+        ],
+    );
+    span_by_value::check(&root, &import);
+    fs::remove_dir_all(root).unwrap();
 }
 
 #[test]

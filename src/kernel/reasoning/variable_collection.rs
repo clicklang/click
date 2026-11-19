@@ -752,7 +752,9 @@ pub(in crate::kernel) fn collect_term_bitvector_variables(
             collect_program_value_bitvector_variables(value.native_compat(), variables);
         }
         Term::Sequence(sequence) => collect_sequence_bitvector_variables(sequence, variables),
-        Term::Algebraic(term) => collect_algebraic_term_bitvector_variables(term, variables),
+        Term::Algebraic(term) => {
+            collect_algebraic_term_bitvector_variables(term.native_compat(), variables)
+        }
         Term::Memory(memory) => collect_memory_bitvector_variables(memory, variables),
         Term::ExecutionState(state) => {
             collect_execution_state_bitvector_variables(state, variables)

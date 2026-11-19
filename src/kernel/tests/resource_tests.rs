@@ -1443,12 +1443,12 @@ fn resource_match_kernel_checks_schema_case_and_ownership() {
     );
     let unknown = PureFactContext::new();
     let set = unknown.clone().assume_proposition(Proposition::Equal(
-        Term::Algebraic(model.clone()),
-        Term::Algebraic(constructor("Set")),
+        Term::Algebraic(model.clone().into()),
+        Term::Algebraic(constructor("Set").into()),
     ));
     let clear = unknown.clone().assume_proposition(Proposition::Equal(
-        Term::Algebraic(model),
-        Term::Algebraic(constructor("Clear")),
+        Term::Algebraic(model.into()),
+        Term::Algebraic(constructor("Clear").into()),
     ));
     assert!(rewrite_resource_instance(&state, &instance, &definition, &unknown, true).is_err());
     let (empty, facts) =
@@ -1719,8 +1719,10 @@ fn resource_instances_distinguish_identity_from_equal_field_state() {
     let empty = PureFactContext::new();
     let context = ResourceContext::new().unchecked_with_fact(owned.clone());
     assert!(!context.satisfies_fact(&equal_state, &empty));
-    let assumptions =
-        empty.assume_proposition(Proposition::Equal(Term::Algebraic(m), Term::Algebraic(n)));
+    let assumptions = empty.assume_proposition(Proposition::Equal(
+        Term::Algebraic(m.into()),
+        Term::Algebraic(n.into()),
+    ));
     assert!(context.satisfies_fact(&equal_state, &assumptions));
     assert!(resources_directly_match(
         owned.resource(),
@@ -1812,9 +1814,10 @@ fn resource_instance_projections_use_owned_current_or_explicit_entry_state() {
         !crate::kernel::search::ProofSearch::proves(&(empty), &paths[0].proposition),
         "ownership alone must not imply preservation"
     );
-    let equal = empty
-        .clone()
-        .assume_proposition(Proposition::Equal(Term::Algebraic(n), Term::Algebraic(m)));
+    let equal = empty.clone().assume_proposition(Proposition::Equal(
+        Term::Algebraic(n.into()),
+        Term::Algebraic(m.into()),
+    ));
     assert!(crate::kernel::search::ProofSearch::proves(
         &(equal),
         &paths[0].proposition
@@ -2151,8 +2154,14 @@ fn symbolic_resource_indices_preserve_types_equality_and_linear_transfer() {
         );
 
         for equality in [
-            Proposition::Equal(Term::Algebraic(m.clone()), Term::Algebraic(n.clone())),
-            Proposition::Equal(Term::Algebraic(n.clone()), Term::Algebraic(m.clone())),
+            Proposition::Equal(
+                Term::Algebraic(m.clone().into()),
+                Term::Algebraic(n.clone().into()),
+            ),
+            Proposition::Equal(
+                Term::Algebraic(n.clone().into()),
+                Term::Algebraic(m.clone().into()),
+            ),
             Proposition::condition_is(
                 ConditionTerm::AlgebraicEqual(Box::new(m.clone()), Box::new(n.clone())),
                 true,
@@ -3979,8 +3988,8 @@ fn matched_resource_integer_binding_is_checked_and_substituted() {
             .unchecked_with_fact(ResourceFact::own(Resource::Instance(instance.clone()))),
     );
     let assumptions = PureFactContext::new().assume_proposition(Proposition::Equal(
-        Term::Algebraic(model),
-        Term::Algebraic(constructor),
+        Term::Algebraic(model.into()),
+        Term::Algebraic(constructor.into()),
     ));
     let selected = crate::kernel::rewrite_resource_instance_selecting_children(
         &state,
@@ -4117,8 +4126,8 @@ fn matched_resource_integer_binding_does_not_capture_free_integer_field() {
             .unchecked_with_fact(ResourceFact::own(Resource::Instance(instance.clone()))),
     );
     let assumptions = PureFactContext::new().assume_proposition(Proposition::Equal(
-        Term::Algebraic(model),
-        Term::Algebraic(constructor),
+        Term::Algebraic(model.into()),
+        Term::Algebraic(constructor.into()),
     ));
     let (_, unfolded_facts) =
         rewrite_resource_instance(&state, &instance, &definition, &assumptions, true).unwrap();
@@ -4423,8 +4432,8 @@ fn resource_model_arm_selection_decides_only_entailed_arms() {
     };
     let equal = |left: &AlgebraicTerm, right: &AlgebraicTerm| {
         Proposition::Equal(
-            Term::Algebraic(left.clone()),
-            Term::Algebraic(right.clone()),
+            Term::Algebraic(left.clone().into()),
+            Term::Algebraic(right.clone().into()),
         )
     };
 
@@ -4489,8 +4498,8 @@ fn resource_model_possible_arms_are_the_unrefuted_ones() {
     let reserved = arm_selection_constructor(&ty, "Reserved", vec![]);
     let exclusion = |value: &AlgebraicTerm| {
         Proposition::Not(Box::new(Proposition::Equal(
-            Term::Algebraic(model.clone()),
-            Term::Algebraic(value.clone()),
+            Term::Algebraic(model.clone().into()),
+            Term::Algebraic(value.clone().into()),
         )))
     };
 

@@ -88,6 +88,7 @@ fn authoritative_memory_projection_scales_with_used_members_not_unrelated_frames
         clause_position: None,
         section_index: None,
         selected_mutex_source: None,
+        mutex_storage: None,
     }];
     let projection = project_contract_memory_effects(
         &state,

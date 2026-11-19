@@ -294,7 +294,8 @@ impl<'a> Proof<'a> {
             else {
                 unreachable!()
             };
-            let AlgebraicTermNode::Constructor { fields, .. } = &constructor.node else {
+            let AlgebraicTermNode::Constructor { fields, .. } = &constructor.native_compat().node
+            else {
                 unreachable!()
             };
             let mut scope = self.state.locals().values.clone();
@@ -668,8 +669,9 @@ impl<'a> Proof<'a> {
             right: ContractExpression::AlgebraicConstructor {
                 algebraic_type: AlgebraicTypeApplication {
                     rigid: false,
-                    name: constructor.algebraic_type.name.clone(),
+                    name: constructor.native_compat().algebraic_type.name.clone(),
                     arguments: constructor
+                        .native_compat()
                         .algebraic_type
                         .arguments
                         .iter()

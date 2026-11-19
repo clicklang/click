@@ -269,7 +269,6 @@ impl StoredIntegerTerm {
 #[derive(Clone)]
 pub struct StoredAlgebraicTerm(StoredAlgebraic);
 #[derive(Clone)]
-#[allow(dead_code)] // Prepared retained branch; native inputs stay native.
 enum StoredAlgebraic {
     Input(Arc<AlgebraicTerm>),
     Shared(KernelTerm),
@@ -279,7 +278,6 @@ impl From<AlgebraicTerm> for StoredAlgebraicTerm {
         Self(StoredAlgebraic::Input(Arc::new(value)))
     }
 }
-#[allow(dead_code)] // Term storage activates these entry points in the next slice.
 impl StoredAlgebraicTerm {
     pub(crate) fn from_root(root: KernelTerm) -> Option<Self> {
         matches!(root.ty(), KernelType::Algebraic(_)).then(|| Self(StoredAlgebraic::Shared(root)))
@@ -288,6 +286,14 @@ impl StoredAlgebraicTerm {
         match &self.0 {
             StoredAlgebraic::Input(_) => None,
             StoredAlgebraic::Shared(root) => Some(root),
+        }
+    }
+    pub(crate) fn into_native_compat(self) -> AlgebraicTerm {
+        match self.0 {
+            StoredAlgebraic::Input(value) => Arc::unwrap_or_clone(value),
+            StoredAlgebraic::Shared(root) => KernelTermExport::default()
+                .algebraic(&root)
+                .expect("algebraic field output"),
         }
     }
     pub(crate) fn native_compat(&self) -> &AlgebraicTerm {

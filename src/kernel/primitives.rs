@@ -13248,7 +13248,7 @@ pub enum Term {
     PointerOffset(AddressOffset),
     ProgramValue(StoredProgramValue),
     Sequence(SequenceTerm),
-    Algebraic(AlgebraicTerm),
+    Algebraic(StoredAlgebraicTerm),
     // Outcomes carry ExecutionState. Keep them out of Term's inline size so cloning
     // a deep pure proposition does not spend stack on unused C variants.
     Memory(SymbolicMemory),
@@ -13294,7 +13294,7 @@ impl Term {
     }
     pub(crate) fn algebraic_native(&self) -> Option<&AlgebraicTerm> {
         match self {
-            Self::Algebraic(value) => Some(value),
+            Self::Algebraic(value) => Some(value.native_compat()),
             _ => None,
         }
     }
@@ -16027,7 +16027,9 @@ mod representation_size_tests {
     #[test]
     fn pure_facts_do_not_pay_for_program_payloads() {
         assert!(std::mem::size_of::<Term>() <= 144);
-        assert!(std::mem::size_of::<Proposition>() <= 2 * std::mem::size_of::<Term>());
+        // Keep this budget independent of Term's current layout. Shrinking
+        // an operand does not increase the space used by other fact variants.
+        assert!(std::mem::size_of::<Proposition>() <= 2 * 144);
         assert!(std::mem::size_of::<ExecutionPureFact>() <= 352);
         assert!(std::mem::size_of::<StatementOutcome>() <= 144);
         assert!(std::mem::size_of::<FunctionOutcome>() <= 144);

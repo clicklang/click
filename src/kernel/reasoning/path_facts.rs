@@ -207,7 +207,7 @@ pub(in crate::kernel) fn memory_effect_execution_facts(
 pub(crate) fn solve_builtin_prop(proposition: &Proposition) -> bool {
     match proposition {
         Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) => {
-            algebraic_terms_equal(left, right)
+            algebraic_terms_equal(left.native_compat(), right.native_compat())
         }
         Proposition::Equal(Term::Integer(left), Term::Integer(right)) => left == right,
         Proposition::Equal(Term::Sequence(left), Term::Sequence(right)) => {
@@ -304,7 +304,7 @@ pub(in crate::kernel) fn disprove_builtin_prop(proposition: &Proposition) -> boo
             program_values_definitely_distinct(left.native_compat(), right.native_compat())
         }
         Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) => {
-            algebraic_terms_definitely_distinct(left, right)
+            algebraic_terms_definitely_distinct(left.native_compat(), right.native_compat())
         }
         Proposition::Equal(Term::Integer(left), Term::Integer(right)) => left != right,
         Proposition::And(left, right) => {

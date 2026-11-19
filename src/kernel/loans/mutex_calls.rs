@@ -32,6 +32,7 @@ pub(crate) struct MutexUseCallTransfer {
     pub(crate) usage: MutexUseBinding,
     source: ResourceFact,
     selected_alias: Option<Variable>,
+    pub(crate) mutex_storage: Option<Arc<MemoryRange>>,
     interface: Option<Arc<crate::kernel::mutexes::InitializedMutexInterface>>,
     required_type: Option<ResourceDescription>,
     loan: MutexUseLoan,
@@ -109,6 +110,7 @@ impl MutexUseCallTransfer {
             usage: loan.usage,
             source: source.clone(),
             selected_alias: None,
+            mutex_storage: None,
             interface: None,
             required_type: None,
             loan,
@@ -191,6 +193,7 @@ impl MutexUseCallTransfer {
             usage: loan.usage,
             source: source.clone(),
             selected_alias: None,
+            mutex_storage: None,
             interface: None,
             required_type: None,
             loan,
@@ -773,6 +776,7 @@ mod tests {
             clause_position: None,
             section_index: Some(0),
             selected_mutex_source: None,
+            mutex_storage: None,
         };
         let second = plan_stable_view_transfer_with_bindings_and_composites_for_worker(
             &first.caller_resources,
@@ -1121,6 +1125,7 @@ mod tests {
             clause_position: None,
             section_index: Some(0),
             selected_mutex_source: Some(Arc::new((Variable(500), second_fact.clone()))),
+            mutex_storage: None,
         };
         // A generic lookup is ambiguous here. The selected proof name picks
         // the second share even when the evaluated clause picked its sibling.

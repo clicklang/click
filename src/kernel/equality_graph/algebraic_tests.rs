@@ -42,7 +42,10 @@ fn constructor(ty: &AlgebraicType, variant: &str, fields: Vec<AlgebraicValue>) -
     }
 }
 fn eq(a: &AlgebraicTerm, b: &AlgebraicTerm) -> Proposition {
-    Proposition::Equal(Term::Algebraic(a.clone()), Term::Algebraic(b.clone()))
+    Proposition::Equal(
+        Term::Algebraic(a.clone().into()),
+        Term::Algebraic(b.clone().into()),
+    )
 }
 fn condition(a: &AlgebraicTerm, b: &AlgebraicTerm, truth: bool) -> Proposition {
     Proposition::condition_is(

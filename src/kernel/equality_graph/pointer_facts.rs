@@ -65,7 +65,9 @@ impl EqualityGraph {
                 Work::Term(Term::ProgramValue(value)) => {
                     pending.push(Work::Value(value.native_compat()));
                 }
-                Work::Term(Term::Algebraic(model)) => pending.push(Work::Model(model)),
+                Work::Term(Term::Algebraic(model)) => {
+                    pending.push(Work::Model(model.native_compat()));
+                }
                 Work::Model(AlgebraicTerm {
                     node: AlgebraicTermNode::Constructor { fields, .. },
                     ..
