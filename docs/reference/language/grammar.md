@@ -79,6 +79,32 @@ theorem float_bits() {
 }
 ```
 
+## Typed loads
+
+`load<T>(p)` reads the object at address `p` as type `T`. It is one memory
+read with a type argument, the kernel's typed load, so it covers every type a
+read can have:
+- a scalar, such as `int8`, `uint64`, `int128`, `Bool`, `float`, or `double`
+- a data pointer, such as `void*`, `int32*`, or `uint8**`
+- a function pointer, written `R (*)(A, ...)`
+
+`volatile T` makes the access volatile. `const T*` reads a pointer whose
+pointee is `const`. A struct is not read whole: read its fields.
+
+A C read such as `*p`, `p->f`, or `p[i]` already names its place. A
+specification writes `load<T>` for a read whose address has no such place,
+such as one byte of a wider cell, `load<uint8>(byte_offset(p, n))`.
+Expansion writes it for the same reason. The type argument is explicit
+because it is not the static type of `p`.
+
+<!-- verified-example: mdtests/typed_load_built_in_on_comparison_left.md -->
+```click
+uint64 read64(uint64* p) {
+    views p[0..1];
+    ensures load<uint64>(p) == result;
+} by { step(); solve(); }
+```
+
 ## Word index
 
 Surface Click uses contextual words rather than a separate token kind for
@@ -116,7 +142,7 @@ documentation inventory keep the following accepted words synchronized.
 | `exact` | `exact(place)` reads `place` named by the state in scope itself, with no version walk ([`exact(...)`](index.md#exact)). |
 | `float32_from_bits`, `float64_from_bits` | Literal-only IEEE bit-pattern expressions; see [exact float bit literals](#exact-float-bit-literals). |
 | `sizeof`, `byte_offset`, `address` | Supported scalar, pointer, and struct-layout sizes, byte-granularity pointer-offset expressions, and the LP64 integer representation of an object pointer. |
-| `load_int32`, `load_uint8`, `load_uint16`, `load_uint32`, `load_int64`, `load_uint64`, `load_int32_pointer`, `load_uint8_pointer`, `load_uint16_pointer`, `load_int32_pointer_pointer`, `load_uint8_pointer_pointer`, `load_uint16_pointer_pointer` | Typed memory-load expressions used by checked expansion when no higher-level source form is available. |
+| `load` | Typed memory read `load<T>(p)`: reads the object at `p` as `T`, a scalar, data pointer, or function pointer `R (*)(A, ...)`; `volatile T` makes the access volatile and `const T*` reads a pointer to `const T`. Expansion writes it for a read with no C place to name it. See [Typed loads](#typed-loads). |
 | `by`, `using` | Proof introduction and exact-premise syntax. |
 | `mark`, `step`, `step_until` | Execution tactics. |
 | `unfold`, `fold`, `observe`, `construct`, `open` | Predicate and resource tactics. |

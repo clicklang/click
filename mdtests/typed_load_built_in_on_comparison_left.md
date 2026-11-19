@@ -1,7 +1,7 @@
 # built-in expressions keep their meaning on either comparison side
 
-The typed scalar and pointer loads and `sizeof` are expression primitives, not
-user calls. A proposition that starts with one must parse as that expression
+A typed load `load<T>(...)` and `sizeof` are expression primitives, not user
+calls. A proposition that starts with one must parse as that expression
 regardless of which side of a comparison it starts on, inside arithmetic, or
 inside parentheses.
 
@@ -17,22 +17,22 @@ verifying "typed_load_left.c";
 
 uint64 read64(uint64* p) {
     views p[0..1];
-    ensures load_uint64(p) == result;
+    ensures load<uint64>(p) == result;
 } by { step(); solve(); }
 
 uint32 read32(uint32* p) {
     views p[0..1];
-    ensures load_uint32(p) == result;
+    ensures load<uint32>(p) == result;
 } by { step(); solve(); }
 
 uint8 read8(uint8* p) {
     views p[0..1];
-    ensures 1 + load_uint8(p) == result + 1;
+    ensures 1 + load<uint8>(p) == result + 1;
 } by { step(); solve(); }
 
 int64 readi64(int64* p) {
     views p[0..1];
-    ensures (load_int64(p)) == result;
+    ensures (load<int64>(p)) == result;
 } by { step(); solve(); }
 
 theorem reversed_orientation() {

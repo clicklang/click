@@ -16983,7 +16983,7 @@ int32 run(int32& value) { owns value; ensures result == 1; ensures value == 1; }
 
 /// A failure's "C operation" line prints a read through a scalar reference
 /// parameter as the sidecar writes it, `value`, not as the kernel term
-/// `load_int32(&value)`.
+/// `load<int32>(&value)`.
 #[test]
 fn cpp_scalar_reference_reads_print_as_referents_in_a_c_operation_offline() {
     let project = Project::with_fixture(
@@ -17005,7 +17005,7 @@ fn cpp_scalar_reference_reads_print_as_referents_in_a_c_operation_offline() {
         error.message()
     );
     assert!(
-        !error.message().contains("load_int32(&"),
+        !error.message().contains("load<int32>(&"),
         "{}",
         error.message()
     );
@@ -17035,7 +17035,7 @@ fn cpp_struct_reference_reads_print_as_fields_in_a_c_operation_offline() {
         error.message()
     );
     assert!(
-        !error.message().contains("load_int32(&"),
+        !error.message().contains("load<int32>(&"),
         "{}",
         error.message()
     );
@@ -17109,7 +17109,7 @@ fn cpp_expansion_writes_a_branch_over_a_reference_by_its_referent_offline() {
         position.column,
     )
     .unwrap();
-    assert!(!expanded.contains("load_int32(&"), "{expanded}");
+    assert!(!expanded.contains("load<int32>(&"), "{expanded}");
     verify_program_prepared_project(&parsed.with_entry_source(expanded.clone()), &import)
         .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
 }
@@ -17152,7 +17152,7 @@ fn cpp_expansion_writes_a_branch_over_a_struct_reference_by_its_field_offline() 
         expanded.contains("if at(region(0).entry, c.second) > "),
         "{expanded}"
     );
-    assert!(!expanded.contains("load_int32("), "{expanded}");
+    assert!(!expanded.contains("load<int32>("), "{expanded}");
     verify_program_prepared_project(&parsed.with_entry_source(expanded.clone()), &import)
         .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
 }

@@ -255,7 +255,7 @@ mod tests {
     }
 
     /// A read in a 64-bit equality raises as the read as written, not as a
-    /// typed word read at the equality's signedness (`load_int64(..)`),
+    /// typed word read at the equality's signedness (`load<int64>(..)`),
     /// which lowers to a different read: `left()`'s result equals the
     /// counter it read after the call.
     #[test]

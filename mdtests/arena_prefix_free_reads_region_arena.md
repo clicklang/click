@@ -142,15 +142,15 @@ void arena_release(struct region* region) {
             separate(memory(at(after_assignment, &arena->live_regions)[0]), memory(at(after_assignment, &region->arena->data)[0]));
         };
     }
-    have load_int32_pointer(at(after_assignment, &region->arena->data)) == at(after_assignment, region->arena->data) by {
+    have load<int32*>(at(after_assignment, &region->arena->data)) == at(after_assignment, region->arena->data) by {
         preserve(memory(at(after_assignment, &region->arena->data)[0]), statement(2));
     }
-    have region->arena->data == load_int32_pointer(at(after_assignment, &region->arena->data)) by {
+    have region->arena->data == load<int32*>(at(after_assignment, &region->arena->data)) by {
         rewrite(region->arena, at(after_assignment, region->arena));
         normalize();
     }
     have region->arena->data == at(after_assignment, region->arena->data) by {
-        rewrite(region->arena->data, load_int32_pointer(at(after_assignment, &region->arena->data)));
+        rewrite(region->arena->data, load<int32*>(at(after_assignment, &region->arena->data)));
         known();
     }
     have region->arena == at(before_store, region->arena) by {

@@ -57,7 +57,7 @@ only by the tests that read them.
   `memcpy` on a wider object, about 48 files) and the kernel's byte view
   handles it (`docs/internals/byte-representation.md`). A specification that
   must state one byte of a wider cell writes the explicit load,
-  `load_uint8(byte_offset(p, n))`.
+  `load<uint8>(byte_offset(p, n))`.
 - Holding a resource, viewed or owned, lets C read the memory it owns
   directly; a write needs `unfold`, and a child's memory is not read
   through. The views are attached to the owner and retire with it. The

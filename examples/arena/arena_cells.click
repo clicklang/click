@@ -1697,7 +1697,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     known();
                 }
                 observe(at(opened, arena->occupied)[0..at(opened, arena->capacity)]);
-                have forall (k: int32) { i <= k and k < end implies load_int32((old(arena->occupied) + k)) == 0 } by {
+                have forall (k: int32) { i <= k and k < end implies load<int32>((old(arena->occupied) + k)) == 0 } by {
                     intro();
                     intro();
                     instantiate(forall (j: int32) { i <= j and j < end implies arena->occupied[j] == 0 }, k);
@@ -1709,7 +1709,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                         &arena->occupied[k] == old(&arena->occupied[k]);
                     };
                 }
-                have forall (k: int32) { start <= k and k < i implies load_int32((old(arena->occupied) + k)) == 1 } by {
+                have forall (k: int32) { start <= k and k < i implies load<int32>((old(arena->occupied) + k)) == 1 } by {
                     intro();
                     intro();
                     instantiate(forall (j: int32) { start <= j and j < i implies arena->occupied[j] == 1 }, k);

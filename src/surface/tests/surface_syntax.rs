@@ -723,10 +723,10 @@ fn parses_expanded_typed_loads_and_old_loadability() {
         } by {
             solve() using {
                 viewable(old(owner[0..6]));
-                load_int32_pointer((owner + 2)) == data;
+                load<int32*>((owner + 2)) == data;
                 separate(
                     memory(owner[0..6]),
-                    memory(load_int32_pointer((owner + 2))[0..load_int32(owner)])
+                    memory(load<int32*>((owner + 2))[0..load<int32>(owner)])
                 );
             }
         }
@@ -2593,7 +2593,7 @@ fn parses_parenthesized_loaded_pointer_segment_base() {
             verifying "read.c";
 
             int32 read(int32* owner) {
-                requires at(function.entry, viewable((load_int32_pointer((owner + 2)) + 0)[0..1]));
+                requires at(function.entry, viewable((load<int32*>((owner + 2)) + 0)[0..1]));
                 ensures result == 0;
             }
         "#;
@@ -3643,26 +3643,20 @@ fn a_diverges_function_never_yields_termination_evidence() {
     assert!(!session.function_termination_is_verified("drain_then_wait"));
 }
 
-/// Every documented typed load and `sizeof` is an expression primitive, not a
-/// user call. A proposition starting with one must parse as that expression on
+/// A typed load `load<T>(...)` and `sizeof` are expression primitives, not
+/// user calls. A proposition starting with one must parse as that expression on
 /// either side of a comparison, inside arithmetic, and inside parentheses,
 /// while user-style calls keep the call interpretation.
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_27")]
 fn parses_built_in_expressions_on_either_comparison_side() {
     let loads = [
-        "load_int32",
-        "load_uint8",
-        "load_uint16",
-        "load_uint32",
-        "load_int64",
-        "load_uint64",
-        "load_int32_pointer",
-        "load_uint8_pointer",
-        "load_uint16_pointer",
-        "load_int32_pointer_pointer",
-        "load_uint8_pointer_pointer",
-        "load_uint16_pointer_pointer",
+        "load<int32>",
+        "load<uint8>",
+        "load<int64>",
+        "load<uint64>",
+        "load<int32*>",
+        "load<uint8**>",
     ];
     for load in loads {
         parser::parse_file_items(&format!(
@@ -3693,6 +3687,95 @@ fn parses_built_in_expressions_on_either_comparison_side() {
         }",
     )
     .expect("`byte_offset` keeps its built-in meaning");
+}
+
+/// `load<T>(p)` lowers to the kernel's typed load of `T`, and printing that
+/// load writes `load<T>(p)` back: raising and then lowering returns the same
+/// term, for every kind of type a load reads and for its qualifiers.
+#[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_27")]
+fn typed_loads_lower_and_raise_back_to_the_same_term() {
+    let lowered_load = |text: &str| {
+        let file = parser::parse_file_items(&format!(
+            "function read(p: uint64*) -> Integer {{ {text} }}"
+        ))
+        .unwrap_or_else(|error| panic!("`{text}` should parse: {}", error.report()));
+        let body = file.click_function_definitions()[0].body().unwrap().clone();
+        let (ContractExpression::ProgramExpression(lowered @ ProgramExpression::TypedLoad { .. })
+        | ContractExpression::CUnary {
+            lowered: lowered @ ProgramExpression::TypedLoad { .. },
+            ..
+        }) = &body
+        else {
+            panic!("`{text}` should lower to a typed load: {body:?}");
+        };
+        (body.clone(), lowered.clone())
+    };
+    for (text, expected) in [
+        ("load<int8>(p)", (ProgramType::Int8, false, false)),
+        ("load<uint16>(p)", (ProgramType::UInt16, false, false)),
+        ("load<int32>(p)", (ProgramType::Int32, false, false)),
+        ("load<uint64>(p)", (ProgramType::UInt64, false, false)),
+        ("load<int128>(p)", (ProgramType::Int128, false, false)),
+        ("load<Bool>(p)", (ProgramType::Bool, false, false)),
+        ("load<float>(p)", (ProgramType::Float32, false, false)),
+        ("load<double>(p)", (ProgramType::Float64, false, false)),
+        ("load<void*>(p)", (ProgramType::VoidPointer, false, false)),
+        ("load<int32*>(p)", (ProgramType::Int32Pointer, false, false)),
+        (
+            "load<uint8**>(p)",
+            (ProgramType::UInt8PointerPointer, false, false),
+        ),
+        (
+            "load<const uint8*>(p)",
+            (ProgramType::UInt8Pointer, false, true),
+        ),
+        ("load<volatile int32>(p)", (ProgramType::Int32, true, false)),
+        (
+            "load<int32 (*)(int32, uint8*)>(p)",
+            (
+                ProgramType::FunctionPointer(ProgramType::qualified_function_pointer_signature(
+                    ProgramType::Int32,
+                    false,
+                    &[
+                        (ProgramType::Int32, false),
+                        (ProgramType::UInt8Pointer, false),
+                    ],
+                )),
+                false,
+                false,
+            ),
+        ),
+    ] {
+        let (body, lowered) = lowered_load(text);
+        let ProgramExpression::TypedLoad {
+            value_type,
+            volatile,
+            pointee_constant,
+            ..
+        } = &lowered
+        else {
+            unreachable!()
+        };
+        assert_eq!(
+            (*value_type, *volatile, *pointee_constant),
+            expected,
+            "{text}"
+        );
+        let raised = crate::surface::diagnostics::describe_contract_expression(&body);
+        assert_eq!(raised, text, "raising `{text}`");
+        let (_, relowered) = lowered_load(&raised);
+        assert_eq!(relowered, lowered, "lowering the raised `{raised}`");
+    }
+    for refused in ["load<const int32>(p)", "load<void>(p)"] {
+        assert!(
+            parser::parse_file_items(&format!(
+                "function read(p: uint64*) -> Integer {{ {refused} }}"
+            ))
+            .is_err(),
+            "`{refused}` should be refused"
+        );
+    }
 }
 
 #[test]
@@ -5419,6 +5502,7 @@ test_batches! {
     ],
     surface_syntax_batch_27: [
         parses_built_in_expressions_on_either_comparison_side,
+        typed_loads_lower_and_raise_back_to_the_same_term,
         resource_array_size_excludes_struct_padding,
         a_child_resource_is_owned_like_any_other,
         an_invariant_label_names_it_in_a_failure,

@@ -5222,8 +5222,8 @@ fn string_literal_pointer_raising_names_the_exact_source_occurrence() {
 fn typed_word_reads_round_trip_their_observation_without_a_sign_cast() {
     use crate::kernel::{IntegerTerm, Pointer};
     for (format, name) in [
-        (MachineIntegerType::Int64, "load_int64"),
-        (MachineIntegerType::UInt64, "load_uint64"),
+        (MachineIntegerType::Int64, "load<int64>"),
+        (MachineIntegerType::UInt64, "load<uint64>"),
     ] {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = Address::symbolic(Variable(981_200));

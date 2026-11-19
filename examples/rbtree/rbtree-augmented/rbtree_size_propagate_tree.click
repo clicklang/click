@@ -93,13 +93,13 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
                                 }
                                 have parent == sized_context_parent(sized_path_context(path_model), stop);
                                 let { metadata: metadata, left: left, right: right } = unfold(repaired);
-                                have ((load_uint64(&child_node->rb) & ~3) as (struct rb_node *)) == parent by { known(); }
+                                have ((load<uint64>(&child_node->rb) & ~3) as (struct rb_node *)) == parent by { known(); }
                                 mark before_parent;
                                 step(); step();
                                 have rb == parent by { known(); }
-                                transport(at(before_parent, ((load_uint64(&child_node->rb) & ~3) as (struct rb_node *))) == parent,
-                                          ((load_uint64(&child_node->rb) & ~3) as (struct rb_node *)) == parent) using {
-                                    at(before_parent, ((load_uint64(&child_node->rb) & ~3) as (struct rb_node *))) == parent;
+                                transport(at(before_parent, ((load<uint64>(&child_node->rb) & ~3) as (struct rb_node *))) == parent,
+                                          ((load<uint64>(&child_node->rb) & ~3) as (struct rb_node *)) == parent) using {
+                                    at(before_parent, ((load<uint64>(&child_node->rb) & ~3) as (struct rb_node *))) == parent;
                                 };
                                 let sub = fold(sized_at(&child_node->rb), { model: SizedTree::Node(identity, parent, color, value, left_model, right_model), metadata: metadata, left: left, right: right });
                                 have rb == sized_context_parent(sized_path_context(path.model), stop) by {

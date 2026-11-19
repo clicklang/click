@@ -3510,11 +3510,13 @@ pub(in crate::surface) fn describe_resource_clause(resource: &ResourceClause) ->
 /// The C spelling of a function-pointer type, read back from the kernel's
 /// packed signature identity: a leading one, then the return type and each
 /// parameter as a base-46 digit whose upper half marks a `const` pointee.
-fn describe_callback_signature(signature: crate::kernel::CallbackSignature) -> String {
+pub(in crate::surface) fn describe_callback_signature(
+    signature: crate::kernel::CallbackSignature,
+) -> String {
     const TYPES: [&str; 23] = [
         "void", "int32", "uint8", "uint32", "int32*", "uint8*", "int32**", "uint8**", "int16",
         "uint16", "int64", "uint64", "int16*", "uint16*", "uint32*", "int64*", "uint64*", "float",
-        "double", "bool", "void*", "int8", "int8*",
+        "double", "Bool", "void*", "int8", "int8*",
     ];
     let Ok(mut encoded) = signature.to_string().parse::<u128>() else {
         return "a function pointer".to_string();

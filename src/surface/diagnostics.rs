@@ -6097,6 +6097,28 @@ pub(in crate::surface) fn describe_operator_kind(
     }
 }
 
+/// The type argument `T` of a typed load `load<T>(p)`, as the parser reads
+/// it back: the C type in Click's spelling, `volatile` for a volatile
+/// access, and `const` for a pointer whose pointee is `const`.
+pub(in crate::surface) fn typed_load_type_argument(
+    value_type: ProgramType,
+    volatile: bool,
+    pointee_constant: bool,
+) -> String {
+    let spelled = match value_type {
+        ProgramType::FunctionPointer(signature) => {
+            super::validation::describe_callback_signature(signature)
+        }
+        ProgramType::Bool => "Bool".to_string(),
+        value_type => crate::kernel::program_type_spelling(value_type)
+            .replace("float32", "float")
+            .replace("float64", "double"),
+    };
+    let constant = if pointee_constant { "const " } else { "" };
+    let volatile = if volatile { "volatile " } else { "" };
+    format!("{volatile}{constant}{spelled}")
+}
+
 pub(super) fn describe_program_expression(expression: &ProgramExpression) -> String {
     match expression {
         ProgramExpression::StringLiteral(identity) => identity.to_string(),
@@ -6332,71 +6354,11 @@ pub(super) fn describe_program_expression(expression: &ProgramExpression) -> Str
             {
                 return place;
             }
-            let name = match value_type {
-                ProgramType::Int128 => "load_int128",
-                ProgramType::UInt128 => "load_uint128",
-                ProgramType::Parameter(_) => "load_parameter",
-                ProgramType::ParameterPointer(_) => "load_parameter_pointer",
-                ProgramType::Void => "load_void",
-                ProgramType::Bool => "load_bool",
-                ProgramType::VoidPointer => "load_void_pointer",
-                ProgramType::VoidPointerPointer => "load_void_pointer_pointer",
-                ProgramType::Int8 => "load_int8",
-                ProgramType::Int16 => "load_int16",
-                ProgramType::Int32 => "load_int32",
-                ProgramType::UInt8 => "load_uint8",
-                ProgramType::UInt16 => "load_uint16",
-                ProgramType::UInt32 => "load_uint32",
-                ProgramType::Int64 => "load_int64",
-                ProgramType::UInt64 => "load_uint64",
-                ProgramType::Float32 => "load_float",
-                ProgramType::Float64 => "load_double",
-                ProgramType::Int8Pointer => "load_int8_pointer",
-                ProgramType::Int16Pointer => "load_int16_pointer",
-                ProgramType::UInt16Pointer => "load_uint16_pointer",
-                ProgramType::Int32Pointer => "load_int32_pointer",
-                ProgramType::UInt8Pointer => "load_uint8_pointer",
-                ProgramType::UInt32Pointer => "load_uint32_pointer",
-                ProgramType::Int64Pointer => "load_int64_pointer",
-                ProgramType::Int128Pointer => "load_int128_pointer",
-                ProgramType::UInt64Pointer => "load_uint64_pointer",
-                ProgramType::UInt128Pointer => "load_uint128_pointer",
-                ProgramType::Int8PointerPointer => "load_int8_pointer_pointer",
-                ProgramType::Int16PointerPointer => "load_int16_pointer_pointer",
-                ProgramType::UInt16PointerPointer => "load_uint16_pointer_pointer",
-                ProgramType::Int32PointerPointer => "load_int32_pointer_pointer",
-                ProgramType::UInt8PointerPointer => "load_uint8_pointer_pointer",
-                ProgramType::UInt32PointerPointer => "load_uint32_pointer_pointer",
-                ProgramType::Int64PointerPointer => "load_int64_pointer_pointer",
-                ProgramType::Int128PointerPointer => "load_int128_pointer_pointer",
-                ProgramType::UInt64PointerPointer => "load_uint64_pointer_pointer",
-                ProgramType::UInt128PointerPointer => "load_uint128_pointer_pointer",
-                ProgramType::Float32Pointer => "load_float_pointer",
-                ProgramType::Float64Pointer => "load_double_pointer",
-                ProgramType::Float32PointerPointer => "load_float_pointer_pointer",
-                ProgramType::Float64PointerPointer => "load_double_pointer_pointer",
-                ProgramType::FunctionPointer(_) => "load_function_pointer",
-                ProgramType::Int8Array(_) => {
-                    return format!("*{}", describe_program_expression(pointer));
-                }
-                ProgramType::Int32Array(_)
-                | ProgramType::UInt8Array(_)
-                | ProgramType::Int16Array(_)
-                | ProgramType::UInt16Array(_)
-                | ProgramType::UInt32Array(_)
-                | ProgramType::Int128Array(_)
-                | ProgramType::Int64Array(_)
-                | ProgramType::UInt128Array(_)
-                | ProgramType::UInt64Array(_)
-                | ProgramType::Float32Array(_)
-                | ProgramType::Float64Array(_) => {
-                    return format!("*{}", describe_program_expression(pointer));
-                }
-                ProgramType::PointerArray(_, _) => {
-                    return format!("*{}", describe_program_expression(pointer));
-                }
-            };
-            format!("{name}({})", describe_program_expression(pointer))
+            format!(
+                "load<{}>({})",
+                typed_load_type_argument(*value_type, *volatile, *pointee_constant),
+                describe_program_expression(pointer)
+            )
         }
         ProgramExpression::Index(base, index) => {
             // A read through the checked address of a C++ reference's
@@ -7431,11 +7393,14 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
                 ProgramExpression::PointerOffsetBytes { bytes, .. } => {
                     format!("byte_offset({operand}, {bytes})")
                 }
-                ProgramExpression::TypedLoad { value_type, .. } => format!(
-                    "load_{}({operand})",
-                    crate::kernel::program_type_spelling(*value_type)
-                        .replace(' ', "")
-                        .replace('*', "_pointer")
+                ProgramExpression::TypedLoad {
+                    value_type,
+                    volatile,
+                    pointee_constant,
+                    ..
+                } => format!(
+                    "load<{}>({operand})",
+                    typed_load_type_argument(*value_type, *volatile, *pointee_constant)
                 ),
                 ProgramExpression::Load(_) => format!("*({operand})"),
                 ProgramExpression::AddressOf(_) | ProgramExpression::Subobject { .. } => {

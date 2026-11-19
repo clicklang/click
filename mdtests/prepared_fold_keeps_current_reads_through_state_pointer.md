@@ -23,7 +23,7 @@ void make(struct holder* h) {
     produces z: ones(old(h->data));
 } by {
     step();
-    have forall(k: int32) { 0 <= k and k < 1 implies load_int32(old(h->data) + k) == 1 } by { solve(); }
+    have forall(k: int32) { 0 <= k and k < 1 implies load<int32>(old(h->data) + k) == 1 } by { solve(); }
     let z = fold(ones(old(h->data)), {next: 0});
     step_until(function.exit);
     solve();
