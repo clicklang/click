@@ -26,6 +26,7 @@ struct IndexedTactic {
 /// Queries never tokenize or scan source.
 pub struct ProofSourceIndex {
     tokens: Vec<SourceToken>,
+    parsed: Arc<ParsedBlocks>,
     characters: Vec<usize>,
     lines: Vec<usize>,
     positions: Vec<SourcePosition>,
@@ -82,7 +83,7 @@ impl ProofSourceIndex {
     pub(super) fn build(source: &str, spans: &SourceSpans) -> Result<Self, ClickError> {
         crate::instrumentation::record_deterministic_work(source.len());
         let tokens = proof_source_tokens(source, &spans.implicit_proofs)?;
-        let parsed = ParsedBlocks::new(&tokens, spans);
+        let parsed = Arc::new(ParsedBlocks::new(&tokens, spans));
         let mut characters = Vec::new();
         let mut lines = vec![0];
         for (offset, character) in source.char_indices() {
@@ -97,6 +98,7 @@ impl ProofSourceIndex {
             by_offset: HashMap::new(),
             starts: vec![Vec::new(); lines.len()],
             tokens,
+            parsed: parsed.clone(),
             characters,
             lines,
             blocks: HashMap::new(),
@@ -217,19 +219,44 @@ impl ProofSourceIndex {
     /// Claim roots use the same token stream as nested paths and containment.
     pub fn project_tactic_positions(
         &self,
-        project: &ClickProject,
+        _project: &ClickProject,
         claim: &str,
     ) -> Result<Vec<SourcePosition>, ClickError> {
+        self.tactic_positions(claim)
+    }
+
+    /// The outer tactic occurrences of a claim in this resolved source.
+    pub fn tactic_positions(&self, claim: &str) -> Result<Vec<SourcePosition>, ClickError> {
+        let (file, tokens) = self.proof_tokens()?;
+        Ok(tactic_source_offsets(file, claim, &tokens)?
+            .into_iter()
+            .map(|offset| self.position_at(offset))
+            .collect())
+    }
+
+    /// The expansion sites in the same source used for position lookups.
+    pub fn smart_tactic_sites(
+        &self,
+        click_source: &str,
+    ) -> Result<Vec<SmartTacticSourceSite>, ClickError> {
+        let (file, tokens) = self.proof_tokens()?;
+        smart_tactic_sites_from_entries(
+            click_source,
+            source_tactic_entries_with_tokens(file, &tokens)?,
+        )
+    }
+
+    fn proof_tokens(&self) -> Result<(&ClickFile, ProofTokens<'_>), ClickError> {
         let file = self
             .file
             .as_ref()
             .ok_or_else(|| ClickError::new("the source index has no resolved project"))?;
-        tactic_source_positions_with_tokens(
-            file,
-            project.entry_source().expect("resolved entry source"),
-            claim,
-            &self.tokens,
-        )
+        let tokens = ProofTokens {
+            tokens: &self.tokens,
+            blocks: self.parsed.clone(),
+            spans: file.source_spans().clone(),
+        };
+        Ok((file, tokens))
     }
 
     pub fn nested_position(

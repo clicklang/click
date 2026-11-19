@@ -1164,10 +1164,17 @@ fn smart_tactic_source_sites_file(
     click_source: &str,
     file: &ClickFile,
 ) -> Result<Vec<SmartTacticSourceSite>, ClickError> {
+    smart_tactic_sites_from_entries(click_source, source_tactic_entries(click_source, file)?)
+}
+
+fn smart_tactic_sites_from_entries(
+    click_source: &str,
+    entries: Vec<SourceTacticEntry>,
+) -> Result<Vec<SmartTacticSourceSite>, ClickError> {
     let mut sites = Vec::new();
     let mut ordered = Vec::new();
     let mut seen = BTreeSet::new();
-    for entry in source_tactic_entries(click_source, file)? {
+    for entry in entries {
         if !entry.smart {
             continue;
         }
@@ -2406,7 +2413,7 @@ impl<'a> DeclarationSources<'a> {
 /// as the token slice it wraps.
 struct ProofTokens<'a> {
     tokens: &'a [SourceToken],
-    blocks: parsed_blocks::ParsedBlocks,
+    blocks: Arc<parsed_blocks::ParsedBlocks>,
     /// The parse these blocks come from.
     spans: Arc<parser::SourceSpans>,
 }
@@ -2415,7 +2422,10 @@ impl<'a> ProofTokens<'a> {
     fn new(file: &ClickFile, tokens: &'a [SourceToken]) -> Self {
         Self {
             tokens,
-            blocks: parsed_blocks::ParsedBlocks::new(tokens, file.source_spans()),
+            blocks: Arc::new(parsed_blocks::ParsedBlocks::new(
+                tokens,
+                file.source_spans(),
+            )),
             spans: file.source_spans().clone(),
         }
     }
@@ -4604,8 +4614,15 @@ fn source_tactic_entries(
 ) -> Result<Vec<SourceTacticEntry>, ClickError> {
     let source_tokens = proof_source_tokens(click_source, &file.source_spans().implicit_proofs)?;
     let tokens = ProofTokens::new(file, &source_tokens);
+    source_tactic_entries_with_tokens(file, &tokens)
+}
+
+fn source_tactic_entries_with_tokens(
+    file: &ClickFile,
+    tokens: &ProofTokens<'_>,
+) -> Result<Vec<SourceTacticEntry>, ClickError> {
     let mut entries = Vec::new();
-    let declarations = DeclarationSources::new(&tokens);
+    let declarations = DeclarationSources::new(tokens);
     for theorem in file.theorem_definitions() {
         // An axiom has no proof to expand.
         if theorem.is_axiom() || !file.theorem_is_selected(theorem.name()) {
@@ -4625,13 +4642,13 @@ fn source_tactic_entries(
             {
                 continue;
             }
-            let edit = find_ensure_proof_edit(&tokens, &source, ensure_index)?;
+            let edit = find_ensure_proof_edit(tokens, &source, ensure_index)?;
             let label = theorem.ensure_claim_label(ensure_index);
             let site = ProofSite::TheoremEnsure {
                 theorem_name: theorem.name().to_string(),
                 ensure_index,
             };
-            proof_tactic_entries(&tokens, &edit, ensure.proof(), &site, &label, &mut entries)?;
+            proof_tactic_entries(tokens, &edit, ensure.proof(), &site, &label, &mut entries)?;
         }
     }
     for function_block in proof_function_blocks(file) {
@@ -4641,9 +4658,9 @@ fn source_tactic_entries(
         let function_name = function_block.signature().name();
         let function = declarations.function(function_block)?;
         if let Some(proof) = expansion_covering_proof(function_block) {
-            let edit = find_grouped_proof_edit(&tokens, &function, function_block)?;
+            let edit = find_grouped_proof_edit(tokens, &function, function_block)?;
             proof_tactic_entries(
-                &tokens,
+                tokens,
                 &edit,
                 proof,
                 &ProofSite::FunctionClaim {
@@ -4659,10 +4676,10 @@ fn source_tactic_entries(
                 continue;
             }
             let claim = ContractProofClaim::Ensure(index);
-            let edit = find_claim_proof_edit(&tokens, &function, function_block, claim)?;
+            let edit = find_claim_proof_edit(tokens, &function, function_block, claim)?;
             let label = function_block.ensure_claim_label(index);
             proof_tactic_entries(
-                &tokens,
+                tokens,
                 &edit,
                 ensure.proof(),
                 &ProofSite::FunctionClaim {
@@ -4678,10 +4695,10 @@ fn source_tactic_entries(
                 continue;
             }
             let claim = ContractProofClaim::ExceptionalEnsure(index);
-            let edit = find_claim_proof_edit(&tokens, &function, function_block, claim)?;
+            let edit = find_claim_proof_edit(tokens, &function, function_block, claim)?;
             let label = function_block.exceptional_ensure_claim_label(index);
             proof_tactic_entries(
-                &tokens,
+                tokens,
                 &edit,
                 ensure.proof(),
                 &ProofSite::FunctionClaim {
@@ -5376,23 +5393,20 @@ fn tactic_source_positions_file(
     Ok(positions_at_offsets(click_source, offsets))
 }
 
-fn tactic_source_positions_with_tokens(
-    file: &ClickFile,
-    click_source: &str,
-    claim_label: &str,
-    tokens: &[SourceToken],
-) -> Result<Vec<SourcePosition>, ClickError> {
-    let offsets = tactic_source_offsets_with_tokens(file, claim_label, tokens)?;
-    Ok(positions_at_offsets(click_source, offsets))
-}
-
 fn tactic_source_offsets_with_tokens(
     file: &ClickFile,
     claim_label: &str,
     tokens: &[SourceToken],
 ) -> Result<Vec<usize>, ClickError> {
+    tactic_source_offsets(file, claim_label, &ProofTokens::new(file, tokens))
+}
+
+fn tactic_source_offsets(
+    file: &ClickFile,
+    claim_label: &str,
+    tokens: &ProofTokens<'_>,
+) -> Result<Vec<usize>, ClickError> {
     let claim_label = &*resolve_source_claim_label(file, claim_label);
-    let tokens = &ProofTokens::new(file, tokens);
     let declarations = DeclarationSources::new(tokens);
     if claim_label == "program.termination" {
         let (start, end) = file

@@ -546,6 +546,14 @@ fn render_accounting(output: &mut String, profiles: &[ProjectProfile]) {
             }
         )
         .expect("writing a String cannot fail");
+        if let Some(elapsed) = profile.report_preparation {
+            writeln!(
+                output,
+                "  Report preparation: {}",
+                format_fractional_duration(elapsed)
+            )
+            .expect("writing a String cannot fail");
+        }
         for (label, part) in [
             ("FRONTEND", accounting.frontend),
             ("ENVIRONMENT", accounting.environment),
