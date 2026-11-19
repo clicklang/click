@@ -2045,7 +2045,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                             have tmp2 == nid;
                                                             have tmp2 != 0;
                                                             have separate(memory(sibling->rb_right), memory(tmp2->__rb_parent_color));
-                                                            have separate(memory(iid->rb_right), memory(tmp2->__rb_parent_color)) by { transport(separate(memory(sibling->rb_right), memory(tmp2->__rb_parent_color)), separate(memory(iid->rb_right), memory(tmp2->__rb_parent_color))) using { separate(memory(sibling->rb_right), memory(tmp2->__rb_parent_color)); sibling == iid; }; }
+                                                            have separate(memory(iid->rb_right), memory(tmp2->__rb_parent_color)) by { rewrite(iid, sibling); known(); }
                                                             have (tmp2->__rb_parent_color & 1) == color_bit(nc);
                                                             mark near_tag;
                                                             step(); // Select the nonempty near-child parent update.
@@ -3944,7 +3944,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                             have tmp2 == nid;
                                                             have tmp2 != 0;
                                                             have separate(memory(sibling->rb_left), memory(tmp2->__rb_parent_color));
-                                                            have separate(memory(iid->rb_left), memory(tmp2->__rb_parent_color)) by { transport(separate(memory(sibling->rb_left), memory(tmp2->__rb_parent_color)), separate(memory(iid->rb_left), memory(tmp2->__rb_parent_color))) using { separate(memory(sibling->rb_left), memory(tmp2->__rb_parent_color)); sibling == iid; }; }
+                                                            have separate(memory(iid->rb_left), memory(tmp2->__rb_parent_color)) by { rewrite(iid, sibling); known(); }
                                                             have (tmp2->__rb_parent_color & 1) == color_bit(nc);
                                                             mark near_tag;
                                                             step(); // Select the nonempty near-child parent update.
