@@ -471,8 +471,8 @@ equality of two Boolean variables, or a 32/64-bit comparison. Machine comparison
 operands and innermost arms can be literal or variable leaves, one bitwise
 operation (`&`, `|`, `^`, `~`)
 over such leaves, a right shift or unsigned left shift by an in-range literal
-count or with two variable operands, an unsigned sum, difference, or product over two variables or a variable
-and a literal,
+count or with two variable operands, a sum, difference, or product over two variables, or an unsigned one over a
+variable and a literal,
 a quotient or remainder of a variable by a nonzero literal (excluding signed `-1`),
 an unsigned quotient or remainder over two variables,
 a signedness cast of one variable, or a 32-to-64-bit widening or 64-to-32-bit

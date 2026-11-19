@@ -411,7 +411,7 @@ fn bounded_comparison_operand(
             match arguments.map(|argument| argument.variable().is_some()) {
                 // Exact rewriting keeps the explicit operator format for
                 // two variables. Arithmetic with a literal can use word32.
-                [true, true] if unsigned => false,
+                [true, true] => false,
                 [true, false] | [false, true] if unsigned || word32 => word32,
                 _ => return None,
             }
