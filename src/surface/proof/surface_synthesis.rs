@@ -5239,9 +5239,8 @@ fn synthesize_point_read(
         if let Some(field) = synthesize_owned_field_at_address(pointer, value_type, state) {
             return Some(field);
         }
-        if version.is_exact_read()
-            && let Some(field) =
-                synthesize_struct_field_load(pointer, value_type, parameter_binding, state)
+        if let Some(field) =
+            synthesize_struct_field_load(pointer, value_type, parameter_binding, state)
         {
             return Some(field);
         }
@@ -5251,6 +5250,11 @@ fn synthesize_point_read(
             state,
             bound_variables,
         )?;
+        let address = if value_type == ProgramType::UInt8 {
+            synthesize_observation_operand(address, ProgramType::UInt8Pointer)?
+        } else {
+            address
+        };
         Some(ContractExpression::CUnary {
             operand: Box::new(address),
             lowered: ProgramExpression::TypedLoad {
@@ -5274,12 +5278,9 @@ fn synthesize_point_read(
     let selects_version = |state: &ExecutionState| {
         let point = state.program_point();
         if version.is_exact_read() {
-            point.id() == version.read_version_id()
+            point.names_exact_read(version)
         } else {
-            point
-                .indexed_local_typed_version(pointer, value_type)
-                .as_ref()
-                == Some(version)
+            point.indexed_typed_version(pointer, value_type).as_ref() == Some(version)
         }
     };
     if selects_version(state) {

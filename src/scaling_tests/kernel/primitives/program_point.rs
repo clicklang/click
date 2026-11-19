@@ -55,10 +55,10 @@ fn sealed_batch_read_lookup_ignores_the_number_of_effects() {
                 let point = sealed.program_point();
                 (
                     point
-                        .indexed_local_integer_version(&first, LoadKind::Int32)
+                        .indexed_integer_version(&first, LoadKind::Int32)
                         .unwrap(),
                     point
-                        .indexed_local_integer_version(&second, LoadKind::Int32)
+                        .indexed_integer_version(&second, LoadKind::Int32)
                         .unwrap(),
                 )
             });
@@ -112,14 +112,14 @@ fn joining_one_changed_cell_uses_shared_index_branches() {
             assert_eq!(
                 joined
                     .program_point()
-                    .indexed_local_integer_version(&slot, LoadKind::Int32)
+                    .indexed_integer_version(&slot, LoadKind::Int32)
                     .and_then(|point| point.read_version_id()),
                 original
             );
             assert!(
                 joined
                     .program_point()
-                    .indexed_local_integer_version(&changed, LoadKind::Int32)
+                    .indexed_integer_version(&changed, LoadKind::Int32)
                     .is_none()
             );
             samples.push((count, work));
@@ -186,7 +186,7 @@ fn sealing_checked_footprints_ignores_cells_in_untouched_objects() {
             for (path, memory) in [(called, &call_memory), (head, &loop_memory)] {
                 assert_eq!(
                     ProgramPoint::of_state(memory, &path)
-                        .indexed_local_integer_version(&slot, LoadKind::Int32)
+                        .indexed_integer_version(&slot, LoadKind::Int32)
                         .and_then(|point| point.read_version_id()),
                     original
                 );
@@ -236,17 +236,17 @@ fn boolean_and_complete_pointer_reads_keep_their_stores_across_sibling_writes() 
         let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
             let point = state.program_point();
             let flag_version = point
-                .indexed_local_typed_version(&flag, ProgramType::Bool)
+                .indexed_typed_version(&flag, ProgramType::Bool)
                 .unwrap();
             assert_eq!(flag_version.read_version_id(), written.program_point_id());
             assert!(
                 point
-                    .indexed_local_integer_version(&flag, LoadKind::UInt8)
+                    .indexed_integer_version(&flag, LoadKind::UInt8)
                     .is_none()
             );
             for (cell, stored) in [(&object, &pointer), (&callback, &function)] {
                 let version = point
-                    .indexed_local_typed_version(cell, stored.program_type())
+                    .indexed_typed_version(cell, stored.program_type())
                     .unwrap();
                 let read = Pointer::from_point_read(version, stored.program_type(), cell);
                 assert_eq!(
@@ -277,7 +277,7 @@ fn boolean_and_complete_pointer_reads_keep_their_stores_across_sibling_writes() 
     assert!(
         partial
             .program_point()
-            .indexed_local_typed_version(&object, ProgramType::Int32Pointer)
+            .indexed_typed_version(&object, ProgramType::Int32Pointer)
             .is_none()
     );
 }

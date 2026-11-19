@@ -6614,7 +6614,7 @@ mod guarded_unmatched_materialization_tests {
         assert_eq!(
             named
                 .program_point()
-                .indexed_local_integer_version(&slot, crate::kernel::LoadKind::Int32)
+                .indexed_integer_version(&slot, crate::kernel::LoadKind::Int32)
                 .and_then(|version| version.read_version_id()),
             Some(point)
         );

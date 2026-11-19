@@ -4408,7 +4408,7 @@ fn check_local_read_versions(value_type: ProgramType, disjoint_type: ProgramType
     assert_eq!(
         repeated
             .program_point()
-            .indexed_local_integer_version(&slot, load_kind)
+            .indexed_integer_version(&slot, load_kind)
             .unwrap()
             .id(),
         repeated.program_point_id()
@@ -4417,7 +4417,7 @@ fn check_local_read_versions(value_type: ProgramType, disjoint_type: ProgramType
     assert!(
         mismatched
             .program_point()
-            .indexed_local_integer_version(&slot, load_kind)
+            .indexed_integer_version(&slot, load_kind)
             .is_none(),
         "a write with a different load kind ends the prior version"
     );
@@ -4427,7 +4427,7 @@ fn check_local_read_versions(value_type: ProgramType, disjoint_type: ProgramType
     assert!(
         possibly_aliasing
             .program_point()
-            .indexed_local_integer_version(&slot, load_kind)
+            .indexed_integer_version(&slot, load_kind)
             .is_none(),
         "an unclassified store cannot keep an indexed version"
     );

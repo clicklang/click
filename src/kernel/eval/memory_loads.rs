@@ -271,6 +271,7 @@ pub(in crate::kernel) fn evaluate_logical_memory_load_paths(
         assumptions,
     );
     retain_indexed_scalar_cell_value(memory, &pointer, value_type, assumptions, &mut paths);
+    #[cfg(test)]
     if let [path] = paths.as_slice()
         && let ExpressionOutcome::Value(value) = &path.outcome
     {
@@ -281,7 +282,6 @@ pub(in crate::kernel) fn evaluate_logical_memory_load_paths(
 
 /// A logical integer read whose version was selected from the execution path.
 pub(in crate::kernel) fn evaluate_indexed_read(
-    memory: &SymbolicMemory,
     version: ProgramPoint,
     pointer: Address,
     value_type: ProgramType,
@@ -305,7 +305,6 @@ pub(in crate::kernel) fn evaluate_indexed_read(
             read.clone(),
         ));
         let value = ProgramValue::Pointer(read);
-        super::typed_reads::record(memory, &pointer, &value);
         return ExpressionPath {
             outcome: ExpressionOutcome::Value(value),
             facts,
@@ -376,7 +375,6 @@ pub(in crate::kernel) fn evaluate_indexed_read(
         logical_read_equation: true,
         ..ExecutionPureFact::certified(Proposition::condition_is(equation, true))
     });
-    super::typed_reads::record(memory, &pointer, &value);
     ExpressionPath {
         outcome: ExpressionOutcome::Value(value),
         facts,
@@ -3012,7 +3010,7 @@ fn read_over_write_boolean(condition: &ConditionTerm) -> Option<ConditionTerm> {
     };
     let version;
     let point = if point.is_exact_read() {
-        version = point.indexed_local_typed_version(pointer, ProgramType::Bool)?;
+        version = point.indexed_typed_version(pointer, ProgramType::Bool)?;
         &version
     } else {
         point
@@ -3380,12 +3378,9 @@ pub(crate) fn pointer_load_at_point(
 ) -> PointerLoadId {
     use std::hash::{Hash, Hasher};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    point.shared_memory().arena_id().hash(&mut hasher);
-    if let Some(id) = point.read_version_id() {
-        id.hash(&mut hasher);
-        point.is_exact_read().hash(&mut hasher);
-        value_type.hash(&mut hasher);
-    }
+    point.read_key().hash(&mut hasher);
+    point.is_exact_read().hash(&mut hasher);
+    value_type.hash(&mut hasher);
     address.hash(&mut hasher);
     let mut slot = hasher.finish() % POINTER_LOAD_ID_RANGE;
     POINTER_LOAD_REGISTRY.with(|registry| {
@@ -3394,11 +3389,9 @@ pub(crate) fn pointer_load_at_point(
             let identity = PointerLoadId(slot);
             match registry.get(&identity) {
                 Some((known_point, known_address, known_type))
-                    if known_point.read_version_id() == point.read_version_id()
+                    if known_point.read_key() == point.read_key()
                         && known_point.is_exact_read() == point.is_exact_read()
                         && *known_type == value_type
-                        && known_point.shared_memory().arena_id()
-                            == point.shared_memory().arena_id()
                         && known_address == address =>
                 {
                     return identity;
@@ -5071,7 +5064,7 @@ pub(crate) fn comparison_identity_of_exact_read(
     pointer: &Address,
     kind: LoadKind,
 ) -> MachineTerm {
-    match point.indexed_local_integer_version(pointer, kind) {
+    match point.indexed_integer_version(pointer, kind) {
         Some(version) => MachineTerm::MemoryLoad(version, Box::new(pointer.clone()), kind),
         None => canonical_form_of_load(point.shared_memory().clone(), pointer.clone(), kind),
     }
@@ -6704,7 +6697,7 @@ mod tests {
     }
 
     #[test]
-    fn indexed_local_load_uses_proven_alias_without_inventing_initialization() {
+    fn indexed_load_uses_proven_alias_without_inventing_initialization() {
         let index = MachineTerm::Variable(Variable(839));
         let base = Address {
             base: "local:indexed".into(),

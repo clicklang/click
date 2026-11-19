@@ -88,6 +88,14 @@ fn preserve_viewability(separation: &Proposition) -> Result<(Proposition, Propos
 // never used to manufacture the primitive's conclusion.
 fn read_type(result: &Proposition) -> Option<ReadType> {
     match result {
+        Proposition::ConditionIs(_, true)
+            if matches!(
+                result.condition_native(),
+                Some((ConditionTerm::BoolEqual(..), true))
+            ) =>
+        {
+            Some(ReadType::Boolean)
+        }
         condition_source_0 @ Proposition::ConditionIs(_, true)
             if let Some((ConditionTerm::AlgebraicEqual(a, b), _)) =
                 condition_source_0.condition_native()
@@ -335,6 +343,12 @@ fn observation_equality(
         ));
     }
     let condition = match (kind, after, before) {
+        (ReadType::Boolean, ProgramValue::Bool(a), ProgramValue::Bool(b)) => {
+            ConditionTerm::bool_equal(
+                ConditionTerm::truth_of_bool_word(&a),
+                ConditionTerm::truth_of_bool_word(&b),
+            )
+        }
         (ReadType::Pointer(_), ProgramValue::Pointer(a), ProgramValue::Pointer(b)) => {
             ConditionTerm::logical_pointer_equal(a, b)
         }
@@ -1093,10 +1107,9 @@ mod tests {
         let read = |state: &ExecutionState| {
             let version = state
                 .program_point()
-                .indexed_local_integer_version(&slot, load_kind)
+                .indexed_integer_version(&slot, load_kind)
                 .unwrap();
             let path = crate::kernel::eval::evaluate_indexed_read(
-                state.memory(),
                 version,
                 slot.clone(),
                 format.program_type(),
@@ -1106,6 +1119,7 @@ mod tests {
             let ExpressionOutcome::Value(value) = path.outcome else {
                 panic!("expected a typed integer read");
             };
+            typed_reads::record_at(&state.program_point(), &slot, &value);
             integer_bits(value).unwrap()
         };
         let before_read = read(&before);
