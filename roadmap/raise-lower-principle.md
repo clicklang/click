@@ -4461,6 +4461,13 @@ cell read lowers to a byte comparison, so raising a raw `BoolLoad` as that
 source read would change the term on relowering. Keep the raw case open until
 it has an exact spelling or its remaining native inputs migrate.
 
+After 11e, Boolean, float, and algebraic dependency collection reads retained
+descriptors. Machine read candidate keys also take the retained address and
+load kind. Exact cell lookup and address key construction still use the same
+native address keys. Candidate selection still erases memory state, and
+checked transport still establishes any needed equality across versions.
+The next planned checker slice is 11f.
+
 ## Delivery and history
 
 Land coherent tested slices in small PRs, one open PR per thread, with auto-merge
