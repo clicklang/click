@@ -669,10 +669,6 @@ pub(crate) fn is_loop_iterations_spelling(name: &str) -> bool {
 /// with the declarations of the modules before it.
 const CLICK_LIBRARY_MODULES: &[(&str, &str)] = &[
     (
-        "library/cpp/span_state.click",
-        include_str!("../library/cpp/span_state.click"),
-    ),
-    (
         "library/separation.click",
         include_str!("../library/separation.click"),
     ),
@@ -713,6 +709,10 @@ const CLICK_LIBRARY_MODULES: &[(&str, &str)] = &[
     (
         "library/c/stdio.click",
         include_str!("../library/c/stdio.click"),
+    ),
+    (
+        "library/cpp/span_state.click",
+        include_str!("../library/cpp/span_state.click"),
     ),
     (
         "library/rust/i8.click",
