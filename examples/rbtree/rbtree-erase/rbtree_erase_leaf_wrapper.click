@@ -77,7 +77,23 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                 }
                 step_until(region(10));
                 have parent == parent_model;
-                let { after: remaining } = step(__rb_change_child, { before: up });
+                have ctx_node_is(up.model, parent) == 1;
+                let { links: incoming, frame: outer_frame } = detach_erase_links(node, parent, root, { before: up });
+                observe(erase_callbacks(augment));
+                mark incoming_link_state;
+                let { sibling_ptr: sibling_ptr, root_count: root_count, parent_count: parent_count, tag: parent_tag, above: above } = unfold(incoming);
+                have separate(memory(root[0..root_count]), memory(*augment)) by known();
+                have separate(memory(parent[0..parent_count]), memory(*augment)) by known();
+                let incoming = fold(erase_change_links(node, parent, root), {
+                    model: at(incoming_link_state, incoming.model), sibling_ptr: sibling_ptr,
+                    root_count: root_count, parent_count: parent_count, tag: parent_tag, above: above
+                });
+                let { updated: linked } = step(__rb_change_child, { links: incoming });
+                have linked.model == outer_frame.model;
+                have linked.sibling_ptr == outer_frame.sibling_ptr;
+                have linked.tag == outer_frame.tag;
+                have linked.above == outer_frame.above;
+                let { updated: remaining } = attach_erase_links(child, parent, root, { links: linked, frame: outer_frame });
                 have remaining.model == old(up.model);
                 have erase_leaf_result(old(up.model), rb_color(old(tree.model))) == erase_flips_red_all_result(remaining.model, RbTree::Empty) by { rewrite(remaining.model, old(up.model)); known(); }
                 match remaining.model {
@@ -168,7 +184,23 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                     rewrite(color, Color::Red); unfold(color_bit(Color::Red)); normalize();
                 }
                 step_until(region(10));
-                let { after: remaining } = step(__rb_change_child, { before: up });
+                have ctx_node_is(up.model, parent) == 1;
+                let { links: incoming, frame: outer_frame } = detach_erase_links(node, parent, root, { before: up });
+                observe(erase_callbacks(augment));
+                mark incoming_link_state;
+                let { sibling_ptr: sibling_ptr, root_count: root_count, parent_count: parent_count, tag: parent_tag, above: above } = unfold(incoming);
+                have separate(memory(root[0..root_count]), memory(*augment)) by known();
+                have separate(memory(parent[0..parent_count]), memory(*augment)) by known();
+                let incoming = fold(erase_change_links(node, parent, root), {
+                    model: at(incoming_link_state, incoming.model), sibling_ptr: sibling_ptr,
+                    root_count: root_count, parent_count: parent_count, tag: parent_tag, above: above
+                });
+                let { updated: linked } = step(__rb_change_child, { links: incoming });
+                have linked.model == outer_frame.model;
+                have linked.sibling_ptr == outer_frame.sibling_ptr;
+                have linked.tag == outer_frame.tag;
+                have linked.above == outer_frame.above;
+                let { updated: remaining } = attach_erase_links(child, parent, root, { links: linked, frame: outer_frame });
                 apply(ctx_rb_black_focus(old(up.model), Nat::Zero, Color::Red));
                 have ctx_rb(old(up.model), black_height(RbTree::Empty), rb_color(RbTree::Empty)) == 1 by {
                     unfold(black_height(RbTree::Empty)); unfold(rb_color(RbTree::Empty)); known();
@@ -215,6 +247,7 @@ void rb_erase(struct rb_node* node, struct rb_root* root) {
     fold(erase_callbacks(&dummy_callbacks));
     step(); // Declare rebalance.
     let { hole: hole, remaining: deficit } = step(__rb_erase_augmented, { tree: tree, up: up });
+    step(); // Store the returned rebalance pointer.
     apply(plug_parent_consistent_transport(deficit.model, RbTree::Empty, 0));
     have rb_tree_parent_consistent(plug(deficit.model, RbTree::Empty)) == 1;
     if rebalance != 0 {
