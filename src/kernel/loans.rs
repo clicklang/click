@@ -6333,6 +6333,7 @@ impl LoanLedger {
         Ok(loans.iter().copied().collect())
     }
 
+    #[cfg(test)]
     fn first_active_memory_overlap_with_assumptions(
         &self,
         range: &MemoryRange,
@@ -6439,6 +6440,7 @@ impl LoanLedger {
     /// and it revisits the same index buckets the check itself used, so a
     /// permitted access costs nothing and a refused one never walks the
     /// ledger.
+    #[cfg(test)]
     pub(crate) fn memory_access_refusal(
         &self,
         range: &MemoryRange,
@@ -6462,6 +6464,7 @@ impl LoanLedger {
 
     /// The first active loan whose protected footprint explains a refusal of
     /// `range`, with the protected range and the loan's origin.
+    #[cfg(test)]
     fn conflicting_memory_loan(
         &self,
         range: &MemoryRange,
@@ -6509,6 +6512,7 @@ impl LoanLedger {
     /// the symbolic buckets. Fewer assumptions prove fewer overlaps, so this is the
     /// more permissive form; the ordinary owned-authority check remains the
     /// primary guard on every write.
+    #[cfg(test)]
     pub(crate) fn permits_memory_access(&self, range: &MemoryRange) -> Result<(), LoanRefusal> {
         self.permits_memory_access_with_assumptions(range, &PureFactContext::default())
     }

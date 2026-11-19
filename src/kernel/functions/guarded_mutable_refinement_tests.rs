@@ -124,9 +124,12 @@ fn active_is_zero(value: bool) -> PureFactContext {
 }
 
 #[test]
-fn explicit_write_projection_retains_guard_certainty() {
+fn explicit_write_projection_keeps_each_checked_bound() {
     let entry = entry_state();
-    let segments = [segment(Some(guard(ComparisonOperator::NotEqual, 0)), 0, 1)];
+    let segments = [
+        segment(None, 0, 1),
+        segment(Some(guard(ComparisonOperator::NotEqual, 0)), 2, 3),
+    ];
     let project = |assumptions: &PureFactContext| {
         project_explicit_memory_segments(
             &entry,
@@ -139,13 +142,11 @@ fn explicit_write_projection_retains_guard_certainty() {
         .expect("the segment has evaluable bounds")
     };
     let active = project(&active_is_zero(false));
-    assert!(active.has_exact_write_ranges);
-    assert_eq!(active.ranges.len(), 1);
+    assert_eq!(active.ranges.len(), 2);
     let inactive = project(&active_is_zero(true));
-    assert!(inactive.has_exact_write_ranges);
-    assert!(inactive.ranges.is_empty());
+    assert_eq!(inactive.ranges.len(), 1);
+    assert!(active.ranges.contains(&inactive.ranges[0]));
     let undecided = project(&PureFactContext::new());
-    assert!(!undecided.has_exact_write_ranges);
     assert_eq!(undecided.ranges, active.ranges);
 }
 
