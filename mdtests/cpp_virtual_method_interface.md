@@ -3,12 +3,11 @@
 A virtual method's contract is its interface. A call through it, by a
 reference to the base or through `this`, is checked against that contract,
 whichever override the object's dynamic type selects. A pure virtual method
-has no body, so its contract is written `extern`. Each override inherits the
-interface's guarantees, which its own proof establishes, and its `requires`
-must follow from the interface's: `Square::area` states nothing and inherits
-both, and `Tile::area` overrides `Square::area`, so it inherits that
-override's exact result. A `Square` reference converts to the `Shape` base a
-callee takes.
+has no body, so its contract is declared in an imported `.interface.click`
+file. Each override inherits the interface's guarantees and proves them.
+`Square::area` inherits the base preconditions and adds a guarantee for its
+exact result. `Tile::area` overrides `Square::area` and inherits that exact
+result. A `Square` reference converts to the `Shape` base a callee takes.
 
 ```cpp filename=shapes.cpp function=caller profile=normal_only
 struct Shape {
@@ -31,11 +30,8 @@ int caller(const Square& square, int scale) noexcept {
 ```
 
 ```click
+import "interfaces/cpp_virtual_method.interface.click";
 verifying "shapes.cpp";
-extern int Shape::area(int scale) const {
-    requires 0 <= scale and scale <= 1000;
-    ensures scale < result and result <= 2000;
-}
 int Shape::twice(int scale) const {
     requires 0 <= scale and scale <= 1000;
     ensures 0 < result;

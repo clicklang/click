@@ -135,12 +135,12 @@ pub(in crate::surface) fn resolve_click_project_with_layouts(
             .flat_map(|file| {
                 file.function_blocks()
                     .iter()
+                    .map(parser::ImportedCallee::Function)
                     .chain(
                         file.tactic_definitions()
                             .iter()
-                            .map(TacticDefinition::function_block),
+                            .map(parser::ImportedCallee::Tactic),
                     )
-                    .map(parser::ImportedCallee::Function)
                     .chain(
                         file.contract_definitions()
                             .iter()

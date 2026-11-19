@@ -1,8 +1,8 @@
 # A C++ override cannot refuse a call its virtual method allows
 
 A call through `Shape::area` may pass any `scale` its contract allows and
-reach `Square::area`. An override whose `requires` does not follow from the
-interface's does not refine it, and is refused naming both.
+reach `Square::area`. An override whose `requires` is stronger than the
+imported interface allows is refused, naming both methods.
 
 ```cpp filename=shapes.cpp function=caller profile=normal_only
 struct Shape {
@@ -25,11 +25,8 @@ int caller(const Square& square, int scale) noexcept {
 ```
 
 ```click
+import "interfaces/cpp_virtual_method.interface.click";
 verifying "shapes.cpp";
-extern int Shape::area(int scale) const {
-    requires 0 <= scale and scale <= 1000;
-    ensures scale < result and result <= 2000;
-}
 int Shape::twice(int scale) const {
     requires 0 <= scale and scale <= 1000;
     ensures 0 < result;
