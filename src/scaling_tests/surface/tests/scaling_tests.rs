@@ -4785,6 +4785,43 @@ fn call_preparation_and_ensures_keep_the_computed_argument_shared() {
     );
 }
 
+/// The first call can register a previously unseen expression. Later statement
+/// publications must use the same graph when they add another result equality.
+#[test]
+fn repeated_call_publication_reuses_the_argument_registration() {
+    use crate::instrumentation::VerificationEvent;
+
+    let mut samples = Vec::new();
+    for depth in [8, 32, 64] {
+        let updates = "    x = x * 3u + 1u;\n".repeat(depth);
+        let steps = "    step();\n".repeat(depth);
+        let c = format!(
+            "extern uint32 echo(uint32 value);\nvoid caller(uint32 x) {{\n{updates}    echo(x);\n    echo(x);\n}}"
+        );
+        let click = format!(
+            "verifying \"echo.c\";\n\
+             extern uint32 echo(uint32 value) {{ ensures result == old(value); }}\n\
+             void caller(uint32 x) {{ ensures true; }} by {{\n{steps}    step();\n    step();\n}}"
+        );
+        let (verified, events) =
+            crate::instrumentation::collect(|| verify_c_sources(&click, &[("echo.c", &c)]));
+        verified.unwrap_or_else(|error| panic!("depth {depth}: {}", error.report()));
+        let work = events.iter().find_map(|event| match event {
+            VerificationEvent::TacticFinished { tactic, work, .. }
+                if tactic.tactic_name == "step" && tactic.source_index == depth + 1 =>
+            {
+                Some(*work)
+            }
+            _ => None,
+        });
+        samples.push(work.expect("the second call was stepped"));
+    }
+    assert!(
+        samples.iter().all(|&work| work <= samples[0] + 64),
+        "publishing a new equality rewalked the argument: {samples:?}"
+    );
+}
+
 /// One `step()` over a call whose external contract has `N` ensures lowers
 /// them in work linear in `N`.
 ///

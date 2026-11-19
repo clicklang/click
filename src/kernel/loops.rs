@@ -1167,7 +1167,7 @@ fn execute_modeled_pthread_create_paths(
                                 )
                             }
                         }
-                        Err(message) => refusal(&message),
+                        Err(error) => StatementOutcome::RuntimeError(error),
                     },
                     Err(error) => StatementOutcome::RuntimeError(error),
                 }
@@ -3358,6 +3358,32 @@ fn joined_resource_fields<'a>(
 ) -> Result<ResourceFieldValues, String> {
     let mut joined = Vec::with_capacity(base.len());
     for position in 0..base.len() {
+        if let Some(initial) = base.integer_term(position)
+            && let Some(held) = exits
+                .clone()
+                .map(|exit| exit.integer_term(position))
+                .collect::<Option<Vec<_>>>()
+        {
+            if held
+                .iter()
+                .all(|other| same_loop_exit_integer(&initial, other))
+            {
+                joined.push(base.stored_field(position).expect("field index"));
+                continue;
+            }
+            let variable = variables.next_in(budget).map_err(exhausted_identities)?;
+            let root = KernelTerm::variable(KernelType::Integer, variable);
+            let fresh = Term::Integer(
+                StoredIntegerTerm::from_root(root.clone()).expect("fresh Integer field"),
+            );
+            for (restatement, held) in restatements.iter_mut().zip(held) {
+                restatement
+                    .equations
+                    .push(Proposition::Equal(fresh.clone(), Term::Integer(held)));
+            }
+            joined.push(StoredResourceField::Integer(root));
+            continue;
+        }
         let value = base.get(position).expect("field index");
         let held = exits
             .clone()
@@ -3378,6 +3404,18 @@ fn joined_resource_fields<'a>(
         joined.push(StoredResourceField::from_minted(fresh));
     }
     Ok(ResourceFieldValues::from_stored(joined))
+}
+
+fn same_loop_exit_integer(left: &StoredIntegerTerm, right: &StoredIntegerTerm) -> bool {
+    match (left.root(), right.root()) {
+        (Some(left), Some(right))
+            if !matches!(left.node(), KernelTermNode::Legacy(_))
+                && !matches!(right.node(), KernelTermNode::Legacy(_)) =>
+        {
+            left.integer_native_syntax_equal(right)
+        }
+        _ => left == right,
+    }
 }
 
 /// A fresh symbolic value of the same sort as `value`.
@@ -3412,7 +3450,7 @@ fn exhausted_identities(limit: ExecutionLimit) -> String {
 /// One resource argument or field as the term an equation is written over.
 fn resource_value_term(value: &AlgebraicValue) -> Term {
     match value {
-        AlgebraicValue::Integer(term) => Term::Integer(term.clone()),
+        AlgebraicValue::Integer(term) => Term::Integer(term.clone().into()),
         AlgebraicValue::Program(value) => Term::ProgramValue(value.clone().into()),
         AlgebraicValue::Algebraic(term) => Term::Algebraic(term.clone().into()),
     }

@@ -583,6 +583,24 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         Some((proof, reversed, lower, upper))
     }
 
+    fn try_direct_logical_leaf(
+        input: &Proof<'a>,
+        budget: &mut attempt::AttemptBudget,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_direct_logical_leaf");
+        let mut candidates = direct_logical_candidates(input.goal()).into_iter();
+        if let Some(closed) = attempt::try_steps(input, budget, candidates.by_ref().take(1))? {
+            return Ok(Some(closed));
+        }
+        if let Some(closed) =
+            attempt::candidate_outcome(Self::try_conditional_bound_using(input, &[]))?.flatten()
+        {
+            return Ok(Some(closed));
+        }
+        attempt::try_steps(input, budget, candidates)
+    }
+
     /// A small shared search combinator for structural proposition closure.
     /// Every candidate is accepted only through `apply_step`; `intro` is the
     /// binder move; disjunctions open a `have` for a smaller disjunct.
@@ -599,9 +617,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let mut budget = attempt::AttemptBudget::unbounded();
         let mut proof = search_input.clone();
         loop {
-            if let Some(closed) =
-                attempt::try_steps(&proof, &mut budget, direct_logical_candidates(proof.goal()))?
-            {
+            if let Some(closed) = Self::try_direct_logical_leaf(&proof, &mut budget)? {
                 scope.succeed();
                 return Ok(Some(closed));
             }
@@ -1028,11 +1044,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         crate::kernel::search::record_discovery("try_direct_structural_closure_inner_impl");
         check_verification_deadline()?;
         let mut budget = attempt::AttemptBudget::unbounded();
-        if let Some(closed) = attempt::try_steps(
-            search_input,
-            &mut budget,
-            direct_logical_candidates(search_input.goal()),
-        )? {
+        if let Some(closed) = Self::try_direct_logical_leaf(search_input, &mut budget)? {
             return Ok(Some(closed));
         }
         if let Some(closed) =
@@ -5253,8 +5265,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             .filter_map(|(bound, introduced_surface)| {
                 let (variable, pivot) = kernel_upper_bound_split_candidate(&bound)?;
                 let pivot_probe = Proposition::Equal(
-                    Term::Integer(crate::kernel::IntegerTerm::Machine(pivot.clone())),
-                    Term::Integer(crate::kernel::IntegerTerm::Machine(pivot.clone())),
+                    Term::Integer(crate::kernel::IntegerTerm::Machine(pivot.clone()).into()),
+                    Term::Integer(crate::kernel::IntegerTerm::Machine(pivot.clone()).into()),
                 );
                 if crate::kernel::proposition_variables(&pivot_probe).contains(&variable) {
                     return None;

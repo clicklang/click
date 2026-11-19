@@ -1371,7 +1371,7 @@ impl Printer<'_> {
         }
         match term {
             Term::Bitvector32(value) => self.bitvector(value, None, depth + 1),
-            Term::Integer(value) => self.integer(value, depth + 1),
+            Term::Integer(value) => self.integer(value.native_compat(), depth + 1),
             term_source_0 @ Term::Condition(_)
                 if let Some(ConditionTerm::Constant(value)) = term_source_0.condition_native() =>
             {
@@ -3091,8 +3091,8 @@ mod tests {
             ))],
         );
         let fact = Proposition::Equal(
-            Term::Integer(IntegerTerm::PureFunctionApplication(application)),
-            Term::Integer(IntegerTerm::from(3)),
+            Term::Integer(IntegerTerm::PureFunctionApplication(application).into()),
+            Term::Integer(IntegerTerm::from(3).into()),
         );
         assert_eq!(render(&fact, &mut labels), Some("size(r) == 3".into()));
     }

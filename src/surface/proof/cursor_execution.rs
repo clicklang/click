@@ -2523,7 +2523,7 @@ fn execute_step_from_frontier_position_selecting_path(
         // Preserve every theorem with its own outcome for contract closing.
 
         let mut common_pure_facts = transitions[0].pure_facts.clone();
-        common_pure_facts.retain(|fact| {
+        common_pure_facts.retain_from(available_pure_facts, |fact| {
             transitions
                 .iter()
                 .skip(1)

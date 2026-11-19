@@ -1449,10 +1449,11 @@ impl CheckedResourceRewrite {
             if !folded.memory().access_in_bounds(&base, bytes) && !imported_control_cell {
                 return Err("authority control body exceeds live storage".into());
             }
-            if let Some(ledger) = folded.loan_ledger() {
-                ledger
-                    .permits_memory_access_with_assumptions(range, assumptions)
-                    .map_err(|_| "authority control body has an active borrow")?;
+            if folded
+                .loan_ledger()
+                .is_some_and(|ledger| !ledger.rewrite_separates_from_loans(range, assumptions))
+            {
+                return Err("authority control body requires separation from active loans".into());
             }
         }
         let expected_resources = if exposing {
@@ -2147,10 +2148,12 @@ impl CheckedResourceRewrite {
                     {
                         return Err("member private body exceeds live storage".into());
                     }
-                    if let Some(ledger) = before_state.loan_ledger() {
-                        ledger
-                            .permits_memory_access_with_assumptions(range, assumptions)
-                            .map_err(|_| "member private body has an active borrow")?;
+                    if before_state.loan_ledger().is_some_and(|ledger| {
+                        !ledger.rewrite_separates_from_loans(range, assumptions)
+                    }) {
+                        return Err(
+                            "member private body requires separation from active loans".into()
+                        );
                     }
                 }
                 let child_context = ResourceContext::new_with_equalities(assumptions)
@@ -6362,10 +6365,6 @@ pub(crate) struct ExecutionProofCore {
     pub(crate) last_footprint: Option<Arc<crate::kernel::RegionFootprint>>,
     pub(crate) state: SharedValue<ExecutionState>,
     initial_match_scope: SharedValue<ExecutionState>,
-    /// Context of the logical frontier cases admitted by the kernel, in
-    /// split order. Forks share the prefix; a join restores the parent's.
-    /// Other case producers use the ordinary local-context construction.
-    checked_step_cases: (usize, PureFactContext),
     /// The admitted case delta, shared by every returned descendant. Retain
     /// it at the split, before terminal joins could copy it into every path.
     publication_case_facts: ExecutionFacts,
@@ -8186,7 +8185,6 @@ impl ExecutionProofCore {
             descent: None,
             last_footprint: None,
             initial_match_scope: state.clone(),
-            checked_step_cases: (0, PureFactContext::new()),
             publication_case_facts: ExecutionFacts::new(),
             cases_hold_memory_effects: false,
             path_context: None,
@@ -9047,13 +9045,10 @@ impl ExecutionProofCore {
 
     /// Called only after the kernel admitted this logical frontier case.
     pub(in crate::kernel::proof) fn retain_step_case(&mut self, fact: Proposition) {
-        self.checked_step_cases.0 += 1;
-        crate::kernel::reasoning::path_facts::count_context_rebuild_entries(1);
         self.cases_hold_memory_effects |= is_memory_effect(&fact);
         self.publication_case_facts.ensure_indexed();
         self.publication_case_facts
-            .push(ExecutionPureFact::new(fact.clone()));
-        self.checked_step_cases.1 = self.checked_step_cases.1.clone().assume_proposition(fact);
+            .push(ExecutionPureFact::new(fact));
     }
 
     pub(crate) fn publication_case_prefix(&self) -> ExecutionFacts {
@@ -9125,13 +9120,6 @@ impl ExecutionProofCore {
         facts.forget_indexes();
         facts.extend_shared(&self.effect_facts);
         Some(facts)
-    }
-
-    /// A local context for a presentation containing exactly these admitted
-    /// cases. The caller still checks every selected premise against its
-    /// PureFactStore; presentation never supplies semantic authority.
-    pub(crate) fn checked_step_case_context(&self, count: usize) -> Option<PureFactContext> {
-        (self.checked_step_cases.0 == count).then(|| self.checked_step_cases.1.clone())
     }
 
     /// The state the retained evidence has reached, or the core's state

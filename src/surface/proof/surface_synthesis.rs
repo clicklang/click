@@ -4851,6 +4851,7 @@ fn synthesize_indexed_integer_read(
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<ContractExpression> {
     let value_type = match kind {
+        crate::kernel::LoadKind::Int8 => ProgramType::Int8,
         crate::kernel::LoadKind::UInt8 => ProgramType::UInt8,
         crate::kernel::LoadKind::Int16 => ProgramType::Int16,
         crate::kernel::LoadKind::UInt16 => ProgramType::UInt16,

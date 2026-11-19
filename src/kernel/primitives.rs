@@ -11233,6 +11233,7 @@ pub(super) struct ResourceContextIndex {
     /// (`memory_state::CallKeptRanges::range_holding`).
     pub(super) owned_composites_by_pointer_argument: PersistentMap<Address, ResourceEntryIds>,
     pub(super) owned_composites_by_argument_block: PersistentMap<AddressBase, ResourceEntryIds>,
+    pub(super) viewed_composites_by_argument_block: PersistentMap<AddressBase, ResourceEntryIds>,
     /// Owned unit heads with exactly one argument, a nominal heap pointer.
     /// The count for a typed family can cover its whole shape without
     /// enumerating the occurrences the caller kept.
@@ -13244,7 +13245,7 @@ mod population_authority_spec_tests {
 pub enum Term {
     Condition(ConditionTerm),
     Bitvector32(MachineTerm),
-    Integer(IntegerTerm),
+    Integer(StoredIntegerTerm),
     PointerOffset(AddressOffset),
     ProgramValue(StoredProgramValue),
     Sequence(SequenceTerm),
@@ -13282,7 +13283,7 @@ impl Term {
     #[cfg(test)]
     pub(crate) fn integer_native(&self) -> Option<&IntegerTerm> {
         match self {
-            Self::Integer(value) => Some(value),
+            Self::Integer(value) => Some(value.native_compat()),
             _ => None,
         }
     }

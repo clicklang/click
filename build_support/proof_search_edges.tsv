@@ -7,16 +7,12 @@ src/kernel/loans.rs	legacy-caller	LoanLedger::conflicting_memory_loan	memory_ran
 src/kernel/loans.rs	legacy-caller	LoanLedger::first_active_memory_overlap_with_assumptions	memory_range_aliases	1
 src/kernel/loans.rs	legacy-caller	LoanLedger::memory_access_refusal	permits_memory_access_with_assumptions	1
 src/kernel/loans.rs	legacy-caller	LoanLedger::permits_memory_access	permits_memory_access_with_assumptions	1
-src/kernel/loans.rs	legacy-caller	StableViewTransferPlan::lend_local_views_with_worker_shares	permits_memory_access_with_assumptions	2
 src/kernel/loans/legacy_search.rs	search	ProofSearch::loan_access	memory_range_aliases	1
 src/kernel/mutexes.rs	legacy-caller	MutexLedger::havoc_protected_for_call	call_kept_ownership	1
 src/kernel/mutexes/assumed_protocol.rs	legacy-caller	::forget_released_protected_memory	call_kept_ownership	1
 src/kernel/functions/construction_return.rs	legacy-caller	::bind	permits_memory_access_with_assumptions	1
-src/kernel/primitives/memory_state.rs	legacy-caller	ExecutionState::checked_population_member_exchange	permits_memory_access_with_assumptions	1
 src/kernel/primitives/resource_algebra.rs	legacy-bridge	ResourceContext::owned_validity_candidates	ownership_validity_candidates	1
 src/kernel/primitives/resource_algebra.rs	legacy-caller	ResourceContext::validity_error_with_separation	owned_validity_candidates	1
-src/kernel/proof/execution.rs	legacy-caller	CheckedResourceRewrite::check_authority_wrapper	permits_memory_access_with_assumptions	1
-src/kernel/proof/execution.rs	legacy-caller	CheckedResourceRewrite::check_with_children_recording	permits_memory_access_with_assumptions	1
 src/kernel/publication.rs	legacy-caller	::release_store	call_kept_ownership	1
 src/kernel/search/proposition_search.rs	search	ProofSearch::derive_and_rule	derive_proposition_using	2
 src/kernel/search/proposition_search.rs	search	ProofSearch::derive_atomic_proposition	derive_atomic_proposition_using	1
@@ -790,6 +786,9 @@ src/surface/proof/smart_closures/machine_bridges.rs	search	ProofSearch::try_cond
 src/surface/proof/smart_closures/machine_bridges.rs	search	ProofSearch::try_conditional_bridge_using	try_signed_interval_using	1
 src/surface/proof/smart_closures/machine_bridges.rs	search	ProofSearch::rewrite_conditional_arms_using	driver	2
 src/surface/proof/smart_closures/machine_bridges.rs	search	ProofSearch::try_conditional_bridge_using	rewrite_conditional_arms_using	1
+src/surface/proof/smart_closures/machine_bridges.rs	search	ProofSearch::try_conditional_bridge_using	try_conditional_bound_using	1
+src/surface/proof/smart_closures/machine_bridges.rs	search	ProofSearch::try_conditional_bound_using	known_bridge_using	1
+src/surface/proof/smart_closures/machine_bridges.rs	search	ProofSearch::try_conditional_bound_using	driver	3
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_goal_conditional_normalization	rewrite_conditional_arms_using	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::apply_normalization_closure	try_pointer_translation_using	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_solve_closure_before_arithmetic	try_pointer_translation_using	1
@@ -821,3 +820,6 @@ src/surface/proof/driver/scopes.rs	driver	ProofDriver::try_native_integer_bound	
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_signed_interval_using	try_native_integer_bound	1
 src/surface/proof/smart_closures/signed_intervals.rs	search	ProofSearch::ordinary_integer_fact	try_native_integer_bound	1
 src/surface/proof/smart_closures/signed_intervals.rs	search	ProofSearch::apply_signed_interval_composition	try_int32_add_sub_using	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_direct_logical_leaf	try_conditional_bound_using	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_direct_logical_closure	try_direct_logical_leaf	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_direct_structural_closure_inner_impl	try_direct_logical_leaf	1

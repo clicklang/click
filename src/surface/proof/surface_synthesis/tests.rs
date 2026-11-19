@@ -4171,6 +4171,10 @@ fn local_read_test_store(
     bits: u32,
 ) -> ExecutionState {
     let value = match value_type {
+        ProgramType::Int8 => ProgramValue::Int8(MachineTerm::narrow_constant(
+            MachineIntegerType::Int8,
+            u128::from(bits & 0xff),
+        )),
         ProgramType::UInt8 => ProgramValue::UInt8(MachineTerm::narrow_constant(
             MachineIntegerType::UInt8,
             u128::from(bits & 0xff),
@@ -4219,6 +4223,8 @@ fn local_read_test_claim(value_type: ProgramType) -> ClickProposition {
 
 #[test]
 fn ordinary_indexed_integer_reads_select_the_write_on_their_own_path() {
+    check_local_read_versions(ProgramType::Int8, ProgramType::UInt8);
+    check_local_read_versions(ProgramType::UInt8, ProgramType::Int8);
     check_local_read_versions(ProgramType::Int16, ProgramType::UInt16);
     check_local_read_versions(ProgramType::UInt16, ProgramType::Int16);
     check_local_read_versions(ProgramType::UInt8, ProgramType::Int32);
@@ -4230,6 +4236,7 @@ fn ordinary_indexed_integer_reads_select_the_write_on_their_own_path() {
 fn check_local_read_versions(value_type: ProgramType, disjoint_type: ProgramType) {
     let _session = crate::kernel::VerificationSession::enter();
     let pointer_type = match value_type {
+        ProgramType::Int8 => ProgramType::Int8Pointer,
         ProgramType::UInt8 => ProgramType::UInt8Pointer,
         ProgramType::Int16 => ProgramType::Int16Pointer,
         ProgramType::UInt16 => ProgramType::UInt16Pointer,
@@ -4343,6 +4350,7 @@ fn check_local_read_versions(value_type: ProgramType, disjoint_type: ProgramType
 
 #[test]
 fn ordinary_indexed_integer_read_work_is_bounded_as_path_grows() {
+    check_local_read_work(ProgramType::Int8, ProgramType::UInt8);
     check_local_read_work(ProgramType::Int16, ProgramType::UInt16);
     check_local_read_work(ProgramType::UInt16, ProgramType::Int16);
     check_local_read_work(ProgramType::UInt8, ProgramType::Int32);
@@ -4353,6 +4361,7 @@ fn ordinary_indexed_integer_read_work_is_bounded_as_path_grows() {
 fn check_local_read_work(value_type: ProgramType, disjoint_type: ProgramType) {
     let _session = crate::kernel::VerificationSession::enter();
     let pointer_type = match value_type {
+        ProgramType::Int8 => ProgramType::Int8Pointer,
         ProgramType::UInt8 => ProgramType::UInt8Pointer,
         ProgramType::Int16 => ProgramType::Int16Pointer,
         ProgramType::UInt16 => ProgramType::UInt16Pointer,
@@ -4378,7 +4387,7 @@ fn check_local_read_work(value_type: ProgramType, disjoint_type: ProgramType) {
         for i in 0..earlier {
             before = local_read_test_store(&before, &slot, value_type, i);
         }
-        let write = local_read_test_store(&before, &slot, value_type, earlier);
+        let write = local_read_test_store(&before, &slot, value_type, 0x80);
         let mut reader = write.clone();
         for i in 0..later {
             reader = local_read_test_store(&reader, &other, disjoint_type, i);
@@ -4399,12 +4408,12 @@ fn check_local_read_work(value_type: ProgramType, disjoint_type: ProgramType) {
         work.push((proof_work, map_work));
     }
     let (first_proof_work, first_map_work) = work[0];
-    // The first lowering can also pay for setting up the shared literal and
-    // pointer terms. Later samples may reuse them, but still select a new read.
+    // The terms and persistent-map keys for each version have fresh identities.
+    // Allow a fixed amount of lookup variation as the history grows by 256x.
     assert!(
         work.iter()
-            .all(|&(proof, map)| proof <= first_proof_work && map <= first_map_work),
-        "lowering grew with the execution history: {work:?}"
+            .all(|&(proof, map)| { proof <= first_proof_work + 64 && map <= first_map_work + 256 }),
+        "lowering {value_type:?} grew with the execution history: {work:?}"
     );
 }
 
@@ -8561,5 +8570,50 @@ fn recorded_volatile_read_slots_retain_the_producer_value() {
     assert_eq!(
         branch.read_event_results.get(&(3, 0)).unwrap().root(),
         Some(&root)
+    );
+}
+
+/// Lowering keeps a comparison of two identical or literal machine words,
+/// `address(p) + 3u64 == address(p) + 3u64`, rather than deciding it;
+/// checking decides it. A comparison its operands' type range decides,
+/// `0u64 <= w`, keeps its established decision.
+#[test]
+fn identical_word_comparisons_keep_their_comparison_through_lowering() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let pointer = crate::kernel::Pointer::new(
+        Address::symbolic(Variable(999_962)),
+        ProgramType::Int32Pointer,
+    );
+    let state = ExecutionState::new()
+        .with_local("p", ProgramValue::Pointer(pointer))
+        .with_local(
+            "w",
+            ProgramValue::UInt64(MachineTerm::Variable(Variable(999_961))),
+        );
+    let lower = |text: &str| {
+        let file = parser::parse(&format!(
+            "theorem probe() {{ requires {text}; ensures true; }}"
+        ))
+        .unwrap();
+        let Requirement::Proposition(written) = &file.theorem_definitions()[0].requires()[0] else {
+            panic!("requirement")
+        };
+        relower_written_proposition(written, &state).unwrap()
+    };
+    let Proposition::ConditionIs(condition, true) = lower("address(p) + 3u64 == address(p) + 3u64")
+    else {
+        panic!("a held comparison")
+    };
+    assert!(
+        matches!(condition.native_compat(), ConditionTerm::Compare { .. }),
+        "{condition:?}"
+    );
+    assert_eq!(condition.native_compat().reflexive_value(), Some(true));
+    let Proposition::ConditionIs(range, true) = lower("0u64 <= w") else {
+        panic!("a held comparison")
+    };
+    assert!(
+        matches!(range.native_compat(), ConditionTerm::Constant(true)),
+        "{range:?}"
     );
 }

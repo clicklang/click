@@ -261,3 +261,54 @@ fn loop_exit_cell_pins_use_indexed_constants() {
         "{samples:?}"
     );
 }
+
+#[test]
+fn loop_exit_integer_field_equations_retain_growing_roots() {
+    for size in [8, 32, 128] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let base_root = KernelTerm::variable(KernelType::Integer, Variable(950_001));
+        let mut held_root = base_root.clone();
+        for _ in 0..size {
+            held_root = KernelTerm::integer_operation(
+                KernelIntegerOperator::Add,
+                vec![held_root.clone(), held_root],
+            )
+            .unwrap();
+        }
+        let base =
+            ResourceFieldValues::from_stored([StoredResourceField::Integer(base_root.clone())]);
+        let other =
+            ResourceFieldValues::from_stored([StoredResourceField::Integer(held_root.clone())]);
+        let mut restatements = [
+            LoopExitRestatement::default(),
+            LoopExitRestatement::default(),
+        ];
+        let mut variables =
+            KernelVariableGenerator::fresh_for_execution(BTreeSet::from([Variable(950_001)]));
+        let mut budget = ExecutionBudget::new();
+        let (joined, work) = crate::instrumentation::measure_deterministic_work(|| {
+            joined_resource_fields(
+                &base,
+                [&base, &other].into_iter(),
+                &mut restatements,
+                &mut variables,
+                &mut budget,
+            )
+            .unwrap()
+        });
+        let joined = joined.retained_integer(0).unwrap();
+        assert_ne!(joined, &base_root);
+        for (restatement, expected) in restatements.iter().zip([&base_root, &held_root]) {
+            let [Proposition::Equal(Term::Integer(fresh), Term::Integer(held))] =
+                restatement.equations.as_slice()
+            else {
+                panic!("one Integer field equation per exit")
+            };
+            assert_eq!(fresh.root(), Some(joined));
+            assert_eq!(held.root(), Some(expected));
+        }
+        assert!(!base_root.has_cached_native_argument());
+        assert!(!held_root.has_cached_native_argument());
+        assert!(work < 128, "size={size} work={work}");
+    }
+}

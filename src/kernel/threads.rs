@@ -1022,11 +1022,11 @@ impl ThreadContext {
         assumptions: &PureFactContext,
         environment: &ExecutionEnvironment,
         budget: &mut ExecutionBudget,
-    ) -> ExecutionResult<Result<PreparedThreadCreate<'a>, String>> {
+    ) -> ExecutionResult<Result<PreparedThreadCreate<'a>, super::RuntimeError>> {
         if termination.is_none_or(|termination| termination.function != worker.function) {
-            return Ok(Err(
-                "spawn requires termination evidence for the exact worker".to_string(),
-            ));
+            return Ok(Err(super::RuntimeError::FunctionContract(
+                "spawn requires termination evidence for the exact worker".into(),
+            )));
         }
         let (completion, obligations) = match suspend_verified_worker(
             &self.parent,
@@ -1042,16 +1042,18 @@ impl ThreadContext {
         if completion.plan.caller_participant()
             != self.parent.loan_participant().expect("parent participant")
         {
-            return Ok(Err(
-                "worker partition belongs to a different parent".to_string()
-            ));
+            return Ok(Err(super::RuntimeError::FunctionContract(
+                "worker partition belongs to a different parent".into(),
+            )));
         }
         if completion
             .plan
             .recheck_entry(self.parent.loan_ledger().expect("parent ledger"))
             .is_err()
         {
-            return Ok(Err("invalid worker entry evidence".to_string()));
+            return Ok(Err(super::RuntimeError::FunctionContract(
+                "invalid worker entry evidence".into(),
+            )));
         }
         let retained_names = if let Some(named) = &self.parent.named_mutex_authorities {
             let target = self
@@ -1067,9 +1069,9 @@ impl ThreadContext {
             match named.apply_checked_mutex_updates(&updates, &target) {
                 Ok(names) => Some(Arc::new(names)),
                 Err(_) => {
-                    return Ok(Err(
-                        "retained mutex authority cannot transport its proof name".to_string(),
-                    ));
+                    return Ok(Err(super::RuntimeError::FunctionContract(
+                        "retained mutex authority cannot transport its proof name".into(),
+                    )));
                 }
             }
         } else {
@@ -1102,6 +1104,7 @@ impl ThreadContext {
                 environment,
                 budget,
             )?
+            .map_err(|error| super::api::describe_certification_runtime_error(&error))
             .and_then(|mut prepared| {
                 if prepared
                     .take_obligations()

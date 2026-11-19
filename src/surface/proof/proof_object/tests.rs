@@ -11376,7 +11376,8 @@ fn execution_proof_if_split_is_logarithmic_in_unrelated_facts() {
         for take_then in [true, false] {
             let focused = split.focus_execution_if_arm(&record, take_then).unwrap();
             let execution = focused.execution().unwrap();
-            let cases = execution.core.checked_step_case_context(1).unwrap();
+            let cases = focused.facts().assumptions();
+            assert_eq!(execution.core.publication_case_prefix().len(), 1);
             let selected = execution
                 .presentation
                 .case_assumptions
@@ -11393,8 +11394,7 @@ fn execution_proof_if_split_is_logarithmic_in_unrelated_facts() {
                 .last()
                 .unwrap();
             assert!(!cases.proves_exact(opposite_fact.fact.as_ref().unwrap()));
-            assert!(!cases.proves_exact(&indexed_fact(0)));
-            assert!(execution.core.checked_step_case_context(2).is_none());
+            assert!(cases.proves_exact(&indexed_fact(0)));
         }
 
         let completed = split
@@ -11421,8 +11421,8 @@ fn execution_proof_if_split_is_logarithmic_in_unrelated_facts() {
                 .execution()
                 .unwrap()
                 .core
-                .checked_step_case_context(0)
-                .is_some()
+                .publication_case_prefix()
+                .is_empty()
         );
         assert!(completed.is_at_function_exit());
         assert!(matches!(

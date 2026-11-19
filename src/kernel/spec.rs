@@ -2822,7 +2822,7 @@ fn sequence_contains_integer_variable(sequence: &SequenceTerm, variable: Variabl
 fn proposition_mentions_integer_variable(proposition: &Proposition, variable: Variable) -> bool {
     fn term_contains(term: &Term, variable: Variable) -> bool {
         match term {
-            Term::Integer(term) => integer_carrier_in_integer(term, variable),
+            Term::Integer(term) => integer_carrier_in_integer(term.native_compat(), variable),
             Term::Bitvector32(term) => integer_carrier_in_bitvector(term, variable),
             Term::Condition(condition) => condition_contains(condition, variable),
             Term::ProgramValue(value) => {
@@ -3255,14 +3255,14 @@ fn rewrite_integer_match_typed_body(
         integer_replacements,
         algebraic_replacements,
     );
-    let rewritten = rewrite.term(&Term::Integer(body));
+    let rewritten = rewrite.term(&Term::Integer(body.into()));
     if rewrite.refusal().is_some() {
         return None;
     }
     let Term::Integer(value) = rewritten else {
         return None;
     };
-    Some(value)
+    Some(value.into_native_compat())
 }
 
 /// Eliminates an arm's binders by substituting the selected constructor's
@@ -7868,7 +7868,8 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 if !*exact
                     && matches!(
                         value_type,
-                        ProgramType::UInt8
+                        ProgramType::Int8
+                            | ProgramType::UInt8
                             | ProgramType::Int16
                             | ProgramType::UInt16
                             | ProgramType::Int32

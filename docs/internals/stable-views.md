@@ -170,7 +170,10 @@ range must fit inside the live allocation. Checked entry storage includes
 fresh by-value aggregate parameter copies as well as the caller's original
 locals. The loan grants a callee share and a caller close right, but escrows
 no owned fact; closing it restores implicit access without adding an ownership
-resource. Read-only storage retains intrinsic read authority and is neither
+resource. Opening a root checks the retained allocation and byte range
+against indexed live loans. Ambiguous coordinates require a separation
+proof at call entry. Worker reborrows use the selected existing binding.
+Read-only storage retains intrinsic read authority and is neither
 lent nor recovered. So does a view of a composite whose checked one-level
 expansion is only string-literal bytes and whose body facts those bytes
 decide (`string_literal_composite_holds` in `src/kernel/functions.rs`), such
@@ -225,6 +228,12 @@ bound. When several exits join, any memory cell the successor drops or
 abstracts also needs separation from the shared exit loan footprint. Its
 proof belongs at loop entry, where it cannot depend on the joined state's
 fresh values or exit equations.
+
+Population member exchanges and opening or closing a private body or an
+authority wrapper check each owned memory range in the selected body against
+the live loan footprint. State the separation before the rewrite with
+`have separate(...)`. The rewrite checks the same premise when validating
+the ownership exchange.
 
 Direct scalar assignments to address-taken locals and stores through their
 addresses require separation from the ledger's live memory footprint,

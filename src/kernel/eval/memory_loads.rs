@@ -294,6 +294,7 @@ pub(in crate::kernel) fn evaluate_indexed_integer_read(
         .clone();
     let read = MachineTerm::MemoryLoad(version, Box::new(pointer.clone()), kind);
     let (format, value) = match kind {
+        LoadKind::Int8 => (MachineIntegerType::Int8, ProgramValue::Int8(read.clone())),
         LoadKind::UInt8 => (MachineIntegerType::UInt8, ProgramValue::UInt8(read.clone())),
         LoadKind::Int16 => (MachineIntegerType::Int16, ProgramValue::Int16(read.clone())),
         LoadKind::UInt16 => (
@@ -9193,11 +9194,14 @@ fn scalar_read_presence_survives_shared_admission_and_registry_reset() {
     let name = load_variable_for_exact_cell(&memory, &pointer, LoadKind::Int32, 4);
     let observed = |term| {
         Proposition::Equal(
-            Term::Integer(IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
-                MachineIntegerType::Int32,
-                term,
-            ))),
-            Term::Integer(IntegerTerm::constant_i64(0)),
+            Term::Integer(
+                IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
+                    MachineIntegerType::Int32,
+                    term,
+                ))
+                .into(),
+            ),
+            Term::Integer(IntegerTerm::constant_i64(0).into()),
         )
     };
     let shared = observed(MachineTerm::Variable(name));
