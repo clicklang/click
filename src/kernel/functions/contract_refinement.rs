@@ -699,7 +699,6 @@ pub(super) fn project_refinement_effects(
         return Ok(Ok(FunctionMemoryEffectProjection {
             ranges,
             evidence_facts: evidence_facts.into(),
-            has_exact_write_ranges: true,
             // Explicit segments carry no requirement source.
             range_sources: Vec::new(),
         }));

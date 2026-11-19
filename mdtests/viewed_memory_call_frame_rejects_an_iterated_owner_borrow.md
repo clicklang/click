@@ -57,10 +57,18 @@ int32 keep(int32* flags, int32* data, int32 n, int32* b) {
     views *b;
     requires n == 1;
     requires flags[0] == 0;
+    requires separate(memory(flags[0..n]), memory(*b));
+    requires separate(memory(data[0..n]), memory(*b));
     ensures result == old(*b);
 } by {
-    step();
-    step();
+    step() {
+        requires separate(memory(flags[0..n]), memory(*b)) by known();
+        requires separate(memory(data[0..n]), memory(*b)) by known();
+    }
+    step() {
+        requires separate(memory(flags[0..n]), memory(*b)) by known();
+        requires separate(memory(data[0..n]), memory(*b)) by known();
+    }
     have *b == old(*b) by { known(); }
 }
 int32 root(int32* flags, int32* b) {

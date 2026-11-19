@@ -330,6 +330,8 @@ struct FunctionResourceTransfer {
     /// consumed capability when reconstructing the caller successor.
     borrowed_inputs: Vec<CheckedResourceFact>,
     consumed_inputs: Vec<CheckedResourceFact>,
+    /// Entry clauses whose checked expansion has no owned members.
+    empty_owned_input_indices: BTreeSet<usize>,
     /// Checked callee-side borrowed ownership paired with an equivalent
     /// caller-side spelling selected by the exclusive reservation planner.
     /// This is output-sized call-boundary pairing, not a search through
@@ -1212,7 +1214,6 @@ pub(crate) struct CheckedResourceFact {
 pub(crate) struct FunctionMemoryEffectProjection {
     ranges: Vec<MemoryRange>,
     evidence_facts: ExecutionFacts,
-    has_exact_write_ranges: bool,
     /// The owned requirement each projected range came out of, for the ranges
     /// a checked resource transition produced. An explicit effect segment
     /// names no requirement and appears here not at all; the call site reads
@@ -3351,7 +3352,6 @@ fn execute_verified_function_applications_with_suspension(
             name,
             interface_name,
             candidate_ordinal,
-            has_exact_write_ranges,
             storage,
             evidence,
             framed_rule,
@@ -3379,39 +3379,36 @@ fn execute_verified_function_applications_with_suspension(
                 caller_state.memory(),
             )
         };
-        let mut write_requirements = if !has_exact_write_ranges {
-            // An unresolved projection can widen an effect to bytes the
-            // callee cannot write. Keep its conservative admission check.
-            if let Some(diagnostic) = entry_state.loan_ledger().and_then(|ledger| {
-                transfer.memory_effects.iter().find_map(|range| {
-                    ledger.memory_access_refusal(
-                        range,
-                        &effective_assumptions,
-                        LoanRefusalOperation::MemoryAccess,
-                    )
-                })
-            }) {
-                paths.push(FunctionPath::new(
-                    FunctionOutcome::RuntimeError(RuntimeError::LoanRefusal(Box::new(diagnostic))),
-                    facts,
-                    obligations,
-                ));
-                continue;
-            }
-            Vec::new()
-        } else {
-            verified_call_loan_requirements(
-                caller_state.loan_ledger(),
-                &transfer.memory_effects,
-                call_site,
-                interface.contract_requires().len(),
-                if suspended.is_some() {
-                    "suspended worker write separation"
-                } else {
-                    "verified call write separation"
-                },
-            )
-        };
+        // Each successfully lowered span bounds the bytes it can affect.
+        // For an undecided guard, the whole span is still a safe bound.
+        // An unnamed projection provides no span a caller can separate.
+        let caller_loans = caller_state.loan_ledger();
+        if caller_loans.is_some_and(LoanLedger::has_active_memory_loans)
+            && transfer
+                .memory_effects
+                .iter()
+                .any(MemoryRange::is_unnamed_footprint)
+        {
+            paths.push(FunctionPath::new(
+                FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(
+                    "call has a write effect without a checked byte range while memory loans are active".into(),
+                )),
+                facts,
+                obligations,
+            ));
+            continue;
+        }
+        let mut write_requirements = verified_call_loan_requirements(
+            caller_loans,
+            &transfer.memory_effects,
+            call_site,
+            interface.contract_requires().len(),
+            if suspended.is_some() {
+                "suspended worker write separation"
+            } else {
+                "verified call write separation"
+            },
+        );
         // A checked mutex-use call may execute runtime lock/unlock operations.
         // Their representation writes are authorized by the selected use
         // transfer, not by the contract's ordinary mutable footprint. Keep
@@ -5419,7 +5416,6 @@ struct PreparedVerifiedFunctionCall<'a> {
     name: &'a str,
     interface_name: &'a str,
     candidate_ordinal: usize,
-    has_exact_write_ranges: bool,
     /// Concrete declaration identity for global and static storage lowering.
     /// This is not evidence that the function body was checked.
     storage: Option<&'a ProgramFunction>,
@@ -6832,8 +6828,17 @@ fn prepare_verified_function_call<'a>(
     // Reassemble the transition in source order from its role partitions.
     // This keeps the effect projection tied to the checked role-bearing
     // inputs rather than to a normalized context that erased source metadata.
-    let mut checked_transition_inputs = transfer.borrowed_inputs.clone();
-    checked_transition_inputs.extend(transfer.consumed_inputs.clone());
+    let mut checked_transition_inputs = transfer
+        .borrowed_inputs
+        .iter()
+        .chain(&transfer.consumed_inputs)
+        .filter(|input| {
+            !input
+                .section_index
+                .is_some_and(|index| transfer.empty_owned_input_indices.contains(&index))
+        })
+        .cloned()
+        .collect::<Vec<_>>();
     checked_transition_inputs.sort_by_key(|checked| checked.clause_position);
     let projection = match project_contract_memory_effects(
         &footprint_state,
@@ -6868,7 +6873,6 @@ fn prepare_verified_function_call<'a>(
         )));
     }
     let projection_range_sources = projection.range_sources;
-    let has_exact_write_ranges = projection.has_exact_write_ranges;
     {
         // Compare the effects against the complete checked view frontier, not
         // just the views whose requirement is a plain memory range. A
@@ -7042,7 +7046,6 @@ fn prepare_verified_function_call<'a>(
         name: application.name,
         interface_name: application.interface_name,
         candidate_ordinal,
-        has_exact_write_ranges,
         storage: application.storage,
         evidence: application.evidence,
         framed_rule: application.framed_rule,
@@ -8016,7 +8019,6 @@ fn project_explicit_memory_segments(
     let mut projection_assumptions = assumptions.clone();
     let mut ranges = BTreeSet::new();
     let mut evidence_facts = Vec::new();
-    let mut has_exact_write_ranges = true;
     for segment in segments {
         if let Some(guard) = segment.guard() {
             match evaluate_guarded_contract_condition(guard, entry, &projection_assumptions, budget)
@@ -8026,7 +8028,7 @@ fn project_explicit_memory_segments(
                 None if require_decided_guards => {
                     return Ok(Err("mutable footprint guard is undecided".to_string()));
                 }
-                None => has_exact_write_ranges = false,
+                None => {}
             }
         }
         match evaluate_loop_effect_segment_with_facts(
@@ -8048,7 +8050,6 @@ fn project_explicit_memory_segments(
     Ok(Ok(FunctionMemoryEffectProjection {
         ranges: ranges.into_iter().collect(),
         evidence_facts: evidence_facts.into(),
-        has_exact_write_ranges,
         range_sources: Vec::new(),
     }))
 }
@@ -8066,9 +8067,7 @@ pub(super) fn checked_owned_memory_ranges(
     state: &ExecutionState,
     assumptions: &PureFactContext,
 ) -> Option<Vec<MemoryRange>> {
-    OwnedFootprintDerivation::new(definitions, state, assumptions)
-        .derive(fact)
-        .map(|footprint| footprint.ranges)
+    OwnedFootprintDerivation::new(definitions, state, assumptions).derive(fact)
 }
 
 /// Project storage dependencies once at an independent contract entry. The
@@ -8093,7 +8092,6 @@ pub(super) fn assumed_mutex_input_reservations(
         ranges.extend(
             derivation
                 .derive(fact)
-                .map(|footprint| footprint.ranges)
                 .unwrap_or_else(|| vec![MemoryRange::unnamed_footprint()]),
         );
         let mut guards = OwnedFootprintDerivation::new(
@@ -8106,7 +8104,6 @@ pub(super) fn assumed_mutex_input_reservations(
         guard_ranges.extend(
             guards
                 .derive(fact)
-                .map(|footprint| footprint.ranges)
                 .unwrap_or_else(|| vec![MemoryRange::unnamed_footprint()]),
         );
     }
@@ -8569,18 +8566,12 @@ struct OwnedFootprintDerivation<'a> {
     assumptions: &'a PureFactContext,
     evaluation_assumptions: PureFactContext,
     ranges: Vec<MemoryRange>,
-    exact: bool,
     reaches_unnamed: bool,
     undefined_family: bool,
     work: usize,
     /// What remains to visit. The descent is a worklist rather than a
     /// recursion, so a long chain of families costs heap, not stack.
     pending: Vec<OwnedFootprintTask<'a>>,
-}
-
-struct OwnedMemoryFootprint {
-    ranges: Vec<MemoryRange>,
-    exact: bool,
 }
 
 /// One pending visit of [`OwnedFootprintDerivation`].
@@ -8613,7 +8604,6 @@ impl<'a> OwnedFootprintDerivation<'a> {
                 .allow_symbolic_contract_loads()
                 .prefer_symbolic_external_loads(),
             ranges: Vec::new(),
-            exact: true,
             reaches_unnamed: false,
             undefined_family: false,
             work: 0,
@@ -8624,7 +8614,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
     /// The footprint of `fact`, owned by the holder. `None` when a family
     /// it reaches has no definition in the set: the interface is malformed
     /// and the transition that needs the footprint is refused.
-    fn derive(mut self, fact: &ResourceFact) -> Option<OwnedMemoryFootprint> {
+    fn derive(mut self, fact: &ResourceFact) -> Option<Vec<MemoryRange>> {
         self.pending.push(OwnedFootprintTask::Fact(fact.clone()));
         while let Some(task) = self.pending.pop() {
             // Past the bound the footprint is unnamed memory, which covers
@@ -8655,10 +8645,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
             if self.reaches_unnamed {
                 self.ranges.push(MemoryRange::unnamed_footprint());
             }
-            return Some(OwnedMemoryFootprint {
-                ranges: self.ranges,
-                exact: false,
-            });
+            return Some(self.ranges);
         }
         // This is the footprint of the selected held/assumed head, including
         // conservative unions of match arms, not admission of new ownership.
@@ -8679,10 +8666,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
         }
         ranges.sort();
         ranges.dedup();
-        Some(OwnedMemoryFootprint {
-            ranges,
-            exact: self.exact && !self.reaches_unnamed,
-        })
+        Some(ranges)
     }
 
     /// Charges one unit; past the bound the footprint is unnamed.
@@ -8720,21 +8704,12 @@ impl<'a> OwnedFootprintDerivation<'a> {
             self.reaches_unnamed = true;
             return false;
         }
-        self.exact &= definition.witnesses.is_empty()
-            && definition.resource_parameters.is_empty()
-            && !definition.authorized
-            && !definition.is_sealed();
         true
     }
 
     fn owned_fact(&mut self, fact: &ResourceFact) {
-        let ResourceFact::Own(resource, quantity) = fact else {
+        let ResourceFact::Own(resource, _) = fact else {
             return;
-        };
-        self.exact &= match resource {
-            Resource::Memory(_) => true,
-            Resource::Composite { .. } | Resource::Instance(_) => quantity.as_const() == Some(1),
-            _ => false,
         };
         match resource {
             Resource::Footprint(_) | Resource::Parameter(_) | Resource::Emp | Resource::Star(_) => {
@@ -8907,8 +8882,6 @@ impl<'a> OwnedFootprintDerivation<'a> {
             evaluation.instance_field_scope = ResourceContext::new()
                 .unchecked_with_fact(ResourceFact::own(Resource::Instance(instance)));
             evaluation.resource_bindings = None;
-        } else {
-            self.exact = false;
         }
         for ((name, _), value) in schema.fields().iter().zip(fields) {
             if let Some(AlgebraicValue::Program(value)) = value {
@@ -8934,9 +8907,6 @@ impl<'a> OwnedFootprintDerivation<'a> {
             return;
         };
         for (arm, constructor) in self.footprint_arms(definition, matched, arguments, fields) {
-            // A union of possible arms is a conservative footprint, even
-            // when each individual arm names all of its memory.
-            self.exact &= constructor.is_some();
             let mut arm_evaluation = evaluation.clone();
             if let Some(constructor) = &constructor {
                 for ((name, binding_type), value) in
@@ -9037,21 +9007,9 @@ impl<'a> OwnedFootprintDerivation<'a> {
             &mut budget,
         ) {
             Some(false) => return,
-            Some(true) => {}
-            None => self.exact = false,
+            Some(true) | None => {}
         }
         for spec in contains {
-            // Direct memory and ordinary nested bodies may be exact. Each
-            // owned child records its own certainty when the worklist visits it.
-            self.exact &= spec.guard().is_none()
-                && spec.resource_arguments().is_empty()
-                && match spec.term() {
-                    ResourceTerm::Memory(segment) => segment.guard().is_none(),
-                    ResourceTerm::Composite { .. } | ResourceTerm::Instance { .. } => {
-                        spec.access() == ResourceAccessMode::Own
-                    }
-                    _ => false,
-                };
             // Abstract tokens own no memory, regardless of their quantity.
             // Footprint discovery need not prove that quantity nonnegative;
             // the actual resource exchange still checks it. A population
@@ -9124,7 +9082,6 @@ impl<'a> OwnedFootprintDerivation<'a> {
                     let [path] = paths.as_slice() else {
                         return None;
                     };
-                    self.exact &= path.obligations.is_empty();
                     let ExpressionOutcome::Value(value) = &path.outcome else {
                         return None;
                     };
@@ -9213,7 +9170,6 @@ pub(crate) fn project_contract_memory_effects_with_guard_policy(
     let mut ranges = BTreeSet::new();
     let mut evidence_facts = Vec::new();
     let mut range_sources = Vec::new();
-    let mut has_exact_write_ranges = true;
     if let Some(resources) = transition_resources {
         for checked in resources {
             // Borrowing is a boundary role, not an access-mode rewrite:
@@ -9222,7 +9178,7 @@ pub(crate) fn project_contract_memory_effects_with_guard_policy(
             if !checked.fact.is_own() {
                 continue;
             }
-            let Some(footprint) = OwnedFootprintDerivation::new(
+            let Some(footprint_ranges) = OwnedFootprintDerivation::new(
                 interface.composite_resource_definitions(),
                 entry,
                 assumptions,
@@ -9235,8 +9191,7 @@ pub(crate) fn project_contract_memory_effects_with_guard_policy(
                     "could not expand the checked resource transition".to_string()
                 ));
             };
-            has_exact_write_ranges &= footprint.exact || footprint.ranges.is_empty();
-            for range in footprint.ranges {
+            for range in footprint_ranges {
                 // Every byte of the expansion belongs to this one requirement,
                 // whatever depth it came from, so the requirement is the
                 // source recorded for each of its ranges.
@@ -9269,11 +9224,9 @@ pub(crate) fn project_contract_memory_effects_with_guard_policy(
     };
     ranges.extend(explicit.ranges);
     evidence_facts.extend(explicit.evidence_facts);
-    has_exact_write_ranges &= explicit.has_exact_write_ranges;
     Ok(Ok(FunctionMemoryEffectProjection {
         ranges: ranges.into_iter().collect(),
         evidence_facts: evidence_facts.into(),
-        has_exact_write_ranges,
         range_sources,
     }))
 }
@@ -11814,6 +11767,7 @@ fn prepare_contract_resource_transfer_unexplained(
             helper_call: None,
             borrowed_inputs: Vec::new(),
             consumed_inputs: Vec::new(),
+            empty_owned_input_indices: BTreeSet::new(),
             canonical_borrowed_owners: Vec::new(),
             consumed_cell_returns: ConsumedCellReturns::default(),
             allocation_creator: checked_allocation_creator(caller_state, callee_state),
@@ -12983,6 +12937,10 @@ fn prepare_contract_resource_transfer_unexplained(
         helper_call,
         borrowed_inputs,
         consumed_inputs,
+        empty_owned_input_indices: definitionally_empty_owned
+            .iter()
+            .filter_map(|requirement| requirement.section_index)
+            .collect(),
         canonical_borrowed_owners,
         consumed_cell_returns,
         allocation_creator: checked_allocation_creator(caller_state, callee_state),
