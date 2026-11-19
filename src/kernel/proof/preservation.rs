@@ -435,14 +435,14 @@ mod tests {
             super::apply(&self.separation, self.field, &self.result, available)?;
             Ok(self.result.clone())
         }
-        pub fn memories(&self) -> (&SymbolicMemory, &SymbolicMemory) {
+        pub fn points(&self) -> (&ProgramPoint, &ProgramPoint) {
             let Proposition::ResourceSeparate { left, .. } = &self.separation else {
                 unreachable!()
             };
             let Resource::Footprint(fp) = left.as_ref() else {
                 unreachable!()
             };
-            (&fp.before, &fp.after)
+            (&fp.before_point, &fp.after_point)
         }
     }
 
@@ -805,6 +805,16 @@ mod tests {
         value.clone()
     }
 
+    pub(super) fn observe_point(
+        point: &ProgramPoint,
+        address: &Address,
+        ty: ProgramType,
+    ) -> ProgramValue {
+        let value = observe(point.memory(), address, ty);
+        typed_reads::record_at(point, address, &value);
+        value
+    }
+
     pub(super) fn fixture(history: u64, cached: bool) -> (Preservation, Proposition) {
         let address = Address::symbolic(Variable(8_310_000));
         let changed = Address::symbolic(Variable(8_310_001));
@@ -853,12 +863,12 @@ mod tests {
             right: resource(address.clone(), C_POINTER_BYTE_WIDTH),
         };
         let ProgramValue::Pointer(before_value) =
-            observe(&before, &address, ProgramType::Int32Pointer)
+            observe_point(&entry.program_point(), &address, ProgramType::Int32Pointer)
         else {
             unreachable!()
         };
         let ProgramValue::Pointer(after_value) =
-            observe(&after, &address, ProgramType::Int32Pointer)
+            observe_point(&exit.program_point(), &address, ProgramType::Int32Pointer)
         else {
             unreachable!()
         };
@@ -878,13 +888,13 @@ mod tests {
 
     pub(super) fn abstract_fixture(history: u64) -> (Preservation, Proposition) {
         let (mut preservation, _) = fixture(history, false);
-        let (before, after) = preservation.memories();
+        let (before, after) = preservation.points();
         let address = Address::symbolic(Variable(8_310_000));
         let ty = ProgramType::Parameter(TypeParameterName::intern("TransportValue"));
-        let ProgramValue::Parameter(a) = observe(after, &address, ty) else {
+        let ProgramValue::Parameter(a) = observe_point(after, &address, ty) else {
             unreachable!()
         };
-        let ProgramValue::Parameter(b) = observe(before, &address, ty) else {
+        let ProgramValue::Parameter(b) = observe_point(before, &address, ty) else {
             unreachable!()
         };
         let goal = Proposition::condition_is(ConditionTerm::AlgebraicEqual(a, b), true);
