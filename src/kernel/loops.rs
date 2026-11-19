@@ -2618,10 +2618,20 @@ fn abstract_loop_exit_states(
     )?;
     let mut successor = rebound[0].clone();
     let mut restatements = vec![LoopExitRestatement::default(); rebound.len()];
-    let uninitialized = abstract_loop_exit_initialization(&mut successor, &rebound);
+    // Every binding shared by all exits already has its joined value and
+    // initialization in the successor. Keep the changed names in binding
+    // order so the fresh variables and their equations keep that order.
+    let changed_locals = rebound[1..]
+        .iter()
+        .flat_map(|state| successor.locals.differing_names(&state.locals))
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    let uninitialized =
+        abstract_loop_exit_initialization(&mut successor, &rebound, &changed_locals);
     let locals = abstract_loop_exit_locals(
         &mut successor,
         &rebound,
+        changed_locals,
         &mut restatements,
         variables,
         budget,
@@ -3474,30 +3484,25 @@ struct LoopExitAbstraction<'a> {
 /// value, so a read of it after the loop is refused rather than given a value
 /// one path never produced. What this gives up is exactly such a read.
 ///
-/// One pass over the successor's names, looking each up in every exit.
+/// Look up each changed scalar binding in the exits.
 fn abstract_loop_exit_initialization(
     successor: &mut ExecutionState,
     exits: &[ExecutionState],
+    changed_locals: &BTreeSet<BindingName>,
 ) -> Vec<BindingName> {
-    let names = successor
-        .locals
-        .bindings
-        .iter()
-        .filter(|(_, binding)| {
-            matches!(
-                binding,
-                LocalBinding::Object { .. } | LocalBinding::UninitializedObject { .. }
-            )
-        })
-        .map(|(name, _)| name.clone())
-        .collect::<Vec<_>>();
-    crate::instrumentation::record_deterministic_work(names.len().saturating_mul(exits.len()));
     let mut uninitialized = Vec::new();
-    for name in names {
+    for name in changed_locals {
+        if !matches!(
+            successor.locals.bindings.get(name),
+            Some(LocalBinding::Object { .. } | LocalBinding::UninitializedObject { .. })
+        ) {
+            continue;
+        }
         let mut initialized = false;
         let mut not_initialized = false;
         for state in exits {
-            match state.locals.binding(&name) {
+            crate::instrumentation::record_deterministic_work(1);
+            match state.locals.binding(name) {
                 Some(LocalBinding::Object { .. }) => initialized = true,
                 Some(LocalBinding::UninitializedObject { .. }) => not_initialized = true,
                 // Any other shape is a difference the residual comparison
@@ -3506,8 +3511,8 @@ fn abstract_loop_exit_initialization(
             }
         }
         if initialized && not_initialized {
-            successor.locals.forget_initialization(&name);
-            uninitialized.push(name);
+            successor.locals.forget_initialization(name);
+            uninitialized.push(name.clone());
         }
     }
     uninitialized
@@ -3647,19 +3652,22 @@ fn join_loop_exit_storage_bookkeeping(
 fn abstract_loop_exit_locals(
     successor: &mut ExecutionState,
     exits: &[ExecutionState],
+    changed_locals: BTreeSet<BindingName>,
     restatements: &mut [LoopExitRestatement],
     variables: &mut KernelVariableGenerator,
     budget: &mut ExecutionBudget,
 ) -> Result<Vec<(BindingName, ProgramType)>, String> {
     let mut abstracted = Vec::new();
-    let names = successor
-        .locals()
-        .object_values()
-        .map(|(name, _)| name.clone())
-        .collect::<Vec<_>>();
-    for name in names {
+    for name in changed_locals {
+        if !matches!(
+            successor.locals.bindings.get(&name),
+            Some(LocalBinding::Object { .. })
+        ) {
+            continue;
+        }
         let mut held = Vec::with_capacity(exits.len());
         for state in exits {
+            crate::instrumentation::record_deterministic_work(1);
             let Some(value) = state.locals().get(&name) else {
                 return Err(format!("local `{name}` is not bound by every exit"));
             };
@@ -3761,17 +3769,27 @@ fn abstract_loop_exit_memory(
     }) {
         return Err("heap allocation lifetimes".to_string());
     }
-    let pointers = memory
-        .cells
-        .keys()
-        .filter(|pointer| !resynced.contains(*pointer))
-        .cloned()
-        .collect::<Vec<_>>();
+    // Compare post-resynchronization memory with each exit. This also
+    // selects cells only another exit holds, and skips the persistent
+    // concrete cells and compact runs that every exit shares.
+    let pointers = exits
+        .iter()
+        .flat_map(|state| memory.cells.differing_pointers(&state.memory().cells))
+        .filter(|pointer| !resynced.contains(pointer))
+        .collect::<BTreeSet<_>>();
     let mut dropped = Vec::new();
     let mut havoced = Vec::new();
+    let mut abstracted = BTreeSet::new();
     for pointer in pointers {
+        if !memory.cells.contains_key(&pointer) {
+            // Only another exit holds this value. The successor already
+            // omits it, but the residual comparison must set it aside.
+            abstracted.insert(pointer);
+            continue;
+        }
         let mut held = Vec::with_capacity(exits.len());
         for state in exits {
+            crate::instrumentation::record_deterministic_work(1);
             match state.memory().cells.get(&pointer) {
                 Some(value) => held.push(value.clone()),
                 // A cell one exit does not hold is authority the successor
@@ -3841,23 +3859,6 @@ fn abstract_loop_exit_memory(
                 &range,
                 "loop exit join separation",
             ));
-        }
-    }
-    let mut abstracted = BTreeSet::new();
-    // The same missing authority seen from the other side: a cell some exit
-    // holds and the successor never did. There is nothing to drop from the
-    // successor, and that exit's own copy is not a component the exits
-    // disagree about, so it is abstracted like a dropped cell. Without this
-    // the join depended on which exit came first: an exit that opened an
-    // instance the first exit left folded was refused as a memory difference.
-    for state in exits {
-        if std::sync::Arc::ptr_eq(&state.memory().cells, &memory.cells) {
-            continue;
-        }
-        for pointer in state.memory().cells.keys() {
-            if !resynced.contains(pointer) && !memory.cells.contains_key(pointer) {
-                abstracted.insert(pointer.clone());
-            }
         }
     }
     if !dropped.is_empty() || !havoced.is_empty() {
@@ -4226,12 +4227,7 @@ fn loop_exit_state_difference(
         };
     }
     if locals != &right.locals {
-        let names = locals
-            .bindings
-            .keys()
-            .chain(right.locals.bindings.keys())
-            .filter(|name| locals.bindings.get(*name) != right.locals.bindings.get(*name))
-            .collect::<BTreeSet<_>>();
+        let names = locals.differing_names(&right.locals).collect::<Vec<_>>();
         let shown = names
             .iter()
             .take(12)
