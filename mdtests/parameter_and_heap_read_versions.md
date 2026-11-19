@@ -10,6 +10,13 @@ int32 parameter(int32 *p) {
     return p[0];
 }
 
+int32 relative(int32 *p, int32 i) {
+    int32 *cursor = p + i;
+    cursor[0] = 7;
+    cursor[1] = 9;
+    return cursor[0];
+}
+
 int32 heap(void) {
     int32 *p = malloc(8);
     if (p == 0) {
@@ -34,6 +41,20 @@ int32 parameter(int32 *p) {
     mark stored;
     step();
     have p[0] == at(stored, p[0]) by known();
+    step();
+    solve();
+}
+
+int32 relative(int32 *p, int32 i) {
+    owns p[0..4];
+    requires 0 <= i;
+    requires i < 3;
+    ensures result == 7;
+} by {
+    step(); step(); step();
+    mark stored;
+    step();
+    have cursor[0] == at(stored, cursor[0]) by known();
     step();
     solve();
 }
