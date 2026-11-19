@@ -844,7 +844,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_conditional_bridge_using");
         let Some((proof, sources)) = Self::rewrite_conditional_arms_using(input, premises)? else {
-            return Ok(None);
+            return attempt::candidate_outcome(Self::try_conditional_bound_using(input, premises))
+                .map(Option::flatten);
         };
         if proof.focused_discharged() {
             return Ok(Some(proof));
@@ -863,6 +864,106 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(Some(closed));
         }
         Self::try_signed_interval_using(&proof, &sources)
+    }
+
+    /// Prove an order bound by checking its two selected arms. Try one
+    /// written guard and close each branch from its explicit evidence.
+    pub(super) fn try_conditional_bound_using(
+        input: &Proof<'a>,
+        premises: &[ClickProposition],
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_conditional_bound_using");
+        let Some(ClickProposition::Comparison {
+            left,
+            operator:
+                ComparisonOperator::LessEqual
+                | ComparisonOperator::LessThan
+                | ComparisonOperator::GreaterEqual
+                | ComparisonOperator::GreaterThan,
+            right,
+        }) = input
+            .surface_goal()
+            .and_then(integer_composition::canonical_surface)
+        else {
+            return Ok(None);
+        };
+        // An order may compare exact observations of native operands.
+        // Preserve the conditional's lexical Integer context, if any.
+        let mut remaining = 4096;
+        let candidates = conditional_candidates(&left, &right, false, &mut remaining)
+            .map_err(|message| input.step_error(message))?;
+        let Some((
+            expression @ ContractExpression::If {
+                condition,
+                then_branch,
+                else_branch,
+            },
+            mathematical,
+        )) = candidates.first().copied()
+        else {
+            return Ok(None);
+        };
+        let condition = condition.as_ref().clone();
+        let Some((mut proof, split, ids)) =
+            attempt::candidate_outcome(input.split_focused_if(condition.clone()))?
+        else {
+            return Ok(None);
+        };
+        let marker = proof.checkpoint();
+        let operand = if mathematical {
+            super::super::surface_synthesis::integer_typed_expression(expression.clone())
+        } else {
+            expression.clone()
+        };
+        let mut sources = premises.to_vec();
+        for (id, (guard, arm)) in ids.into_iter().zip([
+            (condition.clone(), then_branch),
+            (
+                ClickProposition::Not(Box::new(condition.clone())),
+                else_branch,
+            ),
+        ]) {
+            let branch = proof.focus_branch(id)?;
+            let equality = eq(operand.clone(), arm.as_ref().clone());
+            let stated = branch
+                .driver()
+                .apply_step(super::super::wide_arithmetic::have(
+                    equality.clone(),
+                    vec![ProofStep::Known],
+                ))?;
+            let rewritten = stated
+                .driver()
+                .apply_step(ProofStep::Rewrite(equality.clone()))?;
+            sources.extend([guard, equality]);
+            proof = if let Some(goal) = rewritten.goal() {
+                let listed = || {
+                    sources.iter().any(|source| {
+                        rewritten
+                            .lower_cited_surface_proposition(source, "conditional arm bound")
+                            .is_ok_and(|premise| {
+                                selected_premise_contains_goal(&premise, goal)
+                                    && rewritten.facts().listed_premise_available(
+                                        &premise,
+                                        &[],
+                                        false,
+                                    )
+                            })
+                    })
+                };
+                if !crate::surface::planning::solve::computes_with_known(goal)
+                    && !listed()
+                    && !Self::known_bridge_using(&rewritten, &sources)?
+                {
+                    return Ok(None);
+                }
+                rewritten.driver().apply_step(ProofStep::Known)?
+            } else {
+                rewritten
+            };
+            sources.truncate(premises.len());
+        }
+        attempt::candidate_outcome(proof.join_focused_if(&marker, split, ids, condition))
     }
 }
 

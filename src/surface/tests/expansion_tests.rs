@@ -2386,6 +2386,59 @@ pub(super) fn mdtest_sources(relative: &str) -> (String, Vec<(String, String)>) 
     (click_source, mdtest.c_sources.clone())
 }
 
+#[test]
+#[ignore = "nightly: expands and cold-verifies conditional bounds and two fold proofs"]
+fn both_arms_prove_a_conditional_bound_without_normalize() {
+    for (fixture, claims) in [
+        (
+            "pure_conditional_has_an_interval",
+            &[
+                "indicator_is_nonnegative.ensures_0",
+                "indicator_is_at_most_one.ensures_0",
+                "indicator_integer_is_nonnegative.ensures_0",
+                "indicator_integer_is_at_most_one.ensures_0",
+            ][..],
+        ),
+        (
+            "fold_function_is_nonnegative_by_induction",
+            &["marks_nonnegative.ensures_0"],
+        ),
+        (
+            "fold_reading_an_array_is_nonnegative_by_induction",
+            &["unmarked_nonnegative.ensures_0"],
+        ),
+    ] {
+        let (source, sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+        let sources = sources
+            .iter()
+            .map(|(name, source)| (name.as_str(), source.as_str()))
+            .collect::<Vec<_>>();
+        for claim in claims {
+            let expanded = expand_c_claim_source_by_label(&source, &sources, claim)
+                .unwrap_or_else(|error| panic!("{claim}: {}", error.message()));
+            assert!(!expanded.contains("normalize()"), "{expanded}");
+            without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
+        }
+    }
+
+    let source = r#"
+theorem bounded(flag: Bool, a: Integer, b: Integer) {
+    requires 0 <= a;
+    requires 0 <= b;
+    ensures 0 <= (if flag { a } else { b }) by {
+        solve() using { 0 <= a; 0 <= b; };
+    }
+}
+"#;
+    let expanded = expand_c_claim_source_by_label(source, &[], "bounded.ensures_0").unwrap();
+    assert!(expanded.contains("if flag {"), "{expanded}");
+    assert!(!expanded.contains("normalize()"), "{expanded}");
+    assert!(!expanded.contains("solve()"), "{expanded}");
+    without_implicit_solve(|| verify_c_sources(&expanded, &[])).unwrap();
+    let missing = source.replace("0 <= a; 0 <= b; };", "0 <= a; };");
+    assert!(verify_c_sources(&missing, &[]).is_err());
+}
+
 /// A proof split after `step_until(function.exit)` reaches its arm from both
 /// arms of the C `if`, with different closers on each. Claim expansion places
 /// the proof cases inside each C arm instead of refusing for want of a
