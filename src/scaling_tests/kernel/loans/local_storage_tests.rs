@@ -92,3 +92,54 @@ fn local_view_work_tracks_the_explicit_delta_not_ambient_local_storage() {
         );
     }
 }
+
+#[test]
+fn local_loan_admission_tracks_selected_backing_with_live_loans_and_aliases() {
+    let requirement = view(0, 1);
+    let local = requirement.fact.memory_range().unwrap().base().clone();
+    let memory = SymbolicMemory::new().with_block(local.base.clone(), 4);
+    for worker in [false, true] {
+        let samples = [4, 16, 64].map(|count| {
+            let mut ledger = LoanLedger::new();
+            let caller = ledger.fresh_participant().unwrap();
+            let callee = ledger.fresh_participant().unwrap();
+            let mut assumptions = PureFactContext::new();
+            for index in 0..count {
+                let unrelated = SymbolicMemory::local_lifetime_pointer(index, "unrelated");
+                let range = MemoryRange::new(unrelated.clone(), 0u32.into(), 1u32.into());
+                let opening = lend_memory(&ledger, caller, callee, range);
+                ledger = ledger.apply(&opening.transition).unwrap();
+                assumptions = assumptions.assume_condition(
+                    crate::kernel::ConditionTerm::address_equal(
+                        unrelated,
+                        Address::symbolic(Variable(99_000 + index)),
+                    ),
+                    true,
+                );
+            }
+            let mut plan = plan_stable_view_transfer(
+                &ResourceContext::new(),
+                &[],
+                &assumptions,
+                &ledger,
+                caller,
+                callee,
+            )
+            .unwrap();
+            let existing = BTreeMap::new();
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                plan.lend_local_views_with_worker_shares(
+                    &memory,
+                    std::slice::from_ref(&requirement),
+                    &assumptions,
+                    worker.then_some(&existing),
+                )
+                .unwrap();
+                plan.recheck_entry(&ledger).unwrap();
+            });
+            assert_eq!(plan.stable_views.len(), 1);
+            work
+        });
+        assert!(samples[2] <= samples[0] + 48, "{worker}: {samples:?}");
+    }
+}

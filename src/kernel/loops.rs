@@ -1167,7 +1167,7 @@ fn execute_modeled_pthread_create_paths(
                                 )
                             }
                         }
-                        Err(message) => refusal(&message),
+                        Err(error) => StatementOutcome::RuntimeError(error),
                     },
                     Err(error) => StatementOutcome::RuntimeError(error),
                 }

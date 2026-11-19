@@ -581,6 +581,15 @@ impl ResourceContextIndex {
                 }
             }
         }
+        if let ResourceFact::View(Resource::Composite { arguments, .. }) = fact {
+            for pointer in algebraic_pointer_arguments(arguments) {
+                result.viewed_composites_by_argument_block = insert_resource_index_entry(
+                    &result.viewed_composites_by_argument_block,
+                    pointer.base.clone(),
+                    entry,
+                );
+            }
+        }
         if let Resource::MutexGuard(identity) = fact.resource() {
             result.mutex_authorities = insert_resource_index_entry(
                 &result.mutex_authorities,
@@ -993,6 +1002,15 @@ impl ResourceContextIndex {
                         entry,
                     );
                 }
+            }
+        }
+        if let ResourceFact::View(Resource::Composite { arguments, .. }) = fact {
+            for pointer in algebraic_pointer_arguments(arguments) {
+                result.viewed_composites_by_argument_block = remove_resource_index_entry(
+                    &result.viewed_composites_by_argument_block,
+                    &pointer.base,
+                    entry,
+                );
             }
         }
         if let Resource::MutexGuard(identity) = fact.resource() {
@@ -3526,6 +3544,22 @@ impl ResourceContext {
             .chain(composites)
             .chain(iterated)
             .inspect(|_| crate::instrumentation::record_deterministic_work(1))
+    }
+
+    /// Whether any explicit fact names this block through the same frontier
+    /// used for implicit local composite views.
+    pub(in crate::kernel) fn has_fact_referring_to_local_view_block(
+        &self,
+        block: &AddressBase,
+    ) -> bool {
+        crate::instrumentation::record_deterministic_work(1);
+        let index = &self.storage.index;
+        index.memory_by_block.contains_key(block)
+            || index.owned_composites_by_argument_block.contains_key(block)
+            || index
+                .viewed_composites_by_argument_block
+                .contains_key(block)
+            || index.iterated_by_block.contains_key(block)
     }
 
     /// Positive absence evidence for implicit local-storage borrowing. Any

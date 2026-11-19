@@ -2544,16 +2544,17 @@ pub(super) fn suspend_verified_worker(
     assumptions: &PureFactContext,
     environment: &ExecutionEnvironment,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<(super::threads::WorkerCompletion, Vec<ProofObligation>), String>> {
+) -> ExecutionResult<Result<(super::threads::WorkerCompletion, Vec<ProofObligation>), RuntimeError>>
+{
     if !rule
         .function
         .contract_interface()
         .exceptional_signature()
         .is_empty()
     {
-        return Ok(Err(
-            "exceptional workers are outside the scoped thread profile".to_string(),
-        ));
+        return Ok(Err(RuntimeError::FunctionContract(
+            "exceptional workers are outside the scoped thread profile".into(),
+        )));
     }
     let mut completions = Vec::new();
     let paths = execute_verified_function_applications_with_suspension(
@@ -2582,9 +2583,15 @@ pub(super) fn suspend_verified_worker(
         ..
     }) = paths.first()
     {
-        return Ok(Err(super::api::describe_certification_runtime_error(error)));
+        return Ok(Err(match error {
+            RuntimeError::PendingCallObligations(_) => error.clone(),
+            error => RuntimeError::FunctionContract(
+                super::api::describe_certification_runtime_error(error),
+            ),
+        }));
     }
-    Ok(unique_worker_completion(paths.is_empty(), completions))
+    Ok(unique_worker_completion(paths.is_empty(), completions)
+        .map_err(RuntimeError::FunctionContract))
 }
 
 pub(super) fn unique_worker_completion(
@@ -12212,11 +12219,9 @@ fn prepare_contract_resource_transfer_unexplained(
                         // Bytes the caller holds through any resource, such
                         // as a folded composite over part of the array, are
                         // not implicit local storage.
-                        && caller_state
+                        && !caller_state
                             .resources()
-                            .facts_that_may_refer_to_memory_block(&range.base().base)
-                            .next()
-                            .is_none()
+                            .has_fact_referring_to_local_view_block(&range.base().base)
                 })
             })
         {
@@ -12624,6 +12629,15 @@ fn prepare_contract_resource_transfer_unexplained(
                         super::loans::StableViewPlanError::UnestablishedOwnedBoundary(required) => {
                             resource_context_runtime_error(
                                 ResourceContextValidityError::UnestablishedOwnedBoundary(required),
+                            )
+                        }
+                        super::loans::StableViewPlanError::UnestablishedLocalSeparation(goal) => {
+                            RuntimeError::PendingCallObligations(
+                                vec![
+                                    ProofObligation::verification_condition(*goal)
+                                        .with_context("local loan admission separation"),
+                                ]
+                                .into(),
                             )
                         }
                         error => error

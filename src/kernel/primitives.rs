@@ -11233,6 +11233,7 @@ pub(super) struct ResourceContextIndex {
     /// (`memory_state::CallKeptRanges::range_holding`).
     pub(super) owned_composites_by_pointer_argument: PersistentMap<Address, ResourceEntryIds>,
     pub(super) owned_composites_by_argument_block: PersistentMap<AddressBase, ResourceEntryIds>,
+    pub(super) viewed_composites_by_argument_block: PersistentMap<AddressBase, ResourceEntryIds>,
     /// Owned unit heads with exactly one argument, a nominal heap pointer.
     /// The count for a typed family can cover its whole shape without
     /// enumerating the occurrences the caller kept.
