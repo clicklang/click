@@ -1480,8 +1480,14 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                     }
                                     have sibling == parent->rb_left by known();
                                     have sibling == sid by known();
+                                    have sibling->__rb_parent_color == sid->__rb_parent_color by {
+                                        normalize() using { sibling == sid; };
+                                    }
                                     have (sibling->__rb_parent_color & 1) == 1 by {
-                                        rewrite(sibling, sid); known();
+                                        normalize() using {
+                                            sibling->__rb_parent_color == sid->__rb_parent_color;
+                                            (sid->__rb_parent_color & 1) == 1;
+                                        };
                                     }
                                     step(); step(); // Skip the red-sibling rotation.
                                     step(); // Read the sibling's left child.
@@ -1505,7 +1511,10 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                     have rb_root_black(RbTree::Node(cid, cp, cc, crm, clm)) == 1 by { rewrite(RbTree::Node(cid, cp, cc, crm, clm), srm); known(); }
                                                     apply(rb_root_black_node_color_bit(cid, cp, cc, crm, clm));
                                                     let { right: cl, left: cr } = unfold(sr);
+                                                    mark black_child_guard;
                                                     step(); // The owned black child's tag satisfies the guard.
+                                                    have tmp1->rb_left == at(black_child_guard, tmp1->rb_left) by normalize();
+                                                    have tmp1->rb_right == at(black_child_guard, tmp1->rb_right) by normalize();
                                                     let rs = fold(rb_at(tmp1), { model: RbTree::Node(cid, cp, cc, crm, clm), right: cl, left: cr });
                                                     have rs.model == srm by { rewrite(srm, RbTree::Node(cid, cp, cc, crm, clm)); normalize(); }
                                                 },
@@ -1527,7 +1536,10 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                     have rb_root_black(RbTree::Node(cid, cp, cc, crm, clm)) == 1 by { rewrite(RbTree::Node(cid, cp, cc, crm, clm), slm); known(); }
                                                     apply(rb_root_black_node_color_bit(cid, cp, cc, crm, clm));
                                                     let { right: cl, left: cr } = unfold(sl);
+                                                    mark black_child_guard;
                                                     step(); // The owned black child's tag satisfies the guard.
+                                                    have tmp2->rb_left == at(black_child_guard, tmp2->rb_left) by normalize();
+                                                    have tmp2->rb_right == at(black_child_guard, tmp2->rb_right) by normalize();
                                                     let ls = fold(rb_at(tmp2), { model: RbTree::Node(cid, cp, cc, crm, clm), right: cl, left: cr });
                                                     have ls.model == slm by { rewrite(slm, RbTree::Node(cid, cp, cc, crm, clm)); normalize(); }
                                                 },
@@ -1781,7 +1793,10 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                     have rb_root_black(RbTree::Node(cid, cp, cc, crm, clm)) == 1 by { rewrite(RbTree::Node(cid, cp, cc, crm, clm), srm); known(); }
                                                     apply(rb_root_black_node_color_bit(cid, cp, cc, crm, clm));
                                                     let { right: cl, left: cr } = unfold(sr);
+                                                    mark black_child_guard;
                                                     step(); // The owned black child's tag satisfies the guard.
+                                                    have tmp1->rb_left == at(black_child_guard, tmp1->rb_left) by normalize();
+                                                    have tmp1->rb_right == at(black_child_guard, tmp1->rb_right) by normalize();
                                                     let rs = fold(rb_at(tmp1), { model: RbTree::Node(cid, cp, cc, crm, clm), right: cl, left: cr });
                                                     have rs.model == srm by { rewrite(srm, RbTree::Node(cid, cp, cc, crm, clm)); normalize(); }
                                                 },
@@ -2622,7 +2637,10 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                             have rb_root_black(RbTree::Node(cid, cp, cc, crm, clm)) == 1 by { rewrite(RbTree::Node(cid, cp, cc, crm, clm), zlm); known(); }
                                                             apply(rb_root_black_node_color_bit(cid, cp, cc, crm, clm));
                                                             let { right: cl, left: cr } = unfold(zl);
+                                                            mark black_child_guard;
                                                             step(); // The owned black child's tag satisfies the guard.
+                                                            have tmp1->rb_left == at(black_child_guard, tmp1->rb_left) by normalize();
+                                                            have tmp1->rb_right == at(black_child_guard, tmp1->rb_right) by normalize();
                                                             let rs = fold(rb_at(tmp1), { model: RbTree::Node(cid, cp, cc, crm, clm), right: cl, left: cr });
                                                             have rs.model == zlm by { rewrite(zlm, RbTree::Node(cid, cp, cc, crm, clm)); normalize(); }
                                                         },
@@ -2660,7 +2678,10 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                             have rb_root_black(RbTree::Node(cid, cp, cc, crm, clm)) == 1 by { rewrite(RbTree::Node(cid, cp, cc, crm, clm), zrm); known(); }
                                                             apply(rb_root_black_node_color_bit(cid, cp, cc, crm, clm));
                                                             let { right: cl, left: cr } = unfold(zr);
+                                                            mark black_child_guard;
                                                             step(); // The owned black child's tag satisfies the guard.
+                                                            have tmp2->rb_left == at(black_child_guard, tmp2->rb_left) by normalize();
+                                                            have tmp2->rb_right == at(black_child_guard, tmp2->rb_right) by normalize();
                                                             let ls = fold(rb_at(tmp2), { model: RbTree::Node(cid, cp, cc, crm, clm), right: cl, left: cr });
                                                             have ls.model == zrm by { rewrite(zrm, RbTree::Node(cid, cp, cc, crm, clm)); normalize(); }
                                                         },
@@ -2764,7 +2785,10 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                             have rb_root_black(RbTree::Node(cid, cp, cc, crm, clm)) == 1 by { rewrite(RbTree::Node(cid, cp, cc, crm, clm), zlm); known(); }
                                                             apply(rb_root_black_node_color_bit(cid, cp, cc, crm, clm));
                                                             let { right: cl, left: cr } = unfold(zl);
+                                                            mark black_child_guard;
                                                             step(); // The owned black child's tag satisfies the guard.
+                                                            have tmp1->rb_left == at(black_child_guard, tmp1->rb_left) by normalize();
+                                                            have tmp1->rb_right == at(black_child_guard, tmp1->rb_right) by normalize();
                                                             let rs = fold(rb_at(tmp1), { model: RbTree::Node(cid, cp, cc, crm, clm), right: cl, left: cr });
                                                             have rs.model == zlm by { rewrite(zlm, RbTree::Node(cid, cp, cc, crm, clm)); normalize(); }
                                                         },
@@ -3377,8 +3401,14 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                     }
                                     have sibling == parent->rb_right by known();
                                     have sibling == sid by known();
+                                    have sibling->__rb_parent_color == sid->__rb_parent_color by {
+                                        normalize() using { sibling == sid; };
+                                    }
                                     have (sibling->__rb_parent_color & 1) == 1 by {
-                                        rewrite(sibling, sid); known();
+                                        normalize() using {
+                                            sibling->__rb_parent_color == sid->__rb_parent_color;
+                                            (sid->__rb_parent_color & 1) == 1;
+                                        };
                                     }
                                     step(); step(); // Skip the red-sibling rotation.
                                     step(); // Read the sibling's right child.
@@ -3402,7 +3432,10 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                     have rb_root_black(RbTree::Node(cid, cp, cc, clm, crm)) == 1 by { rewrite(RbTree::Node(cid, cp, cc, clm, crm), srm); known(); }
                                                     apply(rb_root_black_node_color_bit(cid, cp, cc, clm, crm));
                                                     let { left: cl, right: cr } = unfold(sr);
+                                                    mark black_child_guard;
                                                     step(); // The owned black child's tag satisfies the guard.
+                                                    have tmp1->rb_left == at(black_child_guard, tmp1->rb_left) by normalize();
+                                                    have tmp1->rb_right == at(black_child_guard, tmp1->rb_right) by normalize();
                                                     let rs = fold(rb_at(tmp1), { model: RbTree::Node(cid, cp, cc, clm, crm), left: cl, right: cr });
                                                     have rs.model == srm by { rewrite(srm, RbTree::Node(cid, cp, cc, clm, crm)); normalize(); }
                                                 },
@@ -3424,7 +3457,10 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                     have rb_root_black(RbTree::Node(cid, cp, cc, clm, crm)) == 1 by { rewrite(RbTree::Node(cid, cp, cc, clm, crm), slm); known(); }
                                                     apply(rb_root_black_node_color_bit(cid, cp, cc, clm, crm));
                                                     let { left: cl, right: cr } = unfold(sl);
+                                                    mark black_child_guard;
                                                     step(); // The owned black child's tag satisfies the guard.
+                                                    have tmp2->rb_left == at(black_child_guard, tmp2->rb_left) by normalize();
+                                                    have tmp2->rb_right == at(black_child_guard, tmp2->rb_right) by normalize();
                                                     let ls = fold(rb_at(tmp2), { model: RbTree::Node(cid, cp, cc, clm, crm), left: cl, right: cr });
                                                     have ls.model == slm by { rewrite(slm, RbTree::Node(cid, cp, cc, clm, crm)); normalize(); }
                                                 },
@@ -3678,7 +3714,10 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                     have rb_root_black(RbTree::Node(cid, cp, cc, clm, crm)) == 1 by { rewrite(RbTree::Node(cid, cp, cc, clm, crm), srm); known(); }
                                                     apply(rb_root_black_node_color_bit(cid, cp, cc, clm, crm));
                                                     let { left: cl, right: cr } = unfold(sr);
+                                                    mark black_child_guard;
                                                     step(); // The owned black child's tag satisfies the guard.
+                                                    have tmp1->rb_left == at(black_child_guard, tmp1->rb_left) by normalize();
+                                                    have tmp1->rb_right == at(black_child_guard, tmp1->rb_right) by normalize();
                                                     let rs = fold(rb_at(tmp1), { model: RbTree::Node(cid, cp, cc, clm, crm), left: cl, right: cr });
                                                     have rs.model == srm by { rewrite(srm, RbTree::Node(cid, cp, cc, clm, crm)); normalize(); }
                                                 },
@@ -4520,7 +4559,10 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                             have rb_root_black(RbTree::Node(cid, cp, cc, clm, crm)) == 1 by { rewrite(RbTree::Node(cid, cp, cc, clm, crm), zrm); known(); }
                                                             apply(rb_root_black_node_color_bit(cid, cp, cc, clm, crm));
                                                             let { left: cl, right: cr } = unfold(zr);
+                                                            mark black_child_guard;
                                                             step(); // The owned black child's tag satisfies the guard.
+                                                            have tmp1->rb_left == at(black_child_guard, tmp1->rb_left) by normalize();
+                                                            have tmp1->rb_right == at(black_child_guard, tmp1->rb_right) by normalize();
                                                             let rs = fold(rb_at(tmp1), { model: RbTree::Node(cid, cp, cc, clm, crm), left: cl, right: cr });
                                                             have rs.model == zrm by { rewrite(zrm, RbTree::Node(cid, cp, cc, clm, crm)); normalize(); }
                                                         },
@@ -4557,7 +4599,10 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                             have rb_root_black(RbTree::Node(cid, cp, cc, clm, crm)) == 1 by { rewrite(RbTree::Node(cid, cp, cc, clm, crm), zlm); known(); }
                                                             apply(rb_root_black_node_color_bit(cid, cp, cc, clm, crm));
                                                             let { left: cl, right: cr } = unfold(zl);
+                                                            mark black_child_guard;
                                                             step(); // The owned black child's tag satisfies the guard.
+                                                            have tmp2->rb_left == at(black_child_guard, tmp2->rb_left) by normalize();
+                                                            have tmp2->rb_right == at(black_child_guard, tmp2->rb_right) by normalize();
                                                             let ls = fold(rb_at(tmp2), { model: RbTree::Node(cid, cp, cc, clm, crm), left: cl, right: cr });
                                                             have ls.model == zlm by { rewrite(zlm, RbTree::Node(cid, cp, cc, clm, crm)); normalize(); }
                                                         },
@@ -4661,7 +4706,10 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                             have rb_root_black(RbTree::Node(cid, cp, cc, clm, crm)) == 1 by { rewrite(RbTree::Node(cid, cp, cc, clm, crm), zrm); known(); }
                                                             apply(rb_root_black_node_color_bit(cid, cp, cc, clm, crm));
                                                             let { left: cl, right: cr } = unfold(zr);
+                                                            mark black_child_guard;
                                                             step(); // The owned black child's tag satisfies the guard.
+                                                            have tmp1->rb_left == at(black_child_guard, tmp1->rb_left) by normalize();
+                                                            have tmp1->rb_right == at(black_child_guard, tmp1->rb_right) by normalize();
                                                             let rs = fold(rb_at(tmp1), { model: RbTree::Node(cid, cp, cc, clm, crm), left: cl, right: cr });
                                                             have rs.model == zrm by { rewrite(zrm, RbTree::Node(cid, cp, cc, clm, crm)); normalize(); }
                                                         },
