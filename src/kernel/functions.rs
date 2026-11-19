@@ -1820,7 +1820,7 @@ fn execute_function_paths(
             ));
             continue;
         }
-        let Some((argument_values, argument_obligations)) = coerce_program_function_arguments(
+        let Some((argument_values, mut argument_obligations)) = coerce_program_function_arguments(
             function,
             &native_arguments,
             &arguments_path.obligations,
@@ -1840,6 +1840,7 @@ fn execute_function_paths(
             function,
             &argument_values,
             &arguments_path.values,
+            &mut argument_obligations,
         ) else {
             paths.push(FunctionPath::new(
                 FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(
@@ -2261,7 +2262,7 @@ pub(super) fn execute_program_function_call_paths(
             ));
             continue;
         }
-        let Some((argument_values, argument_obligations)) = coerce_program_function_arguments(
+        let Some((argument_values, mut argument_obligations)) = coerce_program_function_arguments(
             function,
             &native_arguments,
             &arguments_path.obligations,
@@ -2294,6 +2295,7 @@ pub(super) fn execute_program_function_call_paths(
             function,
             &argument_values,
             &arguments_path.values,
+            &mut argument_obligations,
         ) else {
             paths.push(FunctionPath::new(
                 FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(
