@@ -18,6 +18,8 @@ use cpp_description::{load_import, refresh_import};
 
 #[path = "support/pinned_clang.rs"]
 mod pinned_clang;
+#[path = "support/span_by_value.rs"]
+mod span_by_value;
 use pinned_clang::{output, pinned_clang, sha256};
 
 const ARCHIVE: &[u8] = include_bytes!("fixtures/libcxx-span/input-closure.tar.gz");
@@ -380,5 +382,17 @@ bool probe(const std::span<int>& s) {
             "named resource instance does not match its contract",
         )],
     );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+#[ignore = "nightly: pinned libc++ by-value span proof and replay"]
+fn libcxx_span_by_value_caller_uses_the_verified_helper() {
+    let (root, import) = libcxx_fixture(
+        "by-value-helper",
+        span_by_value::CPP,
+        &["libcxx/include/c++/v1/span"],
+    );
+    span_by_value::check(&root, &import);
     fs::remove_dir_all(root).unwrap();
 }
