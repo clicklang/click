@@ -14415,6 +14415,28 @@ fn c_callback_typedefs_reject_signature_erasure_in_unmodeled_positions() {
 }
 
 #[test]
+fn c_function_type_typedef_requires_an_explicit_pointer_to_a_prototype() {
+    for (declaration, expected) in [
+        (
+            "typedef int unary(int); struct holder { unary callback; };",
+            "function-type alias requires `*`",
+        ),
+        (
+            "typedef int unary(int); struct holder { unary **callback; };",
+            "pointers to function pointers are not supported",
+        ),
+        (
+            "typedef int unary(); struct holder { unary *callback; };",
+            "function-type typedefs require a parameter prototype",
+        ),
+    ] {
+        let source = format!("{declaration} int run(void) {{ return 0; }}");
+        let error = syntax::parse_functions(&source).expect_err("unsupported function alias");
+        assert!(error.message().contains(expected), "{error}");
+    }
+}
+
+#[test]
 fn c_opaque_pointer_typedef_returns_retain_identity_without_a_layout() {
     let functions = syntax::parse_functions(
         r#"

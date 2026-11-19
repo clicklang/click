@@ -6,11 +6,32 @@ impl Parser {
     pub(super) fn parse_typedef_declaration(&mut self) -> Result<(), CSyntaxError> {
         self.expect_ident_spelling("typedef")?;
         let mut parsed_type = self.parse_type_with_anonymous_struct(true, true, true)?;
-        let alias = if let Some((alias, interface_type, signature)) =
-            self.parse_function_pointer_declarator(parsed_type.clone())?
-        {
-            // The callback's return qualifiers and nominal tags belong to its
-            // signature, not to the function-pointer object named by this alias.
+        let pointer_declarator =
+            self.peek() == Some(&Token::LParen) && self.peek_next() == Some(&Token::Star);
+        let (alias, callback) = if pointer_declarator {
+            let (alias, ty, signature) = self
+                .parse_function_pointer_declarator(parsed_type.clone())?
+                .expect("function-pointer declarator starts with a parenthesis");
+            (alias, Some((ty, signature)))
+        } else {
+            let parenthesized = self.peek() == Some(&Token::LParen);
+            if parenthesized {
+                self.expect(Token::LParen)?;
+            }
+            let alias = self.expect_ident("typedef name")?;
+            if parenthesized {
+                self.expect(Token::RParen)?;
+            }
+            let callback = if self.peek() == Some(&Token::LParen) {
+                Some(self.parse_callback_signature(parsed_type.clone(), true)?)
+            } else {
+                None
+            };
+            (alias, callback)
+        };
+        let function_alias = callback.is_some() && !pointer_declarator;
+        if let Some((interface_type, signature)) = callback {
+            // Return qualifiers and tags are properties of the signature.
             parsed_type.interface_type = interface_type;
             parsed_type.function_pointer_signature = Some(signature);
             parsed_type.struct_name = None;
@@ -21,10 +42,10 @@ impl Parser {
             parsed_type.is_volatile = false;
             parsed_type.volatile_levels = 0;
             parsed_type.pointer_depth = 0;
-            alias
-        } else {
-            self.expect_ident("typedef name")?
-        };
+        }
+        if function_alias && self.peek() != Some(&Token::Semicolon) {
+            return Err(self.error_here("function-type typedef must end with `;`"));
+        }
         if self.peek() == Some(&Token::LBracket) {
             self.position += 1;
             let length = self.parse_struct_array_length()?;
@@ -99,7 +120,12 @@ impl Parser {
             self.expect(Token::RParen)?;
         }
         self.expect(Token::Semicolon)?;
-        if self.typedefs.insert(alias.clone(), parsed_type).is_some() {
+        let ty = if function_alias {
+            CTypeAlias::Function(parsed_type)
+        } else {
+            CTypeAlias::Object(parsed_type)
+        };
+        if self.typedefs.insert(alias.clone(), ty).is_some() {
             return Err(self.error_at_previous(format!("duplicate typedef `{alias}`")));
         }
         Ok(())
