@@ -4574,6 +4574,20 @@ fn synthesize_surface_resource_argument(
 ) -> Option<ContractExpression> {
     use crate::kernel::AlgebraicValue as A;
     match argument {
+        // A local's storage is spelled by the local, `&pool`, as a memory
+        // range's base is.
+        A::Program(ProgramValue::Pointer(pointer))
+            if let Some(name) = state.locals().name_for_slot(pointer.address()) =>
+        {
+            let object = ProgramExpression::Variable(surface_local_name(name));
+            Some(ContractExpression::ProgramExpression(
+                if state.locals().array_object_element_type(name).is_some() {
+                    object
+                } else {
+                    ProgramExpression::AddressOf(Box::new(object))
+                },
+            ))
+        }
         A::Program(ProgramValue::Pointer(pointer)) => synthesize_surface_pointer_expression(
             pointer,
             parameter_binding,
