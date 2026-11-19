@@ -1478,12 +1478,29 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     )),
                     _ => None,
                 };
+                let retained_product = matches!(node, IntervalMultiply { .. })
+                    && inputs.iter().any(has_retained_read_source);
                 let result_identity = if let Some(exact) = exact {
                     let bounds = [
                         le(number(i64::from(i32::MIN)), exact.clone()),
                         le(exact.clone(), number(i64::from(i32::MAX))),
                     ];
                     for bound in &bounds {
+                        if retained_product {
+                            let candidate = (|| {
+                                let scope = proof.driver().open_have(bound.clone())?;
+                                scope
+                                    .driver()
+                                    .try_product_bound_using(&inputs)?
+                                    .filter(|closed| closed.is_complete())
+                                    .map(|closed| closed.join())
+                                    .transpose()
+                            })();
+                            if let Some(next) = attempt::candidate_outcome(candidate)?.flatten() {
+                                proof = next;
+                                continue;
+                            }
+                        }
                         let Some(next) =
                             Self::ordinary_integer_fact(&proof, bound.clone(), &inputs)?
                         else {
@@ -1514,28 +1531,31 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 }
                 let lower = le(number(lo), observed(&term));
                 let upper = le(observed(&term), number(hi));
-                let add_sub_identity = result_identity.filter(|_| {
-                    matches!(
-                        term,
-                        ContractExpression::Add(..) | ContractExpression::Subtract(..)
-                    ) && inputs.iter().any(has_retained_read_source)
+                let retained_identity = result_identity.filter(|_| {
+                    retained_product
+                        || (matches!(
+                            term,
+                            ContractExpression::Add(..) | ContractExpression::Subtract(..)
+                        ) && inputs.iter().any(has_retained_read_source))
                 });
                 for bound in [&lower, &upper] {
-                    if let Some(identity) = &add_sub_identity {
-                        // Keep the native value's spelling in the fact we publish.
-                        // The already-established equality turns its bound into
-                        // an ordinary Integer addition or subtraction bound.
+                    if let Some(identity) = &retained_identity {
+                        // Retain the native endpoint after proving its bound
+                        // through the checked exact-operation identity.
                         let candidate = (|| {
                             let scope = proof.driver().open_have(bound.clone())?;
                             let rewritten = scope
                                 .driver()
                                 .apply_step(ProofStep::Rewrite(identity.clone()))?;
-                            let Some(closed) =
+                            let closed = if retained_product {
+                                rewritten.driver().try_product_bound_using(&inputs)?
+                            } else {
                                 rewritten.driver().try_int32_add_sub_using(&inputs)?
-                            else {
-                                return Ok(None);
                             };
-                            closed.is_complete().then(|| closed.join()).transpose()
+                            closed
+                                .filter(|closed| closed.is_complete())
+                                .map(|closed| closed.join())
+                                .transpose()
                         })();
                         if let Some(next) = attempt::candidate_outcome(candidate)?.flatten() {
                             proof = next;

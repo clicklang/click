@@ -189,6 +189,20 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // the goal names the complete product through an Integer let binding.
         let mut selected: [Option<(BigInt, ClickProposition, ContractExpression)>; 4] =
             std::array::from_fn(|_| None);
+        for (i, operand) in [x, y].into_iter().enumerate() {
+            if let Some(value) = operand.as_const() {
+                let written = super::super::surface_synthesis::integer_typed_expression(
+                    surface_signed_integer_literal(value),
+                );
+                let bound = ClickProposition::Comparison {
+                    left: written.clone(),
+                    operator: ComparisonOperator::LessEqual,
+                    right: written.clone(),
+                };
+                selected[2 * i] = Some((value.clone(), bound.clone(), written.clone()));
+                selected[2 * i + 1] = Some((value.clone(), bound, written));
+            }
+        }
         for surface in premises {
             let written = super::integer_composition::canonical_surface(surface)
                 .unwrap_or_else(|| surface.clone());
@@ -233,7 +247,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                                 };
                                 // Native bounds supply a machine spelling; theorem
                                 // arguments denote its mathematical observation.
-                                if matches!(operand.value_read(), IntegerTerm::Machine(_)) {
+                                if matches!(operand.value_read(), IntegerTerm::Machine(_))
+                                    && super::integer_composition::observed_argument(&written)
+                                        .is_none()
+                                {
                                     ContractExpression::Call {
                                         name: "to_integer".into(),
                                         arguments: vec![written],

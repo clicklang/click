@@ -2660,6 +2660,16 @@ fn pointer_cursor_invariant_expands_and_replays() {
     verify_c_sources(&click, &sources).unwrap();
     let expanded = expand_function_proof_source(&click, &sources, "f").unwrap();
     assert!(!expanded.contains("transport("), "{expanded}");
+    assert!(expanded.matches("normalize()").count() <= 4, "{expanded}");
+    for law in ["product_lower_bound", "product_upper_bound"] {
+        assert!(
+            expanded
+                .matches(&format!("apply(click::integer::{law}("))
+                .count()
+                >= 4,
+            "{expanded}"
+        );
+    }
     without_implicit_solve_for_claim("f.contract", || {
         verify_c_sources(&expanded, &sources).map_err(|error| error.report())
     })
