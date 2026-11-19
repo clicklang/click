@@ -4957,35 +4957,17 @@ impl CheckedExecutionBranch {
 /// Whether every stable-view loan dependency the interface successor carries
 /// was already held by a concrete arm.
 ///
-/// The checked quantity is the binding itself -- the
-/// loan, scope, share, support occurrence, and viewed fact -- which names the
-/// exact authority that licenses reading the exported view. Requiring each of
-/// those to appear in some arm keeps the join from minting authority that no
-/// alternative execution actually reached (D2 law 9).
-///
-/// The binding count follows the proof -- one binding per exposed child per
-/// unfold or observe -- while the loans themselves follow the contract, so
-/// comparing the two sides pairwise would be quadratic in proof length. The
-/// arms' binding *values* are folded into one membership index first and each
-/// successor binding is then one lookup. That is the same predicate: a binding
-/// is inherited exactly when some arm holds an equal one, at whatever
-/// occurrence. The occurrence keys cannot serve as that index, because a
-/// `branch ensuring` interface rebuilds its resource context from the declared
-/// clauses and its occurrences are fresh.
+/// Check the exact authority (including the loan, share, scope, support,
+/// viewed fact and hold) of each claimed binding. Interface publication can
+/// give a held view a fresh occurrence, so membership is by binding value
+/// and the arms maintain that index as their bindings change (D2 law 9).
 fn interface_successor_loans_are_inherited(
     successor: &ExecutionState,
     arms: [&ExecutionState; 2],
 ) -> bool {
-    let mut held = std::collections::HashSet::new();
-    for arm in arms {
-        for (_, binding) in arm.loan_view_bindings().iter() {
-            crate::instrumentation::record_deterministic_work(1);
-            held.insert(binding);
-        }
-    }
     successor.loan_view_bindings().iter().all(|(_, binding)| {
-        crate::instrumentation::record_deterministic_work(1);
-        held.contains(binding)
+        arms.iter()
+            .any(|arm| arm.loan_view_bindings().contains_binding(binding))
     })
 }
 

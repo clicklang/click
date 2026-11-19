@@ -158,6 +158,57 @@ fn an_interface_successor_may_only_carry_a_loan_an_arm_held() {
     ));
 }
 
+#[test]
+fn interface_inheritance_tracks_duplicate_bindings_and_replacement() {
+    let (arm, binding) = arm_holding_a_view("same_spelling");
+    let (_, replacement) = arm_holding_a_view("same_spelling");
+    assert_eq!(binding.viewed, replacement.viewed);
+    assert_ne!(binding, replacement);
+    let claim = successor_carrying(&binding);
+    let replacement_claim = successor_carrying(&replacement);
+    assert!(!interface_successor_loans_are_inherited(
+        &replacement_claim,
+        [&arm, &arm],
+    ));
+
+    let original = arm.resources().occurrences_for_fact(&binding.viewed)[0];
+    let (duplicated, inserted) = arm
+        .resources()
+        .clone()
+        .unchecked_with_facts_and_occurrences([binding.viewed.clone()]);
+    let duplicate = inserted[0].1;
+    let once = duplicated
+        .with_loan_dependency(duplicate, binding.clone())
+        .without_bound_view_occurrence(original, &binding)
+        .expect("the original binding can be removed independently");
+    let once = arm.clone().with_resource_context(once);
+    assert!(interface_successor_loans_are_inherited(
+        &claim,
+        [&once, &once]
+    ));
+
+    let rebound_bindings = once
+        .loan_view_bindings()
+        .with_inserted(duplicate, replacement);
+    let rebound = once.clone().with_resource_context(
+        once.resources()
+            .clone()
+            .with_loan_dependency_state(rebound_bindings.state()),
+    );
+    assert!(!interface_successor_loans_are_inherited(
+        &claim,
+        [&rebound, &rebound],
+    ));
+    assert!(interface_successor_loans_are_inherited(
+        &replacement_claim,
+        [&rebound, &rebound],
+    ));
+    assert!(interface_successor_loans_are_inherited(
+        &claim,
+        [&arm, &arm]
+    ));
+}
+
 fn constructor_partition_fixture(
     width: usize,
 ) -> (ExecutionProofCore, crate::kernel::AlgebraicTerm) {

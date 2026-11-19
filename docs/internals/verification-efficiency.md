@@ -594,10 +594,6 @@ The following are known violations of the fast-part rule, listed under
 "Fast-part scans" in [the smart-tactics roadmap item](https://github.com/clicklang/click/blob/master/roadmap/smart-tactics.md).
 Their mechanisms are described here; their cost is not accepted.
 
-- **Interface-join binding inheritance.** The successor's bindings are
-  compared with the arms' through one membership index over binding values,
-  linear in the binding count, which grows with proof length
-  (`interface_binding_inheritance_is_near_linear_in_the_binding_count`).
 - **Uncharged transport contexts.** Explicit transport planning still builds
   contexts through `assume_proposition_uncharged`, counted separately by
   `count_uncharged_context_entries`. It admits the path's memory-effect facts

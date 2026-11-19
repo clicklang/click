@@ -253,6 +253,10 @@ pub(crate) struct LoanViewBindingsState {
     pub(crate) map: PersistentMap<ResourceOccurrenceId, LoanViewBinding>,
     changes: imbl::Vector<(u64, ResourceOccurrenceId)>,
     by_view: PersistentMap<ResourceFact, PersistentSet<ResourceOccurrenceId>>,
+    // A join can re-key a view, so exact inheritance looks up the whole
+    // authority by value. Keep all its occurrences so removing one leaves
+    // the others available.
+    by_binding: PersistentMap<LoanViewBinding, PersistentSet<ResourceOccurrenceId>>,
     by_key: PersistentMap<BoundViewKey, PersistentSet<ResourceOccurrenceId>>,
 }
 
@@ -265,15 +269,18 @@ impl LoanViewBindingsState {
         let mut changes = self.changes.clone();
         let identity = next_loan_binding_identity();
         let mut by_view = self.by_view.clone();
+        let mut by_binding = self.by_binding.clone();
         let mut by_key = self.by_key.clone();
         for occurrence in changed {
             changes.push_back((identity, occurrence));
             if let Some(old) = self.map.get(&occurrence) {
                 remove_bound_occurrence(&mut by_view, &old.viewed, occurrence);
+                remove_bound_occurrence(&mut by_binding, old, occurrence);
                 remove_bound_occurrence(&mut by_key, &BoundViewKey::of(&old.viewed), occurrence);
             }
             if let Some(new) = map.get(&occurrence) {
                 insert_bound_occurrence(&mut by_view, new.viewed.clone(), occurrence);
+                insert_bound_occurrence(&mut by_binding, new.clone(), occurrence);
                 insert_bound_occurrence(&mut by_key, BoundViewKey::of(&new.viewed), occurrence);
             }
         }
@@ -282,6 +289,7 @@ impl LoanViewBindingsState {
             map,
             changes,
             by_view,
+            by_binding,
             by_key,
         })
     }
@@ -401,6 +409,11 @@ impl LoanViewBindings {
 
     pub(crate) fn get(&self, occurrence: &ResourceOccurrenceId) -> Option<&LoanViewBinding> {
         self.state.map.get(occurrence)
+    }
+
+    pub(crate) fn contains_binding(&self, binding: &LoanViewBinding) -> bool {
+        crate::instrumentation::record_deterministic_work(1);
+        self.state.by_binding.contains_key(binding)
     }
 
     /// Nominate one bound occurrence, never enumerate observations or retry
