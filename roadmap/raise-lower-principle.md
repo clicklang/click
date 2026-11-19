@@ -4432,6 +4432,29 @@ regular corpora passed fact-stability auditing with zero differences. The
 focused volatile census passed 11 fixtures and reported the one miss above.
 These are scoped measurements, not evidence that the split is already complete.
 
+## Package 11: shared operands in checking
+
+Deliver one PR per slice. The authorized implementation sequence is 11a–11e.
+Each slice preserves fact identity, raise/lower behavior, and deterministic
+scaling. If a slice requires a new search index, a larger budget, a proof
+rewrite, or a change to snapshot identity, pause and isolate the case before
+changing the plan.
+
+| Slice | Scope and completion criterion |
+| --- | --- |
+| 11a | Collect Boolean read dependencies from the retained read. Preserve exact stored-cell connections and history dependencies without building a native Boolean term. |
+| 11b | Collect float read dependencies from the retained read. Preserve both widths, exact stored-cell connections, and selected read origins. |
+| 11c | Collect algebraic read dependencies from the retained read. Remove its native read adapter when its last consumer moves. |
+| 11d | Raise retained Boolean and float reads directly. Check identity on raise/lower for named reads and reads across stores. |
+| 11e | Build machine read fact keys from retained load shape and width. Preserve fact identity across registered names and memory versions. |
+| 11f | Move shape-only machine conversion and comparison readers onto the operand view. Preserve polarity, width, and refusals. |
+| 11g | Build Integer fold fact keys from the retained fold. Preserve binder scope, range kind, free variables, and memory-state identity. |
+| 11h | Keep checked Integer fold substitution in shared form. Check endpoint and body substitution against native reference tests for capture and refusal. |
+| 11i | Move dependency and bound-variable readers for contract pointer offsets onto shared offsets. Preserve collected reads and variables. |
+| 11j | Retain the shared offset in the contract term. Cover checked rewriting, raising, and fact identity. |
+| 11k | Move one scalar machine-result certificate reader onto retained typed arguments. Preserve call identity and exact argument spelling. |
+| 11l | Delete adapters and cache branches whose last readers have moved. Update the live-boundary inventory with the callers that remain. |
+
 ## Delivery and history
 
 Land coherent tested slices in small PRs, one open PR per thread, with auto-merge
