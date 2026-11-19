@@ -16027,7 +16027,9 @@ mod representation_size_tests {
     #[test]
     fn pure_facts_do_not_pay_for_program_payloads() {
         assert!(std::mem::size_of::<Term>() <= 144);
-        assert!(std::mem::size_of::<Proposition>() <= 2 * std::mem::size_of::<Term>());
+        // Keep this budget independent of Term's current layout. Shrinking
+        // an operand does not increase the space used by other fact variants.
+        assert!(std::mem::size_of::<Proposition>() <= 2 * 144);
         assert!(std::mem::size_of::<ExecutionPureFact>() <= 352);
         assert!(std::mem::size_of::<StatementOutcome>() <= 144);
         assert!(std::mem::size_of::<FunctionOutcome>() <= 144);
