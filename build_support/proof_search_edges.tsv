@@ -790,6 +790,9 @@ src/surface/proof/smart_closures/machine_bridges.rs	search	ProofSearch::try_cond
 src/surface/proof/smart_closures/machine_bridges.rs	search	ProofSearch::try_conditional_bridge_using	try_signed_interval_using	1
 src/surface/proof/smart_closures/machine_bridges.rs	search	ProofSearch::rewrite_conditional_arms_using	driver	2
 src/surface/proof/smart_closures/machine_bridges.rs	search	ProofSearch::try_conditional_bridge_using	rewrite_conditional_arms_using	1
+src/surface/proof/smart_closures/machine_bridges.rs	search	ProofSearch::try_conditional_bridge_using	try_conditional_bound_using	1
+src/surface/proof/smart_closures/machine_bridges.rs	search	ProofSearch::try_conditional_bound_using	known_bridge_using	1
+src/surface/proof/smart_closures/machine_bridges.rs	search	ProofSearch::try_conditional_bound_using	driver	3
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_goal_conditional_normalization	rewrite_conditional_arms_using	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::apply_normalization_closure	try_pointer_translation_using	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_solve_closure_before_arithmetic	try_pointer_translation_using	1
@@ -821,3 +824,6 @@ src/surface/proof/driver/scopes.rs	driver	ProofDriver::try_native_integer_bound	
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_signed_interval_using	try_native_integer_bound	1
 src/surface/proof/smart_closures/signed_intervals.rs	search	ProofSearch::ordinary_integer_fact	try_native_integer_bound	1
 src/surface/proof/smart_closures/signed_intervals.rs	search	ProofSearch::apply_signed_interval_composition	try_int32_add_sub_using	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_direct_logical_leaf	try_conditional_bound_using	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_direct_logical_closure	try_direct_logical_leaf	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_direct_structural_closure_inner_impl	try_direct_logical_leaf	1
