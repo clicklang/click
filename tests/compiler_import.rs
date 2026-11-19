@@ -571,6 +571,25 @@ fn userspace_and_kernel_imports_have_distinct_identity_for_identical_c() {
 }
 
 #[test]
+fn userspace_string_header_skips_the_legacy_fallback() {
+    let project = Project::new();
+    configure_userspace(&project);
+    fs::write(
+        project.0.join("main.c"),
+        r#"
+#include <string.h>
+#define HAVE_STRINGS_H 1
+#if defined(HAVE_STRINGS_H) && !defined(_STRING_H) && !defined(__USE_BSD)
+#include <strings.h>
+#endif
+size_t answer(void) { return strlen("hello"); }
+"#,
+    )
+    .unwrap();
+    create_lock(&project.config()).unwrap();
+}
+
+#[test]
 #[ignore = "nightly: 1.5s in the parallel gate"]
 fn userspace_compiler_import_refuses_profile_overrides_and_ambient_headers() {
     let project = Project::new();

@@ -29,15 +29,11 @@ system headers. This was tested with GCC 14.2 and CMake 3.31.
 integrations/json-c/verify.sh json-c array-list
 ```
 
-The [array length proof](array-list.click) is a pending claim. Import currently
-stops at `arraylist.c:22`. json-c's CMake configuration detects `strings.h`,
-and the source tries to include it if the preceding `string.h` has not set
-`_STRING_H` or enabled `__USE_BSD`. glibc's `string.h` sets `_STRING_H`.
-Click's modeled header leaves it unset, and Click has no modeled
-`strings.h`. Testing with the glibc guard defined just for diagnosis let
-preprocessing finish. The parser then stopped on the function type
-declaration `typedef void(array_list_free_fn)(void *data);` at
-`arraylist.h:29`.
+The [array length proof](array-list.click) is a pending claim. Click's
+modeled `string.h` sets the same `_STRING_H` guard as glibc, so GCC skips
+json-c's fallback `strings.h` include in `arraylist.c`. Preprocessing now
+finishes. Click then stops on the function-type declaration
+`typedef void(array_list_free_fn)(void *data);` at `arraylist.h:29`.
 
 Once that translation unit imports, `array_list_length` tests reading a field
 from the actual list struct. `array_list_get_idx` is the next useful claim.
