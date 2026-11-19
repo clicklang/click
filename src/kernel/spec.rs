@@ -7837,7 +7837,11 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 if !*exact
                     && matches!(
                         value_type,
-                        ProgramType::UInt8 | ProgramType::Int32 | ProgramType::UInt32
+                        ProgramType::UInt8
+                            | ProgramType::Int16
+                            | ProgramType::UInt16
+                            | ProgramType::Int32
+                            | ProgramType::UInt32
                     )
                     && ProgramPoint::supports_indexed_local_integer_version(&pointer)
                 {

@@ -4156,15 +4156,10 @@ fn local_read_test_address(name: &str) -> Address {
 }
 
 fn local_test_read_operand(term: &MachineTerm, value_type: ProgramType) -> &MachineTerm {
-    if value_type == ProgramType::UInt8
-        && let MachineTerm::Cast {
-            from: MachineIntegerType::UInt8,
-            to: MachineIntegerType::Int32,
-            value,
-            ..
-        } = term
+    if let Some((source, operand)) = term.narrow_widening32_operand()
+        && source.program_type() == value_type
     {
-        return value;
+        return operand;
     }
     term
 }
@@ -4179,6 +4174,14 @@ fn local_read_test_store(
         ProgramType::UInt8 => ProgramValue::UInt8(MachineTerm::narrow_constant(
             MachineIntegerType::UInt8,
             u128::from(bits & 0xff),
+        )),
+        ProgramType::Int16 => ProgramValue::Int16(MachineTerm::narrow_constant(
+            MachineIntegerType::Int16,
+            u128::from(bits & 0xffff),
+        )),
+        ProgramType::UInt16 => ProgramValue::UInt16(MachineTerm::narrow_constant(
+            MachineIntegerType::UInt16,
+            u128::from(bits & 0xffff),
         )),
         ProgramType::Int32 => ProgramValue::Int32(MachineTerm::constant(bits)),
         ProgramType::UInt32 => ProgramValue::UInt32(MachineTerm::uint32_constant(bits)),
@@ -4216,6 +4219,8 @@ fn local_read_test_claim(value_type: ProgramType) -> ClickProposition {
 
 #[test]
 fn ordinary_indexed_integer_reads_select_the_write_on_their_own_path() {
+    check_local_read_versions(ProgramType::Int16, ProgramType::UInt16);
+    check_local_read_versions(ProgramType::UInt16, ProgramType::Int16);
     check_local_read_versions(ProgramType::UInt8, ProgramType::Int32);
     check_local_read_versions(ProgramType::Int32, ProgramType::UInt8);
     check_local_read_versions(ProgramType::Int32, ProgramType::UInt32);
@@ -4226,6 +4231,8 @@ fn check_local_read_versions(value_type: ProgramType, disjoint_type: ProgramType
     let _session = crate::kernel::VerificationSession::enter();
     let pointer_type = match value_type {
         ProgramType::UInt8 => ProgramType::UInt8Pointer,
+        ProgramType::Int16 => ProgramType::Int16Pointer,
+        ProgramType::UInt16 => ProgramType::UInt16Pointer,
         ProgramType::Int32 => ProgramType::Int32Pointer,
         ProgramType::UInt32 => ProgramType::UInt32Pointer,
         _ => unreachable!("indexed local test type"),
@@ -4336,6 +4343,8 @@ fn check_local_read_versions(value_type: ProgramType, disjoint_type: ProgramType
 
 #[test]
 fn ordinary_indexed_integer_read_work_is_bounded_as_path_grows() {
+    check_local_read_work(ProgramType::Int16, ProgramType::UInt16);
+    check_local_read_work(ProgramType::UInt16, ProgramType::Int16);
     check_local_read_work(ProgramType::UInt8, ProgramType::Int32);
     check_local_read_work(ProgramType::Int32, ProgramType::UInt32);
     check_local_read_work(ProgramType::UInt32, ProgramType::Int32);
@@ -4345,6 +4354,8 @@ fn check_local_read_work(value_type: ProgramType, disjoint_type: ProgramType) {
     let _session = crate::kernel::VerificationSession::enter();
     let pointer_type = match value_type {
         ProgramType::UInt8 => ProgramType::UInt8Pointer,
+        ProgramType::Int16 => ProgramType::Int16Pointer,
+        ProgramType::UInt16 => ProgramType::UInt16Pointer,
         ProgramType::Int32 => ProgramType::Int32Pointer,
         ProgramType::UInt32 => ProgramType::UInt32Pointer,
         _ => unreachable!("indexed local test type"),

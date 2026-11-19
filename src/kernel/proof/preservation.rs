@@ -51,6 +51,7 @@ pub(crate) fn apply(
         preserve_footprint(
             separation,
             read_type(result).ok_or("unsupported footprint observation")?,
+            result,
         )
         .ok_or(
             "preserve requires a region footprint separated from the selected complete observation",
@@ -147,7 +148,11 @@ fn observation_footprint(range: &MemoryRange) -> Option<(Address, u32)> {
     (bytes > 0).then(|| (range.start_pointer(), bytes))
 }
 
-fn preserve_footprint(separation: &Proposition, kind: ReadType) -> Option<Proposition> {
+fn preserve_footprint(
+    separation: &Proposition,
+    kind: ReadType,
+    result: &Proposition,
+) -> Option<Proposition> {
     let Proposition::ResourceSeparate { left, right } = separation else {
         return None;
     };
@@ -160,7 +165,7 @@ fn preserve_footprint(separation: &Proposition, kind: ReadType) -> Option<Propos
         return None;
     }
     let (address, bytes) = observation_footprint(kept)?;
-    let observed = observation_type(kind, bytes)?;
+    let observed = observation_type(kind, bytes, result)?;
     observation_equality(footprint, address, observed, kind)
 }
 
@@ -274,16 +279,24 @@ fn preserve_field(
     Some(Proposition::condition_is(condition, true))
 }
 
-// A comparison selects the read of its own format, and an 8- or 16-bit read
-// compared natively is that read. C promotes an unsigned byte comparison to
-// int32, comparing the reads' widenings, while the selected resource still
-// describes one byte: that comparison selects the byte's `uint8` read. Select
-// that exact producer record, not a four-byte read or a search for an
-// alternative observation.
-fn observation_type(comparison: ReadType, bytes: u32) -> Option<ReadType> {
+// A native comparison selects its own format. A promoted halfword
+// comparison must name two widenings of the same type, since the footprint's
+// width alone cannot distinguish signed from unsigned reads.
+fn observation_type(comparison: ReadType, bytes: u32, result: &Proposition) -> Option<ReadType> {
     match (comparison, bytes) {
         (ReadType::Integer(MachineIntegerType::Int32), 1) => {
             Some(ReadType::Integer(MachineIntegerType::UInt8))
+        }
+        (ReadType::Integer(MachineIntegerType::Int32), 2) => {
+            let (ConditionTerm::Compare { left, right, .. }, true) = result.condition_native()?
+            else {
+                return None;
+            };
+            let (left, _) = left.narrow_widening32_operand()?;
+            let (right, _) = right.narrow_widening32_operand()?;
+            (left == right
+                && matches!(left, MachineIntegerType::Int16 | MachineIntegerType::UInt16))
+            .then_some(ReadType::Integer(left))
         }
         (kind, bytes) if kind.bytes() == bytes => Some(kind),
         _ => None,
@@ -298,7 +311,7 @@ fn observation_equality(
 ) -> Option<Proposition> {
     let after = typed_reads::get_at(&footprint.after_point, &footprint.after, &address, kind)?;
     let before = typed_reads::get_at(&footprint.before_point, &footprint.before, &address, kind)?;
-    // A promoted comparison of a byte read compares the reads' widenings.
+    // A promoted comparison compares the narrow reads' widenings.
     if let (ReadType::Integer(narrow), ReadType::Integer(MachineIntegerType::Int32)) =
         (kind, comparison)
         && narrow != MachineIntegerType::Int32
@@ -884,7 +897,7 @@ mod tests {
         let _reads = typed_reads::ReadScope::enter();
         let (mut preservation, goal) = fixture(8, false);
         assert_eq!(
-            preserve_footprint(&preservation.separation, read_type(&goal).unwrap()),
+            preserve_footprint(&preservation.separation, read_type(&goal).unwrap(), &goal),
             Some(goal)
         );
         let mut wrong_domain = preservation.clone();
@@ -975,6 +988,24 @@ mod tests {
             ProgramValue::UInt32(MachineTerm::uint32_constant(0x8000_0000)),
         );
         check_indexed_preservation(
+            LoadKind::Int16,
+            MachineIntegerType::Int16,
+            2,
+            ProgramValue::Int16(MachineTerm::narrow_constant(
+                MachineIntegerType::Int16,
+                0x8000,
+            )),
+        );
+        check_indexed_preservation(
+            LoadKind::UInt16,
+            MachineIntegerType::UInt16,
+            2,
+            ProgramValue::UInt16(MachineTerm::narrow_constant(
+                MachineIntegerType::UInt16,
+                0x8000,
+            )),
+        );
+        check_indexed_preservation(
             LoadKind::UInt8,
             MachineIntegerType::UInt8,
             1,
@@ -1027,7 +1058,7 @@ mod tests {
                 Vec::new(),
             );
             let ExpressionOutcome::Value(value) = path.outcome else {
-                panic!("expected an unsigned read");
+                panic!("expected a typed integer read");
             };
             integer_bits(value).unwrap()
         };
@@ -1040,27 +1071,53 @@ mod tests {
             &after,
             &Vec::<ExecutionPureFact>::new(),
         );
-        let comparison = if format == MachineIntegerType::UInt8 {
+        let comparison = if format.format().bits() < 32 {
             MachineIntegerType::Int32
         } else {
             format
         };
         let comparison_type = ReadType::Integer(comparison);
-        let observed = observation_type(comparison_type, bytes).unwrap();
-        assert_eq!(observed, ReadType::Integer(format));
         let operand = |bits| MachineTerm::machine_integer_cast(format, comparison, bits);
+        let expected = Proposition::condition_is(
+            ConditionTerm::machine_compare(
+                comparison,
+                CompareRelation::Equal,
+                operand(after_read.clone()),
+                operand(before_read.clone()),
+            ),
+            true,
+        );
+        let observed = observation_type(comparison_type, bytes, &expected).unwrap();
+        assert_eq!(observed, ReadType::Integer(format));
+        let separation = Proposition::ResourceSeparate {
+            left: Box::new(Resource::Footprint(footprint)),
+            right: Box::new(Resource::Memory(MemoryRange::new_with_element_width(
+                slot,
+                0u32.into(),
+                1u32.into(),
+                bytes,
+            ))),
+        };
         assert_eq!(
-            observation_equality(&footprint, slot, observed, comparison_type),
-            Some(Proposition::condition_is(
-                ConditionTerm::machine_compare(
-                    comparison,
-                    CompareRelation::Equal,
+            apply(&separation, None, &expected, |fact| fact == &separation),
+            Ok(())
+        );
+        if bytes == 2 {
+            let other_format = if format == MachineIntegerType::Int16 {
+                MachineIntegerType::UInt16
+            } else {
+                MachineIntegerType::Int16
+            };
+            let mixed = Proposition::condition_is(
+                ConditionTerm::equal(
                     operand(after_read),
-                    operand(before_read),
+                    MachineTerm::machine_integer_cast(other_format, comparison, before_read),
                 ),
                 true,
-            )),
-        );
+            );
+            assert_eq!(observation_type(comparison_type, bytes, &mixed), None);
+            assert!(apply(&separation, None, &mixed, |fact| fact == &separation).is_err());
+        }
     }
 
     #[test]
