@@ -572,6 +572,17 @@ check, not evidence that a fixed one-local change ignores ambient state.
 for parts of this operation; do not infer a scan just from the weak assertion.
 The `JoinLocals::Stable` loop-head policy has different traversal behavior.
 
+Writing loop heads reuse the memory cache's pointer-reachable projection.
+Directly assigned scalars get their new head values before havoc. Private
+scalar cells stay in the persistent map without being visited. For selected
+addressable cells the head checks scalar slot membership by block, along
+with the existing loan check. Stores to private scalar slots advance the
+projection so forks of a warm frame do not each walk the same cells.
+`writing_loop_havoc_ignores_untouched_scalar_slots` varies the initialized
+slots at 4/16/64/128 and measures a later fixed loop. Addressable memory,
+first-loop annotation, identity reservation, and differing loop exits have
+separate costs.
+
 Measure the complete split/join and loop entry/exit at fixed arms, changed
 locals and interface size, growing stable locals/cells/resources and prior
 joins. Separately grow explicit arms, changed entries and invariant text.

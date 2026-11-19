@@ -1163,6 +1163,37 @@ fn sequential_loop_clauses_cost_the_same_at_every_position() {
     );
 }
 
+#[test]
+fn writing_loop_havoc_ignores_untouched_scalar_slots() {
+    let costs = [4, 16, 64, 128].map(|count| {
+        let run = run(
+            |count| {
+                let (c, proof) = loops(3);
+                let locals = lines(count, |index| {
+                    format!("    int32 spare{index};\n    spare{index} = {index};")
+                });
+                let c = c.replace("    int32 i;", &format!("    int32 i;\n{locals}"));
+                let proof = proof.replacen(
+                    "    step();",
+                    &"    step();\n".repeat(1 + 2 * count).trim_end(),
+                    1,
+                );
+                (c, proof)
+            },
+            count,
+        );
+        // The first loop annotates the whole function. Measure a later
+        // loop with the same body, write footprint and invariant shape.
+        assert_eq!(run.loops.len(), 3);
+        run.loops[2]
+    });
+    let (min, max) = (costs.iter().min().unwrap(), costs.iter().max().unwrap());
+    assert!(
+        max - min <= 90,
+        "warmed loop work with 4/16/64/128 retained scalar slots: {costs:?}"
+    );
+}
+
 /// The contexts a `loop` tactic builds, charged or not, do not grow with
 /// the loops before it. Its executions copy the path's facts, and the
 /// initialization proof's indexed facts are the ones the proof keeps,
