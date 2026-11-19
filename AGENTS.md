@@ -183,6 +183,12 @@ form, and treat the gap as a tooling defect. A new kernel fact or term form
 ships with its Surface form. See the
 [raise-lower principle](docs/internals/raise-lower-principle.md).
 
+Keep the proof-visible program tree faithful to the target-language source.
+Generated operations and typed temporaries belong to the source constructs
+that cause them. When changing a frontend or lowering, check statement
+selectors, diagnostics, and expansion replay. See
+[proof-visible program structure](docs/internals/raise-lower-principle.md#proof-visible-program-structure).
+
 Lowering is fact-stable: a term may depend on the program state and the
 resources held, but facts may only refuse it, discharge its obligations, or
 add side facts; they must not change the term produced. Do not fold, resolve
