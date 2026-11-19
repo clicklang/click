@@ -1356,13 +1356,9 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             intro();
             have start <= k;
             have k < end;
+            have 0 <= start by { known(); }
             have 0 <= k by {
-                solve() using { (at(function.entry, 0) as int32) < (at(function.entry, count) as
-                        int32); (at(function.entry, start) as int32) < (at(function.entry, end) as
-                        int32); (count as int32) <= (end as int32); (at(function.entry, end) as int32) <= (at(function.entry,
-                        arena->capacity) as int32); (at(function.entry, arena->capacity) as int32) <= (at(function.entry,
-                        536870911) as int32); (at(function.entry, start) as int32) <= (at(function.entry, end) as
-                        int32); (i as int32) <= (k as int32); };
+                normalize() using { 0 <= start; start <= k; };
             }
             have k < arena->capacity by {
                 solve() using { k < end; at(function.entry, end) <= at(function.entry, arena->capacity); };
@@ -1433,14 +1429,9 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 have start <= i by {
                     known();
                 }
+                have 0 <= start by { known(); }
                 have 0 <= i by {
-                    solve() using { (at(function.entry, 0) as int32) < (at(function.entry, count) as
-                            int32); (at(function.entry, start) as int32) < (at(function.entry, end)
-                            as int32); (count as int32) <= (end as int32); (at(function.entry, end) as int32) <= (at(function.entry,
-                            arena->capacity) as int32); (at(function.entry, arena->capacity) as int32) <=
-                            (at(function.entry, 536870911) as int32); (at(function.entry, start) as int32) <= (at(function.entry, end)
-                            as int32); (at(function.entry, start) as int32) <= (at(function.entry, i) as
-                            int32); (start as int32) <= (m as int32); };
+                    normalize() using { 0 <= start; start <= i; };
                 }
                 have i < arena->capacity by {
                     solve() using { at(region(24).entry, i) < at(region(24).entry, end); at(function.entry, end) <= at(function.entry, arena->capacity); };
@@ -1572,15 +1563,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                             known();
                         }
                         have 0 <= k by {
-                            solve() using { (at(function.entry, 0) as int32) < (at(function.entry,
-                                    count) as int32); (at(region(24).entry, i) as int32) <
-                                    (at(region(24).entry, end) as int32); (at(function.entry, start) as int32) <
-                                    (at(function.entry, end) as int32); (at(function.entry, 0) as int32) <= (at(function.entry,
-                                    i) as int32); (count as int32) <= (end as int32); (at(function.entry, end) as int32) <= (at(function.entry,
-                                    arena->capacity) as int32); (at(function.entry, arena->capacity) as int32) <=
-                                    (at(function.entry, 536870911) as int32); (at(function.entry, start) as int32) <=
-                                    (at(function.entry, end) as int32); (at(function.entry, start) as int32) <=
-                                    (at(function.entry, i) as int32); (start as int32) <= (m as int32); (start as int32) <= (k as int32); };
+                            normalize() using { 0 <= start; start <= k; };
                         }
                         have at(opened, i) != k by { solve() using { k < at(opened, i); }; }
                         have at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))) by {
@@ -1903,14 +1886,9 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             have k < end by {
                 known();
             }
+            have 0 <= start by { known(); }
             have 0 <= k by {
-                solve() using { (at(function.entry, 0) as int32) < (at(function.entry, count) as
-                        int32); (at(function.entry, start) as int32) < (at(function.entry, end) as
-                        int32); (count as int32) <= (end as int32); (at(function.entry, end) as int32) <= (at(function.entry,
-                        arena->capacity) as int32); (at(function.entry, arena->capacity) as int32) <= (at(function.entry,
-                        536870911) as int32); (at(function.entry, start) as int32) <= (at(function.entry, end) as
-                        int32); (at(function.entry, start) as int32) <= (at(function.entry, k) as
-                        int32); };
+                normalize() using { 0 <= start; start <= k; };
             }
             have k < arena->capacity by {
                 solve() using { at(function.entry, k) < at(function.entry, end); at(function.entry, end) <= at(function.entry, arena->capacity); };
