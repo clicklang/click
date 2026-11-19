@@ -42,6 +42,33 @@ impl KernelTerm {
             KernelTermNode::MachineIf { arguments },
         )
     }
+    /// Certificate source matching reads typed machine arguments directly.
+    /// Other argument domains retain the written compatibility policy.
+    pub(in crate::kernel) fn machine_call_identity(
+        &self,
+    ) -> Option<std::sync::Arc<PureApplicationIdentity>> {
+        let KernelTermNode::Call { name, arguments } = self.node() else {
+            return None;
+        };
+        match self.0.machine_leaf.0.get() {
+            Some(MachineLeaf::Application(application)) => return Some(application.identity()),
+            Some(MachineLeaf::Native(_)) => {}
+            None => {
+                if let Some(identity) =
+                    SharedPureApplication::identity_for_machine_roots(name, arguments)
+                {
+                    return Some(identity);
+                }
+            }
+        }
+        let MachineTerm::ClickFunctionApplication { name, arguments } =
+            self.machine_conversion_leaf()?
+        else {
+            return None;
+        };
+        Some(SharedPureApplication::identity_for(name, arguments))
+    }
+
     /// An explicitly retained native leaf or the compatibility reading of a
     /// mathematical integer conversion. The surrounding machine DAG is never
     /// exported; conversion Integer payloads stay shared.

@@ -4480,7 +4480,12 @@ their original handles for native ordering and hashing. Rendering and checked
 rewriting keep their established native offset policies, and offsets with
 exact native-only indices keep that input representation.
 
-The next planned checker slice is 11k. Before 11l, audit the raw `BoolLoad`
+11k reads pure machine calls in checked source matching through the existing
+application identity and retained typed arguments. It builds no native
+call carrier for that match. Native call spelling and the identity policy
+for opaque arguments stay available.
+
+The next planned checker slice is 11l. Before 11l, audit the raw `BoolLoad`
 producers and decide whether their inputs can migrate to the existing byte
 comparison or require an exact Surface spelling.
 
