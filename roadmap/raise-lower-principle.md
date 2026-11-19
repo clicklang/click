@@ -682,7 +682,7 @@ The native forms below still have callers.
 | `SharedPureApplication` and `SpecCallArgument` | Call certification and spelling retain the exact typed argument carrier and stable call identity. The session memo prepares common arguments for evaluation and reuse. Native call arguments and typed opaque leaves can still contain proof-relevant metadata. |
 | `StoredMachineTerm`, `StoredConditionTerm`, `StoredIntegerTerm`, `StoredAlgebraicTerm`, `StoredProgramValue`, and outcome carriers | Native inputs keep the exact original payload. Fact keys, equality, proof rewriting, diagnostics and evaluation output APIs still request native views when their contract needs them. Resource dependency checking and evaluated proposition production can carry common roots. |
 | `SharedAddress`, `SharedAddressOffset`, `SharedPointer`, and native range and resource descriptors | Existing ownership, aliasing and read-over-write consumers use native address and pointer descriptors. Retained operands preserve exact offsets, object classes, load names and versions. Sequence values, resource fields, ranges, allocation counts and theorem/state bindings retain their migrated producers and explicit native input forms. |
-| `Term::PointerOffset` and `Proposition` address, memory, resource and program fields | Contract terms and their substitution and dependency readers still use `AddressOffset`. Memory judgments and volatile events carry address descriptors and memory identities. Program evaluation and verification judgments record the program input and execution state alongside their migrated value outcomes. These fields participate in judgment identity and checked rewriting. |
+| `Term::PointerOffset` and `Proposition` address, memory, resource and program fields | Contract terms retain shared offsets. Exact legacy inputs and selected rewrite, rendering, and identity readers still use `AddressOffset`. Memory judgments and volatile events carry address descriptors and memory identities. Program evaluation and verification judgments record the program input and execution state alongside their migrated value outcomes. These fields participate in judgment identity and checked rewriting. |
 | `SpecExpression`, `SpecIntegerExpression::Term`, and typed algebraic and fold syntax | Declaration checking and public kernel APIs still accept typed specification syntax, including native inputs. The evaluators use this syntax to produce common operands and fact/definedness obligations. The raising boundary still needs explicit rewrite and naming adapters for selected forms. |
 
 This closes the package's producer and storage work. An entirely common-form
@@ -4474,9 +4474,13 @@ in the retained rewrite path. Opaque children and capture summaries still
 use the established native Integer rules.
 
 11i reads contract offset dependencies and binder identities through the
-shared offset. Its native input still owns the exact descriptor identity.
+shared offset. 11j makes the shared offset the stored contract payload and
+uses it for the range constructor's variable check. Scaled indices retain
+their original handles for native ordering and hashing. Rendering and checked
+rewriting keep their established native offset policies, and offsets with
+exact native-only indices keep that input representation.
 
-The next planned checker slice is 11j. Before 11l, audit the raw `BoolLoad`
+The next planned checker slice is 11k. Before 11l, audit the raw `BoolLoad`
 producers and decide whether their inputs can migrate to the existing byte
 comparison or require an exact Surface spelling.
 

@@ -335,53 +335,80 @@ impl StoredConditionTerm {
     }
 }
 
-/// Contract offset with its retained reader initialized on first use.
+/// Retained contract displacement. Exact legacy indices still enter as a
+/// native input because their carrier identity cannot be recovered from a root.
 #[derive(Clone)]
-pub struct StoredPointerOffset(Arc<PointerOffsetInput>);
+pub struct StoredPointerOffset(Arc<PointerOffsetStorage>);
 
-struct PointerOffsetInput {
-    written: AddressOffset,
-    shared: OnceLock<Option<SharedAddressOffset>>,
+enum PointerOffsetStorage {
+    Native(AddressOffset),
+    Shared {
+        root: SharedAddressOffset,
+        // The machine interner is weak. Keep the original index handles alive
+        // for native ordering and hashing without retaining the offset tree.
+        _index_identities: Vec<SharedMachineIntegerTerm>,
+        native: OnceLock<AddressOffset>,
+    },
 }
 
 impl From<AddressOffset> for StoredPointerOffset {
     fn from(written: AddressOffset) -> Self {
-        Self(Arc::new(PointerOffsetInput {
-            written,
-            shared: OnceLock::new(),
-        }))
+        Self(Arc::new(
+            Self::retain(&written).unwrap_or_else(|| PointerOffsetStorage::Native(written)),
+        ))
     }
 }
 
 impl StoredPointerOffset {
+    pub(in crate::kernel) fn from_written(written: &AddressOffset) -> Self {
+        Self(Arc::new(Self::retain(written).unwrap_or_else(|| {
+            PointerOffsetStorage::Native(written.clone())
+        })))
+    }
+
+    fn retain(written: &AddressOffset) -> Option<PointerOffsetStorage> {
+        let mut indices = Vec::new();
+        if written.any_scaled_operand(|value| {
+            if value.shared_operand().is_none() {
+                return true;
+            }
+            indices.push(value.clone());
+            false
+        }) {
+            return None;
+        }
+        Some(PointerOffsetStorage::Shared {
+            root: KernelAddressOffset::import(written),
+            _index_identities: indices,
+            native: OnceLock::new(),
+        })
+    }
+
     pub(crate) fn native_compat(&self) -> &AddressOffset {
-        &self.0.written
+        match &*self.0 {
+            PointerOffsetStorage::Native(written) => written,
+            PointerOffsetStorage::Shared { root, native, .. } => {
+                native.get_or_init(|| KernelAddressOffset::export(root).expect("stored offset"))
+            }
+        }
     }
 
     pub(crate) fn root(&self) -> Option<&SharedAddressOffset> {
-        self.0
-            .shared
-            .get_or_init(|| {
-                // Preserve the native identity of exact legacy indices.
-                let written = &self.0.written;
-                (!written.any_scaled_operand(|value| value.shared_operand().is_none()))
-                    .then(|| KernelAddressOffset::import(written))
-            })
-            .as_ref()
+        match &*self.0 {
+            PointerOffsetStorage::Native(_) => None,
+            PointerOffsetStorage::Shared { root, .. } => Some(root),
+        }
     }
 }
 
 macro_rules! native_descriptor_identity {
-    ($carrier:ty) => { native_descriptor_identity!($carrier, |a: &$carrier, b: &$carrier| {
-        matches!((a.root(), b.root()), (Some(a), Some(b)) if a == b)
-    }); };
-    ($carrier:ty, $same:expr) => {
+    ($carrier:ty) => {
         impl std::fmt::Debug for $carrier {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { self.native_compat().fmt(f) }
         }
         impl PartialEq for $carrier {
             fn eq(&self, other: &Self) -> bool {
-                ($same)(self, other) || self.native_compat() == other.native_compat()
+                matches!((self.root(), other.root()), (Some(a), Some(b)) if a == b) || self.native_compat() == other.native_compat()
             }
         }
         impl Eq for $carrier {}
@@ -390,7 +417,7 @@ macro_rules! native_descriptor_identity {
         }
         impl Ord for $carrier {
             fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-                if ($same)(self, other) { std::cmp::Ordering::Equal }
+                if matches!((self.root(), other.root()), (Some(a), Some(b)) if a == b) { std::cmp::Ordering::Equal }
                 else { self.native_compat().cmp(other.native_compat()) }
             }
         }
@@ -403,7 +430,7 @@ native_descriptor_identity!(StoredProgramValue);
 native_descriptor_identity!(StoredIntegerTerm);
 native_descriptor_identity!(StoredAlgebraicTerm);
 native_descriptor_identity!(StoredConditionTerm);
-native_descriptor_identity!(StoredPointerOffset, |_, _| false);
+native_descriptor_identity!(StoredPointerOffset);
 
 #[cfg(test)]
 mod protocol_value_tests {
@@ -414,6 +441,34 @@ mod protocol_value_tests {
         value.hash(&mut h);
         h.finish()
     }
+    #[test]
+    fn retained_contract_offset_preserves_written_identity_after_input_drops() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let first = AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(998981)), 4);
+        let second =
+            AddressOffset::scaled_int64_node(MachineTerm::Variable(Variable(998982)), 8, true);
+        let input = AddressOffset::Add(Box::new(first), Box::new(second));
+        let expected_hash = hash(&input);
+        let expected_debug = format!("{input:?}");
+        let stored = StoredPointerOffset::from(input);
+        assert!(stored.root().is_some());
+        assert_eq!(hash(&stored), expected_hash);
+        assert_eq!(format!("{stored:?}"), expected_debug);
+
+        let same = StoredPointerOffset::from(stored.native_compat().clone());
+        let distinct = StoredPointerOffset::from(AddressOffset::Add(
+            Box::new(AddressOffset::Constant(0)),
+            Box::new(stored.native_compat().clone()),
+        ));
+        assert_eq!(stored, same);
+        assert_ne!(stored, distinct);
+        assert_eq!(
+            stored.cmp(&distinct),
+            stored.native_compat().cmp(distinct.native_compat()),
+        );
+        assert_eq!(hash(&stored), hash(&same));
+    }
+
     #[test]
     fn protocol_native_values_keep_exact_identity_and_scalar_conditions_round_trip() {
         let _session = crate::kernel::VerificationSession::enter();
