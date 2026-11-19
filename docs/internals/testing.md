@@ -100,7 +100,19 @@ resolve, fails the gate with the page named. The docs-only gate writes them
 into `target/click-docs/`; after a plain `scripts/mdbook-build.sh`, run
 `scripts/build-ai-reference.sh`.
 
-Run the markdown proof fixtures with:
+Use a focused nextest run while iterating on one proof fixture or example.
+These commands reuse the ordinary gate build and keep nextest's containment.
+Replace the file or project name with the one affected by the change.
+
+```console
+MDTEST_FILTER=indexed_iterated_ownership.md cargo nextest run --lib --features fast-gate -E 'test(=gate_tests::mdtests::mdtests)'
+CLICK_EXAMPLE=arena cargo nextest run --lib --features fast-gate -E 'test(=gate_tests::examples::example_projects)'
+```
+
+Explicit names also run fixtures assigned to nightly. CI runs the full gate
+for code changes.
+
+To run the default Markdown fixture suite on its own:
 
 ```console
 cargo test --test mdtests
