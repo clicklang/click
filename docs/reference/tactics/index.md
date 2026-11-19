@@ -2164,6 +2164,7 @@ or mismatched endpoints is a local refusal. This tactic is distinct from a
 loop's `preserve by { ... }` proof block.
 
 - Read equality. [`preserve_step_carries_a_fact.md`](https://github.com/clicklang/click/blob/master/mdtests/preserve_step_carries_a_fact.md) and [`memcpy_then_terminator_keeps_copied_bytes.md`](https://github.com/clicklang/click/blob/master/mdtests/memcpy_then_terminator_keeps_copied_bytes.md)
+- Resource field equality across two statements. [`multi_write_resource_transport_expansion.md`](https://github.com/clicklang/click/blob/master/mdtests/multi_write_resource_transport_expansion.md)
 - Range viewability. [`cstr_plain_char_kernel_requirement_reaches_callee.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_plain_char_kernel_requirement_reaches_callee.md)
 
 `region.footprint` is a resource descriptor, not ownership. Execution records
@@ -3535,8 +3536,7 @@ endpoint equalities. The premises can be written in either order; they must
 cover the read's path to the current point. No intermediate footprint or
 separation is discovered from history, and failure of ordinary equality closure is final rather
 than retrying a history search. Both memory reads and abstract resource fields
-use this form. See `mdtests/multi_write_transport_expansion.md` and
-`mdtests/multi_write_resource_transport_expansion.md`.
+use this form. See `mdtests/multi_write_transport_expansion.md`.
 
 A focused comparison with one read operand changing from a statement entry
 to the current point uses the same preservation chain. For example,

@@ -655,10 +655,26 @@ fn multiple_write_resource_transport_expands_to_ordinary_equalities() {
         .iter()
         .map(|(n, s)| (n.as_str(), s.as_str()))
         .collect::<Vec<_>>();
-    let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
-    assert!(!expanded.contains("transport("), "{expanded}");
-    assert!(!expanded.contains("transport_certificate"), "{expanded}");
-    without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
+    let legacy = source.replace(
+        r#"    have at(statement(0).exit, m.value) == at(statement(0).entry, m.value) by {
+        preserve(m, statement(0));
+    }
+    have m.value == at(statement(1).entry, m.value) by {
+        preserve(m, statement(1));
+    }
+    have m.value == at(statement(0).entry, m.value) by { known(); }"#,
+        r#"    have m.value == at(statement(0).entry, m.value) by {
+        transport(at(statement(0).entry, m.value) == at(statement(0).entry, m.value),
+            m.value == at(statement(0).entry, m.value));
+    }"#,
+    );
+    assert_ne!(legacy, source);
+    for source in [source, legacy] {
+        let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
+        assert!(!expanded.contains("transport("), "{expanded}");
+        assert!(!expanded.contains("transport_certificate"), "{expanded}");
+        without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
+    }
 }
 
 #[test]
