@@ -24127,6 +24127,26 @@ fn typed_contract_results_expand_and_recheck() {
 }
 
 #[test]
+#[ignore = "nightly: multi-byte bit-field update expansion and replay"]
+fn bit_field_value_capture_expands_and_replays() {
+    let (source, sources) = mdtest_sources("mdtests/c_bit_field_multiword_update_and_copy.md");
+    let sources = sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let claim = "answer.ensures_0";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, claim)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert_ne!(expanded, source);
+    assert!(!expanded.contains("__click_bit_field_value_"), "{expanded}");
+    assert!(!expanded.contains("<temporary storage>"), "{expanded}");
+    without_implicit_solve_for_claim(claim, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
 #[ignore = "nightly: saved-memory and member-address expansion with cold replay"]
 fn specification_member_addresses_expand_and_recheck() {
     for (fixture, claim) in [
