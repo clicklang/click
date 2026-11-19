@@ -2715,17 +2715,17 @@ fn certified_function_path_parts<'a>(
 
 fn resource_contexts_definitionally_equal(
     function: &ProgramFunction,
-    left_memory: &SymbolicMemory,
+    left_point: &crate::kernel::ProgramPoint,
     left: &ResourceContext,
-    right_memory: &SymbolicMemory,
+    right_point: &crate::kernel::ProgramPoint,
     right: &ResourceContext,
     assumptions: &PureFactContext,
 ) -> bool {
     resource_contexts_definitionally_equal_with_definitions(
         function.composite_resource_definitions(),
-        left_memory,
+        left_point,
         left,
-        right_memory,
+        right_point,
         right,
         assumptions,
     )
@@ -2733,30 +2733,31 @@ fn resource_contexts_definitionally_equal(
 
 pub(in crate::kernel) fn resource_contexts_definitionally_equal_with_definitions(
     composite_resource_definitions: &[CompositeResourceDefinition],
-    left_memory: &SymbolicMemory,
+    left_point: &crate::kernel::ProgramPoint,
     left: &ResourceContext,
-    right_memory: &SymbolicMemory,
+    right_point: &crate::kernel::ProgramPoint,
     right: &ResourceContext,
     assumptions: &PureFactContext,
 ) -> bool {
     if left == right {
         return true;
     }
+    let (left_memory, right_memory) = (left_point.memory(), right_point.memory());
     let relation_facts = crate::instrumentation::measure_operation(
         "kernel",
         "resource context equality",
         "resource equality: relation facts",
         || {
-            [(left, left_memory), (right, right_memory)]
+            [(left, left_point), (right, right_point)]
                 .into_iter()
-                .flat_map(|(resources, memory)| {
+                .flat_map(|(resources, point)| {
                     resources.facts().iter().filter_map(move |fact| {
                         matches!(fact.resource(), Resource::Composite { .. })
                             .then(|| {
                                 evaluate_composite_resource_relation_propositions(
                                     fact,
                                     composite_resource_definitions,
-                                    &crate::kernel::ProgramPoint::of_memory(memory),
+                                    point,
                                     assumptions,
                                 )
                             })
@@ -2848,7 +2849,7 @@ pub(in crate::kernel) fn resource_contexts_definitionally_equal_with_definitions
             crate::kernel::functions::expand_all_composite_resource_facts_with_composites(
                 left,
                 composite_resource_definitions,
-                &crate::kernel::ProgramPoint::of_memory(left_memory),
+                left_point,
                 assumptions,
             )
         },
@@ -2861,7 +2862,7 @@ pub(in crate::kernel) fn resource_contexts_definitionally_equal_with_definitions
             crate::kernel::functions::expand_all_composite_resource_facts_with_composites(
                 right,
                 composite_resource_definitions,
-                &crate::kernel::ProgramPoint::of_memory(right_memory),
+                right_point,
                 assumptions,
             )
         },
@@ -2883,14 +2884,14 @@ pub(in crate::kernel) fn resource_contexts_definitionally_equal_with_definitions
                             other: &ResourceContext,
                             other_composites: &[ResourceFact],
                             other_expanded: &ResourceContext,
-                            other_memory: &SymbolicMemory| {
+                            other_point: &crate::kernel::ProgramPoint| {
         composites.iter().all(|composite| {
             other_composites.contains(composite)
                 || other.satisfies_fact(composite, assumptions)
                 || crate::kernel::functions::assembled_composite_body_facts_hold(
                     composite,
                     composite_resource_definitions,
-                    &crate::kernel::ProgramPoint::of_memory(other_memory),
+                    other_point,
                     other_expanded,
                     assumptions,
                 )
@@ -2906,13 +2907,13 @@ pub(in crate::kernel) fn resource_contexts_definitionally_equal_with_definitions
         right,
         &right_composites,
         &expanded_right,
-        right_memory,
+        right_point,
     ) && reassembly_holds(
         &right_composites,
         left,
         &left_composites,
         &expanded_left,
-        left_memory,
+        left_point,
     )
 }
 

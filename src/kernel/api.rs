@@ -5740,9 +5740,9 @@ pub(crate) fn execution_evidence_states_match(
     left_without_ghost_difference == *right
         && contract_certification::resource_contexts_definitionally_equal_with_definitions(
             function.composite_resource_definitions(),
-            left.memory(),
+            &left.program_point(),
             left.resources(),
-            right.memory(),
+            &right.program_point(),
             right.resources(),
             assumptions,
         )
@@ -5766,9 +5766,9 @@ pub(crate) fn function_entry_representation_states_match(
         && memories_definitionally_equal(left.memory(), right.memory(), assumptions)
         && contract_certification::resource_contexts_definitionally_equal_with_definitions(
             function.composite_resource_definitions(),
-            left.memory(),
+            &left.program_point(),
             left.resources(),
-            right.memory(),
+            &right.program_point(),
             right.resources(),
             assumptions,
         )
