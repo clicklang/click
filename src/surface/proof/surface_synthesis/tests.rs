@@ -4189,6 +4189,8 @@ fn local_read_test_store(
         )),
         ProgramType::Int32 => ProgramValue::Int32(MachineTerm::constant(bits)),
         ProgramType::UInt32 => ProgramValue::UInt32(MachineTerm::uint32_constant(bits)),
+        ProgramType::Int64 => ProgramValue::Int64(MachineTerm::int64_constant(i64::from(bits))),
+        ProgramType::UInt64 => ProgramValue::UInt64(MachineTerm::uint64_constant(u64::from(bits))),
         _ => unreachable!("indexed local test type"),
     };
     state
@@ -4197,10 +4199,11 @@ fn local_read_test_store(
 }
 
 fn local_read_test_claim(value_type: ProgramType) -> ClickProposition {
-    let limit = if value_type == ProgramType::UInt32 {
-        ProgramValue::UInt32(MachineTerm::uint32_constant(20))
-    } else {
-        int32(20)
+    let limit = match value_type {
+        ProgramType::UInt32 => ProgramValue::UInt32(MachineTerm::uint32_constant(20)),
+        ProgramType::Int64 => ProgramValue::Int64(MachineTerm::int64_constant(20)),
+        ProgramType::UInt64 => ProgramValue::UInt64(MachineTerm::uint64_constant(20)),
+        _ => int32(20),
     };
     ClickProposition::Comparison {
         left: ContractExpression::CUnary {
@@ -4231,6 +4234,8 @@ fn ordinary_indexed_integer_reads_select_the_write_on_their_own_path() {
     check_local_read_versions(ProgramType::Int32, ProgramType::UInt8);
     check_local_read_versions(ProgramType::Int32, ProgramType::UInt32);
     check_local_read_versions(ProgramType::UInt32, ProgramType::Int32);
+    check_local_read_versions(ProgramType::Int64, ProgramType::Int32);
+    check_local_read_versions(ProgramType::UInt64, ProgramType::UInt32);
 }
 
 fn check_local_read_versions(value_type: ProgramType, disjoint_type: ProgramType) {
@@ -4242,6 +4247,8 @@ fn check_local_read_versions(value_type: ProgramType, disjoint_type: ProgramType
         ProgramType::UInt16 => ProgramType::UInt16Pointer,
         ProgramType::Int32 => ProgramType::Int32Pointer,
         ProgramType::UInt32 => ProgramType::UInt32Pointer,
+        ProgramType::Int64 => ProgramType::Int64Pointer,
+        ProgramType::UInt64 => ProgramType::UInt64Pointer,
         _ => unreachable!("indexed local test type"),
     };
     let slot = local_read_test_address("slot");
@@ -4250,8 +4257,8 @@ fn check_local_read_versions(value_type: ProgramType, disjoint_type: ProgramType
     let start = ExecutionState::new()
         .with_memory(
             SymbolicMemory::new()
-                .with_block("local:slot", 4)
-                .with_block("local:other", 4),
+                .with_block("local:slot", value_type.byte_width())
+                .with_block("local:other", disjoint_type.byte_width()),
         )
         .with_local("p", ProgramValue::typed_pointer(slot.clone(), pointer_type));
     let left_write = local_read_test_store(&start, &slot, value_type, 7);
@@ -4334,7 +4341,7 @@ fn check_local_read_versions(value_type: ProgramType, disjoint_type: ProgramType
             .program_point()
             .indexed_local_integer_version(&slot, load_kind)
             .is_none(),
-        "a write with different signedness ends the prior version"
+        "a write with a different load kind ends the prior version"
     );
 
     let possibly_aliasing =
@@ -4356,6 +4363,8 @@ fn ordinary_indexed_integer_read_work_is_bounded_as_path_grows() {
     check_local_read_work(ProgramType::UInt8, ProgramType::Int32);
     check_local_read_work(ProgramType::Int32, ProgramType::UInt32);
     check_local_read_work(ProgramType::UInt32, ProgramType::Int32);
+    check_local_read_work(ProgramType::Int64, ProgramType::Int32);
+    check_local_read_work(ProgramType::UInt64, ProgramType::UInt32);
 }
 
 fn check_local_read_work(value_type: ProgramType, disjoint_type: ProgramType) {
@@ -4367,6 +4376,8 @@ fn check_local_read_work(value_type: ProgramType, disjoint_type: ProgramType) {
         ProgramType::UInt16 => ProgramType::UInt16Pointer,
         ProgramType::Int32 => ProgramType::Int32Pointer,
         ProgramType::UInt32 => ProgramType::UInt32Pointer,
+        ProgramType::Int64 => ProgramType::Int64Pointer,
+        ProgramType::UInt64 => ProgramType::UInt64Pointer,
         _ => unreachable!("indexed local test type"),
     };
     let slot = local_read_test_address("slot");
@@ -4374,8 +4385,8 @@ fn check_local_read_work(value_type: ProgramType, disjoint_type: ProgramType) {
     let start = ExecutionState::new()
         .with_memory(
             SymbolicMemory::new()
-                .with_block("local:slot", 4)
-                .with_block("local:other", 4),
+                .with_block("local:slot", value_type.byte_width())
+                .with_block("local:other", disjoint_type.byte_width()),
         )
         .with_local("p", ProgramValue::typed_pointer(slot.clone(), pointer_type));
     let claim = local_read_test_claim(value_type);
