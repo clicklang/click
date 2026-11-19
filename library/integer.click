@@ -4515,6 +4515,34 @@ theorem le_transitive(a: Integer, b: Integer, c: Integer) {
     }
 }
 
+theorem uint64_increment_upper_bound(value: uint64, upper: uint64) {
+    requires value < upper;
+    ensures to_integer(value + 1u64) <= to_integer(upper) by {
+        have to_integer(value) < to_integer(upper) by known();
+        have (to_integer(value) + 1) <= to_integer(upper) by {
+            apply(integer::lt_step_le(to_integer(value), to_integer(upper))) using {
+                to_integer(value) < to_integer(upper);
+            };
+        }
+        have to_integer(upper) <= 18446744073709551615 by known();
+        have (to_integer(value) + 1) <= 18446744073709551615 by {
+            apply(integer::le_transitive(to_integer(value) + 1, to_integer(upper), 18446744073709551615)) using {
+                to_integer(value) + 1 <= to_integer(upper);
+                to_integer(upper) <= 18446744073709551615;
+            };
+        }
+        have (to_integer(value) + to_integer(1u64)) <= 18446744073709551615 by known();
+        have to_integer(value + 1u64) == (to_integer(value) + 1) by {
+            apply(integer::uint64_add_to_integer(value, 1u64)) using {
+                to_integer(value) + to_integer(1u64) <= 18446744073709551615;
+            };
+            known();
+        }
+        rewrite(to_integer(value + 1u64), to_integer(value) + 1);
+        known();
+    }
+}
+
 theorem lt_le(a: Integer, b: Integer) {
     requires a < b;
     ensures a <= b by {

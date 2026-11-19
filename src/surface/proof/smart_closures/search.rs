@@ -101,6 +101,29 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         {
             return Ok(closed);
         }
+        if let Some(guard) = search_input
+            .goal()
+            .and_then(uint64_increment_upper_bound_guard)
+            && let Some(sources) = &premises
+            && let Some(step) = sources.iter().find_map(|source| {
+                search_input
+                    .lower_cited_surface_proposition(source, "uint64 increment guard")
+                    .ok()
+                    .filter(|premise| *premise == guard)
+                    .and_then(|_| uint64_increment_upper_bound_application(source))
+            })
+            && let Some(applied) =
+                attempt::candidate_outcome(search_input.driver().apply_step(step))?
+        {
+            if applied.focused_discharged() {
+                return Ok(applied);
+            }
+            if let Some(closed) =
+                attempt::candidate_outcome(applied.driver().apply_step(ProofStep::Known))?
+            {
+                return Ok(closed);
+            }
+        }
         let step = match premises {
             Some(premises) => ProofStep::NormalizeUsing(premises),
             None => ProofStep::Normalize,
