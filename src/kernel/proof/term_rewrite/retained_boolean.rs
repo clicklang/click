@@ -41,7 +41,7 @@ impl TermRewrite<'_> {
             self.integer_shadowed,
             self.resolve_registered_loads,
         );
-        let key = |term: &KernelTerm| (term.id(), scope.0, scope.1, scope.2, scope.3);
+        let key = |term: &KernelTerm| (term.id(), scope.0, scope.1, scope.2, scope.3, false);
         let reuse = self.integer_exact.is_none()
             && self.condition_exact.is_none()
             && self.conditions.is_none()

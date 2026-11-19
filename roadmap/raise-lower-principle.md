@@ -4466,7 +4466,16 @@ descriptors. Machine read candidate keys also take the retained address and
 load kind. Exact cell lookup and address key construction still use the same
 native address keys. Candidate selection still erases memory state, and
 checked transport still establishes any needed equality across versions.
-The next planned checker slice is 11f.
+11f reads comparison shapes and conversion destinations through the operand
+view. 11g builds the outer Integer fold key from the retained descriptor with
+the existing binder rules. It still keys Integer descendants through the
+native Integer key walker. 11h keeps fold endpoints and arithmetic children
+in the retained rewrite path. Opaque children and capture summaries still
+use the established native Integer rules.
+
+The next planned checker slice is 11i. Before 11l, audit the raw `BoolLoad`
+producers and decide whether their inputs can migrate to the existing byte
+comparison or require an exact Surface spelling.
 
 ## Delivery and history
 

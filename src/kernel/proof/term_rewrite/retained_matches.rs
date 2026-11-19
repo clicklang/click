@@ -186,6 +186,7 @@ impl TermRewrite<'_> {
                 self.source_disabled,
                 self.integer_shadowed,
                 self.resolve_registered_loads,
+                false,
             );
             let memo = self
                 .shared_machine_cache

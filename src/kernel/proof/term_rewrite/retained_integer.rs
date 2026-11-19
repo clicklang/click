@@ -75,13 +75,29 @@ impl TermRewrite<'_> {
         &mut self,
         root: &KernelTerm,
     ) -> Option<KernelTerm> {
+        self.shared_integer_operand_in(root, false)
+    }
+
+    /// Fold scope already performs the native capture checks. Rewrite the
+    /// arithmetic prefix here and bridge only the other node families.
+    pub(super) fn shared_fold_integer_child(&mut self, root: &KernelTerm) -> Option<KernelTerm> {
+        self.shared_integer_operand_in(root, true)
+    }
+
+    fn shared_integer_operand_in(
+        &mut self,
+        root: &KernelTerm,
+        fold_child: bool,
+    ) -> Option<KernelTerm> {
         if root.ty() != &KernelType::Integer || self.integer_exact.is_some() {
             // This partial entry point admits variable/typed substitutions.
             // Exact-source/read-through matching is required before Term use.
             return None;
         }
-        self.reserve_shared_rewrite_variables_once(root)?;
-        self.visit(); // The native integer entry charges before its shared walk.
+        if !fold_child {
+            self.reserve_shared_rewrite_variables_once(root)?;
+            self.visit(); // The native integer entry charges before its shared walk.
+        }
         if self.checked_work_exhausted() {
             return None;
         }
@@ -93,7 +109,7 @@ impl TermRewrite<'_> {
         let disabled = self.source_disabled;
         let shadowed = self.integer_shadowed;
         let reads = self.resolve_registered_loads;
-        let key = |term: &KernelTerm| (term.id(), scope_id, disabled, shadowed, reads);
+        let key = |term: &KernelTerm| (term.id(), scope_id, disabled, shadowed, reads, fold_child);
         let mut import = KernelTermImport::default();
         let mut pending = vec![(root.clone(), false)];
         let mut guards = HashMap::new();
@@ -102,6 +118,23 @@ impl TermRewrite<'_> {
                 return None;
             }
             if memo.borrow().contains_key(&key(&term)) {
+                continue;
+            }
+            if fold_child
+                && !matches!(
+                    term.node(),
+                    KernelTermNode::IntegerLiteral(_)
+                        | KernelTermNode::Variable(_)
+                        | KernelTermNode::IntegerOperation { .. }
+                )
+            {
+                let native = self.fold_integer_bridge.integer(&term).ok()?;
+                let rewritten = self.integer_shared(&native);
+                if self.refusal_status().is_some() {
+                    return None;
+                }
+                memo.borrow_mut()
+                    .insert(key(&term), import.integer(&rewritten.into()));
                 continue;
             }
             if !finish {
