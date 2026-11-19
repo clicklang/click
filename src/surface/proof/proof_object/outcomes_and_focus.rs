@@ -204,91 +204,8 @@ impl<'a> Proof<'a> {
         let execution = self
             .execution()
             .ok_or_else(|| self.step_error("resource claim lost its execution"))?;
-        let (guard_active, guard_deferred) = match claim.key() {
-            FunctionContractClaimKey::Ensure(index) => {
-                let guard = checked_execution
-                    .function()
-                    .resource_ensures()
-                    .get(index)
-                    .and_then(|resource| resource.guard());
-                let Some(guard) = guard else {
-                    return prove_ensure_resource(
-                        checked_execution,
-                        claim.key(),
-                        context.claim_label,
-                        goal.path_index,
-                        || (*goal.data.core.effect_facts).clone(),
-                        self.facts(),
-                        resource,
-                        claim.clause().borrowed(),
-                        context.parameter_binding(),
-                        execution
-                            .core
-                            .frontier
-                            .execution_start_state(&execution.core.state),
-                        context
-                            .constants
-                            .function_entry_state
-                            .as_ref()
-                            .unwrap_or_else(|| {
-                                execution
-                                    .core
-                                    .frontier
-                                    .execution_start_state(&execution.core.state)
-                            }),
-                        &self.focused_outcome_state()?,
-                        None,
-                        false,
-                    );
-                };
-                let decision = {
-                    let mut budget = ExecutionBudget::beside_live_state();
-                    // Outcome construction already imported these checked path
-                    // facts. Retain that context instead of folding the same
-                    // inherited guard prefix again for each resource claim.
-                    let guard_assumptions = self.facts().assumptions().clone();
-                    let guard_state = context
-                        .constants
-                        .function_entry_state
-                        .as_ref()
-                        .unwrap_or_else(|| {
-                            execution
-                                .core
-                                .frontier
-                                .execution_start_state(&execution.core.state)
-                        });
-                    let guard_post_state = match self.focused_outcome_state() {
-                        Ok(FunctionOutcome::Return { state, .. }) => {
-                            // Function exits restore caller locals. Rebind the
-                            // callee parameters before lowering a guard, whose
-                            // old-memory pointer still uses those names.
-                            program_function_entry_state(
-                                &state,
-                                checked_execution.function(),
-                                context.arguments,
-                            )
-                            .ok_or_else(|| {
-                                self.step_error(
-                                    "could not bind function parameters for the resource guard",
-                                )
-                            })?
-                        }
-                        _ => guard_state.clone(),
-                    };
-                    crate::kernel::evaluate_guarded_contract_condition_with_loop_entry(
-                        guard,
-                        &guard_post_state,
-                        Some(guard_state),
-                        &guard_assumptions,
-                        &mut budget,
-                    )
-                };
-                (decision, decision.is_none())
-            }
-            FunctionContractClaimKey::BodySafety
-            | FunctionContractClaimKey::ExceptionalEnsure(_)
-            | FunctionContractClaimKey::Effect(_) => (None, false),
-        };
+        let (guard_active, guard_deferred) =
+            self.outcome_resource_guard(checked_execution.function(), claim.key())?;
         prove_ensure_resource(
             checked_execution,
             claim.key(),
@@ -317,6 +234,70 @@ impl<'a> Proof<'a> {
             guard_active,
             guard_deferred,
         )
+    }
+
+    /// The guard decision and whether an unresolved guard defers the claim.
+    pub(in crate::surface::proof) fn outcome_resource_guard(
+        &self,
+        function: &ProgramFunction,
+        key: FunctionContractClaimKey,
+    ) -> Result<(Option<bool>, bool), ClickError> {
+        let FunctionContractClaimKey::Ensure(index) = key else {
+            return Ok((None, false));
+        };
+        let Some(guard) = function
+            .resource_ensures()
+            .get(index)
+            .and_then(|resource| resource.guard())
+        else {
+            return Ok((None, false));
+        };
+        let ProofContext::Execution(context) = self.context.as_ref() else {
+            return Err(self.step_error("resource guard requires an execution proof"));
+        };
+        let execution = self
+            .execution()
+            .ok_or_else(|| self.step_error("resource guard lost its execution"))?;
+        let decision = {
+            let mut budget = ExecutionBudget::beside_live_state();
+            // Outcome construction already imported these checked path
+            // facts. Retain that context instead of folding the same
+            // inherited guard prefix again for each resource claim.
+            let guard_assumptions = self.facts().assumptions().clone();
+            let guard_state = context
+                .constants
+                .function_entry_state
+                .as_ref()
+                .unwrap_or_else(|| {
+                    execution
+                        .core
+                        .frontier
+                        .execution_start_state(&execution.core.state)
+                });
+            let guard_post_state = match self.focused_outcome_state() {
+                Ok(FunctionOutcome::Return { state, .. }) => {
+                    // Function exits restore caller locals. Rebind the
+                    // callee parameters before lowering a guard, whose
+                    // old-memory pointer still uses those names.
+                    program_function_entry_state(&state, function, context.arguments).ok_or_else(
+                        || {
+                            self.step_error(
+                                "could not bind function parameters for the resource guard",
+                            )
+                        },
+                    )?
+                }
+                _ => guard_state.clone(),
+            };
+            crate::kernel::evaluate_guarded_contract_condition_with_loop_entry(
+                guard,
+                &guard_post_state,
+                Some(guard_state),
+                &guard_assumptions,
+                &mut budget,
+            )
+        };
+        Ok((decision, decision.is_none()))
     }
 
     /// Updates the focused branch outcome goal's immutable result/state state

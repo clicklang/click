@@ -3875,9 +3875,12 @@ and prints its body's checked steps.
 
 **Form:** `construct(resource)`
 
-**Specialized.** Write it at a function outcome whose contract `constructs` an
-abstract token. At a function outcome, create exactly one owned abstract token
-named by an authorized `constructs` clause without consuming an input resource.
+**Specialized.** At a function outcome, create exactly one owned abstract token
+named by a `constructs` clause without consuming an input resource. Ordinary
+proof closing supplies a directly produced token at a normal return if it is
+missing and a `constructs` clause authorizes it. Expansion writes out the checked
+`construct` step. Write the tactic explicitly when another step needs the token,
+for example to fold a composite resource.
 
 **Accepts**, at a function outcome (after the last `step()` or `step_until(function.exit)`),
 an owned `abstract resource` token declared without `authorized`, when:

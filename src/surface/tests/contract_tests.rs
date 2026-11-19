@@ -688,6 +688,63 @@ fn abstract_resource_construction_requires_function_authorization() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_03")]
+fn closing_constructs_only_a_missing_authorized_output_token() {
+    let inputs = [("identity.c", "int32 identity(int32 n) { return n; }")];
+    let source = r#"
+        abstract resource token(n: int32);
+        verifying "identity.c";
+        int32 identity(int32 n) {
+            constructs token(result);
+            produces token(result);
+        } by { step_until(function.exit); }
+    "#;
+    let verified = verify_c_sources(source, &inputs).unwrap();
+    let expanded = expand_checked_grouped_claim(source, &verified, "identity").unwrap();
+    assert_eq!(
+        expanded.matches("construct(token(result));").count(),
+        1,
+        "{expanded}"
+    );
+    without_implicit_solve(|| verify_c_sources(&expanded, &inputs)).unwrap();
+
+    for individual_proof in [
+        "produces token(result) by { step_until(function.exit); }",
+        "produces token(result) by { step_until(function.exit); solve(); }",
+    ] {
+        let individual = source
+            .replace("produces token(result);", individual_proof)
+            .replace("} by { step_until(function.exit); }", "}");
+        let verified = verify_c_sources(&individual, &inputs).unwrap();
+        let expanded =
+            expand_checked_function_claim(&individual, &verified, "identity.produces_0").unwrap();
+        assert_eq!(
+            expanded.matches("construct(token(result));").count(),
+            1,
+            "{expanded}"
+        );
+        without_implicit_solve(|| verify_c_sources(&expanded, &inputs)).unwrap();
+    }
+
+    let held = source.replace(
+        "constructs token(result);",
+        "consumes token(n); constructs token(result);",
+    );
+    let verified = verify_c_sources(&held, &inputs).unwrap();
+    let expanded = expand_checked_grouped_claim(&held, &verified, "identity").unwrap();
+    assert!(!expanded.contains("construct("), "{expanded}");
+    without_implicit_solve(|| verify_c_sources(&expanded, &inputs)).unwrap();
+
+    for authorization in ["", "constructs token(7);"] {
+        let unauthorized = source.replace("constructs token(result);", authorization);
+        assert!(
+            verify_c_sources(&unauthorized, &inputs).is_err(),
+            "{unauthorized}"
+        );
+    }
+}
+
+#[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_04")]
 fn contradiction_closes_an_impossible_concrete_outcome() {
     let c_source = r#"
@@ -3223,6 +3280,7 @@ test_batches! {
         exceptional_contract_bindings_are_family_specific,
         abstract_resource_construction_adds_one_authorized_token,
         abstract_resource_construction_requires_function_authorization,
+        closing_constructs_only_a_missing_authorized_output_token,
     ],
     contract_batch_04: [
         contradiction_closes_an_impossible_concrete_outcome,
