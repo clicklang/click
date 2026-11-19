@@ -4455,11 +4455,8 @@ changing the plan.
 | 11k | Move one scalar machine-result certificate reader onto retained typed arguments. Preserve call identity and exact argument spelling. |
 | 11l | Delete adapters and cache branches whose last readers have moved. Update the live-boundary inventory with the callers that remain. |
 
-11d moves float read raising to the retained program point and address. The
-raw logical `BoolLoad` needs its own representation decision. A source `bool`
-cell read lowers to a byte comparison, so raising a raw `BoolLoad` as that
-source read would change the term on relowering. Keep the raw case open until
-it has an exact spelling or its remaining native inputs migrate.
+11d moves float read raising to the retained program point and address.
+The 11l audit below accounts for the raw logical Boolean read.
 
 After 11e, Boolean, float, and algebraic dependency collection reads retained
 descriptors. Machine read candidate keys also take the retained address and
@@ -4485,9 +4482,18 @@ application identity and retained typed arguments. It builds no native
 call carrier for that match. Native call spelling and the identity policy
 for opaque arguments stay available.
 
-The next planned checker slice is 11l. Before 11l, audit the raw `BoolLoad`
-producers and decide whether their inputs can migrate to the existing byte
-comparison or require an exact Surface spelling.
+11l closes this checker pass. Shared machine reads use their retained
+candidate-key branch, and explicitly native leaves use the written branch.
+The redundant native-read probe and the test-only `bool_load` constructor
+are removed.
+
+| Remaining reader | Live boundary |
+| --- | --- |
+| Raw `ConditionTerm::BoolLoad` and retained `BoolRead` | `BoolLoad` is a public kernel input. Import, checked rewriting, substitution, storage identity, and resource/connection collection preserve its state and address. The native read adapter is still used by Boolean storage, fold dependency collection and Surface synthesis. |
+| Ordinary C and Rust Boolean cell reads | `symbolic_load_value_unrecorded` constructs a `UInt8` memory read and uses the ordinary nonzero interpretation. There is no ordinary source producer of the raw logical `BoolLoad`. That byte comparison has a distinct fact identity. An exact Surface form would be needed to raise raw public input without changing its identity. |
+| Float read compatibility | `assumptions/float_conversions.rs` still uses the selected native descriptor to collect reads nested under conversions. |
+| Integer reverse bridge and native argument storage | Integer import/export and opaque binder collectors still use the reverse link. Checked source matching reads retained machine call arguments directly. Exact mixed arguments and consumers that require written output still use the existing call and argument adapters. |
+| Contract displacement compatibility | Dependency, binder and range variable readers use the retained root. Checked rewriting and rendering use the established native offset rules. Native equality, ordering and hashing still use original index identities, and exact legacy inputs retain their native representation. |
 
 ## Delivery and history
 

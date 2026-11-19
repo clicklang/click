@@ -223,12 +223,16 @@ fn an_unfolded_application_has_its_body_s_truth() {
 fn a_bool_read_is_one_value_per_cell() {
     let _session = VerificationSession::enter();
     let memory = crate::kernel::intern_memory(SymbolicMemory::new());
-    let read = ConditionTerm::bool_load(memory.clone(), Address::symbolic(Variable(70)));
-    let same = ConditionTerm::bool_load(memory, Address::symbolic(Variable(70)));
+    let read = || {
+        ConditionTerm::BoolLoad(
+            crate::kernel::ProgramPoint::at(&memory),
+            Box::new(Address::symbolic(Variable(70))),
+        )
+    };
     let context = PureFactContext::new()
-        .assume_condition(bool_equal(read, binder(71)), true)
+        .assume_condition(bool_equal(read(), binder(71)), true)
         .assume_condition(binder(71), true);
-    assert_eq!(context.decide(&same), Some(true));
+    assert_eq!(context.decide(&read()), Some(true));
 }
 
 /// Substituting a word variable reaches a `Bool` value's comparisons,
