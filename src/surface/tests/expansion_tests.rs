@@ -24364,6 +24364,59 @@ fn bit_field_record_storage_expands_and_replays() {
 }
 
 #[test]
+#[ignore = "nightly: row-pointer expansion and replay"]
+fn row_pointer_source_binding_expands_and_replays() {
+    let (source, sources) = mdtest_sources("mdtests/c_local_row_pointer_offset.md");
+    let sources = sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let source = format!(
+        "{source}\nby {{
+            step_until(statement(4));
+            have row != 0;
+            step_until(statement(5));
+            have next != 0;
+            step_until(function.exit);
+            solve();
+        }}"
+    );
+    let claim = "select_rows.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, claim)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert_ne!(expanded, source);
+    assert!(expanded.contains("have row != 0"), "{expanded}");
+    assert!(expanded.contains("have next != 0"), "{expanded}");
+    assert!(!expanded.contains("__click_row_pointer_"), "{expanded}");
+    without_implicit_solve_for_claim(claim, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
+fn row_pointer_declaration_keeps_later_local_ordinals() {
+    let c = r#"
+        int select_rows(void) {
+            int matrix[2][3] = {{11, 12, 13}, {21, 22, 23}};
+            int (*row)[3] = matrix;
+            int after = row[1][0];
+            return after;
+        }
+    "#;
+    let click = r#"
+        verifying "matrix.c";
+        int32 select_rows() { ensures result == 21; } by {
+            step_until(statement(3));
+            have select_rows.local(3) == 21;
+            step_until(function.exit);
+            solve();
+        }
+    "#;
+    verify_c_sources(click, &[("matrix.c", c)]).unwrap();
+}
+
+#[test]
 #[ignore = "nightly: saved-memory and member-address expansion with cold replay"]
 fn specification_member_addresses_expand_and_recheck() {
     for (fixture, claim) in [
