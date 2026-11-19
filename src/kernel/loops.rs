@@ -3007,12 +3007,10 @@ impl LoopExitRestatement {
     /// This exit's contribution to the join: what it states, and the same
     /// path restated about the successor's fresh names for its disjunct.
     ///
-    /// The restated reading never replaces what the path stated — the loop
-    /// may retain historical facts under the names the head stated them —
-    /// but the disjunct is built from the restated reading
-    /// alone, because a name the loop left behind is one no proof after the
-    /// loop can spell, and a `cases` over the exported disjunction has to
-    /// spell it.
+    /// Keep the original facts available for the intersection across exits.
+    /// For the disjunct, use the successor's scalar names where they replace
+    /// exit-only names. Effect summaries keep the states and ranges of the
+    /// transitions that established them.
     fn restate(
         self,
         facts: ExecutionFacts,
@@ -3026,7 +3024,7 @@ impl LoopExitRestatement {
             self.renamings
                 .iter()
                 .fold(proposition.clone(), |proposition, (from, to)| {
-                    substitute_bitvector_variable_in_proposition(&proposition, *from, to)
+                    crate::kernel::reasoning::restate_loop_exit_scalar(&proposition, *from, to)
                 })
         };
         let mut restated = Vec::new();
@@ -3040,9 +3038,7 @@ impl LoopExitRestatement {
         }
         let mut successor_equations = Vec::new();
         for equation in &self.equations {
-            // An equation the renaming covers is dropped: every fact this exit
-            // stated about the renamed value was restated about the
-            // successor's name above, so keeping it would state nothing.
+            // A pin reduced to a reflexive equality states nothing.
             let renamed = rename(equation);
             if equation_states_nothing(&renamed) {
                 continue;
