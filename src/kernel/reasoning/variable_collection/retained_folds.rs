@@ -336,14 +336,9 @@ pub(super) fn common_variables(
                             summaries,
                         );
                         if collecting_connection_variables() {
-                            let ConditionTerm::BoolLoad(_, pointer) =
-                                term.boolean_read_native().expect("Boolean read")
-                            else {
-                                unreachable!();
-                            };
                             collect_stored_load_connection_variables(
                                 memory,
-                                pointer,
+                                address.exact_cell_key(),
                                 &mut leaf_variables,
                             );
                         }
@@ -669,6 +664,59 @@ mod tests {
         let mut variables = BTreeSet::new();
         collect_boolean_variables(condition, mode, &mut variables);
         variables
+    }
+
+    #[test]
+    fn retained_boolean_read_connections_use_the_exact_stored_cell() {
+        use crate::kernel::BooleanOperandView;
+
+        let _session = crate::kernel::VerificationSession::enter();
+        let base = Variable(999941);
+        let coordinate = Variable(999942);
+        let stored = Variable(999943);
+        let unrelated = Variable(999944);
+        let address = Address {
+            base: AddressBase::Symbolic(base),
+            offset: AddressOffset::Variable(coordinate),
+        };
+        let memory = intern_memory(
+            SymbolicMemory::new()
+                .store(
+                    address.clone(),
+                    ProgramValue::Bool(MachineTerm::Variable(stored)),
+                )
+                .store(
+                    Address::symbolic(base),
+                    ProgramValue::Bool(MachineTerm::Variable(unrelated)),
+                ),
+        );
+        let native = ConditionTerm::BoolLoad(ProgramPoint::at(&memory), Box::new(address));
+        let root = KernelTermImport::default().condition(&native);
+        let KernelTermNode::BoolRead(read) = root.node() else {
+            panic!("retained Boolean read");
+        };
+        for (connections, frame) in [(false, false), (true, false), (true, true), (true, false)] {
+            let expected = condition_variables_in_scope(
+                BooleanOperandView::Native(&native),
+                FoldVariableRead::ExpressionFree,
+                connections,
+                frame,
+            );
+            let actual = condition_variables_in_scope(
+                BooleanOperandView::Shared(&root),
+                FoldVariableRead::ExpressionFree,
+                connections,
+                frame,
+            );
+            assert_eq!(actual, expected);
+            if connections {
+                assert!(actual.contains(&stored));
+                assert!(!actual.contains(&unrelated));
+            }
+        }
+        let (_, work) =
+            crate::instrumentation::measure_deterministic_work(|| read.parts().1.exact_cell_key());
+        assert_eq!(work, 0, "the connection query prepared the exact address");
     }
 
     #[test]
