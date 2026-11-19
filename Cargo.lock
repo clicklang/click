@@ -319,6 +319,7 @@ version = "0.1.0"
 dependencies = [
  "charon",
  "flate2",
+ "hashbrown 0.17.1",
  "imbl",
  "libc",
  "mimalloc",

@@ -113,7 +113,8 @@ fn exit_difference_names_call_bindings_and_storage_metadata() {
     right.resource_bindings = Some(Arc::new(BTreeMap::from([(Variable(1), Variable(2))])));
     right.next_local_frame = 3;
     right.enclosing_frame_holds_locals = true;
-    let report = loop_exit_state_difference(&left, &right, &PureFactContext::new()).unwrap();
+    let report =
+        loop_exit_state_difference(&left, &right, left.memory(), &PureFactContext::new()).unwrap();
     assert!(
         report.contains("call resource bindings (successor: 0 entries; exit: 1 entries)"),
         "{report}"
@@ -127,7 +128,9 @@ fn exit_difference_names_call_bindings_and_storage_metadata() {
         "{report}"
     );
     assert!(!report.contains("the symbolic state"), "{report}");
-    assert!(loop_exit_state_difference(&left, &left, &PureFactContext::new()).is_none());
+    assert!(
+        loop_exit_state_difference(&left, &left, left.memory(), &PureFactContext::new()).is_none()
+    );
 }
 
 #[test]
@@ -136,7 +139,8 @@ fn exit_difference_does_not_blame_equivalent_creation_ledgers() {
     let left = ExecutionState::new().with_population_creation_tracking();
     let mut right = ExecutionState::new().with_population_creation_tracking();
     right.next_local_frame = 3;
-    let report = loop_exit_state_difference(&left, &right, &PureFactContext::new()).unwrap();
+    let report =
+        loop_exit_state_difference(&left, &right, left.memory(), &PureFactContext::new()).unwrap();
     assert!(report.contains("next automatic-storage frame"), "{report}");
     assert!(!report.contains("population effects"), "{report}");
 }
@@ -150,7 +154,9 @@ fn exit_difference_names_missing_locals_from_either_side_and_bounds_names() {
         right = right.with_local(format!("only_exit_{index:02}"), int32(0));
     }
     for (first, second) in [(&left, &right), (&right, &left)] {
-        let report = loop_exit_state_difference(first, second, &PureFactContext::new()).unwrap();
+        let report =
+            loop_exit_state_difference(first, second, first.memory(), &PureFactContext::new())
+                .unwrap();
         assert!(
             report.contains("only_exit_00") && report.contains("only_exit_11"),
             "{report}"
@@ -176,7 +182,15 @@ fn partial_value_binding_join_cannot_supply_a_missing_read_or_drop_declared_stor
             .iter()
             .all(|state| state.locals.get_native("temporary").as_deref().is_none())
     );
-    assert!(loop_exit_state_difference(&exits[0], &exits[1], &PureFactContext::new()).is_none());
+    assert!(
+        loop_exit_state_difference(
+            &exits[0],
+            &exits[1],
+            exits[0].memory(),
+            &PureFactContext::new()
+        )
+        .is_none()
+    );
 
     let mut exits = [empty.clone(), value.clone()];
     discard_loop_exit_partial_value_bindings(&value, &body, &mut exits);
@@ -204,7 +218,15 @@ fn partial_value_binding_join_cannot_supply_a_missing_read_or_drop_declared_stor
         exits[1].locals.get_native("temporary").as_deref().is_some(),
         "declared storage must remain checked"
     );
-    assert!(loop_exit_state_difference(&exits[0], &exits[1], &PureFactContext::new()).is_some());
+    assert!(
+        loop_exit_state_difference(
+            &exits[0],
+            &exits[1],
+            exits[0].memory(),
+            &PureFactContext::new()
+        )
+        .is_some()
+    );
 }
 
 #[test]

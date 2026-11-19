@@ -2385,7 +2385,7 @@ impl CellStore {
             .diff(&other.concrete)
             .map(|change| change.key().clone())
             .collect::<Vec<_>>();
-        if self.runs.ptr_eq(&other.runs) || self.runs == other.runs {
+        if self.runs.ptr_eq(&other.runs) {
             return DifferingCells {
                 pointers: concrete_changes,
                 run_slots: Vec::new(),
@@ -2417,6 +2417,12 @@ impl CellStore {
             differing_runs.push((run.clone(), slots));
         }
         crate::instrumentation::record_deterministic_work(differing_runs.len());
+        if differing_runs.is_empty() {
+            return DifferingCells {
+                pointers: concrete_changes,
+                run_slots: Vec::new(),
+            };
+        }
         let mut pointers = Vec::new();
         let concrete_changes = concrete_changes.into_iter().collect::<BTreeSet<_>>();
         for pointer in &concrete_changes {
@@ -2473,9 +2479,10 @@ impl CellStore {
     /// and nothing weaker. The work is [`Self::differing_cells`]': what the
     /// two stores do not share.
     pub(crate) fn same_cells_as(&self, other: &Self) -> bool {
-        if self == other {
-            return true;
-        }
+        self == other || self.same_logical_cells_by_difference(other)
+    }
+
+    pub(super) fn same_logical_cells_by_difference(&self, other: &Self) -> bool {
         let differing = self.differing_cells(other);
         differing.pointers.is_empty() && differing.run_slots.is_empty()
     }

@@ -10312,6 +10312,17 @@ impl ExecutionState {
         self
     }
 
+    /// Install memory built from a shared base. Register its identity by
+    /// changed paths before resource invalidation or the point link looks it up.
+    pub(in crate::kernel) fn with_memory_relative_to(
+        self,
+        memory: SymbolicMemory,
+        base: &SymbolicMemory,
+    ) -> Self {
+        super::intern_memory_with(std::borrow::Cow::Borrowed(&memory), Some(base), None);
+        self.with_memory(memory)
+    }
+
     /// Replace the memory state after proof-only cell naming.
     ///
     /// Materializing a canonical load does not write program memory or
