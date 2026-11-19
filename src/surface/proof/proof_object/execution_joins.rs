@@ -590,7 +590,6 @@ impl<'a> Proof<'a> {
             &mut facts,
             None,
             join_next_kernel_variable,
-            false,
         )
         .map_err(|error| {
             let error = add_proof_branch_path(error, &execution.presentation.branch_path);
@@ -984,16 +983,16 @@ impl<'a> Proof<'a> {
                 &mut execution,
                 context,
                 &mut facts,
-                Some(&sibling_join_states),
+                Some((&sibling_join_states, &common_states)),
                 join_next_kernel_variable,
-                true)
+            )
             .map_err(|error| {
-            let error = add_proof_branch_path(error, &execution.presentation.branch_path);
-            match self.focus_branch(arm.branch_id) {
-                Ok(focused) => focused.attach_step_diagnostic(error),
-                Err(_) => error,
-            }
-        })?;
+                let error = add_proof_branch_path(error, &execution.presentation.branch_path);
+                match self.focus_branch(arm.branch_id) {
+                    Ok(focused) => focused.attach_step_diagnostic(error),
+                    Err(_) => error,
+                }
+            })?;
             Ok((execution, facts))
         };
         let (then_abstract, then_interface_facts) = abstract_arm(&arms[0])?;
