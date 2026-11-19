@@ -443,7 +443,10 @@ impl PureFactContext {
         // A comparison of a term with itself is decided by its shape, with
         // no fact: the same one-comparison rule every `using` list applies
         // (`proposition_holds_without_facts`).
-        if let Some(value) = condition.reflexive_value() {
+        if let Some(value) = condition
+            .reflexive_value()
+            .or_else(|| condition.literal_float_comparison_value())
+        {
             return Some(value);
         }
         // A `Bool` binder that an L-Eq merge gave a truth. A binder no

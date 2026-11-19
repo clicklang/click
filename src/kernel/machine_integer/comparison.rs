@@ -198,9 +198,8 @@ pub(crate) fn literal_native_comparison_value(condition: &ConditionTerm) -> Opti
 }
 
 /// The value of a closed condition from its literal roots alone: a constant,
-/// a closed native comparison ([`literal_native_comparison_value`]), or a
-/// `bool` equality of two constants. Lowering retains the last two as
-/// written; checking and exact matching decide them here.
+/// a native machine or float comparison, or a `bool` equality of two
+/// constants. Checking and exact matching decide the retained comparisons here.
 pub(crate) fn closed_condition_value(condition: &ConditionTerm) -> Option<bool> {
     match condition {
         ConditionTerm::Constant(value) => Some(*value),
@@ -208,7 +207,8 @@ pub(crate) fn closed_condition_value(condition: &ConditionTerm) -> Option<bool> 
             (ConditionTerm::Constant(left), ConditionTerm::Constant(right)) => Some(left == right),
             _ => None,
         },
-        condition => literal_native_comparison_value(condition),
+        condition => literal_native_comparison_value(condition)
+            .or_else(|| condition.literal_float_comparison_value()),
     }
 }
 

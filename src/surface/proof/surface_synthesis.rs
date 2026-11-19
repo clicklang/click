@@ -2856,6 +2856,27 @@ fn synthesize_surface_atomic_proposition(
     let Proposition::ConditionIs(condition, value) = proposition else {
         return None;
     };
+    if let Some((format, operator, [left, right])) = condition.operand_view().float_comparison()
+        && left.literal_bits().is_some()
+        && right.literal_bits().is_some()
+    {
+        let literal = |operand: crate::kernel::FloatOperandView<'_>| {
+            Some(SurfaceTerm::ProgramExpression(ProgramExpression::Value(
+                format.value(operand.native_compat()?.clone()),
+            )))
+        };
+        let comparison = ClickProposition::Comparison {
+            left: literal(left)?,
+            operator: surface_float_comparison_operator(operator),
+            right: literal(right)?,
+        };
+        // Negation cannot be spelled as the opposite order for a NaN.
+        return Some(if *value {
+            comparison
+        } else {
+            ClickProposition::Not(Box::new(comparison))
+        });
+    }
     // A closed `bool` comparison is spelled as written: `true == false`
     // lowers back to exactly this retained comparison.
     if let ConditionTerm::BoolEqual(left, right) = condition.native_compat()
@@ -3682,8 +3703,21 @@ fn raise_call(
     })
 }
 
-// Keep the float-only temporaries out of the recursive shared renderer's
-// frame, which is also used for deeply nested integer expressions.
+fn surface_float_comparison_operator(
+    operator: crate::kernel::ComparisonOperator,
+) -> ComparisonOperator {
+    use crate::kernel::ComparisonOperator as C;
+    match operator {
+        C::Equal => ComparisonOperator::Equal,
+        C::NotEqual => ComparisonOperator::NotEqual,
+        C::LessThan => ComparisonOperator::LessThan,
+        C::LessEqual => ComparisonOperator::LessEqual,
+        C::GreaterThan => ComparisonOperator::GreaterThan,
+        C::GreaterEqual => ComparisonOperator::GreaterEqual,
+    }
+}
+
+// Keep float-only temporaries out of the recursive shared renderer's frame.
 fn raise_float_expression(
     term: &crate::kernel::KernelTerm,
     parameter_binding: ParameterBinding<'_>,
@@ -3723,22 +3757,12 @@ fn raise_float_expression(
             operator,
             arguments,
             ..
-        } => {
-            use crate::kernel::ComparisonOperator as C;
-            proposition_bool_value(ClickProposition::Comparison {
-                left: recurse(&arguments[0])?,
-                operator: match operator {
-                    C::Equal => ComparisonOperator::Equal,
-                    C::NotEqual => ComparisonOperator::NotEqual,
-                    C::LessThan => ComparisonOperator::LessThan,
-                    C::LessEqual => ComparisonOperator::LessEqual,
-                    C::GreaterThan => ComparisonOperator::GreaterThan,
-                    C::GreaterEqual => ComparisonOperator::GreaterEqual,
-                },
-                right: recurse(&arguments[1])?,
-            })
-            .ok()?
-        }
+        } => proposition_bool_value(ClickProposition::Comparison {
+            left: recurse(&arguments[0])?,
+            operator: surface_float_comparison_operator(*operator),
+            right: recurse(&arguments[1])?,
+        })
+        .ok()?,
         Node::FloatClassify {
             classification,
             operand,
