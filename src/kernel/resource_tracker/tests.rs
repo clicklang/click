@@ -1805,3 +1805,45 @@ fn a_join_is_crossed_only_when_both_arms_leave_the_cell() {
         joined.program_point().id()
     );
 }
+
+#[test]
+fn contract_offset_reads_keep_order_and_distinct_versions() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let entry = entry_memory();
+    let pointer = at(block("global:g"), 0);
+    let before = point(&entry);
+    let after = point(&entry.store(pointer.clone(), one()));
+    for point in [&before, &after] {
+        crate::kernel::eval::record_load_access_width(point.memory(), &pointer, 4);
+    }
+    let scaled = |point| {
+        AddressOffset::scaled_int32_node(
+            MachineTerm::MemoryLoad(point, Box::new(pointer.clone()), LoadKind::Int32),
+            4,
+        )
+    };
+    let first = scaled(before.clone());
+    let second = scaled(after.clone());
+    let offset = AddressOffset::Add(
+        Box::new(first.clone()),
+        Box::new(AddressOffset::Add(Box::new(first), Box::new(second))),
+    );
+    let stored = crate::kernel::StoredPointerOffset::from(offset);
+    assert!(stored.root().is_some());
+    let mut reads = Vec::new();
+    collect_term_reads(&Term::PointerOffset(stored), &mut reads);
+    let cell = OwnedResource::Cell { pointer, bytes: 4 };
+    assert_eq!(
+        reads,
+        [
+            ResourceRead {
+                resource: cell.clone(),
+                point: after
+            },
+            ResourceRead {
+                resource: cell,
+                point: before
+            },
+        ],
+    );
+}

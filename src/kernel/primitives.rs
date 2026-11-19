@@ -164,7 +164,7 @@ pub use sequence_values::{SequenceValues, SequenceValuesIter};
 mod descriptor_values;
 pub use descriptor_values::{
     StoredAlgebraicTerm, StoredConditionTerm, StoredIntegerTerm, StoredMachineTerm,
-    StoredProgramValue,
+    StoredPointerOffset, StoredProgramValue,
 };
 mod resource_fields;
 pub(crate) use resource_fields::StoredResourceField;
@@ -13280,7 +13280,7 @@ pub enum Term {
     Condition(StoredConditionTerm),
     Bitvector32(StoredMachineTerm),
     Integer(StoredIntegerTerm),
-    PointerOffset(AddressOffset),
+    PointerOffset(StoredPointerOffset),
     ProgramValue(StoredProgramValue),
     Sequence(SequenceTerm),
     Algebraic(StoredAlgebraicTerm),

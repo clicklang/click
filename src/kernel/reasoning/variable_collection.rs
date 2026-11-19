@@ -748,7 +748,7 @@ pub(in crate::kernel) fn collect_term_bitvector_variables(
         Term::Bitvector32(bits) => collect_bitvector_variables(bits.native_compat(), variables),
         Term::Integer(integer) => collect_integer_variables(integer.native_compat(), variables),
         Term::PointerOffset(offset) => {
-            collect_pointer_offset_bitvector_variables(offset, variables)
+            collect_pointer_offset_bitvector_variables(offset.native_compat(), variables)
         }
         Term::ProgramValue(value) => {
             collect_program_value_bitvector_variables(value.native_compat(), variables);

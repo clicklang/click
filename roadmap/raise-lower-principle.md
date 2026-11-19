@@ -4473,7 +4473,10 @@ native Integer key walker. 11h keeps fold endpoints and arithmetic children
 in the retained rewrite path. Opaque children and capture summaries still
 use the established native Integer rules.
 
-The next planned checker slice is 11i. Before 11l, audit the raw `BoolLoad`
+11i reads contract offset dependencies and binder identities through the
+shared offset. Its native input still owns the exact descriptor identity.
+
+The next planned checker slice is 11j. Before 11l, audit the raw `BoolLoad`
 producers and decide whether their inputs can migrate to the existing byte
 comparison or require an exact Surface spelling.
 
