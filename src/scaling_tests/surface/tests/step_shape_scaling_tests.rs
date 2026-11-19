@@ -927,20 +927,26 @@ fn a_call_ignores_unrelated_owned_objects() {
 
 #[test]
 fn repeated_writing_calls_ignore_unrelated_folded_owners() {
-    let check = |owners, calls| {
+    let check = |owners, calls, distinct_families| {
         let fixture = |owners| {
             let parameters = (0..owners)
                 .map(|index| format!("int32* p{index}"))
                 .collect::<Vec<_>>()
                 .join(", ");
-            let kept = lines(owners, |index| format!("    owns boxed(p{index});"));
+            let family = |index| if distinct_families { index } else { 0 };
+            let definitions = lines(if distinct_families { owners } else { 1 }, |index| {
+                format!("resource boxed{index}(p: int32*) {{ owns *p; }}")
+            });
+            let kept = lines(owners, |index| {
+                format!("    owns boxed{}(p{index});", family(index))
+            });
             let c = format!(
                 "void caller(int32* scratch, {parameters}) {{\n{}\n}}",
                 lines(calls, |_| "    ping(scratch);".into())
             );
             let click = format!(
                 r#"verifying "hunt.c";
-resource boxed(p: int32*) {{ owns *p; }}
+{definitions}
 extern void ping(int32* scratch) {{ owns *scratch; ensures *scratch == 7; }}
 void caller(int32* scratch, {parameters}) {{
     owns *scratch;
@@ -961,7 +967,7 @@ void caller(int32* scratch, {parameters}) {{
     };
 
     let widths = [2, 4, 8, 16];
-    let by_width = widths.map(|owners| check(owners, 4));
+    let by_width = widths.map(|owners| check(owners, 4, false));
     for (owners, work) in widths.into_iter().zip(&by_width).skip(1) {
         // The second call catches the cell index up with the first call's
         // removals. Charge the diff and the index update once per owner.
@@ -977,10 +983,62 @@ void caller(int32* scratch, {parameters}) {{
         }
     }
     // Grow the call sequence at a fixed width to detect repeated upkeep.
-    let longer = check(16, 12);
+    let longer = check(16, 12, false);
     assert!(
         longer[4..].iter().all(|work| *work <= longer[3] + 32),
         "repeated writing calls revisit earlier calls: {longer:?}"
+    );
+    for (owners, one_family) in widths.into_iter().zip(&by_width) {
+        let distinct = check(owners, 4, true);
+        assert_eq!(
+            &one_family[2..],
+            &distinct[2..],
+            "writing calls enumerate {owners} retained resource families"
+        );
+    }
+}
+
+#[test]
+fn inline_stores_ignore_unrelated_owned_parameter_runs() {
+    let samples = [4, 8, 16, 32].map(|owners| {
+        let parameters = (0..owners)
+            .map(|index| format!("int32* p{index}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let kept = lines(owners, |index| format!("    owns *p{index};"));
+        let c = format!(
+            "#include \"ping.h\"\nvoid caller(int32* scratch, {parameters}) {{\n{}\n}}",
+            lines(4, |index| format!("    ping(scratch, {});", 7 + index))
+        );
+        let header = "static inline void ping(int32* p, int32 value) { *p = value; }";
+        let click = format!(
+            r#"verifying "hunt.c";
+void caller(int32* scratch, {parameters}) {{
+    owns *scratch;
+{kept}
+    ensures *scratch == 10;
+}} by {{
+{}
+}}"#,
+            steps(4)
+        );
+        let (verified, samples) = crate::instrumentation::collect_tactic_work(|| {
+            verify_c_sources(&click, &[("hunt.c", &c), ("ping.h", header)])
+        });
+        verified.unwrap_or_else(|error| panic!("{owners} owners: {}", error.message()));
+        let calls: Vec<_> = samples
+            .into_iter()
+            .filter(|sample| {
+                sample.tactic.claim == "caller.contract" && sample.tactic.tactic_name == "step"
+            })
+            .map(|sample| sample.work)
+            .collect();
+        assert_eq!(calls.len(), 4);
+        calls[3]
+    });
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 8),
+        "one inline store revisits unrelated parameter runs: {samples:?}"
     );
 }
 

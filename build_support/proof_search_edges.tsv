@@ -1,5 +1,4 @@
 src/kernel/functions.rs	legacy-bridge	::call_kept_ownership	call_frame	1
-src/kernel/functions.rs	legacy-caller	::execute_verified_function_applications_with_suspension	call_kept_ownership	1
 src/kernel/loans.rs	legacy-bridge	::memory_range_aliases	loan_aliases	1
 src/kernel/loans.rs	legacy-bridge	LoanLedger::permits_memory_access_with_assumptions	loan_access	1
 src/kernel/loans.rs	legacy-caller	::protected_range_proven_overlapping_with_separation	memory_range_aliases	2

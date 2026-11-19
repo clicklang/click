@@ -1100,7 +1100,8 @@ struct SlotAt<'a> {
 impl CellStore {
     /// Index checked whole-cell membership in an atomic parameter partition.
     /// Follow persistent cell deltas; unrelated members are not queried at
-    /// every store. Runs and union views retain their ordinary rules.
+    /// every store. Run membership covers the entire span, including holes.
+    /// Union views retain their ordinary rules.
     pub(in crate::kernel) fn parameter_store_candidates(
         &self,
         pointer: &Address,
@@ -1108,7 +1109,7 @@ impl CellStore {
         candidates: &AliasCandidates,
         gap_kept: &[(Address, Address)],
         assumptions: &PureFactContext,
-    ) -> Option<Vec<Address>> {
+    ) -> Option<(Vec<Address>, Vec<RunKey>)> {
         if crate::kernel::reasoning::store_gap::store_gap_skip_disabled()
             || crate::kernel::assumptions::implicit_consulted_premises_capturing()
             || crate::kernel::assumptions::reasoning_interrupted()
@@ -1124,7 +1125,16 @@ impl CellStore {
             .entries(&index.unknown)
             .map(|(key, _)| key.clone())
             .collect::<Vec<_>>();
+        let ordinary = candidates.excluding_external_arguments();
+        let mut runs = candidates
+            .entries(&index.unknown_runs)
+            .map(|(key, _)| key.clone())
+            .chain(ordinary.entries(&self.runs).map(|(key, _)| key.clone()))
+            .collect::<Vec<_>>();
         for base in alias_bases {
+            if let Some(keys) = index.known_runs.get(&base) {
+                runs.extend(keys.iter().cloned());
+            }
             let mut start = Bound::Included((base.clone(), Address::null()));
             for (low, high) in gap_kept {
                 selected.extend(
@@ -1143,7 +1153,7 @@ impl CellStore {
                     .map(|((_, key), _)| key.clone()),
             );
         }
-        Some(selected)
+        Some((selected, runs))
     }
 
     pub(in crate::kernel) fn prepare_parameter_partition(

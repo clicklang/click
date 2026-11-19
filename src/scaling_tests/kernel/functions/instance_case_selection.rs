@@ -130,7 +130,7 @@ fn check_resource_publication_work(
             assumptions = assumptions.retaining_required_obligations();
         }
         let mut interface = FunctionContractInterface::new(ProgramType::Void, vec![]);
-        interface.composite_resource_definitions = vec![definition.clone()];
+        interface.composite_resource_definitions = [definition.clone()].into();
         let (facts, work) = crate::instrumentation::measure_deterministic_work(|| {
             if fold {
                 let rewrite = rewrite_resource_instance_selecting_children(

@@ -5277,7 +5277,7 @@ fn symbolic_execution_statement_execution_with_loop_rule(
         loop_evidence,
         required_assumptions: assumptions.clone(),
         paths: paths.clone(),
-        composite_resource_definitions: Vec::new(),
+        composite_resource_definitions: Default::default(),
         // The rule records the anchor its own body was stepped under. A
         // self-call in that body raised the descent obligations exactly when
         // this is set. Every body obligation has already been discharged
