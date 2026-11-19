@@ -263,6 +263,20 @@ fn construction_binding_retains_the_full_destination_loan_requirement() {
         &ledger.memory_access_requirement(&range).unwrap(),
     );
     assert!(!PureFactContext::new().proves_atomic_without_search(obligation.proposition()));
+    let arguments = [int32(MachineTerm::constant(37))];
+    let mut direct_obligations = Vec::new();
+    assert!(
+        bind_program_function_arguments_retained(
+            &caller,
+            &function,
+            &arguments,
+            &[arguments[0].clone().into()],
+            &mut direct_obligations,
+        )
+        .is_some()
+    );
+    assert_eq!(direct_obligations, obligations);
+
     assert!(
         construction_return::bind(
             &caller,
@@ -272,6 +286,67 @@ fn construction_binding_retains_the_full_destination_loan_requirement() {
         )
         .is_none()
     );
+}
+
+#[test]
+fn direct_native_construction_distinguishes_fields_from_padding() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let state = allocate_destination(&ExecutionState::new(), "node");
+    let destination = state.locals.slot("node").unwrap().clone();
+    let function = program_function(
+        ProgramType::Void,
+        "native_constructor",
+        vec![program_parameter("target", ProgramType::Int32Pointer)],
+        program_return(program_void_value()),
+    )
+    .with_construction_parameter(0, node_layout());
+    let arguments = [ProgramValue::pointer(destination.clone())];
+
+    // The 16-byte layout writes an 8-byte pointer and a 4-byte scalar.
+    // A loan at byte 12 covers only padding. A loan at byte 8 covers a field.
+    for (loan_offset, separates) in [(12, true), (8, false)] {
+        let view = ResourceFact::view_memory(MemoryRange::new_with_element_width(
+            destination.offset_by_bytes(loan_offset),
+            0u32.into(),
+            1u32.into(),
+            1,
+        ));
+        let (_, occurrences) =
+            ResourceContext::new().unchecked_with_facts_and_occurrences([view.clone()]);
+        let ledger = LoanLedger::new();
+        let holder = ledger.fresh_participant().unwrap();
+        let opening = ledger
+            .borrowed_contract_input(holder, occurrences[0].1, view, None)
+            .unwrap();
+        let ledger = ledger.apply(&opening.transition).unwrap();
+        let caller = state
+            .clone()
+            .with_loan_ledger(Some(ledger))
+            .with_loan_participant(Some(holder));
+        let mut obligations = Vec::new();
+        assert!(
+            bind_program_function_arguments_retained(
+                &caller,
+                &function,
+                &arguments,
+                &[arguments[0].clone().into()],
+                &mut obligations,
+            )
+            .is_some()
+        );
+        assert_eq!(obligations.len(), 2);
+        assert!(
+            obligations
+                .iter()
+                .all(ProofObligation::requires_statement_entry)
+        );
+        let assumptions = PureFactContext::new();
+        assert!(assumptions.proves_atomic_without_search(obligations[0].proposition()));
+        assert_eq!(
+            assumptions.proves_atomic_without_search(obligations[1].proposition()),
+            separates
+        );
+    }
 }
 
 #[test]

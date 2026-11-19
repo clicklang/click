@@ -868,6 +868,7 @@ pub(super) fn bind_program_function_arguments_retained(
     function: &ProgramFunction,
     values: &[ProgramValue],
     roots: &[ExecutionValue],
+    obligations: &mut Vec<ProofObligation>,
 ) -> Option<ExecutionState> {
     bind_program_function_arguments_impl(
         caller_state,
@@ -875,6 +876,7 @@ pub(super) fn bind_program_function_arguments_retained(
         values,
         AggregateArgumentBinding::Call,
         Some(roots),
+        Some(obligations),
     )
 }
 
@@ -893,7 +895,7 @@ pub(in crate::kernel) fn bind_program_function_arguments_with(
     } else {
         AggregateArgumentBinding::ProofEntry
     };
-    bind_program_function_arguments_impl(caller_state, function, values, binding, None)
+    bind_program_function_arguments_impl(caller_state, function, values, binding, None, None)
 }
 
 fn bind_program_function_arguments_impl(
@@ -902,6 +904,7 @@ fn bind_program_function_arguments_impl(
     values: &[ProgramValue],
     aggregate_binding: AggregateArgumentBinding,
     roots: Option<&[ExecutionValue]>,
+    obligations: Option<&mut Vec<ProofObligation>>,
 ) -> Option<ExecutionState> {
     // Preserve the value-only representation for parameters whose addresses
     // never escape. Besides avoiding unnecessary memory cells, this
@@ -1134,7 +1137,7 @@ fn bind_program_function_arguments_impl(
         caller_state,
         function.contract_interface(),
         &mut callee_state,
-        None,
+        obligations,
     )?;
     Some(callee_state)
 }
@@ -1394,6 +1397,7 @@ mod pointer_argument_tests {
             &function,
             std::slice::from_ref(&native),
             std::slice::from_ref(&source),
+            &mut Vec::new(),
         )
         .unwrap();
         let bound = callee.locals.get("x").unwrap();
@@ -1449,6 +1453,7 @@ mod pointer_argument_tests {
                 &function,
                 std::slice::from_ref(&native),
                 std::slice::from_ref(&source),
+                &mut Vec::new(),
             )
             .unwrap();
             let bound = callee.locals.get("x").unwrap();
@@ -1504,6 +1509,7 @@ mod pointer_argument_tests {
             &function,
             std::slice::from_ref(&native),
             std::slice::from_ref(&source),
+            &mut Vec::new(),
         )
         .unwrap();
         let bound = callee.locals.get("x").unwrap();
@@ -1606,6 +1612,7 @@ mod pointer_argument_tests {
             &function,
             &native,
             &arguments[0].values,
+            &mut Vec::new(),
         )
         .unwrap();
         let legacy = bind_program_function_arguments(&state, &function, &native).unwrap();

@@ -176,33 +176,24 @@ pub(super) fn bind(
         else {
             return true;
         };
-        let field_range = || {
+        // Whole-object writes use the raw owner's byte coordinates, since
+        // an aggregate stride need not have a scalar Surface type.
+        let range = if interface.construction_parameter().is_some() {
             MemoryRange::new_with_element_width(pointer.clone(), 0u32.into(), 1u32.into(), bytes)
-        };
-        if loan_obligations.is_some() {
-            // Whole-object writes use the raw owner's byte coordinates.
-            // An aggregate stride need not have a scalar Surface type.
-            let range = if interface.construction_parameter().is_some() {
-                field_range()
-            } else if i32::try_from(bytes).is_ok() {
-                MemoryRange::new_with_element_width(pointer.clone(), 0u32.into(), bytes.into(), 1)
-            } else {
-                MemoryRange::new_wide(pointer.clone(), 0u32.into(), bytes.into(), 1)
-            };
-            if let Some(requirement) = ledger.memory_access_requirement(&range) {
-                pending.push(
-                    ProofObligation::verification_condition(requirement)
-                        .with_statement_entry_required(true)
-                        .with_context("construction destination write separation"),
-                );
-            }
-            true
+        } else if i32::try_from(bytes).is_ok() {
+            MemoryRange::new_with_element_width(pointer.clone(), 0u32.into(), bytes.into(), 1)
         } else {
-            // Body execution binds directly and has no modular entry proof.
-            ledger
-                .permits_memory_access_with_assumptions(&field_range(), &assumptions)
-                .is_ok()
-        }
+            MemoryRange::new_wide(pointer.clone(), 0u32.into(), bytes.into(), 1)
+        };
+        let Some(requirement) = ledger.memory_access_requirement(&range) else {
+            return true;
+        };
+        pending.push(
+            ProofObligation::verification_condition(requirement)
+                .with_statement_entry_required(true)
+                .with_context("construction destination write separation"),
+        );
+        true
     };
     let authorized = if interface.construction_parameter().is_some() {
         // Native constructor contracts own fields, not padding. The body and
@@ -220,8 +211,12 @@ pub(super) fn bind(
     if !authorized {
         return None;
     }
+    // Entry reconstruction does not publish obligations. Such a caller can
+    // only reconstruct a destination that needs no additional evidence.
     if let Some(obligations) = loan_obligations {
         obligations.extend(pending);
+    } else if !pending.is_empty() {
+        return None;
     }
     callee.aggregate_destination = selected_state.aggregate_destination.clone();
     if interface.construction_parameter().is_none() {
