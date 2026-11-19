@@ -4764,173 +4764,6 @@ axiom uint32_difference_decreases_after_increment(value: uint32, bound: uint32) 
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-### `integer::uint64_less_than_less_equal_transitive`
-
-```click
-theorem uint64_less_than_less_equal_transitive(first: uint64, middle: uint64, last: uint64) {
-    requires first < middle;
-    requires middle <= last;
-
-    ensures first < last by {
-        have to_integer(first) < to_integer(last) by {
-            have (to_integer(first) + (-1 * to_integer(middle)) + 1) <= 0 by {
-                have to_integer(first) < to_integer(middle) by {
-                    normalize() using {
-                        first < middle;
-                    };
-                }
-                have (to_integer(first) + 1) <= to_integer(middle) by {
-                    apply(integer::lt_step_le(to_integer(first), to_integer(middle))) using {
-                        to_integer(first) < to_integer(middle);
-                    };
-                }
-                have (to_integer(first) + (-1 * to_integer(middle)) + 1) == ((to_integer(first) + 1) - to_integer(middle)) by {
-                    normalize();
-                }
-                apply(integer::le_difference((to_integer(first) + 1), to_integer(middle), (to_integer(first) + (-1 * to_integer(middle)) + 1))) using {
-                    (to_integer(first) + 1) <= to_integer(middle);
-                    (to_integer(first) + (-1 * to_integer(middle)) + 1) == ((to_integer(first) + 1) -
-                        to_integer(middle));
-                };
-            }
-            have ((-1 * to_integer(last)) + to_integer(middle)) <= 0 by {
-                have to_integer(middle) <= to_integer(last) by {
-                    normalize() using {
-                        middle <= last;
-                    };
-                }
-                have ((-1 * to_integer(last)) + to_integer(middle)) == (to_integer(middle) - to_integer(last)) by {
-                    normalize();
-                }
-                apply(integer::le_difference(to_integer(middle), to_integer(last), ((-1 * to_integer(last)) + to_integer(middle)))) using {
-                    to_integer(middle) <= to_integer(last);
-                    ((-1 * to_integer(last)) + to_integer(middle)) == (to_integer(middle) -
-                        to_integer(last));
-                };
-            }
-            have (to_integer(first) + (-1 * to_integer(last)) + 1) <= 0 by {
-                have (to_integer(first) + (-1 * to_integer(middle)) + 1 + ((-1 * to_integer(last)) + to_integer(middle))) <= (0 + 0) by {
-                    apply(integer::add_le((to_integer(first) + (-1 * to_integer(middle)) + 1), 0, ((-1 * to_integer(last)) + to_integer(middle)), 0)) using {
-                        (to_integer(first) + (-1 * to_integer(middle)) + 1) <= 0;
-                        ((-1 * to_integer(last)) + to_integer(middle)) <= 0;
-                    };
-                }
-                have (to_integer(first) + (-1 * to_integer(last)) + 1) == (to_integer(first) + (-1 * to_integer(middle)) + 1 + ((-1 * to_integer(last)) + to_integer(middle))) by {
-                    normalize();
-                }
-                have (let integer_value: Integer = 0; integer_value) == (0 + 0) by {
-                    normalize();
-                }
-                apply(integer::le_substitute((to_integer(first) + (-1 * to_integer(middle)) + 1 + ((-1 * to_integer(last)) + to_integer(middle))), (0 + 0), (to_integer(first) + (-1 * to_integer(last)) + 1), 0)) using {
-                    (to_integer(first) + (-1 * to_integer(middle)) + 1 + ((-1 * to_integer(last)) +
-                        to_integer(middle))) <= (0 + 0);
-                    (to_integer(first) + (-1 * to_integer(last)) + 1) == (to_integer(first) + (-1 *
-                        to_integer(middle)) + 1 + ((-1 * to_integer(last)) + to_integer(middle)));
-                    (let integer_value: Integer = 0; integer_value) == (0 + 0);
-                };
-            }
-            have (to_integer(first) + (-1 * to_integer(last)) + 1) == ((to_integer(first) + 1) - to_integer(last)) by {
-                normalize();
-            }
-            apply(integer::difference_le((to_integer(first) + 1), to_integer(last), (to_integer(first) + (-1 * to_integer(last)) + 1))) using {
-                (to_integer(first) + (-1 * to_integer(last)) + 1) <= 0;
-                (to_integer(first) + (-1 * to_integer(last)) + 1) == ((to_integer(first) + 1) -
-                    to_integer(last));
-            };
-            apply(integer::step_le_lt(to_integer(first), to_integer(last))) using {
-                (to_integer(first) + 1) <= to_integer(last);
-            };
-        }
-        normalize() using {
-            to_integer(first) < to_integer(last);
-        };
-    }
-}
-```
-
-Transitivity of unsigned 64-bit order: `first < middle` and `middle <= last` give `first < last`.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
-
-### `integer::uint64_less_equal_transitive`
-
-```click
-theorem uint64_less_equal_transitive(first: uint64, middle: uint64, last: uint64) {
-    requires first <= middle;
-    requires middle <= last;
-
-    ensures first <= last by {
-        have to_integer(first) <= to_integer(last) by {
-            have (to_integer(first) + (-1 * to_integer(middle))) <= 0 by {
-                have to_integer(first) <= to_integer(middle) by {
-                    normalize() using {
-                        first <= middle;
-                    };
-                }
-                have (to_integer(first) + (-1 * to_integer(middle))) == (to_integer(first) - to_integer(middle)) by {
-                    normalize();
-                }
-                apply(integer::le_difference(to_integer(first), to_integer(middle), (to_integer(first) + (-1 * to_integer(middle))))) using {
-                    to_integer(first) <= to_integer(middle);
-                    (to_integer(first) + (-1 * to_integer(middle))) == (to_integer(first) -
-                        to_integer(middle));
-                };
-            }
-            have ((-1 * to_integer(last)) + to_integer(middle)) <= 0 by {
-                have to_integer(middle) <= to_integer(last) by {
-                    normalize() using {
-                        middle <= last;
-                    };
-                }
-                have ((-1 * to_integer(last)) + to_integer(middle)) == (to_integer(middle) - to_integer(last)) by {
-                    normalize();
-                }
-                apply(integer::le_difference(to_integer(middle), to_integer(last), ((-1 * to_integer(last)) + to_integer(middle)))) using {
-                    to_integer(middle) <= to_integer(last);
-                    ((-1 * to_integer(last)) + to_integer(middle)) == (to_integer(middle) -
-                        to_integer(last));
-                };
-            }
-            have (to_integer(first) + (-1 * to_integer(last))) <= 0 by {
-                have (to_integer(first) + (-1 * to_integer(middle)) + ((-1 * to_integer(last)) + to_integer(middle))) <= (0 + 0) by {
-                    apply(integer::add_le((to_integer(first) + (-1 * to_integer(middle))), 0, ((-1 * to_integer(last)) + to_integer(middle)), 0)) using {
-                        (to_integer(first) + (-1 * to_integer(middle))) <= 0;
-                        ((-1 * to_integer(last)) + to_integer(middle)) <= 0;
-                    };
-                }
-                have (to_integer(first) + (-1 * to_integer(last))) == (to_integer(first) + (-1 * to_integer(middle)) + ((-1 * to_integer(last)) + to_integer(middle))) by {
-                    normalize();
-                }
-                have (let integer_value: Integer = 0; integer_value) == (0 + 0) by {
-                    normalize();
-                }
-                apply(integer::le_substitute((to_integer(first) + (-1 * to_integer(middle)) + ((-1 * to_integer(last)) + to_integer(middle))), (0 + 0), (to_integer(first) + (-1 * to_integer(last))), 0)) using {
-                    (to_integer(first) + (-1 * to_integer(middle)) + ((-1 * to_integer(last)) +
-                        to_integer(middle))) <= (0 + 0);
-                    (to_integer(first) + (-1 * to_integer(last))) == (to_integer(first) + (-1 *
-                        to_integer(middle)) + ((-1 * to_integer(last)) + to_integer(middle)));
-                    (let integer_value: Integer = 0; integer_value) == (0 + 0);
-                };
-            }
-            have (to_integer(first) + (-1 * to_integer(last))) == (to_integer(first) - to_integer(last)) by {
-                normalize();
-            }
-            apply(integer::difference_le(to_integer(first), to_integer(last), (to_integer(first) + (-1 * to_integer(last))))) using {
-                (to_integer(first) + (-1 * to_integer(last))) <= 0;
-                (to_integer(first) + (-1 * to_integer(last))) == (to_integer(first) - to_integer(last));
-            };
-        }
-        normalize() using {
-            to_integer(first) <= to_integer(last);
-        };
-    }
-}
-```
-
-Transitivity of unsigned 64-bit order: `first <= middle` and `middle <= last` give `first <= last`.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
-
 ### `integer::int32_nonnegative_predecessor_upper_bound`
 
 ```click
@@ -6650,6 +6483,58 @@ theorem int32_less_equal_transitive(first: int32, middle: int32, last: int32) {
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
+### `integer::uint64_less_than_less_equal_transitive`
+
+```click
+theorem uint64_less_than_less_equal_transitive(first: uint64, middle: uint64, last: uint64) {
+    requires first < middle;
+    requires middle <= last;
+
+    ensures first < last by {
+        have (to_integer(first) + 1) <= to_integer(middle) by {
+            apply(integer::lt_step_le(to_integer(first), to_integer(middle))) using {
+                to_integer(first) < to_integer(middle);
+            };
+        }
+        have (to_integer(first) + 1) <= to_integer(last) by {
+            apply(integer::le_transitive(to_integer(first) + 1, to_integer(middle), to_integer(last))) using {
+                (to_integer(first) + 1) <= to_integer(middle);
+                to_integer(middle) <= to_integer(last);
+            };
+        }
+        apply(integer::step_le_lt(to_integer(first), to_integer(last))) using {
+            (to_integer(first) + 1) <= to_integer(last);
+        };
+        known();
+    }
+}
+```
+
+Transitivity of unsigned 64-bit order: `first < middle` and `middle <= last` give `first < last`.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
+### `integer::uint64_less_equal_transitive`
+
+```click
+theorem uint64_less_equal_transitive(first: uint64, middle: uint64, last: uint64) {
+    requires first <= middle;
+    requires middle <= last;
+
+    ensures first <= last by {
+        apply(integer::le_transitive(to_integer(first), to_integer(middle), to_integer(last))) using {
+            to_integer(first) <= to_integer(middle);
+            to_integer(middle) <= to_integer(last);
+        };
+        known();
+    }
+}
+```
+
+Transitivity of unsigned 64-bit order: `first <= middle` and `middle <= last` give `first <= last`.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
 ### `integer::subtract_right_order`
 
