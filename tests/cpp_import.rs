@@ -18709,11 +18709,11 @@ fn axiomatic_system_header_calls_export_interfaces_only() {
     );
 }
 
-// The `extern` head of a system-header member function is its C++
+// The interface head of a system-header member function is its C++
 // declaration: the qualified member name, `const`, and an implicit `this`.
 // Writing `this` out is refused, as it is in a verified function's head.
 #[test]
-fn axiomatic_member_function_extern_heads_are_cpp_declarations() {
+fn axiomatic_member_function_heads_in_interfaces_are_cpp_declarations() {
     let mut project = Project::with_fixture(
         "driver.cpp",
         "read",
@@ -18733,16 +18733,21 @@ fn axiomatic_member_function_extern_heads_are_cpp_declarations() {
     };
     assert_eq!(axiom.name, "Box_get");
     let sidecar = project.directory.join("read.click");
-    let native = "verifying \"driver.cpp\";\nextern int ministd::Box::get() const { views this->value; ensures result == this->value; }\nint read(const Box& box) { views box.value; ensures result == box.value; }\n";
-    fs::write(&sidecar, native).unwrap();
-    let parsed = read_click_project(&sidecar, native).unwrap();
+    let interface = project.directory.join("box.interface.click");
+    let native =
+        "int ministd::Box::get() const { views this->value; ensures result == this->value; }\n";
+    let source = "import \"box.interface.click\";\nverifying \"driver.cpp\";\nint read(const Box& box) { views box.value; ensures result == box.value; }\n";
+    fs::write(&interface, native).unwrap();
+    fs::write(&sidecar, source).unwrap();
+    let parsed = read_click_project(&sidecar, source).unwrap();
     verify_program_prepared_project(&parsed, &import)
         .unwrap_or_else(|error| panic!("{}", error.message()));
     let explicit = native.replace(
-        "extern int ministd::Box::get() const",
-        "extern int Box_get(const Box* this)",
+        "int ministd::Box::get() const",
+        "int Box_get(const Box* this)",
     );
-    let parsed = read_click_project(&sidecar, &explicit).unwrap();
+    fs::write(&interface, explicit).unwrap();
+    let parsed = read_click_project(&sidecar, source).unwrap();
     let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
     assert!(
         error.message().contains("`this` is implicit"),

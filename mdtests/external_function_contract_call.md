@@ -13,12 +13,8 @@ int32 caller(int32 x) {
 ```
 
 ```click
+import "external_identity.interface.click";
 verifying "caller.c";
-
-extern int32 external_identity(int32 x) {
-    requires x >= 0;
-    ensures result == x;
-}
 
 int32 caller(int32 x) {
     requires x >= 0;

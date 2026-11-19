@@ -1,7 +1,7 @@
 // The dynamic pointer/count constructor initializes its own descriptor.
 // This contract supplies no permission or initialization for the backing.
 // The authenticated dynamic layouts have no padding: pointer and size.
-template<class T> extern std::span<T>::span<T *>(T* first, unsigned long count) {
+template<class T> std::span<T>::span<T *>(T* first, unsigned long count) {
     consumes uninitialized(this[0..1]);
     produces this[0..1];
     ensures std_span_data(this) == first;
@@ -19,51 +19,51 @@ template<class T> extern std::span<T>::span<T *>(T* first, unsigned long count) 
 // Each method is written out at each element type a call names, and its
 // parameters take that instance's names; the element types are the C++
 // importer's `SPAN_ELEMENTS`.
-template<class T> extern unsigned long std::span<T>::size() const {
+template<class T> unsigned long std::span<T>::size() const {
     views std_span_size(this);
     ensures result == std_span_size(this);
 }
-template<class T> extern unsigned long std::span<T>::size_bytes() const {
+template<class T> unsigned long std::span<T>::size_bytes() const {
     views std_span_size(this);
     ensures result == std_span_size(this) * sizeof(T);
 }
-template<class T> extern T* std::span<T>::data() const {
+template<class T> T* std::span<T>::data() const {
     views std_span_data(this);
     ensures result == std_span_data(this);
 }
-template<class T> extern T& std::span<T>::front() const {
+template<class T> T& std::span<T>::front() const {
     views std_span_data(this);
     views std_span_size(this);
     requires 1u64 <= std_span_size(this);
     ensures &result == std_span_data(this);
 }
-template<class T> extern T& std::span<T>::back() const {
+template<class T> T& std::span<T>::back() const {
     views std_span_data(this);
     views std_span_size(this);
     requires 1u64 <= std_span_size(this);
     ensures &result == std_span_data(this) + (std_span_size(this) - 1u64);
 }
-template<class T> extern T& std::span<T>::operator[](unsigned long index) const {
+template<class T> T& std::span<T>::operator[](unsigned long index) const {
     views std_span_data(this);
     views std_span_size(this);
     requires index < std_span_size(this);
     ensures &result == std_span_data(this) + index;
 }
-template<class T> extern std::span<T> std::span<T>::first(unsigned long count) const {
+template<class T> std::span<T> std::span<T>::first(unsigned long count) const {
     views std_span_data(this);
     views std_span_size(this);
     requires count <= std_span_size(this);
     ensures std_span_data(result) == std_span_data(this);
     ensures std_span_size(result) == count;
 }
-template<class T> extern std::span<T> std::span<T>::last(unsigned long count) const {
+template<class T> std::span<T> std::span<T>::last(unsigned long count) const {
     views std_span_data(this);
     views std_span_size(this);
     requires count <= std_span_size(this);
     ensures std_span_data(result) == std_span_data(this) + (std_span_size(this) - count);
     ensures std_span_size(result) == count;
 }
-template<class T> extern std::span<T> std::span<T>::subspan(unsigned long offset, unsigned long count) const {
+template<class T> std::span<T> std::span<T>::subspan(unsigned long offset, unsigned long count) const {
     views std_span_data(this);
     views std_span_size(this);
     requires offset <= std_span_size(this);
@@ -79,44 +79,44 @@ template<class T> extern std::span<T> std::span<T>::subspan(unsigned long offset
 // subviews taking a runtime count are dynamic-extent spans. An extent is
 // written out only when its byte size fits a `uint64`, and never as
 // `std::dynamic_extent`.
-template<class T, std::size_t N> extern unsigned long std::span<T, N>::size() const {
+template<class T, std::size_t N> unsigned long std::span<T, N>::size() const {
     ensures result == N;
 }
-template<class T, std::size_t N> extern unsigned long std::span<T, N>::size_bytes() const {
+template<class T, std::size_t N> unsigned long std::span<T, N>::size_bytes() const {
     ensures result == N * sizeof(T);
 }
-template<class T, std::size_t N> extern T* std::span<T, N>::data() const {
+template<class T, std::size_t N> T* std::span<T, N>::data() const {
     views std_span_data(this);
     ensures result == std_span_data(this);
 }
-template<class T, std::size_t N> extern T& std::span<T, N>::front() const {
+template<class T, std::size_t N> T& std::span<T, N>::front() const {
     views std_span_data(this);
     requires 1u64 <= N;
     ensures &result == std_span_data(this);
 }
-template<class T, std::size_t N> extern T& std::span<T, N>::back() const {
+template<class T, std::size_t N> T& std::span<T, N>::back() const {
     views std_span_data(this);
     requires 1u64 <= N;
     ensures &result == std_span_data(this) + (N - 1u64);
 }
-template<class T, std::size_t N> extern T& std::span<T, N>::operator[](unsigned long index) const {
+template<class T, std::size_t N> T& std::span<T, N>::operator[](unsigned long index) const {
     views std_span_data(this);
     requires index < N;
     ensures &result == std_span_data(this) + index;
 }
-template<class T, std::size_t N> extern std::span<T> std::span<T, N>::first(unsigned long count) const {
+template<class T, std::size_t N> std::span<T> std::span<T, N>::first(unsigned long count) const {
     views std_span_data(this);
     requires count <= N;
     ensures std_span_data(result) == std_span_data(this);
     ensures std_span_size(result) == count;
 }
-template<class T, std::size_t N> extern std::span<T> std::span<T, N>::last(unsigned long count) const {
+template<class T, std::size_t N> std::span<T> std::span<T, N>::last(unsigned long count) const {
     views std_span_data(this);
     requires count <= N;
     ensures std_span_data(result) == std_span_data(this) + (N - count);
     ensures std_span_size(result) == count;
 }
-template<class T, std::size_t N> extern std::span<T> std::span<T, N>::subspan(unsigned long offset, unsigned long count) const {
+template<class T, std::size_t N> std::span<T> std::span<T, N>::subspan(unsigned long offset, unsigned long count) const {
     views std_span_data(this);
     requires offset <= N;
     requires count != 18446744073709551615u64 implies count <= N - offset;

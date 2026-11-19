@@ -416,16 +416,34 @@ pub(in crate::surface) fn parsed_source_spans(
     ))
 }
 
+#[cfg(test)]
 pub(super) fn parse_with_layouts_and_aggregate_objects(
     source: &str,
-    mut layouts: ProgramLayouts,
+    layouts: ProgramLayouts,
 ) -> Result<ClickFile, ClickError> {
-    // Appending keeps every position in the sidecar unchanged.
-    let contracts = std::mem::take(&mut layouts.frontend_contracts);
-    if contracts.is_empty() {
-        return Parser::with_program_layouts(source, layouts, None)?.parse_file();
+    parse_with_interface_catalog(source, layouts, "")
+}
+
+pub(super) fn parse_with_interface_catalog(
+    source: &str,
+    mut layouts: ProgramLayouts,
+    library_contracts: &str,
+) -> Result<ClickFile, ClickError> {
+    let contracts = layouts.take_interface_catalog(library_contracts);
+    Parser::with_program_layouts_and_catalog(source, layouts, None, contracts.as_deref())?
+        .parse_file()
+}
+
+impl ProgramLayouts {
+    pub(super) fn take_interface_catalog(&mut self, library: &str) -> Option<String> {
+        let frontend = std::mem::take(&mut self.frontend_contracts);
+        match (library, frontend.is_empty()) {
+            ("", true) => None,
+            ("", false) => Some(frontend),
+            (library, true) => Some(library.to_string()),
+            (library, false) => Some(format!("{library}\n{frontend}")),
+        }
     }
-    Parser::with_program_layouts(&format!("{source}\n{contracts}"), layouts, None)?.parse_file()
 }
 
 /// Whether a Click source declares only definitions for importers:
@@ -1655,10 +1673,12 @@ impl Parser {
             &BTreeMap::new(),
             &BTreeMap::new(),
             None,
+            None,
         )
     }
 
     /// A parser for `source` against a program's layouts and objects.
+    #[cfg(test)]
     fn with_program_layouts(
         source: &str,
         layouts: ProgramLayouts,
@@ -1684,6 +1704,7 @@ impl Parser {
             &layouts.rust_trait_instances,
             &layouts.record_spellings,
             catalog,
+            layouts.language,
         )
         .map_err(|error| error.with_kind(ClickErrorKind::Syntax))?;
         parser.local_bindings = layouts.local_bindings;
@@ -1869,17 +1890,23 @@ impl Parser {
         rust_trait_instances: &BTreeMap<String, BTreeSet<Vec<String>>>,
         record_spellings: &BTreeMap<String, String>,
         catalog: Option<&str>,
+        import_language: Option<SourceLanguage>,
     ) -> Result<Self, ClickError> {
-        let (tokens, positions) = tokenize(source, container)?;
-        let (tokens, positions) = if let Some(catalog) = catalog {
-            let source = crate::source::SourceContainer::new("C++ catalog", 0);
+        let (mut tokens, mut positions) = tokenize(source, container)?;
+        if let Some(catalog) = catalog {
+            let source = crate::source::SourceContainer::new("catalog.interface.click", 0);
             let (mut catalog_tokens, mut catalog_positions) = tokenize(catalog, Some(&source))?;
-            catalog_tokens.extend(tokens);
-            catalog_positions.extend(positions);
-            (catalog_tokens, catalog_positions)
-        } else {
-            (tokens, positions)
-        };
+            // C++ catalog binders precede the client contracts that name them.
+            if import_language == Some(SourceLanguage::Cpp) {
+                catalog_tokens.append(&mut tokens);
+                catalog_positions.append(&mut positions);
+                tokens = catalog_tokens;
+                positions = catalog_positions;
+            } else {
+                tokens.append(&mut catalog_tokens);
+                positions.append(&mut catalog_positions);
+            }
+        }
         let (tokens, positions) = rewrite_model_accessors(tokens, positions, &struct_layouts);
         let names::ResolvedLibraryTokens {
             tokens,
@@ -1914,6 +1941,12 @@ impl Parser {
                 }
                 _ => None,
             }));
+        let language =
+            if container.is_some_and(|source| source.filename.ends_with(".interface.click")) {
+                import_language.unwrap_or(language)
+            } else {
+                language
+            };
         // Reserve written binder identities before desugaring allocates any names.
         for window in tokens.windows(4) {
             if let [Token::Ident(name), Token::LParen, number, Token::RParen] = window
@@ -2360,6 +2393,13 @@ impl Parser {
         Ok(spread)
     }
 
+    fn in_interface_file(&self) -> bool {
+        self.positions
+            .get(self.position)
+            .and_then(|position| position.origin.as_ref())
+            .is_some_and(|origin| origin.filename.ends_with(".interface.click"))
+    }
+
     fn parse_file_items(&mut self) -> Result<ClickFile, ClickError> {
         self.index_default_source_aliases();
         self.index_algebraic_variant_fields();
@@ -2389,6 +2429,13 @@ impl Parser {
             // An instance name ended in an earlier declaration's proof is
             // no name here at all.
             self.names.ended_instance_names.clear();
+            if self.in_interface_file()
+                && matches!(self.peek_ident(), Some("verifying" | "termination"))
+            {
+                return Err(self.error(
+                    "an interface file cannot select a program body or prove its termination",
+                ));
+            }
             if self.peek_ident() == Some("import")
                 && matches!(self.peek_next(), Some(Token::Ident(_)))
             {
@@ -2510,7 +2557,7 @@ impl Parser {
             } else if self.verifies_rust() && self.peek_ident() == Some("trait") {
                 self.parse_rust_trait_block(&mut function_blocks)?;
             } else {
-                function_blocks.push(self.parse_function_block(false)?);
+                function_blocks.push(self.parse_function_block(self.in_interface_file())?);
             }
         }
 
@@ -2798,11 +2845,8 @@ impl Parser {
                 ),
             ));
         }
-        let identity = format!("library/{}.click", segments[1..].join("/"));
-        if super::CLICK_LIBRARY_MODULES
-            .iter()
-            .all(|(module, _)| *module != identity)
-        {
+        let module_path = segments[1..].iter().map(String::as_str).collect::<Vec<_>>();
+        let Some(identity) = names::module_identity(&module_path) else {
             let available = super::CLICK_LIBRARY_MODULES
                 .iter()
                 .map(|(module, _)| super::library_module_path(module))
@@ -2812,16 +2856,16 @@ impl Parser {
                 at,
                 format!("unknown Click library module `{spelling}`; the library has {available}"),
             ));
-        }
+        };
         for name in &selected {
-            if !names::module_declares(&identity, name) {
+            if !names::module_declares(identity, name) {
                 return Err(self.error_at(
                     at.clone(),
                     format!("Click library module `{spelling}` declares no `{name}` to import"),
                 ));
             }
         }
-        Ok(identity)
+        Ok(identity.to_string())
     }
 
     /// `tactic name(p: type, ...) { clauses } by { proof }`.
@@ -4936,7 +4980,7 @@ impl Parser {
         self.rust_abstract_type_parameters.extend(names);
         // A pure virtual method of a class template has no body: its
         // interface is written `extern`.
-        let external = self.peek_ident() == Some("extern");
+        let external = self.peek_ident() == Some("extern") || self.in_interface_file();
         let block = self.parse_function_block_in_scope(external);
         self.rust_abstract_type_parameters = previous_abstract;
         block
@@ -5012,8 +5056,8 @@ impl Parser {
         let written_instance = self.rust_written_instances.contains(&self.position);
         // A crate trait's method is declared without `extern`, as Rust
         // writes it in the `trait` block.
-        if external && self.rust_trait_interface.is_none() {
-            self.expect_ident_spelling("extern")?;
+        if external && self.rust_trait_interface.is_none() && self.peek_ident() == Some("extern") {
+            self.position += 1;
         }
         // Rust marks a generated instance at `fn`, after `extern`; C++
         // marks its declaration at `extern` itself.

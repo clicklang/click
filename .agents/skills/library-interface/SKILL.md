@@ -21,20 +21,25 @@ skill is the procedure for applying them.
 
 ## Writing it
 
-1. State the contract, and the type's ownership resource if it owns
-   memory, in `library/c/`, `library/cpp/` or `library/rust/`. Describe
+1. State the contract in a `*.interface.click` file under `library/c/`,
+   `library/cpp/` or `library/rust/`. Write the function signature and
+   contract directly. The interface file supplies the assumed contract
+   without an `extern` modifier or a `verifying` directive. Include the
+   type's ownership resource if it owns memory. Describe
    observable state and effects: logical values, what is owned, preconditions,
    effects and invalidation. Never the representation or the implementation.
    Preserve source-library names and signatures. Put library-specific
    resources and proof helpers in `click::<language>::<library>`. Write ghost
    queries as module-level specification functions and prefer selective
    imports in examples. Use shared specification modules for helpers whose
-   meaning is language-independent (principle 7).
+   meaning is language-independent (principle 7). Prove any helper
+   theorems the interface declares.
 2. Map the call to the contract in the front end's name table, and nothing
    else. No front-end rewrite of what the library does.
 3. Add the inventory item, the library reference entry and the trust row.
-4. Add a verified use that calls it and verifies, and a case where an unmet
-   precondition is refused.
+4. Add a caller that verifies using the interface and a case where an unmet
+   precondition is refused. Check that verification reports the library
+   contract among the caller's assumptions.
 
 ## When a contract cannot say it
 

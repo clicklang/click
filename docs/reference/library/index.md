@@ -15,7 +15,7 @@ how far it is trusted:
   `subscriber`, `authority` and `allocation`, and
   `__click_constant_p_unknown`, are given their meaning by the kernel or the
   C front end. Their declarations sit in `library/primitives.click` and
-  `library/c/builtins.click`, and are documented under
+  `library/c/builtins.interface.click`, and are documented under
   [verifier primitives](../language/index.md#verifier-primitives) in the
   language reference, not here.
 - **Language library interfaces** state what the C, C++ or Rust library the
@@ -28,9 +28,9 @@ how far it is trusted:
   ([heap allocation](../language/c.md#heap-allocation)) and writes the
   literal-format contracts ([formatted output](../language/c.md#formatted-output)),
   and the C++ and Rust importers append the generic contracts of
-  `library/cpp/` and `library/rust/core.click`, written out at each called
+  `library/cpp/` and `library/rust/core.interface.click`, written out at each called
   instance, and the Rust integer-method contracts of
-  `library/rust/integers.click` an import calls. The Rust core-method
+  `library/rust/integers.interface.click` an import calls. The Rust core-method
   contracts state their results with the `click::rust::` modules below.
 - **The specification library** is checked Click: types, pure functions,
   predicates and theorems. A theorem is either proved or a kernel standard
@@ -56,7 +56,7 @@ how far it is trusted:
 | [`click::rust::result`](#clickrustresult) | `import click::rust::result;` | specification |
 | [`click::rust::vec`](#clickrustvec) | `import click::rust::vec;` | specification, with trusted axioms |
 | [`click::rust::slice`](#clickrustslice) | `import click::rust::slice;` | specification |
-| [Rust core interfaces](#rust-core-interfaces), `library/rust/core.click` (not a module) | when a Rust import calls one of its methods | Rust library interface |
+| [Rust core interfaces](#rust-core-interfaces), `library/rust/core.interface.click` (not a module) | when a Rust import calls one of its methods | Rust library interface |
 | [`click::separation`](#clickseparation) | `import click::separation;` | specification |
 
 `click::primitives` and `click::c::builtins` are implicit too; they hold the
@@ -9278,7 +9278,7 @@ theorem padded_digit_lower_bound(v: uint64, width: uint64, k: uint64) {
 
 ## `click::c::string`
 
-`library/c/string.click` defines the C library contracts and the proof
+`library/c/string.interface.click` defines the C library contracts and the proof
 vocabulary for C strings. A C declaration or call brings the modeled
 contracts. To use a proof helper, a sidecar can name its full path or import
 the module. For example, `import click::c::string::{cstr_at, readable};`
@@ -9293,7 +9293,7 @@ Click does not verify an implementation of the external function.
 ### `memcpy`
 
 ```click
-extern uint8* memcpy(uint8 destination[], const uint8 source[], uint64 bytes) {
+uint8* memcpy(uint8 destination[], const uint8 source[], uint64 bytes) {
     views source[0..bytes];
     owns uninitialized(destination[0..bytes]);
     ensures result == destination;
@@ -9324,7 +9324,7 @@ effect is bound to this declaration, not to the name `memcpy`.
 ### `memcmp`
 
 ```click
-extern int32 memcmp(const uint8 left[], const uint8 right[], uint64 bytes) {
+int32 memcmp(const uint8 left[], const uint8 right[], uint64 bytes) {
     views left[0..bytes];
     views right[0..bytes];
     requires forall (k: uint64) { k < bytes implies defined(left[k]) and defined(right[k]) };
@@ -9341,7 +9341,7 @@ extern int32 memcmp(const uint8 left[], const uint8 right[], uint64 bytes) {
 ### `memset`
 
 ```click
-extern uint8* memset(uint8 destination[], int32 value, uint64 bytes) {
+uint8* memset(uint8 destination[], int32 value, uint64 bytes) {
     owns uninitialized(destination[0..bytes]);
     ensures result == destination;
     ensures (0u64..bytes).all(|k| {
@@ -9362,7 +9362,7 @@ it modulo 256: `-1` fills with 255 and `300` fills with 44.
 ### `strlen`
 
 ```click
-extern uint64 strlen(const uint8* bytes) {
+uint64 strlen(const uint8* bytes) {
     let n: uint64;
     views cstr_at(bytes, n);
     ensures result == n;
@@ -9661,8 +9661,8 @@ theorem len_has_terminator(bytes: uint8[], len: uint64) {
 
 ## C++ standard library interfaces
 
-Source: `library/cpp/span.click`, `library/cpp/array.click` and
-`library/cpp/as_writable_bytes.click`. These files are not modules: the C++
+Source: `library/cpp/span.interface.click`, `library/cpp/array.interface.click` and
+`library/cpp/as_writable_bytes.interface.click`. These files are not modules: the C++
 importer adds the selected contracts to the sidecar's environment and writes each
 `template<...> extern` block out at each element type and extent a call
 names, `std::span<int>::size`. Its name table,
@@ -9685,7 +9685,7 @@ abstract resource span_state(span: uint8*) {
     field count: uint64;
 }
 
-template<class T> extern std::span<T>::span(const std::span<T>& source) {
+template<class T> std::span<T>::span(const std::span<T>& source) {
     owns input: span_state(&source as (uint8*));
     produces copy: span_state(this as (uint8*));
     ensures input.data == old(input.data);
@@ -9694,7 +9694,7 @@ template<class T> extern std::span<T>::span(const std::span<T>& source) {
     ensures copy.count == input.count;
 }
 
-template<class T> extern bool std::span<T>::empty() const {
+template<class T> bool std::span<T>::empty() const {
     owns state: span_state(this as (uint8*));
     ensures state.data == old(state.data);
     ensures state.count == old(state.count);
@@ -9708,57 +9708,57 @@ The dynamic pointer/count constructor initializes the descriptor and establishes
 its address and count. Its contract grants no authority over the backing.
 
 ```click
-template<class T> extern std::span<T>::span<T *>(T* first, unsigned long count) {
+template<class T> std::span<T>::span<T *>(T* first, unsigned long count) {
     consumes uninitialized(this[0..1]);
     produces this[0..1];
     ensures std_span_data(this) == first;
     ensures std_span_size(this) == count;
 }
-template<class T> extern unsigned long std::span<T>::size() const {
+template<class T> unsigned long std::span<T>::size() const {
     views std_span_size(this);
     ensures result == std_span_size(this);
 }
-template<class T> extern unsigned long std::span<T>::size_bytes() const {
+template<class T> unsigned long std::span<T>::size_bytes() const {
     views std_span_size(this);
     ensures result == std_span_size(this) * sizeof(T);
 }
-template<class T> extern T* std::span<T>::data() const {
+template<class T> T* std::span<T>::data() const {
     views std_span_data(this);
     ensures result == std_span_data(this);
 }
-template<class T> extern T& std::span<T>::front() const {
+template<class T> T& std::span<T>::front() const {
     views std_span_data(this);
     views std_span_size(this);
     requires 1u64 <= std_span_size(this);
     ensures &result == std_span_data(this);
 }
-template<class T> extern T& std::span<T>::back() const {
+template<class T> T& std::span<T>::back() const {
     views std_span_data(this);
     views std_span_size(this);
     requires 1u64 <= std_span_size(this);
     ensures &result == std_span_data(this) + (std_span_size(this) - 1u64);
 }
-template<class T> extern T& std::span<T>::operator[](unsigned long index) const {
+template<class T> T& std::span<T>::operator[](unsigned long index) const {
     views std_span_data(this);
     views std_span_size(this);
     requires index < std_span_size(this);
     ensures &result == std_span_data(this) + index;
 }
-template<class T> extern std::span<T> std::span<T>::first(unsigned long count) const {
+template<class T> std::span<T> std::span<T>::first(unsigned long count) const {
     views std_span_data(this);
     views std_span_size(this);
     requires count <= std_span_size(this);
     ensures std_span_data(result) == std_span_data(this);
     ensures std_span_size(result) == count;
 }
-template<class T> extern std::span<T> std::span<T>::last(unsigned long count) const {
+template<class T> std::span<T> std::span<T>::last(unsigned long count) const {
     views std_span_data(this);
     views std_span_size(this);
     requires count <= std_span_size(this);
     ensures std_span_data(result) == std_span_data(this) + (std_span_size(this) - count);
     ensures std_span_size(result) == count;
 }
-template<class T> extern std::span<T> std::span<T>::subspan(unsigned long offset, unsigned long count) const {
+template<class T> std::span<T> std::span<T>::subspan(unsigned long offset, unsigned long count) const {
     views std_span_data(this);
     views std_span_size(this);
     requires offset <= std_span_size(this);
@@ -9782,44 +9782,44 @@ and keep the backing storage. `subspan`'s count `std::dynamic_extent`,
 ### `std::span<T, N>`
 
 ```click
-template<class T, std::size_t N> extern unsigned long std::span<T, N>::size() const {
+template<class T, std::size_t N> unsigned long std::span<T, N>::size() const {
     ensures result == N;
 }
-template<class T, std::size_t N> extern unsigned long std::span<T, N>::size_bytes() const {
+template<class T, std::size_t N> unsigned long std::span<T, N>::size_bytes() const {
     ensures result == N * sizeof(T);
 }
-template<class T, std::size_t N> extern T* std::span<T, N>::data() const {
+template<class T, std::size_t N> T* std::span<T, N>::data() const {
     views std_span_data(this);
     ensures result == std_span_data(this);
 }
-template<class T, std::size_t N> extern T& std::span<T, N>::front() const {
+template<class T, std::size_t N> T& std::span<T, N>::front() const {
     views std_span_data(this);
     requires 1u64 <= N;
     ensures &result == std_span_data(this);
 }
-template<class T, std::size_t N> extern T& std::span<T, N>::back() const {
+template<class T, std::size_t N> T& std::span<T, N>::back() const {
     views std_span_data(this);
     requires 1u64 <= N;
     ensures &result == std_span_data(this) + (N - 1u64);
 }
-template<class T, std::size_t N> extern T& std::span<T, N>::operator[](unsigned long index) const {
+template<class T, std::size_t N> T& std::span<T, N>::operator[](unsigned long index) const {
     views std_span_data(this);
     requires index < N;
     ensures &result == std_span_data(this) + index;
 }
-template<class T, std::size_t N> extern std::span<T> std::span<T, N>::first(unsigned long count) const {
+template<class T, std::size_t N> std::span<T> std::span<T, N>::first(unsigned long count) const {
     views std_span_data(this);
     requires count <= N;
     ensures std_span_data(result) == std_span_data(this);
     ensures std_span_size(result) == count;
 }
-template<class T, std::size_t N> extern std::span<T> std::span<T, N>::last(unsigned long count) const {
+template<class T, std::size_t N> std::span<T> std::span<T, N>::last(unsigned long count) const {
     views std_span_data(this);
     requires count <= N;
     ensures std_span_data(result) == std_span_data(this) + (N - count);
     ensures std_span_size(result) == count;
 }
-template<class T, std::size_t N> extern std::span<T> std::span<T, N>::subspan(unsigned long offset, unsigned long count) const {
+template<class T, std::size_t N> std::span<T> std::span<T, N>::subspan(unsigned long offset, unsigned long count) const {
     views std_span_data(this);
     requires offset <= N;
     requires count != 18446744073709551615u64 implies count <= N - offset;
@@ -9841,36 +9841,36 @@ dynamic-extent spans.
 ### `std::array<T, N>`
 
 ```click
-template<class T, std::size_t N> extern unsigned long std::array<T, N>::size() const {
+template<class T, std::size_t N> unsigned long std::array<T, N>::size() const {
     ensures result == N;
 }
-template<class T, std::size_t N> extern T* std::array<T, N>::data() {
+template<class T, std::size_t N> T* std::array<T, N>::data() {
     ensures result == &std_array_data(this)[0];
 }
-template<class T, std::size_t N> extern const T* std::array<T, N>::data() const {
+template<class T, std::size_t N> const T* std::array<T, N>::data() const {
     ensures result == &std_array_data(this)[0];
 }
-template<class T, std::size_t N> extern T& std::array<T, N>::operator[](unsigned long index) {
+template<class T, std::size_t N> T& std::array<T, N>::operator[](unsigned long index) {
     requires index < N;
     ensures &result == &std_array_data(this)[index];
 }
-template<class T, std::size_t N> extern const T& std::array<T, N>::operator[](unsigned long index) const {
+template<class T, std::size_t N> const T& std::array<T, N>::operator[](unsigned long index) const {
     requires index < N;
     ensures &result == &std_array_data(this)[index];
 }
-template<class T, std::size_t N> extern T& std::array<T, N>::front() {
+template<class T, std::size_t N> T& std::array<T, N>::front() {
     requires 1u64 <= N;
     ensures &result == &std_array_data(this)[0];
 }
-template<class T, std::size_t N> extern const T& std::array<T, N>::front() const {
+template<class T, std::size_t N> const T& std::array<T, N>::front() const {
     requires 1u64 <= N;
     ensures &result == &std_array_data(this)[0];
 }
-template<class T, std::size_t N> extern T& std::array<T, N>::back() {
+template<class T, std::size_t N> T& std::array<T, N>::back() {
     requires 1u64 <= N;
     ensures &result == &std_array_data(this)[N - 1u64];
 }
-template<class T, std::size_t N> extern const T& std::array<T, N>::back() const {
+template<class T, std::size_t N> const T& std::array<T, N>::back() const {
     requires 1u64 <= N;
     ensures &result == &std_array_data(this)[N - 1u64];
 }
@@ -9889,7 +9889,7 @@ the array and form an address without reading it.
 ### `std::as_writable_bytes<T, N>`
 
 ```click
-template<class T, std::size_t N> extern std::span<std::byte> std::as_writable_bytes<T, N>(std::span<T> s) {
+template<class T, std::size_t N> std::span<std::byte> std::as_writable_bytes<T, N>(std::span<T> s) {
     ensures std_span_data(result) == old(std_span_data(s) as (uint8 *));
     ensures std_span_size(result) == old(std_span_size(s)) * sizeof(T);
 }
@@ -9906,7 +9906,7 @@ it was on entry.
 
 ## `click::rust::i8` through `click::rust::usize`
 
-Source: `library/rust/i8.click` through `library/rust/usize.click`, one module per Rust integer type, imported as `import click::rust::u32;`. The Rust integer-method contracts of `library/rust/integers.click` name them by path.
+Source: `library/rust/i8.click` through `library/rust/usize.click`, one module per Rust integer type, imported as `import click::rust::u32;`. The Rust integer-method contracts of `library/rust/integers.interface.click` name them by path.
 
 ### Rust core methods
 
@@ -11220,7 +11220,7 @@ b, s.len()))`, and prints as `s[a..b]`.
 
 ## Rust core interfaces
 
-Source: `library/rust/core.click`. This file is not a module: the Rust
+Source: `library/rust/core.interface.click`. This file is not a module: the Rust
 importer appends it to a sidecar when an import calls one of its methods,
 and writes each generic `extern fn` block out at each element type a call
 names, `Vec::push<u32>`. A block no call names is dropped. The integer
@@ -11229,13 +11229,13 @@ core-method contracts are in [Rust integer methods](#rust-integer-methods).
 ### `Vec<T>` methods
 
 ```click
-extern fn Vec::new<T>() -> Vec<T> {
+fn Vec::new<T>() -> Vec<T> {
     ensures click::rust::vec::len(result) == 0u64;
 }
-extern fn Vec::with_capacity<T>(capacity: usize) -> Vec<T> {
+fn Vec::with_capacity<T>(capacity: usize) -> Vec<T> {
     ensures click::rust::vec::len(result) == 0u64;
 }
-extern fn Vec::push<T>(v: &mut Vec<T>, x: T) {
+fn Vec::push<T>(v: &mut Vec<T>, x: T) {
     owns *v;
     requires click::rust::vec::len(*v) < 18446744073709551615u64;
     ensures *v == click::rust::vec::push(old(*v), x);
@@ -11243,11 +11243,11 @@ extern fn Vec::push<T>(v: &mut Vec<T>, x: T) {
     ensures click::rust::vec::get(*v, click::rust::vec::len(old(*v))) == x;
     ensures forall (k: usize) { k < click::rust::vec::len(old(*v)) implies click::rust::vec::get(*v, k) == click::rust::vec::get(old(*v), k) };
 }
-extern fn Vec::len<T>(v: &Vec<T>) -> usize {
+fn Vec::len<T>(v: &Vec<T>) -> usize {
     views *v;
     ensures result == click::rust::vec::len(old(*v));
 }
-extern fn Vec::index<T>(v: &Vec<T>, i: usize) -> T {
+fn Vec::index<T>(v: &Vec<T>, i: usize) -> T {
     views *v;
     requires i < click::rust::vec::len(*v);
     ensures result == click::rust::vec::get(old(*v), i);
@@ -11267,7 +11267,7 @@ allocation limit is smaller and aborts rather than returns.
 ### `slice::swap<T>`
 
 ```click
-extern fn slice::swap<T>(s: &mut [T], a: usize, b: usize) {
+fn slice::swap<T>(s: &mut [T], a: usize, b: usize) {
     owns *s;
     requires a < s.len();
     requires b < s.len();
@@ -11288,26 +11288,26 @@ every other element unchanged.
 ### `Option<T>` and `Result<T, E>` unwrapping
 
 ```click
-extern fn Option::unwrap<T>(o: Option<T>) -> T {
+fn Option::unwrap<T>(o: Option<T>) -> T {
     requires o != Option<T>::None;
     ensures o == Option<T>::Some(result);
 }
-extern fn Option::expect<T>(o: Option<T>) -> T {
+fn Option::expect<T>(o: Option<T>) -> T {
     requires o != Option<T>::None;
     ensures o == Option<T>::Some(result);
 }
-extern fn Option::unwrap_or<T>(o: Option<T>, d: T) -> T {
+fn Option::unwrap_or<T>(o: Option<T>, d: T) -> T {
     ensures result == click::rust::option::unwrap_or(o, d);
 }
-extern fn Result::unwrap<T, E>(r: Result<T, E>) -> T {
+fn Result::unwrap<T, E>(r: Result<T, E>) -> T {
     requires exists (value: T) { r == Result<T, E>::Ok(value) };
     ensures r == Result<T, E>::Ok(result);
 }
-extern fn Result::expect<T, E>(r: Result<T, E>) -> T {
+fn Result::expect<T, E>(r: Result<T, E>) -> T {
     requires exists (value: T) { r == Result<T, E>::Ok(value) };
     ensures r == Result<T, E>::Ok(result);
 }
-extern fn Result::unwrap_or<T, E>(r: Result<T, E>, d: T) -> T {
+fn Result::unwrap_or<T, E>(r: Result<T, E>, d: T) -> T {
     ensures result == click::rust::result::unwrap_or(r, d);
 }
 ```
@@ -11323,7 +11323,7 @@ and is not passed. `unwrap_or` is the library's `option::unwrap_or` or
 
 ## Rust integer methods
 
-Source: `library/rust/integers.click`, one `extern fn` per Rust integer core
+Source: `library/rust/integers.interface.click`, one contract per Rust integer core
 method and type, each on one line. This file is not a module: the Rust
 importer appends to a sidecar the line of each method an import calls, and
 only those, so a contract at a type no call names, `Option<i8>`, is never
@@ -11335,26 +11335,26 @@ library function ([core library methods](../rust.md#core-library-methods)).
 ### Integer `min` and `max`
 
 ```click
-extern fn i8::min(a: i8, b: i8) -> i8 { ensures result == click::rust::i8::min(a, b); }
-extern fn i8::max(a: i8, b: i8) -> i8 { ensures result == click::rust::i8::max(a, b); }
-extern fn i16::min(a: i16, b: i16) -> i16 { ensures result == click::rust::i16::min(a, b); }
-extern fn i16::max(a: i16, b: i16) -> i16 { ensures result == click::rust::i16::max(a, b); }
-extern fn i32::min(a: i32, b: i32) -> i32 { ensures result == click::rust::i32::min(a, b); }
-extern fn i32::max(a: i32, b: i32) -> i32 { ensures result == click::rust::i32::max(a, b); }
-extern fn i64::min(a: i64, b: i64) -> i64 { ensures result == click::rust::i64::min(a, b); }
-extern fn i64::max(a: i64, b: i64) -> i64 { ensures result == click::rust::i64::max(a, b); }
-extern fn isize::min(a: isize, b: isize) -> isize { ensures result == click::rust::isize::min(a, b); }
-extern fn isize::max(a: isize, b: isize) -> isize { ensures result == click::rust::isize::max(a, b); }
-extern fn u8::min(a: u8, b: u8) -> u8 { ensures result == click::rust::u8::min(a, b); }
-extern fn u8::max(a: u8, b: u8) -> u8 { ensures result == click::rust::u8::max(a, b); }
-extern fn u16::min(a: u16, b: u16) -> u16 { ensures result == click::rust::u16::min(a, b); }
-extern fn u16::max(a: u16, b: u16) -> u16 { ensures result == click::rust::u16::max(a, b); }
-extern fn u32::min(a: u32, b: u32) -> u32 { ensures result == click::rust::u32::min(a, b); }
-extern fn u32::max(a: u32, b: u32) -> u32 { ensures result == click::rust::u32::max(a, b); }
-extern fn u64::min(a: u64, b: u64) -> u64 { ensures result == click::rust::u64::min(a, b); }
-extern fn u64::max(a: u64, b: u64) -> u64 { ensures result == click::rust::u64::max(a, b); }
-extern fn usize::min(a: usize, b: usize) -> usize { ensures result == click::rust::usize::min(a, b); }
-extern fn usize::max(a: usize, b: usize) -> usize { ensures result == click::rust::usize::max(a, b); }
+fn i8::min(a: i8, b: i8) -> i8 { ensures result == click::rust::i8::min(a, b); }
+fn i8::max(a: i8, b: i8) -> i8 { ensures result == click::rust::i8::max(a, b); }
+fn i16::min(a: i16, b: i16) -> i16 { ensures result == click::rust::i16::min(a, b); }
+fn i16::max(a: i16, b: i16) -> i16 { ensures result == click::rust::i16::max(a, b); }
+fn i32::min(a: i32, b: i32) -> i32 { ensures result == click::rust::i32::min(a, b); }
+fn i32::max(a: i32, b: i32) -> i32 { ensures result == click::rust::i32::max(a, b); }
+fn i64::min(a: i64, b: i64) -> i64 { ensures result == click::rust::i64::min(a, b); }
+fn i64::max(a: i64, b: i64) -> i64 { ensures result == click::rust::i64::max(a, b); }
+fn isize::min(a: isize, b: isize) -> isize { ensures result == click::rust::isize::min(a, b); }
+fn isize::max(a: isize, b: isize) -> isize { ensures result == click::rust::isize::max(a, b); }
+fn u8::min(a: u8, b: u8) -> u8 { ensures result == click::rust::u8::min(a, b); }
+fn u8::max(a: u8, b: u8) -> u8 { ensures result == click::rust::u8::max(a, b); }
+fn u16::min(a: u16, b: u16) -> u16 { ensures result == click::rust::u16::min(a, b); }
+fn u16::max(a: u16, b: u16) -> u16 { ensures result == click::rust::u16::max(a, b); }
+fn u32::min(a: u32, b: u32) -> u32 { ensures result == click::rust::u32::min(a, b); }
+fn u32::max(a: u32, b: u32) -> u32 { ensures result == click::rust::u32::max(a, b); }
+fn u64::min(a: u64, b: u64) -> u64 { ensures result == click::rust::u64::min(a, b); }
+fn u64::max(a: u64, b: u64) -> u64 { ensures result == click::rust::u64::max(a, b); }
+fn usize::min(a: usize, b: usize) -> usize { ensures result == click::rust::usize::min(a, b); }
+fn usize::max(a: usize, b: usize) -> usize { ensures result == click::rust::usize::max(a, b); }
 ```
 
 **Meaning:** `a.min(b)` and `a.max(b)`, of `Ord` at an integer type, are the library's
@@ -11367,36 +11367,36 @@ extern fn usize::max(a: usize, b: usize) -> usize { ensures result == click::rus
 ### Integer wrapping arithmetic
 
 ```click
-extern fn i8::wrapping_add(a: i8, b: i8) -> i8 { ensures result == click::rust::i8::wrapping_add(a, b); }
-extern fn i8::wrapping_sub(a: i8, b: i8) -> i8 { ensures result == click::rust::i8::wrapping_sub(a, b); }
-extern fn i8::wrapping_mul(a: i8, b: i8) -> i8 { ensures result == click::rust::i8::wrapping_mul(a, b); }
-extern fn i16::wrapping_add(a: i16, b: i16) -> i16 { ensures result == click::rust::i16::wrapping_add(a, b); }
-extern fn i16::wrapping_sub(a: i16, b: i16) -> i16 { ensures result == click::rust::i16::wrapping_sub(a, b); }
-extern fn i16::wrapping_mul(a: i16, b: i16) -> i16 { ensures result == click::rust::i16::wrapping_mul(a, b); }
-extern fn i32::wrapping_add(a: i32, b: i32) -> i32 { ensures result == click::rust::i32::wrapping_add(a, b); }
-extern fn i32::wrapping_sub(a: i32, b: i32) -> i32 { ensures result == click::rust::i32::wrapping_sub(a, b); }
-extern fn i32::wrapping_mul(a: i32, b: i32) -> i32 { ensures result == click::rust::i32::wrapping_mul(a, b); }
-extern fn i64::wrapping_add(a: i64, b: i64) -> i64 { ensures result == click::rust::i64::wrapping_add(a, b); }
-extern fn i64::wrapping_sub(a: i64, b: i64) -> i64 { ensures result == click::rust::i64::wrapping_sub(a, b); }
-extern fn i64::wrapping_mul(a: i64, b: i64) -> i64 { ensures result == click::rust::i64::wrapping_mul(a, b); }
-extern fn isize::wrapping_add(a: isize, b: isize) -> isize { ensures result == click::rust::isize::wrapping_add(a, b); }
-extern fn isize::wrapping_sub(a: isize, b: isize) -> isize { ensures result == click::rust::isize::wrapping_sub(a, b); }
-extern fn isize::wrapping_mul(a: isize, b: isize) -> isize { ensures result == click::rust::isize::wrapping_mul(a, b); }
-extern fn u8::wrapping_add(a: u8, b: u8) -> u8 { ensures result == click::rust::u8::wrapping_add(a, b); }
-extern fn u8::wrapping_sub(a: u8, b: u8) -> u8 { ensures result == click::rust::u8::wrapping_sub(a, b); }
-extern fn u8::wrapping_mul(a: u8, b: u8) -> u8 { ensures result == click::rust::u8::wrapping_mul(a, b); }
-extern fn u16::wrapping_add(a: u16, b: u16) -> u16 { ensures result == click::rust::u16::wrapping_add(a, b); }
-extern fn u16::wrapping_sub(a: u16, b: u16) -> u16 { ensures result == click::rust::u16::wrapping_sub(a, b); }
-extern fn u16::wrapping_mul(a: u16, b: u16) -> u16 { ensures result == click::rust::u16::wrapping_mul(a, b); }
-extern fn u32::wrapping_add(a: u32, b: u32) -> u32 { ensures result == click::rust::u32::wrapping_add(a, b); }
-extern fn u32::wrapping_sub(a: u32, b: u32) -> u32 { ensures result == click::rust::u32::wrapping_sub(a, b); }
-extern fn u32::wrapping_mul(a: u32, b: u32) -> u32 { ensures result == click::rust::u32::wrapping_mul(a, b); }
-extern fn u64::wrapping_add(a: u64, b: u64) -> u64 { ensures result == click::rust::u64::wrapping_add(a, b); }
-extern fn u64::wrapping_sub(a: u64, b: u64) -> u64 { ensures result == click::rust::u64::wrapping_sub(a, b); }
-extern fn u64::wrapping_mul(a: u64, b: u64) -> u64 { ensures result == click::rust::u64::wrapping_mul(a, b); }
-extern fn usize::wrapping_add(a: usize, b: usize) -> usize { ensures result == click::rust::usize::wrapping_add(a, b); }
-extern fn usize::wrapping_sub(a: usize, b: usize) -> usize { ensures result == click::rust::usize::wrapping_sub(a, b); }
-extern fn usize::wrapping_mul(a: usize, b: usize) -> usize { ensures result == click::rust::usize::wrapping_mul(a, b); }
+fn i8::wrapping_add(a: i8, b: i8) -> i8 { ensures result == click::rust::i8::wrapping_add(a, b); }
+fn i8::wrapping_sub(a: i8, b: i8) -> i8 { ensures result == click::rust::i8::wrapping_sub(a, b); }
+fn i8::wrapping_mul(a: i8, b: i8) -> i8 { ensures result == click::rust::i8::wrapping_mul(a, b); }
+fn i16::wrapping_add(a: i16, b: i16) -> i16 { ensures result == click::rust::i16::wrapping_add(a, b); }
+fn i16::wrapping_sub(a: i16, b: i16) -> i16 { ensures result == click::rust::i16::wrapping_sub(a, b); }
+fn i16::wrapping_mul(a: i16, b: i16) -> i16 { ensures result == click::rust::i16::wrapping_mul(a, b); }
+fn i32::wrapping_add(a: i32, b: i32) -> i32 { ensures result == click::rust::i32::wrapping_add(a, b); }
+fn i32::wrapping_sub(a: i32, b: i32) -> i32 { ensures result == click::rust::i32::wrapping_sub(a, b); }
+fn i32::wrapping_mul(a: i32, b: i32) -> i32 { ensures result == click::rust::i32::wrapping_mul(a, b); }
+fn i64::wrapping_add(a: i64, b: i64) -> i64 { ensures result == click::rust::i64::wrapping_add(a, b); }
+fn i64::wrapping_sub(a: i64, b: i64) -> i64 { ensures result == click::rust::i64::wrapping_sub(a, b); }
+fn i64::wrapping_mul(a: i64, b: i64) -> i64 { ensures result == click::rust::i64::wrapping_mul(a, b); }
+fn isize::wrapping_add(a: isize, b: isize) -> isize { ensures result == click::rust::isize::wrapping_add(a, b); }
+fn isize::wrapping_sub(a: isize, b: isize) -> isize { ensures result == click::rust::isize::wrapping_sub(a, b); }
+fn isize::wrapping_mul(a: isize, b: isize) -> isize { ensures result == click::rust::isize::wrapping_mul(a, b); }
+fn u8::wrapping_add(a: u8, b: u8) -> u8 { ensures result == click::rust::u8::wrapping_add(a, b); }
+fn u8::wrapping_sub(a: u8, b: u8) -> u8 { ensures result == click::rust::u8::wrapping_sub(a, b); }
+fn u8::wrapping_mul(a: u8, b: u8) -> u8 { ensures result == click::rust::u8::wrapping_mul(a, b); }
+fn u16::wrapping_add(a: u16, b: u16) -> u16 { ensures result == click::rust::u16::wrapping_add(a, b); }
+fn u16::wrapping_sub(a: u16, b: u16) -> u16 { ensures result == click::rust::u16::wrapping_sub(a, b); }
+fn u16::wrapping_mul(a: u16, b: u16) -> u16 { ensures result == click::rust::u16::wrapping_mul(a, b); }
+fn u32::wrapping_add(a: u32, b: u32) -> u32 { ensures result == click::rust::u32::wrapping_add(a, b); }
+fn u32::wrapping_sub(a: u32, b: u32) -> u32 { ensures result == click::rust::u32::wrapping_sub(a, b); }
+fn u32::wrapping_mul(a: u32, b: u32) -> u32 { ensures result == click::rust::u32::wrapping_mul(a, b); }
+fn u64::wrapping_add(a: u64, b: u64) -> u64 { ensures result == click::rust::u64::wrapping_add(a, b); }
+fn u64::wrapping_sub(a: u64, b: u64) -> u64 { ensures result == click::rust::u64::wrapping_sub(a, b); }
+fn u64::wrapping_mul(a: u64, b: u64) -> u64 { ensures result == click::rust::u64::wrapping_mul(a, b); }
+fn usize::wrapping_add(a: usize, b: usize) -> usize { ensures result == click::rust::usize::wrapping_add(a, b); }
+fn usize::wrapping_sub(a: usize, b: usize) -> usize { ensures result == click::rust::usize::wrapping_sub(a, b); }
+fn usize::wrapping_mul(a: usize, b: usize) -> usize { ensures result == click::rust::usize::wrapping_mul(a, b); }
 ```
 
 **Meaning:** `wrapping_add`, `wrapping_sub` and `wrapping_mul` are the library's
@@ -11409,26 +11409,26 @@ modular sums, differences and products of each type.
 ### Integer saturating arithmetic
 
 ```click
-extern fn i8::saturating_add(a: i8, b: i8) -> i8 { ensures result == click::rust::i8::saturating_add(a, b); }
-extern fn i8::saturating_sub(a: i8, b: i8) -> i8 { ensures result == click::rust::i8::saturating_sub(a, b); }
-extern fn i16::saturating_add(a: i16, b: i16) -> i16 { ensures result == click::rust::i16::saturating_add(a, b); }
-extern fn i16::saturating_sub(a: i16, b: i16) -> i16 { ensures result == click::rust::i16::saturating_sub(a, b); }
-extern fn i32::saturating_add(a: i32, b: i32) -> i32 { ensures result == click::rust::i32::saturating_add(a, b); }
-extern fn i32::saturating_sub(a: i32, b: i32) -> i32 { ensures result == click::rust::i32::saturating_sub(a, b); }
-extern fn i64::saturating_add(a: i64, b: i64) -> i64 { ensures result == click::rust::i64::saturating_add(a, b); }
-extern fn i64::saturating_sub(a: i64, b: i64) -> i64 { ensures result == click::rust::i64::saturating_sub(a, b); }
-extern fn isize::saturating_add(a: isize, b: isize) -> isize { ensures result == click::rust::isize::saturating_add(a, b); }
-extern fn isize::saturating_sub(a: isize, b: isize) -> isize { ensures result == click::rust::isize::saturating_sub(a, b); }
-extern fn u8::saturating_add(a: u8, b: u8) -> u8 { ensures result == click::rust::u8::saturating_add(a, b); }
-extern fn u8::saturating_sub(a: u8, b: u8) -> u8 { ensures result == click::rust::u8::saturating_sub(a, b); }
-extern fn u16::saturating_add(a: u16, b: u16) -> u16 { ensures result == click::rust::u16::saturating_add(a, b); }
-extern fn u16::saturating_sub(a: u16, b: u16) -> u16 { ensures result == click::rust::u16::saturating_sub(a, b); }
-extern fn u32::saturating_add(a: u32, b: u32) -> u32 { ensures result == click::rust::u32::saturating_add(a, b); }
-extern fn u32::saturating_sub(a: u32, b: u32) -> u32 { ensures result == click::rust::u32::saturating_sub(a, b); }
-extern fn u64::saturating_add(a: u64, b: u64) -> u64 { ensures result == click::rust::u64::saturating_add(a, b); }
-extern fn u64::saturating_sub(a: u64, b: u64) -> u64 { ensures result == click::rust::u64::saturating_sub(a, b); }
-extern fn usize::saturating_add(a: usize, b: usize) -> usize { ensures result == click::rust::usize::saturating_add(a, b); }
-extern fn usize::saturating_sub(a: usize, b: usize) -> usize { ensures result == click::rust::usize::saturating_sub(a, b); }
+fn i8::saturating_add(a: i8, b: i8) -> i8 { ensures result == click::rust::i8::saturating_add(a, b); }
+fn i8::saturating_sub(a: i8, b: i8) -> i8 { ensures result == click::rust::i8::saturating_sub(a, b); }
+fn i16::saturating_add(a: i16, b: i16) -> i16 { ensures result == click::rust::i16::saturating_add(a, b); }
+fn i16::saturating_sub(a: i16, b: i16) -> i16 { ensures result == click::rust::i16::saturating_sub(a, b); }
+fn i32::saturating_add(a: i32, b: i32) -> i32 { ensures result == click::rust::i32::saturating_add(a, b); }
+fn i32::saturating_sub(a: i32, b: i32) -> i32 { ensures result == click::rust::i32::saturating_sub(a, b); }
+fn i64::saturating_add(a: i64, b: i64) -> i64 { ensures result == click::rust::i64::saturating_add(a, b); }
+fn i64::saturating_sub(a: i64, b: i64) -> i64 { ensures result == click::rust::i64::saturating_sub(a, b); }
+fn isize::saturating_add(a: isize, b: isize) -> isize { ensures result == click::rust::isize::saturating_add(a, b); }
+fn isize::saturating_sub(a: isize, b: isize) -> isize { ensures result == click::rust::isize::saturating_sub(a, b); }
+fn u8::saturating_add(a: u8, b: u8) -> u8 { ensures result == click::rust::u8::saturating_add(a, b); }
+fn u8::saturating_sub(a: u8, b: u8) -> u8 { ensures result == click::rust::u8::saturating_sub(a, b); }
+fn u16::saturating_add(a: u16, b: u16) -> u16 { ensures result == click::rust::u16::saturating_add(a, b); }
+fn u16::saturating_sub(a: u16, b: u16) -> u16 { ensures result == click::rust::u16::saturating_sub(a, b); }
+fn u32::saturating_add(a: u32, b: u32) -> u32 { ensures result == click::rust::u32::saturating_add(a, b); }
+fn u32::saturating_sub(a: u32, b: u32) -> u32 { ensures result == click::rust::u32::saturating_sub(a, b); }
+fn u64::saturating_add(a: u64, b: u64) -> u64 { ensures result == click::rust::u64::saturating_add(a, b); }
+fn u64::saturating_sub(a: u64, b: u64) -> u64 { ensures result == click::rust::u64::saturating_sub(a, b); }
+fn usize::saturating_add(a: usize, b: usize) -> usize { ensures result == click::rust::usize::saturating_add(a, b); }
+fn usize::saturating_sub(a: usize, b: usize) -> usize { ensures result == click::rust::usize::saturating_sub(a, b); }
 ```
 
 **Meaning:** `saturating_add` and `saturating_sub` are the library's sums and
@@ -11441,26 +11441,26 @@ differences clamped to the type's range.
 ### Integer checked arithmetic
 
 ```click
-extern fn i8::checked_add(a: i8, b: i8) -> Option<i8> { ensures result == click::rust::i8::checked_add(a, b); }
-extern fn i8::checked_sub(a: i8, b: i8) -> Option<i8> { ensures result == click::rust::i8::checked_sub(a, b); }
-extern fn i16::checked_add(a: i16, b: i16) -> Option<i16> { ensures result == click::rust::i16::checked_add(a, b); }
-extern fn i16::checked_sub(a: i16, b: i16) -> Option<i16> { ensures result == click::rust::i16::checked_sub(a, b); }
-extern fn i32::checked_add(a: i32, b: i32) -> Option<i32> { ensures result == click::rust::i32::checked_add(a, b); }
-extern fn i32::checked_sub(a: i32, b: i32) -> Option<i32> { ensures result == click::rust::i32::checked_sub(a, b); }
-extern fn i64::checked_add(a: i64, b: i64) -> Option<i64> { ensures result == click::rust::i64::checked_add(a, b); }
-extern fn i64::checked_sub(a: i64, b: i64) -> Option<i64> { ensures result == click::rust::i64::checked_sub(a, b); }
-extern fn isize::checked_add(a: isize, b: isize) -> Option<isize> { ensures result == click::rust::isize::checked_add(a, b); }
-extern fn isize::checked_sub(a: isize, b: isize) -> Option<isize> { ensures result == click::rust::isize::checked_sub(a, b); }
-extern fn u8::checked_add(a: u8, b: u8) -> Option<u8> { ensures result == click::rust::u8::checked_add(a, b); }
-extern fn u8::checked_sub(a: u8, b: u8) -> Option<u8> { ensures result == click::rust::u8::checked_sub(a, b); }
-extern fn u16::checked_add(a: u16, b: u16) -> Option<u16> { ensures result == click::rust::u16::checked_add(a, b); }
-extern fn u16::checked_sub(a: u16, b: u16) -> Option<u16> { ensures result == click::rust::u16::checked_sub(a, b); }
-extern fn u32::checked_add(a: u32, b: u32) -> Option<u32> { ensures result == click::rust::u32::checked_add(a, b); }
-extern fn u32::checked_sub(a: u32, b: u32) -> Option<u32> { ensures result == click::rust::u32::checked_sub(a, b); }
-extern fn u64::checked_add(a: u64, b: u64) -> Option<u64> { ensures result == click::rust::u64::checked_add(a, b); }
-extern fn u64::checked_sub(a: u64, b: u64) -> Option<u64> { ensures result == click::rust::u64::checked_sub(a, b); }
-extern fn usize::checked_add(a: usize, b: usize) -> Option<usize> { ensures result == click::rust::usize::checked_add(a, b); }
-extern fn usize::checked_sub(a: usize, b: usize) -> Option<usize> { ensures result == click::rust::usize::checked_sub(a, b); }
+fn i8::checked_add(a: i8, b: i8) -> Option<i8> { ensures result == click::rust::i8::checked_add(a, b); }
+fn i8::checked_sub(a: i8, b: i8) -> Option<i8> { ensures result == click::rust::i8::checked_sub(a, b); }
+fn i16::checked_add(a: i16, b: i16) -> Option<i16> { ensures result == click::rust::i16::checked_add(a, b); }
+fn i16::checked_sub(a: i16, b: i16) -> Option<i16> { ensures result == click::rust::i16::checked_sub(a, b); }
+fn i32::checked_add(a: i32, b: i32) -> Option<i32> { ensures result == click::rust::i32::checked_add(a, b); }
+fn i32::checked_sub(a: i32, b: i32) -> Option<i32> { ensures result == click::rust::i32::checked_sub(a, b); }
+fn i64::checked_add(a: i64, b: i64) -> Option<i64> { ensures result == click::rust::i64::checked_add(a, b); }
+fn i64::checked_sub(a: i64, b: i64) -> Option<i64> { ensures result == click::rust::i64::checked_sub(a, b); }
+fn isize::checked_add(a: isize, b: isize) -> Option<isize> { ensures result == click::rust::isize::checked_add(a, b); }
+fn isize::checked_sub(a: isize, b: isize) -> Option<isize> { ensures result == click::rust::isize::checked_sub(a, b); }
+fn u8::checked_add(a: u8, b: u8) -> Option<u8> { ensures result == click::rust::u8::checked_add(a, b); }
+fn u8::checked_sub(a: u8, b: u8) -> Option<u8> { ensures result == click::rust::u8::checked_sub(a, b); }
+fn u16::checked_add(a: u16, b: u16) -> Option<u16> { ensures result == click::rust::u16::checked_add(a, b); }
+fn u16::checked_sub(a: u16, b: u16) -> Option<u16> { ensures result == click::rust::u16::checked_sub(a, b); }
+fn u32::checked_add(a: u32, b: u32) -> Option<u32> { ensures result == click::rust::u32::checked_add(a, b); }
+fn u32::checked_sub(a: u32, b: u32) -> Option<u32> { ensures result == click::rust::u32::checked_sub(a, b); }
+fn u64::checked_add(a: u64, b: u64) -> Option<u64> { ensures result == click::rust::u64::checked_add(a, b); }
+fn u64::checked_sub(a: u64, b: u64) -> Option<u64> { ensures result == click::rust::u64::checked_sub(a, b); }
+fn usize::checked_add(a: usize, b: usize) -> Option<usize> { ensures result == click::rust::usize::checked_add(a, b); }
+fn usize::checked_sub(a: usize, b: usize) -> Option<usize> { ensures result == click::rust::usize::checked_sub(a, b); }
 ```
 
 **Meaning:** `checked_add` and `checked_sub` return the library's `Option` of the
@@ -11474,21 +11474,21 @@ otherwise.
 ### Integer `abs_diff` and `unsigned_abs`
 
 ```click
-extern fn i8::abs_diff(a: i8, b: i8) -> u8 { ensures result == click::rust::i8::abs_diff(a, b); }
-extern fn i8::unsigned_abs(a: i8) -> u8 { ensures result == click::rust::i8::unsigned_abs(a); }
-extern fn i16::abs_diff(a: i16, b: i16) -> u16 { ensures result == click::rust::i16::abs_diff(a, b); }
-extern fn i16::unsigned_abs(a: i16) -> u16 { ensures result == click::rust::i16::unsigned_abs(a); }
-extern fn i32::abs_diff(a: i32, b: i32) -> u32 { ensures result == click::rust::i32::abs_diff(a, b); }
-extern fn i32::unsigned_abs(a: i32) -> u32 { ensures result == click::rust::i32::unsigned_abs(a); }
-extern fn i64::abs_diff(a: i64, b: i64) -> u64 { ensures result == click::rust::i64::abs_diff(a, b); }
-extern fn i64::unsigned_abs(a: i64) -> u64 { ensures result == click::rust::i64::unsigned_abs(a); }
-extern fn isize::abs_diff(a: isize, b: isize) -> usize { ensures result == click::rust::isize::abs_diff(a, b); }
-extern fn isize::unsigned_abs(a: isize) -> usize { ensures result == click::rust::isize::unsigned_abs(a); }
-extern fn u8::abs_diff(a: u8, b: u8) -> u8 { ensures result == click::rust::u8::abs_diff(a, b); }
-extern fn u16::abs_diff(a: u16, b: u16) -> u16 { ensures result == click::rust::u16::abs_diff(a, b); }
-extern fn u32::abs_diff(a: u32, b: u32) -> u32 { ensures result == click::rust::u32::abs_diff(a, b); }
-extern fn u64::abs_diff(a: u64, b: u64) -> u64 { ensures result == click::rust::u64::abs_diff(a, b); }
-extern fn usize::abs_diff(a: usize, b: usize) -> usize { ensures result == click::rust::usize::abs_diff(a, b); }
+fn i8::abs_diff(a: i8, b: i8) -> u8 { ensures result == click::rust::i8::abs_diff(a, b); }
+fn i8::unsigned_abs(a: i8) -> u8 { ensures result == click::rust::i8::unsigned_abs(a); }
+fn i16::abs_diff(a: i16, b: i16) -> u16 { ensures result == click::rust::i16::abs_diff(a, b); }
+fn i16::unsigned_abs(a: i16) -> u16 { ensures result == click::rust::i16::unsigned_abs(a); }
+fn i32::abs_diff(a: i32, b: i32) -> u32 { ensures result == click::rust::i32::abs_diff(a, b); }
+fn i32::unsigned_abs(a: i32) -> u32 { ensures result == click::rust::i32::unsigned_abs(a); }
+fn i64::abs_diff(a: i64, b: i64) -> u64 { ensures result == click::rust::i64::abs_diff(a, b); }
+fn i64::unsigned_abs(a: i64) -> u64 { ensures result == click::rust::i64::unsigned_abs(a); }
+fn isize::abs_diff(a: isize, b: isize) -> usize { ensures result == click::rust::isize::abs_diff(a, b); }
+fn isize::unsigned_abs(a: isize) -> usize { ensures result == click::rust::isize::unsigned_abs(a); }
+fn u8::abs_diff(a: u8, b: u8) -> u8 { ensures result == click::rust::u8::abs_diff(a, b); }
+fn u16::abs_diff(a: u16, b: u16) -> u16 { ensures result == click::rust::u16::abs_diff(a, b); }
+fn u32::abs_diff(a: u32, b: u32) -> u32 { ensures result == click::rust::u32::abs_diff(a, b); }
+fn u64::abs_diff(a: u64, b: u64) -> u64 { ensures result == click::rust::u64::abs_diff(a, b); }
+fn usize::abs_diff(a: usize, b: usize) -> usize { ensures result == click::rust::usize::abs_diff(a, b); }
 ```
 
 **Meaning:** `abs_diff` is the distance between its operands and `unsigned_abs` the

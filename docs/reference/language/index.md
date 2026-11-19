@@ -129,8 +129,8 @@ An `extern` head is written the same way in each language:
 `extern int32 g(int32 x)` in C (`mdtests/external_function_contract_call.md`),
 `extern int ministd::Box::get() const` in C++
 (`tests/cpp_import.rs::axiomatic_member_function_extern_heads_are_cpp_declarations`),
-and `extern fn extern_functions::clamp_reading(raw: i32) -> i32` in Rust
-([`design/charon-trial/extern-functions`](https://github.com/clicklang/click/blob/master/design/charon-trial/extern-functions/ffi.click)).
+and `fn extern_functions::clamp_reading(raw: i32) -> i32` in a Rust interface
+([`design/charon-trial/extern-functions`](https://github.com/clicklang/click/blob/master/design/charon-trial/extern-functions/ffi.interface.click)).
 The Rust syntax is in [the Rust reference](../rust.md), the C syntax in
 [C](c.md).
 
@@ -3248,7 +3248,7 @@ Verifier primitives are part of the language, not the Click library. The
 kernel or the C front end gives each one its meaning, so none can be
 implemented or unfolded in Click. Every sidecar sees them without an import.
 They are written in Click syntax in `library/primitives.click` and
-`library/c/builtins.click` only so that the parser declares them; the
+`library/c/builtins.interface.click` only so that the parser declares them; the
 [library reference](../library/index.md) does not list them. The documentation
 gate checks each declaration below against that source.
 
@@ -3461,7 +3461,7 @@ and [`mdtests/a_callee_frees_a_64_bit_block_it_consumes.md`](https://github.com/
 
 #### `__click_constant_p_unknown`
 
-**Declaration:** `extern int32 __click_constant_p_unknown() { ensures result == 0 or result == 1; }`
+**Declaration:** `int32 __click_constant_p_unknown() { ensures result == 0 or result == 1; }`
 
 **Meaning:** The value of the GNU builtin `__builtin_constant_p`, which the C
 frontend lowers to a call of this function. Whether the compiler folds the

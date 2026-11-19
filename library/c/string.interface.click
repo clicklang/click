@@ -128,21 +128,21 @@ theorem len_has_terminator(bytes: uint8[], len: uint64) {
 
 // The C library's byte functions, with C's `size_t` counts. memset converts
 // its int fill value to unsigned char, reducing it modulo 256.
-extern uint8* memcpy(uint8 destination[], const uint8 source[], uint64 bytes) {
+uint8* memcpy(uint8 destination[], const uint8 source[], uint64 bytes) {
     views source[0..bytes];
     owns uninitialized(destination[0..bytes]);
     ensures result == destination;
     ensures bytes::equal(destination, 0u64, old(source), 0u64, bytes);
 }
 
-extern int32 memcmp(const uint8 left[], const uint8 right[], uint64 bytes) {
+int32 memcmp(const uint8 left[], const uint8 right[], uint64 bytes) {
     views left[0..bytes];
     views right[0..bytes];
     requires forall (k: uint64) { k < bytes implies defined(left[k]) and defined(right[k]) };
     ensures bytes::comparison(left, right, bytes, result);
 }
 
-extern uint8* memset(uint8 destination[], int32 value, uint64 bytes) {
+uint8* memset(uint8 destination[], int32 value, uint64 bytes) {
     owns uninitialized(destination[0..bytes]);
     ensures result == destination;
     ensures (0u64..bytes).all(|k| {
@@ -150,7 +150,7 @@ extern uint8* memset(uint8 destination[], int32 value, uint64 bytes) {
     });
 }
 
-extern uint64 strlen(const uint8* bytes) {
+uint64 strlen(const uint8* bytes) {
     let n: uint64;
     views cstr_at(bytes, n);
     ensures result == n;

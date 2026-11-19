@@ -1,5 +1,4 @@
 use super::*;
-use crate::languages::SourceLanguage;
 
 const MAX_IMPORT_CHAIN: usize = 256;
 
@@ -30,13 +29,7 @@ pub(in crate::surface) fn resolve_click_project_with_layouts(
     library_contracts: &str,
     mut layouts: parser::ProgramLayouts,
 ) -> Result<ClickFile, ClickError> {
-    let frontend_contracts = std::mem::take(&mut layouts.frontend_contracts);
-    let library_contracts = match (library_contracts, frontend_contracts.as_str()) {
-        (contracts, "") => contracts.to_string(),
-        ("", contracts) => contracts.to_string(),
-        (library, frontend) => format!("{library}\n{frontend}"),
-    };
-    let library_contracts = library_contracts.as_str();
+    let library_contracts = layouts.take_interface_catalog(library_contracts);
     let modules = project
         .modules()
         .iter()
@@ -165,22 +158,11 @@ pub(in crate::surface) fn resolve_click_project_with_layouts(
             .filter_map(|imported| locals.get(imported))
             .flat_map(module_declarations)
             .collect::<Vec<_>>();
-        // C++ catalog binders are in scope for client proof steps. Give
-        // the catalog its own token positions so client locations stay put.
-        let catalog = (identity == project.entry()
-            && layouts.language == Some(SourceLanguage::Cpp)
-            && !library_contracts.is_empty())
-        .then_some(library_contracts);
-        let entry_source;
-        let source =
-            if identity == project.entry() && catalog.is_none() && !library_contracts.is_empty() {
-                entry_source = format!("{}\n{library_contracts}", module.source());
-                entry_source.as_str()
-            } else {
-                module.source()
-            };
+        let catalog = library_contracts
+            .as_deref()
+            .filter(|_| identity == project.entry());
         let mut local = parser::parse_file_items_for_module(
-            source,
+            module.source(),
             identity,
             module.line_offset(),
             &imported_algebraic_types,
@@ -869,7 +851,7 @@ theorem local_conditional(x: int32) {
         assert_eq!(file.imports().len(), 1);
         assert_eq!(
             file.library_imports(),
-            ["library/c/string.click", "library/bytes.click"]
+            ["library/c/string.interface.click", "library/bytes.click"]
         );
     }
 
@@ -1292,6 +1274,67 @@ theorem sibling_bad() { ensures 0 == 1 by solve(); }
             "{}",
             error.message()
         );
+    }
+
+    #[test]
+    fn interface_contracts_report_the_same_assumptions_as_legacy_contracts() {
+        let contract = "int32 external_identity(int32 x) { requires x >= 0; ensures result == x; }";
+        let caller = r#"verifying "caller.c";
+int32 caller(int32 x) { requires x >= 0; ensures result == x; }
+"#;
+        let interface = ClickProject::new(
+            "caller.click",
+            [
+                ClickModuleSource::new("identity.interface.click", contract, []),
+                ClickModuleSource::new(
+                    "caller.click",
+                    format!("import \"identity.interface.click\";\n{caller}"),
+                    ["identity.interface.click".to_string()],
+                ),
+            ],
+        );
+        let legacy = ClickProject::new(
+            "caller.click",
+            [ClickModuleSource::new(
+                "caller.click",
+                format!("{caller}\nextern {contract}"),
+                [],
+            )],
+        );
+        let sources = [(
+            "caller.c",
+            "int caller(int x) { return external_identity(x); }",
+        )];
+        let inputs = ProgramInputs::Bundle(sources.to_vec());
+        let (before, verified) = verify_project_with_summary(&legacy, &inputs).unwrap();
+        verified.unwrap();
+        let (after, verified) = verify_project_with_summary(&interface, &inputs).unwrap();
+        verified.unwrap();
+        assert_eq!(after.assumptions, before.assumptions);
+        let [assumption] = after.assumptions["caller"].as_slice() else {
+            panic!("expected the interface contract to be reported");
+        };
+        assert_eq!(assumption.name, "external_identity");
+        assert_eq!(assumption.family, ModelFamily::Extern);
+    }
+
+    #[test]
+    fn an_interface_cannot_select_program_bodies_or_prove_its_contracts() {
+        for (source, expected) in [
+            ("verifying \"body.c\";", "interface file cannot select"),
+            (
+                "int32 f() { ensures result == 1; } by { solve(); }",
+                "external function contracts cannot carry proof",
+            ),
+        ] {
+            let project = ClickProject::new(
+                "entry.interface.click",
+                [ClickModuleSource::new("entry.interface.click", source, [])],
+            );
+            let error = resolve_click_project(&project, &[("body.c", "int f(void) { return 1; }")])
+                .unwrap_err();
+            assert!(error.message().contains(expected), "{error}");
+        }
     }
 
     #[test]

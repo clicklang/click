@@ -2,6 +2,9 @@ use super::*;
 
 const SIDECAR: &str = include_str!("../../design/charon-trial/extern-functions/ffi.click");
 
+const INTERFACE: &str =
+    include_str!("../../design/charon-trial/extern-functions/ffi.interface.click");
+
 fn extern_function_project() -> Project {
     let p = Project::from_fixture("design/charon-trial/extern-functions");
     fs::write(p.root.join("borrow.click"), SIDECAR).unwrap();
@@ -9,7 +12,7 @@ fn extern_function_project() -> Project {
 }
 
 // `caller` calls `clamp_reading`, declared in an `unsafe extern "C"` block,
-// under the sidecar's trusted `extern fn` contract: it must establish the
+// under the imported interface contract: it must establish the
 // precondition, may use only the postcondition, and the head must restate
 // the declaration.
 #[test]
@@ -17,47 +20,43 @@ fn extern_function_project() -> Project {
 fn charon_extern_block_calls_meet_their_extern_contract() {
     let p = extern_function_project();
     let prepared = p.prepared().unwrap();
-    ProgramVerificationSession::new_program_prepared(SIDECAR, &prepared)
-        .unwrap_or_else(|error| panic!("{error:?}"));
-    let head = "extern fn extern_functions::clamp_reading(raw: i32) -> i32 {";
-    // A head names the parameters; the declaration in the import has none.
-    let renamed = SIDECAR
-        .replace(
-            head,
-            "extern fn extern_functions::clamp_reading(value: i32) -> i32 {",
-        )
-        .replace(
-            "    requires raw >= 0;\n    ensures 0",
-            "    requires value >= 0;\n    ensures 0",
-        );
-    ProgramVerificationSession::new_program_prepared(&renamed, &prepared)
-        .unwrap_or_else(|error| panic!("{error:?}"));
-    let caller_requires = "    requires raw >= 0;\n    ensures 1";
+    let verify = |sidecar: &str, interface: &str| {
+        let path = p.root.join("borrow.click");
+        fs::write(p.root.join("ffi.interface.click"), interface).unwrap();
+        let project = click::cli::read_click_project(&path, sidecar).unwrap();
+        click::surface::verify_program_prepared_project(&project, &prepared)
+    };
+    verify(SIDECAR, INTERFACE).unwrap_or_else(|error| panic!("{error:?}"));
+
+    // The imported Rust declaration is positional. The interface supplies
+    // names for its contract, with the exact declared parameter types.
+    let renamed = INTERFACE.replace("raw", "value");
+    verify(SIDECAR, &renamed).unwrap_or_else(|error| panic!("{error:?}"));
     for (before, after, expected) in [
-        (
-            caller_requires,
-            "    ensures 1",
-            "is missing prerequisite (precondition clause 1 of",
-        ),
+        ("    requires raw >= 0;\n", "", "precondition clause 1 of"),
         ("result <= 101;", "result <= 100;", "unclosed goal"),
-        (
-            head,
-            "extern fn extern_functions::clamp_reading(raw: u32) -> i32 {",
-            "parameter 1 in `ffi.rs`: .click has UInt32 raw, C has Int32 raw",
-        ),
-        (
-            head,
-            "fn extern_functions::clamp_reading(raw: i32) -> i32 {",
-            "is declared in an `extern` block and has no body to verify",
-        ),
     ] {
         let invalid = SIDECAR.replace(before, after);
         assert_ne!(invalid, SIDECAR);
-        let error = ProgramVerificationSession::new_program_prepared(&invalid, &prepared)
-            .err()
-            .expect("an unmet or misstated extern contract must fail");
+        let error = verify(&invalid, INTERFACE).expect_err("the caller must satisfy its contract");
         assert!(format!("{error:?}").contains(expected), "{error:?}");
     }
+
+    let invalid_interface = INTERFACE.replace("raw: i32", "raw: u32");
+    let error = verify(SIDECAR, &invalid_interface)
+        .expect_err("the interface must match the Rust declaration");
+    assert!(
+        format!("{error:?}")
+            .contains("parameter 1 in `ffi.rs`: .click has UInt32 raw, C has Int32 raw"),
+        "{error:?}"
+    );
+
+    let invalid = SIDECAR.replace("import \"ffi.interface.click\";", INTERFACE);
+    let error = verify(&invalid, INTERFACE).expect_err("the Rust declaration has no body");
+    assert!(
+        format!("{error:?}").contains("is declared in an `extern` block and has no body to verify"),
+        "{error:?}"
+    );
 }
 
 #[cfg(not(feature = "fast-gate"))]

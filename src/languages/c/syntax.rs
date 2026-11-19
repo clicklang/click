@@ -7609,7 +7609,7 @@ impl LibraryType {
 }
 
 /// The standard C prototype of each library function Click specifies: the
-/// `<string.h>` functions with a contract in `library/c/string.click` and the
+/// `<string.h>` functions with a contract in `library/c/string.interface.click` and the
 /// `<stdlib.h>` functions of the allocation model. A call binds to Click's
 /// specification by the function's name, so a declaration of one of these
 /// names must have the library's type.
@@ -7669,7 +7669,8 @@ pub(crate) fn library_contract_module(header: &CFunctionHeader) -> Option<&'stat
 /// The Click library module whose contract a call to the library function
 /// `name` uses; see [`library_contract_module`].
 pub(crate) fn library_contract_module_named(name: &str) -> Option<&'static str> {
-    matches!(name, "memcpy" | "memcmp" | "memset" | "strlen").then_some("library/c/string.click")
+    matches!(name, "memcpy" | "memcmp" | "memset" | "strlen")
+        .then_some("library/c/string.interface.click")
 }
 
 /// Which standard stream writer this declaration denotes, if any.

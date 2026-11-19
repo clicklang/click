@@ -904,12 +904,10 @@ a caller through `&mut dyn Container<u32>` can apply lemmas about the list
 ### `extern` block functions
 
 A `safe fn` declared in an `unsafe extern "C" { ... }` block has no body in
-the crate, and a call to it needs no `unsafe`. The sidecar states the
-contract Click trusts for it, as a C `extern` declaration does:
-`extern fn extern_functions::clamp_reading(raw: i32) -> i32 { requires raw
->= 0; ensures 0 <= result and result <= 100; }`. A caller must establish the `requires` and may use only the `ensures`.
-`extern fn` takes no proof, and a verified `fn` for such a declaration is
-refused. Charon keeps no parameter names for a foreign item, so the head
+the crate, and a call to it needs no `unsafe`. The sidecar imports `ffi.interface.click`, which states the contract for
+`fn extern_functions::clamp_reading(raw: i32) -> i32`. A caller must establish
+the `requires` and may use the `ensures`. An interface contract takes no
+program proof. A verified `fn` for such a declaration is refused. Charon keeps no parameter names for a foreign item, so the head
 names them; its types must be the declaration's. Parameters and the result
 are scalars, or `()` for the result. An `unsafe fn` item and other ABIs are
 refused, as their calls need `unsafe`. Functions of other crates are not
@@ -920,7 +918,7 @@ imported
 
 A call of a Rust core integer method, `a.min(b)`, `x.checked_add(y)` or
 `n.unsigned_abs()`, calls an external function whose contract is a one-line
-`extern fn` of `library/rust/integers.click`
+contract in `library/rust/integers.interface.click`
 ([Rust integer methods](library/index.md#rust-integer-methods)):
 `extern fn u32::min(a: u32, b: u32) -> u32 { ensures result ==
 click::rust::u32::min(a, b); }`. The importer appends the line of each method
@@ -956,7 +954,7 @@ verifies calls at several widths.
 `xs.swap(a, b)` on a mutable slice of integers calls an instance of
 `slice::swap<T>`, whose contract states the call's effect rather than a
 result. The contract is the generic `extern fn` block in
-`library/rust/core.click`, written out at each called element type as a
+`library/rust/core.interface.click`, written out at each called element type as a
 sidecar's generic function is, with the instance's own parameter names by
 position. The other non-integer core methods are stated there the same way:
 the `Vec` methods ([Vec values](#vec-values)), `Option` and `Result`
@@ -1922,7 +1920,7 @@ for a reference). A signature that names a `Vec` brings the library module
 `Vec::new()`, `Vec::with_capacity(n)`, `v.push(x)`, `v.len()` and `v[i]`
 call external functions whose contracts Click supplies, the generic
 `extern fn` blocks `Vec::new<T>` ... `Vec::index<T>` of
-`library/rust/core.click` written out at the element type, `Vec::push<u32>`:
+`library/rust/core.interface.click` written out at the element type, `Vec::push<u32>`:
 
 - `new` and `with_capacity` ensure `vec::len(result) == 0`; the reserved
   capacity is not modeled.

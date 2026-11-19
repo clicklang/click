@@ -7,8 +7,8 @@ The importer records it as an `external` function with positional
 parameters, and lowering gives it an interface and no body, as for a C
 `extern` declaration.
 
-The sidecar states the contract Click trusts with
-`extern fn extern_functions::clamp_reading(raw: i32) -> i32`, whose head
+The sidecar imports `ffi.interface.click`, which declares
+`fn extern_functions::clamp_reading(raw: i32) -> i32`. The head
 names the parameters and must have the declaration's exact types. `caller`
 must establish its `requires` and may use its `ensures`. Regressions refuse a
 caller that cannot establish the precondition, a postcondition the caller

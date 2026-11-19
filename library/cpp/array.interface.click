@@ -9,36 +9,36 @@
 // Each method is written out at each element type and extent a call names;
 // the element types are the C++ importer's `SPAN_ELEMENTS` without `const`,
 // and an extent is written out only when its byte size fits a `uint64`.
-template<class T, std::size_t N> extern unsigned long std::array<T, N>::size() const {
+template<class T, std::size_t N> unsigned long std::array<T, N>::size() const {
     ensures result == N;
 }
-template<class T, std::size_t N> extern T* std::array<T, N>::data() {
+template<class T, std::size_t N> T* std::array<T, N>::data() {
     ensures result == &std_array_data(this)[0];
 }
-template<class T, std::size_t N> extern const T* std::array<T, N>::data() const {
+template<class T, std::size_t N> const T* std::array<T, N>::data() const {
     ensures result == &std_array_data(this)[0];
 }
-template<class T, std::size_t N> extern T& std::array<T, N>::operator[](unsigned long index) {
+template<class T, std::size_t N> T& std::array<T, N>::operator[](unsigned long index) {
     requires index < N;
     ensures &result == &std_array_data(this)[index];
 }
-template<class T, std::size_t N> extern const T& std::array<T, N>::operator[](unsigned long index) const {
+template<class T, std::size_t N> const T& std::array<T, N>::operator[](unsigned long index) const {
     requires index < N;
     ensures &result == &std_array_data(this)[index];
 }
-template<class T, std::size_t N> extern T& std::array<T, N>::front() {
+template<class T, std::size_t N> T& std::array<T, N>::front() {
     requires 1u64 <= N;
     ensures &result == &std_array_data(this)[0];
 }
-template<class T, std::size_t N> extern const T& std::array<T, N>::front() const {
+template<class T, std::size_t N> const T& std::array<T, N>::front() const {
     requires 1u64 <= N;
     ensures &result == &std_array_data(this)[0];
 }
-template<class T, std::size_t N> extern T& std::array<T, N>::back() {
+template<class T, std::size_t N> T& std::array<T, N>::back() {
     requires 1u64 <= N;
     ensures &result == &std_array_data(this)[N - 1u64];
 }
-template<class T, std::size_t N> extern const T& std::array<T, N>::back() const {
+template<class T, std::size_t N> const T& std::array<T, N>::back() const {
     requires 1u64 <= N;
     ensures &result == &std_array_data(this)[N - 1u64];
 }

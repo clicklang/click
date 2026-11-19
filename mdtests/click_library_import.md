@@ -1,6 +1,6 @@
 # a Click library module is imported by its `click::` path
 
-The nested path `click::c::string` names `library/c/string.click`.
+The nested path `click::c::string` names `library/c/string.interface.click`.
 Repeated imports of a module are accepted. A selective import makes
 the named declaration available by its bare name.
 

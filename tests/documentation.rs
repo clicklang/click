@@ -869,19 +869,22 @@ fn markdown_links(source: &str) -> Vec<String> {
 /// The `library/` modules that declare verifier primitives. Their
 /// declarations are language, documented in the language reference under
 /// `primitive.` inventory IDs rather than in the library reference.
-const PRIMITIVE_MODULES: &[&str] = &["library/primitives.click", "library/c/builtins.click"];
+const PRIMITIVE_MODULES: &[&str] = &[
+    "library/primitives.click",
+    "library/c/builtins.interface.click",
+];
 
 /// The Click library files an importer appends to a sidecar, with the
 /// inventory kind of their contracts. They are not modules, so no import or
-/// module path names them: each `extern` template is named by the C++ or Rust
+/// module path names them: each interface template is named by the C++ or Rust
 /// path it models, `library.cpp.std::span<T>::size`, `library.rust.Vec::push`
 /// or `library.rust.u32::min`, and its verified use is in the tests its
 /// reference entry cites. They are otherwise under the same gates as the
 /// modules.
 const SIDECAR_LIBRARY_FILES: &[(&str, &str)] = &[
     ("library/cpp/", "cpp"),
-    ("library/rust/core.click", "rust"),
-    ("library/rust/integers.click", "rust"),
+    ("library/rust/core.interface.click", "rust"),
+    ("library/rust/integers.interface.click", "rust"),
 ];
 
 fn library_identity(path: &Path) -> String {
@@ -904,13 +907,13 @@ fn is_primitive_module(path: &Path) -> bool {
 }
 
 /// The path a sidecar library contract models, from its head: C++
-/// `template<...> extern <ret> <path>(...)`, `std::span<T, N>::size`, or Rust
-/// `extern fn <path><T>(...)`, `Vec::push`.
+/// `template<...> <ret> <path>(...)`, `std::span<T, N>::size`, or Rust
+/// `fn <path><T>(...)`, `Vec::push`.
 fn sidecar_contract_path(line: &str) -> Option<String> {
-    if let Some(rest) = line.strip_prefix("extern fn ") {
+    if let Some(rest) = line.strip_prefix("fn ") {
         return rest.split(['<', '(']).next().map(str::to_string);
     }
-    let head = line.strip_prefix("template<")?.split_once(" extern ")?.1;
+    let head = line.strip_prefix("template<")?.split_once("> ")?.1;
     let head = head.split_once('(')?.0;
     // The path is the last word at angle depth 0: `std::span<T, N>::size`.
     let mut depth = 0i32;
@@ -981,10 +984,11 @@ fn standard_library_inventory_is_bidirectional() {
             continue;
         }
         let module = qualified.contains(&library_identity(&path)).then(|| {
-            path.file_stem()
+            let stem = path
+                .file_stem()
                 .expect("library module name")
-                .to_string_lossy()
-                .into_owned()
+                .to_string_lossy();
+            stem.strip_suffix(".interface").unwrap_or(&stem).to_string()
         });
         let source = fs::read_to_string(&path).expect("read library module");
         declare_library_inventory(&source, module.as_deref(), &mut declarations);
@@ -1038,15 +1042,14 @@ fn declare_library_inventory(
                 }
             }
         }
-        if let Some(rest) = line.strip_prefix("extern ") {
-            let name = rest
-                .split('(')
-                .next()
-                .and_then(|signature| signature.split_whitespace().last())
-                .expect("external function name");
+    }
+    for_each_library_declaration(source, |declaration| {
+        if let Some(name) =
+            c_interface_function_name(declaration.lines().next().unwrap_or_default())
+        {
             declarations.insert(format!("extern.{name}"));
         }
-    }
+    });
 }
 
 #[test]
@@ -1142,6 +1145,14 @@ fn verifier_primitive_declarations_are_in_the_language_reference() {
     });
 }
 
+fn c_interface_function_name(line: &str) -> Option<&str> {
+    let (head, _) = line.split_once('(')?;
+    let mut words = head.split_whitespace();
+    let ty = words.next()?;
+    let name = words.next()?;
+    ((ty.starts_with("int") || ty.starts_with("uint")) && words.next().is_none()).then_some(name)
+}
+
 /// Calls `check` with each complete top-level declaration of `source`.
 fn for_each_library_declaration(source: &str, mut check: impl FnMut(&str)) {
     let mut declaration = String::new();
@@ -1155,8 +1166,9 @@ fn for_each_library_declaration(source: &str, mut check: impl FnMut(&str)) {
             || line.starts_with("predicate ")
             || line.starts_with("resource ")
             || line.starts_with("abstract resource ")
-            || line.starts_with("extern ")
-            || line.starts_with("template<");
+            || line.starts_with("fn ")
+            || line.starts_with("template<")
+            || c_interface_function_name(line).is_some();
         if declaration.is_empty() && !starts {
             continue;
         }

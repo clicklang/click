@@ -278,7 +278,7 @@ backing authority remain separate.
 
 Four repairs make these boundaries compose:
 
-- `library/cpp/span.click` supplies the dynamic pointer/count constructor's
+- `library/cpp/span.interface.click` supplies the dynamic pointer/count constructor's
   explicit library assumption. It initializes the descriptor, with no grant
   of backing ownership. Signature selection excludes static extent, iterator
   pairs and other count types.

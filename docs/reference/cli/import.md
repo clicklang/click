@@ -2559,18 +2559,18 @@ contract:
   catalog itself is never written into a sidecar by expansion.
 - The catalog's contracts are Click text, written as a sidecar writes a
   class template's methods ([class templates verified once](#class-templates-verified-once)):
-  `library/cpp/span.click` states the dynamic-extent `std::span<T>` methods
-  as `template<class T> extern unsigned long std::span<T>::size() const { ... }`
-  and the static-extent ones as `template<class T, std::size_t N> extern
+  `library/cpp/span.interface.click` states the dynamic-extent `std::span<T>` methods
+  as `template<class T> unsigned long std::span<T>::size() const { ... }`
+  and the static-extent ones as `template<class T, std::size_t N>
   unsigned long std::span<T, N>::size() const { ensures result == N; }`.
   The dynamic pointer/count constructor is also a library interface,
-  `template<class T> extern std::span<T>::span<T *>(T* first, unsigned long count)`.
+  `template<class T> std::span<T>::span<T *>(T* first, unsigned long count)`.
   Its Click contract has no exceptional outcome, including on standard
   libraries that omit `noexcept` on this overload. It consumes unwritten
   descriptor storage, produces it initialized and
   establishes the data pointer and count, without granting backing authority.
   Static-extent constructors and iterator-pair overloads are outside that model.
-  `library/cpp/array.click` states `std::array<T, N>`, whose element
+  `library/cpp/array.interface.click` states `std::array<T, N>`, whose element
   accessors are each a mutable and a `const` overload written as two
   template methods, `T& std::array<T, N>::front()` and `const T&
   std::array<T, N>::front() const`.
@@ -2585,7 +2585,7 @@ contract:
   Each called instance is written out from its template, and a library
   template no call instantiates is dropped. A sidecar does not restate a
   library interface: an `extern` for `std::span<int>::size` is refused, naming
-  the library. `library/cpp/as_writable_bytes.click` states the function
+  the library. `library/cpp/as_writable_bytes.interface.click` states the function
   template `std::as_writable_bytes<T, N>`, named in its own segment by its
   element and extent as Clang names the instance,
   `std::as_writable_bytes<int, 18446744073709551615>`; the table maps it

@@ -432,7 +432,8 @@ impl Parser {
         let previous_module = std::mem::replace(&mut self.rust_impl_module, impl_module);
         let mut result = Ok(());
         while self.peek() != Some(&Token::RBrace) {
-            let external = written && self.peek_ident() == Some("extern");
+            let external =
+                self.in_interface_file() || (written && self.peek_ident() == Some("extern"));
             if self.peek_ident() != Some("fn") && !external {
                 result = Err(self.error("an `impl` block holds `fn` contracts"));
                 break;

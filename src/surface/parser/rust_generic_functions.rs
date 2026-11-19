@@ -42,7 +42,7 @@ pub(super) type Instances = BTreeMap<Vec<String>, Vec<String>>;
 /// Writes out each instance of the sidecar's generic functions, by the
 /// function's importer name, at the type arguments the import declares,
 /// after the generic block. A Click library generic function
-/// (`library/rust/core.click`), which no import has, is dropped with its
+/// (`library/rust/core.interface.click`), which no import has, is dropped with its
 /// `extern`: only its instances are written.
 /// Returns the tokens with the index of each written instance's `fn`.
 #[allow(clippy::type_complexity)]

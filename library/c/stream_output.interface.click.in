@@ -1,4 +1,4 @@
-extern int32 @function@(FILE* file) {
+int32 @function@(FILE* file) {
     owns out: click::c::stdio::stream(file);
     ensures result == @length@ or result < 0;
     ensures out.write_history == List::Cons(

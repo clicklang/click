@@ -35,6 +35,11 @@ The function signature in the `.click` file must match the C function. The body
 of the Click function is not executable C; it is the contract and proof surface
 for the C function.
 
+Use a `*.interface.click` file for contracts whose implementations are outside
+the proof. A sidecar imports the interface by path. It must prove the
+interface's preconditions at calls and can then use its guarantees. Click
+reports that dependency among the caller's assumptions.
+
 ## The `verifying` clause
 
 Each sidecar starts with one or more source declarations:
@@ -128,7 +133,7 @@ A Click library module has a `click::` path that mirrors its file under
 import click::c::string;
 ```
 
-`click::c::string` names `library/c/string.click`. Importing a module twice is accepted. An unknown
+`click::c::string` names `library/c/string.interface.click`. Importing a module twice is accepted. An unknown
 module, or a path outside the `click` root such as `std::list`, is refused at
 the import. A project file is always imported by a quoted path. A module's
 library imports reach the files that import it, like its other declarations.
