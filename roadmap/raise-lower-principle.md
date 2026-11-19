@@ -60,17 +60,15 @@ Already landed:
 - Volatile observation result names (#2492), with typed value retention and
   branch/indexing controls. Specification reads no longer emit C access events.
 
-**The split is not complete.** Common roots are live for supported numeric
-evaluation, calls, execution handoffs, range folds, numeric/algebraic match
-results, and complete pointers/read addresses. Chunk 7 covers pointer formation,
-arithmetic, calls, branches, locals, returns, temporary statement results and
-memory storage/receipt. Package 8 completes supported Boolean, algebraic and floating-point payloads
-through 8ad ([PR #2920](https://github.com/clicklang/click/pull/2920)). Remaining
-packages are the general raise/lower and certificate boundary (9), and duplicate
-storage removal/final closure (10). Named native checking, ABI, nonpointer-cell
-and presentation compatibility consumers remain explicit; closing chunk 8 does
-not close those packages. These are
-representation boundaries, not a count of every remaining verifier defect.
+Common roots are live for supported numeric evaluation, calls, execution
+handoffs, range folds, numeric and algebraic match results, and complete
+pointers and read addresses. Package 9 delivered the raise/lower and
+certificate boundary work. Package 10 closed the producer and storage
+migration and [inventoried the native compatibility contracts](#10t-closure-audit)
+still used for exact inputs, identity, checking, and output. Package 11 moved
+more checker readers onto retained operands. Its
+[live-boundary inventory](#package-11-shared-operands-in-checking) records what
+still uses native rules.
 
 The previous document interleaved open boxes with later paragraphs completing
 parts of them. Its old unchecked lists and historical accessor counts must not
@@ -4490,9 +4488,9 @@ are removed.
 | Remaining reader | Live boundary |
 | --- | --- |
 | Boolean cell reads | Native kernel inputs and C and Rust evaluation use `ConditionTerm::boolean_cell_read`, which represents the selected one-byte read as a nonzero comparison. Shared Boolean terms retain the same comparison and read operands. `load<Bool>(p)` raises the comparison when the read's memory records the Boolean type, preserving the selected state. |
-| Float read compatibility | `assumptions/float_conversions.rs` still uses the selected native descriptor to collect reads nested under conversions. |
+| Float read compatibility | Conversion candidate keys read the retained load's address directly. Native fingerprints, output, and compatibility readers still use the selected native value. |
 | Integer reverse bridge and native argument storage | Integer import/export and opaque binder collectors still use the reverse link. Checked source matching reads retained machine call arguments directly. Exact mixed arguments and consumers that require written output still use the existing call and argument adapters. |
-| Contract displacement compatibility | Dependency, binder and range variable readers use the retained root. Checked rewriting and rendering use the established native offset rules. Native equality, ordering and hashing still use original index identities, and exact legacy inputs retain their native representation. |
+| Contract displacement compatibility | Dependency, binder and range variable readers use the retained root. Current-memory load collection walks retained offsets and checks each scaled index at its existing width. Checked rewriting and rendering use the established native offset rules. Native equality, ordering and hashing still use original index identities, and exact legacy inputs retain their native representation. |
 
 ## Delivery and history
 

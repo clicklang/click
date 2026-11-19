@@ -214,6 +214,26 @@ pub(super) fn collect_common_memory_loads(
     Ok(())
 }
 
+pub(super) fn collect_offset_memory_loads(
+    offset: &crate::kernel::SharedAddressOffset,
+    current_memory: &SymbolicMemory,
+    loads: &mut Vec<(Address, u32)>,
+    seen_integers: &mut BTreeSet<u64>,
+) -> Result<(), String> {
+    let mut pending = Vec::new();
+    push_offset_memory_loads(std::iter::once(offset), &mut pending)?;
+    for (index, width) in pending.into_iter().rev() {
+        collect_shared_machine_root_memory_loads(
+            index,
+            current_memory,
+            loads,
+            width,
+            seen_integers,
+        )?;
+    }
+    Ok(())
+}
+
 fn push_offset_memory_loads<'a>(
     roots: impl IntoIterator<Item = &'a crate::kernel::SharedAddressOffset>,
     pending: &mut Vec<(&'a KernelTerm, Option<u32>)>,
@@ -250,6 +270,41 @@ fn push_offset_memory_loads<'a>(
 mod tests {
     use super::*;
     use crate::kernel::KernelTermImport;
+
+    #[test]
+    fn contract_offset_loads_use_retained_widths_and_states() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let memory = SymbolicMemory::new();
+        let point = ProgramPoint::at(&crate::kernel::intern_memory_ref(&memory));
+        let word = Address::symbolic(Variable(999967));
+        let wide = Address::symbolic(Variable(999968));
+        let offset = AddressOffset::Add(
+            Box::new(AddressOffset::scaled_int32_node(
+                MachineTerm::MemoryLoad(point.clone(), Box::new(word.clone()), LoadKind::Int32),
+                4,
+            )),
+            Box::new(AddressOffset::scaled_int64_node(
+                MachineTerm::MemoryLoad(point, Box::new(wide.clone()), LoadKind::Bits64),
+                8,
+                true,
+            )),
+        );
+        let stored = crate::kernel::StoredPointerOffset::from(offset.clone());
+        assert!(stored.root().is_some());
+        let mut native = Vec::new();
+        collect_pointer_offset_memory_loads(&offset, &memory, &mut native, &mut BTreeSet::new())
+            .unwrap();
+        let term = Term::PointerOffset(stored);
+        let actual = current_memory_loads_in_term(&term, &memory).unwrap();
+        assert_eq!(actual, native);
+        assert_eq!(actual, [(word, 4), (wide, 8)]);
+        let later = memory.with_block("later offset memory", 4);
+        assert!(
+            current_memory_loads_in_term(&term, &later)
+                .unwrap()
+                .is_empty()
+        );
+    }
 
     #[test]
     fn common_float_conversions_preserve_native_memory_collection_refusal() {

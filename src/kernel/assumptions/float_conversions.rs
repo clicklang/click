@@ -229,14 +229,11 @@ pub(super) fn collect_load_keys(root: &KernelTerm, keys: &mut BTreeSet<(AddressB
             continue;
         }
         match root.node() {
-            KernelTermNode::FloatRead(_) => collect_bitvector_memory_load_keys(
-                root.float_read_native().expect("float read"),
-                keys,
-            ),
-            KernelTermNode::MemoryLoad { .. } => collect_bitvector_memory_load_keys(
-                root.machine_read_leaf().expect("scalar read"),
-                keys,
-            ),
+            KernelTermNode::FloatRead(read) => {
+                collect_float_read_load_keys(read.parts().1.exact_cell_key(), keys);
+            }
+            // Scalar read leaves cannot contribute to the float transport index.
+            KernelTermNode::MemoryLoad { .. } => {}
             KernelTermNode::IntegerAddress { .. } => collect_bitvector_memory_load_keys(
                 root.machine_conversion_leaf().expect("address"),
                 keys,
@@ -387,6 +384,33 @@ mod tests {
                     exports
                 );
             }
+        }
+    }
+
+    #[test]
+    fn conversion_load_keys_do_not_build_a_native_float_read() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let point = ProgramPoint::at(&crate::kernel::intern_memory(SymbolicMemory::new()));
+        for (format, name) in [
+            (KernelFloatType::Float32, "c_float32_to_int32"),
+            (KernelFloatType::Float64, "c_float64_to_int32"),
+        ] {
+            let pointer = Address::symbolic(Variable(999978));
+            let native = MachineTerm::opaque_conversion(
+                name,
+                MachineTerm::MemoryLoad(point.clone(), Box::new(pointer), format.load_kind()),
+            );
+            let root = KernelTermImport::default().machine(MachineIntegerType::Int32, &native);
+            let KernelTermNode::FloatConvert { operand, .. } = root.node() else {
+                panic!("float conversion");
+            };
+            let mut expected = BTreeSet::new();
+            collect_bitvector_memory_load_keys(&native, &mut expected);
+            let mut actual = BTreeSet::new();
+            collect_load_keys(&root, &mut actual);
+            assert_eq!(actual, expected);
+            assert_eq!(actual.len(), 1);
+            assert!(!operand.has_cached_native_argument());
         }
     }
 
