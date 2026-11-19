@@ -77,6 +77,7 @@ mod separation_classes;
 pub(in crate::kernel) use separation_classes::SeparatedAddressIndex;
 
 mod memory_reasoning;
+pub(in crate::kernel) use memory_reasoning::AccessExtent;
 pub(in crate::kernel) use memory_reasoning::additive_base_spellings;
 pub(crate) use memory_reasoning::arm_frame_composite_definitions;
 pub(in crate::kernel) use memory_reasoning::parameter_alias_bucket;

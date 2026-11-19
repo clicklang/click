@@ -15939,6 +15939,17 @@ impl TypeParameterName {
         id
     }
 
+    /// Whether Click knows nothing of this type but its name, as of a type
+    /// parameter: its values are opaque and its size is `sizeof(T)`. An
+    /// enum, with its variants, or an instance such as `Vec<u32>` is not.
+    pub fn has_abstract_size(self) -> bool {
+        let names = TYPE_PARAMETER_NAMES.lock().expect("type parameter names");
+        let algebraic_type = names.types[self.0 as usize];
+        algebraic_type.rigid
+            && algebraic_type.arguments.is_empty()
+            && algebraic_type.variants.is_empty()
+    }
+
     /// The bytes a value of this type takes in memory, `sizeof(T)`: a
     /// number the type fixes and Click does not know. Two uses of one type
     /// name the same term; a proof learns of it only the facts the program's

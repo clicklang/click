@@ -3072,7 +3072,9 @@ fn lower_resource_segment_with_values(
     };
     // `*p` of a value of an abstract type is its whole object, `[p, p +
     // sizeof(T))`, whose size is the type's and no number Click knows.
-    if let Some(ProgramType::Parameter(parameter)) = base_value.program_type().pointee_type() {
+    if let Some(ProgramType::Parameter(parameter)) = base_value.program_type().pointee_type()
+        && parameter.has_abstract_size()
+    {
         let index = |value: &ProgramValue| match value.numeric_value() {
             ProgramValue::Int32(term) | ProgramValue::UInt64(term) | ProgramValue::Int64(term) => {
                 term.as_const()

@@ -3,7 +3,11 @@
 use super::*;
 
 /// One step of `statement` from `state`, which must end normally.
-fn step(state: &ExecutionState, statement: &ProgramStatement, facts: &PureFactContext) -> ExecutionState {
+fn step(
+    state: &ExecutionState,
+    statement: &ProgramStatement,
+    facts: &PureFactContext,
+) -> ExecutionState {
     let paths = execute_execution_statement_paths(
         state,
         statement,

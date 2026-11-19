@@ -1936,8 +1936,9 @@ impl PureFactContext {
     pub(in crate::kernel) fn owned_store_footprint(
         &self,
         write: &Address,
-        bytes: u32,
+        bytes: impl Into<AccessExtent>,
     ) -> OwnedStoreFootprint<'_> {
+        let bytes = bytes.into();
         if self.resource_compositions.is_empty() {
             return OwnedStoreFootprint::Members(Vec::new());
         }
@@ -1962,7 +1963,7 @@ impl PureFactContext {
         &self,
         compositions: impl IntoIterator<Item = &'a ResourceContext>,
         spellings: &[(Address, Address)],
-        bytes: u32,
+        bytes: AccessExtent,
     ) -> OwnedStoreMembers<'a> {
         let mut members = Vec::new();
         // A range restated by multiple candidate compositions needs only
@@ -1974,7 +1975,7 @@ impl PureFactContext {
                 if let Some((entry, range)) = resources.unique_owned_memory_member_with_base(base) {
                     let contains = *decided
                         .entry(range)
-                        .or_insert_with(|| self.access_within_memory_range(access, bytes, range));
+                        .or_insert_with(|| self.access_held_by_range(access, bytes, range));
                     if contains {
                         members.push((resources, entry, range));
                     }
@@ -2092,8 +2093,9 @@ impl PureFactContext {
         footprint: &OwnedStoreFootprint<'a>,
         write: &Address,
         pointer: &Address,
-        bytes: u32,
+        bytes: impl Into<AccessExtent>,
     ) -> bool {
+        let bytes = bytes.into();
         if matches!(footprint, OwnedStoreFootprint::Members(members) if members.is_empty()) {
             return false;
         }
@@ -2144,7 +2146,7 @@ impl PureFactContext {
                         .unique_owned_memory_member_with_base(base)
                         .is_some_and(|(entry, range)| {
                             entry != *write_entry
-                                && self.access_within_memory_range(access, bytes, range)
+                                && self.access_held_by_range(access, bytes, range)
                                 && !self
                                     .memory_ranges_overlap_after_base_equality(write_range, range)
                         })
@@ -2161,6 +2163,28 @@ impl PureFactContext {
             &Proposition::ResourceComposition((*resources).clone()),
         );
         true
+    }
+
+    /// Whether `range` holds every byte an access of `extent` at `access`
+    /// reaches: a whole object of abstract type is held when the range
+    /// covers `[access, access + sizeof(T))`, empty or not.
+    fn access_held_by_range(
+        &self,
+        access: &Address,
+        extent: AccessExtent,
+        range: &MemoryRange,
+    ) -> bool {
+        match extent {
+            AccessExtent::Bytes(bytes) => self.access_within_memory_range(access, bytes, range),
+            AccessExtent::Object(parameter) => crate::kernel::memory_range_covers(
+                range,
+                &MemoryRange::access(
+                    access.clone(),
+                    crate::kernel::ProgramType::Parameter(parameter),
+                ),
+                self,
+            ),
+        }
     }
 
     /// Whether one owned memory member of `resources` holds every byte of an
@@ -5746,11 +5770,38 @@ impl PureFactContext {
 /// Current store owners' containing members, or the write keys needed to
 /// select historical compositions once the read is known; see
 /// [`PureFactContext::owned_store_footprint`].
+/// The bytes an access reaches: a fixed count from its address, or, for a
+/// value of an abstract type, its whole object, `[p, p + sizeof(T))`,
+/// whose size the type fixes and Click does not know.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(in crate::kernel) enum AccessExtent {
+    Bytes(u32),
+    Object(crate::kernel::TypeParameterName),
+}
+
+impl From<u32> for AccessExtent {
+    fn from(bytes: u32) -> Self {
+        Self::Bytes(bytes)
+    }
+}
+
+impl AccessExtent {
+    /// The extent an access of `value`, stored or read whole, reaches.
+    pub(in crate::kernel) fn of_value(value: &crate::kernel::ProgramValue) -> Self {
+        match value.program_type() {
+            crate::kernel::ProgramType::Parameter(parameter) if parameter.has_abstract_size() => {
+                Self::Object(parameter)
+            }
+            _ => Self::Bytes(crate::kernel::reasoning::cell_access_byte_width(value)),
+        }
+    }
+}
+
 pub(in crate::kernel) enum OwnedStoreFootprint<'a> {
     Members(OwnedStoreMembers<'a>),
     Indexed {
         spellings: Vec<(Address, Address)>,
-        bytes: u32,
+        bytes: AccessExtent,
         // Keys are storage identities; the borrowed context keeps all their
         // compositions alive, even cached misses with no member reference.
         members: std::cell::RefCell<BTreeMap<usize, OwnedStoreMembers<'a>>>,

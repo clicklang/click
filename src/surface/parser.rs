@@ -4135,7 +4135,9 @@ impl Parser {
         self.abstract_pointer_params = parameters
             .iter()
             .filter_map(|parameter| match parameter.click_type {
-                ClickType::Program(InterfaceType::ParameterPointer(parameter_type)) => {
+                ClickType::Program(InterfaceType::ParameterPointer(parameter_type))
+                    if parameter_type.has_abstract_size() =>
+                {
                     Some((parameter.name.clone(), parameter_type))
                 }
                 _ => None,

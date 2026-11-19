@@ -6711,8 +6711,12 @@ impl SymbolicMemory {
         if (invalidate_aliases
             || !self.union_cells.is_empty()
             || !self.heap.initialized.partial_map().is_empty())
-            && let Some((mut prepared, lost_knowledge)) =
-                self.prepare_store_cache(&pointer, value.byte_width(), context)
+            && let Some((mut prepared, lost_knowledge)) = self.prepare_store_cache_of(
+                &pointer,
+                value.byte_width(),
+                crate::kernel::assumptions::AccessExtent::of_value(value.native()),
+                context,
+            )
         {
             if lost_knowledge {
                 prepared.mark_forgotten_from(&base);
@@ -7607,6 +7611,19 @@ impl SymbolicMemory {
         bytes: u32,
         assumptions: &PureFactContext,
     ) -> Option<(Self, bool)> {
+        self.prepare_store_cache_of(pointer, bytes, bytes.into(), assumptions)
+    }
+
+    /// [`Self::prepare_store_cache`] for a store reaching `extent`: a whole
+    /// object of abstract type is placed by the owner that holds it, as each
+    /// such cell is, never by its bytes.
+    fn prepare_store_cache_of(
+        &self,
+        pointer: &Address,
+        bytes: u32,
+        extent: crate::kernel::assumptions::AccessExtent,
+        assumptions: &PureFactContext,
+    ) -> Option<(Self, bool)> {
         let normalized_pointer = Address {
             base: pointer.base.clone(),
             offset: normalize_exact_memory_loads_in_pointer_offset(&pointer.offset, assumptions),
@@ -7634,7 +7651,7 @@ impl SymbolicMemory {
         // pure-fact distinctness ladder, whose failing searches cost work in
         // every separation fact of the block. Cells ownership does not place
         // go down the ladder unchanged.
-        let owned_footprint = assumptions.owned_store_footprint(&normalized_pointer, bytes);
+        let owned_footprint = assumptions.owned_store_footprint(&normalized_pointer, extent);
         let mut run_forgot = false;
         let run_rule = |run: &CellRun| {
             let (kept, forgot) =
@@ -7705,7 +7722,7 @@ impl SymbolicMemory {
                 &owned_footprint,
                 &normalized_pointer,
                 &normalized_cell_pointer,
-                crate::kernel::reasoning::cell_access_byte_width(cell_value),
+                crate::kernel::assumptions::AccessExtent::of_value(cell_value),
             ) {
                 return CachedValueFate::Kept;
             }

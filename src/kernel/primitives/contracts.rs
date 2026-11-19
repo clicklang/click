@@ -2946,7 +2946,7 @@ impl MemoryRange {
     /// whose size is the type's and no number Click knows.
     pub(crate) fn access(pointer: Address, program_type: ProgramType) -> Self {
         match program_type {
-            ProgramType::Parameter(parameter) => Self::new_wide(
+            ProgramType::Parameter(parameter) if parameter.has_abstract_size() => Self::new_wide(
                 pointer,
                 MachineTerm::uint64_constant(0),
                 parameter.size_term(),

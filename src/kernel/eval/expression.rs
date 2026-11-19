@@ -3423,7 +3423,8 @@ fn read_retained_lvalue_paths_without_ranges(
                 let returned_aggregate = SpecificationAccessScope::is_active()
                     && matches!(pointer.base, AddressBase::Temporary(_));
                 // A value of an abstract type is read whole: its object.
-                let abstract_object = matches!(lvalue.value_type, ProgramType::Parameter(_));
+                let abstract_object = matches!(lvalue.value_type,
+                    ProgramType::Parameter(parameter) if parameter.has_abstract_size());
                 let has_read_resource = (is_external || require_owned)
                     && (returned_aggregate
                         || (!require_owned && assumptions.should_allow_symbolic_contract_loads())

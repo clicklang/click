@@ -917,7 +917,8 @@ fn write_program_lvalue_paths_for_initialization(
                         || !lvalue.bounds_known && lvalue.bounds_owner.is_some()
                 });
             // A value of an abstract type is written whole: its object.
-            let abstract_object = matches!(value.program_type(), ProgramType::Parameter(_));
+            let abstract_object = matches!(value.program_type(),
+                ProgramType::Parameter(parameter) if parameter.has_abstract_size());
             let authorized_range = (is_external && !abstract_object)
                 .then(|| {
                     state.resources().designated_memory_write_range(
@@ -982,8 +983,8 @@ fn write_program_lvalue_paths_for_initialization(
             // Ownership was established above. Loan separation is a proof
             // obligation for the driver, not an alias search during the store.
             let mut write_range = MemoryRange::access(source_pointer, value.program_type())
-            .with_bounds_owner(lvalue.bounds_owner.clone(), lvalue.bounds_known)
-            .with_typed_carrier();
+                .with_bounds_owner(lvalue.bounds_owner.clone(), lvalue.bounds_known)
+                .with_typed_carrier();
             if let Some(provenance) = &lvalue.provenance {
                 write_range = write_range.with_provenance(provenance.clone());
             }
