@@ -43,6 +43,32 @@ When a fact has no Surface form, today's code works around it rather than failin
 None of these is unsound, since every cited Surface form is lowered again and
 checked. Each one costs completeness, expansion, or a readable report.
 
+## Proof-visible program structure
+
+The proof-visible program tree follows the target-language source. Build its
+statement hierarchy and local declarations from the statements and declarations
+the author wrote. Preserve their identity, order, and nesting through lowering.
+Frontends may introduce typed temporaries and execution steps to model the
+source's behavior. Retain the source construct responsible for each generated
+operation and attribute the operation to that construct in the execution layout.
+Reserve source statement selectors and local names for written constructs.
+
+For example, a C bit-field update such as `p->delta++` is one source statement.
+Its execution saves a value and may perform several byte stores. A proof can
+distinguish those operations through the statement's existing atomic region
+selectors. A diagnostic points to the written update and identifies the
+operation that failed. [Program regions and points](../reference/language/index.md#at)
+
+Review frontend and lowering changes against these checks.
+
+- Statement selectors still resolve to the same written constructs. Changes
+  to the internal step sequence leave source statement numbering and nesting
+  intact.
+- A failure in a generated operation identifies the source responsible for
+  it and describes the operation in terms of that source.
+- `click expand` emits source-backed selectors and names. The expanded proof
+  replays with implicit solving disabled.
+
 ## The rule
 
 - **Raise by construction, not by search.** A fact's Surface form follows from
