@@ -5825,13 +5825,13 @@ fn synthesize_surface_bitvector(
                 // must not choose the access width. A word read states its
                 // own type, including through byte-addressed struct fields.
                 let typed_word = value_type.is_none() && *kind == crate::kernel::LoadKind::Int32;
-                // Through a pointer whose own element is not `uint8`, a byte
-                // read is spelled through an explicit byte view,
+                // Unless the pointer is known to point at `uint8`, a byte read
+                // is spelled through an explicit byte view,
                 // `*(&dst[i] as (uint8 *))`: a bare `*` reads the pointer's
-                // own element type, and the printed `*` drops a typed load's
-                // type.
+                // own element type (`int8` through a plain `char *`), and the
+                // printed `*` drops a typed load's type.
                 let byte_view = *kind == crate::kernel::LoadKind::UInt8
-                    && value_type.is_some_and(|element| element != ProgramType::UInt8);
+                    && value_type != Some(ProgramType::UInt8);
                 let value_type = if *kind == crate::kernel::LoadKind::UInt8 {
                     Some(ProgramType::UInt8)
                 } else if typed_word {
@@ -5840,7 +5840,7 @@ fn synthesize_surface_bitvector(
                     value_type
                 };
                 let load = match value_type {
-                    Some(_) if byte_view => {
+                    _ if byte_view => {
                         ProgramExpression::Load(Box::new(ProgramExpression::Cast {
                             expression: Box::new(pointer.clone()),
                             target_type: ProgramType::UInt8Pointer,
