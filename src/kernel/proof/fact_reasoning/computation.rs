@@ -32,6 +32,14 @@ pub(crate) fn computes_leaf(goal: &Proposition) -> bool {
         Proposition::Equal(Term::Integer(left), Term::Integer(right)) => integer_affine_comparison(
             &ConditionTerm::IntegerEqual(left.clone().into(), right.clone().into()),
         ),
+        Proposition::MemoryReadDefined {
+            memory,
+            pointer,
+            value_type,
+            ..
+        } => memory
+            .indexed_read_is_defined(pointer, *value_type)
+            .then_some(true),
         Proposition::Equal(left, right)
             if matches!(
                 left,

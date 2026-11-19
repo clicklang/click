@@ -1,7 +1,7 @@
 use super::diagnostics::{
     aligned_sugar, describe_code_region_ref, describe_contract_expression,
     describe_contract_segment, describe_program_expression, describe_program_point_selector,
-    describe_resource_subject, program_point_aligned_sugar,
+    describe_resource_subject, object_at_address, program_point_aligned_sugar,
 };
 use super::*;
 
@@ -393,6 +393,28 @@ pub(super) fn print_proposition(
             format!("viewable({})", describe_contract_segment(segment))
         }
         ClickProposition::Defined { expression } => {
+            // Keep the indexed read when its base is an object address.
+            // A bare local can lower to a held value and lose the typed
+            // read-definedness fact that this proposition establishes.
+            let indexed = match expression {
+                ContractExpression::Index(base, index) => Some((
+                    describe_contract_expression(base),
+                    describe_contract_expression(index),
+                )),
+                ContractExpression::ProgramExpression(ProgramExpression::Index(base, index)) => {
+                    Some((
+                        describe_program_expression(base),
+                        describe_program_expression(index),
+                    ))
+                }
+                _ => None,
+            };
+            if let Some((base, index)) = indexed
+                && index == "0"
+                && object_at_address(&base).is_some()
+            {
+                return format!("defined(({base})[0])");
+            }
             format!("defined({})", describe_contract_expression(expression))
         }
         ClickProposition::At {
