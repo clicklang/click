@@ -412,7 +412,7 @@ pub(in crate::surface) fn parsed_source_spans(
     let mut parser = Parser::with_program_layouts(source, layouts, None)?;
     parser.plain_char = Some(crate::languages::c::target::CTarget::SUPPORTED.plain_char());
     Ok(SourceSpans::clone(
-        parser.parse_file_items()?.source_spans(),
+        parser.parse_file_items(&[])?.source_spans(),
     ))
 }
 
@@ -503,7 +503,7 @@ pub(super) fn parse_file_items(source: &str) -> Result<ClickFile, ClickError> {
     let mut parser =
         Parser::new(source).map_err(|error| error.with_kind(ClickErrorKind::Syntax))?;
     parser.plain_char = Some(crate::languages::c::target::CTarget::SUPPORTED.plain_char());
-    parser.parse_file_items()
+    parser.parse_file_items(&[])
 }
 
 /// Parses file items as a library module reads them, for tests that state a
@@ -521,11 +521,12 @@ pub(super) fn parse_library_file_items(source: &str) -> Result<ClickFile, ClickE
     )
     .map_err(|error| error.with_kind(ClickErrorKind::Syntax))?;
     parser.plain_char = Some(crate::languages::c::target::CTarget::SUPPORTED.plain_char());
-    parser.parse_file_items()
+    parser.parse_file_items(&[])
 }
 
 pub(in crate::surface) enum ImportedCallee<'a> {
     Function(&'a FunctionBlock),
+    Tactic(&'a TacticDefinition),
     Contract(&'a ContractDefinition),
 }
 
@@ -577,6 +578,7 @@ pub(super) fn parse_file_items_for_module(
     for callee in imported_callees {
         let (named_contract, block) = match callee {
             ImportedCallee::Function(block) => (false, *block),
+            ImportedCallee::Tactic(tactic) => (false, tactic.function_block()),
             ImportedCallee::Contract(definition) => {
                 parser.contract_proof_bindings.insert(
                     definition.name().to_string(),
@@ -652,7 +654,7 @@ pub(super) fn parse_file_items_for_module(
             );
         }
     }
-    parser.parse_file_items()
+    parser.parse_file_items(imported_callees)
 }
 
 /// Whether `name` is the leading word of a built-in tactic or proof form, which
@@ -2119,7 +2121,7 @@ impl Parser {
     }
 
     fn parse_file(mut self) -> Result<ClickFile, ClickError> {
-        let file = self.parse_file_items()?;
+        let file = self.parse_file_items(&[])?;
         let mut file = super::validation::expand_declared_resource_clauses_for_project(file)
             .map_err(|error| {
                 error
@@ -2407,7 +2409,10 @@ impl Parser {
             .is_some_and(|origin| origin.filename.ends_with(".interface.click"))
     }
 
-    fn parse_file_items(&mut self) -> Result<ClickFile, ClickError> {
+    fn parse_file_items(
+        &mut self,
+        imported_callees: &[ImportedCallee<'_>],
+    ) -> Result<ClickFile, ClickError> {
         self.index_default_source_aliases();
         self.index_algebraic_variant_fields();
         let mut imports = Vec::new();
@@ -2581,6 +2586,15 @@ impl Parser {
         // trait's method, external or a default method with its proof, or the
         // virtual method overridden, whose contract a call through it assumes.
         let cpp = self.language == SourceLanguage::Cpp;
+        // Imported blocks are already parsed in their own module's scope.
+        let imported_cpp_method = |name: &str| {
+            imported_callees.iter().find_map(|callee| match callee {
+                ImportedCallee::Function(block) if cpp && block.signature().name() == name => {
+                    Some(*block)
+                }
+                _ => None,
+            })
+        };
         for (implementation, interface) in std::mem::take(&mut self.rust_trait_implementations) {
             // An override of a method of a class whose object carries state, or
             // of a defining class's method, is stated on its own memory, by its
@@ -2613,6 +2627,7 @@ impl Parser {
             let Some(interface) = function_blocks
                 .iter()
                 .find(|block| block.signature().name() == interface)
+                .or_else(|| imported_cpp_method(&interface))
                 .cloned()
             else {
                 continue;
@@ -18348,7 +18363,7 @@ mod integer_quantifier_parser_tests {
         "#;
         let file = Parser::new(source)
             .unwrap()
-            .parse_file_items()
+            .parse_file_items(&[])
             .expect("adjacent function contracts should parse");
         let Ensure::Proposition(ClickProposition::Comparison { left, .. }) =
             file.function_blocks()[0].ensures()[0].ensure()
@@ -18382,7 +18397,7 @@ mod integer_quantifier_parser_tests {
                 }
             }
         "#;
-        Parser::new(source).unwrap().parse_file_items().expect(
+        Parser::new(source).unwrap().parse_file_items(&[]).expect(
             "an expression at a program point must not parse as a proposition at that point",
         );
     }
@@ -18740,7 +18755,7 @@ mod loop_name_tests {
             "lp".to_string(),
             std::sync::Arc::new(["n", "p", "i"].map(str::to_string).into()),
         );
-        Parser::with_program_layouts(&source, layouts, None)?.parse_file_items()
+        Parser::with_program_layouts(&source, layouts, None)?.parse_file_items(&[])
     }
 
     #[test]

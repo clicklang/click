@@ -23,11 +23,8 @@ int caller(const Square& square, int scale) noexcept {
 ```
 
 ```click
+import "interfaces/cpp_virtual_method.interface.click";
 verifying "shapes.cpp";
-extern int Shape::area(int scale) const {
-    requires 0 <= scale and scale <= 1000;
-    ensures scale < result and result <= 2000;
-}
 int Square::area(int scale) const {
     ensures to_integer(result) == to_integer(scale + 1);
 }

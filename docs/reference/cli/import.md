@@ -1814,9 +1814,10 @@ classes have their own, below.
 A virtual method's contract is its interface. A call through it, on a
 reference or through `this`, is checked against the contract of the method
 the receiver's static type names, whichever override the dynamic type
-selects. A pure virtual method has no body; its contract is written `extern`,
-`extern int Shape::area(int scale) const { ... }`. Each override inherits the interface of the
-method it overrides, as a Rust trait implementation does
+selects. Declare a pure virtual method's contract in an imported
+`.interface.click` file, for example `int Shape::area(int scale) const { ... }`.
+Each override inherits the interface of the method it overrides, as a Rust
+trait implementation does
 ([Rust reference](../rust.md#trait-method-interfaces)): the interface's
 `ensures` join its own, labeled `Square::area.interface_ensures_0`, and its
 proof establishes them; an override that writes no `requires` takes the
@@ -1828,10 +1829,7 @@ sidecar does not state, is refused naming both methods:
 
 <!-- verified-example: mdtests/cpp_virtual_method_interface.md -->
 ```click
-extern int Shape::area(int scale) const {
-    requires 0 <= scale and scale <= 1000;
-    ensures scale < result and result <= 2000;
-}
+import "interfaces/cpp_virtual_method.interface.click";
 int Square::area(int scale) const {
     ensures result == scale + 1;
 }
