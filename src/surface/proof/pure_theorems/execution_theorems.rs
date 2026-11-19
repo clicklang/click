@@ -121,7 +121,7 @@ pub(super) fn verify_execution_theorem(
             theorem.name(),
             proposition,
             ContractEnvironment::new(&context.values, &context.array_refs),
-            context.point.memory(),
+            &context.point,
             spec_definitions,
         )
         .map_err(ClickError::new)

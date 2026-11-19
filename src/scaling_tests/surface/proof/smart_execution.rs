@@ -50,13 +50,13 @@ fn model_argument_guard_work(prepare: bool) {
                 crate::kernel::Variable(90_000),
             )),
         )]);
-        let memory = crate::kernel::SymbolicMemory::new();
+        let point = crate::kernel::ProgramPoint::starting_at(&crate::kernel::SymbolicMemory::new());
         let arrays = ClickArrayRefs::new();
         let lowered = lower_pure_theorem_proposition(
             "argument guard scaling",
             &guard,
             ContractEnvironment::new(&values, &arrays),
-            &memory,
+            &point,
             definitions,
         )
         .unwrap();
@@ -78,7 +78,7 @@ fn model_argument_guard_work(prepare: bool) {
                 "unrelated guard fact",
                 &surface,
                 ContractEnvironment::new(&values, &arrays),
-                &memory,
+                &point,
                 definitions,
             )
             .unwrap();
@@ -88,7 +88,7 @@ fn model_argument_guard_work(prepare: bool) {
         let context = PureTheoremContext {
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
-            point: crate::kernel::ProgramPoint::starting_at(&memory),
+            point: point.clone(),
             values,
             integer_values: Default::default(),
             array_refs: arrays,
@@ -103,7 +103,7 @@ fn model_argument_guard_work(prepare: bool) {
             definitions,
             &theorems,
         );
-        let state = ExecutionState::new().with_memory(memory);
+        let state = ExecutionState::at_point(&point);
         let algebraic = BTreeMap::new();
         let retained_states = RecordedStates::new();
         let application_context = TheoremApplicationContext {

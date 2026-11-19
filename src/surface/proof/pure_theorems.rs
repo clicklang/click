@@ -854,6 +854,9 @@ pub(super) fn pure_theorem_context(
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<PureTheoremContext, ClickError> {
     let memory = SymbolicMemory::new();
+    // The theorem is stated over one memory: its requirements and its proof
+    // all stand at the point that starts there.
+    let point = crate::kernel::ProgramPoint::starting_at(&memory);
     let values = pure_theorem_parameter_values_with_generic_pointers(
         theorem.parameters(),
         &theorem.generic_pointer_parameters,
@@ -876,7 +879,7 @@ pub(super) fn pure_theorem_context(
             ContractEnvironment::new(&values, &array_refs),
             &BTreeMap::new(),
             &integer_values,
-            &memory,
+            &point,
             spec_definitions,
         )
         .map_err(|message| {
@@ -949,7 +952,7 @@ pub(super) fn pure_theorem_context(
                 ))
             })
             .collect(),
-        point: crate::kernel::ProgramPoint::starting_at(&memory),
+        point,
         values,
         integer_values,
         array_refs,
@@ -995,7 +998,7 @@ pub(in crate::surface) fn assumed_theorem_certification_authorities(
                 ContractEnvironment::new(&context.values, &context.array_refs),
                 &BTreeMap::new(),
                 &context.integer_values,
-                context.point.memory(),
+                &context.point,
                 spec_definitions,
             )
             .map_err(|message| {
@@ -1703,7 +1706,7 @@ fn verify_contract_refinement_theorem(
             proposition,
             ContractEnvironment::new(&context.values, &context.array_refs),
             &context.integer_values,
-            context.point.memory(),
+            &context.point,
             spec_definitions,
         )
         .map_err(|message| {
@@ -2073,7 +2076,7 @@ fn certificate_int32_rewrites(
                 claim_label,
                 surface,
                 ContractEnvironment::new(&context.values, &context.array_refs),
-                context.point.memory(),
+                &context.point,
                 spec_definitions,
             )
             .ok(),
@@ -2957,14 +2960,14 @@ pub(super) fn lower_pure_theorem_proposition(
     theorem_name: &str,
     proposition: &ClickProposition,
     contract_environment: ContractEnvironment<'_>,
-    memory: &SymbolicMemory,
+    at: &crate::kernel::ProgramPoint,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Proposition, String> {
     lower_pure_theorem_proposition_with_opaque_calls(
         theorem_name,
         proposition,
         contract_environment,
-        memory,
+        at,
         spec_definitions,
         &BTreeSet::new(),
     )
@@ -2975,7 +2978,7 @@ pub(super) fn lower_pure_theorem_proposition_with_integer_values(
     proposition: &ClickProposition,
     contract_environment: ContractEnvironment<'_>,
     integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
-    memory: &SymbolicMemory,
+    at: &crate::kernel::ProgramPoint,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Proposition, String> {
     lower_pure_theorem_proposition_with_algebraic_and_integer_values(
@@ -2984,7 +2987,7 @@ pub(super) fn lower_pure_theorem_proposition_with_integer_values(
         contract_environment,
         &BTreeMap::new(),
         integer_values,
-        memory,
+        at,
         spec_definitions,
     )
 }
@@ -2996,7 +2999,7 @@ pub(super) fn lower_pure_theorem_proposition_with_algebraic_and_integer_values(
     contract_environment: ContractEnvironment<'_>,
     algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
     integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
-    memory: &SymbolicMemory,
+    at: &crate::kernel::ProgramPoint,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Proposition, String> {
     lower_pure_theorem_proposition_recording_introductions(
@@ -3006,7 +3009,7 @@ pub(super) fn lower_pure_theorem_proposition_with_algebraic_and_integer_values(
         contract_environment,
         algebraic_values,
         integer_values,
-        memory,
+        at,
         spec_definitions,
     )
     .map(|(proposition, _)| proposition)
@@ -3023,7 +3026,7 @@ pub(super) fn lower_pure_theorem_proposition_recording_introductions(
     contract_environment: ContractEnvironment<'_>,
     algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
     integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
-    memory: &SymbolicMemory,
+    at: &crate::kernel::ProgramPoint,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<(Proposition, crate::kernel::LoweringIntroductions), String> {
     lower_pure_theorem_proposition_for_proof(
@@ -3033,7 +3036,7 @@ pub(super) fn lower_pure_theorem_proposition_recording_introductions(
         contract_environment,
         algebraic_values,
         integer_values,
-        memory,
+        at,
         spec_definitions,
         false,
     )
@@ -3047,11 +3050,11 @@ pub(super) fn lower_pure_theorem_proposition_for_proof(
     contract_environment: ContractEnvironment<'_>,
     algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
     integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
-    memory: &SymbolicMemory,
+    at: &crate::kernel::ProgramPoint,
     spec_definitions: SpecDefinitions<'_>,
     is_conjunct_label: bool,
 ) -> Result<(Proposition, crate::kernel::LoweringIntroductions), String> {
-    let state = ExecutionState::new().with_memory(memory.clone());
+    let state = ExecutionState::at_point(at);
     lower_fixed_state_proposition_through_kernel_with_introductions(
         proposition,
         &PureFactContext::new(),
@@ -3076,11 +3079,11 @@ fn lower_pure_theorem_proposition_with_opaque_calls(
     theorem_name: &str,
     proposition: &ClickProposition,
     contract_environment: ContractEnvironment<'_>,
-    memory: &SymbolicMemory,
+    at: &crate::kernel::ProgramPoint,
     spec_definitions: SpecDefinitions<'_>,
     opaque_click_functions: &BTreeSet<String>,
 ) -> Result<Proposition, String> {
-    let state = ExecutionState::new().with_memory(memory.clone());
+    let state = ExecutionState::at_point(at);
     lower_fixed_state_proposition_through_kernel_with(
         proposition,
         &PureFactContext::new(),
@@ -3870,7 +3873,7 @@ mod tests {
                 theorem.name(),
                 surface_goal,
                 ContractEnvironment::new(&context.values, &context.array_refs),
-                context.point.memory(),
+                &context.point,
                 spec_definitions,
             )
             .unwrap();
