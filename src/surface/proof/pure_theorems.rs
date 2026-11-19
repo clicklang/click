@@ -236,7 +236,9 @@ pub(super) struct PureTheoremContext {
     /// Immutable specification parameter names, retained for diagnostics.
     pub(super) diagnostic_names: std::sync::Arc<[(Variable, String)]>,
     pub(super) declaration_bindings: BTreeMap<String, ContractExpression>,
-    pub(super) memory: SymbolicMemory,
+    /// The theorem's starting point: the memory it quantifies over, as the
+    /// first point of a path of its own.
+    pub(super) point: crate::kernel::ProgramPoint,
     pub(super) values: ProgramValueBindings,
     pub(super) integer_values: PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
     pub(super) array_refs: ClickArrayRefs,
@@ -303,7 +305,7 @@ impl PureTheoremContext {
                         // Conversion-backed and function-backed aliases also
                         // need shared terms. Inlining their source expressions
                         // would double a binary alias chain at every binding.
-                        let state = ExecutionState::new().with_memory(context.memory.clone());
+                        let state = ExecutionState::at_point(&context.point);
                         let integer_values = contract_expression_referenced_names(&promoted)
                             .into_iter()
                             .filter_map(|name| {
@@ -799,7 +801,7 @@ fn prepare_pure_induction_tactics(
         let ClickType::Algebraic(algebraic_type) = p.click_type() else {
             unreachable!()
         };
-        let state = ExecutionState::new().with_memory(context.memory.clone());
+        let state = ExecutionState::at_point(&context.point);
         let captured = capture_fixed_state_algebraic_expression(
             &ContractExpression::AlgebraicVariable {
                 name: parameter.clone().into(),
@@ -947,7 +949,7 @@ pub(super) fn pure_theorem_context(
                 ))
             })
             .collect(),
-        memory,
+        point: crate::kernel::ProgramPoint::starting_at(&memory),
         values,
         integer_values,
         array_refs,
@@ -993,7 +995,7 @@ pub(in crate::surface) fn assumed_theorem_certification_authorities(
                 ContractEnvironment::new(&context.values, &context.array_refs),
                 &BTreeMap::new(),
                 &context.integer_values,
-                &context.memory,
+                context.point.memory(),
                 spec_definitions,
             )
             .map_err(|message| {
@@ -1452,7 +1454,7 @@ fn verify_theorem_ensure(
         return Ok(verified);
     }
     let lowering_assumptions = assumptions_from_propositions(&context.requires);
-    let state = ExecutionState::new().with_memory(context.memory.clone());
+    let state = ExecutionState::at_point(&context.point);
     let (goal, goal_introductions, _, obligations) =
         lower_fixed_state_proposition_retaining_requirements(
             surface_goal,
@@ -1701,7 +1703,7 @@ fn verify_contract_refinement_theorem(
             proposition,
             ContractEnvironment::new(&context.values, &context.array_refs),
             &context.integer_values,
-            &context.memory,
+            context.point.memory(),
             spec_definitions,
         )
         .map_err(|message| {
@@ -2071,7 +2073,7 @@ fn certificate_int32_rewrites(
                 claim_label,
                 surface,
                 ContractEnvironment::new(&context.values, &context.array_refs),
-                &context.memory,
+                context.point.memory(),
                 spec_definitions,
             )
             .ok(),
@@ -2427,7 +2429,7 @@ fn verify_kernel_standard_theorem_axiom(
             .collect::<Vec<_>>();
         if theorem.name() == "click::separation::viewable_restrict" {
             crate::kernel::prove_viewable_restrict(
-                &context.memory,
+                context.point.memory(),
                 args[0].clone(),
                 args[1].clone(),
             )
@@ -3106,7 +3108,7 @@ fn lower_pure_theorem_proposition_opaque(
         .keys()
         .cloned()
         .collect::<BTreeSet<_>>();
-    let state = ExecutionState::new().with_memory(context.memory.clone());
+    let state = ExecutionState::at_point(&context.point);
     lower_fixed_state_proposition_through_kernel_with(
         proposition,
         assumptions,
@@ -3868,7 +3870,7 @@ mod tests {
                 theorem.name(),
                 surface_goal,
                 ContractEnvironment::new(&context.values, &context.array_refs),
-                &context.memory,
+                context.point.memory(),
                 spec_definitions,
             )
             .unwrap();

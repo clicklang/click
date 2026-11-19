@@ -1049,7 +1049,7 @@ fn integer_equality_rewrite_builds_names_only_on_refusal_and_scales() {
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
             integer_values: PersistentBinderMap::default(),
-            memory: SymbolicMemory::new(),
+            point: crate::kernel::ProgramPoint::starting_at(&SymbolicMemory::new()),
             array_refs: BTreeMap::new(),
             requires: vec![equality.clone()],
             surface_requirements: SurfacePropositionMap::default(),
@@ -1264,7 +1264,7 @@ fn wide_bound_direct_rewrite_ignores_connected_ambient_equalities() {
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
             integer_values: PersistentBinderMap::default(),
-            memory: SymbolicMemory::new(),
+            point: crate::kernel::ProgramPoint::starting_at(&SymbolicMemory::new()),
             values: ProgramValueBindings::from([
                 ("x".into(), ProgramValue::UInt64(x.clone())),
                 ("y".into(), ProgramValue::UInt64(y.clone())),
@@ -2218,7 +2218,7 @@ fn check_impossible_offset_rewrite_search(already_intrinsic: bool, native: bool)
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
             integer_values: Default::default(),
-            memory: SymbolicMemory::new(),
+            point: crate::kernel::ProgramPoint::starting_at(&SymbolicMemory::new()),
             values: words
                 .iter()
                 .enumerate()
