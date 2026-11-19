@@ -63,7 +63,7 @@
     "diagnostic": "unbound variable `__rust_iter_3_5_remaining`",
     "migrated_sidecar": "design/charon-trial/iterator-proof/rust-iter-references/sum.click",
     "frozen_sidecar": "design/charon-trial/iterator-proof/rust-iter-references/frozen.click",
-    "frozen_sha256": "5a76acf67c66a3b70cbb740fee7047d309196f37cf1309941e48b6128b8a7f03",
+    "frozen_sha256": "04b29ea4c19e8947b5635e0a0f535780006f58867d9e912d6df7c80cab046f97",
     "original_sha256": "b36a9f6fd4f25cf172e82ed3df23f8811f1862c89f992093f4d7bc62948553d8"
   },
   {
@@ -72,7 +72,7 @@
     "diagnostic": "unbound variable `__rust_iter_3_5_remaining`",
     "migrated_sidecar": "design/charon-trial/iterator-proof/rust-iterators/sum.click",
     "frozen_sidecar": "design/charon-trial/iterator-proof/rust-iterators/frozen.click",
-    "frozen_sha256": "5a76acf67c66a3b70cbb740fee7047d309196f37cf1309941e48b6128b8a7f03",
+    "frozen_sha256": "04b29ea4c19e8947b5635e0a0f535780006f58867d9e912d6df7c80cab046f97",
     "original_sha256": "b36a9f6fd4f25cf172e82ed3df23f8811f1862c89f992093f4d7bc62948553d8"
   },
   {
