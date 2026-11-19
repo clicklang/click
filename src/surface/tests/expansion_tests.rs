@@ -1,6 +1,54 @@
 use super::*;
 
 #[test]
+#[ignore = "nightly: expands and cold-verifies ten signed countdown proofs"]
+fn signed_countdown_bounds_expand_without_normalize() {
+    for (fixture, label) in [
+        (
+            "model_pointer_fields_keep_object_class",
+            "follow_model.contract",
+        ),
+        ("natural_goto_exit_label", "count_down.contract"),
+        (
+            "natural_goto_forward_exit_and_return",
+            "count_down_or_stop.contract",
+        ),
+        (
+            "natural_goto_forward_exit_differing_states",
+            "count_down_or_stop.contract",
+        ),
+        (
+            "natural_goto_forward_exit_multiple_edges_state",
+            "count_down_or_stop.contract",
+        ),
+        ("natural_goto_forward_exit_state", "count_down.contract"),
+        (
+            "natural_goto_multiple_exit_labels",
+            "count_down_or_stop.contract",
+        ),
+        (
+            "null_assignment_preserves_loop_object_class_join",
+            "f.contract",
+        ),
+        (
+            "packed_model_pointer_loop_object_class",
+            "follow_model.contract",
+        ),
+        ("packed_pointer_loop_object_class", "follow.contract"),
+    ] {
+        let (source, c_sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+        let sources = crate::cli::source_refs(&c_sources);
+        let expanded = expand_c_claim_source_by_label(&source, &sources, label)
+            .unwrap_or_else(|error| panic!("{fixture}: {}", error.report()));
+        assert!(!expanded.contains("normalize()"), "{fixture}\n{expanded}");
+        without_implicit_solve_for_claim(label, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{fixture}: {error}\n{expanded}"));
+    }
+}
+
+#[test]
 #[ignore = "nightly: expands and cold-verifies three linked-pointer C programs"]
 fn linked_pointer_viewability_expands_without_normalize() {
     for (fixture, guards, rewrites) in [
