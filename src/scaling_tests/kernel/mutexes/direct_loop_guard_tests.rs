@@ -5,6 +5,7 @@
 use super::*;
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn direct_loop_guard_lookup_ignores_unrelated_mutexes() {
     let mut measurements = Vec::new();

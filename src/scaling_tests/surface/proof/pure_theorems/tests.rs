@@ -1,6 +1,7 @@
 // Scaling tests for scalar induction script preparation and checked prefixes.
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.67s focused scalar-induction prefixes at four sizes"]
 fn scalar_induction_prefix_work_scales_with_explicit_helpers() {
     let template = "theorem prefix(n: int32) { requires n >= 0; ensures n >= 0 by { have n == n; let ih = induct(n); known(); } }";
@@ -21,6 +22,7 @@ fn scalar_induction_prefix_work_scales_with_explicit_helpers() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: structural induction scope scaling at four prefix sizes"]
 fn structural_induction_prefix_work_scales_with_explicit_helpers() {
     let fixture =

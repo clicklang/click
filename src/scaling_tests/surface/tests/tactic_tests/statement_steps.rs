@@ -1,6 +1,7 @@
 use super::*;
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: source-level store proofs across context sizes"]
 fn indexed_store_bounds_preparation_ignores_order_chain_length() {
     let mut samples = Vec::new();
@@ -173,6 +174,7 @@ void write(struct job *job, int32 *dest) {
 /// postconditions a second time. Grow the selected contract as well as unrelated
 /// input facts; count kernel executions and charged work, not wall time.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: nine prepared-call proofs across contract and context sizes"]
 fn prepared_call_obligations_execute_once_as_contract_and_context_grow() {
     for mode in ["bare", "by", "requires"] {
@@ -250,24 +252,28 @@ int32 caller(int32 a, int32 unrelated) {{
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: source-level obligation scaling through 512 premises"]
 fn known_step_obligations_do_not_scan_unrelated_facts() {
     known_obligation_scaling("step", false);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: source-level obligation scaling through 512 premises"]
 fn known_step_obligations_do_not_scan_related_facts() {
     known_obligation_scaling("step", true);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: source-level obligation scaling through 512 premises"]
 fn known_fold_obligations_do_not_scan_unrelated_facts() {
     known_obligation_scaling("fold", false);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: source-level obligation scaling through 512 premises"]
 fn known_fold_obligations_do_not_scan_related_facts() {
     known_obligation_scaling("fold", true);
@@ -324,6 +330,7 @@ void check(int32 x, int32 y) {{ requires x > 0; {ambient} {produces} ensures 1 =
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: named fold source selection through 512 resource arms"]
 fn named_fold_obligation_source_selects_only_its_arm() {
     let mut samples = Vec::new();
@@ -370,6 +377,7 @@ void pack(int32* p) {{
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: three fold preparation forms"]
 fn prepared_named_fold_constructs_once() {
     for suffix in [";", " by { known(); }", " { requires x > 0 by known(); }"] {
@@ -403,6 +411,7 @@ void make(int32 x) {{ requires x > 0; produces p: positive(x); }} by {{
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: prepared folds after growing execution histories"]
 fn prepared_named_fold_completion_does_not_walk_history() {
     let mut samples = Vec::new();
@@ -448,6 +457,7 @@ void make(int32 x) {{ requires x > 0; produces p: positive_value(x); }} by {{
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: return-fold construction and history controls"]
 fn prepared_return_fold_constructs_once_without_recovering_history() {
     let mut samples = Vec::new();
@@ -497,6 +507,7 @@ void make(int32 x) {{ requires x > 0; produces p: positive(x); }} by {{
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: population fold construction and history controls"]
 fn prepared_population_fold_constructs_once() {
     let mut samples = Vec::new();
@@ -626,6 +637,7 @@ void make(struct pool* pool) {{
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: legacy outcome fold preparation and replay"]
 fn prepared_legacy_outcome_fold_applies_once() {
     let mut samples = Vec::new();
@@ -681,6 +693,7 @@ void make(int32 x) {{ requires x > 0; produces positive(x); }} by {{
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: loan-backed call preparation and replay"]
 fn prepared_view_call_does_not_retry_loan_recovery() {
     let mut samples = Vec::new();
@@ -753,6 +766,7 @@ int32 caller(int32 a, int32* p) {{
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: guarded statement preparation and expansion replay"]
 fn prepared_guarded_statement_does_not_retry_execution() {
     let mut samples = Vec::new();
@@ -806,6 +820,7 @@ fn prepared_guarded_statement_does_not_retry_execution() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "focused audit: state-valued fold prerequisites expand and cold-replay"]
 fn prepared_fold_state_pointer_reads_current_memory() {
     for element in ["int32", "uint8"] {
@@ -847,6 +862,7 @@ void make(struct holder* h) {{
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "focused audit: arithmetic fold fields retain their type in expansion"]
 fn prepared_fold_arithmetic_field_replays() {
     let source = r#"
@@ -892,6 +908,7 @@ fn store_index_separation_search_scales_with_unrelated_stores_and_facts() {
 /// with `size_t` indices: the store reads the `uint64` index-word
 /// disequality, and the search proves `j != 0u64` the same way.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.6s; the int32 sibling runs in the gate"]
 fn wide_store_index_separation_search_scales_with_unrelated_stores_and_facts() {
     store_index_separation_search_scales("size_t", "size_t", "u64");

@@ -45,6 +45,7 @@ fn projection_context_attachment_does_not_scan_unrelated_facts() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn owned_frontier_attachment_ignores_unrelated_facts_and_caller_resources() {
     let mut samples = Vec::new();
@@ -147,6 +148,7 @@ fn frontier_coverage_does_not_scan_unrelated_equality_facts() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.4s in the parallel gate"]
 fn resource_satisfaction_does_not_scan_unrelated_resources_or_equalities() {
     let mut samples = Vec::new();
@@ -187,6 +189,7 @@ fn resource_satisfaction_does_not_scan_unrelated_resources_or_equalities() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.3s in the parallel gate"]
 fn fresh_and_framing_publication_do_not_scan_ambient_inputs() {
     let mut samples = Vec::new();

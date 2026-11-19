@@ -241,6 +241,7 @@ const MEMORY_FRAME_SOURCE: &str = r#"
 const MEMORY_FRAME_C: &str = "struct Frame { int64 wide; int32 narrow; }; int32 package(int32 object, struct Frame* frame) { return object; } int32 unpack(int32 object, struct Frame* frame) { return object; }";
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.4s in the parallel gate"]
 fn authority_transfer_wrapper_memory_frame_expands_and_rechecks_retained_proof() {
     let sources = [("wrapper.c", MEMORY_FRAME_C)];
@@ -266,6 +267,7 @@ fn authority_transfer_wrapper_memory_frame_expands_and_rechecks_retained_proof()
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn authority_transfer_wrapper_memory_frame_cannot_supply_missing_or_duplicate_children() {
     for source in [

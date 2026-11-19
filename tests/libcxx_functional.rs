@@ -146,6 +146,7 @@ int caller(int k, int x) {
 // captures, and its contract, which reads the capture by name, is fixed to
 // that value; the callee's parameterized contract is met by refinement.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4.5s in the parallel gate"]
 fn libcxx_std_function_holds_a_capturing_lambda() {
     let (root, import) = import("capturing", CAPTURING_SOURCE, "caller").unwrap();
@@ -185,6 +186,7 @@ fn libcxx_std_function_holds_a_capturing_lambda() {
 // `std::function` parameter, by value or by const reference, can be passed
 // on, carrying the contract its callee requires.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 7.1s in the parallel gate"]
 fn libcxx_std_function_holds_a_function_and_is_passed_on() {
     for parameter in [

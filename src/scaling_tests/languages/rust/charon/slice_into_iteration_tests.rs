@@ -5,6 +5,7 @@
 use super::*;
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.5s in the parallel gate"]
 fn charon_slice_into_iter_work_does_not_depend_on_slice_length() {
     let export = decode(ARTIFACT, "iteration.rs", SOURCE).unwrap();

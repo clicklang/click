@@ -2132,6 +2132,7 @@ int32 increment_and_return_old(int32 p[1]) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.3s in the parallel gate"]
 fn expansion_preserves_unfolded_resource_and_predicate_fact_forms() {
     let c_source = r#"
@@ -2468,6 +2469,7 @@ fn uint64_arithmetic_expands_to_its_integer_bridge_steps() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn wide_arithmetic_reads_listed_bounds_at_their_named_state() {
     for carrier in ["uint64", "int64"] {
@@ -3522,6 +3524,7 @@ fn specification_pointer_load_equality_expands_to_known() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn recursive_child_alias_fold_expands_and_rechecks_without_load_claims() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -3560,6 +3563,7 @@ fn pointer_read_single_store_normalization_expands_and_rechecks() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.9s in the parallel gate"]
 fn recursive_child_sibling_write_fold_expands_and_rechecks() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -3991,6 +3995,7 @@ fn a_caught_call_can_bypass_its_branch_return() {
 /// the `int64` minimum as a C numeral, which the rechecked certificate
 /// would not find.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn an_solve_sum_identity_after_a_proved_lower_bound_reverifies() {
     let c_source = "#include <stdint.h>\nint64_t inc(int64_t q) { return q; }\n";
@@ -4072,6 +4077,7 @@ fn common_machine_call_expansion_rechecks_selected_call_premises() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: aggregate call and conditional results expand and independently recheck"]
 fn aggregate_step_result_fields_expand_and_recheck_without_generated_locals() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -4103,6 +4109,7 @@ fn aggregate_step_result_fields_expand_and_recheck_without_generated_locals() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: source literal names expand and independently recheck"]
 fn string_literal_source_references_raise_expand_and_recheck() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -4226,6 +4233,7 @@ fn solve_expands_excluded_middle_to_if_without_extract() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: memory disjunction expansion and cold replay"]
 fn solve_expands_refuted_memory_disjunction_without_extract() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/sequence-transform");
@@ -4243,6 +4251,7 @@ fn solve_expands_refuted_memory_disjunction_without_extract() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: loop exit projection expansion and cold replay"]
 fn solve_expands_loop_exit_projection_without_extract() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -4264,6 +4273,7 @@ fn solve_expands_loop_exit_projection_without_extract() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: C declaration references expand and independently recheck"]
 fn c_declaration_references_raise_expand_and_recheck() {
     for (fixture, label) in [

@@ -2,9 +2,11 @@
 // input sizes. Included into its `scaling_tests` module; see "Scaling
 // tests" in `docs/internals/testing.md`.
 
+#[cfg(not(feature = "fast-gate"))]
 use super::*;
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn helper_transfers_ignore_unrelated_resources_protocols_and_history() {
     let assumptions = PureFactContext::new();

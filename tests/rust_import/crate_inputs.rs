@@ -109,6 +109,7 @@ fn rust_crate_locks_all_compiler_inputs_and_preserves_qualified_calls() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 15s in the parallel gate"]
 fn rust_crate_rejects_escape_symlink_and_changed_configuration() {
     let p = crate_project();

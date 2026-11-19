@@ -309,6 +309,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: replay both chunk Option outcomes"]
     fn chunk_option_fields_expand_and_replay() {
         use crate::languages::rust::schema::{MirStatement as S, MirTerminator};

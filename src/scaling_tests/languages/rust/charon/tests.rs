@@ -5,6 +5,7 @@
 use super::*;
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn charon_shared_iterator_lowering_and_first_read_work_are_independent_of_length() {
     fn resize(ty: &mut Type, n: u64) {
@@ -288,6 +289,7 @@ fn charon_array_field_layout_and_verification_work_are_independent_of_length() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn charon_chunk_metadata_work_is_independent_of_input_length() {
     let export = decode(CHUNK_ARTIFACT, "chunks.rs", CHUNK_SOURCE).unwrap();

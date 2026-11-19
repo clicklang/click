@@ -16,6 +16,7 @@ fn trait_methods_project() -> Project {
 // establishes, and must accept every call it allows. The interface reads nothing
 // through `self`, whose type it does not know.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 6s in the parallel gate"]
 fn charon_trait_method_implementations_refine_their_interface() {
     let p = trait_methods_project();

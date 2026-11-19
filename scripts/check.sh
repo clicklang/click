@@ -39,7 +39,8 @@ fi
 
 # The gate has a ten-minute budget, locally and in CI
 # (`docs/internals/testing.md`). A test that takes half a second or more is
-# `#[ignore = "nightly: ..."]`, an example that does is in `NIGHTLY` in
+# `#[ignore = "nightly: ..."]` with `#[cfg(not(feature = "fast-gate"))]` in
+# shared targets. An example that does is in `NIGHTLY` in
 # `tests/examples.rs`, and `click audit` runs in the import tests only under
 # `CLICK_NIGHTLY`. `--nightly` runs all of it with no budget.
 #

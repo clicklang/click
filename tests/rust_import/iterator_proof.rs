@@ -108,23 +108,27 @@ fn audits_checked_frontiers(fixture: &str) {
 macro_rules! iterator_checks {
     ($fixture:literal, $obligations:ident, $profile:ident, $expand:ident, $audit:ident) => {
         #[test]
+        #[cfg(not(feature = "fast-gate"))]
         #[ignore = "nightly: 8s in the parallel gate"]
         fn $obligations() {
             preserves_source_and_checks_obligations($fixture);
         }
         #[test]
+        #[cfg(not(feature = "fast-gate"))]
         #[ignore = "nightly: whole-example proof-tool rechecks"]
         #[cfg(not(feature = "fast-gate"))]
         fn $profile() {
             profile_agrees($fixture);
         }
         #[test]
+        #[cfg(not(feature = "fast-gate"))]
         #[ignore = "nightly: whole-example proof-tool rechecks"]
         #[cfg(not(feature = "fast-gate"))]
         fn $expand() {
             expansion_rechecks($fixture);
         }
         #[test]
+        #[cfg(not(feature = "fast-gate"))]
         #[ignore = "nightly: whole-example proof-tool rechecks"]
         #[cfg(not(feature = "fast-gate"))]
         fn $audit() {

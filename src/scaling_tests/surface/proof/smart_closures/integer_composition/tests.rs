@@ -21,6 +21,7 @@ fn integer_composition_shared_nodes_have_polynomial_output_and_checking_work() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: six context controls take 1.2s in parallel"]
 fn integer_composition_checking_ignores_growing_related_and_unrelated_contexts() {
     for related in [false, true] {

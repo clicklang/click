@@ -996,10 +996,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(not(feature = "fast-gate"))]
     use crate::surface::{
         expand_c_claim_source_by_label, verify_c_sources, without_implicit_solve,
     };
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: coefficient/polynomial/quotient expansion with search disabled on replay"]
     fn integer_algebra_and_quotient_shifts_expand_without_normalize() {
         let mut failures = Vec::new();

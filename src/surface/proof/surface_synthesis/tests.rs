@@ -4851,6 +4851,7 @@ fn common_machine_calls_round_trip_source_with_nested_arguments_and_casts() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: complete ten-format call reconstruction sweep"]
 fn common_machine_calls_round_trip_source_with_all_native_formats() {
     check_common_machine_call_formats(&[
@@ -5246,6 +5247,7 @@ fn common_pointer_calls_round_trip_nested_source_calls() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: literal raising round trips through a verified C function"]
 fn string_literal_pointer_raising_names_the_exact_source_occurrence() {
     let identity = crate::kernel::StringLiteralId::new("text", 1).with_source("literal_raising.c");
@@ -7467,6 +7469,7 @@ fn narrow_symbolic_comparisons_keep_their_existing_normal_forms() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: retained pthread value parse/lower round trip"]
 fn pthread_handle_words_use_c_names_and_retained_states() {
     use crate::kernel::{KernelTermImport, ThreadHandleId};

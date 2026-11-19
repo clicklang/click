@@ -1,4 +1,5 @@
 use super::*;
+#[cfg(not(feature = "fast-gate"))]
 use crate::surface::ProgramVerificationSession;
 
 const ARTIFACT: &[u8] =
@@ -7,6 +8,7 @@ const SOURCE: &[u8] = include_bytes!("../../../../design/charon-trial/split-slic
 const CLAIM: &str = include_str!("../../../../design/charon-trial/split-slices/split.click");
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.4s in the parallel gate"]
 fn charon_split_at_preserves_both_shared_slices_and_original_proofs() {
     assert_eq!(

@@ -99,6 +99,7 @@ fn charon_refused_panic_names_its_condition() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: live Charon extraction takes 0.6s"]
 fn charon_assert_eq_macro_checks_operands_and_preserves_caller_origin() {
     let p = Project::new("pub fn q(x: u32, y: u32) -> u32 {\n    assert_eq!(x, y);\n    x\n}\n");

@@ -6654,6 +6654,7 @@ mod local_descent_tests {
     /// once, so a call chain as long as the project is neither a machine
     /// stack overflow nor a quadratic walk.
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: 1.0s in the parallel gate"]
     fn a_long_call_chain_plans_and_checks() {
         const LENGTH: usize = 20_000;

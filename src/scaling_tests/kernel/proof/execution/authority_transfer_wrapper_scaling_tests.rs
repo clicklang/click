@@ -2,9 +2,11 @@
 // input sizes. Included into its `scaling_tests` module; see "Scaling
 // tests" in `docs/internals/testing.md`.
 
+#[cfg(not(feature = "fast-gate"))]
 use super::*;
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 6s in the parallel gate"]
 fn ordinary_authority_wrapper_checks_only_its_delta() {
     // An ordinary wrapper around an authorized member reaches population

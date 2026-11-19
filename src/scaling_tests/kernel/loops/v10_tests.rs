@@ -2,9 +2,11 @@
 // input sizes. Included into its `scaling_tests` module; see "Scaling
 // tests" in `docs/internals/testing.md`.
 
+#[cfg(not(feature = "fast-gate"))]
 use super::*;
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.3s in the parallel gate"]
 fn loop_view_partition_uses_alias_graph_without_scanning_ambient_ranges() {
     let _session = crate::kernel::VerificationSession::enter();

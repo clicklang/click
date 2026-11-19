@@ -3,6 +3,7 @@
 // tests" in `docs/internals/testing.md`.
 
 use super::*;
+#[cfg(not(feature = "fast-gate"))]
 use crate::kernel::binary_node;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
@@ -379,6 +380,7 @@ fn load_equality_resolves_through_stored_cell_chains_of_any_length() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.4s in the parallel gate"]
 fn shifted_constant_view_spans_match_without_ambient_search() {
     let _session = crate::kernel::VerificationSession::enter();

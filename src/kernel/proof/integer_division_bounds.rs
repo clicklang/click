@@ -156,6 +156,7 @@ mod tests {
         }
     }
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: 0.5s in the parallel gate"]
     fn division_bounds_match_independent_small_signed_oracles() {
         for lo in -3..=3 {

@@ -271,6 +271,7 @@ fn footprint_normalization_does_not_scan_ambient_aliases_or_separations() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: footprint normalization with 512 related spans and aliases"]
 fn footprint_normalization_ignores_large_alias_and_separation_buckets() {
     check_footprint_normalization_scaling([8, 32, 128, 512]);

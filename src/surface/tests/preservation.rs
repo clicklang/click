@@ -257,6 +257,7 @@ fn region_footprint_free_and_call_preservation_expands_without_search() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: expands and replays complete memory proofs"]
 fn cell_source_removal_repairs_expand_and_replay_without_implicit_search() {
     for (fixture, claim) in [
@@ -424,6 +425,7 @@ fn preserve_named_resource_is_a_theorem_argument() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: focused full destructor expansion"]
 fn destructor_footprint_cleanup_expands_and_replays() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -453,6 +455,7 @@ fn destructor_footprint_cleanup_expands_and_replays() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: full positive prefixes of pointer rejection fixtures"]
 fn pointer_rejection_prefixes_expand_and_replay() {
     for (fixture, claim, from, to) in [
@@ -1541,6 +1544,7 @@ test_batches! {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: computed scalar transport expansion and cold replay"]
 fn computed_scalar_transport_expands_to_ordinary_steps() {
     let (source, sources) = mdtest_sources("mdtests/state_comparison_transport_expansion.md");
@@ -1565,6 +1569,7 @@ fn computed_scalar_transport_expands_to_ordinary_steps() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: indexed transport expansion and cold replay"]
 fn indexed_read_transport_expansion_replays_without_search() {
     let (source, sources) = mdtest_sources("mdtests/two_read_transport_expansion.md");
@@ -1579,6 +1584,7 @@ fn indexed_read_transport_expansion_replays_without_search() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: returned-have transport expansion and cold replay"]
 fn returned_have_transport_expansion_replays_without_search() {
     let (source, sources) = mdtest_sources("mdtests/single_write_transport_expansion.md");
@@ -1654,6 +1660,7 @@ fn memory_observation_does_not_establish_initialization() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: quantified preservation migration expansion and cold replay"]
 fn quantified_preservation_migrations_expand_and_replay() {
     for fixture in [
@@ -1677,6 +1684,7 @@ fn quantified_preservation_migrations_expand_and_replay() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: copy-loop migration expansion and cold replay"]
 fn copy_loop_preservation_migrations_expand_and_replay() {
     for (fixture, claim) in [
@@ -1704,6 +1712,7 @@ fn copy_loop_preservation_migrations_expand_and_replay() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: loop ownership preservation migration expansion and cold replay"]
 fn loop_ownership_preservation_migrations_expand_and_replay() {
     for (fixture, claim) in [
@@ -1738,6 +1747,7 @@ fn loop_ownership_preservation_migrations_expand_and_replay() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: local-pointer observation expansion and cold replay"]
 fn local_pointer_memory_observation_uses_its_element_type() {
     for (fixture, claims) in [(
@@ -1764,6 +1774,7 @@ fn local_pointer_memory_observation_uses_its_element_type() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: resource-scope preservation migration expansion and cold replay"]
 fn resource_scope_preservation_migrations_expand_and_replay() {
     for (fixture, claim) in [
@@ -1819,6 +1830,7 @@ fn resource_scope_preservation_migrations_expand_and_replay() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: saved-range observation expansion and cold replay"]
 fn saved_memory_observation_expands_and_replays() {
     let (mut source, sources) = mdtest_sources("mdtests/observe_saved_pointer_memory_range.md");
@@ -1835,6 +1847,7 @@ fn saved_memory_observation_expands_and_replays() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: branching graph preservation expansion and cold replay"]
 fn branching_graph_preservation_expands_and_replays() {
     let fixture = "mdtests/branching_graph_dfs.md";
@@ -1860,6 +1873,7 @@ fn branching_graph_preservation_expands_and_replays() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: complete sweep migration expansion and cold replay"]
 fn sweep_prefix_preservation_migration_expands_and_replays() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))

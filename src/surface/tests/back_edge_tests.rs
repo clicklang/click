@@ -17,6 +17,7 @@ fn source(body: &str) -> String {
     format!("int32 count(int32 n) {{ int32 i; i=0; while(i<n) {{ {body} }} return i; }}")
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn back_edge_checks_body_end_and_continue_and_expands() {
     for body in ["i=i+1;", "i=i+1; continue;"] {

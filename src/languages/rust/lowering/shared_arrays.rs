@@ -332,6 +332,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: replay retained slice iterator Options"]
     fn slice_iterator_option_fields_expand_and_replay() {
         use crate::languages::rust::schema::{MirStatement as S, MirTerminator as T};

@@ -333,9 +333,11 @@ objects to exhaust the same budget in the same phase.
 The budget is kept by what the gate leaves out, not by a faster machine:
 
 - A test that takes half a second or more while the gate runs tests in
-  parallel is marked `#[ignore = "nightly: <measurement>"]`. When that would
-  leave a test file with no test in the gate, its fastest test stays. The gate
-  kills a test still running after 30 seconds.
+  parallel is marked `#[ignore = "nightly: <measurement>"]`. If the test
+  belongs to a target compiled by the fast gate, also add
+  `#[cfg(not(feature = "fast-gate"))]` so the gate build omits its body.
+  When that would leave a test file with no test in the gate, its fastest
+  test stays. The gate kills a test still running after 30 seconds.
   One approved exception: `standard_library_theorems_are_proved_by_their_own_entry_point`
   proves every library theorem through `verify_standard_library`, about 7.5
   CPU-seconds in a debug build, and stays in the gate as its only proof of the
@@ -358,10 +360,12 @@ The budget is kept by what the gate leaves out, not by a faster machine:
 is not a per-PR check: agents and contributors do not run it before opening
 or updating a PR. The gate is the merge bar; a nightly failure is fixed
 forward. To check a change against nightly coverage it plausibly affects,
-run those tests or fixtures by name (`MDTEST_FILTER`, `CLICK_EXAMPLE`, or one
-`cargo nextest run --run-ignored all <name>`), and say in the PR what was not
-run. The same workflow has a
-second job, `scripts/check.sh --audit`, which runs `click audit` over the
+run those tests or fixtures by name. Use `MDTEST_FILTER` or `CLICK_EXAMPLE`
+for corpus entries. For a nightly-only Rust unit test, run
+`cargo nextest run --lib --run-ignored only <name>` with the default feature
+selection. For a nightly-only integration test, use its standalone
+`--test <target>` in place of `--lib`. Say in the PR what was not run. The
+same workflow has a second job, `scripts/check.sh --audit`, which runs `click audit` over the
 whole repository on a release build: every smart tactic in the examples and
 mdtests must expand to a proof that verifies. It takes about twenty minutes.
 Every example's import lock and prepared artifacts are checked in, so the
@@ -628,9 +632,10 @@ placing a memory cap on rustc.
 The unit/API group runs in parallel. The markdown harness and example-project
 harness run separately, each using all available cores. Their existing work
 budgets and nextest containment remain in force. `fast-gate` excludes executable-
-dependent functions at compile time: ignoring a test would still compile its
-body and require the normal application binary. Their production targets retain
-the original tests without that feature. Fast-only support modules deliberately
+dependent functions at compile time because those functions require the
+normal application binary. It also excludes nightly-only Rust tests in the
+shared harnesses and library unit modules. The default-feature targets retain
+those tests for nightly. Fast-only support modules deliberately
 retain each standalone harness's support namespace.
 
 ### Speeding up the gate: what has been tried

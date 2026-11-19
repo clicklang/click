@@ -8,6 +8,7 @@ use crate::kernel::{
     bits32_constant, constant_u32, int64_constant, native_constant, uint64_constant,
 };
 #[cfg(test)]
+#[cfg(not(feature = "fast-gate"))]
 use crate::surface::planning::solve::plan_explicit_equality_rewrites_from;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -584,6 +585,7 @@ mod tests {
     /// goal it cannot close makes it visit all of them. Under an exhausted
     /// deadline it stops at its first node.
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: 1.8s in the parallel gate"]
     fn equality_rewrite_search_observes_the_deadline() {
         let variable = |index: u64| MachineTerm::Variable(Variable(93_400 + index));

@@ -58,6 +58,7 @@ fn copy_source_after_call_project() -> Project {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2s in the parallel gate"]
 fn charon_array_copy_preserves_symbolic_source_across_by_value_call() {
     let p = copy_source_after_call_project();
@@ -110,6 +111,7 @@ fn project() -> Project {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.3s in the parallel gate"]
 fn charon_array_reference_assignments_check_values_and_independent_states() {
     let p = project();

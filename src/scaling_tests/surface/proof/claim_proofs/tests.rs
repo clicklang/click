@@ -105,6 +105,7 @@ fn return_normalization_views_scale_with_resources_and_claims() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: full 24-case resource/claim matrix took 10.38s beside release compilation"]
 fn exact_return_closers_share_preparation_beside_unrelated_resources() {
     // Keep all 24 combinations, both closers, the empty-resource case,

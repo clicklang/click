@@ -63,6 +63,7 @@ fn separation_class_lookup_visits_only_the_selected_payload() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 512 related separation spans and alias history"]
 fn exact_separation_lookup_ignores_related_widths_and_alias_history() {
     let mut samples = Vec::new();

@@ -167,6 +167,7 @@ fn reinterning_retained_memory_uses_shallow_component_identity() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.6s in the parallel gate"]
 fn checked_order_store_crossing_ignores_unrelated_order_facts() {
     let samples = [4_u64, 16, 64, 256, 1024]
@@ -720,6 +721,7 @@ fn seeded_scalar_slots_preserve_overlapping_wide_reads() {
 /// predicate must use that indexed equality without scanning unrelated facts
 /// or accepting a different field, partial store, or an unproved alias.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn stored_field_value_uses_indexed_base_aliases() {
     use crate::kernel::resource_tracker::cell_source::write_supplies_read;
@@ -892,6 +894,7 @@ fn aliased_store_byte_frame_checks_width_context_and_scales() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn graph_aliased_range_membership_checks_complete_access_and_scales() {
     // A named call can leave a store's pointer connected to the selected

@@ -3435,6 +3435,7 @@ mod tests {
     // adjacent states every step and all retained states at doubling
     // checkpoints and the final step, rather than every historical pair.
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: model-based mutation and retained-history regression"]
     fn the_run_index_agrees_with_a_per_cell_model() {
         let global = AddressBase::Concrete("cell-store-global".to_string());

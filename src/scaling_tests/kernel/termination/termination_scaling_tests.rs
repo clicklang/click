@@ -134,6 +134,7 @@ fn one_large_cycle_costs_linear_termination_work() {
 /// A layered DAG whose edges outnumber its nodes four to one, so a check
 /// linear in edges and one linear only in nodes are distinguishable.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn a_layered_dag_costs_linear_termination_work() {
     const WIDTH: usize = 8;

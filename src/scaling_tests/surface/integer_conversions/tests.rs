@@ -130,6 +130,7 @@ fn deferred_integer_function_high_arity_scales_with_arguments() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.9s in the parallel gate"]
 fn machine_integer_order_bridge_applications_scale_with_steps_and_unused_bounds() {
     for ty in ["int32", "int64", "uint64"] {
@@ -162,6 +163,7 @@ fn machine_integer_order_bridge_applications_scale_with_steps_and_unused_bounds(
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.7s in the parallel gate"]
 fn int64_integer_operation_applications_scale_with_steps_and_unused_bounds() {
     for (name, op) in [("click::integer::int64_subtract_to_integer", "-")] {
@@ -194,6 +196,7 @@ fn int64_integer_operation_applications_scale_with_steps_and_unused_bounds() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn opaque_product_arithmetic_scales_with_steps_and_unused_bounds() {
     let goal = "q * d <= n";
@@ -223,6 +226,7 @@ fn opaque_product_arithmetic_scales_with_steps_and_unused_bounds() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.5s in the parallel gate"]
 fn integer_multiply_add_applications_scale_with_steps_and_unused_bounds() {
     let goal = "(a + b) * c == a * c + b * c";
@@ -252,6 +256,7 @@ fn integer_multiply_add_applications_scale_with_steps_and_unused_bounds() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn integer_truncation_applications_scale_with_steps_and_unused_bounds() {
     let goal = "n == truncating_quotient(n, d) * d + truncating_remainder(n, d)";
@@ -281,6 +286,7 @@ fn integer_truncation_applications_scale_with_steps_and_unused_bounds() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn multiply_order_applications_scale_with_explicit_inputs() {
     let mut samples = Vec::new();
@@ -307,6 +313,7 @@ fn multiply_order_applications_scale_with_explicit_inputs() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn scaled_quotient_applications_scale_with_steps_and_unused_bounds() {
     let mut samples = Vec::new();
@@ -333,6 +340,7 @@ fn scaled_quotient_applications_scale_with_steps_and_unused_bounds() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.0s in the parallel gate"]
 fn correction_endpoint_applications_scale_with_steps_and_unused_bounds() {
     let mut samples = Vec::new();
@@ -359,6 +367,7 @@ fn correction_endpoint_applications_scale_with_steps_and_unused_bounds() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn normalized_opposite_bound_certificates_scale_with_steps_and_unused_facts() {
     let mut samples = Vec::new();

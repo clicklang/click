@@ -45,6 +45,7 @@ fn pure_witness_integer_aliases_keep_shared_term_scaling() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: three cold call-history proofs"]
 fn extracting_two_call_equalities_ignores_earlier_call_history() {
     let mut measured = Vec::new();

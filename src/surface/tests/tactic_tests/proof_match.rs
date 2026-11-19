@@ -29,6 +29,7 @@ int read(int* p) {
 "#;
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.9s in the parallel gate"]
 fn proof_match_fields_survive_function_unfold_in_have() {
     let source = SOURCE
@@ -52,6 +53,7 @@ fn proof_match_fields_survive_function_unfold_in_have() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 12s in the parallel gate"]
 fn modeled_tree_rotate_left_checks_model_and_ownership() {
     let source = include_str!("../../../../examples/modeled-binary-tree/modeled_binary_tree.click");
@@ -174,6 +176,7 @@ fn modeled_tree_rotate_left_checks_model_and_ownership() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn proof_match_closes_impossible_constructor_without_executing_c() {
     let source = SOURCE
@@ -277,6 +280,7 @@ int id(int x) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.5s in the parallel gate"]
 fn proof_match_checks_arbitrary_payload_and_rejects_invalid_arms() {
     verify_c_sources(SOURCE, &[("read.c", C)])
@@ -347,6 +351,7 @@ fn proof_match_checks_arbitrary_payload_and_rejects_invalid_arms() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.1s in the parallel gate"]
 fn proof_match_expands_and_rechecks() {
     let sources = [("read.c", C)];
