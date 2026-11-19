@@ -612,6 +612,7 @@ pub(in crate::surface) fn initial_call_state(
         }
     }
 
+    let state = state.begin_function_entry_memory();
     let memory = memory_with_symbolic_loadable_cells(state.memory().clone(), &loadable_ranges);
     // In particular, a resource such as `pointer[0..1]` must follow the
     // pointer value already present in the entry state, rather than deriving
@@ -619,7 +620,7 @@ pub(in crate::surface) fn initial_call_state(
     let memory =
         materialize_symbolic_access_resource_cells(memory, &state, requires, parameter_binding)?;
     let memory = mark_uninitialized_resource_memory(memory, requires, parameter_binding)?;
-    let state = state.with_memory(memory);
+    let state = state.with_function_entry_memory(memory);
     // Resource endpoints are named under the entry's declared pure premises.
     // Calls still discharge these requirements before transferring ownership.
     let entry_propositions = crate::surface::proof::available_initial_requirement_propositions(
@@ -934,6 +935,8 @@ fn materialize_symbolic_access_resource_cells(
     requires: &[Requirement],
     parameter_binding: ParameterBinding<'_>,
 ) -> Result<SymbolicMemory, ClickError> {
+    let mut entry_frame = ExecutionState::new();
+    entry_frame.keep_memory_of(state);
     // A segment based at a static pointer reads it before seeding the cells
     // it points at; keep that read so a later read of the pointer is the
     // same value rather than a question of whether those cells alias it.
@@ -944,7 +947,7 @@ fn materialize_symbolic_access_resource_cells(
             }
             _ => memory,
         };
-        materialize_access_segment_cells(memory, segment, parameter_binding)
+        materialize_access_segment_cells(memory, &entry_frame, segment, parameter_binding)
     };
     for requirement in requires {
         let Requirement::Resource(resource) = requirement else {
@@ -1302,10 +1305,13 @@ pub(in crate::surface) fn folded_matched_instance_note(
 
 fn materialize_access_segment_cells(
     mut memory: SymbolicMemory,
+    entry_frame: &ExecutionState,
     segment: &ContractSegment,
     parameter_binding: ParameterBinding<'_>,
 ) -> Result<SymbolicMemory, ClickError> {
-    let state = ExecutionState::new().with_memory(memory.clone());
+    let state = entry_frame
+        .clone()
+        .with_function_entry_memory(memory.clone());
     let source_segment = segment;
     let Ok(segment) = evaluate_requirement_segment(parameter_binding, &state, source_segment)
     else {

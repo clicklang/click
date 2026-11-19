@@ -10239,6 +10239,27 @@ impl ExecutionState {
         self.with_materialized_memory(memory)
     }
 
+    /// Start the path of a standalone function proof after preparing its
+    /// storage. Contract-provided cells belong to this entry point.
+    pub(crate) fn begin_function_entry_memory(mut self) -> Self {
+        self.memory.pending_steps = None;
+        let memory = super::intern_memory_ref(&self.memory);
+        self.point = super::program_point::PathLink::default().after(memory, None);
+        self
+    }
+
+    /// Install a provisional or finished memory view during function entry
+    /// setup. The setup log describes initial contents and does not record
+    /// executed statements. Keep the ordinary resource invalidation checks.
+    pub(crate) fn with_function_entry_memory(mut self, memory: SymbolicMemory) -> Self {
+        self.replace_memory(memory, false);
+        self.memory.pending_steps = None;
+        self.point = self
+            .point
+            .with_entry_view(&super::intern_memory_ref(&self.memory));
+        self
+    }
+
     /// Replace memory through the single checked-state transition hook.
     /// Keeping this beside `with_memory` prevents evaluator paths that already
     /// own a mutable state from bypassing resource-observation invalidation.
