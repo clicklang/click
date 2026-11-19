@@ -2998,6 +2998,43 @@ Unsigned addition agrees with Integer addition when the sum fits uint64. Native 
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
+### `integer::uint64_increment_upper_bound`
+
+```click
+theorem uint64_increment_upper_bound(value: uint64, upper: uint64) {
+    requires value < upper;
+    ensures to_integer(value + 1u64) <= to_integer(upper) by {
+        have to_integer(value) < to_integer(upper) by known();
+        have (to_integer(value) + 1) <= to_integer(upper) by {
+            apply(integer::lt_step_le(to_integer(value), to_integer(upper))) using {
+                to_integer(value) < to_integer(upper);
+            };
+        }
+        have to_integer(upper) <= 18446744073709551615 by known();
+        have (to_integer(value) + 1) <= 18446744073709551615 by {
+            apply(integer::le_transitive(to_integer(value) + 1, to_integer(upper), 18446744073709551615)) using {
+                to_integer(value) + 1 <= to_integer(upper);
+                to_integer(upper) <= 18446744073709551615;
+            };
+        }
+        have (to_integer(value) + to_integer(1u64)) <= 18446744073709551615 by known();
+        have to_integer(value + 1u64) == (to_integer(value) + 1) by {
+            apply(integer::uint64_add_to_integer(value, 1u64)) using {
+                to_integer(value) + to_integer(1u64) <= 18446744073709551615;
+            };
+            known();
+        }
+        rewrite(to_integer(value + 1u64), to_integer(value) + 1);
+        known();
+    }
+}
+```
+
+The strict bound on the original value proves the increment fits in `uint64`
+and the incremented word remains at most the upper bound.
+
+**Verified use:** [`mdtests/back_edge_closes_an_unsigned_bound_from_the_guard.md`](https://github.com/clicklang/click/blob/master/mdtests/back_edge_closes_an_unsigned_bound_from_the_guard.md).
+
 ### `integer::uint64_multiply_to_integer`
 
 ```click

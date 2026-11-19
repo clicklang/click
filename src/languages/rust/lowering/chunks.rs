@@ -95,8 +95,10 @@ impl Context<'_> {
             return Ok(result);
         }
 
-        let [tag, pointer, length] =
-            LocalBindingId::chunk_option_fields(owner, ordinal).map(BindingName::from);
+        let [tag, pointer] =
+            LocalBindingId::iterator_option_fields(owner, ordinal, ProgramType::UInt8Pointer)
+                .map(BindingName::from);
+        let length = LocalBindingId::iterator_option_length(owner, ordinal).into();
         let mut result = program_skip();
         for binding in [&tag, &pointer, &length] {
             let ty = binding.program_type().expect("chunk Option field type");
@@ -417,7 +419,7 @@ mod tests {
                 expand_program_prepared_claim_source_by_label(&sidecar, &prepared, claim).unwrap();
             assert_ne!(expanded, sidecar);
             assert!(
-                !expanded.contains("chunk_option") && !expanded.contains("<chunk option "),
+                !expanded.contains("chunk_option") && !expanded.contains("<iterator option "),
                 "{expanded}"
             );
             without_implicit_solve_for_claim(claim, || {

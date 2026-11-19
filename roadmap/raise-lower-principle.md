@@ -614,8 +614,8 @@ sequence below. These rows record planned scope, not completed implementation.
 | 10p | Migrate remaining expression payloads in sequence/resource descriptors. | Inventory and subdivide independent families before implementation; preserve legitimate opaque descriptor identities. | Complete: 10p1–10p6 landed, with every pushed commit verified upstream. |
 | 10q | Migrate remaining native expression payloads in proposition outputs. | Proposition outputs retain shared operands with unchanged fact identity, raising/lowering and proof admission. | 10q1–10q3 landed. 10q-A ([#3360](https://github.com/clicklang/click/pull/3360)) migrated program-value outputs. 10q-B ([#3370](https://github.com/clicklang/click/pull/3370)) migrated algebraic outputs. 10q-C ([#3384](https://github.com/clicklang/click/pull/3384)) migrated Integer equations from resource-field joins. 10q-D completes the producer inventory below. |
 | 10r | Remove obsolete machine compatibility caches and reverse bridges. | Remove only after their live readers migrate; account for any retained reader and reason. | Existing structural words can be borrowed by the observation reader without duplicating the native value. Live compatibility paths are recorded below. |
-| 10s | Remove obsolete Boolean, float and algebraic compatibility caches. | Remove only after their live readers migrate; preserve explicit native input/output boundaries. | Planned; after affected consumers. |
-| 10t | Closure audit: account for every remaining native adapter and remove dead APIs. | Inventory every remaining adapter/cache/native expression field with a live consumer and reason, remove dead APIs, and report any unresolved migration gaps. | Planned; final audit. |
+| 10s | Remove obsolete Boolean, float and algebraic compatibility caches. | Remove only after their live readers migrate; preserve explicit native input/output boundaries. | Exact legacy Boolean and algebraic arguments are borrowed, and float atoms share one native slot. |
+| 10t | Closure audit: account for every remaining native adapter and remove dead APIs. | Inventory every remaining adapter/cache/native expression field with a live consumer and reason, remove dead APIs, and report any unresolved migration gaps. | Producer migration closed. The live compatibility boundary inventory is below. |
 
 Keep one PR per coherent slice; subdivide when actual consumers warrant it.
 Do not invent implementation work to satisfy an old title. In particular,
@@ -642,6 +642,53 @@ certification and arithmetic readers. The weak Integer reverse link still
 lets the explicit exporter recover a live native operand without rewalking a
 shared Integer prefix. Conversion and fold tests exercise warm reuse and
 source lifetime. Both remain live compatibility paths.
+
+### 10s Boolean, float and algebraic compatibility readers
+
+A nonconstant legacy Boolean observation already owns the exact typed
+argument. The comparison and storage readers can borrow it directly. Minted
+conditions and remaining Boolean calls and reads still have selected native
+consumers. Their caches preserve producer syntax and typed call arguments.
+
+Float literals, variables and reads now share their native program-value
+slot with the operand view instead of holding a second native machine
+leaf. Legacy float arguments lend the value they already own. Compound
+float roots still export through the existing native program-value boundary.
+
+Algebraic field, constructor, and owned-output readers borrow an exact
+legacy argument directly. Readers that require a borrowed program carrier
+still use the selected `ProgramValue` wrapper. Algebraic loads retain a
+native read descriptor for the existing expression-variable collector,
+which follows load connections and history.
+
+### 10t Closure audit
+
+`SurfaceTerm` is the source expression representation used by declaration
+parsing, proof claims, and raising. Its C fragments and lowered C annotations
+still use `ProgramExpression` for frontend checking and binding identity.
+`KernelTerm` is the typed expression representation carried by migrated
+evaluation and storage boundaries. The last proposition slice carries
+condition and width-tagged count roots into resource dependency checking.
+The native forms below still have callers.
+
+| Remaining boundary | Live consumer and reason |
+| --- | --- |
+| `KernelTermImport`, `KernelTermExport`, and `KernelTermNode::Legacy` | Native program/specification constructors, certificate readers, substitution, and raising still accept or produce `MachineTerm`, `ConditionTerm`, `IntegerTerm`, `AlgebraicTerm`, `ProgramValue`, and `PureFunctionArgument`. Legacy keys also preserve opaque call argument identity, pointer qualifiers, and exact annotations. |
+| `SharedMachineIntegerTerm` native output and exact input | Address normalization and range transport use structural words. The observation reader accepts explicitly written words, including registered load names and opaque call arguments, and reuses common structural output when available. The session import memo keeps repeated imports bounded. Its value-reading cache records mathematical conversion identity. |
+| `SharedIntegerTerm` native node, forward link, and weak reverse link | Native arithmetic, binder substitution and folds still accept interned Integer nodes. Import and export traverse shared prefixes once per verification. The weak link lets an exporter recover a live source without retaining it. The read-through cache holds mathematical observation results. |
+| `TermData::machine_leaf` | Conversion and address adapters, native memory-read and variable collectors, opaque calls, and their fact/certificate consumers borrow selected native descriptors. A produced machine call may borrow its already-owned application. Boolean and algebraic read descriptors still carry the native access shape used by read-connection and history collectors. |
+| `TermData::argument_leaf` | Native program, Integer, Boolean, float, algebraic, pointer and array-reference readers borrow retained output through one existing slot. The slot also preserves explicitly minted condition spellings needed by Integer/scalar variable collection and raising. Compound exports and exact native equality, ordering, hashing, and diagnostics still use these readers. |
+| `ExecutionValue`, `StoredExecutionValue`, and `StoredMemoryValue` | Public input, C/Rust execution adapters, stored-value refresh, and typed load queries still use native values. Local keys compare machine observations. Numeric memory cells keep structural native identity. Other memory families use their specific storage keys. A native value and a retained root remain alternative value representations. |
+| `SharedPureApplication` and `SpecCallArgument` | Call certification and spelling retain the exact typed argument carrier and stable call identity. The session memo prepares common arguments for evaluation and reuse. Native call arguments and typed opaque leaves can still contain proof-relevant metadata. |
+| `StoredMachineTerm`, `StoredConditionTerm`, `StoredIntegerTerm`, `StoredAlgebraicTerm`, `StoredProgramValue`, and outcome carriers | Native inputs keep the exact original payload. Fact keys, equality, proof rewriting, diagnostics and evaluation output APIs still request native views when their contract needs them. Resource dependency checking and evaluated proposition production can carry common roots. |
+| `SharedAddress`, `SharedAddressOffset`, `SharedPointer`, and native range and resource descriptors | Existing ownership, aliasing and read-over-write consumers use native address and pointer descriptors. Retained operands preserve exact offsets, object classes, load names and versions. Sequence values, resource fields, ranges, allocation counts and theorem/state bindings retain their migrated producers and explicit native input forms. |
+| `Term::PointerOffset` and `Proposition` address, memory, resource and program fields | Contract terms and their substitution and dependency readers still use `AddressOffset`. Memory judgments and volatile events carry address descriptors and memory identities. Program evaluation and verification judgments record the program input and execution state alongside their migrated value outcomes. These fields participate in judgment identity and checked rewriting. |
+| `SpecExpression`, `SpecIntegerExpression::Term`, and typed algebraic and fold syntax | Declaration checking and public kernel APIs still accept typed specification syntax, including native inputs. The evaluators use this syntax to produce common operands and fact/definedness obligations. The raising boundary still needs explicit rewrite and naming adapters for selected forms. |
+
+This closes the package's producer and storage work. An entirely common-form
+checker and removal of every compatibility cache would still require changes
+to the listed native contracts. No proof syntax, search policy, or snapshot
+identity change is part of this closure.
 
 ### 10a Storage inventory and completion criteria
 

@@ -1,6 +1,26 @@
 use super::*;
 
 #[test]
+#[ignore = "nightly: expands and cold-verifies a uint64 loop back edge"]
+fn uint64_loop_successor_bound_expands_without_normalize() {
+    let (source, c_sources) =
+        mdtest_sources("mdtests/back_edge_closes_an_unsigned_bound_from_the_guard.md");
+    let sources = crate::cli::source_refs(&c_sources);
+    let label = "count.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, label)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(
+        expanded.contains("apply(click::integer::uint64_increment_upper_bound(at("),
+        "{expanded}"
+    );
+    assert!(!expanded.contains("normalize()"), "{expanded}");
+    without_implicit_solve_for_claim(label, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
 #[ignore = "nightly: expands and cold-verifies read definedness in two C proofs"]
 fn read_definedness_expands_without_normalize() {
     for (fixture, label, reads) in [
@@ -949,7 +969,7 @@ fn cases_obligation_expands_before_execution_arms() {
         );
     let explicit = after.replace(
         "            cases {",
-        "            have x == 0 or x == 1 by { known(); known(); }\n            cases {",
+        "            have x == 0 or x == 1 by { rewrite(1, y); known(); }\n            cases {",
     );
     let result_cases = after
         .replace("x == 0 =>", "result == 0 =>")

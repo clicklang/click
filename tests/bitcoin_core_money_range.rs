@@ -1429,6 +1429,51 @@ fn pinned_std_byte_template_record_keeps_nominal_argument() {
     check_pinned_byte_proof(&root, &import, source);
 }
 
+#[test]
+#[ignore = "nightly: pinned C++ construction return with two active views"]
+fn pinned_aggregate_return_separates_destination_from_views() {
+    let (root, import) = pinned_span_fixture_with_exact_dependencies(
+        "aggregate-return-from-views",
+        r#"
+struct Triple { int left; int right; int tag; };
+Triple make_triple(const int* left, const int* right) noexcept;
+Triple probe(const int* left, const int* right) noexcept {
+    return make_triple(left, right);
+}
+"#,
+        &[],
+    );
+    let source = r#"verifying "span-probe.cpp";
+extern struct Triple make_triple(const int32* left, const int32* right) {
+    views left[0..1];
+    views right[0..1];
+    ensures result.left == left[0];
+    ensures result.right == right[0];
+    ensures result.tag == 42;
+}
+struct Triple probe(const int32* left, const int32* right) {
+    views left[0..1];
+    views right[0..1];
+    ensures result.left == left[0];
+    ensures result.right == right[0];
+    ensures result.tag == 42;
+} by {
+    have separate(memory(((&result) as (uint8 *))[0..12]), memory(left[0..1])) by { known(); }
+    have separate(memory(((&result) as (uint8 *))[0..12]), memory(right[0..1])) by { known(); }
+    step() {
+        requires separate(
+            memory(((&result) as (uint8 *))[0..12]),
+            memory(left[0..1]) * memory(right[0..1])
+        ) by { solve(); }
+    }
+    step_until(function.exit);
+    solve();
+}
+"#;
+    check_pinned_writable_span_proof(&root, &import, source, "probe.contract");
+    fs::remove_dir_all(root).unwrap();
+}
+
 // The selected assumed interface preserves the descriptor's address and
 // length. Reading its fields requires views, but grants no backing authority.
 #[test]
@@ -1443,8 +1488,9 @@ fn pinned_writable_byte_span_reference_preserves_view_offline() {
             "sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h",
         ],
     );
-    let source = "verifying \"span-probe.cpp\"; std::span<std::byte> probe(const std::span<int>& span) { views std_span_data(span); views std_span_size(span); ensures std_span_data(result) == std_span_data(span) as (uint8 *); ensures std_span_size(result) == std_span_size(span) * 4u64; ensures std_span_data(span) == old(std_span_data(span)); ensures std_span_size(span) == old(std_span_size(span)); }";
-    check_pinned_byte_proof(&root, &import, source);
+    let source = include_str!("fixtures/cpp-byte-output/span-reference-return.click");
+    check_pinned_writable_span_proof(&root, &import, source, "probe.ensures_0");
+    fs::remove_dir_all(root).unwrap();
 }
 
 // Explicit copying and return-frame links preserve the unchanged by-value
@@ -1634,14 +1680,24 @@ fn pinned_byte_template_metadata_and_span_authority_are_checked() {
             "sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h",
         ],
     );
-    let source = "verifying \"span-probe.cpp\"; std::span<std::byte> probe(const std::span<int>& span) { views std_span_data(span); views std_span_size(span); ensures std_span_data(result) == std_span_data(span) as (uint8 *); ensures std_span_size(result) == std_span_size(span) * 4u64; ensures std_span_data(span) == old(std_span_data(span)); ensures std_span_size(span) == old(std_span_size(span)); }";
+    let source = include_str!("fixtures/cpp-byte-output/span-reference-return.click");
     check_pinned_byte_proof(&root, &import, source);
     for field in ["std_span_data", "std_span_size"] {
         let bad = source.replace(&format!("views {field}(span);"), "");
         fs::write(root.join("bad.click"), &bad).unwrap();
         let project = read_click_project(&root.join("bad.click"), &bad).unwrap();
-        assert!(verify_program_prepared_project(&project, &import).is_err());
+        let error = verify_program_prepared_project(&project, &import)
+            .expect_err("separation from the missing view is not available");
+        assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
+        assert!(
+            error
+                .report()
+                .contains("requires the current goal as an available semantic fact"),
+            "{field}: {}",
+            error.report()
+        );
     }
+    fs::remove_dir_all(root).unwrap();
 }
 
 #[test]
@@ -4689,7 +4745,12 @@ fn pinned_std_byte_modular_output_initializes_uint32_offline() {
     }
 }
 
-fn check_pinned_writable_span_proof(root: &Path, import: &PreparedCppImport, source: &str) {
+fn check_pinned_writable_span_proof(
+    root: &Path,
+    import: &PreparedCppImport,
+    source: &str,
+    label: &str,
+) {
     fs::write(root.join("byte.click"), source).unwrap();
     let project = read_click_project(&root.join("byte.click"), source).unwrap();
     click::surface::with_proof_trace("probe", || {
@@ -4701,12 +4762,9 @@ fn check_pinned_writable_span_proof(root: &Path, import: &PreparedCppImport, sou
             )
         });
     });
-    let expanded = expand_project_claim_source_by_label(
-        &project,
-        &ProgramInputs::program(import),
-        "probe.ensures_0",
-    )
-    .unwrap();
+    let expanded =
+        expand_project_claim_source_by_label(&project, &ProgramInputs::program(import), label)
+            .unwrap();
     let rewritten = project.with_entry_source(expanded.clone());
     click::surface::without_implicit_solve_for_claim("probe.contract", || {
         verify_program_prepared_project(&rewritten, import).map_err(|error| error.report())
@@ -4714,13 +4772,9 @@ fn check_pinned_writable_span_proof(root: &Path, import: &PreparedCppImport, sou
     .unwrap();
     let (session, _) =
         ProgramVerificationSession::new_program_prepared_project(&project, import).unwrap();
-    let position = project_tactic_source_position(
-        &rewritten,
-        &ProgramInputs::program(import),
-        "probe.ensures_0",
-        0,
-    )
-    .unwrap();
+    let position =
+        project_tactic_source_position(&rewritten, &ProgramInputs::program(import), label, 0)
+            .unwrap();
     fs::write(root.join("expanded.click"), &expanded).unwrap();
     click::surface::with_proof_trace("probe", || {
         session
@@ -4748,7 +4802,7 @@ fn pinned_writable_byte_span_modular_output_initializes_uint32_offline() {
         &harness,
         BYTE_SPAN_DEPENDENCIES,
     );
-    check_pinned_writable_span_proof(&root, &import, &source);
+    check_pinned_writable_span_proof(&root, &import, &source, "probe.ensures_0");
     fs::remove_dir_all(root).unwrap();
 
     let short = harness.replace("*>(&obj), 4)", "*>(&obj), 3)");
@@ -4878,7 +4932,7 @@ fn pinned_span_nested_parameter_precondition_expands_offline() {
         &harness,
         BYTE_SPAN_DEPENDENCIES,
     );
-    check_pinned_writable_span_proof(&root, &import, &source);
+    check_pinned_writable_span_proof(&root, &import, &source, "probe.ensures_0");
     fs::remove_dir_all(root).unwrap();
 }
 

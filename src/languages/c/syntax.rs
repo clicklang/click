@@ -1949,6 +1949,13 @@ enum CompatibilityIdentity {
     Unavailable,
 }
 
+#[derive(Clone)]
+enum CTypeAlias {
+    Object(ParsedType),
+    /// The pointer type obtained by applying a declarator's first `*` to this function type.
+    Function(ParsedType),
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ParsedType {
     compatibility_identity: CompatibilityIdentity,
@@ -4840,10 +4847,12 @@ pub(crate) enum CHeadTypedef {
         constant: bool,
         pointee_constant: bool,
     },
-    /// A function pointer, `typedef int (*unary)(int);`, with its signature.
+    /// A callable parameter type from a verified source's alias, with a star
+    /// required when the alias names the function type itself.
     FunctionPointer {
         interface_type: InterfaceType,
         signature: CallbackInterface,
+        requires_star: bool,
     },
     /// A scalar array, `typedef int triple[3];`: its element type, possibly
     /// `const`, and length.
@@ -4859,11 +4868,15 @@ pub(crate) enum CHeadTypedef {
 }
 
 impl CHeadTypedef {
-    fn of(parsed: &ParsedType) -> Self {
-        Self::restated(parsed).unwrap_or(Self::Other)
+    fn of(alias: &CTypeAlias) -> Self {
+        let (parsed, requires_star) = match alias {
+            CTypeAlias::Object(parsed) => (parsed, false),
+            CTypeAlias::Function(parsed) => (parsed, true),
+        };
+        Self::restated(parsed, requires_star).unwrap_or(Self::Other)
     }
 
-    fn restated(parsed: &ParsedType) -> Option<Self> {
+    fn restated(parsed: &ParsedType, requires_star: bool) -> Option<Self> {
         if let (InterfaceType::FunctionPointer(_), Some(signature)) =
             (parsed.interface_type, &parsed.function_pointer_signature)
             && !parsed.is_volatile
@@ -4873,6 +4886,7 @@ impl CHeadTypedef {
             return Some(Self::FunctionPointer {
                 interface_type: parsed.interface_type,
                 signature: signature.clone(),
+                requires_star,
             });
         }
         if let Some(length) = parsed.interface_type.array_length()
@@ -7338,7 +7352,7 @@ struct Parser {
     structs: DeclarationMap<RecordLayout>,
     enums: DeclarationMap<CEnumDefinition>,
     enum_constants: BTreeMap<String, CExpression>,
-    typedefs: BTreeMap<String, ParsedType>,
+    typedefs: BTreeMap<String, CTypeAlias>,
     parsing_function_header: bool,
     opaque_function_signature: bool,
     opaque_signature_types: Vec<(bool, bool)>,
@@ -9310,7 +9324,7 @@ impl Parser {
             head_typedefs: self
                 .typedefs
                 .iter()
-                .map(|(name, parsed)| (name.clone(), CHeadTypedef::of(parsed)))
+                .map(|(name, alias)| (name.clone(), CHeadTypedef::of(alias)))
                 .collect(),
         })
     }
@@ -10483,6 +10497,9 @@ impl Parser {
         } else {
             false
         };
+        let function_alias = self
+            .peek_ident()
+            .is_some_and(|name| matches!(self.typedefs.get(name), Some(CTypeAlias::Function(_))));
         let parsed = match self.next() {
             Some(Token::Ident(name)) if name == "typeof" || name == "__typeof__" => {
                 self.parse_typeof_type()?
@@ -10629,6 +10646,16 @@ impl Parser {
             self.position += 1;
             object_constant = true;
         }
+        if function_alias {
+            if self.peek() != Some(&Token::Star) {
+                return Err(
+                    self.error_here("a function-type alias requires `*` in this declaration")
+                );
+            }
+            if object_constant || volatile_levels != 0 {
+                return Err(self.error_here("qualifiers on a function type are not supported"));
+            }
+        }
         let mut saw_pointer = false;
         let mut pointer_depth: u8 = 0;
         while self.peek() == Some(&Token::Star) {
@@ -10733,6 +10760,9 @@ impl Parser {
                 }
                 InterfaceType::Float32Array(_) | InterfaceType::Float64Array(_) => {
                     return Err(self.error_at_previous("pointer-to-array types are not supported"));
+                }
+                InterfaceType::FunctionPointer(_) if function_alias && !saw_pointer => {
+                    interface_type
                 }
                 InterfaceType::FunctionPointer(_) => {
                     return Err(
@@ -10958,6 +10988,19 @@ impl Parser {
         if self.peek() != Some(&Token::LParen) {
             return Ok(None);
         }
+        self.expect(Token::LParen)?;
+        self.expect(Token::Star)?;
+        let name = self.expect_ident("function-pointer name")?;
+        self.expect(Token::RParen)?;
+        let (interface_type, signature) = self.parse_callback_signature(return_type, false)?;
+        Ok(Some((name, interface_type, signature)))
+    }
+
+    fn parse_callback_signature(
+        &mut self,
+        return_type: ParsedType,
+        require_prototype: bool,
+    ) -> Result<(InterfaceType, CallbackInterface), CSyntaxError> {
         if return_type.function_pointer_signature.is_some() {
             return Err(self.error_here("nested function-pointer signatures are not supported"));
         }
@@ -10981,11 +11024,10 @@ impl Parser {
         {
             return Err(self.error_here(format!("unknown struct declaration `{struct_name}`")));
         }
-        self.position += 1;
-        self.expect(Token::Star)?;
-        let name = self.expect_ident("function-pointer name")?;
-        self.expect(Token::RParen)?;
         self.expect(Token::LParen)?;
+        if require_prototype && self.peek() == Some(&Token::RParen) {
+            return Err(self.error_here("function-type typedefs require a parameter prototype; use `(void)` for zero parameters"));
+        }
         let mut parameters = Vec::new();
         if self.peek() != Some(&Token::RParen) {
             loop {
@@ -11087,11 +11129,10 @@ impl Parser {
             parameters,
             return_type.pointee_constant,
         );
-        Ok(Some((
-            name,
+        Ok((
             InterfaceType::FunctionPointer(signature),
             function_pointer_signature,
-        )))
+        ))
     }
 
     fn parse_named_type(&mut self, name: String) -> Result<ParsedType, CSyntaxError> {
@@ -11159,7 +11200,9 @@ impl Parser {
                         "unknown C type `{name}`; expected a supported standard spelling, typedef, or `struct`"
                     )));
                     };
-                    return Ok(typedef.clone());
+                    return Ok(match typedef {
+                        CTypeAlias::Object(parsed) | CTypeAlias::Function(parsed) => parsed.clone(),
+                    });
                 }
             }
         };

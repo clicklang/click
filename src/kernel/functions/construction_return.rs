@@ -176,9 +176,19 @@ pub(super) fn bind(
         else {
             return true;
         };
-        let range =
-            MemoryRange::new_with_element_width(pointer.clone(), 0u32.into(), 1u32.into(), bytes);
+        let field_range = || {
+            MemoryRange::new_with_element_width(pointer.clone(), 0u32.into(), 1u32.into(), bytes)
+        };
         if loan_obligations.is_some() {
+            // Whole-object writes use the raw owner's byte coordinates.
+            // An aggregate stride need not have a scalar Surface type.
+            let range = if interface.construction_parameter().is_some() {
+                field_range()
+            } else if i32::try_from(bytes).is_ok() {
+                MemoryRange::new_with_element_width(pointer.clone(), 0u32.into(), bytes.into(), 1)
+            } else {
+                MemoryRange::new_wide(pointer.clone(), 0u32.into(), bytes.into(), 1)
+            };
             if let Some(requirement) = ledger.memory_access_requirement(&range) {
                 pending.push(
                     ProofObligation::verification_condition(requirement)
@@ -190,7 +200,7 @@ pub(super) fn bind(
         } else {
             // Body execution binds directly and has no modular entry proof.
             ledger
-                .permits_memory_access_with_assumptions(&range, &assumptions)
+                .permits_memory_access_with_assumptions(&field_range(), &assumptions)
                 .is_ok()
         }
     };

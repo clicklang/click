@@ -310,6 +310,7 @@ impl Parser {
             struct_array_params: BTreeSet::new(),
             reference_params: BTreeSet::new(),
             return_struct_name: parsed_return_type.struct_name,
+            aggregate_result: false,
         })
     }
 

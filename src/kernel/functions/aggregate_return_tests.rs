@@ -257,7 +257,7 @@ fn construction_binding_retains_the_full_destination_loan_requirement() {
     };
     assert!(obligation.requires_statement_entry());
     let bytes = node_layout().size_bytes();
-    let range = MemoryRange::new_with_element_width(destination, 0u32.into(), 1u32.into(), bytes);
+    let range = MemoryRange::new_with_element_width(destination, 0u32.into(), bytes.into(), 1);
     assert_eq!(
         obligation.proposition(),
         &ledger.memory_access_requirement(&range).unwrap(),

@@ -3764,6 +3764,10 @@ id = "library.theorem.integer::uint64_add_to_integer"
 path = "reference/library/index.md#integeruint64_add_to_integer"
 
 [[item]]
+id = "library.theorem.integer::uint64_increment_upper_bound"
+path = "reference/library/index.md#integeruint64_increment_upper_bound"
+
+[[item]]
 id = "library.theorem.integer::uint64_multiply_to_integer"
 path = "reference/library/index.md#integeruint64_multiply_to_integer"
 

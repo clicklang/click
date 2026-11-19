@@ -7,7 +7,6 @@ mod boolean;
 pub(crate) use boolean::BooleanOperandView;
 pub use boolean::{KernelBooleanRead, KernelPointerEquality};
 // Scoped payloads shared by evaluation, checking, and Surface synthesis.
-#[allow(dead_code)]
 mod folds;
 pub use folds::KernelFold;
 pub(crate) use folds::KernelFoldIndex;
@@ -21,19 +20,15 @@ mod float;
 mod machine;
 pub(crate) use float::FloatOperandView;
 pub use float::{KernelFloatCall, KernelFloatType};
-#[allow(dead_code)]
 mod matches;
 pub(crate) use matches::KernelMatchArm;
 pub(crate) use matches::{KernelConstructor, KernelMatch};
 mod pointer_observations;
 mod reads;
 pub use reads::KernelMemoryRead;
-// Prepared pointer payloads; producer activation follows scoped consumers and spelling.
-#[allow(dead_code)]
+// Pointer descriptors retain address, offset, and producer syntax.
 mod addresses;
-#[allow(dead_code)]
 mod offsets;
-#[allow(dead_code)]
 mod pointers;
 pub(crate) use addresses::{SharedAddress, SharedAddressBase};
 pub use machine::KernelMachineLiteral;

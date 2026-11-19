@@ -15,20 +15,12 @@ pub(in crate::surface::proof) struct ProofCheckpoint<'a> {
 }
 
 impl ProofCheckpoint<'_> {
-    /// A checked child that used one written arm keeps that arm's label.
-    /// Children split further keep their labels on their own certificates.
-    pub(in crate::surface::proof) fn retain_written_conjunct(
-        &mut self,
-        child: usize,
-        first: Option<(usize, &ProofAllArm)>,
-        next: Option<(usize, &ProofAllArm)>,
-        end_index: usize,
-    ) {
-        if let Some((index, arm)) = first
-            && next.map_or(end_index, |(next_index, _)| next_index) == index + 1
-        {
-            self.conjuncts[child] = Some(Arc::new(arm.proposition.clone()));
-        }
+    pub(in crate::surface::proof) fn with_conjunct_labels(
+        mut self,
+        labels: [Option<Arc<ClickProposition>>; 2],
+    ) -> Self {
+        self.conjuncts = labels;
+        self
     }
 }
 

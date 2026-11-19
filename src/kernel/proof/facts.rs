@@ -1353,6 +1353,27 @@ impl PureFactStore {
         self.with_fact(fact)
     }
 
+    /// Reuse the checked path's reasoning context for the outcome, retaining
+    /// the ordinary proof's premise indexes and reasoning policy. The selected
+    /// statement's publication is the only ordinary delta since its entry.
+    pub(super) fn with_outcome_context(
+        &self,
+        mut context: PureFactContext,
+        entry: &Self,
+    ) -> Option<Self> {
+        let published = self.introduced_since(entry)?;
+        context = context.with_reasoning_policy_of(&self.assumptions);
+        for proposition in published {
+            if !context.contains_assumed_exact(&proposition) {
+                context = context.assume_proposition(proposition);
+            }
+        }
+        Some(Self {
+            assumptions: context,
+            ..self.clone()
+        })
+    }
+
     /// Retain producer evidence for a read whose defining proposition was
     /// already published by the checked statement. Plain propositions and
     /// evidence outside this branch cannot introduce a typed read bridge.

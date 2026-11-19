@@ -28,6 +28,7 @@ use std::sync::Arc;
 
 #[cfg(test)]
 thread_local! {
+    static CHECKED_PATH_EFFECT_ADMISSIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     static MATCH_SCOPE_INDEX_BUILDS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     static MATCH_FRESHNESS_PROBES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     static CHECKED_CALL_EVENT_LOOKUP_CANDIDATES: std::cell::Cell<usize> =
@@ -273,7 +274,14 @@ fn path_context_extended_by(
     next: &PureFactContext,
     budget: usize,
 ) -> Option<PureFactContext> {
-    if previous.reasoning_policy != next.reasoning_policy
+    // A prepared statement retains open requirements for the driver;
+    // a branch decision may discharge them immediately. That choice only
+    // controls obligation reporting, so both use the same admitted facts.
+    let policy_delta =
+        previous.reasoning_policy.fingerprint() ^ next.reasoning_policy.fingerprint();
+    let obligation_policy =
+        crate::kernel::ReasoningPolicy::RETAIN_REQUIRED_OBLIGATIONS.fingerprint();
+    if policy_delta & !obligation_policy != 0
         || !previous
             .resource_compositions
             .shares_root_with(&next.resource_compositions)
@@ -296,7 +304,7 @@ fn path_context_extended_by(
         added.push(fact);
     }
     crate::instrumentation::record_deterministic_work(added.len());
-    let mut facts = facts.clone();
+    let mut facts = facts.clone().with_reasoning_policy_of(next);
     for fact in added {
         facts = facts.assume_execution_pure_fact(fact);
     }
@@ -4256,22 +4264,19 @@ fn interface_join_resources(
     let mut arm_residuals = Vec::with_capacity(2);
     for (index, (arm, facts)) in arms.iter().zip(arm_facts).enumerate() {
         let mut remaining = arm.state.resources().clone();
-        // Views are non-consuming. Check them while their owned support
-        // is still present, then consume the owned interface facts in
-        // their source order so consuming a parent cannot erase a view
-        // that the same interface has already established.
+        // Check observations against the held context while the owned
+        // support is present. The same indexed view judgment is used by
+        // Surface and for views already established by the common frame.
         for required in arm_interface_resources[index]
             .iter()
             .filter(|fact| fact.is_view())
         {
-            if remaining
-                .clone()
-                .without_facts(std::slice::from_ref(required), facts.assumptions())
-                .is_none()
-            {
+            if !remaining.satisfies_fact(required, facts.assumptions()) {
                 return Err("an interface resource is not owned by one concrete arm");
             }
         }
+        // Consume owned exports in source order: giving up one may also
+        // remove the retained observations it supported.
         for required in arm_interface_resources[index]
             .iter()
             .filter(|fact| fact.is_own())
@@ -7308,7 +7313,8 @@ fn retain_completed_path_fact(
 ) -> PureFactContext {
     crate::instrumentation::record_deterministic_work(1);
     if assumptions.contains_assumed_exact(fact.proposition())
-        && (!fact.is_certified() || fact.generated_load_binding().is_none())
+        && (!fact.is_certified()
+            || (fact.generated_load_binding().is_none() && !fact.has_checked_pointer_read()))
     {
         return assumptions;
     }
@@ -8300,6 +8306,8 @@ impl ExecutionProofCore {
             built.facts = retain_completed_path_fact(built.facts, fact);
         }
         for fact in self.effect_facts.facts_from(built.effects) {
+            #[cfg(test)]
+            CHECKED_PATH_EFFECT_ADMISSIONS.with(|count| count.set(count.get() + 1));
             built.facts = retain_completed_path_fact(built.facts, fact);
         }
         built.cases = self.publication_case_facts.len();
@@ -8324,6 +8332,36 @@ impl ExecutionProofCore {
         for trace in self.execution_evidence.iter_mut() {
             trace.push(CheckedExecutionEvent::CompletedContext(context.clone()));
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn take_checked_path_effect_admissions() -> usize {
+        CHECKED_PATH_EFFECT_ADMISSIONS.with(|count| count.replace(0))
+    }
+
+    /// Open the facts of this exact completed trace before outcome
+    /// publication. The path context already carries its checked effects.
+    pub(crate) fn checked_outcome_facts(
+        &self,
+        candidate: &crate::kernel::FunctionExecutionCandidate,
+        entry: &PureFactStore,
+        facts: &PureFactStore,
+    ) -> Option<PureFactStore> {
+        let frontier = self.frontier.execution()?;
+        if !self.evidence_completed
+            || self.execution_evidence.len() != 1
+            || frontier.path_count() != 1
+            || !frontier.candidate_at(0)?.shares_record_with(candidate)
+        {
+            return None;
+        }
+        let built = self.path_context.as_ref()?;
+        if built.cases != self.publication_case_facts.len()
+            || built.effects != self.effect_facts.len()
+        {
+            return None;
+        }
+        facts.with_outcome_context(built.facts.clone(), entry)
     }
 
     /// Appends a checked statement's effects to the proof's effect list and

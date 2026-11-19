@@ -304,15 +304,29 @@ pub(in crate::kernel) fn evaluate_indexed_integer_read(
         ProgramType::UInt32 => ProgramValue::UInt32(read.clone()),
         ProgramType::Int64 => ProgramValue::Int64(read.clone()),
         ProgramType::UInt64 => ProgramValue::UInt64(read.clone()),
+        ProgramType::Int128 => ProgramValue::Int128(read.clone()),
+        ProgramType::UInt128 => ProgramValue::UInt128(read.clone()),
         _ => unreachable!("indexed integer read"),
     };
     // Retain the read and publish its exact store equation separately.
+    let equation = match value_type {
+        ProgramType::Int128 => wide_integer_comparison_condition(
+            ComparisonOperator::Equal,
+            &value,
+            &ProgramValue::Int128(stored),
+        )
+        .expect("typed signed 128-bit store"),
+        ProgramType::UInt128 => wide_integer_comparison_condition(
+            ComparisonOperator::Equal,
+            &value,
+            &ProgramValue::UInt128(stored),
+        )
+        .expect("typed unsigned 128-bit store"),
+        _ => ConditionTerm::machine_compare(format, CompareRelation::Equal, read, stored),
+    };
     facts.push(ExecutionPureFact {
         logical_read_equation: true,
-        ..ExecutionPureFact::certified(Proposition::condition_is(
-            ConditionTerm::machine_compare(format, CompareRelation::Equal, read, stored),
-            true,
-        ))
+        ..ExecutionPureFact::certified(Proposition::condition_is(equation, true))
     });
     super::typed_reads::record(memory, &pointer, &value);
     ExpressionPath {

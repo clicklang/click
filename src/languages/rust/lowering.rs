@@ -1019,7 +1019,7 @@ struct Context<'a> {
     ranges: BTreeMap<String, (Type, bool)>,
     /// The count of each enumerated slice iterator and the index of each yielded Option.
     enumerate_fields: BTreeMap<String, BindingName>,
-    shared_array_options: BTreeMap<String, ProgramType>,
+    shared_array_options: BTreeMap<String, shared_arrays::SliceIteratorOptionStorage>,
     shared_scalar_slices: BTreeMap<String, (String, ProgramType)>,
     mir_chunk_iterators: BTreeMap<String, crate::languages::interface::ChunkIteratorFields>,
     chunk_options: BTreeMap<String, chunks::ChunkOptionFields>,
@@ -1897,19 +1897,11 @@ impl Context<'_> {
         match e {
             E::EnumerateOptionIndex { option } => self.enumerate_option_index(option),
             E::SharedArrayOptionElement { option } => {
-                if !self.shared_array_options.contains_key(option) {
-                    return Err("unknown shared iterator Option".into());
-                }
+                use crate::kernel::program_expression::{equal, int32_literal, variable};
+                let option = self.shared_array_option(option)?;
                 Ok((
-                    program_assert(crate::kernel::program_expression::equal(
-                        crate::kernel::program_expression::variable(
-                            self.binding(&format!("{option}_some")),
-                        ),
-                        crate::kernel::program_expression::int32_literal(1),
-                    )),
-                    crate::kernel::program_expression::variable(
-                        self.binding(&format!("{option}_pointer")),
-                    ),
+                    program_assert(equal(variable(&option.tag), int32_literal(1))),
+                    variable(&option.pointer),
                 ))
             }
             E::Call {
@@ -2545,14 +2537,9 @@ impl Context<'_> {
             }),
             E::SharedArrayHasNext { iterator } => self.shared_array_has_next(iterator),
             E::RangeHasNext { iterator } => self.range_has_next(iterator),
-            E::SharedArrayOptionTag { option } => {
-                if !self.shared_array_options.contains_key(option) {
-                    return Err("unknown shared iterator Option".into());
-                }
-                Ok(crate::kernel::program_expression::variable(
-                    self.binding(&format!("{option}_some")),
-                ))
-            }
+            E::SharedArrayOptionTag { option } => Ok(crate::kernel::program_expression::variable(
+                &self.shared_array_option(option)?.tag,
+            )),
             E::SharedArrayOptionElement { .. } => {
                 Err("shared Option payload requires checked preparation".into())
             }

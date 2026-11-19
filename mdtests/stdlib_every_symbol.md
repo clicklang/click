@@ -243,6 +243,13 @@ theorem use_uint64_add_to_integer(left: uint64, right: uint64) {
     ensures to_integer(left + right) == to_integer(left) + to_integer(right) by apply(integer::uint64_add_to_integer(left, right));
 }
 
+theorem use_uint64_increment_upper_bound(value: uint64, upper: uint64) {
+    requires value < upper;
+    ensures to_integer(value + 1u64) <= to_integer(upper) by {
+        apply(integer::uint64_increment_upper_bound(value, upper)) using { value < upper; };
+    }
+}
+
 theorem use_uint64_multiply_to_integer(left: uint64, right: uint64) {
     requires to_integer(left) * to_integer(right) <= 18446744073709551615;
     ensures to_integer(left * right) == to_integer(left) * to_integer(right) by apply(integer::uint64_multiply_to_integer(left, right));

@@ -18,7 +18,7 @@ mod pointer_indices;
 mod pointer_names;
 
 use crate::kernel::program_local_source_name as surface_local_name;
-use crate::surface::diagnostics::has_surface_chunk_binding;
+use crate::surface::diagnostics::has_surface_iterator_binding;
 
 const SURFACE_SYNTHESIS_WORK_LIMIT: usize = 16_384;
 pub(super) const SURFACE_SYNTHESIS_DEPTH_LIMIT: usize = 128;
@@ -784,7 +784,7 @@ fn synthesize_state_local(term: &MachineTerm) -> Option<ContractExpression> {
                 crate::kernel::MachineIntegerType::from_program_type(value.program_type()).is_some()
             })
         })?;
-        if !has_surface_chunk_binding(name) {
+        if !has_surface_iterator_binding(name) {
             return None;
         }
         if let Some(result) = SYNTHESIS_RECORDED_POINTS.with(|slot| {
@@ -817,7 +817,7 @@ fn synthesize_recorded_local(term: &MachineTerm) -> Option<ContractExpression> {
         let slot = slot.borrow();
         let points = slot.as_ref()?;
         let (selector, name, state) = points.point_naming_integer(term)?;
-        if !has_surface_chunk_binding(name) {
+        if !has_surface_iterator_binding(name) {
             return None;
         }
         if let Some(result) = state
@@ -4013,10 +4013,12 @@ fn raise_kernel_term_dispatch(
         Node::AlgebraicRead(_) => raise_algebraic_read(term, parameter_binding, state)?,
         Node::Variable(_) if matches!(term.ty(), KernelType::Algebraic(_)) => {
             // Variable naming uses a bounded typed descriptor, not a tree export.
-            let ProgramValue::Parameter(variable) = term.algebraic_native_value()? else {
-                unreachable!("algebraic variable descriptor")
-            };
-            synthesize_surface_algebraic(variable, parameter_binding, state, bound_variables)?
+            synthesize_surface_algebraic(
+                term.algebraic_native_term()?,
+                parameter_binding,
+                state,
+                bound_variables,
+            )?
         }
         Node::IntegerLiteral(value) if value.sign() == num_bigint::Sign::Minus => {
             SurfaceTerm::Negate(Box::new(SurfaceTerm::IntegerLiteral((-value).to_string())))
@@ -4919,6 +4921,11 @@ fn synthesize_indexed_integer_read(
 ) -> Option<ContractExpression> {
     let kind = crate::kernel::LoadKind::of_type(value_type)?;
     let expression = |state: &ExecutionState| {
+        if pointer.offset != AddressOffset::Constant(0)
+            && let Some(field) = synthesize_owned_field_at_address(pointer, value_type, state)
+        {
+            return Some(field);
+        }
         let address = synthesize_surface_pointer_expression(
             pointer,
             parameter_binding,
@@ -5139,7 +5146,7 @@ fn synthesize_named_integer_local<'a>(
 ) -> Option<SurfaceTerm> {
     if let Some(name) = holders
         .next()
-        .filter(|name| has_surface_chunk_binding(name))
+        .filter(|name| has_surface_iterator_binding(name))
     {
         if let Some(result) = synthesize_call_capture(state, name) {
             return Some(result);
@@ -5507,6 +5514,8 @@ fn synthesize_surface_bitvector(
                     crate::kernel::LoadKind::Int32 => ProgramType::Int32,
                     crate::kernel::LoadKind::UInt32 => ProgramType::UInt32,
                     crate::kernel::LoadKind::Bits64 => ProgramType::Int64,
+                    crate::kernel::LoadKind::Int128 => ProgramType::Int128,
+                    crate::kernel::LoadKind::UInt128 => ProgramType::UInt128,
                     _ => return None,
                 };
                 return synthesize_indexed_integer_read(
@@ -6963,7 +6972,7 @@ fn synthesize_surface_pointer(
         .pointer_objects_in_block(&pointer.base)
         .find_map(|(name, base)| {
             crate::instrumentation::record_deterministic_work(1);
-            if !has_surface_chunk_binding(name) {
+            if !has_surface_iterator_binding(name) {
                 return None;
             }
             let element_width = base.program_type().pointee_type()?.byte_width();

@@ -694,6 +694,11 @@ and ranking closure are separate. `step_until(loop(i).back_edge())` does the
 same and is refused outside `loop(i)`'s preservation region
 (`mdtests/step_until_refuses_another_loop_s_back_edge.md`).
 
+A construction-return proof may use `&result` before the return to name the
+destination object. Its address alone supplies neither initialized field
+values nor permission to read them. A program variable named `result` is
+still available as `program::result`.
+
 `step_until(function.exit)` steps until the function returns, and the proof
 continues at exit, where `result` names the returned value. Where the C
 reaches an `if` the facts do not decide, it is refused and names the split
@@ -1267,14 +1272,14 @@ complete rewritten surface proof through the ordinary entry point.
 
 **Form:** `all { P => { ... } Q => { ... } }`
 
-Write one arm per conjunct in goal order. For `P and (Q and R)`, a
+Write one labeled arm per conjunct in any order. For `P and (Q and R)`, a
 single block may contain three arms. Repeated conjuncts take separate arms.
+Identically labeled arms are used in written order.
 An arm can also name a whole conjunct that is itself a conjunction, for
 example when its proof changes the goal before splitting it.
 
 Each proof starts with the parent assumptions. Facts established in one arm
-are local to that arm. An absent, extra, out-of-order, or unfinished arm
-fails. An ordinary conjunction can still be closed by `solve()`.
+are local to that arm. An absent, extra, or unfinished arm fails. An ordinary conjunction can still be closed by `solve()`.
 
 Expansion writes a flat list using the retained child goals or by raising
 their kernel propositions from the names in scope.
@@ -2197,7 +2202,7 @@ rule. Empty memory ranges, distinct storage blocks, and token/memory pairs
 are disjoint directly. This simple rule does not walk a region containing several transitions: write individual
 `have` goals using `preserve(...)`, then compose the equalities with `rewrite` and `known`.
 
-`preserve` supports complete pointer, 8/16/32/64-bit integer, and abstract
+`preserve` supports complete pointer, 8/16/32/64/128-bit integer, and abstract
 typed memory observations. It also preserves a selected field of a named owned
 resource: cite `separate(region.footprint, r)` and write
 `preserve(r, region);` under a goal such as
@@ -2207,10 +2212,11 @@ reads that field from the footprint's persistent entry and exit resource context
 by identity; it does not unfold the resource or enumerate its other fields.
 Split expressions involving different resource fields into individual links.
 Supported field values include algebraic values, mathematical `Integer`,
-abstract C values, pointers, and the integer types listed above.
+abstract C values, pointers, and 8/16/32/64-bit integers.
 Byte and 16-bit reads retain their storage widths when C promotes the
 comparison to `int32`. For a promoted comparison, both operands must
-widen from the same byte or 16-bit type. The result is oriented
+widen from the same byte or 16-bit type. A 128-bit equality retains both
+operands' signed or unsigned Integer observations. The result is oriented
 after-to-before. Logical read producers
 retain their complete typed values under the exact version point, address, and read
 type. `preserve` looks up the selected observations and constructs their equality;

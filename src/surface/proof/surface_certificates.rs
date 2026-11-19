@@ -3270,6 +3270,46 @@ pub(super) fn surface_nonstrict_parts(
     }
 }
 
+/// Derive the exact guard a uint64 successor bound must cite. The
+/// incremented term and the guard both retain the original word operands.
+pub(super) fn uint64_increment_upper_bound_guard(goal: &Proposition) -> Option<Proposition> {
+    let (
+        ConditionTerm::Compare {
+            format: MachineIntegerType::UInt64,
+            relation: CompareRelation::LessEqual,
+            left,
+            right: upper,
+        },
+        true,
+    ) = goal.condition_native()?
+    else {
+        return None;
+    };
+    let binary_term!(UInt64, Add, base, amount) = left.as_ref() else {
+        return None;
+    };
+    if !matches!(amount.as_ref(), crate::kernel::uint64_constant!(1)) {
+        return None;
+    }
+    Some(Proposition::condition_is(
+        ConditionTerm::uint64_less_than(base.as_ref().clone(), upper.as_ref().clone()),
+        true,
+    ))
+}
+
+pub(super) fn uint64_increment_upper_bound_application(
+    guard: &ClickProposition,
+) -> Option<ProofStep> {
+    let (value, upper) = surface_strict_parts(guard)?;
+    Some(ProofStep::ApplyTheoremUsing {
+        application: TheoremApplication {
+            name: "click::integer::uint64_increment_upper_bound".into(),
+            arguments: vec![value, upper],
+        },
+        premises: vec![guard.clone()],
+    })
+}
+
 pub(super) fn plan_explicit_increment_upper_bound(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
