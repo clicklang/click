@@ -9663,7 +9663,7 @@ theorem len_has_terminator(bytes: uint8[], len: uint64) {
 
 Source: `library/cpp/span.click`, `library/cpp/array.click` and
 `library/cpp/as_writable_bytes.click`. These files are not modules: the C++
-importer appends the ones an import calls to its sidecar and writes each
+importer adds the selected contracts to the sidecar's environment and writes each
 `template<...> extern` block out at each element type and extent a call
 names, `std::span<int>::size`. Its name table,
 `src/languages/cpp/standard_library.rs`, lists the functions and element
@@ -9671,6 +9671,14 @@ types it maps to them. The model accessors `std_span_data`,
 `std_span_size` and `std_array_data` name a span's or array's state.
 
 ### `std::span<T>`
+
+The catalog also supplies copy construction and `empty()` for dynamic
+`std::span<int>`. These use the logical descriptor resource
+`click::cpp::span_state::span_state`, defined in `library/cpp/span_state.click`.
+Copy construction produces a new descriptor resource with the same address
+and count while preserving the source. `empty()` observes the count and
+preserves the descriptor. The resource grants no access to backing memory.
+
 
 The dynamic pointer/count constructor initializes the descriptor and establishes
 its address and count. Its contract grants no authority over the backing.

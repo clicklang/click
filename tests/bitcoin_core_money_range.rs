@@ -3544,7 +3544,7 @@ int32& probe(std::span<int>& span) {{
 fn axiomatic_span_refuses_an_uncatalogued_standard_function() {
     let (root, import) = axiomatic_span_fixture(
         "axiomatic-empty",
-        "#include <span>\nbool probe(std::span<int>& span) { return span.empty(); }\n",
+        "#include <span>\nbool probe(std::span<unsigned int>& span) { return span.empty(); }\n",
         &[
             "sysroot/usr/include/c++/12/span",
             "sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h",
@@ -3558,10 +3558,10 @@ fn axiomatic_span_refuses_an_uncatalogued_standard_function() {
         .unwrap();
     assert_eq!(
         axiom.axiom.as_ref().unwrap().qualified_name,
-        "std::span<int>::empty"
+        "std::span<unsigned int>::empty"
     );
     let source = r#"verifying "span-probe.cpp";
-bool probe(std::span<int>& span) {
+bool probe(std::span<unsigned int>& span) {
     views std_span_size(span);
     ensures result == result;
 }
