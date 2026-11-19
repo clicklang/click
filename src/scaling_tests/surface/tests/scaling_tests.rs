@@ -4820,6 +4820,46 @@ fn repeated_call_publication_reuses_the_argument_registration() {
     );
 }
 
+/// The return paths share the kernel's indexed effects for the common prefix.
+#[test]
+fn returning_branches_share_the_checked_effect_context() {
+    for stores in [8, 32, 64] {
+        let writes = (1..=stores)
+            .map(|value| format!("    p[0] = {value}u;\n"))
+            .collect::<String>();
+        let steps = "    step();\n".repeat(stores);
+        let c = format!(
+            "uint32 caller(uint32* p, uint32 x) {{\n{writes}\
+             if (x <= 2u) {{ if (x == 1u) return 1u; else return 2u; }}\n\
+             else {{ if (x == 3u) return 3u; else return 4u; }} }}"
+        );
+        let click = format!(
+            "verifying \"returns.c\";\n\
+             uint32 caller(uint32* p, uint32 x) {{ owns *p; ensures result <= 4; }} by {{\n{steps}\
+                 branch {{\n\
+                   true => {{ branch {{ true => {{ step(); solve(); }} false => {{ step(); solve(); }} }} }}\n\
+                   false => {{ branch {{ true => {{ step(); solve(); }} false => {{ step(); solve(); }} }} }}\n\
+                 }}\n}}"
+        );
+        use crate::kernel::proof::ExecutionProofCore;
+        ExecutionProofCore::take_checked_path_effect_admissions();
+        crate::surface::proof::take_outcome_fact_reads();
+        verify_c_sources(&click, &[("returns.c", c.as_str())])
+            .unwrap_or_else(|error| panic!("{stores} writes: {}", error.report()));
+        let (reused, imported) = crate::surface::proof::take_outcome_fact_reads();
+        assert!(
+            reused >= 4,
+            "{stores} writes: reused {reused} outcome contexts"
+        );
+        assert_eq!(imported, 0, "{stores} writes: replayed shared effects");
+        let admitted = ExecutionProofCore::take_checked_path_effect_admissions();
+        assert!(
+            (stores..=stores + 8).contains(&admitted),
+            "{stores} writes: indexed {admitted} path effects"
+        );
+    }
+}
+
 /// One `step()` over a call whose external contract has `N` ensures lowers
 /// them in work linear in `N`.
 ///
