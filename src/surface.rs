@@ -5301,9 +5301,13 @@ impl RecordedStates {
         if self.loop_labels == other.loop_labels {
             common.loop_labels = self.loop_labels.clone();
         }
-        // A pass count both arms left the loop with stays.
-        for (index, iterations) in self.loop_iterations.iter() {
-            if other.loop_iterations.get(index) == Some(iterations) {
+        // Overlay agreed counts on the ancestor. A key with the ancestor's
+        // value in this arm cannot change the result, regardless of the
+        // other arm's value. The diff skips shared subtrees.
+        for (index, iterations, _) in self.loop_iterations.diff(&ancestor.loop_iterations) {
+            if let Some(iterations) = iterations
+                && other.loop_iterations.get(index) == Some(iterations)
+            {
                 common.record_loop_iterations_root(*index, iterations.clone());
             }
         }

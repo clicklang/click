@@ -73,6 +73,72 @@ fn branch_interface_reuses_saved_states_beside_growing_locals_and_marks() {
     }
 }
 
+#[test]
+fn recorded_state_join_visits_only_changed_loop_counts() {
+    use crate::kernel::{IntegerTerm, Variable};
+    use crate::persistent::measure_persistent_work;
+
+    let mut samples = Vec::new();
+    for count in [16, 64, 256] {
+        let original = |index: usize| Variable(8_300_000 + index as u64);
+        let agreed = Variable(8_310_000);
+        let left_only = Variable(8_310_001);
+        let right_only = Variable(8_310_002);
+        let new_common = Variable(8_310_003);
+
+        let mut parent = RecordedStates::new();
+        for index in 0..count {
+            parent.record_loop_iterations(index, &IntegerTerm::Variable(original(index)));
+        }
+        let unchanged = parent.common_descendant(&parent, &parent).unwrap();
+        assert!(
+            unchanged
+                .loop_iterations
+                .shares_root_with(&parent.loop_iterations)
+        );
+        assert!(
+            unchanged
+                .loop_iteration_variables
+                .shares_root_with(&parent.loop_iteration_variables)
+        );
+
+        let mut left = parent.clone();
+        let mut right = parent.clone();
+        for arm in [&mut left, &mut right] {
+            arm.record_loop_iterations(0, &IntegerTerm::Variable(agreed));
+            arm.record_loop_iterations(count, &IntegerTerm::Variable(new_common));
+        }
+        left.record_loop_iterations(1, &IntegerTerm::Variable(left_only));
+        right.record_loop_iterations(1, &IntegerTerm::Variable(right_only));
+        left.record_loop_iterations(count + 1, &IntegerTerm::Variable(Variable(8_310_004)));
+
+        let (joined, work) =
+            measure_persistent_work(|| left.common_descendant(&right, &parent).unwrap());
+        assert_eq!(joined.loop_naming_iterations(agreed), Some(0));
+        assert_eq!(joined.loop_naming_iterations(original(0)), None);
+        assert_eq!(joined.loop_naming_iterations(original(1)), Some(1));
+        assert_eq!(
+            joined.loop_naming_iterations(original(count - 1)),
+            Some(count - 1)
+        );
+        assert_eq!(joined.loop_naming_iterations(new_common), Some(count));
+        assert_eq!(joined.loop_naming_iterations(left_only), None);
+        assert_eq!(joined.loop_naming_iterations(right_only), None);
+        assert!(!joined.loop_iterations.contains_key(&(count + 1)));
+        assert_eq!(parent.loop_naming_iterations(original(0)), Some(0));
+        samples.push((count, work));
+    }
+    let (small_count, small_work) = samples[0];
+    for &(count, work) in &samples {
+        // The same changed keys can take logarithmically longer to look up.
+        let extra_levels = (count.ilog2() - small_count.ilog2()) as usize;
+        assert!(
+            work <= small_work + 24 * extra_levels,
+            "a fixed loop-count delta should only visit changed map paths: {samples:?}"
+        );
+    }
+}
+
 const TOUCH_C: &str = "";
 // An extern contract: the call takes the same contract-application path as a
 // verified callee's, without spending the test's time verifying its body.
