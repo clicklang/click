@@ -14,8 +14,8 @@ use std::sync::{Arc, Weak};
 use crate::persistent::PersistentMap;
 
 use super::{
-    Address, AddressBase, AddressOffset, LoadKind, MachineTerm, MemoryDerivation, ProgramValue,
-    SharedMemory, SymbolicMemory, intern_memory, intern_memory_ref,
+    Address, AddressBase, AddressOffset, LoadKind, MachineIntegerType, MachineTerm,
+    MemoryDerivation, ProgramValue, SharedMemory, SymbolicMemory, intern_memory, intern_memory_ref,
 };
 
 /// The identity of one point an execution path reached.
@@ -90,6 +90,16 @@ impl Drop for StepLog {
     }
 }
 
+type LocalIntegerVersions = PersistentMap<AddressBase, LocalIntegerCells>;
+type LocalIntegerCells = PersistentMap<i64, (i64, Weak<PointNode>)>;
+
+#[derive(Debug)]
+struct LocalIntegerWrite {
+    block: AddressBase,
+    start: i64,
+    end: i64,
+}
+
 #[derive(Debug)]
 struct PointNode {
     id: ProgramPointId,
@@ -104,10 +114,10 @@ struct PointNode {
     /// For a branch join, the point where its arms split.
     split: Option<PathLink>,
     /// The direct integer write at this point, if there was one.
-    local_integer_write: Option<AddressBase>,
-    /// Older direct integer writes to independent locals. The predecessor chain
-    /// owns these points, so the index need not retain another history.
-    local_integer_versions: PersistentMap<AddressBase, Weak<PointNode>>,
+    local_integer_write: Option<LocalIntegerWrite>,
+    /// Disjoint older integer cells, keyed by object and byte start. The
+    /// predecessor chain owns the version points.
+    local_integer_versions: LocalIntegerVersions,
 }
 
 impl Drop for PointNode {
@@ -245,40 +255,77 @@ fn indexed_local(block: &AddressBase) -> bool {
 fn local_integer_versions(
     predecessors: &[PathLink],
     steps: Option<&StepLog>,
-) -> (
-    PersistentMap<AddressBase, Weak<PointNode>>,
-    Option<AddressBase>,
-) {
+) -> (LocalIntegerVersions, Option<LocalIntegerWrite>) {
     let ([PathLink(Some(before))], Some(step)) = (predecessors, steps) else {
         return Default::default();
-    };
-    let continued = || {
-        let mut versions = before.local_integer_versions.clone();
-        if let Some(written) = &before.local_integer_write {
-            versions.insert(written.clone(), Arc::downgrade(before));
-        }
-        (versions, None)
     };
     if step.previous.is_some() || step.step.base().arena_id() != before.memory.arena_id() {
         return Default::default();
     }
+    let continued = || {
+        let mut versions = before.local_integer_versions.clone();
+        if let Some(write) = &before.local_integer_write {
+            let mut cells = versions.get(&write.block).cloned().unwrap_or_default();
+            cells.insert(write.start, (write.end, Arc::downgrade(before)));
+            versions.insert(write.block.clone(), cells);
+        }
+        versions
+    };
     match step.step.as_ref() {
-        MemoryDerivation::Store { pointer, .. } if indexed_local(&pointer.base) => {
-            let (mut versions, _) = continued();
-            let written = if matches!(pointer.offset, AddressOffset::Constant(0))
-                && integer_store_bits(step).is_some()
-            {
-                Some(pointer.base.clone())
-            } else {
+        MemoryDerivation::Store { pointer, value, .. } if indexed_local(&pointer.base) => {
+            let mut versions = continued();
+            let width = i64::from(value.byte_width());
+            let AddressOffset::Constant(start) = pointer.offset else {
                 versions.remove(&pointer.base);
-                None
+                return (versions, None);
             };
+            let Some(end) = start
+                .checked_add(width)
+                .filter(|_| start >= 0 && (1..=super::MAX_SCALAR_ACCESS_BYTES).contains(&width))
+            else {
+                versions.remove(&pointer.base);
+                return (versions, None);
+            };
+            if let Some(mut cells) = versions.get(&pointer.base).cloned() {
+                clear_overlapping_cells(&mut cells, start, end);
+                if cells.is_empty() {
+                    versions.remove(&pointer.base);
+                } else {
+                    versions.insert(pointer.base.clone(), cells);
+                }
+            }
+            let written = (MachineIntegerType::from_program_type(value.program_type()).is_some()
+                && integer_store_bits(step).is_some())
+            .then(|| LocalIntegerWrite {
+                block: pointer.base.clone(),
+                start,
+                end,
+            });
             (versions, written)
         }
         MemoryDerivation::CellsForgotten { .. } | MemoryDerivation::CellObserved { .. } => {
-            continued()
+            (continued(), None)
         }
         _ => Default::default(),
+    }
+}
+
+/// Disjoint intervals have at most one earlier start overlapping the write.
+/// Every other hit starts inside the write, so a scalar write removes at most
+/// its byte width plus one entry, regardless of the object's size.
+fn clear_overlapping_cells(cells: &mut LocalIntegerCells, start: i64, end: i64) {
+    if let Some((&earlier, (earlier_end, _))) = cells.get_less_than(&start)
+        && *earlier_end > start
+    {
+        cells.remove(&earlier);
+    }
+    if cells.contains_key(&start) {
+        cells.remove(&start);
+    }
+    while let Some((&later, _)) = cells.get_greater_than(&start)
+        && later < end
+    {
+        cells.remove(&later);
     }
 }
 
@@ -487,7 +534,8 @@ impl ProgramPoint {
     }
 
     pub(crate) fn supports_indexed_local_integer_version(pointer: &Address) -> bool {
-        matches!(pointer.offset, AddressOffset::Constant(0)) && indexed_local(&pointer.base)
+        matches!(pointer.offset, AddressOffset::Constant(offset) if offset >= 0)
+            && indexed_local(&pointer.base)
     }
 
     /// A direct integer cell's version, if this path has a recorded direct write
@@ -505,10 +553,23 @@ impl ProgramPoint {
             // A substituted view has not replayed the stores on this path.
             return None;
         }
-        let version = if node.local_integer_write.as_ref() == Some(&pointer.base) {
+        let AddressOffset::Constant(start) = pointer.offset else {
+            return None;
+        };
+        let end = start.checked_add(i64::from(kind.byte_width()))?;
+        let version = if node.local_integer_write.as_ref().is_some_and(|write| {
+            write.block == pointer.base && write.start == start && write.end == end
+        }) {
             node.clone()
         } else {
-            node.local_integer_versions.get(&pointer.base)?.upgrade()?
+            let (stored_end, version) = node
+                .local_integer_versions
+                .get(&pointer.base)?
+                .get(&start)?;
+            if *stored_end != end {
+                return None;
+            }
+            version.upgrade()?
         };
         let (store_kind, _) = integer_store_bits(version.steps.as_deref()?)?;
         if store_kind != kind {
@@ -633,6 +694,61 @@ mod tests {
             joined.path_link().split().and_then(PathLink::id),
             start.program_point().id()
         );
+    }
+
+    #[test]
+    fn fixed_offset_versions_match_the_path_and_stop_at_overlaps_or_log_gaps() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let left = slot();
+        let right = left.offset_by_bytes(4);
+        let start = ExecutionState::new()
+            .with_memory(SymbolicMemory::new().with_block(left.base.clone(), 8));
+        let store_word = |state: &ExecutionState, address: Address, bits| {
+            state.clone().with_memory(
+                state
+                    .memory()
+                    .clone()
+                    .store(address, ProgramValue::Int32(MachineTerm::constant(bits))),
+            )
+        };
+        let written = store_word(&start, right.clone(), 7);
+        let sibling = store_word(&written, left.clone(), 1);
+        let version = |state: &ExecutionState| {
+            state
+                .program_point()
+                .indexed_local_integer_version(&right, LoadKind::Int32)
+                .and_then(|point| point.read_version_id())
+        };
+        let walked =
+            crate::kernel::resource_tracker::cell_version_on_path(sibling.path_link(), &right, 4);
+        assert_eq!(
+            walked.and_then(|point| point.id()),
+            written.program_point_id()
+        );
+        assert_eq!(version(&sibling), written.program_point_id());
+
+        let overlapping = store_word(&sibling, left.offset_by_bytes(2), 0);
+        assert_eq!(version(&overlapping), None);
+        let byte = ProgramValue::UInt8(MachineTerm::narrow_constant(MachineIntegerType::UInt8, 0));
+        let middle_byte = sibling.clone().with_memory(
+            sibling
+                .memory()
+                .clone()
+                .store(right.offset_by_bytes(1), byte),
+        );
+        assert_eq!(version(&middle_byte), None);
+        assert_eq!(version(&sibling), written.program_point_id());
+
+        let replacement = sibling
+            .memory()
+            .clone()
+            .store(right.clone(), ProgramValue::Int32(MachineTerm::constant(9)));
+        let unlogged = sibling
+            .clone()
+            .with_materialized_memory_at_current_point(replacement);
+        assert_eq!(unlogged.program_point_id(), sibling.program_point_id());
+        assert_eq!(version(&unlogged), None);
+        assert_eq!(version(&store_word(&unlogged, left, 2)), None);
     }
 
     /// The arena's stored instance carries no path's steps.

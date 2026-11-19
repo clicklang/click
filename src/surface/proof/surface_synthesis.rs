@@ -4921,6 +4921,11 @@ fn synthesize_indexed_integer_read(
 ) -> Option<ContractExpression> {
     let kind = crate::kernel::LoadKind::of_type(value_type)?;
     let expression = |state: &ExecutionState| {
+        if pointer.offset != AddressOffset::Constant(0)
+            && let Some(field) = synthesize_owned_field_at_address(pointer, value_type, state)
+        {
+            return Some(field);
+        }
         let address = synthesize_surface_pointer_expression(
             pointer,
             parameter_binding,
