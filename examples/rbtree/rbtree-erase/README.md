@@ -1,7 +1,10 @@
 # Linux rbtree erase
 
-`rbtree_erase_augmented.click` verifies the unchanged Linux
-`__rb_erase_augmented` under one general contract: any node of a red-black,
+See the [current focused rerun](../../../roadmap/rbtree-example.md#focused-verification-on-current-master)
+for the general proofs' verification status.
+
+`rbtree_erase_augmented.click` contains the general proof of the unchanged
+Linux `__rb_erase_augmented` under one contract: any node of a red-black,
 parent-consistent tree, at any position. It consumes the node's subtree
 `rb_at(node)` and its context `ctx_at(node, root)`, and returns the detached
 node's fields and an `erase_out(root, result)` outcome resource. A
@@ -22,7 +25,7 @@ positions share one proof. The deeper-successor exits run the unchanged
 descent loop over the shared spine resources.
 
 `rbtree_erase_general_wrapper.click` imports it and the general color-repair
-proof and verifies the unchanged `rb_erase` under the same precondition. It
+proof and specifies the unchanged `rb_erase` under the same precondition. It
 matches on the outcome and calls `____rb_erase_color` only for a deficit. It
 returns the detached node and a balanced, parent-consistent root whose
 in-order contents are the old context's with the node removed.

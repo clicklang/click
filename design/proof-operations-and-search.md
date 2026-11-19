@@ -137,12 +137,12 @@ statements without re-running declaration proofs; no guard exception remains.
 See the theorem boundary section in the
 [efficiency contract](../docs/internals/verification-efficiency.md).
 
-Four kernel bridges preserve these implementations:
+The search inventory includes these kernel bridges:
 
 | Existing entry point | `ProofSearch` implementation | Ambient work to resolve |
 | --- | --- | --- |
 | `memory_range_aliases` | `loan_aliases` | Pointer aliases used by loan queries. |
-| `permits_memory_access_with_assumptions` | `loan_access` | Write permission, including symbolic protected ranges. |
+| `permits_memory_access_with_assumptions` | `loan_access` | Legacy write check exercised by tests. |
 | `owned_validity_candidates` | `ownership_validity_candidates` | Candidate owners for composition validity. |
 | `call_kept_ownership` | `call_frame` | Residual caller resources and composite families. |
 

@@ -64,23 +64,17 @@ six-group estimate covered only resource/loan candidates, not the verifier.
 
 ## Reconciled status and ownership
 
-The frozen inventory has **662 reference records**: 4 legacy bridges, 17 callers
-of those bridges, 6 operation references, 0 operation-to-driver references,
-16 mixed references, 122 driver references, 489 search references, 6 presentation
-references and 2 imports. These are neither independent walks nor
-runtime invocation counts. The [caller audit](../design/proof-boundary-classification.md)
-classifies every mixed and operation-to-driver record and groups all 6
-operation references. Registering the signed-definedness and unsigned-order
-helpers exposes four existing search-only caller records; it adds no runtime work.
+The [frozen inventory](../build_support/proof_search_edges.tsv) tracks
+caller/target pairs. The [caller audit](../design/proof-boundary-classification.md)
+records the original classification and reproductions.
 
 - **Confirmed architectural exceptions:** explicit legacy transport invokes
   discovery.
   Its fixed-state route retains uncharged transition-assumption reconstruction. No fresh
   scaling curve was run for this reconciliation.
-- **Unmeasured candidates:** four kernel bridges map to three groups, L1, R2
-  and C1. Other transition and declaration checks
-  need caller-specific evidence. Preserve these as candidates, not confirmed
-  performance regressions.
+- **Remaining candidates:** raw ownership admission (R2), composite call
+  framing (C1), and the entry-partition alias check (L1) still need
+  caller-specific cost evidence.
 - **Legitimate search:** driver-owned implicit solve and explicit smart
   planning. Generating obligations is fast work; solving them may be slow and
   expandable. Have/claim and resource-scope obligation scheduling, step/fold dispatch,
@@ -98,10 +92,10 @@ helpers exposes four existing search-only caller records; it adds no runtime wor
 - **Operation guards:** theorem application, scope completion, statement-result
   publication, prepared-step publication, have opening and contract-claim opening
   have test-build discovery guards.
-  Statement preparation retains loan-access, raw ownership-validation and
-  composite-framing dependencies. First guard failures mask later crossings;
-  re-probe complete preparation as each route is removed. See the [reproductions](../design/proof-boundary-classification.md#operation-discovery-guards-and-reproduced-crossings).
-  Statement preparation remains unguarded; no exception exempts its search.
+  The production paths formerly using the loan write guard now use explicit
+  evidence or obligations. Re-probe complete statement preparation for
+  remaining crossings, including ownership validation and composite framing.
+  See the [historical probes](../design/proof-boundary-classification.md#operation-discovery-guards-and-reproduced-crossings).
 - **Enforcement gap:** lexical dependency freezing and selected work counters
   do not prohibit every search call during expanded replay or detect arbitrary
   loops, shared-term export and copying. No global fast-proof guarantee yet.
@@ -110,8 +104,6 @@ Resource-scope completion now reports obligations to the driver, including
 nested opens; function-exit deferral is unchanged. C-branch and proof-case script
 interpretation now also lives in the driver; primitive split/focus/join operations
 do not run arm-script callbacks. No operation-to-driver records remain in the frozen inventory.
-For a new scaling experiment, L1 through an actual write remains a bounded
-candidate. Boundary cleanup and enforcement are alternative next slices below.
 Transport work should target a surviving generated form or a written legacy
 consumer and its retirement criterion, not accumulate already-covered shapes. These are separate
 work items; this reconciliation changes no behavior.
@@ -447,7 +439,7 @@ coverage. Pointer decisions consume explicitly stated separation instead of
 discovering it through ownership compositions or alias classes. Removing this
 copy does not establish a bound for every separation observation.
 
-### L1: write restrictions from active loans — in-progress migration
+### L1: write restrictions from active loans
 
 The pointee-store route generates a separation obligation without alias
 search. The source write regression is flat at 179 charged units with one loan
@@ -474,24 +466,18 @@ source write with one view and 4/16/64 aliases; `loan_access_requirement_is_reta
 covers descriptor generation and persistent closes with 4/16/64/256 loans.
 These scoped controls do not certify every loan caller or proof-publication cost.
 
-Checked scalar and bulk writes, allocation retirement, exact call and worker
-effects, loop heads and exits, ordinary branch memory joins, direct and modular
-mutex representation writes, and modular construction destinations now retain
-separation obligations. Automatic storage retirement and initialization use
-the object-identity index. A newly allocated aggregate result has no prior
-loan.
+Scalar and bulk writes, allocation retirement, call and worker effects, loop
+and branch boundaries, mutex writes, and direct and modular construction now
+check retained loan evidence or emit separation obligations. Automatic storage
+retirement and initialization use the object-identity index. Verified calls
+check each bounded write separately and refuse unnamed write effects with a
+live memory loan. The [rbtree insertion wrappers](rbtree-example.md#focused-verification-on-current-master)
+exercise that refusal with a recursive tree and a live callback-table view.
 
-Remaining uses of the legacy loan check cover unresolved call projections,
-direct constructor execution without a modular proof boundary, local-loan
-admission, and resource or authority rewrites. These need their own evidence
-before the legacy path can be removed. Cache retention remains a separate
-query.
-
-Independently grow symbolic loans at fixed aliases, cold/repeated queries, and
-persistent branches. Cache retention is separate from write permission: its
-selected-separation check now tests endpoints directly instead of using the
-alias-searching membership evidence builder. Retain nested-loan, width,
-overlap and ended-scope safety controls.
+The legacy write guard has only test callers. Its bridge and search helper can
+be restricted to tests. Contract-entry own/view overlap checking still has a
+separate alias query. Cache retention independently uses indexed protection
+evidence to decide which observations survive.
 
 ### C1: modular call framing — source candidate, also in scaling roadmap
 
@@ -546,11 +532,10 @@ guard test prevent that helper from silently returning to publication. The
 removed adapter's lower-level red diagnostic is retired: it measured a helper
 that publication no longer calls, not the cost of the operation after removal.
 
-This does not guard all statement preparation. Other cell-map/effect searches,
-transport re-validation, ownership validation, loan access, and composite
-framing remain separately scoped candidates. Keep ordinary obligation solving
-on the driver and optional fact discovery in expandable search; a missing
-bonus fact is not a new mandatory obligation.
+The publication guard covers the published result. Cell-map and effect
+queries, transport re-validation, ownership validation, and composite framing
+still need scoped checks during preparation. The driver owns obligation solving
+and expandable fact discovery.
 
 ### M1: reads, caches and history — coverage gaps
 
