@@ -452,7 +452,7 @@ impl Parser {
             }
         };
         self.expect(Token::Semicolon)?;
-        let word = self.hidden_bit_field_binding("word", record_value_type(&record.storage));
+        let word = self.hidden_bit_field_word(record_value_type(&record.storage));
         let object = LocalBitFields {
             record,
             word,
@@ -515,14 +515,18 @@ impl Parser {
         }
         self.expect(Token::Semicolon)?;
         let address = scalar_cast(object.address(), InterfaceType::UInt32Pointer);
-        let pointer = self.hidden_bit_field_binding("pointer", InterfaceType::UInt32Pointer);
-        object.pointer = Some(pointer.clone());
+        // Preserve canonical selectors for declarations following this alias.
+        self.next_local_binding = self
+            .next_local_binding
+            .checked_add(1)
+            .expect("binding ordinal fits u32");
+        object.pointer = Some(binding.clone());
         object.read_only = parsed.pointee_constant;
         self.variable_types
             .insert(binding.clone(), parsed.interface_type);
-        self.local_bit_fields.insert(binding, object);
+        self.local_bit_fields.insert(binding.clone(), object);
         Ok(scalar_declaration(
-            pointer,
+            binding,
             InterfaceType::UInt32Pointer,
             Some(address),
         ))
@@ -547,13 +551,9 @@ impl Parser {
         Ok(source)
     }
 
-    fn hidden_bit_field_binding(
-        &mut self,
-        purpose: &str,
-        interface_type: InterfaceType,
-    ) -> BindingName {
+    fn hidden_bit_field_word(&mut self, interface_type: InterfaceType) -> BindingName {
         let name = self.new_automatic_binding(Some(format!(
-            "__click_bit_field_{purpose}_{}",
+            "__click_bit_field_word_{}",
             self.next_local_binding
         )));
         self.track_bit_field_binding(name, interface_type)
