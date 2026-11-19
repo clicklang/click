@@ -238,6 +238,20 @@ pub(super) fn bytes(id: Id) -> Option<u32> {
     })
 }
 
+pub(super) fn origin_for_cell(
+    memory: &SharedMemory,
+    pointer: &Address,
+    kind: LoadKind,
+) -> Option<SharedMemory> {
+    let id = existing(memory, pointer, kind)?;
+    let epoch = LOAD_ORIGIN_EPOCH.with(std::cell::Cell::get);
+    STATE.with(|state| {
+        let state = state.borrow();
+        let record = state.records.get(&id)?;
+        (record.epoch == epoch).then(|| record.origin.clone())
+    })
+}
+
 pub(super) fn observation(id: Id) -> Option<ScalarReadObservation> {
     crate::instrumentation::record_deterministic_work(1);
     let epoch = LOAD_ORIGIN_EPOCH.with(std::cell::Cell::get);
@@ -293,6 +307,22 @@ pub(super) fn for_operand(
 mod tests {
     use super::*;
     use crate::kernel::{KernelTerm, MachineOperandView, VerificationSession};
+
+    #[test]
+    fn cell_origin_lookup_preserves_float_width_and_epoch() {
+        let _session = VerificationSession::enter();
+        let address = Address::symbolic(Variable(998_708));
+        let memory = intern_memory(SymbolicMemory::new());
+        let origin = intern_memory(SymbolicMemory::new().with_block("float-origin", 8));
+        record(&memory, &address, LoadKind::Float32, &origin, 4);
+        assert_eq!(
+            origin_for_cell(&memory, &address, LoadKind::Float32),
+            Some(origin)
+        );
+        assert_eq!(origin_for_cell(&memory, &address, LoadKind::Float64), None);
+        begin_load_origin_epoch();
+        assert_eq!(origin_for_cell(&memory, &address, LoadKind::Float32), None);
+    }
 
     #[test]
     fn a_typed_producer_replaces_an_untyped_canonical_reads_guessed_width() {

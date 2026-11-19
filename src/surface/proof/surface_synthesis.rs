@@ -4298,7 +4298,12 @@ fn raise_kernel_term_dispatch(
         | Node::FloatCall(_) => {
             raise_float_expression(term, parameter_binding, state, bound_variables)?
         }
-        Node::FloatRead(_) => raise_float_read(term, parameter_binding, state, bound_variables)?,
+        Node::FloatRead(read) => {
+            let KernelType::Program(value_type) = term.ty() else {
+                unreachable!("float read type");
+            };
+            raise_float_read(read, *value_type, parameter_binding, state, bound_variables)?
+        }
         Node::FloatLiteral { .. } => SurfaceTerm::ProgramExpression(ProgramExpression::Value(
             crate::kernel::KernelTermExport::float(term).ok()?,
         )),
@@ -4566,6 +4571,61 @@ fn synthesize_unsigned_comparison(
     })
 }
 
+/// One argument of a declared resource, spelled by the value it carries.
+fn synthesize_surface_resource_argument(
+    argument: &crate::kernel::AlgebraicValue,
+    parameter_binding: ParameterBinding<'_>,
+    state: &ExecutionState,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
+) -> Option<ContractExpression> {
+    use crate::kernel::AlgebraicValue as A;
+    match argument {
+        // A local's storage is spelled by the local, `&pool`, as a memory
+        // range's base is.
+        A::Program(ProgramValue::Pointer(pointer))
+            if let Some(name) = state.locals().name_for_slot(pointer.address()) =>
+        {
+            let object = ProgramExpression::Variable(surface_local_name(name));
+            Some(ContractExpression::ProgramExpression(
+                if state.locals().array_object_element_type(name).is_some() {
+                    object
+                } else {
+                    ProgramExpression::AddressOf(Box::new(object))
+                },
+            ))
+        }
+        A::Program(ProgramValue::Pointer(pointer)) => synthesize_surface_pointer_expression(
+            pointer,
+            parameter_binding,
+            state,
+            bound_variables,
+        ),
+        A::Program(ProgramValue::Parameter(term)) => {
+            synthesize_surface_algebraic(term, parameter_binding, state, bound_variables)
+        }
+        A::Algebraic(term) => {
+            synthesize_surface_algebraic(term, parameter_binding, state, bound_variables)
+        }
+        A::Integer(term) => synthesize_surface_integer(
+            &term.clone().into(),
+            parameter_binding,
+            state,
+            bound_variables,
+        ),
+        A::Program(
+            ProgramValue::Int8(value)
+            | ProgramValue::UInt8(value)
+            | ProgramValue::Int16(value)
+            | ProgramValue::UInt16(value)
+            | ProgramValue::Int32(value)
+            | ProgramValue::UInt32(value)
+            | ProgramValue::Int64(value)
+            | ProgramValue::UInt64(value),
+        ) => synthesize_surface_bitvector(value, parameter_binding, state, bound_variables),
+        _ => None,
+    }
+}
+
 pub(super) fn synthesize_surface_resource_subject(
     resource: &Resource,
     parameter_binding: ParameterBinding<'_>,
@@ -4591,6 +4651,35 @@ pub(super) fn synthesize_surface_resource_subject(
     }
     if matches!(resource, Resource::Emp) {
         return Some(ResourceSubject::Emp);
+    }
+    // A declared composite or token is its name applied to its arguments,
+    // `list(node)` or `slot(&pool, p)`, which lowering reads back to the
+    // same resource.
+    if let Resource::Composite { name, arguments } | Resource::Token { name, arguments } = resource
+    {
+        let kind = if matches!(resource, Resource::Composite { .. }) {
+            crate::surface::ResourceKind::Composite
+        } else {
+            crate::surface::ResourceKind::Token
+        };
+        let arguments = arguments
+            .native_values()
+            .iter()
+            .map(|argument| {
+                synthesize_surface_resource_argument(
+                    argument,
+                    parameter_binding,
+                    state,
+                    bound_variables,
+                )
+            })
+            .collect::<Option<Vec<_>>>()?;
+        return Some(ResourceSubject::Declared {
+            kind,
+            name: name.clone(),
+            arguments,
+            parameter_types: Vec::new(),
+        });
     }
     let Resource::Memory(range) = resource else {
         return None;
@@ -7582,27 +7671,26 @@ fn synthesize_state_pointer_expression(
 /// A float load states its width with an existing pointer cast. This keeps the
 /// spelling exact even when the available address name is a byte pointer.
 fn raise_float_read(
-    root: &crate::kernel::KernelTerm,
+    read: &crate::kernel::KernelMemoryRead,
+    value_type: ProgramType,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<SurfaceTerm> {
-    let read = root.float_read_native()?;
-    let MachineTerm::MemoryLoad(memory, _, _) = read else {
-        unreachable!("float read descriptor")
-    };
+    let (point, address) = read.parts();
+    let memory = point.shared_memory();
     // Float producers retain the raw state, rather than the integer load's
     // canonical selection. Spelling must reproduce that same producer input.
     let reads_state = |state: &ExecutionState| {
-        crate::kernel::intern_memory_ref(state.memory()).arena_id()
-            == memory.shared_memory().arena_id()
+        crate::kernel::intern_memory_ref(state.memory()).arena_id() == memory.arena_id()
     };
     if !reads_state(state) {
         if let Some(entry) = SYNTHESIS_ENTRY_STATE.with(|slot| slot.borrow().clone())
             && reads_state(&entry)
         {
             return Some(SurfaceTerm::Old(Box::new(raise_float_read(
-                root,
+                read,
+                value_type,
                 parameter_binding,
                 &entry,
                 bound_variables,
@@ -7611,26 +7699,26 @@ fn raise_float_read(
         let (selector, recorded) = SYNTHESIS_RECORDED_POINTS.with(|slot| {
             let slot = slot.borrow();
             let points = slot.as_ref()?;
-            let (selector, recorded) = points.point_reading_memory(memory.shared_memory())?;
+            let (selector, recorded) = points.point_reading_memory(memory)?;
             reads_state(recorded).then(|| (selector.clone(), recorded.clone()))
         })?;
         return Some(SurfaceTerm::At {
             selector,
             expression: Box::new(raise_float_read(
-                root,
+                read,
+                value_type,
                 parameter_binding,
                 &recorded,
                 bound_variables,
             )?),
         });
     }
-    let MachineTerm::MemoryLoad(_, pointer, _) = read else {
-        unreachable!()
-    };
-    let pointer = synthesize_surface_pointer(pointer, parameter_binding, state, bound_variables)?;
-    let crate::kernel::KernelType::Program(value_type) = root.ty() else {
-        unreachable!()
-    };
+    let pointer = synthesize_surface_pointer(
+        address.exact_cell_key(),
+        parameter_binding,
+        state,
+        bound_variables,
+    )?;
     Some(SurfaceTerm::Index(
         Box::new(SurfaceTerm::ProgramExpression(ProgramExpression::Cast {
             expression: Box::new(ProgramExpression::Cast {

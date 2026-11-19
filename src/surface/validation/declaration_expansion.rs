@@ -694,6 +694,7 @@ fn empty_library_file() -> Result<ClickFile, ClickError> {
         &BTreeSet::new(),
         &BTreeMap::new(),
         Default::default(),
+        None,
     )
 }
 
@@ -733,6 +734,7 @@ fn load_library_modules(modules: &[(&str, &str)]) -> Result<Vec<LibraryModule>, 
             &BTreeSet::new(),
             &BTreeMap::new(),
             Default::default(),
+            None,
         )?;
         if !module.verifying_sources().is_empty()
             || !module.imports().is_empty()

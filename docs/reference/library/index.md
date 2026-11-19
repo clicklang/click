@@ -9663,7 +9663,7 @@ theorem len_has_terminator(bytes: uint8[], len: uint64) {
 
 Source: `library/cpp/span.click`, `library/cpp/array.click` and
 `library/cpp/as_writable_bytes.click`. These files are not modules: the C++
-importer appends the ones an import calls to its sidecar and writes each
+importer adds the selected contracts to the sidecar's environment and writes each
 `template<...> extern` block out at each element type and extent a call
 names, `std::span<int>::size`. Its name table,
 `src/languages/cpp/standard_library.rs`, lists the functions and element
@@ -9671,6 +9671,38 @@ types it maps to them. The model accessors `std_span_data`,
 `std_span_size` and `std_array_data` name a span's or array's state.
 
 ### `std::span<T>`
+
+The catalog also supplies copy construction and `empty()` for dynamic
+`std::span<int>`. These use the logical descriptor resource
+`click::cpp::span_state::span_state`, defined in `library/cpp/span_state.click`.
+Copy construction produces a new descriptor resource with the same address
+and count while preserving the source. `empty()` observes the count and
+preserves the descriptor. The resource grants no access to backing memory.
+
+```click
+abstract resource span_state(span: uint8*) {
+    field data: int32*;
+    field count: uint64;
+}
+
+template<class T> extern std::span<T>::span(const std::span<T>& source) {
+    owns input: span_state(&source as (uint8*));
+    produces copy: span_state(this as (uint8*));
+    ensures input.data == old(input.data);
+    ensures input.count == old(input.count);
+    ensures copy.data == input.data;
+    ensures copy.count == input.count;
+}
+
+template<class T> extern bool std::span<T>::empty() const {
+    owns state: span_state(this as (uint8*));
+    ensures state.data == old(state.data);
+    ensures state.count == old(state.count);
+    ensures state.count == 0u64 implies result;
+    ensures state.count != 0u64 implies not result;
+}
+```
+
 
 The dynamic pointer/count constructor initializes the descriptor and establishes
 its address and count. Its contract grants no authority over the backing.
@@ -11513,6 +11545,19 @@ paths; both premises are explicit.
 
 **Verified use:** `mdtests/viewable_restrict_memory.md` and
 `mdtests/viewable_restrict_resources.md`.
+
+### `separation::contains_joined_ranges`
+
+Two ordered adjacent ranges on the same pointer cover their combined interval.
+This theorem describes the ranges and grants no memory permission.
+
+```click
+theorem contains_joined_ranges<T, I>(p: T*, lo: I, mid: I, hi: I) {
+    requires lo <= mid;
+    requires mid <= hi;
+    ensures contains(memory(p[lo..mid]) * memory(p[mid..hi]), memory(p[lo..hi]));
+}
+```
 
 ### Separating conjunction laws
 

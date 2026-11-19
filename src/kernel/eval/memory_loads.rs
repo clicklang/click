@@ -3192,6 +3192,14 @@ pub(crate) fn scalar_read_observation(
     read_observations::for_operand(operand)
 }
 
+pub(in crate::kernel) fn scalar_read_origin_for_cell(
+    memory: &SharedMemory,
+    address: &Address,
+    kind: LoadKind,
+) -> Option<SharedMemory> {
+    read_observations::origin_for_cell(memory, address, kind)
+}
+
 /// Build an exact read and publish its typed observation. This does not
 /// select a comparison identity or change the supplied memory state. Use
 /// `MachineTerm::memory_read` when no observation needs to be published.

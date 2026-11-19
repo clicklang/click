@@ -4455,6 +4455,12 @@ changing the plan.
 | 11k | Move one scalar machine-result certificate reader onto retained typed arguments. Preserve call identity and exact argument spelling. |
 | 11l | Delete adapters and cache branches whose last readers have moved. Update the live-boundary inventory with the callers that remain. |
 
+11d moves float read raising to the retained program point and address. The
+raw logical `BoolLoad` needs its own representation decision. A source `bool`
+cell read lowers to a byte comparison, so raising a raw `BoolLoad` as that
+source read would change the term on relowering. Keep the raw case open until
+it has an exact spelling or its remaining native inputs migrate.
+
 ## Delivery and history
 
 Land coherent tested slices in small PRs, one open PR per thread, with auto-merge

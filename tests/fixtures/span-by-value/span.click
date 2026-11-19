@@ -1,26 +1,6 @@
 verifying "span-probe.cpp";
 
-abstract resource span_state(span: uint8*) {
-    field data: int32*;
-    field count: uint64;
-}
-
-extern std::span<int>::span(const std::span<int>& source) {
-    owns input: span_state(&source as (uint8*));
-    produces copy: span_state(this as (uint8*));
-    ensures input.data == old(input.data);
-    ensures input.count == old(input.count);
-    ensures copy.data == input.data;
-    ensures copy.count == input.count;
-}
-
-extern bool std::span<int>::empty() const {
-    owns state: span_state(this as (uint8*));
-    ensures state.data == old(state.data);
-    ensures state.count == old(state.count);
-    ensures state.count == 0u64 implies result;
-    ensures state.count != 0u64 implies not result;
-}
+import click::cpp::span_state::{span_state};
 
 bool is_empty(std::span<int> span) {
     consumes state: span_state(&span as (uint8*));

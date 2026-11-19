@@ -425,12 +425,19 @@ pub(super) fn common_variables(
                     );
                 }
                 FoldVariableRead::IntegerBinders | FoldVariableRead::MachineBinders => {}
-                FoldVariableRead::ExpressionFree => collect_machine_leaf(
-                    term.float_read_native().expect("float read"),
-                    mode,
-                    &mut leaf_variables,
-                    &mut SeenTerms::default(),
-                ),
+                FoldVariableRead::ExpressionFree => {
+                    let (point, address) = read.parts();
+                    let kind = crate::kernel::FloatOperandView::from_shared(term)
+                        .expect("float read")
+                        .format()
+                        .load_kind();
+                    collect_machine_read_variables(
+                        point.shared_memory(),
+                        address.exact_cell_key(),
+                        kind,
+                        &mut leaf_variables,
+                    );
+                }
             },
             KernelTermNode::AlgebraicRead(read) => match mode {
                 FoldVariableRead::IntegerFree | FoldVariableRead::MachineCapture => {
@@ -442,12 +449,17 @@ pub(super) fn common_variables(
                     );
                 }
                 FoldVariableRead::IntegerBinders | FoldVariableRead::MachineBinders => {}
-                FoldVariableRead::ExpressionFree => collect_machine_leaf(
-                    term.algebraic_read_carrier().expect("algebraic read"),
-                    mode,
-                    &mut leaf_variables,
-                    &mut SeenTerms::default(),
-                ),
+                FoldVariableRead::ExpressionFree => {
+                    let (point, address) = read.parts();
+                    // The native algebraic collector uses the Bits64 read
+                    // kind to follow registered origins for havoc framing.
+                    collect_machine_read_variables(
+                        point.shared_memory(),
+                        address.exact_cell_key(),
+                        LoadKind::Bits64,
+                        &mut leaf_variables,
+                    );
+                }
             },
             KernelTermNode::MemoryLoad { address, .. } => match mode {
                 FoldVariableRead::IntegerFree | FoldVariableRead::MachineCapture => {
@@ -921,6 +933,7 @@ mod tests {
                     .collect::<BTreeSet<_>>();
                 assert_eq!(actual, expected, "{format:?} {mode:?}");
             }
+            assert!(!root.has_cached_native_argument());
         }
     }
 
