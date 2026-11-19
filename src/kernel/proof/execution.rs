@@ -1102,9 +1102,10 @@ impl CheckedPopulationMemberRewrite {
 /// naming the offending cell, so the caller can report which cell or field a
 /// rejected rewrite changed.
 fn memory_only_adds_named_cells(
-    before: &crate::kernel::SymbolicMemory,
+    before_state: &ExecutionState,
     after: &crate::kernel::SymbolicMemory,
 ) -> Result<(), String> {
+    let before = before_state.memory();
     let mut rebased = after.clone();
     rebased.cells = before.cells.clone();
     if rebased != *before {
@@ -1121,7 +1122,8 @@ fn memory_only_adds_named_cells(
         };
         return Err(format!("changed non-cell memory state ({changed})"));
     }
-    let base = crate::kernel::intern_memory(before.clone());
+    let source = before_state.program_point();
+    let base = source.shared_memory();
     for change in before.cells.diff(&after.cells) {
         let crate::kernel::HashedOrdMapChange::Added(pointer) = change else {
             return Err("removed or rewrote an existing cell".into());
@@ -1143,11 +1145,28 @@ fn memory_only_adds_named_cells(
         let Some(kind) = LoadKind::of_value(&value) else {
             return Err("added a cell no load reads".into());
         };
+        if let Some(MachineTerm::MemoryLoad(point, _, _)) =
+            crate::kernel::spec::program_value_bitvector_term(&value)
+            && point.read_version_id().is_some()
+        {
+            let expected = crate::kernel::eval::indexed_resource_scalar_read(
+                &source,
+                pointer,
+                value.program_type(),
+            );
+            if expected
+                .as_ref()
+                .is_none_or(|load| !cell_value_is_exactly_load(&value, load))
+            {
+                return Err(format!(
+                    "added a cell at {pointer:?} without its indexed source read"
+                ));
+            }
+            continue;
+        }
         let load = crate::kernel::canonical_form_of_load(base.clone(), pointer.clone(), kind);
         if !cell_value_is_exactly_load(&value, &load) {
-            return Err(describe_unnamed_cell_addition(
-                &base, pointer, &value, &load,
-            ));
+            return Err(describe_unnamed_cell_addition(base, pointer, &value, &load));
         }
     }
     Ok(())
@@ -1256,6 +1275,8 @@ fn cell_value_is_exactly_load(value: &ProgramValue, load: &MachineTerm) -> bool 
         | ProgramValue::UInt32(term)
         | ProgramValue::Int64(term)
         | ProgramValue::UInt64(term)
+        | ProgramValue::Int128(term)
+        | ProgramValue::UInt128(term)
         | ProgramValue::Float32(term)
         | ProgramValue::Float64(term) => term == load,
         ProgramValue::Bool(term) => {
@@ -1507,7 +1528,7 @@ impl CheckedResourceRewrite {
             return Err("authority control has the wrong resource exchange".into());
         }
         if exposing {
-            memory_only_adds_named_cells(before_state.memory(), after_state.memory())?;
+            memory_only_adds_named_cells(before_state, after_state.memory())?;
         } else if !crate::kernel::api::contract_certification::memories_definitionally_equal(
             before_state.memory(),
             after_state.memory(),
@@ -2255,7 +2276,7 @@ impl CheckedResourceRewrite {
                     return Err("member body access has the wrong resource exchange".into());
                 }
                 if now_open {
-                    memory_only_adds_named_cells(before_state.memory(), after_state.memory())?;
+                    memory_only_adds_named_cells(before_state, after_state.memory())?;
                 } else if !crate::kernel::api::contract_certification::memories_definitionally_equal(
                     before_state.memory(),
                     after_state.memory(),
@@ -2388,8 +2409,7 @@ impl CheckedResourceRewrite {
                 // each added cell must hold the canonical load form of its own
                 // pointer at the pre-rewrite state. That is a definitional
                 // identity, checked here per added cell with no search.
-                if let Err(detail) =
-                    memory_only_adds_named_cells(&before_state.memory, &after_state.memory)
+                if let Err(detail) = memory_only_adds_named_cells(before_state, &after_state.memory)
                 {
                     return Err(if unfold {
                         format!(
@@ -2836,7 +2856,7 @@ impl CheckedResourceObservation {
                 (after_state, false)
             }
         };
-        if memory_only_adds_named_cells(before_state.memory(), after_state.memory()).is_err()
+        if memory_only_adds_named_cells(before_state, after_state.memory()).is_err()
             && !crate::kernel::api::contract_certification::memories_definitionally_equal(
                 before_state.memory(),
                 after_state.memory(),

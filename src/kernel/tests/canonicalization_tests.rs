@@ -1256,8 +1256,8 @@ fn a_materialized_pointer_cell_is_named_by_the_load_it_holds() {
     let pointer_at = |value: Address| ProgramValue::typed_pointer(value, ProgramType::Int32Pointer);
     let name_at = |memory: SymbolicMemory, cell: &Address| {
         crate::kernel::eval::canonical_cell_load(
-            intern_memory(memory),
-            cell.clone(),
+            &crate::kernel::ProgramPoint::of_memory(&memory),
+            cell,
             ProgramType::Int32Pointer,
         )
     };

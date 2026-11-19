@@ -70,7 +70,7 @@ pub(super) fn merge_byte_bits(left: MachineTerm, right: MachineTerm) -> MachineT
 /// The equation names only the selected output state; initialization and
 /// authority come from the checked output transfer, not from this equation.
 pub(in crate::kernel) fn declared_uint32_read_representation(
-    memory: &SymbolicMemory,
+    point: &ProgramPoint,
     pointer: &Address,
     byte_order: Option<ByteOrder>,
 ) -> Option<Proposition> {
@@ -78,6 +78,7 @@ pub(in crate::kernel) fn declared_uint32_read_representation(
         return None;
     }
     crate::instrumentation::record_deterministic_work(1);
+    let memory = point.memory();
     let declaration = memory.blocks.get(&pointer.base)?;
     if declaration.declared_scalar_type != Some(ProgramType::UInt32)
         || declaration.size().as_const() != Some(4)
@@ -85,20 +86,15 @@ pub(in crate::kernel) fn declared_uint32_read_representation(
     {
         return None;
     }
-    let retained_state = crate::kernel::intern_memory_ref(memory);
-    let value = super::memory_loads::canonical_scalar_read(&MachineTerm::MemoryLoad(
-        ProgramPoint::at(&retained_state),
-        Box::new(pointer.clone()),
-        LoadKind::UInt32,
-    ));
+    let value = super::memory_loads::canonical_cell_load(point, pointer, ProgramType::UInt32);
     let mut assembled = MachineTerm::constant(0);
     for byte in 0..4 {
         crate::instrumentation::record_deterministic_work(1);
-        let read = super::memory_loads::canonical_scalar_read(&MachineTerm::MemoryLoad(
-            ProgramPoint::at(&retained_state),
-            Box::new(pointer.offset_by_bytes(byte)),
-            LoadKind::UInt8,
-        ));
+        let read = super::memory_loads::canonical_cell_load(
+            point,
+            &pointer.offset_by_bytes(byte),
+            ProgramType::UInt8,
+        );
         let bits = byte_word(&ProgramValue::UInt8(read))?;
         assembled = MachineTerm::bitwise_or(
             assembled,

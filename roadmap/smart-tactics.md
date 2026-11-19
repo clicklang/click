@@ -87,9 +87,10 @@ diagnostic comparisons in tests. Keep production selection indexed.
 
 The scalar observation registry and read congruence use the retained version
 when a read has one. Reads produced from a bare memory view still use legacy
-identity. The remaining producers include resource cell reads through
-`canonical_cell_load`, array and algebraic arguments, and the representation
-equation for bytes initialized by a modular call. Ordinary pointer reads
+identity. Concrete resource cells and modular byte outputs pass their source
+point into scalar read construction and use a typed index entry when present.
+Unindexed resource cells, compact runs, array and algebraic arguments, and
+opaque byte outputs still need point-based versions. Ordinary pointer reads
 through parameters also need checked stores to publish a complete pointer
 equation that raises and lowers at the same version point. Read selection
 through unrelated symbolic addresses needs a checked way to identify the

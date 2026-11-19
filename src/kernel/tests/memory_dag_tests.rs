@@ -2024,8 +2024,8 @@ fn a_materialized_pointer_cell_is_named_at_its_source() {
     let sibling = symbolic_descriptor(92_001);
     let name = |memory: &SymbolicMemory, pointer: &Address| {
         crate::kernel::eval::canonical_cell_load(
-            crate::kernel::intern_memory_ref(memory),
-            pointer.clone(),
+            &crate::kernel::ProgramPoint::of_memory(memory),
+            pointer,
             ProgramType::Int32Pointer,
         )
     };

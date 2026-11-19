@@ -3471,3 +3471,49 @@ fn retained_condition_theorem_preserves_the_standalone_premises() {
     assert_eq!(path.theorem(), &standalone);
     assert_eq!(path.theorem().cmp(&standalone), std::cmp::Ordering::Equal);
 }
+
+#[test]
+fn resource_cell_naming_checks_the_recorded_integer_version_after_forgetting_a_name() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let slot = Address {
+        base: crate::kernel::AddressBase::ExternalArgument,
+        offset: crate::kernel::AddressOffset::Constant(0),
+    };
+    let start = ExecutionState::new().with_memory(SymbolicMemory::new().with_block("other", 4));
+    let without_name = || {
+        let stored = start.clone().with_memory(
+            start
+                .memory()
+                .clone()
+                .store(slot.clone(), ProgramValue::Int32(7u32.into())),
+        );
+        let forgotten =
+            stored
+                .memory()
+                .without_possible_aliasing_cells(&slot, 4, &PureFactContext::new());
+        stored.with_memory(forgotten)
+    };
+    let before = without_name();
+    assert!(before.memory().known_value(&slot).is_none());
+    let point = before.program_point();
+    let version = point
+        .indexed_integer_version(&slot, LoadKind::Int32)
+        .unwrap();
+    let named =
+        before
+            .memory()
+            .clone()
+            .materialize_cell_at(slot.clone(), ProgramType::Int32, &point);
+    assert_eq!(
+        named.known_value(&slot),
+        Some(ProgramValue::Int32(MachineTerm::MemoryLoad(
+            version,
+            Box::new(slot.clone()),
+            LoadKind::Int32,
+        ))),
+    );
+    assert!(super::memory_only_adds_named_cells(&before, &named).is_ok());
+    let other = without_name();
+    assert_eq!(before.memory(), other.memory());
+    assert!(super::memory_only_adds_named_cells(&other, &named).is_err());
+}
