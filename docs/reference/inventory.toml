@@ -2419,6 +2419,10 @@ id = "library.cpp.std::span<T>::data"
 path = "reference/library/index.md#stdspant"
 
 [[item]]
+id = "library.cpp.std::vector<unsigned char>::size"
+path = "reference/library/index.md#stdvectorunsigned-char"
+
+[[item]]
 id = "library.cpp.std::span<T>::empty"
 path = "reference/library/index.md#stdspant"
 
