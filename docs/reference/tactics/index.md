@@ -1594,6 +1594,10 @@ available when one of these holds:
   all four bytes are recorded initialized. These checks use the goal's
   memory state and decline if its lifetime or initialization needs further
   evidence.
+- It separates a complete recorded statement footprint from the named
+  resource. For each recorded member, the checker tests intrinsic
+  separation or looks up the exact member separation. A sequence with
+  multiple effects needs individually checked steps.
 - It is a separation of memory ranges on two distinct automatic objects,
   or between an automatic object and storage incoming to the function.
   The check uses the exact block identities in the goal. Forming the
