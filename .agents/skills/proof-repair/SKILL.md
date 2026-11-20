@@ -152,7 +152,13 @@ carry, which fact it did not read.
 
 ## Outcomes
 
-Stop at exactly one, and say which:
+State the status in every user-facing proof-repair update. When the repair
+fails, name exactly one failure category in the report that announces the
+failure. Use the categories below or `crash` or `hang` as defined above. When
+diagnosis or repair is still underway, say it is in progress and name the
+current proof step or question. Use `success` once the proof verifies.
+
+Stop at exactly one outcome:
 
 - `success`: the proof verifies. Keep the explicit links the default
   automation needed.
