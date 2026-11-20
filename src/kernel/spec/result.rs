@@ -231,6 +231,7 @@ impl SpecValue {
             };
             if !conditional_guard
                 && format == MachineIntegerType::Int32
+                && relation == CompareRelation::Equal
                 && [left, right].iter().any(|operand| {
                     matches!(operand, MachineOperandView::Shared(root)
                         if matches!(root.node(), KernelTermNode::Match(matched) if matched.has_simple_int32_arms()))

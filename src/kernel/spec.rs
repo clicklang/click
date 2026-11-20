@@ -1526,7 +1526,13 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
             operator,
             right,
         } => {
-            let previous = std::mem::replace(&mut budget.retain_known_matches, true);
+            let previous = std::mem::replace(
+                &mut budget.retain_known_matches,
+                matches!(
+                    operator,
+                    ComparisonOperator::Equal | ComparisonOperator::NotEqual
+                ),
+            );
             let paths = lower_spec_comparison_proposition_at_state_in(
                 scope,
                 left,
