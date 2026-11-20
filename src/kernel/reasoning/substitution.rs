@@ -3632,7 +3632,7 @@ fn collect_algebraic_bound_variables(term: &AlgebraicTerm, variables: &mut BTree
             pointer,
         } => {
             collect_algebraic_value_bound_variables(
-                &AlgebraicTermNode::memory_load_carrier_value(memory.shared_memory(), pointer),
+                &AlgebraicTermNode::memory_load_carrier_value(memory, pointer),
                 variables,
             );
         }
@@ -3817,15 +3817,20 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_term(
                 algebraic_type: term.native_compat().algebraic_type.clone(),
                 node: match &term.native_compat().node {
                     AlgebraicTermNode::Variable(variable) => AlgebraicTermNode::Variable(*variable),
+                    AlgebraicTermNode::MemoryLoad { point, pointer } if point.is_entry_read() => {
+                        AlgebraicTermNode::MemoryLoad {
+                            point: point.clone(),
+                            pointer: Box::new(substitute_bitvector_variable_in_pointer(
+                                pointer, from, to,
+                            )),
+                        }
+                    }
                     AlgebraicTermNode::MemoryLoad {
                         point: memory,
                         pointer,
                     } => {
                         match substitute_bitvector_variable_in_algebraic_value(
-                            &AlgebraicTermNode::memory_load_carrier_value(
-                                memory.shared_memory(),
-                                pointer,
-                            ),
+                            &AlgebraicTermNode::memory_load_carrier_value(memory, pointer),
                             from,
                             to,
                         ) {
@@ -6969,12 +6974,18 @@ fn substitute_pointer_variable_in_algebraic_term_node(
 ) -> AlgebraicTermNode {
     match &term.node {
         AlgebraicTermNode::Variable(variable) => AlgebraicTermNode::Variable(*variable),
+        AlgebraicTermNode::MemoryLoad { point, pointer } if point.is_entry_read() => {
+            AlgebraicTermNode::MemoryLoad {
+                point: point.clone(),
+                pointer: Box::new(substitute_pointer_variable_in_pointer(pointer, from, to)),
+            }
+        }
         AlgebraicTermNode::MemoryLoad {
             point: memory,
             pointer,
         } => {
             match substitute_pointer_variable_in_algebraic_value(
-                &AlgebraicTermNode::memory_load_carrier_value(memory.shared_memory(), pointer),
+                &AlgebraicTermNode::memory_load_carrier_value(memory, pointer),
                 from,
                 to,
             ) {

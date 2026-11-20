@@ -4712,7 +4712,7 @@ fn an_abstract_value_seeded_unchanged_is_its_source_states_load() {
     );
     assert_eq!(
         crate::kernel::eval::abstract_value_source(&seeded, &address),
-        Some(original.clone())
+        Some(ProgramPoint::at(&original))
     );
     // A word written since is not the source's, so neither is the value.
     let changed = seeded.clone().store(address.offset_by_bytes(4), int32(7));

@@ -732,6 +732,29 @@ fn synthesize_point_held_value(
     raise(state).or_else(|| synthesize_at_program_point(point, state, raise))
 }
 
+fn synthesize_point_algebraic_read(
+    ty: &crate::kernel::AlgebraicType,
+    point: &crate::kernel::ProgramPoint,
+    pointer: &Address,
+    parameter_binding: ParameterBinding<'_>,
+    state: &ExecutionState,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
+) -> Option<SurfaceTerm> {
+    synthesize_point_held_value(ty, point, pointer, state).or_else(|| {
+        if !ty.rigid {
+            return None;
+        }
+        synthesize_point_read(
+            point,
+            pointer,
+            ProgramType::Parameter(crate::kernel::TypeParameterName::of(ty)),
+            parameter_binding,
+            state,
+            bound_variables,
+        )
+    })
+}
+
 /// The name of the local that keeps `term` in its object at `pointer`, in
 /// `state`: a borrowed Rust enum local `o` read there is spelled `o`. The
 /// local's name reads its object at the point it was last written
@@ -2422,24 +2445,6 @@ fn synthesize_surface_bool(
             state,
             bound_variables,
         ),
-        ConditionTerm::AlgebraicEqual(left, right) => {
-            proposition_bool_value(ClickProposition::Comparison {
-                left: synthesize_surface_algebraic(
-                    left,
-                    parameter_binding,
-                    state,
-                    bound_variables,
-                )?,
-                operator: ComparisonOperator::Equal,
-                right: synthesize_surface_algebraic(
-                    right,
-                    parameter_binding,
-                    state,
-                    bound_variables,
-                )?,
-            })
-            .ok()
-        }
         ConditionTerm::BoolEqual(left, right) => {
             proposition_bool_value(ClickProposition::Comparison {
                 left: operand(left)?,
@@ -2861,6 +2866,17 @@ fn synthesize_surface_atomic_proposition(
     let Proposition::ConditionIs(condition, value) = proposition else {
         return None;
     };
+    if let ConditionTerm::AlgebraicEqual(left, right) = condition.native_compat() {
+        return Some(ClickProposition::Comparison {
+            left: synthesize_surface_algebraic(left, parameter_binding, state, bound_variables)?,
+            operator: if *value {
+                ComparisonOperator::Equal
+            } else {
+                ComparisonOperator::NotEqual
+            },
+            right: synthesize_surface_algebraic(right, parameter_binding, state, bound_variables)?,
+        });
+    }
     if let Some((format, operator, [left, right])) = condition.operand_view().float_comparison()
         && left.literal_bits().is_some()
         && right.literal_bits().is_some()
@@ -3954,6 +3970,7 @@ fn raise_algebraic_read(
     term: &crate::kernel::KernelTerm,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<SurfaceTerm> {
     use crate::kernel::{AlgebraicTermNode, KernelTermNode, KernelType, SharedAddress};
     let (KernelType::Algebraic(ty), KernelTermNode::AlgebraicRead(read)) = (term.ty(), term.node())
@@ -3962,7 +3979,14 @@ fn raise_algebraic_read(
     };
     let (point, address) = read.parts();
     if point.read_version_id().is_some() {
-        return synthesize_point_held_value(ty, point, &address.export().ok()?, state);
+        return synthesize_point_algebraic_read(
+            ty,
+            point,
+            &address.export().ok()?,
+            parameter_binding,
+            state,
+            bound_variables,
+        );
     }
     let memory = point.shared_memory();
     let same_address = |pointer: &Address| address.syntax_equal(&SharedAddress::import(pointer));
@@ -4236,7 +4260,9 @@ fn raise_kernel_term_dispatch(
                 })
                 .collect::<Option<Vec<_>>>()?,
         },
-        Node::AlgebraicRead(_) => raise_algebraic_read(term, parameter_binding, state)?,
+        Node::AlgebraicRead(_) => {
+            raise_algebraic_read(term, parameter_binding, state, bound_variables)?
+        }
         Node::Variable(_) if matches!(term.ty(), KernelType::Algebraic(_)) => {
             // Variable naming uses a bounded typed descriptor, not a tree export.
             synthesize_surface_algebraic(
@@ -8274,7 +8300,14 @@ fn synthesize_surface_algebraic(
         crate::kernel::AlgebraicTermNode::MemoryLoad { point, pointer }
             if point.read_version_id().is_some() =>
         {
-            synthesize_point_held_value(&term.algebraic_type, point, pointer, state)
+            synthesize_point_algebraic_read(
+                &term.algebraic_type,
+                point,
+                pointer,
+                parameter_binding,
+                state,
+                bound_variables,
+            )
         }
         // The value a reference parameter refers to is spelled `*r`.
         crate::kernel::AlgebraicTermNode::MemoryLoad { pointer, .. } => parameter_binding

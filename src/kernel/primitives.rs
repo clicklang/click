@@ -4962,6 +4962,19 @@ impl AlgebraicTermNode {
         Self::parameter_load_at(ProgramPoint::at(&memory), pointer, parameter)
     }
 
+    /// A checked cell observation uses the entry version when the point
+    /// establishes that the caller's storage is unchanged.
+    pub(crate) fn parameter_cell_load(
+        source: &ProgramPoint,
+        pointer: Address,
+        parameter: TypeParameterName,
+    ) -> ProgramValue {
+        if let Some(entry) = source.generic_entry_version(&pointer, parameter) {
+            return Self::parameter_load_at(entry, pointer, parameter);
+        }
+        Self::parameter_load(source.shared_memory().clone(), pointer, parameter)
+    }
+
     pub(crate) fn parameter_load_at(
         point: ProgramPoint,
         pointer: Address,
@@ -4978,12 +4991,11 @@ impl AlgebraicTermNode {
 
     /// [`Self::memory_load_carrier`] as an algebraic field value.
     pub(crate) fn memory_load_carrier_value(
-        memory: &SharedMemory,
+        point: &ProgramPoint,
         pointer: &Address,
     ) -> AlgebraicValue {
         AlgebraicValue::Program(ProgramValue::UInt64(Self::memory_load_carrier(
-            &crate::kernel::ProgramPoint::at(memory),
-            pointer,
+            point, pointer,
         )))
     }
 }

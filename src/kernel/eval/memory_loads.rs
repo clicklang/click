@@ -280,7 +280,7 @@ pub(in crate::kernel) fn evaluate_logical_memory_load_paths(
     paths
 }
 
-/// A logical integer read whose version was selected from the execution path.
+/// A typed read whose version was selected from the execution path.
 pub(in crate::kernel) fn evaluate_indexed_read(
     version: ProgramPoint,
     origin: &ProgramPoint,
@@ -289,6 +289,15 @@ pub(in crate::kernel) fn evaluate_indexed_read(
     mut facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
 ) -> ExpressionPath {
+    if let ProgramType::Parameter(parameter) = value_type {
+        return ExpressionPath {
+            outcome: ExpressionOutcome::Value(AlgebraicTermNode::parameter_load_at(
+                version, pointer, parameter,
+            )),
+            facts,
+            obligations,
+        };
+    }
     if value_type.is_pointer() {
         let ProgramValue::Pointer(stored) = version
             .indexed_stored_value()
@@ -1138,7 +1147,7 @@ fn evaluate_retained_memory_load_case(
         {
             return vec![ExpressionPath {
                 outcome: ExpressionOutcome::Value(
-                    (AlgebraicTermNode::parameter_load(source, pointer, parameter)).into(),
+                    (AlgebraicTermNode::parameter_cell_load(&source, pointer, parameter)).into(),
                 ),
                 facts,
                 obligations,
@@ -1829,8 +1838,8 @@ fn evaluate_retained_memory_load_case(
 pub(in crate::kernel) fn abstract_value_source(
     memory: &SymbolicMemory,
     pointer: &Address,
-) -> Option<SharedMemory> {
-    let mut source: Option<SharedMemory> = None;
+) -> Option<ProgramPoint> {
+    let mut source: Option<ProgramPoint> = None;
     for word in 0..ABSTRACT_VALUE_WIDTH / 4 {
         let address = pointer.offset_by_bytes(word * 4);
         let ProgramValue::Int32(term) = memory.known_value(&address)? else {
@@ -1841,14 +1850,10 @@ pub(in crate::kernel) fn abstract_value_source(
         else {
             return None;
         };
-        if *loaded_address != address
-            || source
-                .as_ref()
-                .is_some_and(|source| *source != *loaded.shared_memory())
-        {
+        if *loaded_address != address || source.as_ref().is_some_and(|source| *source != loaded) {
             return None;
         }
-        source = Some(loaded.into_shared_memory());
+        source = Some(loaded);
     }
     source
 }
@@ -3001,10 +3006,7 @@ fn comparison_form_uncached(proposition: &Proposition) -> Option<Proposition> {
             else {
                 return None;
             };
-            Some((
-                (memory.shared_memory().arena_id(), pointer.as_ref().clone()),
-                *stored,
-            ))
+            Some(((memory.clone(), pointer.as_ref().clone()), *stored))
         })
         .collect::<std::collections::HashMap<_, _>>();
     let replacements = variables

@@ -1270,7 +1270,25 @@ impl ProgramPoint {
     /// store supplies a value. Use the recorded disjoint suffix only when
     /// it reaches a verified function-entry view.
     pub(crate) fn entry_integer_version(&self, pointer: &Address, kind: LoadKind) -> Option<Self> {
-        if kind != LoadKind::Int32 || pointer.base != AddressBase::ExternalArgument {
+        if kind != LoadKind::Int32 {
+            return None;
+        }
+        self.external_entry_read(pointer)
+    }
+
+    pub(crate) fn generic_entry_version(
+        &self,
+        pointer: &Address,
+        parameter: super::TypeParameterName,
+    ) -> Option<Self> {
+        if parameter.is_enum() {
+            return None;
+        }
+        self.external_entry_read(pointer)
+    }
+
+    fn external_entry_read(&self, pointer: &Address) -> Option<Self> {
+        if pointer.base != AddressBase::ExternalArgument {
             return None;
         }
         let mut entry = self.parameter_read_start(&pointer.base);
@@ -1310,14 +1328,14 @@ impl ProgramPoint {
         pointer: &Address,
         value_type: ProgramType,
     ) -> Option<Self> {
-        self.indexed_typed_version(pointer, value_type).or_else(|| {
-            if value_type == ProgramType::Int32 {
-                self.call_output_integer_version(pointer, LoadKind::Int32)
-                    .or_else(|| self.entry_integer_version(pointer, LoadKind::Int32))
-            } else {
-                None
-            }
-        })
+        self.indexed_typed_version(pointer, value_type)
+            .or_else(|| match value_type {
+                ProgramType::Int32 => self
+                    .call_output_integer_version(pointer, LoadKind::Int32)
+                    .or_else(|| self.entry_integer_version(pointer, LoadKind::Int32)),
+                ProgramType::Parameter(parameter) => self.generic_entry_version(pointer, parameter),
+                _ => None,
+            })
     }
 
     pub(in crate::kernel) fn supports_local_call_word(pointer: &Address) -> bool {
