@@ -1255,12 +1255,6 @@ impl ProgramPoint {
         pointer: &Address,
         value_type: ProgramType,
     ) -> Option<Self> {
-        // An ordinary pointer read through a parameter still has to round
-        // trip with the complete pointer equation recorded by the store.
-        // That producer uses a projected memory view for the pointer domain.
-        if external_storage(&pointer.base) && value_type.is_pointer() {
-            return None;
-        }
         if value_type == ProgramType::Bool || value_type.is_pointer() {
             return self.indexed_version(pointer, value_type.byte_width(), |store| {
                 matches!(store, MemoryDerivation::Store { value, .. } if value.program_type() == value_type)

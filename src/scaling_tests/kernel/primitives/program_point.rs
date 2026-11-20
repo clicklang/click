@@ -289,6 +289,63 @@ fn sealing_checked_footprints_ignores_cells_in_untouched_objects() {
 }
 
 #[test]
+fn complete_parameter_pointer_reads_keep_their_write_point_across_sibling_stores() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let cell = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Variable(Variable(38_154)),
+    };
+    let target = Address::symbolic(Variable(38_155));
+    let stored = Pointer::new(target.clone(), ProgramType::Int32Pointer)
+        .with_bounds(Some(SubobjectBounds::constant(target, 4)));
+    let state = ExecutionState::new();
+    let written = state.clone().with_memory(
+        state
+            .memory()
+            .clone()
+            .store(cell.clone(), ProgramValue::Pointer(stored.clone())),
+    );
+    let mut samples = Vec::new();
+    for count in [4, 64, 1024] {
+        let mut state = written.clone();
+        for bits in 0..count {
+            state = state.clone().with_memory(state.memory().clone().store(
+                cell.offset_by_bytes(8),
+                ProgramValue::Int32(MachineTerm::constant(bits)),
+            ));
+        }
+        let (version, work) = crate::instrumentation::measure_deterministic_work(|| {
+            state
+                .program_point()
+                .indexed_typed_version(&cell, stored.program_type())
+                .expect("complete pointer store at the parameter cell")
+        });
+        assert_eq!(version.read_version_id(), written.program_point_id());
+        let read = Pointer::from_point_read(version, stored.program_type(), &cell);
+        assert_eq!(
+            crate::kernel::eval::pointer_read_over_write_program_value(read.address()).as_ref(),
+            Some(&stored)
+        );
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|&work| work == samples[0]),
+        "{samples:?}"
+    );
+
+    let partial = written.clone().with_memory(written.memory().clone().store(
+        cell.offset_by_bytes(4),
+        ProgramValue::Int32(MachineTerm::constant(0)),
+    ));
+    assert!(
+        partial
+            .program_point()
+            .indexed_typed_version(&cell, stored.program_type())
+            .is_none()
+    );
+}
+
+#[test]
 fn boolean_and_complete_pointer_reads_keep_their_stores_across_sibling_writes() {
     let _session = crate::kernel::VerificationSession::enter();
     let flag = slot();
