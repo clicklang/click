@@ -347,6 +347,8 @@ struct FunctionResourceTransfer {
     /// dependent addresses have been checked.  It is the sole memory-effect
     /// projection used by modular call havoc and its effect fact.
     memory_effects: Vec<MemoryRange>,
+    /// The selected input that contributed an unnamed write effect, if any.
+    unbounded_write_source: Option<Box<ResourceFact>>,
     resource_effect_bound: Option<Resource>,
     post_outputs: Option<ResourceContext>,
     /// Every evaluated ensured view, kept beside the composed return
@@ -3385,16 +3387,18 @@ fn execute_verified_function_applications_with_suspension(
         // For an undecided guard, the whole span is still a safe bound.
         // An unnamed projection provides no span a caller can separate.
         let caller_loans = caller_state.loan_ledger();
-        if caller_loans.is_some_and(LoanLedger::has_active_memory_loans)
+        if let Some(ledger) = caller_loans.filter(|ledger| ledger.has_active_memory_loans())
             && transfer
                 .memory_effects
                 .iter()
                 .any(MemoryRange::is_unnamed_footprint)
         {
             paths.push(FunctionPath::new(
-                FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(
-                    "call has a write effect without a checked byte range while memory loans are active".into(),
-                )),
+                FunctionOutcome::RuntimeError(RuntimeError::UnboundedWriteWithLiveView {
+                    callee: name.to_owned(),
+                    effect_source: transfer.unbounded_write_source.take(),
+                    protected: ledger.single_protected_range().map(Box::new),
+                }),
                 facts,
                 obligations,
             ));
@@ -3406,9 +3410,9 @@ fn execute_verified_function_applications_with_suspension(
             call_site,
             interface.contract_requires().len(),
             if suspended.is_some() {
-                "suspended worker write separation"
+                CallLoanEffect::WorkerWrite
             } else {
-                "verified call write separation"
+                CallLoanEffect::CallWrite
             },
         );
         // A checked mutex-use call may execute runtime lock/unlock operations.
@@ -3486,7 +3490,7 @@ fn execute_verified_function_applications_with_suspension(
                 &ranges,
                 call_site,
                 first_mutex_ordinal,
-                "verified call mutex storage write separation",
+                CallLoanEffect::MutexWrite,
             ));
             ranges.len()
         } else {
@@ -4879,7 +4883,7 @@ fn execute_verified_function_applications_with_suspension(
                 &retired_allocations,
                 call_site,
                 first_retirement_ordinal,
-                "suspended worker allocation retirement separation",
+                CallLoanEffect::WorkerRetirement,
             ));
             worker_effects.extend(retired_allocations);
             completions.push((
@@ -5168,7 +5172,7 @@ fn execute_verified_function_applications_with_suspension(
             &retired_allocations,
             call_site,
             first_retirement_ordinal,
-            "verified call allocation retirement separation",
+            CallLoanEffect::CallRetirement,
         ));
         paths.push(FunctionPath {
             outcome,
@@ -5196,12 +5200,21 @@ fn execute_verified_function_applications_with_suspension(
     Ok(paths)
 }
 
+#[derive(Clone, Copy)]
+enum CallLoanEffect {
+    CallWrite,
+    WorkerWrite,
+    MutexWrite,
+    CallRetirement,
+    WorkerRetirement,
+}
+
 fn verified_call_loan_requirements(
     ledger: Option<&LoanLedger>,
     effects: &[MemoryRange],
     call_site: impl FnOnce() -> CallRequirementSite,
     first_ordinal: usize,
-    context: &str,
+    effect: CallLoanEffect,
 ) -> Vec<ProofObligation> {
     let Some(ledger) = ledger else {
         return Vec::new();
@@ -5219,9 +5232,23 @@ fn verified_call_loan_requirements(
         return Vec::new();
     }
     let site = Arc::new(call_site());
+    let context = match effect {
+        CallLoanEffect::CallWrite => "verified call write separation",
+        CallLoanEffect::WorkerWrite => "suspended worker write separation",
+        CallLoanEffect::MutexWrite => "verified call mutex storage write separation",
+        CallLoanEffect::CallRetirement => "verified call allocation retirement separation",
+        CallLoanEffect::WorkerRetirement => "suspended worker allocation retirement separation",
+    };
     requirements
         .map(|(index, requirement)| {
-            ProofObligation::verification_condition(requirement)
+            let obligation = ProofObligation::verification_condition(requirement);
+            let obligation = match effect {
+                CallLoanEffect::CallWrite
+                | CallLoanEffect::WorkerWrite
+                | CallLoanEffect::MutexWrite => obligation.with_live_view_write(),
+                CallLoanEffect::CallRetirement | CallLoanEffect::WorkerRetirement => obligation,
+            };
+            obligation
                 .with_call_requirement_site(Arc::new(CallRequirementSource::new(
                     site.clone(),
                     first_ordinal + index,
@@ -6941,7 +6968,10 @@ fn prepare_verified_function_call<'a>(
                 })
                 .find(|(_, relation)| *relation != CandidateMemoryRangeRelation::Disjoint)
             {
-                let subject = LoanRefusalSubject::with_range(mutable_range.clone());
+                let subject = LoanRefusalSubject::for_write_and_view(
+                    mutable_range.clone(),
+                    viewed_range.clone(),
+                );
                 let diagnostic = match relation {
                     CandidateMemoryRangeRelation::Overlap => LoanRefusal::ActiveDependency
                         .proven_overlap_diagnostic(LoanRefusalOperation::MemoryAccess, subject),
@@ -6968,10 +6998,20 @@ fn prepare_verified_function_call<'a>(
     // The projection above is also retained on the transition record below;
     // no later call path reconstructs the footprint from source clauses.
     let mut transfer = transfer;
+    let retain_unbounded_source = contract_interface.resource_derived_mutable_frame()
+        && caller_state
+            .loan_ledger()
+            .is_some_and(LoanLedger::has_active_memory_loans);
     transfer.consumed_cell_returns.retain_frontier(
-        projection_range_sources
-            .iter()
-            .map(|(range, _)| range.clone()),
+        projection_range_sources.iter().map(|(range, source)| {
+            if retain_unbounded_source
+                && transfer.unbounded_write_source.is_none()
+                && range.is_unnamed_footprint()
+            {
+                transfer.unbounded_write_source = Some(Box::new(source.clone()));
+            }
+            range.clone()
+        }),
         &effective_assumptions,
     );
     if caller_state.resources().structural_witnesses.is_some() {
@@ -11762,6 +11802,7 @@ fn prepare_contract_resource_transfer_unexplained(
             ),
             caller_resources_after_requirements: caller_state.resources().clone(),
             memory_effects: Vec::new(),
+            unbounded_write_source: None,
             resource_effect_bound: None,
             post_outputs: None,
             candidate_output_views: Vec::new(),
@@ -12933,6 +12974,7 @@ fn prepare_contract_resource_transfer_unexplained(
         ),
         caller_resources_after_requirements: return_resources,
         memory_effects: Vec::new(),
+        unbounded_write_source: None,
         resource_effect_bound: None,
         post_outputs: None,
         candidate_output_views: Vec::new(),

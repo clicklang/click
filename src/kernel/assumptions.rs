@@ -10299,6 +10299,7 @@ impl ProofObligation {
             evaluation_domain: false,
             assertion_failure: false,
             statement_entry_required: false,
+            live_view_write: false,
             call_requirement_site: None,
             introductions: None,
         }
@@ -10315,6 +10316,7 @@ impl ProofObligation {
             evaluation_domain: false,
             assertion_failure: false,
             statement_entry_required: false,
+            live_view_write: false,
             call_requirement_site: None,
             introductions: None,
         }
@@ -10422,6 +10424,23 @@ impl ProofObligation {
         self.context.as_deref()
     }
 
+    pub(in crate::kernel) fn with_live_view_write(mut self) -> Self {
+        self.live_view_write = true;
+        self
+    }
+
+    /// For a write diagnostic, distinguish known concrete overlap from an
+    /// unresolved separation. Only inspect the proposition's two exact ranges.
+    pub(crate) fn live_view_write_overlap(&self) -> Option<bool> {
+        let Proposition::ResourceSeparate { left, right } = &self.proposition else {
+            return None;
+        };
+        self.live_view_write.then(|| {
+            matches!((left.as_ref(), right.as_ref()), (Resource::Memory(write), Resource::Memory(protected))
+                if super::loans::protected_ranges_constant_overlap(write, protected) == Some(true))
+        })
+    }
+
     pub(super) fn map_proposition(self, f: impl FnOnce(Proposition) -> Proposition) -> Self {
         Self {
             proposition: f(self.proposition),
@@ -10430,6 +10449,7 @@ impl ProofObligation {
             evaluation_domain: self.evaluation_domain,
             assertion_failure: self.assertion_failure,
             statement_entry_required: self.statement_entry_required,
+            live_view_write: self.live_view_write,
             call_requirement_site: None,
             // The chain describes the head nodes of the proposition it was
             // recorded for. A rewrite adds or removes head nodes, so the

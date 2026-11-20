@@ -766,11 +766,16 @@ fn certified_transitions_from_execution(
                     && !obligation.is_assumable()
                     && !established_temporary_separation
                 {
-                    let description = crate::surface::diagnostics::describe_proof_obligation_context(obligation)
-                        .map(|description| format!(" ({description})"))
-                        .unwrap_or_default();
+                    let description = crate::surface::diagnostics::describe_proof_obligation_context(obligation);
+                    let message = match description {
+                        Some(description) if obligation.live_view_write_overlap() == Some(true) => {
+                            format!("{context_label} cannot proceed: {description}")
+                        }
+                        Some(description) => format!("{context_label} requires an explicit prerequisite proof ({description})"),
+                        None => format!("{context_label} requires an explicit prerequisite proof"),
+                    };
                     refuse_or_probe(prerequisite_policy, ClickError::new(format!(
-                        "{context_label} requires an explicit prerequisite proof{description}{}",
+                        "{message}{}",
                         crate::surface::diagnostics::describe_execution_statement_site()
                     )).with_unresolved_requirement(obligation)
                         .with_assertion_condition(

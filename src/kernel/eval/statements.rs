@@ -484,7 +484,8 @@ fn require_write_loan_separation(
         .loan_ledger()
         .and_then(|ledger| ledger.memory_access_requirement(range))
     {
-        obligations.push(ProofObligation::verification_condition(requirement));
+        obligations
+            .push(ProofObligation::verification_condition(requirement).with_live_view_write());
     }
 }
 

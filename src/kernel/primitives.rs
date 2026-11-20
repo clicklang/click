@@ -8092,6 +8092,12 @@ pub enum RuntimeError {
     UnsupportedOpaqueFunctionContract(String),
     AbstractFunctionPointerCall(String),
     FunctionContract(String),
+    /// A verified call may write memory for which it has no checked byte bound.
+    UnboundedWriteWithLiveView {
+        callee: String,
+        effect_source: Option<Box<ResourceFact>>,
+        protected: Option<Box<MemoryRange>>,
+    },
     /// A resource clause's value could not be evaluated for want of a value
     /// it reads: a cell, field or argument the state does not yet hold.
     /// Another clause's authority may supply it, so a contract's resource
@@ -15298,6 +15304,8 @@ pub struct ProofObligation {
     pub(super) assertion_failure: bool,
     /// This condition must be established before applying the statement.
     pub(super) statement_entry_required: bool,
+    /// Diagnostic metadata only. The proposition itself carries both ranges.
+    pub(super) live_view_write: bool,
     /// Source identity for a required call precondition, when this
     /// obligation was emitted while applying a selected callee contract.
     /// This is planning metadata only and is excluded from obligation

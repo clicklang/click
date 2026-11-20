@@ -1262,6 +1262,18 @@ pub(crate) fn render_proposition_labeled(
         .unwrap_or_else(|| render_kernel_fact(proposition, labels, true))
 }
 
+pub(in crate::surface) fn render_view_separation_goal(
+    proposition: &Proposition,
+    labels: &mut MemoryStateLabels,
+) -> String {
+    if !typed_notation()
+        && let Proposition::ResourceSeparate { left, right } = proposition
+    {
+        return surface::source_separation(left, right, labels);
+    }
+    render_proposition_labeled(proposition, labels)
+}
+
 /// Lower-level renderer tests exercise the bounded notation directly.
 #[cfg(test)]
 pub(crate) fn render_internal_proposition_labeled(
