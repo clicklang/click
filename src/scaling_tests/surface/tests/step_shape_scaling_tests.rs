@@ -742,6 +742,43 @@ fn band(work: usize) -> usize {
     2 + work / 256
 }
 
+#[test]
+fn repeated_stores_ignore_numeric_address_aliases_without_cached_cells() {
+    let measure = |size, alias_base| {
+        let run = run(
+            |size| {
+                let mut parameters = "int32* p, int32* other".to_string();
+                let mut requirements = String::new();
+                for i in 0..size {
+                    parameters += &format!(", int32* alias{i}");
+                    requirements += &format!(
+                        "    requires ({alias_base} as uint64) == (alias{i} as uint64);\n"
+                    );
+                }
+                let c = format!(
+                    "void caller({parameters}) {{\n    *p = 17;\n    *p = 18;\n    *p = 19;\n    return;\n}}"
+                );
+                let click = format!(
+                    "verifying \"hunt.c\";\nvoid caller({parameters}) {{\n    owns *p;\n{requirements}}} by {{ step(); step(); step(); step(); }}"
+                );
+                (c, click)
+            },
+            size,
+        );
+        let steps = run.statement_steps("repeated numeric-address stores");
+        [steps[1].1, steps[2].1]
+    };
+    let samples = [4, 16, 64, 128].map(|size| (measure(size, "p"), measure(size, "other")));
+    eprintln!("repeated store work with connected and disconnected aliases: {samples:?}");
+    let baseline = samples[0].0.into_iter().min().unwrap();
+    for (connected, disconnected) in samples {
+        for (connected, disconnected) in connected.into_iter().zip(disconnected) {
+            assert!(connected <= baseline + 16, "{samples:?}");
+            assert!(connected <= disconnected + 16, "{samples:?}");
+        }
+    }
+}
+
 /// Whether work along successive positions drifts: its last changes (three,
 /// or two over three positions) all move the same way by more than `band`.
 /// A step whose cost depends on how many earlier statements ran changes by

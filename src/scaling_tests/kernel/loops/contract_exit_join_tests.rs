@@ -155,7 +155,9 @@ fn a_loop_exit_join_visits_only_changed_bindings_and_cells() {
         assert!(requirements.is_empty());
         (work, cell_work)
     });
-    eprintln!("(exit join, cell selection) work at 4/16/64/256 shared bindings and cells: {work:?}");
+    eprintln!(
+        "(exit join, cell selection) work at 4/16/64/256 shared bindings and cells: {work:?}"
+    );
     assert!(
         work.iter().all(|&(join, cells)| {
             join > 0 && cells > 0 && join <= work[0].0 + 64 && cells <= work[0].1 + 16

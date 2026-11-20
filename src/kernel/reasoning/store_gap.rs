@@ -295,7 +295,7 @@ mod tests {
                 ),
                 true,
             );
-            assert!(!connected.address_connected_objects(&store).is_empty());
+            assert!(connected.addresses_numerically_connected(&store, &store));
             let memory = SymbolicMemory::new().store(field.clone(), value_of_width(8, 17));
             let full = with_store_gap_skip_disabled(|| {
                 memory.without_possible_aliasing_cells(&store, 8, &connected)

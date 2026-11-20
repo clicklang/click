@@ -263,54 +263,14 @@ impl EqualityGraph {
         Some(bases)
     }
 
-    pub(in crate::kernel) fn address_connected_objects(
+    pub(in crate::kernel) fn addresses_numerically_connected(
         &self,
-        pointer: &Address,
-    ) -> BTreeSet<Address> {
-        let mut reached_objects = BTreeSet::new();
-        if self
-            .admitted
-            .wide_pointer_alias_endpoints_by_object
-            .is_empty()
-        {
-            return reached_objects;
-        }
-        let mut pending = vec![parameter_alias_bucket(pointer)];
-        let mut seen = BTreeSet::new();
-        let mut visited_terms = BTreeSet::new();
-        while let Some(bucket) = pending.pop() {
-            if !seen.insert(bucket.clone()) {
-                continue;
-            }
-            crate::instrumentation::record_deterministic_work(1);
-            let mut terms: Vec<_> = self
-                .admitted
-                .wide_pointer_alias_endpoints_by_object
-                .get(&bucket)
-                .into_iter()
-                .flat_map(|endpoints| endpoints.iter().cloned())
-                .collect();
-            while let Some(term) = terms.pop() {
-                if !visited_terms.insert(term.clone()) {
-                    continue;
-                }
-                crate::instrumentation::record_deterministic_work(1);
-                if let Some(address) = term.address_pointer() {
-                    let reached = parameter_alias_bucket(address);
-                    reached_objects.insert(reached.clone());
-                    pending.push(reached);
-                }
-                if let Some(neighbors) = self.admitted.bitvector64_equality_facts.get(
-                    &crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey::for_format(
-                        MachineIntegerType::UInt64,
-                        crate::kernel::MachineOperandView::Legacy(&term),
-                    ),
-                ) {
-                    terms.extend(neighbors.keys().cloned());
-                }
-            }
-        }
-        reached_objects
+        left: &Address,
+        right: &Address,
+    ) -> bool {
+        self.admitted
+            .numeric_address_connectivity
+            .connected(left, right)
     }
 }
 

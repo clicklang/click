@@ -4848,6 +4848,7 @@ impl PureFactContext {
             crate::persistent::PersistentMap::default();
         self.equality_graph.admitted.wide_load_sources = Default::default();
         self.equality_graph.admitted.wide_constant_sources = Default::default();
+        self.equality_graph.admitted.numeric_address_connectivity = Default::default();
         self.equality_graph
             .admitted
             .wide_pointer_alias_endpoints_by_object = crate::persistent::PersistentMap::default();
@@ -5280,14 +5281,20 @@ impl PureFactContext {
             }
         }
 
-        for (endpoint, other) in [
-            (left.as_ref(), right.as_ref()),
-            (right.as_ref(), left.as_ref()),
-        ] {
-            let key = checked_scalar_facts::ScalarOperandKey::for_format(
+        let [left_key, right_key] = [left.as_ref(), right.as_ref()].map(|endpoint| {
+            checked_scalar_facts::ScalarOperandKey::for_format(
                 MachineIntegerType::UInt64,
                 MachineOperandView::Legacy(endpoint),
-            );
+            )
+        });
+        self.equality_graph
+            .admitted
+            .numeric_address_connectivity
+            .record([(&left_key, left.as_ref()), (&right_key, right.as_ref())]);
+        for (key, endpoint, other) in [
+            (left_key, left.as_ref(), right.as_ref()),
+            (right_key, right.as_ref(), left.as_ref()),
+        ] {
             let neighbors = self
                 .equality_graph
                 .admitted

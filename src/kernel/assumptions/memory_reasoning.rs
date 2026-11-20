@@ -2040,18 +2040,15 @@ impl PureFactContext {
         self.equality_graph.parameter_store_alias_bases(base)
     }
 
-    /// The objects whose addresses known 64-bit equalities connect with the
-    /// address of the object `pointer` points into. A C pointer comparison
-    /// states such an equality and not a pointer equality, and memory is
-    /// addressed, so a store through `pointer` may write the bytes of any
-    /// object returned here: separation keeps none of their cached cells.
-    /// Computed once per store; the walk follows only the equalities filed
-    /// under the objects it reaches.
-    pub(in crate::kernel) fn address_connected_objects(
+    /// Whether stated numeric-address equalities connect these object buckets.
+    /// A connection requires a byte-level check before retaining a cached value.
+    pub(in crate::kernel) fn addresses_numerically_connected(
         &self,
-        pointer: &Address,
-    ) -> BTreeSet<Address> {
-        self.equality_graph.address_connected_objects(pointer)
+        left: &Address,
+        right: &Address,
+    ) -> bool {
+        self.equality_graph
+            .addresses_numerically_connected(left, right)
     }
 
     pub(in crate::kernel) fn parameter_partition_cell_base(
