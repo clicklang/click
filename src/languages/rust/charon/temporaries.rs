@@ -72,7 +72,6 @@ pub(super) fn substitute_pure_values(
     };
     let mut removed = BTreeSet::new();
     for block in blocks.iter_mut() {
-        fold_adjacent_slice_borrows(&mut block.statements, &substitutable, &mut removed);
         // The pure values defined so far in this block whose read is still
         // ahead, with nothing since that could change them.
         let mut pending = BTreeMap::<String, E>::new();
@@ -207,6 +206,9 @@ pub(super) fn substitute_pure_values(
                 value,
             });
         }
+        // Finish collapsing reborrow chains before moving their final
+        // borrow into a slice operation.
+        fold_adjacent_slice_borrows(&mut block.statements, &substitutable, &mut removed);
         if !constant_initializers.is_empty() {
             fold_constant_remainder_casts(
                 &mut block.statements,
@@ -3091,11 +3093,27 @@ mod tests {
             }),
             value_type: Type::Reference {
                 mutable: true,
-                pointee: Box::new(array),
+                pointee: Box::new(array.clone()),
             },
         };
-        for separated in [false, true] {
-            let mut statements = vec![assign("t1", borrow.clone())];
+        for (chained, separated) in [(false, false), (false, true), (true, false)] {
+            let mut statements = Vec::new();
+            let operand = if chained {
+                statements.push(assign("t2", borrow.clone()));
+                E::Borrow {
+                    place: Box::new(E::Deref {
+                        reference: Box::new(local("t2")),
+                        value_type: array.clone(),
+                    }),
+                    value_type: Type::Reference {
+                        mutable: true,
+                        pointee: Box::new(array.clone()),
+                    },
+                }
+            } else {
+                borrow.clone()
+            };
+            statements.push(assign("t1", operand));
             if separated {
                 statements.push(assign("a", local("b")));
             }
@@ -3108,6 +3126,9 @@ mod tests {
             ));
             let (locals, block) = substituted(statements, T::Return);
             assert_eq!(locals.iter().any(|name| name == "t1"), separated);
+            if chained {
+                assert!(!locals.iter().any(|name| name == "t2"));
+            }
             assert!(matches!(block.statements.last(),
                 Some(S::Assign { value: E::ArrayToSlice { array, mutable: true }, .. })
                     if matches!(array.as_ref(), E::Borrow { .. }) != separated));
