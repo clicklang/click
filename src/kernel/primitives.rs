@@ -9865,6 +9865,9 @@ pub(crate) struct CallRequirementSource {
     pub(crate) site: std::sync::Arc<CallRequirementSite>,
     pub(crate) requirement_ordinal: usize,
     pub(crate) source_requirement_ordinal: Option<usize>,
+    /// The checked resource clause that requires a symbolic range's bytes
+    /// to be initialized at the call.
+    pub(crate) initialization_clause: Option<usize>,
     /// Exact state identity of the source-side load carrier, when this
     /// requirement is stateful and its lowering registered one.  This is
     /// separate from `site.source_memory_state`, which identifies the caller's
@@ -9889,12 +9892,18 @@ impl CallRequirementSource {
             site,
             requirement_ordinal,
             source_requirement_ordinal,
+            initialization_clause: None,
             source_load_state,
             // Generated requirements and contracts without a source registry
             // must never advertise source-side capabilities.
             source_requirement_is_state_independent: source_requirement_ordinal.is_some()
                 && source_requirement_is_state_independent,
         }
+    }
+
+    pub(crate) fn with_initialization_clause(mut self, index: usize) -> Self {
+        self.initialization_clause = Some(index);
+        self
     }
 }
 

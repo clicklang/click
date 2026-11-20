@@ -2382,6 +2382,12 @@ impl LoopEffectCheck {
 }
 
 impl MemorySegment {
+    pub(crate) fn source_expressions(
+        &self,
+    ) -> (&ProgramExpression, &ProgramExpression, &ProgramExpression) {
+        (&self.base, &self.start, &self.end)
+    }
+
     pub fn new(base: ProgramExpression, start: ProgramExpression, end: ProgramExpression) -> Self {
         Self {
             base,

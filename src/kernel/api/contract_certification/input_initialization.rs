@@ -2,7 +2,7 @@
 //! a quantified entry fact; it neither enumerates cells nor consults history.
 use super::*;
 
-pub(super) fn initialized_input_range_fact(
+pub(in crate::kernel) fn initialized_input_range_fact(
     state: &ExecutionState,
     interface: &FunctionContractInterface,
     segment: &MemorySegment,

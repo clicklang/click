@@ -7,7 +7,7 @@ use crate::kernel::{
 use crate::kernel::{MachineCastSpelling, cast_term};
 
 mod contract_claims;
-mod input_initialization;
+pub(in crate::kernel) mod input_initialization;
 mod retained_syntax;
 pub use contract_claims::*;
 
