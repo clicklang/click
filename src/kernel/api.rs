@@ -595,6 +595,7 @@ impl crate::kernel::proof::PropositionSource for LoopExitFacts {
 pub(crate) struct LoopFinalExitCandidate {
     state: ExecutionState,
     jump_target: Option<ControlTargetId>,
+    guard_points_index: Option<usize>,
     /// A checked exit is copied into the loop rule; its facts stay shared.
     pure_facts: LoopExitFacts,
     loan_evidence: crate::kernel::loans::CheckedLoanCallEvidenceSequence,
@@ -608,6 +609,7 @@ impl LoopFinalExitCandidate {
         Self {
             state,
             jump_target: None,
+            guard_points_index: None,
             pure_facts: LoopExitFacts::Retained(Arc::new(facts.clone())),
             loan_evidence: crate::kernel::loans::empty_checked_loan_evidence_sequence(),
         }
@@ -619,6 +621,7 @@ impl LoopFinalExitCandidate {
         Self {
             state,
             jump_target: None,
+            guard_points_index: None,
             pure_facts: pure_facts.into(),
             loan_evidence: crate::kernel::loans::empty_checked_loan_evidence_sequence(),
         }
@@ -631,6 +634,15 @@ impl LoopFinalExitCandidate {
 
     pub(crate) fn jump_target(&self) -> Option<ControlTargetId> {
         self.jump_target
+    }
+
+    pub(crate) fn with_guard_points_index(mut self, index: Option<usize>) -> Self {
+        self.guard_points_index = index;
+        self
+    }
+
+    pub(crate) fn guard_points_index(&self) -> Option<usize> {
+        self.guard_points_index
     }
 
     pub(crate) fn with_loan_evidence(
@@ -664,6 +676,7 @@ impl LoopFinalExitCandidate {
 pub(crate) struct LoopEarlyExit {
     state: ExecutionState,
     guard_false: bool,
+    guard_points_index: Option<usize>,
     /// A checked exit is copied into the loop rule; its facts stay shared.
     pure_facts: LoopExitFacts,
     loan_evidence: crate::kernel::loans::CheckedLoanCallEvidenceSequence,
@@ -673,6 +686,7 @@ impl PartialEq for LoopEarlyExit {
     fn eq(&self, other: &Self) -> bool {
         self.state == other.state
             && self.guard_false == other.guard_false
+            && self.guard_points_index == other.guard_points_index
             && self.pure_facts == other.pure_facts
             && self.loan_evidence == other.loan_evidence
     }
@@ -685,6 +699,7 @@ impl LoopEarlyExit {
         Self {
             state,
             guard_false: false,
+            guard_points_index: None,
             pure_facts: pure_facts.into(),
             loan_evidence: crate::kernel::loans::empty_checked_loan_evidence_sequence(),
         }
@@ -698,6 +713,7 @@ impl LoopEarlyExit {
         Self {
             state,
             guard_false: false,
+            guard_points_index: None,
             pure_facts: LoopExitFacts::Retained(Arc::new(facts.clone())),
             loan_evidence: crate::kernel::loans::empty_checked_loan_evidence_sequence(),
         }
@@ -717,6 +733,15 @@ impl LoopEarlyExit {
             LoopExitFacts::Retained(facts) => Some(facts.assumptions()),
             LoopExitFacts::Explicit(_) => None,
         }
+    }
+
+    pub(crate) fn with_guard_points_index(mut self, index: Option<usize>) -> Self {
+        self.guard_points_index = index;
+        self
+    }
+
+    pub(crate) fn guard_points_index(&self) -> Option<usize> {
+        self.guard_points_index
     }
 
     pub(crate) fn with_loan_evidence(
@@ -1096,7 +1121,14 @@ pub(crate) fn loop_phase_preservation_contexts(
     // has already handed to something live.
     let mut budget = ExecutionBudget::continuing_from(next_kernel_variable);
     let mut existing_variables = BTreeSet::new();
-    collect_execution_state_bitvector_variables(loop_entry_state, &mut existing_variables);
+    crate::instrumentation::measure_operation("", "", "loop entry state reservation", || {
+        collect_execution_state_reservations(
+            loop_entry_state,
+            budget.next_kernel_variable,
+            None,
+            &mut existing_variables,
+        );
+    });
     if let Some(condition) = condition {
         collect_program_expression_bitvector_variables(condition, &mut existing_variables);
     }
@@ -5066,19 +5098,33 @@ pub fn prove_symbolic_execution_statement_verification_paths_with_environment_an
 fn statement_kernel_variables<'scope>(
     state: &'scope ExecutionState,
     statement: &'scope ProgramStatement,
-    assumptions: &'scope PureFactContext,
+    assumptions: &PureFactContext,
     environment: &ExecutionEnvironment,
+    next_candidate: u64,
 ) -> KernelVariableGenerator<'scope> {
+    let fact_bound = assumptions.execution_variable_ceiling();
     KernelVariableGenerator::fresh_for_execution_with_deferred_reservations(
         move || {
             let mut existing = BTreeSet::new();
-            collect_execution_state_bitvector_variables(state, &mut existing);
+            crate::instrumentation::measure_operation(
+                "",
+                "",
+                "statement state reservation",
+                || {
+                    collect_execution_state_reservations(
+                        state,
+                        next_candidate,
+                        fact_bound,
+                        &mut existing,
+                    );
+                },
+            );
             collect_execution_statement_bitvector_variables(statement, &mut existing);
             existing
         },
         execution_environment_variable_index(environment),
     )
-    .reserving_through(assumptions.execution_variable_ceiling())
+    .reserving_through(fact_bound)
 }
 
 pub(crate) fn prove_symbolic_execution_statement_verification_paths_with_environment_and_loop_rule_using_budget(
@@ -5095,7 +5141,13 @@ pub(crate) fn prove_symbolic_execution_statement_verification_paths_with_environ
     } = statement.into();
     let loop_evidence =
         loop_evidence.map(|evidence| evidence.executed_under(execution_semantics.loops));
-    let mut variables = statement_kernel_variables(&state, &statement, &assumptions, &environment);
+    let mut variables = statement_kernel_variables(
+        &state,
+        &statement,
+        &assumptions,
+        &environment,
+        budget.next_kernel_variable,
+    );
     let execution = execute_execution_statement_verification_paths(
         &state,
         &statement,
@@ -5157,9 +5209,15 @@ pub(crate) fn prove_symbolic_loop_exit_with_proven_phases(
 }
 
 /// Checks an explicit proof at the false-guard frontier. The caller gets
-/// that frontier's checked facts and returns the facts its proof added.
-pub(crate) type LoopOtherwiseProof<'a> =
-    dyn FnMut(&ExecutionState, &ExecutionState, &ExecutionFacts) -> Option<ExecutionFacts> + 'a;
+/// that frontier's checked facts and the caller's record index for a unique
+/// checked false-guard path, if available. It returns the facts its proof added.
+pub(crate) type LoopOtherwiseProof<'a> = dyn FnMut(
+        &ExecutionState,
+        &ExecutionState,
+        &ExecutionFacts,
+        Option<usize>,
+    ) -> Option<ExecutionFacts>
+    + 'a;
 
 /// Checks the source interface for a loop join. The mask selects checked
 /// common facts in producer order. Written exports are checked in every
@@ -5201,7 +5259,13 @@ pub(crate) fn prove_symbolic_loop_exit_with_proven_phases_using_budget(
             None,
         );
     };
-    let mut variables = statement_kernel_variables(&state, &statement, &assumptions, &environment);
+    let mut variables = statement_kernel_variables(
+        &state,
+        &statement,
+        &assumptions,
+        &environment,
+        budget.next_kernel_variable,
+    );
     let execution = execute_program_loop_exit_paths_with_proven_phases(
         &state,
         program_loop,

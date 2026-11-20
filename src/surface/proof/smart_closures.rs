@@ -3472,7 +3472,10 @@ impl<'a> Proof<'a> {
         if let Some(surface) = recorded {
             let lowered = self.lower_surface_goal(surface, "recorded tactic requirement")?;
             if !lowered_covers_recorded_requirement(&lowered, requirement) {
-                return Err(self.step_error("a recorded tactic requirement does not round-trip"));
+                return Err(self.step_error(format!(
+                    "a recorded tactic requirement does not round-trip (report this as a bug)\nSurface form `{}`",
+                    crate::surface::printing::source_click_proposition(surface),
+                )));
             }
             return Ok(Some(RequirementSpelling {
                 surface: surface.clone(),
@@ -3529,14 +3532,20 @@ impl<'a> Proof<'a> {
             }),
         };
         if let Some(surface) = non_execution_surface {
-            let surface = surface.ok_or_else(|| self.step_error(
-                "a generated prerequisite has no Surface form; this is a raise-lower principle defect",
-            ).with_unresolved_requirement(&ProofObligation::verification_condition(requirement.proposition.clone())))?;
+            let surface = surface.ok_or_else(|| {
+                self.step_error(
+                    "a generated prerequisite has no Surface form (report this as a bug)",
+                )
+                .with_unresolved_requirement(
+                    &ProofObligation::verification_condition(requirement.proposition.clone()),
+                )
+            })?;
             let lowered = self.lower_surface_goal(&surface, "proof definedness requirement")?;
             if !lowered_states_requirement(&lowered, requirement) {
-                return Err(self.step_error(
-                    "a proof definedness requirement does not round-trip; this is a raise-lower principle defect",
-                ));
+                return Err(self.step_error(format!(
+                    "a proof definedness requirement does not round-trip (report this as a bug)\nSurface form `{}`",
+                    crate::surface::printing::source_click_proposition(&surface),
+                )));
             }
             return Ok(Some(RequirementSpelling { surface }));
         }

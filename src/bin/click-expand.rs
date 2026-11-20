@@ -180,7 +180,7 @@ fn run_bounded(arguments: &Arguments) -> Result<String, String> {
         expanded,
         &inputs,
         &claim,
-        selects_whole_claim(&arguments.selection, &claim),
+        arguments,
     )
 }
 
@@ -273,7 +273,7 @@ fn run_mdtest(arguments: &Arguments) -> Result<String, String> {
         expanded,
         &inputs,
         &claim,
-        selects_whole_claim(&arguments.selection, &claim),
+        arguments,
     )?;
     mdtest.replace_click_source(&markdown, &expanded)
 }
@@ -342,7 +342,16 @@ fn expand_selection(
                     expand_program_prepared_tactic_source_at(click_source, import, *line, *column)
                 }
             }
-            .map_err(|error| error.report())?;
+            .map_err(|error| {
+                format!(
+                    "{}\nOriginal tactic `{}` at {}:{}:{}",
+                    error.report(),
+                    selected.tactic_name,
+                    report.path.display(),
+                    line + report.line_offset,
+                    column,
+                )
+            })?;
             Ok((claim, expanded))
         }
         Selection::Claim(requested) => {
@@ -372,7 +381,13 @@ fn expand_selection(
                 &claim,
                 at,
             )
-            .map_err(|error| error.report())?;
+            .map_err(|error| {
+                format!(
+                    "{}\nOriginal selection `{requested}` in `{}`",
+                    error.report(),
+                    report.path.display()
+                )
+            })?;
             Ok((expansion.proof_unit, expansion.source))
         }
     }
@@ -468,14 +483,27 @@ fn verified_expansion(
     expanded: String,
     inputs: &VerificationInput,
     claim: &str,
-    whole_claim: bool,
+    arguments: &Arguments,
 ) -> Result<String, String> {
+    let whole_claim = selects_whole_claim(&arguments.selection, claim);
     if let Some(tidied) = click::surface::tidy_expansion_closers(click_source, &expanded)
-        && verify_expansion(project, &tidied, inputs, claim, whole_claim).is_ok()
+        && verify_expansion(project, click_source, &tidied, inputs, claim, whole_claim).is_ok()
     {
         return Ok(tidied);
     }
-    verify_expansion(project, &expanded, inputs, claim, whole_claim)?;
+    verify_expansion(project, click_source, &expanded, inputs, claim, whole_claim).map_err(
+        |error| {
+            let path = arguments.click_path.display();
+            let selection = match &arguments.selection {
+                Selection::Claim(label) => format!("`{label}` in `{path}`"),
+                Selection::Tactic { line, column } => match column {
+                    Some(column) => format!("`{path}:{line}:{column}` in `{claim}`"),
+                    None => format!("`{path}:{line}` in `{claim}`"),
+                },
+            };
+            format!("{error}\nOriginal selection {selection}")
+        },
+    )?;
     Ok(expanded)
 }
 
@@ -494,6 +522,7 @@ fn selects_whole_claim(selection: &Selection, claim: &str) -> bool {
 /// use it.
 fn verify_expansion(
     project: Option<&ClickProject>,
+    original: &str,
     expanded: &str,
     inputs: &VerificationInput,
     claim: &str,
@@ -501,15 +530,16 @@ fn verify_expansion(
 ) -> Result<(), String> {
     if whole_claim {
         click::surface::without_implicit_solve_for_claim(claim, || {
-            verify_expansion_now(project, expanded, inputs, claim)
+            verify_expansion_now(project, original, expanded, inputs, claim)
         })
     } else {
-        verify_expansion_now(project, expanded, inputs, claim)
+        verify_expansion_now(project, original, expanded, inputs, claim)
     }
 }
 
 fn verify_expansion_now(
     project: Option<&ClickProject>,
+    original: &str,
     expanded: &str,
     inputs: &VerificationInput,
     claim: &str,
@@ -521,8 +551,7 @@ fn verify_expansion_now(
                 project_tactic_source_position(project, &inputs.program_inputs(), claim, 0)
             }
             (None, inputs) => tactic_source_position(expanded, &inputs.program_inputs(), claim, 0),
-        }
-        .map_err(|error| error.report())?;
+        }?;
         let result = match (&rewritten, inputs) {
             (Some(project), _) => verify_project_at(
                 project,
@@ -537,9 +566,7 @@ fn verify_expansion_now(
                 position.column,
             ),
         };
-        result
-            .map(|_| ())
-            .map_err(|error| format!("expanded proof did not verify: {}", error.report()))
+        result.map(|_| ())
     });
     if click::instrumentation::deadline_exceeded() {
         return Err(expansion_limit_error(
@@ -547,7 +574,22 @@ fn verify_expansion_now(
             &events,
         ));
     }
-    result
+    result.map_err(|error| {
+        if error.kind() == click::surface::ClickErrorKind::Limit {
+            return error.report();
+        }
+        let start: usize = original
+            .split_inclusive('\n')
+            .zip(expanded.split_inclusive('\n'))
+            .take_while(|(before, after)| before == after)
+            .map(|(_, line)| line.len())
+            .sum();
+        let fragment: String = expanded[start..].chars().take(400).collect();
+        format!(
+            "expanded proof did not verify (report this as a bug)\nGenerated fragment starts with {fragment:?}\n{}",
+            error.report()
+        )
+    })
 }
 
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -1373,6 +1415,26 @@ theorem use_add_one(x: Integer) {
     }
 
     #[test]
+    fn invalid_generated_proof_replay_asks_for_a_bug_report() {
+        let original = "theorem reflexive(x: Integer) { ensures x == x by known(); }";
+        let inputs = VerificationInput::Bundle(Vec::new());
+        let claim = "reflexive.ensures_0";
+        verify_expansion(None, original, original, &inputs, claim, false).unwrap();
+
+        for generated in [
+            "theorem reflexive(x: Integer) { ensures x == x by { have x == x + 1 by known(); } }",
+            "theorem reflexive(x: Integer) { ensures x == x by { ??? } }",
+        ] {
+            let error =
+                verify_expansion(None, original, generated, &inputs, claim, false).unwrap_err();
+            assert!(
+                error.contains("report this as a bug") && error.contains(generated),
+                "{error}"
+            );
+        }
+    }
+
+    #[test]
     fn generated_proof_check_stops_at_the_whole_run_work_budget() {
         let c_source = "int32 identity(int32 x) { return x; }";
         let click_source = r#"verifying "identity.c";
@@ -1382,7 +1444,16 @@ int32 identity(int32 x) {
 "#;
         let inputs =
             VerificationInput::Bundle(vec![("identity.c".to_string(), c_source.to_string())]);
-        let check = || verify_expansion(None, click_source, &inputs, "identity.ensures_0", false);
+        let check = || {
+            verify_expansion(
+                None,
+                click_source,
+                click_source,
+                &inputs,
+                "identity.ensures_0",
+                false,
+            )
+        };
 
         check().expect("the generated proof verifies within the default budgets");
         let first = click::instrumentation::with_run_work_limit(10, check)
@@ -1397,6 +1468,7 @@ int32 identity(int32 x) {
             "{first}"
         );
         assert_eq!(first, second, "a work-budget verdict is deterministic");
+        assert!(!first.contains("report this as a bug"), "{first}");
     }
 
     #[test]

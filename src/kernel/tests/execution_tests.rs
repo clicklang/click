@@ -1672,6 +1672,47 @@ fn perpetual_loop_verifies_safety_without_minting_a_concrete_exit() {
 }
 
 #[test]
+fn loop_head_preserves_sparse_body_field_view_reservations() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let base = ExecutionBudget::KERNEL_VARIABLE_BASE;
+    let mut state = ExecutionState::new().with_local("i", int32(0));
+    let view = ResourceInstance::field_view(
+        "parent".to_string(),
+        std::iter::empty().collect(),
+        ResourceFieldSchema::new(vec![(
+            "rank".to_string(),
+            ResourceFieldType::Program(ProgramType::Int32),
+        )])
+        .unwrap(),
+        [crate::kernel::AlgebraicValue::Program(int32(
+            MachineTerm::Variable(Variable(base + 1)),
+        ))]
+        .into_iter()
+        .collect(),
+    )
+    .unwrap();
+    state.body_field_view = Some(Arc::new(view));
+    let body = program_assign("i", crate::kernel::program_expression::int32_literal(1));
+    let head = crate::kernel::api::loop_phase_preservation_contexts(
+        &state,
+        None,
+        &[],
+        &[],
+        &[],
+        &[],
+        &body,
+        &PureFactContext::new(),
+        0,
+    )
+    .expect("preservation context");
+
+    // The iteration uses the free candidate before the field's identity. The
+    // havoc of i must skip over the field and take the next free identity.
+    assert_eq!(head[0].iterations(), &IntegerTerm::var(Variable(base)));
+    assert_eq!(head[0].next_kernel_variable(), 3);
+}
+
+#[test]
 fn loop_exit_rule_with_proven_preservation_does_not_reverify_the_body() {
     let state = ExecutionState::new().with_local("i", int32(0));
     let statement = program_while_with_invariant_checks(

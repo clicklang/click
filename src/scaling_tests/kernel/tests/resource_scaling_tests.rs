@@ -2550,7 +2550,7 @@ fn a_view_lending_call_and_its_observation_ignore_unrelated_allocations() {
         caller
             .resources()
             .synchronize_memory_equalities(&assumptions);
-        caller.prepare_modular_call_reservations();
+        caller.prepare_execution_variable_reservations();
         caller
             .resources()
             .observable_facts_assuming_valid(&assumptions);
