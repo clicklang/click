@@ -3,7 +3,7 @@
 This page lists the C that Click models. Coverage is incomplete: a construct
 that is not listed here is refused with a diagnostic rather than approximated.
 The same is true of C++ and Rust, whose coverage is described in
-[`click import`](../cli/import.md) and
+[`click import`](../cli/capture.md) and
 [Experimental Rust imports](../rust.md);
 [language coverage](../coverage.md) summarizes all three side by side. When C syntax appears inside Surface
 Click, this documentation calls that syntax a **C fragment**.
@@ -62,7 +62,7 @@ the user-space target and Click's conditional pthread model for every sidecar
 of the project; `"mode": "kernel"` selects kernel mode.
 The fields are optional. Conflicting sidecar directives are rejected. The same
 file can declare compiler-import units; see
-[Project units](../cli/import.md#project-units).
+[Project units](../cli/capture.md#project-units).
 
 Existing sidecars may also select the C target with a top-level directive
 alongside `verifying`:
@@ -179,7 +179,7 @@ declares only what Click models, and a call is checked against Click's
 specification of the function. A proof therefore assumes a C library that
 implements Click's interfaces as specified, and holds for any library that
 does. Verifying plain C needs no compiler or system headers; see the
-[interface boundary](../cli/import.md#interface-boundary).
+[interface boundary](../cli/capture.md#interface-boundary).
 
 | Header | Targets | Provides |
 | --- | --- | --- |
@@ -229,7 +229,7 @@ a scalar's representation directly (`mdtests/memcpy_typed_scalar_arguments.md`).
 The ordinary ownership, initialized-source, separation and destination-write
 requirements still apply.
 
-A [compiler import](../cli/import.md#clicks-system-headers) searches the same
+A [compiler import](../cli/capture.md#clicks-system-headers) searches the same
 headers, with the same text, in the place of the C library's: after the
 project's `-iquote`, `-I`, and `-isystem` directories, as GCC orders them. It
 refuses `<pthread.h>` and `<stdatomic.h>`, whose runtime does not accept

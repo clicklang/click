@@ -607,7 +607,7 @@ Stage 0 record:
 
 The gate pins the first rejection on each route:
 
-- Import route: `click import lock` locks the recorded configuration under
+- Import route: `click capture` locks the recorded configuration under
   the `linux-6.8-x86_64-kbuild` option profile (see "Option profile",
   below); the lock and artifact are committed and load offline. `HOME`
   stays outside the importer's environment allowlist.
@@ -673,7 +673,7 @@ cell that `WRITE_ONCE` expands to.
 Accepted means parsed and lowered declaration by declaration. No proof has
 run against these bodies.
 
-The dependency-closure projection (`docs/reference/cli/import.md`) is now
+The dependency-closure projection (`docs/reference/cli/capture.md`) is now
 implemented as an import option. On the pinned artifact it keeps 32 of the
 2,575 file-scope declarations, omits 2,543 including the twelve export
 triples, and the kept unit parses and lowers as a whole: 26 functions, the
@@ -688,7 +688,7 @@ Option profile, 2026-10-02. The configuration now carries the recorded
 vector unchanged except for `-E` and the source operand, which the importer
 supplies, and selects the named option profile `linux-6.8-x86_64-kbuild`. The
 classification table and each option's reason are in
-`docs/reference/cli/import.md`; a test keeps the table and the profile's
+`docs/reference/cli/capture.md`; a test keeps the table and the profile's
 exact-spelling lists equal. Of the 83 recorded options outside the base
 preprocessing options and the target's fixed four, 79 spellings are distinct,
 and all are accepted: `-mno-sse` and `-mno-sse2` only beside `-mno-80387`,
@@ -705,7 +705,7 @@ an unchecked promise (`nonnull`, `const`, `leaf`, `access`, `noreturn`,
 `returns_twice`, `restrict`; the others were never accepted), allowing
 `noreturn` only on `compiletime_assert`'s block-scope `error` declaration,
 whose calls Click proves unreachable. The list and the GCC 13 experiments
-behind it are in `docs/reference/cli/import.md`. The projected rbtree unit
+behind it are in `docs/reference/cli/capture.md`. The projected rbtree unit
 contains none of them besides that declaration, and parses with them
 refused.
 
@@ -746,7 +746,7 @@ First-milestone interface decisions:
 
 - Compiler imports are selected by explicit `<sidecar>.import.json` configuration;
   legacy source-bundle inputs remain available with no silent fallback.
-- `click import lock <sidecar.click>` explicitly creates or refreshes the separate
+- `click capture <sidecar.click>` explicitly creates or refreshes the separate
   `<sidecar>.import.lock.json` and configured artifacts. Verification reproduces
   and validates the locked input without modifying it.
 - Opaque `PreparedCImport` values carry validated text, source map, logical source
@@ -795,9 +795,9 @@ because one implementation package landed.
 
 The implementation uses `languages::c::compiler_import::{create_lock,
 load_imports}` and opaque, shared `PreparedCImport` values. The public command
-is `click import lock <sidecar.click>`; the usage, restricted compiler profile,
+is `click capture <sidecar.click>`; the usage, restricted compiler profile,
 resource limits, trust boundary, and provisioning requirements are documented
-in [the import reference](../docs/reference/cli/import.md) and
+in [the import reference](../docs/reference/cli/capture.md) and
 [testing documentation](../docs/internals/testing.md#compiler-import-fixtures).
 
 Compiler artifacts are freshly reproduced from controlled GCC arguments and

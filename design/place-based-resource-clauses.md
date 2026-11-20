@@ -47,7 +47,7 @@ permissions. Pointer-based bindings check the entire record's live storage
 without loading fields. Struct/class reference results retain the same nominal
 layout through calls: `result.field` reads a field and `&result` names the
 returned address. A local binding to that result keeps the existing reference
-carrier and permissions. See [supported C++](../docs/reference/cli/import.md).
+carrier and permissions. See [supported C++](../docs/reference/cli/capture.md).
 
 ## Decisions and history
 

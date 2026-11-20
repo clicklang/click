@@ -54,7 +54,7 @@ def main():
         "--lock",
         type=Path,
         required=True,
-        help="the project's click.project.lock.json, locked over the full checkout",
+        help="the project's .click/captures/manifest.json, locked over the full checkout",
     )
     parser.add_argument("--compilation-database", type=Path, required=True)
     args = parser.parse_args()

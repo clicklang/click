@@ -1,7 +1,7 @@
 use super::*;
 
 const ARTIFACT: &[u8] =
-    include_bytes!("../../../../design/charon-trial/option-take/.click/option_take/take.rs.ullbc");
+    include_bytes!("../../../../design/charon-trial/option-take/.click/captures/option_take/take.rs.ullbc");
 const SOURCE: &[u8] = include_bytes!("../../../../design/charon-trial/option-take/take.rs");
 
 fn decode_take(artifact: &ExtractionArtifact) -> Result<out::RustExport, String> {

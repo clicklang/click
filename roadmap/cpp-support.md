@@ -10,8 +10,8 @@ documented profile are refused.
 The P1 part of this item, a released C++ front end, is complete (user ruling,
 2026-11-13). A user installs Click with `CLICK_LANGUAGES=cpp`, or adds the
 front end with `click add cpp`, describes the project in its
-[project configuration](../docs/reference/cli/import.md#project-units), and
-runs `click import lock` and `click verify`:
+[project configuration](../docs/reference/cli/capture.md#project-units), and
+runs `click capture` and `click verify`:
 
 - Releases ship a static, checksummed exporter for `x86_64-unknown-linux-gnu`
   and `aarch64-apple-darwin` (`.github/workflows/cpp-frontend.yml`,
@@ -19,7 +19,7 @@ runs `click import lock` and `click verify`:
   ([`click add`](../docs/reference/cli/versions.md#languages)).
 - The exporter is found by one resolution order and checked by its
   `--identity` before it exports
-  ([C++ exporter identity](../docs/reference/cli/import.md#c-exporter-identity)).
+  ([C++ exporter identity](../docs/reference/cli/capture.md#c-exporter-identity)).
   A lock records the pinned profile, so equal inputs lock byte-identically on
   every machine and host.
 - `the_installed_cpp_front_end_reproduces_the_committed_imports` locks
@@ -27,7 +27,7 @@ runs `click import lock` and `click verify`:
   closure from the installed layout alone.
 - A sidecar links several translation units of one unit, binding each
   declaration to its definition and checking the one-definition rule
-  ([calls into another translation unit](../docs/reference/cli/import.md#calls-into-another-translation-unit)).
+  ([calls into another translation unit](../docs/reference/cli/capture.md#calls-into-another-translation-unit)).
 
 Deferred from P1 by the same ruling:
 
@@ -43,7 +43,7 @@ Deferred from P1 by the same ruling:
 This is the C++ coverage roadmap toward Bitcoin Core. It does not block
 launch. The detailed delivery history of each slice is in
 this file's Git history before the 2026-10-14 ruling. The exact supported
-profile is documented in [`click import`](../docs/reference/cli/import.md).
+profile is documented in [`click import`](../docs/reference/cli/capture.md).
 
 ### Delivered launch demonstration
 

@@ -24,7 +24,7 @@
 //!   unselected in the project.
 //!
 //! The C++ and Rust imports are checked in, so the gate needs neither
-//! toolchain. After changing a source, run `click import lock` on its
+//! toolchain. After changing a source, run `click capture` on its
 //! directory, `examples/integer-languages/cpp` or `rust`, with its toolchain
 //! (`docs/internals/testing.md`, "Cross-language integer fixture").
 
@@ -442,7 +442,7 @@ fn cpp_import_matches_the_pinned_exporter() {
     let exported = unit_import(&scratch.0, "integers_cpp", artifact);
     assert!(
         cpp_imports::same_import(&checked_in, &exported),
-        "the fixture's C++ import differs from the pinned exporter's; run `click import lock examples/integer-languages/cpp`: {}",
+        "the fixture's C++ import differs from the pinned exporter's; run `click capture examples/integer-languages/cpp`: {}",
         cpp_imports::first_import_difference(&checked_in, &exported)
     );
 }
@@ -486,7 +486,7 @@ fn rust_import_matches_live_charon_extraction() {
     let extracted = unit_import(&scratch.0, "integers_rust", artifact);
     assert!(
         cpp_imports::same_import_apart_from_build(&checked_in, &extracted),
-        "the fixture's Rust import differs from live extraction; run `click import lock examples/integer-languages/rust`: {}",
+        "the fixture's Rust import differs from live extraction; run `click capture examples/integer-languages/rust`: {}",
         cpp_imports::first_import_difference(&checked_in, &extracted)
     );
 }

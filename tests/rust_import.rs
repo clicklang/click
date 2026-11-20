@@ -205,7 +205,7 @@ impl Project {
             .find(|(_, unit)| unit["sources"].get(source).is_some())
             .expect("a unit lists the source");
         self.project
-            .join(".click")
+            .join(click::project::ARTIFACT_DIRECTORY)
             .join(unit)
             .join(format!("{source}.ullbc"))
     }
@@ -2444,7 +2444,7 @@ fn assert_cli(p: &Project, args: &[&str]) {
 #[ignore = "nightly: 3s in the parallel gate"]
 fn rust_ordinary_cli_locks_and_verifies() {
     let p = Project::new(SOURCE);
-    assert_cli(&p, &["import", "lock"]);
+    assert_cli(&p, &["capture"]);
     assert_cli(&p, &["verify"]);
 }
 #[cfg(not(feature = "fast-gate"))]
@@ -6837,7 +6837,7 @@ fn charon_project_crate_unit_serves_every_sidecar_of_the_crate() {
     )
     .unwrap();
     let output = Command::new(env!("CARGO_BIN_EXE_click"))
-        .args(["import", "lock"])
+        .args(["capture"])
         .arg(root.join("proofs"))
         .output()
         .unwrap();

@@ -42,7 +42,7 @@ fn relocated_artifact(bytes: &[u8], source_suffix: &std::path::Path) -> serde_js
 #[test]
 fn an_already_relative_gate_artifact_keeps_its_source_metadata() {
     let fixture = root().join("match-in-loop");
-    let bytes = fs::read(fixture.join(".click/borrow/borrow.rs.ullbc")).unwrap();
+    let bytes = fs::read(fixture.join(".click/captures/borrow/borrow.rs.ullbc")).unwrap();
     let original: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     let suffix = PathBuf::from("design/charon-trial/gate-fixtures/match-in-loop/borrow.rs");
     assert_eq!(relocated_artifact(&bytes, &suffix), original);

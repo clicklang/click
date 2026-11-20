@@ -49,7 +49,7 @@ Rust project units use this frontend automatically. `CLICK_CHARON` is a
 contributor override: a bundle directory selects that bundle, while an
 executable selects the existing source-build path and its rustup-managed pinned
 toolchain. The project schema and lock format are described
-in [`click import`](cli/import.md#project-units) and
+in [`click import`](cli/capture.md#project-units) and
 [project configuration](../concepts/own-project.md).
 
 The release workflow builds Charon with `scripts/build-charon.sh --release`
@@ -109,8 +109,8 @@ library, with no other inputs:
 {"units": {"borrow": {"language": "rust", "sources": {"borrow.rs": {}}}}}
 ```
 
-`click import lock` runs the compiler with a bounded process and writes
-`.click/<unit>/<source>.ullbc` and `click.project.lock.json`. Ordinary
+`click capture` runs the compiler with a bounded process and writes
+`.click/captures/<unit>/<source>.ullbc` and `.click/captures/manifest.json`. Ordinary
 verification loads those files without executing the compiler. Source, unit
 description, artifact, or profile changes require refresh, and a changed
 source is named. The lock includes the compiler/extractor identity; after
@@ -119,7 +119,7 @@ normal example gate checks locked native inputs offline, while the nightly
 gate's live Charon tests refresh and verify all 16 original Rust fixtures.
 
 A Rust unit's lock entry uses the envelope shared with C and C++, and its
-import identity the shared formula ([import.md](cli/import.md)); the `rust`
+import identity the shared formula ([import.md](cli/capture.md)); the `rust`
 section records the lock schema, the source and the front end. Legacy
 configurations still accept `"charon-trial"` as a backend compatibility alias.
 Historical single-file crate/output labels inside serialized artifacts remain
@@ -137,7 +137,7 @@ crate paths remain relative to the unit root.
 
 A schema-8 section, from releases before the `frontend` record, names the
 exporter and Charon driver digests and the semantic profile it was prepared
-under; it loads only while that profile is current. `click import lock`
+under; it loads only while that profile is current. `click capture`
 refreshes it into schema 9; a Click release or semantic-profile change also
 requires refresh. Normal verification never rewrites a lock.
 

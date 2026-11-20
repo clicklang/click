@@ -916,10 +916,34 @@ fn read_verification_inputs_with_c_target(
 /// replacement.
 pub fn per_sidecar_config_refusal(config: &Path) -> String {
     format!(
-        "`{}` is a per-sidecar import config, which Click no longer reads; declare its sources as a unit of a `{}` at the project root, remove the config and its lock, and run `click import lock` (see docs/reference/cli/import.md#project-units)",
+        "`{}` is a per-sidecar import config, which Click no longer reads; declare its sources as a unit of a `{}` at the project root, remove the config and its lock, and run `click capture` (see docs/reference/cli/capture.md#project-units)",
         config.display(),
         crate::project::FILE_NAME
     )
+}
+
+/// Captures the configured compilations selected by a sidecar.
+pub fn capture_sidecar(sidecar: &Path) -> Result<(), String> {
+    let source = fs::read_to_string(sidecar)
+        .map_err(|error| format!("read `{}`: {error}", sidecar.display()))?;
+    let (project, requested) = project_unit_selection(sidecar, &source)?.ok_or_else(|| {
+        format!(
+            "`{}` selects no configured compiler sources",
+            sidecar.display()
+        )
+    })?;
+    let paths = requested
+        .into_iter()
+        .map(|(name, path)| {
+            path.ok_or_else(|| {
+                format!(
+                    "cannot resolve source `{name}` from `{}`",
+                    sidecar.display()
+                )
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    project.capture_sources(&paths)
 }
 
 /// The project whose units list a sidecar's `verifying` sources, found as the
@@ -1574,7 +1598,7 @@ pub struct CppMdTestSource {
     pub templates: Vec<String>,
     pub source: String,
     /// Where the fixture's checked-in import lives: the lock and artifact
-    /// `click import lock` writes, under `cpp-imports/<stem>` beside it.
+    /// `click capture` writes, under `cpp-imports/<stem>` beside it.
     pub import_directory: Option<PathBuf>,
 }
 

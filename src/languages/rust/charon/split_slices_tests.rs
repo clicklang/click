@@ -2,7 +2,7 @@ use super::*;
 use crate::surface::ProgramVerificationSession;
 
 const ARTIFACT: &[u8] =
-    include_bytes!("../../../../design/charon-trial/split-slices/.click/split/split.rs.ullbc");
+    include_bytes!("../../../../design/charon-trial/split-slices/.click/captures/split/split.rs.ullbc");
 const SOURCE: &[u8] = include_bytes!("../../../../design/charon-trial/split-slices/split.rs");
 const CLAIM: &str = include_str!("../../../../design/charon-trial/split-slices/split.click");
 

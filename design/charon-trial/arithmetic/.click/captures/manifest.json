@@ -1,0 +1,40 @@
+{
+  "schema": 1,
+  "units": {
+    "arithmetic": {
+      "language": "rust",
+      "lock": {
+        "envelope": 1,
+        "frontend": {
+          "identity": "df7480f0d0ff533c4239edccb00ca77727d5743387aaa485ac5aff933eabca9c",
+          "name": "charon"
+        },
+        "rust": {
+          "frontend": {
+            "click_version": "0.1.0",
+            "compiler_commit": "923c95cdf5ba65cea505aa2ea829f578e1506ed8",
+            "extractor_revision": "5d6b812e5f77dbf3d7f66c21b9b57091f0e084cb",
+            "extractor_version": "0.1.279",
+            "profile": "cd1ca7859f005e20d5211850322a37059b3c50e734584f64d53d513b0210fe76"
+          },
+          "schema": 9,
+          "source": "3e5a2854d65d6b28bcfb5c805f8eaa4cf5bb4b78cec427bcacc8cbacf1869a0a"
+        },
+        "sources": {
+          "arithmetic.rs": {
+            "artifact": {
+              "bytes": 100935,
+              "path": ".click/captures/arithmetic/arithmetic.rs.ullbc",
+              "sha256": "9efe274ee10c6ee4023af4e27d51140992ee5d9965038d715f958c4a10c6b039"
+            },
+            "identity": "390d6655d5afa39d69c3e8ef2960994e518231c9a3bdd9311c898925911d8236",
+            "inputs": {
+              "arithmetic.rs": "3e5a2854d65d6b28bcfb5c805f8eaa4cf5bb4b78cec427bcacc8cbacf1869a0a"
+            }
+          }
+        },
+        "unit": "24729c6898ca2ac6d323ab4191a0333daa61a76410972a84d9c14572a72c0b8d"
+      }
+    }
+  }
+}

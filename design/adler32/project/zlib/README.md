@@ -56,7 +56,7 @@ To reproduce preparation on a machine with the unit's compiler, regenerate
 the lock and prepared sources:
 
 ```sh
-target/debug/click import lock design/adler32/project/zlib
+target/debug/click capture design/adler32/project/zlib
 target/debug/click verify design/adler32/project/zlib/empty.click
 ```
 

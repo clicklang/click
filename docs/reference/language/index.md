@@ -307,7 +307,7 @@ conditional resource clauses and nonmemory resources remain refused with
 The C++ `ios_failure` import profile also supports
 `throws std::ios_base::failure`: `exception` is an opaque value of exactly
 that type, with no addressable layout, message or `what()` accessor
-([import boundary](../cli/import.md)).
+([import boundary](../cli/capture.md)).
 
 For ordinary imported C++ aggregates, the `typed` profile permits
 `throws Error` or `throws errors::ParseError`. The name resolves to an

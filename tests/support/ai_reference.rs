@@ -456,7 +456,7 @@ mod tests {
     fn rewrite(source: &str) -> Result<String, String> {
         rewrite_links(
             &Path::new(env!("CARGO_MANIFEST_DIR")).join("docs"),
-            "reference/cli/import.md",
+            "reference/cli/capture.md",
             source,
         )
     }
@@ -472,7 +472,7 @@ mod tests {
         }
         assert_eq!(
             rewrite("`[](x)` [real](#section) `[](y)`").unwrap(),
-            "`[](x)` [real](reference/cli/import.md#section) `[](y)`"
+            "`[](x)` [real](reference/cli/capture.md#section) `[](y)`"
         );
     }
 
@@ -487,7 +487,7 @@ mod tests {
             let input = format!("{source}[real](#section)\n");
             assert_eq!(
                 rewrite(&input).unwrap(),
-                format!("{source}[real](reference/cli/import.md#section)\n")
+                format!("{source}[real](reference/cli/capture.md#section)\n")
             );
         }
     }
@@ -497,7 +497,7 @@ mod tests {
         for source in ["` [real](#section)", "\\` [real](#section)"] {
             assert_eq!(
                 rewrite(source).unwrap(),
-                source.replace("(#section)", "(reference/cli/import.md#section)")
+                source.replace("(#section)", "(reference/cli/capture.md#section)")
             );
         }
         assert!(rewrite("`[](x)` [missing](missing.md)").is_err());

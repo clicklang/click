@@ -283,14 +283,14 @@ fn compiler_import_identity_binds_invocation_even_when_c_bytes_match() {
     let project = Project::new();
     create_lock(&project.config()).unwrap();
     let first = load_imports(&project.config()).unwrap();
-    let original = fs::read(project.0.join(".click/main/main.c.i")).unwrap();
+    let original = fs::read(project.0.join(".click/captures/main/main.c.i")).unwrap();
     project.configure(1, &["-DUNUSED_CONFIGURATION_VALUE=123"]);
     assert!(load_imports(&project.config()).is_err());
     create_lock(&project.config()).unwrap();
     let second = load_imports(&project.config()).unwrap();
     assert_eq!(
         original,
-        fs::read(project.0.join(".click/main/main.c.i")).unwrap()
+        fs::read(project.0.join(".click/captures/main/main.c.i")).unwrap()
     );
     assert_ne!(first[0].identity(), second[0].identity());
 }
@@ -300,7 +300,7 @@ fn compiler_import_identity_binds_invocation_even_when_c_bytes_match() {
 fn compiler_import_header_and_artifact_changes_cannot_reuse_a_lock() {
     let project = Project::new();
     create_lock(&project.config()).unwrap();
-    let artifact = project.0.join(".click/main/main.c.i");
+    let artifact = project.0.join(".click/captures/main/main.c.i");
     let original = fs::read(&artifact).unwrap();
     fs::write(&artifact, "int answer(void) { return 999; }\n").unwrap();
     assert!(load_imports(&project.config()).is_err());
@@ -557,14 +557,14 @@ fn userspace_and_kernel_imports_have_distinct_identity_for_identical_c() {
     .unwrap();
     create_lock(&project.config()).unwrap();
     let kernel = load_imports(&project.config()).unwrap();
-    let original = fs::read(project.0.join(".click/main/main.c.i")).unwrap();
+    let original = fs::read(project.0.join(".click/captures/main/main.c.i")).unwrap();
     configure_userspace(&project);
     assert!(load_imports(&project.config()).is_err());
     create_lock(&project.config()).unwrap();
     let userspace = load_imports(&project.config()).unwrap();
     assert_eq!(
         original,
-        fs::read(project.0.join(".click/main/main.c.i")).unwrap()
+        fs::read(project.0.join(".click/captures/main/main.c.i")).unwrap()
     );
     assert_ne!(kernel[0].identity(), userspace[0].identity());
     let proof = "target \"x86_64-unknown-linux-gnu\"; verifying \"main.c\"; int answer() { ensures result == 42; }";
@@ -619,7 +619,7 @@ fn userspace_compiler_import_refuses_profile_overrides_and_ambient_headers() {
     fs::write(project.0.join("main.c"), "#include <pthread.h>\n").unwrap();
     let error = create_lock(&project.config()).unwrap_err();
     assert!(error.contains("pthread.h"), "{error}");
-    assert!(!project.0.join(".click/main/main.c.i").exists());
+    assert!(!project.0.join(".click/captures/main/main.c.i").exists());
 }
 
 #[test]
@@ -690,7 +690,7 @@ fn compiler_import_projects_only_selected_functions_and_their_dependencies() {
     set_roots(&mut config, &["selected"]);
     create_lock(&project.config()).unwrap();
     let lock: serde_json::Value =
-        serde_json::from_slice(&fs::read(project.0.join("click.project.lock.json")).unwrap())
+        serde_json::from_slice(&fs::read(project.0.join(".click/captures/manifest.json")).unwrap())
             .unwrap();
     assert_eq!(
         unit_lock(&lock)["sources"][0]["functions"],
@@ -703,7 +703,7 @@ fn compiler_import_projects_only_selected_functions_and_their_dependencies() {
     set_roots(&mut config, &["sibling"]);
     let error = load_imports(&project.config()).expect_err("the root list is locked");
     assert!(error.contains("does not match its description"), "{error}");
-    assert!(error.contains("click import lock"), "{error}");
+    assert!(error.contains("click capture"), "{error}");
     set_roots(&mut config, &["selected"]);
 
     let caller = source.replace("return 42;", "struct slot value; return sibling(&value);");
@@ -1522,15 +1522,17 @@ fn compiler_import_supplies_clicks_modeled_headers_beside_project_flags() {
     );
     let config = project.path().join("main.import-description.json");
     create_lock(&config).expect("lock a user-space import that includes libc headers");
-    let artifact = fs::read_to_string(project.path().join(".click/main/main.c.i")).unwrap();
+    let artifact =
+        fs::read_to_string(project.path().join(".click/captures/main/main.c.i")).unwrap();
     // The artifact names Click's headers, not the private directory GCC
     // read them from, so a refresh reproduces it byte for byte.
     assert!(artifact.contains("# 1 \"<string.h>\" 1 3 4"), "{artifact}");
     assert!(!artifact.contains("click-import-headers"), "{artifact}");
     assert!(artifact.contains("size_t strlen(const char *s);"));
-    let lock: serde_json::Value =
-        serde_json::from_slice(&fs::read(project.path().join("click.project.lock.json")).unwrap())
-            .unwrap();
+    let lock: serde_json::Value = serde_json::from_slice(
+        &fs::read(project.path().join(".click/captures/manifest.json")).unwrap(),
+    )
+    .unwrap();
     assert_eq!(unit_lock(&lock)["schema"], 3);
     let opened = unit_lock(&lock)["sources"][0]["click_headers"]
         .as_object()
@@ -1567,7 +1569,7 @@ fn compiler_import_supplies_clicks_modeled_headers_beside_project_flags() {
     create_lock(&config).unwrap();
     assert_eq!(
         artifact,
-        fs::read_to_string(project.path().join(".click/main/main.c.i")).unwrap(),
+        fs::read_to_string(project.path().join(".click/captures/main/main.c.i")).unwrap(),
         "a refresh reproduces the artifact"
     );
 }
@@ -1584,7 +1586,12 @@ fn compiler_import_refuses_unmodeled_system_headers_by_name() {
             && !error.contains("click-import-headers"),
         "{error}"
     );
-    assert!(!project.path().join(".click/main/main.c.i").exists());
+    assert!(
+        !project
+            .path()
+            .join(".click/captures/main/main.c.i")
+            .exists()
+    );
 
     // `__has_include` finds a hosted header Click refuses, as it finds the C
     // library's, so the program cannot silently take the other branch.
@@ -1659,7 +1666,8 @@ fn compiler_import_project_headers_precede_clicks_in_gcc_search_order() {
         write_userspace_config(project.path(), args);
         create_lock(&config).unwrap();
         let imports = load_imports(&config).unwrap();
-        let lock = fs::read_to_string(project.path().join("click.project.lock.json")).unwrap();
+        let lock =
+            fs::read_to_string(project.path().join(".click/captures/manifest.json")).unwrap();
         // GCC splits an expansion from a system header across line markers,
         // so compare the C without whitespace.
         let source = imports[0].source().split_whitespace().collect::<String>();
@@ -1699,7 +1707,7 @@ fn compiler_import_lock_binds_clicks_header_text_and_catalog() {
         &["-Iinclude"],
     );
     let config = project.path().join("main.import-description.json");
-    let lock_path = project.path().join("click.project.lock.json");
+    let lock_path = project.path().join(".click/captures/manifest.json");
     create_lock(&config).unwrap();
     let original = fs::read_to_string(&lock_path).unwrap();
     load_imports(&config).unwrap();
@@ -2489,8 +2497,8 @@ fn foreign_layout_tree_is_read_in_place_and_never_written() {
     );
     let project = example.join("project");
     let upstream = example.join("upstream/RingQ-1.2");
-    let committed = fs::read(project.join("click.project.lock.json")).unwrap();
-    fs::remove_file(project.join("click.project.lock.json")).unwrap();
+    let committed = fs::read(project.join(".click/captures/manifest.json")).unwrap();
+    fs::remove_file(project.join(".click/captures/manifest.json")).unwrap();
     fs::remove_dir_all(project.join(".click")).unwrap();
     let before = tree_inventory(&upstream);
     set_tree_writable(&upstream, false);
@@ -2501,7 +2509,7 @@ fn foreign_layout_tree_is_read_in_place_and_never_written() {
             .output()
             .unwrap()
     };
-    let locked = click(&["import", "lock"]);
+    let locked = click(&["capture"]);
     let verified = click(&["verify", "ringq.click"]);
     let after = tree_inventory(&upstream);
     set_tree_writable(&upstream, true);
@@ -2520,7 +2528,7 @@ fn foreign_layout_tree_is_read_in_place_and_never_written() {
         "locking and verifying changed the upstream tree"
     );
     assert_eq!(
-        fs::read(project.join("click.project.lock.json")).unwrap(),
+        fs::read(project.join(".click/captures/manifest.json")).unwrap(),
         committed,
         "a fresh lock of the copy differs from the committed one"
     );
@@ -2532,4 +2540,55 @@ fn foreign_layout_tree_is_read_in_place_and_never_written() {
     let error = String::from_utf8_lossy(&stale.stderr);
     assert!(!stale.status.success());
     assert!(error.contains("RingQ.h"), "{error}");
+}
+
+#[cfg(not(feature = "fast-gate"))]
+#[test]
+#[ignore = "nightly: live CLI captures of two configured sources"]
+fn capture_selects_sources_and_reuses_them_across_proof_layouts() {
+    let project = tempfile::tempdir().unwrap();
+    let root = project.path();
+    fs::create_dir(root.join("src")).unwrap();
+    fs::create_dir(root.join("proofs")).unwrap();
+    fs::write(
+        root.join("click.project.json"),
+        r#"{"units":{"app":{"language":"c","compiler":"/usr/bin/gcc",
+          "env":{"PATH":"/usr/bin:/bin","LC_ALL":"C"},
+          "sources":{"src/first.c":{},"src/second.c":{}}}}}"#,
+    )
+    .unwrap();
+    fs::write(root.join("src/first.c"), "int first(void) { return 42; }").unwrap();
+    fs::write(root.join("src/second.c"), "int second(void) { return 7; }").unwrap();
+    fs::write(
+        root.join("proofs/first.click"),
+        r#"verifying "../src/first.c"; int first() { ensures result == 42; }"#,
+    )
+    .unwrap();
+    fs::write(
+        root.join("src/second.click"),
+        r#"verifying "second.c"; int second() { ensures result == 7; }"#,
+    )
+    .unwrap();
+    let click = |args: &[&str]| {
+        let output = std::process::Command::new(env!("CARGO_BIN_EXE_click"))
+            .args(args)
+            .current_dir(root)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{args:?}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    };
+    let captures = root.join(click::project::ARTIFACT_DIRECTORY);
+    click(&["capture", "proofs/first.click"]);
+    assert!(root.join(click::project::LOCK_NAME).is_file());
+    assert!(captures.join("app/src/first.c.i").is_file());
+    assert!(!captures.join("app/src/second.c.i").exists());
+    click(&["capture", "src/second.c"]);
+    click(&["verify", "proofs/first.click"]);
+    click(&["verify", "src/second.click"]);
+    fs::write(root.join("src/second.c"), "int second(void) { return 8; }").unwrap();
+    click(&["verify", "proofs/first.click"]);
 }

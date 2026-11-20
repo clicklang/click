@@ -1638,7 +1638,7 @@ these checks until the case moves into the sidecar. The C++ and Rust imports
 are checked in, so the gate loads them offline. The nightly
 `cpp_import_matches_the_pinned_exporter` and
 `rust_import_matches_live_charon_extraction` compare them with a fresh export
-and extraction. After changing a source, run `click import lock` on its
+and extraction. After changing a source, run `click capture` on its
 directory with its toolchain.
 
 ## Width-uniformity fixture

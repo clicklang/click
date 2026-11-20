@@ -13,7 +13,7 @@ The C is written as a C programmer would write it and is not adapted to Click.
 | `label_copy.c` | `label_measure` and `label_copy`, which call `strlen`, `memcpy`, and `label_fit` |
 | `label.click` | One sidecar for both files |
 | `click.project.json` | The project: one C unit for both files, with the build's flags |
-| `click.project.lock.json`, `.click/label/` | The lock and preprocessed sources `click import lock` wrote |
+| `.click/captures/manifest.json`, `.click/captures/label/` | The lock and preprocessed sources `click capture` wrote |
 
 `label.click` proves that `label_fit` returns its input when it is below the
 build's capacity of 32 and 31 otherwise, and that `label_measure` returns
@@ -37,10 +37,10 @@ accepts its `const char *` source without changing the C.
 From this directory:
 
 ```sh
-click import lock
+click capture
 click verify label.click
 ```
 
 `make` builds `liblabel.a` with a host compiler; Click does not use the
 `Makefile`. The lock and the preprocessed sources are committed, so
-verification needs no compiler; `click import lock` refreshes them.
+verification needs no compiler; `click capture` refreshes them.

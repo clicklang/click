@@ -1,0 +1,73 @@
+{
+  "schema": 1,
+  "units": {
+    "fixture": {
+      "language": "c++",
+      "lock": {
+        "c++": {
+          "sources": {
+            "cell.cpp": {
+              "compilation_database_sha256": "b923879eb4cc09082503d61b27b1f4e9f1d2df1f0ad59ac39362277b9cd02c2d",
+              "dependencies": {},
+              "logical_source_sha256": "a42f36b416b42d49b81ad7ed7c2911ed192b10443efb89952607a2adf3fa1029",
+              "prepared_roots": [
+                "$unit",
+                "$project"
+              ],
+              "profile": {
+                "compilation_command": [
+                  "clang++",
+                  "-x",
+                  "c++",
+                  "-std=c++20",
+                  "--target=x86_64-unknown-linux-gnu",
+                  "-fno-exceptions",
+                  "-fno-rtti",
+                  "-O2",
+                  "-fno-strict-aliasing",
+                  "-funsigned-char",
+                  "-ffreestanding",
+                  "-nostdinc",
+                  "-nostdinc++",
+                  "-c",
+                  "cell.cpp",
+                  "-o",
+                  "cell.cpp.o"
+                ],
+                "compilation_directory": "$unit",
+                "compilation_file": "cell.cpp",
+                "exceptions": false,
+                "frontend": "clang",
+                "frontend_version": "clang version 19.1.7",
+                "rtti": false,
+                "standard": "c++20",
+                "target": "x86_64-unknown-linux-gnu"
+              },
+              "schema": 6,
+              "source_sha256": "a42f36b416b42d49b81ad7ed7c2911ed192b10443efb89952607a2adf3fa1029"
+            }
+          }
+        },
+        "envelope": 1,
+        "frontend": {
+          "identity": "abcba821f53be0cf6eaca36f7cf965760fe3ab3912c356ee9682523fe41cb90d",
+          "name": "clang"
+        },
+        "sources": {
+          "cell.cpp": {
+            "artifact": {
+              "bytes": 11705,
+              "path": ".click/captures/fixture/cell.cpp.click-cpp.json",
+              "sha256": "5b6f712ca1b9ffe3ac1f72e9496a53e5b9a96e53c8fbc726d99564c0ca1ac9eb"
+            },
+            "identity": "02d2f987e86a757f4c1d6da9870f22b9fde67ff95020f5b4cecfc9dae2a29891",
+            "inputs": {
+              "$unit/cell.cpp": "a42f36b416b42d49b81ad7ed7c2911ed192b10443efb89952607a2adf3fa1029"
+            }
+          }
+        },
+        "unit": "07bad25a7cf4951481c09dfeea123f0ac4ae6b4d21da229932f87caf9d6fbf39"
+      }
+    }
+  }
+}

@@ -12,12 +12,12 @@ mod version_manager;
 
 #[path = "click-audit.rs"]
 mod audit;
+#[path = "click-capture.rs"]
+mod capture;
 #[path = "click-docs.rs"]
 mod docs;
 #[path = "click-expand.rs"]
 mod expand;
-#[path = "click-import.rs"]
-mod import;
 #[path = "click-profile.rs"]
 mod profile;
 #[path = "click-verify.rs"]
@@ -30,7 +30,7 @@ commands:\n  \
   profile  measure verification and identify slow tactics\n  \
   expand   replace one smart tactic with its checked simple certificate\n  \
   audit    check expansion across a project or repository\n  \
-  import   prepare and lock compiler-selected sources\n  \
+  capture  record compiler output for verification\n  \
   docs     print the documentation for a tactic or topic\n  \
   upgrade  install the latest Click and make it the default\n  \
   add      add a language front end (cpp, rust); `languages` lists them\n  \
@@ -84,7 +84,7 @@ fn entry(arguments: impl IntoIterator<Item = String>) -> Result<(), String> {
         "profile" => profile::entry_with(arguments),
         "expand" => expand::entry_with(arguments),
         "audit" => audit::entry_with(arguments),
-        "import" => import::entry_with(arguments),
+        "capture" => capture::entry_with(arguments),
         "docs" => docs::entry_with(arguments),
         "version" | "upgrade" | "add" | "remove" | "languages" => {
             version_manager::entry_with(&command, arguments.collect())
@@ -1761,7 +1761,7 @@ int32 f() { ensures result == 2; } by { step(); solve(); }
 
     #[test]
     fn dispatches_import_help_without_spawning() {
-        entry(["import".to_string(), "--help".to_string()]).unwrap();
+        entry(["capture".to_string(), "--help".to_string()]).unwrap();
     }
 
     #[test]

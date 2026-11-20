@@ -776,7 +776,7 @@ pub(super) fn wrap_object_coercions(
 mod tests {
     use super::*;
     const ARTIFACT: &[u8] = include_bytes!(
-        "../../../../design/charon-trial/trait-methods/.click/trait_methods/shapes.rs.ullbc"
+        "../../../../design/charon-trial/trait-methods/.click/captures/trait_methods/shapes.rs.ullbc"
     );
     const SOURCE: &[u8] = include_bytes!("../../../../design/charon-trial/trait-methods/shapes.rs");
     const INTERFACE: &str = "__rust_q_I13_trait_methods_I5_Shape_I4_area";
@@ -849,7 +849,7 @@ mod tests {
     }
 
     const OBJECT_ARTIFACT: &[u8] = include_bytes!(
-        "../../../../design/charon-trial/trait-objects/.click/trait_objects/shapes.rs.ullbc"
+        "../../../../design/charon-trial/trait-objects/.click/captures/trait_objects/shapes.rs.ullbc"
     );
     const OBJECT_SOURCE: &[u8] =
         include_bytes!("../../../../design/charon-trial/trait-objects/shapes.rs");
@@ -934,7 +934,7 @@ mod tests {
     #[test]
     fn charon_generic_implementations_import_once_with_an_instance_per_call() {
         const GENERIC: &[u8] = include_bytes!(
-            "../../../../design/charon-trial/generic-impls/.click/generic_impls/shapes.rs.ullbc"
+            "../../../../design/charon-trial/generic-impls/.click/captures/generic_impls/shapes.rs.ullbc"
         );
         const GENERIC_SOURCE: &[u8] =
             include_bytes!("../../../../design/charon-trial/generic-impls/shapes.rs");
@@ -999,7 +999,7 @@ mod tests {
     #[test]
     fn charon_generic_traits_import_an_interface_per_instance() {
         const GENERIC: &[u8] = include_bytes!(
-            "../../../../design/charon-trial/generic-traits/.click/generic_traits/shapes.rs.ullbc"
+            "../../../../design/charon-trial/generic-traits/.click/captures/generic_traits/shapes.rs.ullbc"
         );
         const GENERIC_SOURCE: &[u8] =
             include_bytes!("../../../../design/charon-trial/generic-traits/shapes.rs");
