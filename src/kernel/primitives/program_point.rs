@@ -242,6 +242,9 @@ struct PointNode {
     /// Earliest recorded view in a suffix of effects disjoint from parameter
     /// storage. Read selection can start here.
     external_read_start: Option<ExternalReadStart>,
+    /// Entry carried across this point's checked call. The ordinary local
+    /// suffix can reach this point without admitting the call for scalar reads.
+    array_entry_after_call: Option<ExternalReadStart>,
 }
 
 #[derive(Clone, Debug)]
@@ -419,6 +422,7 @@ impl PathLink {
                 split: split.filter(|point| point.0.is_some()).cloned(),
                 point_read_index,
                 external_read_start: None,
+                array_entry_after_call: None,
             })),
             IndexedView::Recorded,
         )
@@ -437,6 +441,8 @@ impl PathLink {
             .filter(|point| point.0.is_some())
             .collect::<Box<[_]>>();
         let external_read_start = external_read_start(&predecessors, steps.as_deref(), &memory);
+        let array_entry_after_call =
+            array_entry_across_call(&predecessors, steps.as_deref(), &memory);
         Self(
             Some(Arc::new_cyclic(|version| {
                 let id = ProgramPointId::fresh();
@@ -457,6 +463,7 @@ impl PathLink {
                     split: split.filter(|point| point.0.is_some()),
                     point_read_index,
                     external_read_start,
+                    array_entry_after_call,
                 }
             })),
             IndexedView::Recorded,
@@ -637,6 +644,60 @@ fn external_read_start(
             memory: source.clone(),
         })
     })
+}
+
+/// A checked call with one write range in a fresh automatic object cannot
+/// write any array supplied by a parameter. Use exactly that recorded edge.
+fn array_entry_across_call(
+    predecessors: &[PathLink],
+    steps: Option<&StepLog>,
+    memory: &SharedMemory,
+) -> Option<ExternalReadStart> {
+    let [from] = predecessors else { return None };
+    let log = steps?;
+    if log.previous.is_some() || log.produced.arena_id() != memory.arena_id() {
+        return None;
+    }
+    let MemoryDerivation::CallHavoc {
+        mutable_ranges,
+        base,
+        ..
+    } = log.step.as_ref()
+    else {
+        return None;
+    };
+    let [written] = mutable_ranges.as_slice() else {
+        return None;
+    };
+    if !indexed_local(&written.base().base) {
+        return None;
+    }
+    external_array_entry(from, base)
+}
+
+/// The ordinary local suffix may end at entry or at a call with a certified
+/// entry. Either case is one suffix lookup and at most one further lookup.
+fn external_array_entry(path: &PathLink, memory: &SharedMemory) -> Option<ExternalReadStart> {
+    if !path.matches_indexed_view(memory) {
+        return None;
+    }
+    let node = path.0.as_ref()?;
+    if node.function_entry {
+        return Some(ExternalReadStart {
+            point: Arc::downgrade(node),
+            view: path.1.clone(),
+            memory: memory.clone(),
+        });
+    }
+    if let Some(anchor) = &node.external_read_start {
+        let origin = anchor.point.upgrade()?;
+        return if origin.function_entry {
+            Some(anchor.clone())
+        } else {
+            origin.array_entry_after_call.clone()
+        };
+    }
+    node.array_entry_after_call.clone()
 }
 
 /// Apply the explicit effects once, when execution seals the point. A read
@@ -1170,16 +1231,18 @@ impl ProgramPoint {
         self.clone()
     }
 
-    /// A function-entry array version reached through the recorded suffix
-    /// of operations that leave external storage alone.
+    /// A function-entry array version reached through a recorded suffix of
+    /// local operations and checked calls that preserve parameter storage.
     pub(in crate::kernel) fn entry_array_version(&self, block: &AddressBase) -> Option<Self> {
         if !external_storage(block) {
             return None;
         }
-        let start = self.parameter_read_start(block);
-        let node = start.path.0.as_ref()?;
-        (node.function_entry && start.path.matches_indexed_view(&start.memory))
-            .then(|| start.for_exact_read())
+        let entry = external_array_entry(&self.path, &self.memory)?;
+        Some(Self {
+            memory: entry.memory,
+            path: PathLink(Some(entry.point.upgrade()?), entry.view),
+            read: ReadSelection::Exact,
+        })
     }
 
     /// A scalar supplied by the caller can have a version even when no

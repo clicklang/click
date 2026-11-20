@@ -8496,8 +8496,8 @@ fn evaluate_spec_pure_function_argument_paths_in(
 }
 
 /// Name an external array by its verified entry point when the recorded
-/// suffix preserves external storage. Other arrays still use the existing
-/// block version selector.
+/// suffix preserves external storage, including a call confined to one
+/// automatic object. Other arrays use the block version selector.
 fn array_ref_argument_point(source: &ProgramPoint, pointer: &ProgramValue) -> ProgramPoint {
     let ProgramValue::Pointer(pointer) = pointer else {
         return source.clone();

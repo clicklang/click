@@ -6495,25 +6495,7 @@ fn synthesize_legacy_call_argument(
         crate::kernel::PureFunctionArgument::Algebraic(value) => {
             synthesize_surface_algebraic(value, parameter_binding, state, bound_variables)?
         }
-        crate::kernel::PureFunctionArgument::ArrayRef {
-            point,
-            pointer: ProgramValue::Pointer(pointer),
-            ..
-        } => {
-            let raise = |selected: &ExecutionState| {
-                synthesize_surface_pointer_expression(
-                    pointer,
-                    parameter_binding,
-                    selected,
-                    bound_variables,
-                )
-            };
-            if point.read_version_id().is_some() {
-                synthesize_at_program_point(point, state, raise)?
-            } else {
-                synthesize_at_memory(point.shared_memory(), state, raise)?
-            }
-        }
+        // Pointer arrays are imported into ArrayReference before raising.
         _ => return None,
     })
 }
