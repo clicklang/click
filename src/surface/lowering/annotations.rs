@@ -2460,6 +2460,7 @@ pub(in crate::surface) fn elaborate_fixed_state_algebraic_expression(
     entry_values: ProgramValueBindings,
     current_values: ProgramValueBindings,
     algebraic_values: BTreeMap<String, SpecAlgebraicExpression>,
+    integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
     result: Option<&ProgramValue>,
     retained_states: &RecordedStates,
     spec_definitions: SpecDefinitions<'_>,
@@ -2479,6 +2480,7 @@ pub(in crate::surface) fn elaborate_fixed_state_algebraic_expression(
         pointer_element_widths,
     );
     context.algebraic_values = algebraic_values.into_iter().collect();
+    context.integer_values = integer_values.clone();
     lowerer.capture_referenced_names = Some(contract_expression_referenced_names(expression));
     lowerer.lower_contract_algebraic_to_spec(expression, &context)
 }
