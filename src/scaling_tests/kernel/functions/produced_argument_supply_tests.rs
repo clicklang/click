@@ -116,7 +116,7 @@ fn produced_read_supply_scales_with_outputs_and_ignores_the_caller_frame() {
         let function = program_function(ProgramType::Void, "outputs", vec![], program_skip())
             .with_resource_summary(vec![], vec![output(0)]);
         let mut entry = state(1);
-        let mut bindings = BTreeMap::new();
+        let mut bindings = crate::kernel::ResourceBindings::new();
         for index in 0..count {
             entry = entry.with_local(format!("unrelated_{index}"), int32(index));
             entry.resources = entry
@@ -128,8 +128,8 @@ fn produced_read_supply_scales_with_outputs_and_ignores_the_caller_frame() {
                 ));
             // Consumed instances can retain their logical binding without
             // current custody. No primitive output depends on these names.
-            let identity = Variable(910_000 + u64::from(index));
-            bindings.insert(identity, identity);
+            let identity = InstanceId::from_variable(Variable(910_000 + u64::from(index)));
+            bindings.insert_instance(identity, identity);
         }
         entry.resource_bindings = Some(Arc::new(bindings));
         let mut evaluation = entry.clone();

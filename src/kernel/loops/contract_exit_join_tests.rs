@@ -110,7 +110,12 @@ fn exit_difference_names_call_bindings_and_storage_metadata() {
     let _session = crate::kernel::VerificationSession::enter();
     let left = ExecutionState::new();
     let mut right = left.clone();
-    right.resource_bindings = Some(Arc::new(BTreeMap::from([(Variable(1), Variable(2))])));
+    let mut bindings = crate::kernel::ResourceBindings::new();
+    bindings.insert_instance(
+        crate::kernel::InstanceId::from_variable(Variable(1)),
+        crate::kernel::InstanceId::from_variable(Variable(2)),
+    );
+    right.resource_bindings = Some(Arc::new(bindings));
     right.next_local_frame = 3;
     right.enclosing_frame_holds_locals = true;
     let report =

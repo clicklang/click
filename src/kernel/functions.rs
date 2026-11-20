@@ -2644,16 +2644,39 @@ fn selected_call_binder_application(
         .filter(|resource| resource.binding_identity().is_some())
         .cloned()
         .collect::<Vec<_>>();
-    let mut inferred = BTreeMap::new();
+    // The proof's map names binders and caller resources by binder number;
+    // each binder's declaring clause, a requirement or a production, gives
+    // the sort its caller resource is read in.
+    let written = written.map(|written| {
+        let mut bindings = ResourceBindings::new();
+        for resource in interface
+            .resource_requires()
+            .iter()
+            .chain(interface.resource_ensures())
+        {
+            crate::instrumentation::record_deterministic_work(1);
+            let Some(binder) = resource.binding_identity() else {
+                continue;
+            };
+            let number = match binder {
+                ResourceBinder::Instance(identity) => identity.variable(),
+                ResourceBinder::MutexAuthority(identity) => identity.variable(),
+            };
+            if let Some(actual) = written.get(&number) {
+                bindings.insert_written(binder, *actual);
+            }
+        }
+        bindings
+    });
+    let mut inferred = ResourceBindings::new();
     for parameter in &parameters {
         crate::instrumentation::record_deterministic_work(1);
-        // The binding map is keyed by binder number; see `binding_identity`.
-        let Some(identity) = parameter.instance_identity().map(InstanceId::variable) else {
+        let Some(identity) = parameter.instance_identity() else {
             continue;
         };
         if written
             .as_ref()
-            .is_some_and(|bindings| bindings.contains_key(&identity))
+            .is_some_and(|bindings| bindings.instance(identity).is_some())
         {
             continue;
         }
@@ -2674,7 +2697,7 @@ fn selected_call_binder_application(
         else {
             continue;
         };
-        inferred.insert(identity, only.identity().variable());
+        inferred.insert_instance(identity, only.identity());
     }
     // An instance the call only produces, which the proof does not name,
     // is the caller's under a fresh identity: it binds nothing the caller
@@ -2686,29 +2709,29 @@ fn selected_call_binder_application(
             .collect::<BTreeSet<_>>();
         for produced in interface.resource_ensures() {
             crate::instrumentation::record_deterministic_work(1);
-            let Some(identity) = produced.instance_identity().map(InstanceId::variable) else {
+            let Some(identity) = produced.instance_identity() else {
                 continue;
             };
-            if required.contains(&identity)
-                || inferred.contains_key(&identity)
+            if required.contains(&ResourceBinder::Instance(identity))
+                || inferred.instance(identity).is_some()
                 || written
                     .as_ref()
-                    .is_some_and(|bindings| bindings.contains_key(&identity))
+                    .is_some_and(|bindings| bindings.instance(identity).is_some())
             {
                 continue;
             }
             let fresh = budget
                 .allocate_kernel_variable()
                 .map_err(|_| "a produced instance could not be named")?;
-            inferred.insert(identity, fresh);
+            inferred.insert_instance(identity, InstanceId::from_variable(fresh));
         }
     }
     let bindings = match (written, inferred.is_empty()) {
         (None, true) => return Ok(None),
-        (Some(written), true) => written,
+        (Some(written), true) => std::sync::Arc::new(written),
         (written, false) => {
-            for (binder, instance) in written.iter().flat_map(|written| written.iter()) {
-                inferred.insert(*binder, *instance);
+            if let Some(written) = &written {
+                inferred.extend(written);
             }
             std::sync::Arc::new(inferred)
         }
@@ -3207,7 +3230,7 @@ fn execute_verified_function_applications_with_suspension(
                             return false;
                         }
                         resource.binding_identity().is_some_and(|identity| {
-                            !bindings.is_some_and(|bindings| bindings.contains_key(&identity))
+                            !bindings.is_some_and(|bindings| bindings.contains(identity))
                         })
                     })
                     .map(|resource| {
@@ -3677,7 +3700,7 @@ fn execute_verified_function_applications_with_suspension(
                 .and_then(|formal| {
                     selected_bindings
                         .as_ref()
-                        .and_then(|bindings| bound_instance(bindings, formal))
+                        .and_then(|bindings| bindings.instance(formal))
                 });
             let definition = match helper.required.resource() {
                 Resource::MutexUse(usage) => usage.protected.as_ref().and_then(|description| {
@@ -3826,7 +3849,7 @@ fn execute_verified_function_applications_with_suspension(
             }
             let Some(produced) = selected_bindings
                 .as_ref()
-                .and_then(|bindings| bound_instance(bindings, identity))
+                .and_then(|bindings| bindings.instance(identity))
             else {
                 continue;
             };
@@ -4970,7 +4993,7 @@ fn execute_verified_function_applications_with_suspension(
                     continue;
                 };
                 if resource.role() == ResourceTransferRole::Produce {
-                    let Some(actual) = bound_mutex_authority(bindings, formal) else {
+                    let Some(actual) = bindings.mutex_authority(formal) else {
                         paths.push(resource_call_failure(&format!(
                             "call map omits produced mutex authority binder `{binder}`"
                         )));
@@ -5008,7 +5031,7 @@ fn execute_verified_function_applications_with_suspension(
                 if resource.role() != ResourceTransferRole::Borrow {
                     continue;
                 }
-                let Some(actual) = bound_mutex_authority(bindings, formal) else {
+                let Some(actual) = bindings.mutex_authority(formal) else {
                     paths.push(resource_call_failure(&format!(
                         "call map omits returned mutex authority binder `{binder}`"
                     )));
@@ -5465,7 +5488,7 @@ struct PreparedVerifiedFunctionCall<'a> {
     effective_assumptions: PureFactContext,
     /// The binder map this interface was selected with, if any. A `produces`
     /// binder reads its caller-side identity from exactly this map.
-    bindings: Option<std::sync::Arc<BTreeMap<Variable, Variable>>>,
+    bindings: Option<std::sync::Arc<ResourceBindings>>,
 }
 
 /// Finds the exact source state carried by a lowered pure requirement.
@@ -5943,7 +5966,7 @@ fn prepare_verified_function_call<'a>(
             let Some((formal, _)) = parameter.mutex_authority_binding() else {
                 continue;
             };
-            let Some(actual) = bound_mutex_authority(&application.bindings, formal) else {
+            let Some(actual) = application.bindings.mutex_authority(formal) else {
                 continue;
             };
             let expected = evaluate_function_resource_spec_with_entry(
@@ -6210,7 +6233,7 @@ fn prepare_verified_function_call<'a>(
             let Some((formal, binder)) = parameter.mutex_authority_binding() else {
                 continue;
             };
-            let Some(actual) = bound_mutex_authority(&selected.bindings, formal) else {
+            let Some(actual) = selected.bindings.mutex_authority(formal) else {
                 return Ok(Err(resource_call_failure(&format!(
                     "call map omits mutex authority binder `{binder}`"
                 ))));
@@ -6370,8 +6393,8 @@ fn prepare_verified_function_call<'a>(
                             .iter()
                             .filter_map(|parameter| {
                                 let identity = parameter.binding_identity()?;
-                                let actual = selected.bindings.get(&identity)?;
-                                Some((parameter.binding_name()?.to_owned(), identity, *actual))
+                                let actual = selected.bindings.get(identity)?;
+                                Some((parameter.binding_name()?.to_owned(), identity, actual))
                             })
                             .collect();
                     }
@@ -6727,7 +6750,7 @@ fn prepare_verified_function_call<'a>(
                 let passed = contract_interface
                     .resource_binder_identity(binder)
                     .and_then(|formal| {
-                        resource_application.and_then(|call| bound_instance(&call.bindings, formal))
+                        resource_application.and_then(|call| call.bindings.instance(formal))
                     })
                     .and_then(|actual| caller_state.resources().owned_instance(actual));
                 match passed {
@@ -7254,19 +7277,14 @@ fn execute_named_contract_applications_paths(
                     "resource contract proof argument arity mismatch",
                 )]);
             }
-            let mut bindings = BTreeMap::new();
+            let mut bindings = ResourceBindings::new();
             for (parameter, argument) in contract.proof_parameters().iter().zip(arguments) {
                 let Some(identity) = parameter.instance_identity() else {
                     return Ok(vec![resource_call_failure(
                         "resource proof parameter must be an exclusive instance",
                     )]);
                 };
-                // The binding map also carries named mutex-authority binders,
-                // so it is still keyed and valued by `Variable`.
-                if bindings
-                    .insert(identity.variable(), argument.variable())
-                    .is_some()
-                {
+                if bindings.insert_instance(identity, *argument).is_some() {
                     return Ok(vec![resource_call_failure(
                         "duplicate exclusive resource proof argument",
                     )]);
@@ -7316,7 +7334,7 @@ fn execute_named_contract_applications_paths(
 #[derive(Debug)]
 struct ResourceCallApplication {
     parameters: std::sync::Arc<[ResourceSpec]>,
-    bindings: std::sync::Arc<BTreeMap<Variable, Variable>>,
+    bindings: std::sync::Arc<ResourceBindings>,
 }
 
 impl ResourceCallApplication {
@@ -7332,7 +7350,7 @@ impl ResourceCallApplication {
     /// checks completeness against the interface.
     fn bind(
         parameters: Vec<ResourceSpec>,
-        bindings: std::sync::Arc<BTreeMap<Variable, Variable>>,
+        bindings: std::sync::Arc<ResourceBindings>,
         caller_state: &ExecutionState,
     ) -> Result<Self, &'static str> {
         let mut actuals = BTreeSet::new();
@@ -7341,22 +7359,21 @@ impl ResourceCallApplication {
             let Some(identity) = parameter.binding_identity() else {
                 return Err("resource proof parameter must be an exclusive instance");
             };
-            let Some(actual) = bindings.get(&identity) else {
+            let Some(actual) = bindings.get(identity) else {
                 continue;
             };
-            let owned = if parameter.mutex_authority_binding().is_some() {
-                caller_state
-                    .resolve_named_mutex_authority(MutexAuthorityId::from_variable(*actual))
-                    .is_some()
-            } else {
-                caller_state
-                    .owned_resource_instance(InstanceId::from_variable(*actual))
-                    .is_some()
+            let owned = match actual {
+                ResourceBinder::MutexAuthority(actual) => {
+                    caller_state.resolve_named_mutex_authority(actual).is_some()
+                }
+                ResourceBinder::Instance(actual) => {
+                    caller_state.owned_resource_instance(actual).is_some()
+                }
             };
             if !owned {
                 return Err("resource proof argument is not owned");
             }
-            if !actuals.insert(*actual) {
+            if !actuals.insert(actual) {
                 return Err("duplicate exclusive resource proof argument");
             }
         }
@@ -11877,7 +11894,7 @@ fn prepare_contract_resource_transfer_unexplained(
             let actual = input_evaluation_state
                 .resource_bindings
                 .as_ref()
-                .and_then(|bindings| bound_instance(bindings, *identity))
+                .and_then(|bindings| bindings.instance(*identity))
                 .unwrap_or(*identity);
             let Some(instance) = events.consumed_imported_instance(&description, actual) else {
                 continue;
@@ -12031,7 +12048,7 @@ fn prepare_contract_resource_transfer_unexplained(
         let Some(actual) = callee_state
             .resource_bindings
             .as_ref()
-            .and_then(|bindings| bound_mutex_authority(bindings, formal))
+            .and_then(|bindings| bindings.mutex_authority(formal))
         else {
             continue;
         };
@@ -15525,8 +15542,11 @@ fn rewrite_resource_instance_selecting_children_unspelled(
     let mut child_evaluation = evaluation.clone();
     child_evaluation.resources = body.clone();
     let child_assumptions = assumptions.clone().require_owned_expression_loads();
-    let mut resource_bindings =
-        BTreeMap::from([(Variable(u64::MAX), instance.identity.variable())]);
+    let mut resource_bindings = ResourceBindings::new();
+    resource_bindings.insert_instance(
+        InstanceId::from_variable(Variable(u64::MAX)),
+        instance.identity,
+    );
     let mut introduced_children: Vec<ResourceInstance> = Vec::new();
     let mut child_read_definitions = Vec::new();
     for child in body_children {
@@ -15709,7 +15729,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
             }
             child_instance = actual.clone();
         }
-        resource_bindings.insert(child.binding.variable(), identity.variable());
+        resource_bindings.insert_instance(child.binding, identity);
         introduced_children.push(child_instance.clone());
         body = body
             .try_compose_into_valid_context_delaying_normalization(
