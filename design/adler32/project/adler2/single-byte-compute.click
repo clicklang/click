@@ -41,7 +41,7 @@ impl adler2::Adler32 {
      have loop(2).iter.v.len() == 0u64;
      step_until(assignment(b, 3));
      have b == 0u32;
-     have __rust_mir_78 == 0u64;
+     have remainder_chunk.len() == 0u64;
      step();
      have b == 0u32;
      step_until(assignment(b, 4));

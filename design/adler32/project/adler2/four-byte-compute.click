@@ -77,7 +77,7 @@ impl adler2::Adler32 {
      have a_vec.0[3] == old((bytes[3] as u32));
      have b_vec.0[3] == old((bytes[3] as u32));
      have to_integer(b_vec.0[3]) <= 255 by { known(); }
-     have __rust_mir_78 == 4u64;
+     have remainder_chunk.len() == 4u64;
      step();
      have b == 4u32;
      step_until(statement(12));

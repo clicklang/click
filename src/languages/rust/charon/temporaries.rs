@@ -25,7 +25,7 @@
 //! not name that local, since the place's address is unchanged.
 
 use super::super::schema::{
-    Expression as E, MirBlock, MirStatement as S, MirTerminator as T, Place,
+    Expression as E, MirBlock, MirStatement as S, MirTerminator as T, Place, Type,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -42,6 +42,7 @@ pub(super) fn substitute_pure_values(
     let mut reads = BTreeMap::<String, usize>::new();
     let mut named = BTreeSet::<String>::new();
     let mut assignments = BTreeMap::<String, usize>::new();
+    let mut predecessors = vec![0usize; blocks.len()];
     for block in blocks.iter() {
         for statement in &block.statements {
             statement_uses(statement, &mut reads, &mut named);
@@ -56,6 +57,11 @@ pub(super) fn substitute_pure_values(
         terminator_uses(&block.terminator, &mut reads, &mut named);
         if let Some(destination) = call_destination(&block.terminator) {
             named.insert(destination.clone());
+        }
+        for successor in successors(&block.terminator) {
+            if let Some(count) = predecessors.get_mut(successor) {
+                *count += 1;
+            }
         }
     }
     let substitutable = |name: &str| {
@@ -209,6 +215,7 @@ pub(super) fn substitute_pure_values(
             );
         }
     }
+    fold_borrowed_slice_lengths(blocks, &predecessors, &substitutable, &mut removed);
     for block in blocks.iter_mut() {
         block.statements.retain(|statement| match statement {
             S::BeginStorage { local } | S::EndStorage { local } => !removed.contains(local),
@@ -220,6 +227,113 @@ pub(super) fn substitute_pure_values(
         });
     }
     locals.retain(|local| !removed.contains(&local.name));
+}
+
+/// A lowered slice length call leaves a goto between the metadata read and
+/// its use. Rejoin the two fragments of the same written statement when the
+/// read is the predecessor's last action and the successor has one entry.
+fn fold_borrowed_slice_lengths(
+    blocks: &mut [MirBlock],
+    predecessors: &[usize],
+    substitutable: &impl Fn(&str) -> bool,
+    removed: &mut BTreeSet<String>,
+) {
+    for index in 0..blocks.len() {
+        let T::Goto { target } = blocks[index].terminator else {
+            continue;
+        };
+        if target == 0 || predecessors.get(target) != Some(&1) {
+            continue;
+        }
+        let Ok([definition, consumer]) = blocks.get_disjoint_mut([index, target]) else {
+            continue;
+        };
+        let Some(S::Assign {
+            target: E::Local { name },
+            value: length @ E::SliceLength { slice },
+        }) = definition.statements.last()
+        else {
+            continue;
+        };
+        if !substitutable(name)
+            || !matches!(
+                slice.as_ref(),
+                E::Borrow {
+                    place,
+                    value_type: Type::ByteSlice { mutable: false }
+                        | Type::ScalarSlice { mutable: false, .. },
+                } if matches!(place.as_ref(), E::Local { .. })
+            )
+        {
+            continue;
+        }
+        let Some(site) = definition.terminator_site else {
+            continue;
+        };
+        let definition_site =
+            definition
+                .statements
+                .iter()
+                .rev()
+                .find_map(|statement| match statement {
+                    S::Site { site } => Some(*site),
+                    _ => None,
+                });
+        if definition_site != Some(site) {
+            continue;
+        }
+        let Some(S::Assign { value, .. }) =
+            consumer
+                .statements
+                .iter_mut()
+                .find(|statement| match statement {
+                    S::Site { site: next } => *next != site,
+                    S::BeginStorage { local } | S::EndStorage { local } => {
+                        local != name && !removed.contains(local)
+                    }
+                    _ => true,
+                })
+        else {
+            continue;
+        };
+        if !straight_line_scalar(value) {
+            continue;
+        }
+        let mut values = BTreeMap::from([(name.clone(), length.clone())]);
+        let mut pending = Pending {
+            values: &mut values,
+            refused: Vec::new(),
+        };
+        substitute(value, &mut pending, true);
+        if values.is_empty() {
+            removed.insert(name.clone());
+        }
+    }
+}
+
+/// Moving a scalar metadata read here cannot cross any effect, load, or
+/// short-circuit branch within the consumer.
+fn straight_line_scalar(value: &E) -> bool {
+    match value {
+        E::Binary {
+            operator,
+            left,
+            right,
+            ..
+        } => {
+            !matches!(operator.as_str(), "and" | "or")
+                && straight_line_scalar(left)
+                && straight_line_scalar(right)
+        }
+        E::Cast { value, .. } | E::IntegerFrom { value, .. } => straight_line_scalar(value),
+        E::Local { .. }
+        | E::Integer { .. }
+        | E::UnsignedInteger { .. }
+        | E::SignedInteger { .. }
+        | E::UsizeInteger { .. }
+        | E::Boolean { .. } => true,
+        _ => false,
+    }
 }
 
 /// Put a remainder by a checked Rust constant back into the cast that
@@ -2407,6 +2521,70 @@ mod tests {
             [S::Assign { value: E::Binary { operator, right, .. }, .. }]
                 if operator == "add" && matches!(right.as_ref(), E::Binary { .. })
         ));
+    }
+
+    #[test]
+    fn a_borrowed_slice_length_crosses_only_its_own_straight_line_goto() {
+        let length = E::SliceLength {
+            slice: Box::new(E::Borrow {
+                place: Box::new(local("bytes")),
+                value_type: Type::ByteSlice { mutable: false },
+            }),
+        };
+        let cast = E::Cast {
+            value: Box::new(local("t1")),
+            value_type: Type::U32,
+        };
+        for (site, storage, second_entry, folded) in [
+            (1, "t1", false, true),
+            (2, "t1", false, false),
+            (1, "bytes", false, false),
+            (1, "t1", true, false),
+        ] {
+            let mut blocks = vec![
+                MirBlock {
+                    terminator_site: Some(1),
+                    statements: vec![S::Site { site: 1 }, assign("t1", length.clone())],
+                    terminator: T::Goto { target: 1 },
+                },
+                MirBlock {
+                    terminator_site: Some(site),
+                    statements: vec![
+                        S::Site { site },
+                        S::EndStorage {
+                            local: storage.into(),
+                        },
+                        assign("x", binary("add", local("a"), cast.clone())),
+                    ],
+                    terminator: T::Return,
+                },
+            ];
+            if second_entry {
+                blocks.push(MirBlock {
+                    terminator_site: Some(1),
+                    statements: Vec::new(),
+                    terminator: T::Goto { target: 1 },
+                });
+            }
+            let mut bytes = place("bytes");
+            bytes.value_type = Type::ByteSlice { mutable: false };
+            let mut temporary = place("t1");
+            temporary.value_type = Type::Usize;
+            let mut locals = vec![bytes, place("a"), place("x"), temporary];
+            super::substitute_pure_values(
+                &mut locals,
+                &mut blocks,
+                &BTreeSet::from(["t1".into()]),
+                &BTreeSet::new(),
+            );
+            assert_eq!(!locals.iter().any(|local| local.name == "t1"), folded);
+            assert!(matches!(
+                blocks[1].statements.last(),
+                Some(S::Assign { value: E::Binary { right, .. }, .. })
+                    if matches!(right.as_ref(), E::Cast { value, .. }
+                        if matches!(value.as_ref(), E::SliceLength { .. }) == folded)
+            ));
+        }
     }
 
     #[test]
