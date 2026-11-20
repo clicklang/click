@@ -41,6 +41,17 @@ pub(crate) fn computes_leaf(goal: &Proposition) -> bool {
                 right.native_compat().clone().into(),
             ))
         }
+        // A concrete span is a single bounds lookup in the goal's memory.
+        // A loaded or symbolic base needs its own proof of the address.
+        Proposition::MemoryLoadable {
+            memory,
+            base,
+            bytes,
+            wide: false,
+        } => bytes
+            .as_const()
+            .is_some_and(|size| memory.access_in_bounds(base, size))
+            .then_some(true),
         Proposition::MemoryReadDefined {
             memory,
             pointer,
@@ -869,6 +880,34 @@ fn integer_affine_difference(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn concrete_viewability_checks_only_the_named_span() {
+        let _session = VerificationSession::enter();
+        let sample = |unrelated, size: u32| {
+            let mut memory = SymbolicMemory::new().with_block("target", 1024);
+            for i in 0..unrelated {
+                memory = memory.with_block(format!("other_{i}"), 4);
+            }
+            let goal = Proposition::MemoryLoadable {
+                memory,
+                base: Address {
+                    base: "target".into(),
+                    offset: AddressOffset::Constant(4),
+                },
+                bytes: MachineTerm::constant(size).into(),
+                wide: false,
+            };
+            crate::instrumentation::measure_deterministic_work(|| computes_leaf(&goal))
+        };
+        let measurements = [0, 32, 128].map(|n| [4, 1020, 1021].map(|size| sample(n, size)));
+        for checks in measurements {
+            assert_eq!(checks.map(|(holds, _)| holds), [true, true, false]);
+            for ((_, work), (_, baseline)) in checks.into_iter().zip(measurements[0]) {
+                assert!(work <= baseline + 16, "{measurements:?}");
+            }
+        }
+    }
 
     #[test]
     fn computation_reads_constants_at_the_comparison_format() {

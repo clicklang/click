@@ -1634,7 +1634,8 @@ fn expand_declared_resource_tactic(
         | ProofTactic::Transport { .. }
         | ProofTactic::TransportUsing { .. }
         | ProofTactic::SolveUsing(_)
-        | ProofTactic::NormalizeUsing(_)) => {
+        | ProofTactic::NormalizeUsing(_)
+        | ProofTactic::OrderChain(_)) => {
             expand_declared_resource_tactic_with_propositions(tactic, resource_definitions)
         }
         tactic @ (ProofTactic::UnfoldResource(_)
@@ -2045,6 +2046,12 @@ fn expand_declared_resource_tactic_with_propositions(
                 .map(|premise| expand_declared_resource_proposition(premise, resource_definitions))
                 .collect::<Result<Vec<_>, _>>()?,
         })),
+        ProofTactic::OrderChain(premises) => Ok(ProofTactic::OrderChain(
+            premises
+                .into_iter()
+                .map(|premise| expand_declared_resource_proposition(premise, resource_definitions))
+                .collect::<Result<_, _>>()?,
+        )),
         ProofTactic::NormalizeUsing(premises) => Ok(ProofTactic::NormalizeUsing(
             premises
                 .into_iter()

@@ -124,6 +124,35 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 return Ok(closed);
             }
         }
+        // A cited literal result of a completed call can replace the wide
+        // operand of a returning conversion before direct computation.
+        if let Some(
+            [
+                equality @ ClickProposition::Comparison {
+                    left: ContractExpression::RegionResult(_),
+                    operator: ComparisonOperator::Equal,
+                    right: ContractExpression::ProgramExpression(ProgramExpression::Value(_)),
+                },
+            ],
+        ) = premises.as_deref()
+            && let Some(rewritten) = attempt::candidate_outcome(
+                search_input
+                    .driver()
+                    .apply_step(ProofStep::Rewrite(equality.clone())),
+            )?
+        {
+            if rewritten.focused_discharged() {
+                return Ok(rewritten);
+            }
+            if rewritten
+                .goal()
+                .is_some_and(crate::surface::planning::solve::computes_with_known)
+                && let Some(closed) =
+                    attempt::candidate_outcome(rewritten.driver().apply_step(ProofStep::Known))?
+            {
+                return Ok(closed);
+            }
+        }
         let step = match premises {
             Some(premises) => ProofStep::NormalizeUsing(premises),
             None => ProofStep::Normalize,
@@ -3456,7 +3485,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 attempt::candidate_outcome(
                     search_input
                         .driver()
-                        .apply_step(ProofStep::NormalizeUsing(premises)),
+                        .apply_step(ProofStep::OrderChain(premises)),
                 )?
             };
             if let Some(closed) = closed {
