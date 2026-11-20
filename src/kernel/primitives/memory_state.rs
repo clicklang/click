@@ -8448,24 +8448,6 @@ impl SymbolicMemory {
         self.cells.value_width_at(pointer) == Some(byte_width)
     }
 
-    pub(in crate::kernel) fn string_literal_loadable_facts(&self) -> Vec<Proposition> {
-        self.blocks
-            .iter()
-            .filter(|&(block, contents)| {
-                contents.is_read_only() && matches!(block, AddressBase::StringLiteral { .. })
-            })
-            .map(|(block, contents)| Proposition::MemoryLoadable {
-                memory: self.clone(),
-                base: Address {
-                    base: block.clone(),
-                    offset: AddressOffset::Constant(0),
-                },
-                bytes: (contents.size().clone()).into(),
-                wide: false,
-            })
-            .collect()
-    }
-
     pub(in crate::kernel) fn can_store_concretely(
         &self,
         pointer: &Address,

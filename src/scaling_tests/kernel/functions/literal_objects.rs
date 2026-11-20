@@ -42,3 +42,44 @@ fn string_literal_reference_work_ignores_other_literals_and_selected_byte_length
         );
     }
 }
+
+#[test]
+fn statement_completion_ignores_unrelated_blocks_and_string_literals() {
+    for with_literals in [false, true] {
+        let samples = [4, 16, 64].map(|size| {
+            let _session = crate::kernel::VerificationSession::enter();
+            let mut memory = SymbolicMemory::new();
+            for i in 0..size {
+                let block = if with_literals {
+                    let identity = StringLiteralId::new("statement_completion", i);
+                    SymbolicMemory::string_literal_pointer(&identity, b"ok\0").base
+                } else {
+                    AddressBase::Heap(u64::from(i))
+                };
+                memory = if with_literals {
+                    memory.with_read_only_block(block, 3)
+                } else {
+                    memory.with_block(block, 3)
+                };
+            }
+            let state = ExecutionState::new().with_memory(memory);
+            let (execution, work) = crate::instrumentation::measure_deterministic_work(|| {
+                crate::kernel::prove_symbolic_execution_statement_verification_paths_with_environment(
+                    state,
+                    ProgramStatement::Skip,
+                    PureFactContext::new(),
+                    ExecutionEnvironment::new(),
+                    ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
+                )
+            });
+            let [path] = execution.paths() else {
+                panic!("expected a checked statement");
+            };
+            assert!(path.obligations().is_empty());
+            assert!(path.facts().is_empty());
+            work
+        });
+        eprintln!("statement work with 4/16/64 blocks, literals={with_literals}: {samples:?}");
+        assert_eq!(samples, [samples[0]; 3]);
+    }
+}
