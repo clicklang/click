@@ -303,26 +303,36 @@ pub(in crate::surface::proof) struct ExecutionProofContext<'a> {
     pub(in crate::surface::proof) constants: Arc<ExecutionProofConstants>,
 }
 
-impl<'a> ExecutionProofContext<'a> {
+impl ExecutionProofConstants {
     /// The function's parameters and the argument expressions bound to them.
-    pub(in crate::surface::proof) fn parameter_binding(&self) -> ParameterBinding<'_> {
-        let parameters = self.parsed_function.parameters();
-        let binding = ParameterBinding::new(parameters, self.arguments);
-        let binding = match &self.constants.parameter_index {
+    pub(in crate::surface::proof) fn parameter_binding<'a>(
+        &'a self,
+        parameters: &'a [crate::languages::interface::ImportedParameter],
+        arguments: &'a [ProgramExpression],
+    ) -> ParameterBinding<'a> {
+        let binding = ParameterBinding::new(parameters, arguments);
+        let binding = match &self.parameter_index {
             Some((list, index)) if *list == parameters.as_ptr() as usize => {
                 binding.with_index(index)
             }
             _ => binding,
         };
-        match &self.constants.parameter_naming {
+        match &self.parameter_naming {
             Some((parameter_list, argument_list, naming))
                 if *parameter_list == parameters.as_ptr() as usize
-                    && *argument_list == self.arguments.as_ptr() as usize =>
+                    && *argument_list == arguments.as_ptr() as usize =>
             {
                 binding.with_naming(naming)
             }
             _ => binding,
         }
+    }
+}
+
+impl<'a> ExecutionProofContext<'a> {
+    pub(in crate::surface::proof) fn parameter_binding(&self) -> ParameterBinding<'_> {
+        self.constants
+            .parameter_binding(self.parsed_function.parameters(), self.arguments)
     }
 
     /// The immutable ordinary-callee source registry shared by this proof and

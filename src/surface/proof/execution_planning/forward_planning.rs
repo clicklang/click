@@ -830,10 +830,7 @@ fn advance_execution_proof_statement(
                         let lowered_exit_condition = lower_fixed_state_proposition(
                             &exit_condition,
                             &transition.pure_facts,
-                            ParameterBinding::new(
-                                environment.parsed_function.parameters(),
-                                environment.arguments,
-                            ),
+                            environment.parameter_binding(),
                             FixedStateFrame::new(
                                 environment.initial_state,
                                 exit_state,
@@ -977,10 +974,7 @@ fn loop_entry_branches(
             }
             let surface = crate::surface::proof::surface_synthesis::synthesize_surface_proposition(
                 &positive,
-                ParameterBinding::new(
-                    environment.parsed_function.parameters(),
-                    environment.arguments,
-                ),
+                environment.parameter_binding(),
                 entries[indices[0]].state(),
             )
             .ok_or_else(|| ClickError::new("loop entry guard has no source spelling"))?;

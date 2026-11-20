@@ -30,6 +30,7 @@ pub(in crate::surface::proof) struct ExecutionProofEnvironment<'a> {
     pub(in crate::surface::proof) loop_source: &'a ProgramFunction,
     pub(in crate::surface::proof) loop_owner: Option<&'a crate::kernel::WholeContractRoot>,
     pub(in crate::surface::proof) arguments: &'a [ProgramExpression],
+    pub(in crate::surface::proof) parent_constants: &'a ExecutionProofConstants,
     pub(in crate::surface::proof) surface_propositions: &'a SurfacePropositionMap,
     pub(in crate::surface::proof) source_layout: &'a SourceExecutionLayout,
     pub(in crate::surface::proof) function_source_registry: Arc<FunctionSourceRegistry>,
@@ -41,6 +42,13 @@ pub(in crate::surface::proof) struct ExecutionProofEnvironment<'a> {
     /// The planners resolve them into the loop's written clauses before
     /// lowering, as a `have` goal at that point would.
     pub(in crate::surface::proof) proof_locals: BinderMap<ContractExpression>,
+}
+
+impl<'a> ExecutionProofEnvironment<'a> {
+    pub(in crate::surface::proof) fn parameter_binding(&self) -> ParameterBinding<'a> {
+        self.parent_constants
+            .parameter_binding(self.parsed_function.parameters(), self.arguments)
+    }
 }
 
 #[derive(Clone, Default)]
