@@ -5,6 +5,7 @@
 //! it has no memory resolution, unfolding, or atomic-prover fallback. Legacy
 //! normalization shares arithmetic below but supplies its own atom key.
 
+use crate::kernel::machine_integer::bounds::positive_literal_remainder_divisor;
 use crate::kernel::*;
 use crate::kernel::{
     constant_i64, constant_u32, constant_u64, int32_constant, int64_constant, uint64_constant,
@@ -238,6 +239,20 @@ fn condition_value(condition: &ConditionTerm) -> Option<bool> {
                     CompareRelation::GreaterThan => left > right,
                     CompareRelation::GreaterEqual => left >= right,
                 });
+            }
+            let strict_upper_bound = match relation {
+                CompareRelation::LessThan => Some((left, right)),
+                CompareRelation::GreaterThan => Some((right, left)),
+                _ => None,
+            };
+            if let Some((value, bound)) = strict_upper_bound
+                && let Some(divisor) =
+                    positive_literal_remainder_divisor(*format, MachineOperandView::Legacy(value))
+                && format
+                    .constant_from_term(bound)
+                    .is_some_and(|bound| bound.to_integer() == divisor)
+            {
+                return Some(true);
             }
             if matches!(
                 relation,
@@ -722,6 +737,17 @@ pub(super) fn integer_operation_bound_comparison(condition: &ConditionTerm) -> O
         })
     }
     let (left, right) = match condition {
+        ConditionTerm::IntegerLessThan(value, bound)
+        | ConditionTerm::IntegerGreaterThan(bound, value) => {
+            if let (IntegerTerm::Machine(value), IntegerTerm::Constant(bound)) =
+                (value.as_ref(), bound.as_ref())
+                && positive_literal_remainder_divisor(value.ty(), value.operand_view()).as_ref()
+                    == Some(bound)
+            {
+                return Some(true);
+            }
+            return None;
+        }
         ConditionTerm::IntegerLessEqual(left, right) => (left, right),
         ConditionTerm::IntegerGreaterEqual(left, right) => (right, left),
         _ => return None,

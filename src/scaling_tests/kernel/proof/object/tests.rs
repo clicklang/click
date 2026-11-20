@@ -685,6 +685,60 @@ fn literal_constructor_field_known_work_scales_with_the_goal() {
 }
 
 #[test]
+fn strict_literal_remainder_bound_known_work_ignores_context_growth() {
+    use crate::kernel::{CompareRelation, ConditionTerm, MachineBinaryOp, MachineIntegerType};
+    let mut samples = [Vec::new(), Vec::new()];
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let format = MachineIntegerType::UInt64;
+        let dividend = MachineTerm::Variable(Variable(970500));
+        let strict_bound = |left, right| {
+            Proposition::condition_is(
+                ConditionTerm::machine_compare(format, CompareRelation::LessThan, left, right),
+                true,
+            )
+        };
+        let remainder = MachineTerm::Binary {
+            format,
+            op: MachineBinaryOp::Remainder,
+            left: Box::new(dividend.clone()),
+            right: Box::new(MachineTerm::uint64_constant(1000)),
+        };
+        let facts = (0..size)
+            .flat_map(|index| {
+                [
+                    strict_bound(
+                        dividend.clone(),
+                        MachineTerm::Variable(Variable(971000 + index)),
+                    ),
+                    Proposition::Predicate {
+                        name: format!("unrelated_{index}"),
+                        arguments: vec![],
+                    },
+                ]
+            })
+            .collect::<Vec<_>>();
+        let facts = PureFactStore::from_ordered(&facts);
+        for ((bound, expected), costs) in [(1000, true), (999, false)].into_iter().zip(&mut samples)
+        {
+            let goal = strict_bound(remainder.clone(), MachineTerm::uint64_constant(bound));
+            let proof = known_computation_proof(goal, facts.clone());
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                proof.apply_known(PropositionKnownContext::Exact)
+            });
+            assert_eq!(result.is_ok(), expected);
+            costs.push(work);
+        }
+    }
+    for costs in samples {
+        assert!(
+            costs[0] > 0 && costs.iter().all(|work| *work <= costs[0] + 16),
+            "{costs:?}"
+        );
+    }
+}
+
+#[test]
 fn known_computation_work_is_linear_in_shared_integer_terms() {
     use crate::kernel::{ConditionTerm, IntegerTerm};
     let mut costs = Vec::new();
