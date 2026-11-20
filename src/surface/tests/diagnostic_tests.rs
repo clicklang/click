@@ -1387,7 +1387,7 @@ fn loan_refusal_diagnostic_renders_a_range_subject_without_ledger_state() {
 
     assert!(rendered.contains("`selected_range[1..3]`"), "{rendered}");
     assert!(
-        rendered.contains("Borrowing this resource shape is unsupported."),
+        rendered.contains("The requested ranges must be proved separate."),
         "{rendered}"
     );
     assert!(!rendered.contains("MemoryRange {"), "{rendered}");
