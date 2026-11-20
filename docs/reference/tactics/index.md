@@ -1659,6 +1659,11 @@ A machine-valued range fold whose step returns its accumulator equals its
 initial value. This check reads only the accumulator binding and the initial
 value.
 
+After an explicit `unfold`, `known()` can check values and bounds of machine
+expressions such as decimal lengths and their padded lengths. It follows a
+decided guard and otherwise bounds both arms. Its arithmetic uses only the
+operands in the goal, with a bounded walk and checked machine ranges.
+
 Two values of the same constructor are unequal if a corresponding field
 holds a different machine-integer literal of the same type. The check
 visits only the immediate fields and uses their literal values.

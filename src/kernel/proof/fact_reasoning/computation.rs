@@ -75,7 +75,10 @@ fn computes_atom(goal: &Proposition, expected: bool) -> bool {
     }
     let value = match goal {
         Proposition::ConditionIs(condition, truth) => {
-            condition_value(condition.native_compat()).map(|value| value == *truth)
+            let condition = condition.native_compat();
+            condition_value(condition)
+                .or_else(|| super::machine_ranges::comparison_value(condition))
+                .map(|value| value == *truth)
         }
         Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) => {
             if let (Some(left), Some(right)) = (left.root(), right.root())

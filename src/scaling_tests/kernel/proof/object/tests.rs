@@ -1000,6 +1000,71 @@ fn unchanged_machine_fold_known_work_ignores_context_growth() {
 }
 
 #[test]
+fn unfolded_machine_range_known_work_ignores_context_growth() {
+    use crate::kernel::{CompareRelation, ConditionTerm, MachineBinaryOp, MachineIntegerType};
+    let _session = crate::kernel::VerificationSession::enter();
+    let ty = MachineIntegerType::UInt64;
+    let input = MachineTerm::Variable(Variable(996_001));
+    let word = MachineTerm::uint64_constant;
+    let guard =
+        ConditionTerm::machine_compare(ty, CompareRelation::LessThan, input.clone(), word(10));
+    let decimal_length = MachineTerm::logical_machine_binary(
+        ty,
+        MachineBinaryOp::Add,
+        word(1),
+        MachineTerm::If {
+            condition: guard.into(),
+            then_term: word(0).into(),
+            else_term: word(1).into(),
+        },
+    );
+    let samples = [8, 32, 64].map(|count| {
+        let facts = (0..count)
+            .flat_map(|i| {
+                [
+                    Proposition::condition_is(
+                        ConditionTerm::machine_compare(
+                            ty,
+                            CompareRelation::LessEqual,
+                            input.clone(),
+                            word(100 + i),
+                        ),
+                        true,
+                    ),
+                    Proposition::Predicate {
+                        name: format!("unrelated_{i}"),
+                        arguments: vec![],
+                    },
+                ]
+            })
+            .collect::<Vec<_>>();
+        let facts = PureFactStore::from_ordered(&facts);
+        [2, 1].map(|bound| {
+            let goal = Proposition::condition_is(
+                ConditionTerm::machine_compare(
+                    ty,
+                    CompareRelation::LessEqual,
+                    decimal_length.clone(),
+                    word(bound),
+                ),
+                true,
+            );
+            let proof = known_computation_proof(goal, facts.clone());
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                proof.apply_known(PropositionKnownContext::Exact)
+            });
+            assert_eq!(result.is_ok(), bound == 2);
+            work
+        })
+    });
+    for sample in samples {
+        for (work, baseline) in sample.into_iter().zip(samples[0]) {
+            assert!(work <= baseline + 16, "{samples:?}");
+        }
+    }
+}
+
+#[test]
 fn known_computation_work_is_linear_in_shared_integer_terms() {
     use crate::kernel::{ConditionTerm, IntegerTerm};
     let mut costs = Vec::new();

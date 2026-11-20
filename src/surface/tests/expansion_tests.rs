@@ -2,6 +2,105 @@ use super::*;
 
 #[test]
 #[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: expands and cold-verifies five decimal and padding calculations"]
+fn closed_decimal_calculations_expand_without_normalize() {
+    let source = r#"
+        import click::c::stdio;
+        theorem decimal() {
+            ensures stdio::decimal_length(987u64) == 3u64 by solve();
+        }
+        theorem padded() {
+            ensures stdio::padded_length(5u64, 3u64) == 3u64 by solve();
+        }
+        theorem power() {
+            ensures stdio::pow10(19u64) == 10000000000000000000u64 by solve();
+        }
+        theorem decimal_digit() {
+            ensures stdio::decimal_digit(987u64, 1u64) == 56u8 by {
+                have stdio::decimal_length(987u64) == 3u64 by solve();
+                unfold(stdio::decimal_digit(987u64, 1u64));
+                unfold(stdio::pow10(stdio::decimal_length(987u64) - 1u64 - 1u64));
+                rewrite(stdio::decimal_length(987u64), 3u64);
+                solve();
+            }
+        }
+        theorem padded_digit() {
+            ensures stdio::padded_digit(5u64, 3u64, 48u8, 1u64) == 48u8 by {
+                unfold(stdio::padded_digit(5u64, 3u64, 48u8, 1u64));
+                unfold(stdio::padded_length(5u64, 3u64));
+                unfold(stdio::decimal_length(5u64));
+                solve();
+            }
+        }
+    "#;
+    for label in [
+        "decimal.ensures_0",
+        "padded.ensures_0",
+        "power.ensures_0",
+        "decimal_digit.ensures_0",
+        "padded_digit.ensures_0",
+    ] {
+        let expanded = expand_c_claim_source_by_label(source, &[], label)
+            .unwrap_or_else(|error| panic!("{label}: {}", error.report()));
+        assert!(
+            expanded.contains("unfold(") && expanded.contains("known();"),
+            "{label}\n{expanded}"
+        );
+        assert!(!expanded.contains("normalize()"), "{label}\n{expanded}");
+        without_implicit_solve_for_claim(label, || {
+            verify_click_theorems(&expanded).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{label}\n{error}\n{expanded}"));
+    }
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: expands and cold-verifies five generated and ordinary C call proofs"]
+fn decimal_call_requirements_expand_without_normalize() {
+    for (fixture, label) in [
+        (
+            "pure_result_observation_call_requirement",
+            "native_call.ensures_0",
+        ),
+        (
+            "pure_result_observation_call_requirement",
+            "native_comparison.ensures_0",
+        ),
+        (
+            "snprintf_with_a_literal_format_states_each_character",
+            "render.ensures_0",
+        ),
+        (
+            "snprintf_with_a_literal_format_states_each_character",
+            "render.ensures_1",
+        ),
+        (
+            "snprintf_with_a_literal_format_states_each_character",
+            "fraction.ensures_0",
+        ),
+    ] {
+        let (source, c_sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+        let sources = crate::cli::source_refs(&c_sources);
+        let expanded = expand_c_claim_source_by_label(&source, &sources, label)
+            .unwrap_or_else(|error| panic!("{label}: {}", error.report()));
+        assert!(
+            expanded
+                .lines()
+                .any(|line| line.contains("unfold(") && line.contains("stdio::decimal_length(")),
+            "{label}\n{expanded}"
+        );
+        assert!(expanded.contains("known();"), "{label}\n{expanded}");
+        assert!(!expanded.contains("normalize()"), "{label}\n{expanded}");
+        without_implicit_solve_for_claim(label, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{label}\n{error}\n{expanded}"));
+    }
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: expands and cold-verifies ten signed countdown proofs"]
 fn signed_countdown_bounds_expand_without_normalize() {
     for (fixture, label) in [
