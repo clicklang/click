@@ -7712,12 +7712,29 @@ impl SymbolicMemory {
     /// (C11 6.7.9p21 zero-initializes whatever it does not name), or one value
     /// field guaranteed initialized by a checked construction summary. The
     /// cells describe values; this record outlives forgetting those values.
-    pub(in crate::kernel) fn with_initialized_object(
+    pub(in crate::kernel) fn with_initialized_object(self, pointer: &Address, bytes: u32) -> Self {
+        self.record_object_initialization(pointer, bytes, false)
+    }
+
+    /// The checked call has returned four initialized bytes in one local
+    /// cell. Retain its output even if the earlier call initialized it too.
+    pub(in crate::kernel) fn with_initialized_call_word(self, pointer: &Address) -> Self {
+        let word_type = ProgramType::Int32;
+        let width = word_type.byte_width();
+        let call_word = self.blocks.get(&pointer.base).is_some_and(|block| {
+            block.declared_scalar_type == Some(word_type) && block.size().as_const() == Some(width)
+        }) && self.cells.explicitly_stored_value(pointer).is_none()
+            && self.cells.exact_run_slot_type(pointer) == Ok(None);
+        self.record_object_initialization(pointer, width, call_word)
+    }
+
+    fn record_object_initialization(
         mut self,
         pointer: &Address,
         bytes: u32,
+        call_word: bool,
     ) -> Self {
-        if !self.heap.initialized.covers(pointer, bytes) {
+        if call_word || !self.heap.initialized.covers(pointer, bytes) {
             let base = intern_derivation_base(&mut self);
             std::sync::Arc::make_mut(&mut self.heap)
                 .initialized
@@ -7728,6 +7745,7 @@ impl SymbolicMemory {
                     base,
                     pointer: pointer.clone(),
                     bytes,
+                    call_word,
                 },
             );
         }
