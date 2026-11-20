@@ -3559,21 +3559,20 @@ pub(in crate::surface) fn pure_function_parameter_argument(
     parameter: &FunctionParameter,
     argument: &ContractExpression,
 ) -> ContractExpression {
+    let mut literal = argument;
+    while let ContractExpression::Old(inner) = literal {
+        literal = inner;
+    }
+    if let Some(ty) = parameter.click_type().interface_type()
+        && argument_is_null_pointer_constant(literal, ty)
+    {
+        return ContractExpression::ProgramExpression(ProgramExpression::Value(
+            ProgramValue::typed_pointer(Address::null(), ty.to_kernel_type()),
+        ));
+    }
     let Some((target_type, integer_mode)) = pure_function_parameter_conversion(parameter) else {
         return argument.clone();
     };
-    if target_type == ProgramType::VoidPointer
-        && parameter
-            .click_type()
-            .interface_type()
-            .is_some_and(|interface_type| {
-                argument_is_null_pointer_constant(argument, interface_type)
-            })
-    {
-        return ContractExpression::ProgramExpression(ProgramExpression::Value(
-            ProgramValue::typed_pointer(Address::null(), target_type),
-        ));
-    }
     ContractExpression::CUnary {
         operand: Box::new(argument.clone()),
         // CUnary's operand is authoritative during lowering. Retain an exact
