@@ -1869,16 +1869,6 @@ impl CellStore {
         self.runs.len()
     }
 
-    /// Check the first indexed cell and run in the block without naming
-    /// any of their values.
-    pub(super) fn has_cells_in_block(&self, block: &AddressBase) -> bool {
-        self.concrete
-            .range(Address::first_key_of(block)..)
-            .next()
-            .is_some_and(|(address, _)| address.base == *block)
-            || self.runs_in_block(block).next().is_some()
-    }
-
     /// The runs of one block, in key order, without visiting another
     /// block's.
     pub(crate) fn runs_in_block<'a>(

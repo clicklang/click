@@ -6711,11 +6711,6 @@ impl<'a> TermRewrite<'a> {
                             *kind,
                         )
                     });
-                if let Some(entry) = memory.entry_version_after_rewrite(&rewritten, *kind) {
-                    return crate::kernel::eval::scalar_read_for_exact_cell_at(
-                        &entry, &rewritten, *kind, bytes,
-                    );
-                }
                 // A projection belongs to the selected address. Instantiating
                 // an index must select the new address from that projection's
                 // recorded source, as direct lowering does. This is one indexed

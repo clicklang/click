@@ -3526,42 +3526,6 @@ fn read_retained_lvalue_paths_without_ranges(
                     source,
                     budget.program_byte_order(),
                 );
-                if has_read_resource
-                    && lvalue.value_type == ProgramType::Int32
-                    && !lvalue.is_volatile()
-                    && !SpecificationAccessScope::is_active()
-                    && let Some(entry) = state
-                        .program_point()
-                        .entry_integer_version(pointer, LoadKind::Int32)
-                {
-                    // Successful C evaluation supplies the value of this
-                    // checked read. Relate it to the ordinary proof term
-                    // while retaining the evaluator's alias and access checks.
-                    let read = scalar_read_for_exact_cell_at(
-                        &entry,
-                        pointer,
-                        LoadKind::Int32,
-                        ProgramType::Int32.byte_width(),
-                    );
-                    for path in &mut paths {
-                        if let ExpressionOutcome::Value(value) = &path.outcome
-                            && let ProgramValue::Int32(bits) = value.native().numeric_value()
-                        {
-                            path.facts.push(ExecutionPureFact {
-                                logical_read_equation: true,
-                                ..ExecutionPureFact::certified(Proposition::condition_is(
-                                    ConditionTerm::machine_compare(
-                                        MachineIntegerType::Int32,
-                                        CompareRelation::Equal,
-                                        read.clone(),
-                                        bits.clone(),
-                                    ),
-                                    true,
-                                ))
-                            });
-                        }
-                    }
-                }
                 if let Some(mask) = bit_field_mask {
                     for path in &mut paths {
                         if let ExpressionOutcome::Value(value) = &mut path.outcome

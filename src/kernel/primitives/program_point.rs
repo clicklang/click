@@ -1084,6 +1084,11 @@ impl ProgramPoint {
     /// Read applications use the execution version when known. Legacy views
     /// retain their existing read identity across pure memory materialization.
     pub(in crate::kernel) fn congruence_read_key(&self) -> ReadKey {
+        // Fold instantiation can still produce a bare read of the empty
+        // entry view. Share its comparison key while retaining the point.
+        if self.is_entry_read() {
+            return ReadKey::Memory(self.memory.read_identity());
+        }
         match self.read_version_id() {
             Some(id) => self.read_key_at(id),
             None => ReadKey::Memory(self.memory.read_identity()),
@@ -1149,20 +1154,22 @@ impl ProgramPoint {
     /// store supplies a value. Use the recorded disjoint suffix only when
     /// it reaches a verified function-entry view.
     pub(crate) fn entry_integer_version(&self, pointer: &Address, kind: LoadKind) -> Option<Self> {
+        let direct_parameter = matches!(pointer.offset, AddressOffset::Constant(0))
+            || matches!(&pointer.offset, AddressOffset::Int32Scaled { value, byte_width: 4 }
+                if value.operand_view().variable().is_some());
         if kind != LoadKind::Int32
             || pointer.base != AddressBase::ExternalArgument
-            || !pointer.offset.is_shallow()
+            || !direct_parameter
         {
             return None;
         }
         let mut entry = self.parameter_read_start(&pointer.base);
         let node = entry.path.0.as_ref()?;
-        // Preserve the selection when a fold or quantified index is
-        // instantiated. A materialized parameter block keeps its existing
-        // read rules for both the symbolic index and its concrete instances.
+        // An empty entry view needs no projection to compare with an
+        // older producer that still carries a bare memory view.
         if !node.function_entry
             || !entry.path.matches_indexed_view(&entry.memory)
-            || entry.memory().cells.has_cells_in_block(&pointer.base)
+            || entry.memory() != &SymbolicMemory::default()
         {
             return None;
         }
@@ -1170,18 +1177,8 @@ impl ProgramPoint {
         Some(entry)
     }
 
-    /// An instance of an entry read still names that same input point.
-    /// Check the new address and view using the same rule as direct lowering.
-    pub(in crate::kernel) fn entry_version_after_rewrite(
-        &self,
-        pointer: &Address,
-        kind: LoadKind,
-    ) -> Option<Self> {
-        if matches!(self.read, ReadSelection::Entry) {
-            self.entry_integer_version(pointer, kind)
-        } else {
-            None
-        }
+    pub(in crate::kernel) fn is_entry_read(&self) -> bool {
+        matches!(self.read, ReadSelection::Entry) && self.path.matches_indexed_view(&self.memory)
     }
 
     pub(crate) fn ordinary_typed_version(
