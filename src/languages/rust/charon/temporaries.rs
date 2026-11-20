@@ -72,6 +72,7 @@ pub(super) fn substitute_pure_values(
     };
     let mut removed = BTreeSet::new();
     for block in blocks.iter_mut() {
+        fold_adjacent_slice_borrows(&mut block.statements, &substitutable, &mut removed);
         // The pure values defined so far in this block whose read is still
         // ahead, with nothing since that could change them.
         let mut pending = BTreeMap::<String, E>::new();
@@ -215,7 +216,7 @@ pub(super) fn substitute_pure_values(
             );
         }
     }
-    fold_scalar_intrinsic_results(blocks, &predecessors, &substitutable, &mut removed);
+    fold_scalar_successors(locals, blocks, &predecessors, &substitutable, &mut removed);
     for block in blocks.iter_mut() {
         block.statements.retain(|statement| match statement {
             S::BeginStorage { local } | S::EndStorage { local } => !removed.contains(local),
@@ -229,15 +230,76 @@ pub(super) fn substitute_pure_values(
     locals.retain(|local| !removed.contains(&local.name));
 }
 
-/// An intrinsic lowered to a scalar expression can leave a goto between
-/// the expression and its use. Rejoin the two fragments of the same written
-/// statement when the definition is last and the successor has one entry.
-fn fold_scalar_intrinsic_results(
+/// A borrow consumed by the adjacent slice operation is the operation's
+/// input. Moving it across no statements preserves the borrowed place and,
+/// for an array coercion, its reference view and mutability.
+fn fold_adjacent_slice_borrows(
+    statements: &mut Vec<S>,
+    substitutable: &impl Fn(&str) -> bool,
+    removed: &mut BTreeSet<String>,
+) {
+    let mut statements_iter = std::mem::take(statements).into_iter().peekable();
+    while let Some(statement) = statements_iter.next() {
+        if let S::Assign {
+            target: E::Local { name },
+            value: borrow @ E::Borrow { place, value_type },
+        } = &statement
+            && substitutable(name)
+            && pure(place)
+            && !checked(place)
+            && let Some(consumer) = statements_iter.peek_mut()
+        {
+            let operand = match value_type {
+                Type::Reference { pointee, .. }
+                    if matches!(pointee.as_ref(), Type::Array { .. }) =>
+                {
+                    match consumer {
+                        S::Assign {
+                            target: E::Local { .. },
+                            value: E::ArrayToSlice { array, .. },
+                        } => Some(array.as_mut()),
+                        _ => None,
+                    }
+                }
+                Type::ByteSlice { mutable: false } | Type::ScalarSlice { mutable: false, .. } => {
+                    match consumer {
+                        S::Assign {
+                            target: E::Local { .. },
+                            value: E::SliceLength { slice },
+                        } => Some(slice.as_mut()),
+                        S::SharedArrayInitialize { source, .. } => Some(source),
+                        _ => None,
+                    }
+                }
+                _ => None,
+            };
+            if let Some(operand) = operand
+                && matches!(operand, E::Local { name: read } if read == name)
+            {
+                *operand = borrow.clone();
+                removed.insert(name.clone());
+                continue;
+            }
+        }
+        statements.push(statement);
+    }
+}
+
+/// A scalar copy or intrinsic can leave a goto between the expression and
+/// its use. Rejoin the fragments of the same written statement when the
+/// successor has one entry and no intervening effect can change the value.
+fn fold_scalar_successors(
+    locals: &[Place],
     blocks: &mut [MirBlock],
     predecessors: &[usize],
     substitutable: &impl Fn(&str) -> bool,
     removed: &mut BTreeSet<String>,
 ) {
+    let scalars: BTreeSet<_> = locals
+        .iter()
+        .filter(|local| local.value_type.is_integer() || local.value_type == Type::Bool)
+        .map(|local| local.name.as_str())
+        .collect();
     for index in 0..blocks.len() {
         let T::Goto { target } = blocks[index].terminator else {
             continue;
@@ -248,33 +310,51 @@ fn fold_scalar_intrinsic_results(
         let Ok([definition, consumer]) = blocks.get_disjoint_mut([index, target]) else {
             continue;
         };
-        let Some(S::Assign {
-            target: E::Local { name },
-            value: result,
-        }) = definition.statements.last()
-        else {
+        let Some((last, earlier)) = definition.statements.split_last() else {
             continue;
         };
-        if !substitutable(name) || !is_movable_scalar_intrinsic(result) {
-            continue;
-        }
-        let Some(site) = definition.terminator_site else {
-            continue;
+        // A loop test can compute its length after copying the index. This
+        // metadata read neither rebinds the index nor evaluates user code.
+        let previous_copy = match last {
+            S::Assign {
+                target: E::Local { name },
+                value: length @ E::SliceLength { .. },
+            } if is_movable_scalar_intrinsic(length) => {
+                earlier.last().map(|statement| (statement, Some(name)))
+            }
+            _ => None,
         };
-        let definition_site =
-            definition
-                .statements
-                .iter()
-                .rev()
-                .find_map(|statement| match statement {
-                    S::Site { site } => Some(*site),
-                    _ => None,
-                });
-        if definition_site != Some(site) {
-            continue;
-        }
-        let Some(S::Assign { value, .. }) =
-            consumer
+        for (assignment, length_target) in std::iter::once((last, None)).chain(previous_copy) {
+            let S::Assign {
+                target: E::Local { name },
+                value: result,
+            } = assignment
+            else {
+                continue;
+            };
+            let copy = matches!(result, E::Local { name: source } if scalars.contains(name.as_str())
+                && length_target != Some(source));
+            if !substitutable(name)
+                || !(copy || (length_target.is_none() && is_movable_scalar_intrinsic(result)))
+            {
+                continue;
+            }
+            let Some(site) = definition.terminator_site else {
+                continue;
+            };
+            let definition_site =
+                definition
+                    .statements
+                    .iter()
+                    .rev()
+                    .find_map(|statement| match statement {
+                        S::Site { site } => Some(*site),
+                        _ => None,
+                    });
+            if definition_site != Some(site) {
+                continue;
+            }
+            let value = match consumer
                 .statements
                 .iter_mut()
                 .find(|statement| match statement {
@@ -283,21 +363,28 @@ fn fold_scalar_intrinsic_results(
                         local != name && !removed.contains(local)
                     }
                     _ => true,
-                })
-        else {
-            continue;
-        };
-        if !straight_line_scalar(value) {
-            continue;
-        }
-        let mut values = BTreeMap::from([(name.clone(), result.clone())]);
-        let mut pending = Pending {
-            values: &mut values,
-            refused: Vec::new(),
-        };
-        substitute(value, &mut pending, true);
-        if values.is_empty() {
-            removed.insert(name.clone());
+                }) {
+                Some(S::Assign { value, .. }) => value,
+                None if copy && consumer.terminator_site == Some(site) => {
+                    let T::If { condition, .. } = &mut consumer.terminator else {
+                        continue;
+                    };
+                    condition
+                }
+                _ => continue,
+            };
+            if !straight_line_scalar(value) {
+                continue;
+            }
+            let mut values = BTreeMap::from([(name.clone(), result.clone())]);
+            let mut pending = Pending {
+                values: &mut values,
+                refused: Vec::new(),
+            };
+            substitute(value, &mut pending, true);
+            if values.is_empty() {
+                removed.insert(name.clone());
+            }
         }
     }
 }
@@ -338,7 +425,10 @@ fn straight_line_scalar(value: &E) -> bool {
                 && straight_line_scalar(left)
                 && straight_line_scalar(right)
         }
-        E::Cast { value, .. } | E::IntegerFrom { value, .. } => straight_line_scalar(value),
+        E::Cast { value, .. } | E::IntegerFrom { value, .. } | E::Not { value } => {
+            straight_line_scalar(value)
+        }
+        E::SliceLength { .. } => is_movable_scalar_intrinsic(value),
         E::Local { .. }
         | E::Integer { .. }
         | E::UnsignedInteger { .. }
@@ -2860,7 +2950,7 @@ mod tests {
     }
 
     #[test]
-    fn a_scalar_intrinsic_crosses_only_its_own_straight_line_goto() {
+    fn a_scalar_operand_crosses_only_its_own_straight_line_goto() {
         let length = E::SliceLength {
             slice: Box::new(E::Borrow {
                 place: Box::new(local("source")),
@@ -2879,6 +2969,7 @@ mod tests {
         for (intrinsic, source_type, temporary_type) in [
             (length, Type::ByteSlice { mutable: false }, Type::Usize),
             (conversion, Type::U8, Type::U32),
+            (local("source"), Type::U32, Type::U32),
         ] {
             for (site, storage, second_entry, folded) in [
                 (1, "t1", false, true),
@@ -2927,9 +3018,99 @@ mod tests {
                     blocks[1].statements.last(),
                     Some(S::Assign { value: E::Binary { right, .. }, .. })
                         if matches!(right.as_ref(), E::Cast { value, .. }
-                            if (std::mem::discriminant(value.as_ref()) == std::mem::discriminant(&intrinsic)) == folded)
+                            if matches!(value.as_ref(), E::Local { name } if name == "t1") != folded)
                 ));
             }
+        }
+    }
+
+    #[test]
+    fn the_slice_length_does_not_rebind_a_copied_loop_index() {
+        let borrow = E::Borrow {
+            place: Box::new(local("bytes")),
+            value_type: Type::ByteSlice { mutable: false },
+        };
+        for length_target in ["x", "a"] {
+            let mut locals = ["a", "x", "t1", "t2"].map(place).to_vec();
+            let mut blocks = [
+                MirBlock {
+                    terminator_site: Some(1),
+                    statements: vec![
+                        S::Site { site: 1 },
+                        assign("t1", local("a")),
+                        assign(
+                            length_target,
+                            E::SliceLength {
+                                slice: Box::new(borrow.clone()),
+                            },
+                        ),
+                    ],
+                    terminator: T::Goto { target: 1 },
+                },
+                MirBlock {
+                    terminator_site: Some(1),
+                    statements: vec![S::Site { site: 1 }],
+                    terminator: T::If {
+                        condition: E::Not {
+                            value: Box::new(binary("lt", local("t1"), local("x"))),
+                        },
+                        then_target: 2,
+                        else_target: 0,
+                    },
+                },
+                block(vec![], T::Return),
+            ];
+            super::substitute_pure_values(
+                &mut locals,
+                &mut blocks,
+                &BTreeSet::from(["t1".into()]),
+                &BTreeSet::new(),
+            );
+            assert_eq!(
+                locals.iter().any(|local| local.name == "t1"),
+                length_target == "a"
+            );
+            assert!(
+                matches!(&blocks[1].terminator, T::If { condition: E::Not { value }, .. }
+                if matches!(value.as_ref(), E::Binary { left, .. }
+                    if matches!(left.as_ref(), E::Local { name } if name == if length_target == "a" { "t1" } else { "a" })))
+            );
+        }
+    }
+
+    #[test]
+    fn an_array_reborrow_folds_only_into_the_adjacent_coercion() {
+        let array = Type::Array {
+            element: Box::new(Type::U8),
+            length: 4,
+        };
+        let borrow = E::Borrow {
+            place: Box::new(E::Deref {
+                reference: Box::new(local("a")),
+                value_type: array.clone(),
+            }),
+            value_type: Type::Reference {
+                mutable: true,
+                pointee: Box::new(array),
+            },
+        };
+        for separated in [false, true] {
+            let mut statements = vec![assign("t1", borrow.clone())];
+            if separated {
+                statements.push(assign("a", local("b")));
+            }
+            statements.push(assign(
+                "x",
+                E::ArrayToSlice {
+                    array: Box::new(local("t1")),
+                    mutable: true,
+                },
+            ));
+            let (locals, block) = substituted(statements, T::Return);
+            assert_eq!(locals.iter().any(|name| name == "t1"), separated);
+            assert!(matches!(block.statements.last(),
+                Some(S::Assign { value: E::ArrayToSlice { array, mutable: true }, .. })
+                    if matches!(array.as_ref(), E::Borrow { .. }) != separated));
         }
     }
 
