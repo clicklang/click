@@ -102,7 +102,11 @@ impl StepLog {
                 | MemoryDerivation::RepresentationWrite { pointer, .. } => {
                     indexed_local(&pointer.base)
                 }
-                MemoryDerivation::BlockDeclared { block, .. } => indexed_local(block),
+                // A declaration makes fresh storage: a local, or the
+                // temporary a call result is built in.
+                MemoryDerivation::BlockDeclared { block, .. } => {
+                    indexed_local(block) || matches!(block, AddressBase::Temporary(_))
+                }
                 _ => false,
             };
         Arc::new(Self {
