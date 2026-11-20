@@ -2711,6 +2711,19 @@ impl ResourceContext {
             .then_some(occurrence)
     }
 
+    pub(crate) fn exact_principal_view_occurrences(
+        &self,
+        fact: &ResourceFact,
+    ) -> impl Iterator<Item = ResourceOccurrenceId> + '_ {
+        crate::instrumentation::record_deterministic_work(1);
+        self.storage
+            .principal_views_by_fact
+            .get(fact)
+            .into_iter()
+            .flat_map(ResourceEntryIds::iter)
+            .map(|entry| self.occurrence(*entry))
+    }
+
     pub(crate) fn view_occurrence_is_principal(&self, occurrence: ResourceOccurrenceId) -> bool {
         self.storage
             .entry_by_occurrence
@@ -2970,6 +2983,18 @@ impl ResourceContext {
             index: self.storage.index.with_inserted(entry, &fact),
             supported_by,
             nonmemory_projections_by_fact,
+            principal_views_by_fact: if fact.is_view()
+                && support.is_none()
+                && support_occurrence.is_none()
+            {
+                insert_resource_index_entry(
+                    &self.storage.principal_views_by_fact,
+                    fact.clone(),
+                    entry,
+                )
+            } else {
+                self.storage.principal_views_by_fact.clone()
+            },
             support_occurrence_by_projection,
             projections_by_support,
             projections_by_support_occurrence,
@@ -3173,6 +3198,14 @@ impl ResourceContext {
             index: self.storage.index.without_entry(entry, &fact),
             supported_by,
             nonmemory_projections_by_fact,
+            principal_views_by_fact: if fact.is_view()
+                && support.is_none()
+                && support_occurrence.is_none()
+            {
+                remove_resource_index_entry(&self.storage.principal_views_by_fact, &fact, entry)
+            } else {
+                self.storage.principal_views_by_fact.clone()
+            },
             support_occurrence_by_projection,
             projections_by_support,
             projections_by_support_occurrence,
@@ -3258,6 +3291,7 @@ impl ResourceContext {
             index: self.storage.index.clone(),
             supported_by: self.storage.supported_by.clone(),
             nonmemory_projections_by_fact: self.storage.nonmemory_projections_by_fact.clone(),
+            principal_views_by_fact: self.storage.principal_views_by_fact.clone(),
             support_occurrence_by_projection: self.storage.support_occurrence_by_projection.clone(),
             projections_by_support: self.storage.projections_by_support.clone(),
             projections_by_support_occurrence: self
@@ -3330,6 +3364,7 @@ impl ResourceContext {
             index: replacement_index,
             supported_by: PersistentMap::default(),
             nonmemory_projections_by_fact: PersistentMap::default(),
+            principal_views_by_fact: PersistentMap::default(),
             support_occurrence_by_projection: PersistentMap::default(),
             projections_by_support: PersistentMap::default(),
             projections_by_support_occurrence: PersistentMap::default(),
@@ -6262,6 +6297,7 @@ impl ResourceContext {
             index: self.storage.index.clone(),
             supported_by: self.storage.supported_by.clone(),
             nonmemory_projections_by_fact: self.storage.nonmemory_projections_by_fact.clone(),
+            principal_views_by_fact: self.storage.principal_views_by_fact.clone(),
             support_occurrence_by_projection: self.storage.support_occurrence_by_projection.clone(),
             projections_by_support: self.storage.projections_by_support.clone(),
             projections_by_support_occurrence: self
@@ -6381,6 +6417,7 @@ impl ResourceContext {
             index: self.storage.index.clone(),
             supported_by: self.storage.supported_by.clone(),
             nonmemory_projections_by_fact: self.storage.nonmemory_projections_by_fact.clone(),
+            principal_views_by_fact: self.storage.principal_views_by_fact.clone(),
             support_occurrence_by_projection: self.storage.support_occurrence_by_projection.clone(),
             projections_by_support: self.storage.projections_by_support.clone(),
             projections_by_support_occurrence: self
@@ -9033,6 +9070,7 @@ impl ResourceContext {
             index: self.storage.index.clone(),
             supported_by: self.storage.supported_by.clone(),
             nonmemory_projections_by_fact: self.storage.nonmemory_projections_by_fact.clone(),
+            principal_views_by_fact: self.storage.principal_views_by_fact.clone(),
             support_occurrence_by_projection: self.storage.support_occurrence_by_projection.clone(),
             projections_by_support: self.storage.projections_by_support.clone(),
             projections_by_support_occurrence: self

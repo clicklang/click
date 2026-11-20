@@ -258,6 +258,7 @@ pub(super) fn prove_ensure_resource<'e>(
             checked_execution.function(),
             &claim_key,
             entry_state,
+            post_state,
             &expected,
             &assumptions,
         )

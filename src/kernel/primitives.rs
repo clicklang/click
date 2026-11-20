@@ -11171,6 +11171,8 @@ pub(super) struct ResourceContextStorage {
     /// Exact non-memory observations with live owned support. Separating this
     /// from ordinary views avoids searching equal descriptions for an owner.
     pub(super) nonmemory_projections_by_fact: PersistentMap<ResourceFact, ResourceEntryIds>,
+    /// Explicit views are indexed separately from derived observations.
+    pub(super) principal_views_by_fact: PersistentMap<ResourceFact, ResourceEntryIds>,
     /// Exact owned-entry identity for each supported projection. The fact
     /// cache above is useful for diagnostics, but this occurrence index is
     /// authoritative when one of several equal owned entries is consumed.

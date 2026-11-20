@@ -5972,8 +5972,12 @@ pub(in crate::surface) fn function_resource_summary(
             &mut requires,
         )?;
         if has_named_view_sources
-            && matches!(resource, ResourceClause::ViewMemory(_))
+            && matches!(
+                resource,
+                ResourceClause::ViewMemory(_) | ResourceClause::Declared { .. }
+            )
             && requires.len() == first_spec + 1
+            && requires[first_spec].is_view()
         {
             let source = function_block
                 .requirement_source_clauses
@@ -6104,8 +6108,17 @@ pub(in crate::surface) fn function_resource_summary(
             }
             if let Some(source) = ensure.view_source {
                 let input = view_inputs.get(&source).ok_or_else(|| {
-                    ClickError::new("the selected input view must lower to one memory range")
+                    ClickError::new(
+                        "the selected input view must lower to one memory range or composite",
+                    )
                 })?;
+                if !spec.is_view()
+                    && !matches!(spec.term(), crate::kernel::ResourceTerm::Composite { .. })
+                {
+                    return Err(ClickError::new(
+                        "`from` requires a produced view or an unnamed composite resource",
+                    ));
+                }
                 spec = spec.with_view_source(*input);
             } else if !ensure.borrowed() && matches!(resource, ResourceClause::ViewMemory(_)) {
                 let input = direct_view_inputs

@@ -962,17 +962,21 @@ fn recover_candidate_stable_view_resources(
                 ));
             }
             if !plan.supports_explicit_view_escape(source) {
-                return Err(RuntimeError::FunctionContract(
-                    "a bare produced view needs a direct memory borrow; use a borrowing composite for this input".into(),
-                ));
+                return Err(RuntimeError::FunctionContract(if head.is_view() {
+                    "a bare produced view needs a directly recoverable memory borrow".into()
+                } else {
+                    "a produced composite's named input must have directly recoverable borrow backing".into()
+                }));
             }
-            escaping
-                .entry(source.loan)
-                .or_default()
-                .push(super::loans::EscapingBorrow {
-                    root_permission: Some(source.requirement.fact.clone()),
-                    ..produced.support.clone()
-                });
+            if escaped_occurrences.insert((source.loan, produced.support.occurrence)) {
+                escaping
+                    .entry(source.loan)
+                    .or_default()
+                    .push(super::loans::EscapingBorrow {
+                        root_permission: Some(source.requirement.fact.clone()),
+                        ..produced.support.clone()
+                    });
+            }
             continue;
         }
         let selected = backing_sources
@@ -1121,7 +1125,7 @@ fn recover_candidate_stable_view_resources(
     let explicit_views = transfer
         .produced_borrowing_pieces
         .iter()
-        .filter(|piece| piece.input_view.is_some())
+        .filter(|piece| piece.input_view.is_some() && piece.support.head.is_view())
         .map(|piece| &piece.piece)
         .collect::<BTreeSet<_>>();
     for stable_view in plan.stable_views() {
@@ -1207,6 +1211,7 @@ pub(crate) fn check_produced_view_source(
     function: &ProgramFunction,
     key: &FunctionContractClaimKey,
     entry: &ExecutionState,
+    exit: &ExecutionState,
     output: &[ResourceFact],
     assumptions: &PureFactContext,
 ) -> Result<(), String> {
@@ -1237,9 +1242,24 @@ pub(crate) fn check_produced_view_source(
     )
     .map_err(|_| "could not evaluate the produced view's named input".to_string())?
     .map_err(|_| "could not evaluate the produced view's named input".to_string())?;
-    for view in output {
-        if !explicit_view_coverage(&input, view, assumptions) {
-            return Err(produced_view_coverage_message(&input, view));
+    for resource in output {
+        if resource.is_view() {
+            if !explicit_view_coverage(&input, resource, assumptions) {
+                return Err(produced_view_coverage_message(&input, resource));
+            }
+        } else {
+            let (occurrence, _) = exit
+                .resources()
+                .unique_owned_occurrence_for_fact(resource)
+                .ok_or("the produced composite has no unique held occurrence for its borrow")?;
+            let binding = exit
+                .resources()
+                .loan_dependency(occurrence)
+                .filter(|binding| binding.hold.is_some())
+                .ok_or("the produced composite must hold a borrow from its named input view")?;
+            if !explicit_view_coverage(&input, &binding.viewed, assumptions) {
+                return Err(produced_view_coverage_message(&input, &binding.viewed));
+            }
         }
     }
     Ok(())
@@ -14039,17 +14059,14 @@ fn evaluate_contract_return_resources(
         return Ok(Err(error));
     }
     let mut ensured_views = Vec::new();
-    let mut explicitly_produced_views = BTreeMap::new();
+    let mut output_borrow_sources = BTreeMap::new();
     for occurrence in &evaluated.occurrences {
-        let Some(fact) = ensured_resources.view_fact_at_occurrence(occurrence.source) else {
-            continue;
-        };
         if let Some(input) = occurrence
             .clause
             .and_then(|index| interface.resource_ensures()[index].view_source())
         {
-            explicitly_produced_views.insert(occurrence.source, (input, fact));
-        } else {
+            output_borrow_sources.insert(occurrence.source, input);
+        } else if let Some(fact) = ensured_resources.view_fact_at_occurrence(occurrence.source) {
             ensured_views.push(fact.clone());
         }
     }
@@ -14096,15 +14113,16 @@ fn evaluate_contract_return_resources(
     let mut produced_borrowing_pieces = inserted_ensured_occurrences
         .iter()
         .filter_map(|transfer| {
-            let (input, fact) = explicitly_produced_views.get(&transfer.source)?;
+            let &input = output_borrow_sources.get(&transfer.source)?;
+            let fact = ensured_resources.view_fact_at_occurrence(transfer.source)?;
             Some(ProducedBorrowingPiece {
                 support: super::loans::EscapingBorrow {
-                    head: (*fact).clone(),
+                    head: fact.clone(),
                     occurrence: transfer.destination,
                     root_permission: None,
                 },
-                piece: (*fact).clone(),
-                input_view: Some(*input),
+                piece: fact.clone(),
+                input_view: Some(input),
                 sources: Arc::new(vec![transfer.source]),
             })
         })
@@ -14117,7 +14135,12 @@ fn evaluate_contract_return_resources(
     let mut escrow_boundary =
         EscrowRecoveryBoundary::default().with_entry_partition(returned_entry_partition);
     for resource in projected_cores_by_support {
-        let constructed_borrowing_pieces = resource.constructed_borrowing_pieces();
+        let input_view = output_borrow_sources.get(&resource.source);
+        let constructed_borrowing_pieces = if let Some(&input) = input_view {
+            resource.explicitly_backed_pieces(input)
+        } else {
+            resource.constructed_borrowing_pieces()
+        };
         let ProjectedReturnResource {
             source,
             support,
@@ -14158,6 +14181,11 @@ fn evaluate_contract_return_resources(
             }
             _ => false,
         };
+        if input_view.is_some() && (is_population || constructed_borrowing_pieces.is_empty()) {
+            return Ok(Err(RuntimeError::FunctionContract(
+                "`from` requires a produced composite with a checked viewed body".into(),
+            )));
+        }
         if !is_population {
             produced_borrowing_pieces.extend(constructed_borrowing_pieces);
         }

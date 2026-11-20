@@ -3825,15 +3825,21 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
             state = state.with_resource_context(resources);
         } else if let Some(binding) = held_piece_binding.as_ref() {
             let assumptions = available_pure_facts.assumptions().clone();
+            let ledger = state.loan_ledger().ok_or_else(|| {
+                ClickError::new("an unfolded borrowing composite has no active borrow ledger")
+            })?;
             let dependencies = inserted
                 .into_iter()
                 .filter(|(child, _)| {
                     child.is_view()
-                        && crate::kernel::resources_directly_match(
-                            binding.viewed.resource(),
-                            child.resource(),
-                            &assumptions,
-                        )
+                        && ledger
+                            .selected_return_permission(
+                                binding.loan,
+                                child,
+                                &binding.viewed,
+                                &assumptions,
+                            )
+                            .is_some()
                 })
                 .map(|(_, occurrence)| (occurrence, binding.clone()))
                 .collect::<Vec<_>>();
@@ -4284,7 +4290,7 @@ fn fold_composite_resources_on_outcome_with_facts(
                 pure_facts.assumptions(),
             )?;
             if lowered.is_view()
-                && unique_borrowed_resource_dependency(&guard_state, &lowered)
+                && guard_state.fold_view_dependency(&lowered, &body_assumptions)
                     .map_err(|message| {
                         ClickError::new(format!(
                             "`{claim_label}` path {path_index}: `fold` refused ambiguous body loan dependency: {message}"
@@ -4561,6 +4567,8 @@ fn fold_composite_resources_on_outcome_with_facts(
         let mut lowered_contained = Vec::new();
         let mut witness_fold_children = Vec::new();
         let mut body_has_unbound_view = false;
+        let mut held_view_children = BTreeSet::new();
+        let mut selected_held_view = false;
         let preserve_exposed_body = matches!(
             closure,
             ResourceBodyClosure::CloseOpen {
@@ -4588,22 +4596,42 @@ fn fold_composite_resources_on_outcome_with_facts(
                 witness_fold_children.push(lowered.clone());
             }
             if lowered.is_view() {
-                let binding = unique_borrowed_resource_dependency(&post_state, &lowered)
+                let binding = post_state.fold_view_dependency(&lowered, &assumptions)
                     .map_err(|message| {
                         ClickError::new(format!(
                             "`{claim_label}` path {path_index}: `fold` refused ambiguous body loan dependency: {message}"
                         ))
                     })?;
                 match binding {
-                    Some(binding) => {
+                    Some((occurrence, binding)) => {
                         if body_has_unbound_view
-                            || body_loan_dependency
-                                .as_ref()
-                                .is_some_and(|existing| !same_loan_authority(existing, &binding))
+                            || body_loan_dependency.as_ref().is_some_and(|existing| {
+                                !same_loan_authority(existing, &binding)
+                                    || (existing.hold.is_some() && existing.hold != binding.hold)
+                            })
                         {
                             return Err(ClickError::new(format!(
                                 "`{claim_label}` path {path_index}: `fold` body views carry different or incomplete loan dependencies"
                             )));
+                        }
+                        selected_held_view |= occurrence.is_some() && binding.hold.is_some();
+                        if let Some(occurrence) = occurrence
+                            && binding.hold.is_some()
+                            && post_state
+                                .resources()
+                                .view_occurrence_is_principal(occurrence)
+                            && post_state
+                                .resources()
+                                .view_fact_for_occurrence(occurrence)
+                                .is_some_and(|held| {
+                                    crate::kernel::resources_directly_match(
+                                        held.resource(),
+                                        lowered.resource(),
+                                        &assumptions,
+                                    )
+                                })
+                        {
+                            held_view_children.insert(occurrence);
                         }
                         body_loan_dependency = Some(binding);
                     }
@@ -4746,6 +4774,30 @@ fn fold_composite_resources_on_outcome_with_facts(
                 // exact transition.
                 loan_holds.push(transition);
                 post_state = Box::new(post_state.with_loan_ledger(Some(ledger)));
+            }
+            // A returned view or an opened borrowing head can already carry
+            // the hold. Move the selected viewed pieces into the new head.
+            // Ordinary (non-owning) observations stay where they were.
+            if selected_held_view
+                && !abstract_resource.is_view()
+                && let Some(hold) = body_loan_dependency
+                    .as_ref()
+                    .and_then(|binding| binding.hold)
+                && post_state.loan_view_bindings().hold_occurrence_count(hold)
+                    != held_view_children.len()
+            {
+                return Err(ClickError::new(format!(
+                    "`{claim_label}` path {path_index}: `fold` must move every viewed piece sharing this borrow hold"
+                )));
+            }
+            if !held_view_children.is_empty() && !abstract_resource.is_view() {
+                let mut resources = post_state.resources().clone();
+                for occurrence in held_view_children {
+                    resources = resources
+                        .without_exact_representation_for_occurrence(occurrence)
+                        .expect("the selected folded child is live");
+                }
+                post_state = Box::new(post_state.with_resource_context(resources));
             }
             // Authority rewrites authenticate the selected exchange only;
             // normalizing unrelated memory changes the checked frame.

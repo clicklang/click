@@ -243,6 +243,46 @@ impl ExecutionState {
             .with_loan_ledger(Some(ledger)))
     }
 
+    /// Select the checked occurrence used to fold a viewed child. A single
+    /// indexed bound occurrence carries authority even beside equal observations.
+    pub(crate) fn fold_view_dependency(
+        &self,
+        resource: &ResourceFact,
+        assumptions: &PureFactContext,
+    ) -> Result<Option<(Option<ResourceOccurrenceId>, LoanViewBinding)>, String> {
+        if !self.loan_bindings_are_consistent() {
+            return Err("resource and loan binding sidecars disagree".into());
+        }
+        let bindings = self.loan_view_bindings();
+        let resources = self.resources();
+        let mut exact_principals = resources.exact_principal_view_occurrences(resource);
+        let selected = match exact_principals.next() {
+            Some(occurrence)
+                if exact_principals.next().is_none() && bindings.get(&occurrence).is_some() =>
+            {
+                Some(occurrence)
+            }
+            Some(_) => None,
+            None => bindings.select_bound_view(resource, resources, assumptions),
+        };
+        let Some(occurrence) = selected else {
+            return self
+                .unique_borrowed_resource_dependency(resource)
+                .map(|binding| binding.map(|binding| (None, binding)));
+        };
+        let binding = bindings
+            .get(&occurrence)
+            .expect("the selected view is bound");
+        let (ledger, holder) = self
+            .loan_ledger()
+            .zip(self.loan_participant())
+            .ok_or("selected viewed resource has no active borrow ledger or holder")?;
+        ledger
+            .validate_view_binding(binding.clone(), holder)
+            .map_err(|error| format!("selected viewed resource loan is not live: {error}"))?;
+        Ok(Some((Some(occurrence), binding.clone())))
+    }
+
     /// The exact written representation may have several occurrences. A
     /// projection may use it only if they agree on the dependency bundle.
     pub(crate) fn unique_borrowed_resource_dependency(
@@ -493,6 +533,11 @@ impl LoanViewBindings {
 
     pub(crate) fn get(&self, occurrence: &ResourceOccurrenceId) -> Option<&LoanViewBinding> {
         self.state.map.get(occurrence)
+    }
+
+    pub(crate) fn hold_occurrence_count(&self, hold: LoanHoldId) -> usize {
+        crate::instrumentation::record_deterministic_work(1);
+        self.state.by_hold.get(&hold).map_or(0, PersistentSet::len)
     }
 
     pub(crate) fn contains_binding(&self, binding: &LoanViewBinding) -> bool {
@@ -4722,13 +4767,17 @@ impl StableViewTransferPlan {
                 restorations.push(member);
             }
         }
-        // A composite the callee consumed took its borrow with it: release
-        // the hold, and if that leaves a root this caller may close, close it
-        // and recover the owner, as the fold's mirror image.
+        // Consuming the remaining head releases its hold. The caller has
+        // already excluded holds transferred to another returned head.
+        let mut released_holds = BTreeSet::new();
         for binding in consumed_holds {
             let Some(hold) = binding.hold else {
                 continue;
             };
+            crate::instrumentation::record_deterministic_work(1);
+            if !released_holds.insert(hold) {
+                continue;
+            }
             let (released, transition) = ledger.release_with_transition(hold, self.caller)?;
             ledger = released;
             transitions.push(transition);
