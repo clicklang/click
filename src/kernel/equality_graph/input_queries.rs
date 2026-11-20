@@ -217,17 +217,18 @@ impl EqualityGraph {
         base: Option<&Address>,
     ) -> Option<&super::NumericAddressConnectivity> {
         // A write can use the numeric projection unless its own component
-        // can reach an exact pointer edge. A cache warm-up names no write.
+        // can reach an exact pointer edge or a raw coordinate equality.
+        // Cache warm-up names no write.
         let connectivity = &self.admitted.numeric_address_connectivity;
-        (!connectivity.has_raw_store_alias_endpoints()
-            && base.is_none_or(|base| {
-                self.admitted.address_base_aliases.is_empty()
+        base.is_none_or(|base| {
+            !connectivity.reaches_raw_store_coordinate(base)
+                && (self.admitted.address_base_aliases.is_empty()
                     || (!self
                         .admitted
                         .pointer_alias_endpoints_by_object
                         .contains_key(base)
-                        && !connectivity.reaches_pointer_alias(base))
-            }))
+                        && !connectivity.reaches_pointer_alias(base)))
+        })
         .then_some(connectivity)
     }
 

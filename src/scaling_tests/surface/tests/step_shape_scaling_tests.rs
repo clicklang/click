@@ -744,7 +744,12 @@ fn band(work: usize) -> usize {
 
 #[test]
 fn repeated_stores_ignore_numeric_address_aliases_without_cached_cells() {
-    let measure = |size, alias_base, frame_owners, cross_block| {
+    #[derive(Clone, Copy, PartialEq)]
+    enum OtherEquality {
+        ExactPointer,
+        RawWord,
+    }
+    let measure = |size, alias_base, frame_owners, extra_requirement| {
         let run = run(
             |size| {
                 let mut parameters = "int32* p, int32* other".to_string();
@@ -754,12 +759,16 @@ fn repeated_stores_ignore_numeric_address_aliases_without_cached_cells() {
                     parameters += &format!(", int32* frame{i}");
                     frame += &format!("    owns *frame{i};\n");
                 }
-                let mut requirements = String::new();
-                let globals = if cross_block {
-                    requirements += "    requires other == &sentinel;\n";
-                    "int32 sentinel;\n"
-                } else {
-                    ""
+                let (globals, mut requirements) = match extra_requirement {
+                    Some(OtherEquality::RawWord) => {
+                        parameters += ", uint64 u, uint64 v";
+                        ("", "    requires u == v;\n".to_string())
+                    }
+                    Some(OtherEquality::ExactPointer) => (
+                        "int32 sentinel;\n",
+                        "    requires other == &sentinel;\n".to_string(),
+                    ),
+                    None => ("", String::new()),
                 };
                 for i in 0..size {
                     parameters += &format!(", int32* alias{i}");
@@ -782,11 +791,17 @@ fn repeated_stores_ignore_numeric_address_aliases_without_cached_cells() {
     };
     // A 16-alias star already distinguishes the old scan from the indexed
     // check. Keep the larger source probes out of the budgeted gate.
-    for (frame_owners, cross_block) in [(0, false), (1, false), (8, false), (8, true)] {
+    for (frame_owners, extra_requirement) in [
+        (0, None),
+        (1, None),
+        (8, None),
+        (8, Some(OtherEquality::ExactPointer)),
+        (8, Some(OtherEquality::RawWord)),
+    ] {
         let samples = [2, 8, 16].map(|size| {
             (
-                measure(size, "p", frame_owners, cross_block),
-                measure(size, "other", frame_owners, cross_block),
+                measure(size, "p", frame_owners, extra_requirement),
+                measure(size, "other", frame_owners, extra_requirement),
             )
         });
         eprintln!("repeated store work with connected and disconnected aliases: {samples:?}");
@@ -796,7 +811,7 @@ fn repeated_stores_ignore_numeric_address_aliases_without_cached_cells() {
             for (connected, disconnected) in connected.into_iter().zip(disconnected) {
                 assert!(connected <= connected_baseline + 16, "{samples:?}");
                 assert!(disconnected <= disconnected_baseline + 16, "{samples:?}");
-                if !cross_block {
+                if extra_requirement != Some(OtherEquality::ExactPointer) {
                     assert!(connected <= disconnected + 16, "{samples:?}");
                 }
             }
