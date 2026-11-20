@@ -4033,6 +4033,10 @@ fn raise_constructor_field(
     if let Some(ProgramValue::Pointer(pointer)) = term.pointer_native() {
         return raise_constructor_pointer(pointer, parameter_binding, state, bound_variables);
     }
+    if term.ty() == &KernelType::Integer {
+        return raise_kernel_term(term, parameter_binding, state, bound_variables)
+            .map(integer_typed_expression);
+    }
     if term.ty() == &KernelType::Program(ProgramType::Int32) {
         return raise_kernel_term(term, parameter_binding, state, bound_variables);
     }
@@ -8225,6 +8229,13 @@ fn synthesize_surface_algebraic(
                         state,
                         bound_variables,
                     ),
+                    crate::kernel::AlgebraicValue::Integer(term) => synthesize_surface_integer(
+                        &term.clone().into(),
+                        parameter_binding,
+                        state,
+                        bound_variables,
+                    )
+                    .map(integer_typed_expression),
                     crate::kernel::AlgebraicValue::Program(ProgramValue::Pointer(pointer)) => {
                         raise_constructor_pointer(
                             pointer,
