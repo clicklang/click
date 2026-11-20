@@ -20862,6 +20862,51 @@ uint64 probe(const struct View& source) {
     verify_program_prepared_project(&parsed, &import).unwrap();
 }
 
+#[test]
+fn cpp_by_value_record_keeps_receiver_field_ownership_at_proof_entry() {
+    let project = Project::with_fixture(
+        "reader.cpp",
+        "Reader::read",
+        r#"struct Field { unsigned long first; unsigned long count; };
+struct Reader {
+    Field data;
+    void read(Field dst) noexcept { return; }
+};
+void caller(Reader& reader, Field dst) noexcept { reader.read(dst); }
+"#,
+    );
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let path = project.directory.join("reader.click");
+    let callee = r#"verifying "reader.cpp";
+void Reader::read(Field dst) {
+    owns this->data.first;
+    ensures true;
+}
+"#;
+    fs::write(&path, callee).unwrap();
+    let parsed = read_click_project(&path, callee).unwrap();
+    verify_program_prepared_project(&parsed, &import).unwrap();
+
+    project.write_config("caller");
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let caller = format!(
+        "{callee}void caller(Reader& reader, Field dst) {{\n    owns reader.data.first;\n    ensures true;\n}}\n"
+    );
+    fs::write(&path, &caller).unwrap();
+    let parsed = read_click_project(&path, &caller).unwrap();
+    verify_program_prepared_project(&parsed, &import).unwrap();
+
+    let caller = caller.replace("owns reader.data.first;", "views reader.data.first;");
+    let parsed = read_click_project(&path, &caller).unwrap();
+    let error = verify_program_prepared_project(&parsed, &import)
+        .expect_err("the caller only has read access to the receiver field");
+    let report = error.report();
+    assert!(report.contains("`caller.ensures_0`"), "{report}");
+    assert!(report.contains("write ownership required"), "{report}");
+}
+
 const RECORD_TEMPORARY_ARGUMENT_SOURCE: &str = r#"
 struct Value {
     int value;
