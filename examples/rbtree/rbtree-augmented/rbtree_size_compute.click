@@ -48,7 +48,7 @@ int32 compute_size(struct sized_node* node, int32 exit) {
                 });
                 solve();
             } else {
-                step_until(statement(3));
+                step_until(statement(3).entry);
                 if node->size == size {
                     step_until(function.exit);
                     fold(left);
@@ -87,7 +87,7 @@ int32 compute_size(struct sized_node* node, int32 exit) {
                 });
                 solve();
             } else {
-                step_until(statement(3));
+                step_until(statement(3).entry);
                 if node->size == size {
                     step_until(function.exit);
                     fold(left);
@@ -128,7 +128,7 @@ int32 compute_size(struct sized_node* node, int32 exit) {
                 });
                 solve();
             } else {
-                step_until(statement(3));
+                step_until(statement(3).entry);
                 if node->size == size {
                     step_until(function.exit);
                     fold(left);
@@ -167,7 +167,7 @@ int32 compute_size(struct sized_node* node, int32 exit) {
                 });
                 solve();
             } else {
-                step_until(statement(3));
+                step_until(statement(3).entry);
                 if node->size == size {
                     step_until(function.exit);
                     fold(left);

@@ -5,11 +5,11 @@ int32 count(int32 n) {
  requires 0 <= n and n <= 1000;
  ensures result == n;
 } by {
- step_until(loop(0));
+ step_until(loop(0).entry);
  loop {
   decreases n-i;
   invariant 0 <= i and i <= n;
-  maintain by { step_until(back_edge());  }
+  maintain by { step_until(loop.back_edge);  }
  }
  step_until(function.exit); solve();
 }"#;
@@ -41,7 +41,11 @@ fn back_edge_rejects_exits_wrong_phase_and_false_invariants() {
     }
     let c = source("i=i+1;");
     for proof in [
-        PROOF.replacen("step_until(loop(0));", "step_until(back_edge());", 1),
+        PROOF.replacen(
+            "step_until(loop(0).entry);",
+            "step_until(loop.back_edge);",
+            1,
+        ),
         PROOF.replace("decreases n-i;", "decreases i;"),
     ] {
         assert!(verify_c_sources(&proof, &[("count.c", &c)]).is_err());
@@ -51,10 +55,14 @@ fn back_edge_rejects_exits_wrong_phase_and_false_invariants() {
 fn back_edge_parses_and_preserves_bare_labels() {
     let parsed = parse(PROOF).unwrap();
     assert!(!parsed.function_blocks().is_empty());
-    assert!(parse(&PROOF.replace("back_edge()", "back_edge(1)")).is_err());
+    for old_target in ["back_edge()", "loop(0).back_edge()", "loop(0)"] {
+        assert!(parse(&PROOF.replace("loop.back_edge", old_target)).is_err());
+    }
+    assert!(parse(&PROOF.replace("loop.back_edge", "loop(0).back_edge")).is_ok());
+    assert!(parse(&PROOF.replace("loop.back_edge", "loop(0).exit")).is_err());
     let labeled = PROOF.replace(
-        "step_until(back_edge());",
-        "mark back_edge; step_until(back_edge);",
+        "step_until(loop.back_edge);",
+        "mark back_edge; step_until(back_edge.entry);",
     );
     assert!(parse(&labeled).is_ok());
 }

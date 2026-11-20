@@ -27,7 +27,7 @@ struct rb_node* rb_red_parent(struct rb_node* red) {
             have red->__rb_parent_color == address(up) by {
                 rewrite(red->__rb_parent_color, address(up) + (red->__rb_parent_color & 1));
                 rewrite((red->__rb_parent_color & 1), 0);
-                normalize();
+                known();
             }
             step_until(function.exit);
             let after = fold(insert_red_tag(red), { link: InsertParent::To(up) });
@@ -66,14 +66,11 @@ void __rb_change_child(struct rb_node* old, struct rb_node* new,
             mark before_child_change;
             have separate(memory(parent->rb_left), memory(identity->__rb_parent_color)) by {
                 rewrite(parent, identity);
-                normalize();
+                known();
             }
             step_until(function.exit);
             have separate(statement(0).statement(0).statement(0).footprint, memory(identity->__rb_parent_color)) by {
-                normalize() using {
-                    parent == identity;
-                    separate(memory(parent->rb_left), memory(identity->__rb_parent_color));
-                };
+                known();
             }
             have identity->__rb_parent_color == at(before_child_change, identity->__rb_parent_color) by {
                 preserve(memory(identity->__rb_parent_color), statement(0).statement(0).statement(0));
@@ -98,14 +95,11 @@ void __rb_change_child(struct rb_node* old, struct rb_node* new,
                     mark before_child_change;
                     have separate(memory(parent->rb_right), memory(identity->__rb_parent_color)) by {
                         rewrite(parent, identity);
-                        normalize();
+                        known();
                     }
                     step_until(function.exit);
                     have separate(statement(0).statement(0).statement(1).footprint, memory(identity->__rb_parent_color)) by {
-                        normalize() using {
-                            parent == identity;
-                            separate(memory(parent->rb_right), memory(identity->__rb_parent_color));
-                        };
+                        known();
                     }
                     have identity->__rb_parent_color == at(before_child_change, identity->__rb_parent_color) by {
                         preserve(memory(identity->__rb_parent_color), statement(0).statement(0).statement(1));
@@ -115,8 +109,8 @@ void __rb_change_child(struct rb_node* old, struct rb_node* new,
                         known();
                     }
 
-                    have separate(memory(parent->rb_right), memory(identity->rb_left)) by { rewrite(parent, identity); normalize(); }
-                    have separate(statement(0).statement(0).statement(1).footprint, memory(identity->rb_left)) by { normalize() using { separate(memory(parent->rb_right), memory(identity->rb_left)); }; }
+                    have separate(memory(parent->rb_right), memory(identity->rb_left)) by { rewrite(parent, identity); known(); }
+                    have separate(statement(0).statement(0).statement(1).footprint, memory(identity->rb_left)) by { known(); }
                     have identity->rb_left == at(before_child_change, identity->rb_left) by { preserve(memory(identity->rb_left), statement(0).statement(0).statement(1)); }
                     let sibling = fold(rb_at(0), { model: RbTree::Empty });
                     let after = fold(ctx_at(new, root), {
@@ -134,8 +128,8 @@ void __rb_change_child(struct rb_node* old, struct rb_node* new,
                     have address(sid) != address(old);
                     let saved = fold(insert_saved_tag(old, new), { word: old->__rb_parent_color });
                     have sid == identity->rb_left by known();
-                    have sid->rb_left == identity->rb_left->rb_left by { rewrite(sid, identity->rb_left); normalize(); }
-                    have sid->rb_right == identity->rb_left->rb_right by { rewrite(sid, identity->rb_left); normalize(); }
+                    have sid->rb_left == identity->rb_left->rb_left by { rewrite(sid, identity->rb_left); known(); }
+                    have sid->rb_right == identity->rb_left->rb_right by { rewrite(sid, identity->rb_left); known(); }
                     step();
                     step();
                     let sibling = fold(rb_at(sid), {
@@ -145,14 +139,11 @@ void __rb_change_child(struct rb_node* old, struct rb_node* new,
                     mark before_child_change;
                     have separate(memory(parent->rb_right), memory(identity->__rb_parent_color)) by {
                         rewrite(parent, identity);
-                        normalize();
+                        known();
                     }
                     step_until(function.exit);
                     have separate(statement(0).statement(0).statement(1).footprint, memory(identity->__rb_parent_color)) by {
-                        normalize() using {
-                            parent == identity;
-                            separate(memory(parent->rb_right), memory(identity->__rb_parent_color));
-                        };
+                        known();
                     }
                     have identity->__rb_parent_color == at(before_child_change, identity->__rb_parent_color) by {
                         preserve(memory(identity->__rb_parent_color), statement(0).statement(0).statement(1));
@@ -162,8 +153,8 @@ void __rb_change_child(struct rb_node* old, struct rb_node* new,
                         known();
                     }
 
-                    have separate(memory(parent->rb_right), memory(identity->rb_left)) by { rewrite(parent, identity); normalize(); }
-                    have separate(statement(0).statement(0).statement(1).footprint, memory(identity->rb_left)) by { normalize() using { separate(memory(parent->rb_right), memory(identity->rb_left)); }; }
+                    have separate(memory(parent->rb_right), memory(identity->rb_left)) by { rewrite(parent, identity); known(); }
+                    have separate(statement(0).statement(0).statement(1).footprint, memory(identity->rb_left)) by { known(); }
                     have identity->rb_left == at(before_child_change, identity->rb_left) by { preserve(memory(identity->rb_left), statement(0).statement(0).statement(1)); }
                     let after = fold(ctx_at(new, root), {
                             model: Context::Right(identity, grandparent, color, sibling_model, outer_model),
@@ -188,11 +179,47 @@ function ctx_parent_word(ctx: Context, word: uint64) -> int32 {
 theorem insert_black_context_word(ctx: Context, p: struct rb_node*) {
     requires ctx_node_is(ctx, p) == 1;
     ensures ctx_parent_word(ctx, address(p) + 1) == 1 by {
-        let ih = induct(ctx);
+            let ih = induct(ctx);
         match ctx {
-            Context::Top => { unfold(ctx_node_is(Context::Top, p)); unfold(ctx_parent_word(Context::Top, address(p) + 1)); have p == 0; rewrite(p, 0); normalize(); },
-            Context::Left(id, up, shade, sibling, outer) => { unfold(ctx_node_is(Context::Left(id, up, shade, sibling, outer), p)); have p == id; rewrite(p, id); unfold(ctx_parent_word(Context::Left(id, up, shade, sibling, outer), address(id) + 1)); normalize(); },
-            Context::Right(id, up, shade, sibling, outer) => { unfold(ctx_node_is(Context::Right(id, up, shade, sibling, outer), p)); have p == id; rewrite(p, id); unfold(ctx_parent_word(Context::Right(id, up, shade, sibling, outer), address(id) + 1)); normalize(); },
+            Context::Top => {
+                unfold(ctx_parent_word(Context::Top, address(p) + 1));
+                have p == 0 by {
+                    apply(ctx_node_is_identity(Context::Top, p)) using {
+                        ctx_node_is(Context::Top, p) == 1;
+                    };
+                    unfold(ctx_identity(Context::Top));
+                    rewrite(p, ctx_identity(Context::Top));
+                    known();
+                }
+                rewrite(p, 0);
+                normalize();
+            },
+            Context::Left(id, up, shade, sibling, outer) => {
+                have p == id by {
+                    apply(ctx_node_is_identity(Context::Left(id, up, shade, sibling, outer), p)) using {
+                        ctx_node_is(Context::Left(id, up, shade, sibling, outer), p) == 1;
+                    };
+                    unfold(ctx_identity(Context::Left(id, up, shade, sibling, outer)));
+                    rewrite(p, ctx_identity(Context::Left(id, up, shade, sibling, outer)));
+                    known();
+                }
+                rewrite(p, id);
+                unfold(ctx_parent_word(Context::Left(id, up, shade, sibling, outer), address(id) + 1));
+                normalize();
+            },
+            Context::Right(id, up, shade, sibling, outer) => {
+                have p == id by {
+                    apply(ctx_node_is_identity(Context::Right(id, up, shade, sibling, outer), p)) using {
+                        ctx_node_is(Context::Right(id, up, shade, sibling, outer), p) == 1;
+                    };
+                    unfold(ctx_identity(Context::Right(id, up, shade, sibling, outer)));
+                    rewrite(p, ctx_identity(Context::Right(id, up, shade, sibling, outer)));
+                    known();
+                }
+                rewrite(p, id);
+                unfold(ctx_parent_word(Context::Right(id, up, shade, sibling, outer), address(id) + 1));
+                normalize();
+            },
         }
     }
 }
@@ -202,7 +229,7 @@ theorem aligned_parent_word_from_bit(p: void*, bit: int32) {
     requires 0 <= bit;
     requires bit <= 1;
     ensures (address(p) | bit) == address(p) + bit by {
-        if bit == 0 { rewrite(bit, 0); normalize(); } else {
+        if bit == 0 { rewrite(bit, 0); known(); } else {
             have 1 <= bit by { solve() using { 0 <= bit; not(bit == 0); }; }
             have bit == 1 by { solve() using { 1 <= bit; bit <= 1; }; }
             rewrite(bit, 1);
@@ -237,7 +264,7 @@ void __rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
             have ctx_parent_word(d.model, old->__rb_parent_color) == 1;
             have (old->__rb_parent_color & ~3) == 0 by {
                 if old->__rb_parent_color == 0 {
-                    rewrite(old->__rb_parent_color, 0); normalize();
+                    rewrite(old->__rb_parent_color, 0); known();
                 } else {
                     have old->__rb_parent_color == 1 by {
                         if old->__rb_parent_color == 1 { known(); } else {
@@ -249,7 +276,7 @@ void __rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                             contradiction(ctx_parent_word(d.model, old->__rb_parent_color) == 1);
                         }
                     }
-                    rewrite(old->__rb_parent_color, 1); normalize();
+                    rewrite(old->__rb_parent_color, 1); known();
                 }
             }
             step(); step(); step();
@@ -282,7 +309,7 @@ void __rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                             }
                             have not(ctx_parent_word(d.model, old->__rb_parent_color) == 1) by {
                                 rewrite(ctx_parent_word(d.model, old->__rb_parent_color), 0);
-                                normalize();
+                                known();
                             }
                             contradiction(ctx_parent_word(d.model, old->__rb_parent_color) == 1);
                         }
@@ -296,7 +323,7 @@ void __rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                 rewrite(d.model, Context::Left(id, above, pc, sibling, up));
                 rewrite(parent, id);
                 unfold(ctx_node_is(Context::Left(id, above, pc, sibling, up), id));
-                normalize();
+                known();
             }
             step(); step();
             apply(aligned_parent_word_from_bit(new, color)) using { aligned(new, 8); 0 <= color; color <= 1; };
@@ -326,7 +353,7 @@ void __rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                             }
                             have not(ctx_parent_word(d.model, old->__rb_parent_color) == 1) by {
                                 rewrite(ctx_parent_word(d.model, old->__rb_parent_color), 0);
-                                normalize();
+                                known();
                             }
                             contradiction(ctx_parent_word(d.model, old->__rb_parent_color) == 1);
                         }
@@ -340,7 +367,7 @@ void __rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                 rewrite(d.model, Context::Right(id, above, pc, sibling, up));
                 rewrite(parent, id);
                 unfold(ctx_node_is(Context::Right(id, above, pc, sibling, up), id));
-                normalize();
+                known();
             }
             step(); step();
             apply(aligned_parent_word_from_bit(new, color)) using { aligned(new, 8); 0 <= color; color <= 1; };
@@ -381,11 +408,11 @@ void rb_set_parent_color(struct rb_node* rb, struct rb_node* p, int32 color) {
     have (rb->__rb_parent_color & 1) == color by {
         if color == 0 {
             rewrite(color, 0);
-            normalize() using { aligned(p, 8); };
+            known();
         } else {
             have color == 1 by { normalize() using { 0 <= color; color <= 1; not(color == 0); }; }
             rewrite(color, 1);
-            normalize() using { aligned(p, 8); };
+            known();
         }
     }
     have rb->__rb_parent_color == address(p) + (rb->__rb_parent_color & 1) by known();

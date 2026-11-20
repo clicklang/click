@@ -45,7 +45,7 @@ void set(struct node* p, struct node* q, struct node* r) {
     produces whole: box(p);
     ensures whole.tag == old(child.tag);
 } by {
-    step_until(region(7));
+    step_until(region(7).entry);
     have p->next == tmp;
     let { whole: packaged } = pack(p, tmp, { child: child });
     let { child: returned } = unfold(packaged);

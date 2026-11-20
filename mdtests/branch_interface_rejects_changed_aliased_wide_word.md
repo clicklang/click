@@ -78,7 +78,7 @@ void inspect(struct node* parent) {
     requires parent == parent_identity(tree_context.model);
     ensures 1 == 1;
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         owns tree_context: parent_at(root);
         invariant parent == parent_identity(tree_context.model);
@@ -138,7 +138,7 @@ void inspect(struct node* parent) {
                             have child == leaf;
                             have child != 0;
                             step();
-                            step(set_tag, {});
+                            step(set_tag);
                             step();
                             let after = fold(leaf_at(child), {model: Identity::At(leaf)});
                             have after.model == lm;

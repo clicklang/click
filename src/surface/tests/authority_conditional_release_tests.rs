@@ -66,7 +66,7 @@ void release_one(struct child* obj) {
 } by {
     have obj->refs == count(child_ref(obj)) by { solve(); }
     have 1 < count(child_ref(obj)) by { solve(); }
-    step(child_release, {});
+    step(child_release);
     have obj->payload == old(obj->payload) by { solve(); }
     step();
     solve();

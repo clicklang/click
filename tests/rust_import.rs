@@ -665,9 +665,9 @@ fn charon_repeated_source_names_are_distinct_declarations() {
     let proof = "fn ordered(a: u32, b: u32) -> u32 {
     ensures result == ((a << 1u32) ^ b);
 } by {
-    step_until(assignment(first, 0));
+    step_until(assignment(first, 0).entry);
     have *word == a;
-    step_until(assignment(second, 0));
+    step_until(assignment(second, 0).entry);
     have *word == b;
     have *ordered.statement(3).local(word) == b;
     have *ordered.local(5) == b;
@@ -1223,7 +1223,7 @@ fn charon_chunks_check_boundaries_authority_and_false_claims() {
         let offset = length - length % 4;
         let tail = length % 4;
         let claim = format!(
-            "{LIBRARY_CHUNKS} verifying \"chunks.rs\"; fn tail_byte(bytes: &[u8]) -> u8 {{ requires bytes.len() == {length}u64; views bytes[0..{length}]; ensures result == old(bytes[{offset}]); }} by {{ have bytes.len() % 4u64 == {tail}u64; have bytes.len() - bytes.len() % 4u64 == {offset}u64; step_until(assignment(tail, 0)); step(); step(); have tail.len() == {tail}u64; have tail == bytes + {offset}u64; step_until(function.exit); solve(); }}"
+            "{LIBRARY_CHUNKS} verifying \"chunks.rs\"; fn tail_byte(bytes: &[u8]) -> u8 {{ requires bytes.len() == {length}u64; views bytes[0..{length}]; ensures result == old(bytes[{offset}]); }} by {{ have bytes.len() % 4u64 == {tail}u64; have bytes.len() - bytes.len() % 4u64 == {offset}u64; step_until(assignment(tail, 0).entry); step(); step(); have tail.len() == {tail}u64; have tail == bytes + {offset}u64; step_until(function.exit); solve(); }}"
         );
         ProgramVerificationSession::new_program_prepared(&claim, &prepared).unwrap();
     }
@@ -1280,8 +1280,8 @@ fn charon_chunk_iterator_fields_expand_and_replay() {
     let prepared = charon_chunk_project().prepared().unwrap();
     let claim = "walk.contract";
     let sidecar = CHARON_CHUNK_SIDECAR.replacen(
-        "    step_until(loop(0));\n    loop {",
-        "    step_until(loop(0));\n    have bytes.len() % 4u64 <= bytes.len();\n    have loop(0).iter.rem.len() == bytes.len() % 4u64;\n    have loop(0).iter.rem == bytes + (bytes.len() - bytes.len() % 4u64);\n    loop {",
+        "    step_until(loop(0).entry);\n    loop {",
+        "    step_until(loop(0).entry);\n    have bytes.len() % 4u64 <= bytes.len();\n    have loop(0).iter.rem.len() == bytes.len() % 4u64;\n    have loop(0).iter.rem == bytes + (bytes.len() - bytes.len() % 4u64);\n    loop {",
         1,
     );
     assert_ne!(sidecar, CHARON_CHUNK_SIDECAR);
@@ -2032,7 +2032,7 @@ fn charon_loop_array_copy_empty_input_never_reads_uninitialized_storage() {
         .expect("the sidecar states `walk` after its helper")
         .0;
     let claim = format!(
-        "{helper} fn quad::walk(bytes: &[u8]) -> u32 {{ requires bytes.len() == 0u64; ensures result == 0u32; }} by {{ step_until(loop(0)); have loop(0).iter.v.len() == 0u64; step_until(function.exit); solve(); }}"
+        "{helper} fn quad::walk(bytes: &[u8]) -> u32 {{ requires bytes.len() == 0u64; ensures result == 0u32; }} by {{ step_until(loop(0).entry); have loop(0).iter.v.len() == 0u64; step_until(function.exit); solve(); }}"
     );
     ProgramVerificationSession::new_program_prepared(&claim, &prepared).unwrap();
 }
@@ -2090,7 +2090,7 @@ fn charon_borrowed_loop_checks_restoration_bounds_and_ranking() {
         ),
         CHARON_LOOP_SIDECAR.replace("decreases n - i;", "decreases i;"),
         CHARON_LOOP_SIDECAR.replace("    owns value[0..1];\n", "    views value[0..0];\n"),
-        CHARON_LOOP_SIDECAR.replace("step_until(loop(0))", "step_until(loop(99))"),
+        CHARON_LOOP_SIDECAR.replace("step_until(loop(0).entry)", "step_until(loop(99).entry)"),
     ] {
         assert!(ProgramVerificationSession::new_program_prepared(&invalid, &prepared).is_err());
     }
@@ -3354,7 +3354,7 @@ fn charon_return_place_before_cleanup_is_named_result() {
         BOX_SIDECAR.replacen(
             contract,
             &format!(
-                "    ensures result == old(b.value);\n}} by {{\n    step_until(assignment(result, 0));\n    step();\n    have {claim};\n    step_until(function.exit);\n}}\n\nfn boxed::through"
+                "    ensures result == old(b.value);\n}} by {{\n    step_until(assignment(result, 0).entry);\n    step();\n    have {claim};\n    step_until(function.exit);\n}}\n\nfn boxed::through"
             ),
             1,
         )
@@ -3530,7 +3530,7 @@ fn charon_a_nested_call_result_is_named_by_its_call() {
         RESULT_VALUE_SIDECAR.replacen(
             "fn result_values::round(x: u32) -> u32 {\n    ensures result == x;\n}",
             &format!(
-                "fn result_values::round(x: u32) -> u32 {{\n    ensures result == x;\n}} by {{\n    step_until(call(result_values::or_zero, 0));\n    have {claim};\n}}"
+                "fn result_values::round(x: u32) -> u32 {{\n    ensures result == x;\n}} by {{\n    step_until(call(result_values::or_zero, 0).entry);\n    have {claim};\n}}"
             ),
             1,
         )
@@ -4167,7 +4167,7 @@ fn charon_generic_stack_verifies_once_for_every_type() {
 #[test]
 fn charon_rust_statements_as_written_name_their_calls() {
     let prepared = generic_stack_prepared();
-    let proof = "    step_until(statement(2).call(0));";
+    let proof = "    step_until(statement(2).call(0).entry);";
     assert!(GENERIC_STACK_SIDECAR.contains(proof), "{proof}");
     verify_rust_function(
         GENERIC_STACK_SIDECAR,
@@ -4176,7 +4176,8 @@ fn charon_rust_statements_as_written_name_their_calls() {
     )
     .unwrap_or_else(|error| panic!("{error:?}"));
     // `round_trip` has three statements.
-    let missing = GENERIC_STACK_SIDECAR.replacen(proof, "    step_until(statement(3).call(0));", 1);
+    let missing =
+        GENERIC_STACK_SIDECAR.replacen(proof, "    step_until(statement(3).call(0).entry);", 1);
     let error = verify_rust_function(&missing, &prepared, "generic_stack::round_trip")
         .expect_err("a statement the function does not have is refused");
     assert!(
@@ -4575,7 +4576,7 @@ fn a_rust_pointer_local_keeps_its_c_meaning_in_arithmetic() {
 fn right_length(bytes: &[u8], mid: usize) -> usize {\n\
     requires mid <= bytes.len();\n\
     ensures result == bytes.len() - mid;\n\
-} by { step_until(assignment(right, 0)); step(); have right == bytes + mid; have right == left + mid; step_until(function.exit); solve(); }\n";
+} by { step_until(assignment(right, 0).entry); step(); have right == bytes + mid; have right == left + mid; step_until(function.exit); solve(); }\n";
     fs::write(p.root.join("borrow.click"), sidecar).unwrap();
     let prepared = p.prepared().unwrap();
     ProgramVerificationSession::new_program_prepared(sidecar, &prepared)
@@ -5615,7 +5616,7 @@ fn rust_while_loop_panic_paths_are_rejected() {
             continue;
         }
         let prepared = p.prepared().unwrap();
-        let prefix = "step_until(loop(0));";
+        let prefix = "step_until(loop(0).entry);";
         let requirements = if signature.contains("bytes") {
             "requires bytes.len() <= 2147483647u64; views *bytes;"
         } else {
@@ -5644,7 +5645,7 @@ fn rust_nested_while_loop_invariants_keep_preorder_indices() {
     );
     p.refresh().unwrap();
     let prepared = p.prepared().unwrap();
-    let sidecar = "verifying \"borrow.rs\"; fn nested() -> i32 { ensures result == 1; } by { step_until(loop(0)); loop { decreases 1-i; invariant 0<=i and i<=1; maintain by { step_until(loop(1)); loop { decreases 1-j; invariant 0<=j and j<=1; } step_until(back_edge()); } } step_until(function.exit); solve(); }";
+    let sidecar = "verifying \"borrow.rs\"; fn nested() -> i32 { ensures result == 1; } by { step_until(loop(0).entry); loop { decreases 1-i; invariant 0<=i and i<=1; maintain by { step_until(loop(1).entry); loop { decreases 1-j; invariant 0<=j and j<=1; } step_until(loop.back_edge); } } step_until(function.exit); solve(); }";
     ProgramVerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
     fs::write(p.root.join("borrow.click"), sidecar).unwrap();
     assert_cli(&p, &["expand", "--claim", "nested.contract", "--in-place"]);
@@ -5788,7 +5789,7 @@ fn take(c: &mut C) -> Option<u32> {
 fn seen(n: u32) -> u32 {
     ensures result <= n;
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         decreases k;
         invariant k <= n;
@@ -6006,7 +6007,7 @@ fn rust_chunks_exact_remainder_metadata_and_bytes() {
     } by {
         have bytes.len() % 2u64 == 1u64;
         have bytes.len() - bytes.len() % 2u64 == 4u64;
-        step_until(assignment(tail, 0)); step(); step();
+        step_until(assignment(tail, 0).entry); step(); step();
         have tail.len() == 1u64;
         have tail == bytes + 4u64;
         step_until(function.exit);
@@ -6047,7 +6048,7 @@ fn chunks_exact_is_proved_from_its_fields() {
         ensures to_integer(result) * 4 <= to_integer(bytes.len());
         ensures to_integer(bytes.len()) < to_integer(result) * 4 + 8;
     } by {
-        step_until(loop(0));
+        step_until(loop(0).entry);
         loop {
             decreases iter.v.len();
             views bytes[0..bytes.len()];
@@ -6069,7 +6070,7 @@ fn chunks_exact_is_proved_from_its_fields() {
                     have to_integer(bytes.len() - bytes.len() % 4u64 - iter.v.len()) + 4 <= 18446744073709551615;
                     have (bytes + (bytes.len() - bytes.len() % 4u64 - iter.v.len())) + 4u64 == bytes + ((bytes.len() - bytes.len() % 4u64 - iter.v.len()) + 4u64);
                     mark taken;
-                    step_until(loop(0).back_edge());
+                    step_until(loop(0).back_edge);
                     have to_integer(iter.v.len()) == to_integer(at(taken, iter.v.len())) - 4;
                     have (bytes.len() - bytes.len() % 4u64 - at(taken, iter.v.len())) + 4u64 == bytes.len() - bytes.len() % 4u64 - iter.v.len();
                     have iter.v == bytes + (bytes.len() - bytes.len() % 4u64 - iter.v.len());
@@ -6250,7 +6251,7 @@ fn rust_chunks_exact_evaluates_size_once_and_keeps_shadowed_iterators_distinct()
         solve();
     }}
     fn shadow(bytes: &[u8]) -> usize {{ requires bytes.len() == 5u64; ensures result == 0u64; }} by {{
-        step_until(assignment(tail, 0)); step(); step();
+        step_until(assignment(tail, 0).entry); step(); step();
         have tail.len() == 1u64;
         step_until(function.exit);
         solve();
@@ -7176,9 +7177,9 @@ fn retarget(bytes: &[u8], left_len: usize) -> usize {
     requires left_len == 7u64;
     ensures result == 11u64;
 } by {
-    step_until(statement(1));
+    step_until(statement(1).entry);
     have left.len() == 1u64;
-    step_until(statement(3));
+    step_until(statement(3).entry);
     have left.len() == 3u64;
     have at(statement(1).entry, left.len()) == 1u64;
     have left_len == 7u64;

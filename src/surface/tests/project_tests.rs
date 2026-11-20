@@ -508,7 +508,7 @@ int32 box_pipeline(struct box* owner, int32 data[], int32 value) {
     produces owned_box(owner);
     ensures result == value;
 } by {
-    step_until(region(3));
+    step_until(region(3).entry);
     have owner->data == data by solve();
     have owner->value == 0 by solve();
     step();
@@ -739,7 +739,7 @@ int32 pipeline(struct counter* owner) {
     ensures result == 1;
     ensures owner->value == 1;
 } by {
-    step_until(region(3));
+    step_until(region(3).entry);
     have owner->value == 1 by solve();
     step();
     solve();
@@ -772,12 +772,12 @@ int32 pipeline(struct counter* owner) {
     verify_c_sources(&have_expanded, &sources)
         .expect("the mixed-state frontier-local expansion should check");
 
-    let selected = click_source.find("step_until(region(3));").unwrap();
+    let selected = click_source.find("step_until(region(3).entry);").unwrap();
     let position = expansion::position_at_offset(click_source, selected);
     let expanded =
         expand_c_tactic_source_at(click_source, &sources, position.line, position.column)
             .expect("mixed-state smart execution should expand");
-    assert!(!expanded.contains("step_until(region(3));"));
+    assert!(!expanded.contains("step_until(region(3).entry);"));
     verify_c_sources(&expanded, &sources)
         .expect("the mixed-state smart execution expansion should check");
 }
@@ -917,13 +917,13 @@ int32 buffer_pipeline(
     consumes *owner;
     consumes data[0..capacity];
     produces nonempty_buffer(owner) by {
-        step_until(region(2));
+        step_until(region(2).entry);
         unfold(empty_buffer(owner));
         have 0 <= owner->len by solve();
         have owner->len <= owner->cap by solve();
         have viewable(owner->data[0..owner->len]) by solve();
         fold(buffer_storage(owner));
-        step_until(region(3));
+        step_until(region(3).entry);
         unfold(buffer_storage(owner));
         have owner->len == 1 by solve();
         have 1 <= owner->len by {
@@ -950,7 +950,7 @@ int32 buffer_pipeline(
     let expanded =
         expand_c_tactic_source_at(click_source, &sources, position.line, position.column)
             .expect("vector-shaped mixed-state smart execution should expand");
-    assert!(!expanded.contains("step_until(region(3));"));
+    assert!(!expanded.contains("step_until(region(3).entry);"));
     verify_c_sources(&expanded, &sources)
         .expect("the vector-shaped mixed-state expansion should check");
 }
@@ -981,7 +981,7 @@ int32 callee(int32 x) {
 int32 caller(int32 x) {
     ensures result == x;
 } by {
-    step_until(region(1));
+    step_until(region(1).entry);
     step_until(function.exit);
     solve();
 }
@@ -993,7 +993,7 @@ int32 caller(int32 x) {
     let expanded =
         expand_c_tactic_source_at(click_source, &sources, position.line, position.column)
             .expect("the endpoint call dependency should be verified before expansion");
-    assert!(!expanded.contains("step_until(region(1));"));
+    assert!(!expanded.contains("step_until(region(1).entry);"));
 }
 
 /// A reusable session restores the kernel's tables to its baseline before each
@@ -2128,9 +2128,9 @@ fn execute_until_assignment_checks_real_stores_and_rejects_bad_frontiers() {
     let source = "int32 f() {int32 x;int32 other;other=9;x=3;other=8;x=4;return x;}";
     let proof = r#"verifying "assignment.c";
 int32 f() {ensures result==4;} by {
-    step_until(assignment(x, 0)); step();
+    step_until(assignment(x, 0).entry); step();
     have x==3 by {solve();}
-    step_until(assignment(x, 1));
+    step_until(assignment(x, 1).entry);
     have x==3 by {solve();}
     step(); have x==4 by {solve();}
     step_until(function.exit); solve();
@@ -2163,14 +2163,14 @@ fn execute_until_assignment_stops_before_call_results_and_respects_paths() {
     let proof = r#"verifying "assignment.c";
 int32 id(int32 n) {ensures result==n; }
 int32 f() {ensures result==4;} by {
-    step_until(assignment(x, 0)); step(); have x==3 by {solve();}
-    step_until(assignment(x, 1)); have x==3 by {solve();}
+    step_until(assignment(x, 0).entry); step(); have x==3 by {solve();}
+    step_until(assignment(x, 1).entry); have x==3 by {solve();}
     step(); step_until(function.exit); solve();
 }"#;
     verify_c_sources(proof, &[("assignment.c", source)]).unwrap();
     let exited = proof.replace(
         "step(); step_until(function.exit); solve();",
-        "step(); step_until(function.exit); step_until(assignment(x, 1)); solve();",
+        "step(); step_until(function.exit); step_until(assignment(x, 1).entry); solve();",
     );
     let error = verify_c_sources(&exited, &[("assignment.c", source)]).unwrap_err();
     assert!(error.message().contains("assignment(x, 1)"), "{error:?}");
@@ -2180,7 +2180,7 @@ int32 f() {ensures result==4;} by {
         "int32 f(int32 n) {int32 x; if(0==1) {x=1;} else {x=2;} return x;}",
     ] {
         let proof = r#"verifying "assignment.c";
-int32 f(int32 n) {ensures result==1; } by {step_until(assignment(x, 0)); step(); step_until(function.exit); solve();}"#;
+int32 f(int32 n) {ensures result==1; } by {step_until(assignment(x, 0).entry); step(); step_until(function.exit); solve();}"#;
         assert!(verify_c_sources(proof, &[("assignment.c", source)]).is_err());
     }
     let retained_states = proof.replace("have x==3", "have at(assignment(x, 0).entry, x==3)");
@@ -2194,7 +2194,7 @@ fn execute_until_read_checks_access_and_retains_real_loaded_bounds() {
         "int32 f(const uint8* p) {int32 x;int32 other;other=1;x=(int32)*p;other=2;return x;}";
     let proof = r#"verifying "read.c";
 int32 f(const uint8* p) {views p[0..1]; ensures 0<=result and result<=255;} by {
-    step_until(read(0)); step(); have 0<=x and x<=255 by {solve();} step_until(function.exit); solve();
+    step_until(read(0).entry); step(); have 0<=x and x<=255 by {solve();} step_until(function.exit); solve();
 }"#;
     verify_c_sources(proof, &[("read.c", source)]).unwrap();
     for (from, to) in [
@@ -2204,7 +2204,7 @@ int32 f(const uint8* p) {views p[0..1]; ensures 0<=result and result<=255;} by {
     ] {
         assert!(verify_c_sources(&proof.replace(from, to), &[("read.c", source)]).is_err());
     }
-    let backwards = proof.replace("step(); have", "step(); step_until(read(0)); have");
+    let backwards = proof.replace("step(); have", "step(); step_until(read(0).entry); have");
     assert!(
         verify_c_sources(&backwards, &[("read.c", source)])
             .unwrap_err()
@@ -2219,7 +2219,7 @@ fn step_result_binding_names_checked_values_and_survives_overwrite() {
     let source = "int32 f(const uint8* p) {uint8 x; x=*p; x=(uint8)0; return (int32)x;}";
     let proof = r#"verifying "read.c";
 int32 f(const uint8* p) {views p[0..1]; ensures result==0;} by {
-    step_until(read(0));
+    step_until(read(0).entry);
     let { result: value } = step();
     mark loaded;
     have 0<=value as int32 and 255>=value as int32 by {solve();}
@@ -2244,8 +2244,8 @@ int32 f(const uint8* p) {views p[0..1]; ensures result==0;} by {
             "let { result: value } = step(); let { result: value } = step();",
         ),
         proof.replace(
-            "step_until(read(0));",
-            "step_until(read(0)); step(); step();",
+            "step_until(read(0).entry);",
+            "step_until(read(0).entry); step(); step();",
         ),
     ] {
         assert!(verify_c_sources(&invalid, &[("read.c", source)]).is_err());

@@ -34,7 +34,7 @@ struct node* list_prepend(int32 value, struct node* tail) {
     ensures result == tail or result != 0;
     ensures aligned(result, 8);
 } by {
-    step_until(statement(1));
+    step_until(statement(1).entry);
     if node == 0 {
         step_until(function.exit);
     } else {
@@ -101,7 +101,7 @@ uint32 list_count_live(struct node* node) {
         step_until(function.exit);
     } else {
         let { next: child } = unfold(marked_list(node));
-        step_until(statement(1));
+        step_until(statement(1).entry);
         mark before_local;
         step();
         have separate(statement(1).region(0).footprint, memory(node->word)) by {

@@ -21,7 +21,7 @@ void fill(uint8* bytes, uint64 length, uint8 value) {
     owns bytes[0..length];
     ensures forall (k: uint64) { k <= length implies bytes[k] == value };
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         decreases length - i;
         owns bytes[0..length];

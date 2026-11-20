@@ -40,13 +40,40 @@ fn written_guard(view: BooleanOperandView<'_>) -> Option<ConditionTerm> {
         return match root.node() {
             KernelTermNode::Variable(variable) => Some(ConditionTerm::Variable(*variable)),
             KernelTermNode::BoolLiteral(value) => Some(ConditionTerm::Constant(*value)),
-            // Integer operands export as shared observation handles.
-            KernelTermNode::IntegerCompare { .. } => KernelTermExport::condition(root).ok(),
+            // These guards keep their exact scalar or pointer operands.
+            KernelTermNode::IntegerCompare { .. }
+            | KernelTermNode::PointerEqual(_)
+            | KernelTermNode::AddressEqual { .. } => KernelTermExport::condition(root).ok(),
             // Other shared guards need their own explicit logical steps.
             _ => None,
         };
     }
     None
+}
+
+fn guard_holds(
+    guard: BooleanOperandView<'_>,
+    truth: bool,
+    available: &impl Fn(&Proposition) -> bool,
+) -> bool {
+    if let Some(condition) = written_guard(guard)
+        && holds(&condition.truth_claim(truth), available)
+    {
+        return true;
+    }
+    let Some([left, right]) = guard.algebraic_equality() else {
+        return false;
+    };
+    let equality = Proposition::Equal(
+        Term::Algebraic(StoredAlgebraicTerm::from_root(left).expect("algebraic operand")),
+        Term::Algebraic(StoredAlgebraicTerm::from_root(right).expect("algebraic operand")),
+    );
+    let premise = if truth {
+        equality
+    } else {
+        Proposition::Not(Box::new(equality))
+    };
+    holds(&premise, available)
 }
 
 fn integer_arm(
@@ -64,17 +91,11 @@ fn integer_arm(
                 .into_iter()
                 .any(|(truth, arm)| {
                     arm.as_ref() == other
-                        && holds(
-                            &Proposition::condition_is(condition.as_ref().clone(), truth),
-                            available,
-                        )
+                        && guard_holds(BooleanOperandView::Native(condition), truth, available)
                 });
         }
         IntegerTerm::Machine(machine) => {
             let Some((condition, arms)) = machine.operand_view().conditional_view() else {
-                return false;
-            };
-            let Some(condition) = written_guard(condition) else {
                 return false;
             };
             (condition, arms.map(|arm| arm.observe(machine.ty())))
@@ -83,13 +104,7 @@ fn integer_arm(
     };
     [(true, &arms[0]), (false, &arms[1])]
         .into_iter()
-        .any(|(truth, arm)| {
-            arm.as_ref() == Some(other)
-                && holds(
-                    &Proposition::condition_is(condition.clone(), truth),
-                    available,
-                )
-        })
+        .any(|(truth, arm)| arm.as_ref() == Some(other) && guard_holds(condition, truth, available))
 }
 
 fn identity(
@@ -226,7 +241,8 @@ fn bool_arm(
     [(true, then_condition), (false, else_condition)]
         .into_iter()
         .any(|(polarity, arm)| {
-            holds(&condition.truth_claim(polarity), available) && matches_arm(arm)
+            matches_arm(arm)
+                && guard_holds(BooleanOperandView::Native(condition), polarity, available)
         })
 }
 
@@ -257,6 +273,14 @@ pub(crate) fn known_bridge_leaf(
 ) -> bool {
     crate::instrumentation::record_deterministic_work(1);
     match goal {
+        Proposition::ResourceSeparate { left, right }
+            if matches!(
+                (left.as_ref(), right.as_ref()),
+                (Resource::Footprint(_), _) | (_, Resource::Footprint(_))
+            ) =>
+        {
+            crate::kernel::region_footprint::separate_members(left, right, available)
+        }
         condition_source_0 @ Proposition::ConditionIs(_, true)
             if let Some((ConditionTerm::IntegerEqual(a, b), _)) =
                 condition_source_0.condition_native() =>
@@ -333,6 +357,59 @@ mod tests {
             le(value.clone(), IntegerTerm::Constant(max)),
         ]
     }
+    #[test]
+    fn known_footprint_separation_checks_selected_members() {
+        let _session = VerificationSession::enter();
+        let cell = |n| {
+            Resource::Memory(MemoryRange::new_with_element_width(
+                Address::symbolic(Variable(n)),
+                0u32.into(),
+                1u32.into(),
+                4,
+            ))
+        };
+        let separate = |a, b| Proposition::ResourceSeparate {
+            left: Box::new(a),
+            right: Box::new(b),
+        };
+        let before = ExecutionState::new();
+        let kept = cell(995800);
+        let sample = |writes: usize, extra: usize, omit: bool| {
+            let members = (0..writes)
+                .map(|i| cell(995801 + i as u64))
+                .collect::<imbl::Vector<_>>();
+            let mut facts = members
+                .iter()
+                .skip(usize::from(omit))
+                .map(|write| separate(write.clone(), kept.clone()))
+                .collect::<Vec<_>>();
+            facts.extend((0..extra).map(|i| separate(cell(996000 + i as u64), kept.clone())));
+            let goal = separate(
+                Resource::Footprint(RegionFootprint::sequence(
+                    "write".into(),
+                    &before,
+                    &before,
+                    members,
+                    true,
+                )),
+                kept.clone(),
+            );
+            let facts = PureFactStore::from_ordered(&facts);
+            crate::instrumentation::measure_deterministic_work(|| {
+                known_bridge_leaf(&goal, &|fact| facts.pure_known_available(fact))
+            })
+        };
+        assert!(sample(0, 0, false).0);
+        assert!(!sample(2, 0, false).0);
+        let observations =
+            [0, 32, 128].map(|extra| [sample(1, extra, false), sample(1, extra, true)]);
+        for [success, refusal] in observations {
+            assert!(success.0 && !refusal.0);
+            assert!(success.1 <= observations[0][0].1 + 16, "{observations:?}");
+            assert!(refusal.1 <= observations[0][1].1 + 16, "{observations:?}");
+        }
+    }
+
     #[test]
     fn known_operation_identities_check_both_exact_operands_and_bounds() {
         let _session = VerificationSession::enter();

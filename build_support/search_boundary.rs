@@ -729,6 +729,26 @@ impl Boundary<'_> {
                 self.path, self.function
             ));
         }
+        if self.path == "src/kernel/functions.rs"
+            && matches!(
+                self.function.as_str(),
+                "composite_definition_facts_hold" | "composite_view_body_fact_is_established"
+            )
+            && matches!(
+                name,
+                "exact_pointer_aliases"
+                    | "exact_pointer_offset_aliases"
+                    | "pointer_spellings"
+                    | "exact_uint64_equalities"
+                    | "body_fact_is_established_through_a_pointer_alias"
+                    | "resource_body_fact_is_established"
+            )
+        {
+            self.errors.push(format!(
+                "{}: {}: composite view body checks require established facts ({name})",
+                self.path, self.function
+            ));
+        }
         if matches!(
             name,
             "bitvector_equality_class"

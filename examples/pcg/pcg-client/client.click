@@ -18,7 +18,7 @@ int32 first_outputs_repeat() {
     // formula on the state its call started from, evaluated once that
     // state is known.
     step() { requires aligned(&pcg::pcg32_global.state, 8) by known(); }
-    step_until(region(2));
+    step_until(region(2).entry);
     have pcg::pcg32_global.state == 1753877967969059832u64 by {
         unfold(integer::uint64_wrapping_mul(0u64, 6364136223846793005u64));
         unfold(integer::uint64_wrapping_add(integer::uint64_wrapping_mul(0u64, 6364136223846793005u64), ((54u64 << 1u64) | 1u64)));
@@ -29,13 +29,13 @@ int32 first_outputs_repeat() {
     }
     have pcg::pcg32_global.inc == 109u64 by { solve(); }
     step() { requires aligned(&pcg::pcg32_global.state, 8) by known(); }
-    step_until(region(5));
+    step_until(region(5).entry);
     step() { requires aligned(&pcg::pcg32_global.state, 8) by known(); }
     step();
     step() { requires aligned(&pcg::pcg32_global.state, 8) by known(); }
-    step_until(region(9));
+    step_until(region(9).entry);
     step() { requires aligned(&pcg::pcg32_global.state, 8) by known(); }
-    step_until(region(11));
+    step_until(region(11).entry);
     have at(region(5).entry, pcg::pcg32_global.state) == 3118741472915405573u64 by {
         rewrite(at(region(5).entry, pcg::pcg32_global.state), at(region(2).entry, integer::uint64_wrapping_add(integer::uint64_wrapping_mul(pcg::pcg32_global.state, 6364136223846793005u64), pcg::pcg32_global.inc)));
         rewrite(at(region(2).entry, pcg::pcg32_global.state), 1753877967969059832u64);

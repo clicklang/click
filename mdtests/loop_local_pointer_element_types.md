@@ -13,7 +13,7 @@ int32 wide(const uint64* bytes) { const uint64* chunk = bytes; int32 inner = 1; 
 ```click
 verifying "one-view.c";
 int32 f(const uint8* bytes) { views bytes[0..4]; ensures result == 0; } by {
- step_until(loop(0));
+ step_until(loop(0).entry);
  have chunk == bytes;
  have viewable(bytes[0..4]) by { observe(bytes[0..4]); }
  have viewable(chunk[0..4]) by { rewrite(chunk, bytes); known(); }
@@ -32,7 +32,7 @@ int32 f(const uint8* bytes) { views bytes[0..4]; ensures result == 0; } by {
 }
 
 int32 wide(const uint64* bytes) { views bytes[0..4]; ensures result == 0; } by {
- step_until(loop(0));
+ step_until(loop(0).entry);
  have chunk == bytes;
  have viewable(bytes[0..4]) by { observe(bytes[0..4]); }
  have viewable(chunk[0..4]) by { rewrite(chunk, bytes); known(); }

@@ -1,6 +1,7 @@
 //! The supported 128-bit logical operators retain their mathematical source
 //! and domain. Operand equalities cannot replace that source during lowering.
 use super::*;
+use crate::kernel::machine_integer::wide_spec;
 
 pub(super) fn apply(
     op: MachineBinaryOp,
@@ -10,77 +11,11 @@ pub(super) fn apply(
     right: MachineOperandView<'_>,
     budget: &SpecEvaluation<'_>,
 ) -> Option<PreparedExpression> {
-    use MachineIntegerType as T;
-    let destination = match op {
-        MachineBinaryOp::Multiply
-            if (a == T::Int128 || b == T::Int128) && a != T::UInt128 && b != T::UInt128 =>
-        {
-            T::Int128
-        }
-        MachineBinaryOp::Divide | MachineBinaryOp::Remainder
-            if a == b && a.format().bits() == 128 =>
-        {
-            a
-        }
-        _ => return None,
-    };
+    let destination = wide_spec::result_type(op, a, b)?;
     let left = left.observe(a)?;
     let right = right.observe(b)?;
-    let mut obligations = Vec::new();
-    let mut domain = Vec::new();
-    let mut require = |proposition: Proposition| {
-        if !matches!(&proposition, condition_source_0 @ Proposition::ConditionIs(_, expected) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Constant(actual), _)) if (actual == expected)))
-        {
-            domain.push(proposition);
-        }
-    };
-    let result = if op == MachineBinaryOp::Multiply {
-        let product = IntegerTerm::multiply(left, right);
-        let (min, max) = destination.format().bounds();
-        require(Proposition::condition_is(
-            ConditionTerm::integer_greater_equal(product.clone(), IntegerTerm::constant(min)),
-            true,
-        ));
-        require(Proposition::condition_is(
-            ConditionTerm::integer_less_equal(product.clone(), IntegerTerm::constant(max)),
-            true,
-        ));
-        product
-    } else {
-        if SpecDivision::of(budget) == SpecDivision::CDefined {
-            require(Proposition::condition_is(
-                ConditionTerm::integer_equal(right.clone(), IntegerTerm::constant_i64(0)),
-                false,
-            ));
-        }
-        if destination == MachineIntegerType::Int128 {
-            let min =
-                ConditionTerm::integer_equal(left.clone(), IntegerTerm::constant(i128::MIN.into()));
-            let minus_one =
-                ConditionTerm::integer_equal(right.clone(), IntegerTerm::constant_i64(-1));
-            // Either operand excludes MIN / -1. Keep this disjunction scoped
-            // with the other domain debts, never as an assumed path fact.
-            if !matches!(min, ConditionTerm::Constant(false))
-                && !matches!(minus_one, ConditionTerm::Constant(false))
-            {
-                require(Proposition::Or(
-                    Box::new(Proposition::condition_is(min, false)),
-                    Box::new(Proposition::condition_is(minus_one, false)),
-                ));
-            }
-        }
-        if op == MachineBinaryOp::Remainder {
-            IntegerTerm::truncating_remainder(left, right)
-        } else {
-            IntegerTerm::truncating_quotient(left, right)
-        }
-    };
-    if let Some(domain) = Proposition::arithmetic_domain(domain) {
-        obligations.push(
-            ProofObligation::evaluation_domain(domain)
-                .with_context("wide arithmetic expression is defined"),
-        );
-    }
+    let (result, obligation) =
+        wide_spec::result_and_domain(op, SpecDivision::of(budget), destination, left, right);
     let value = if let Some(term) = result.as_const().and_then(|constant| {
         crate::kernel::machine_integer::range::constant_word(destination, constant)
     }) {
@@ -89,5 +24,8 @@ pub(super) fn apply(
         let integer = KernelTermImport::default().integer(&result.into());
         KernelTerm::integer_to_machine(destination, integer).expect("Integer source")
     };
-    Some(PreparedExpression { value, obligations })
+    Some(PreparedExpression {
+        value,
+        obligations: obligation.into_iter().collect(),
+    })
 }

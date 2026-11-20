@@ -45,7 +45,7 @@ int32 fill(int32 n) {
         }
         false => {}
     }
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         decreases n - i;
         invariant 0 <= i and i <= n;

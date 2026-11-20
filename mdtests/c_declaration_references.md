@@ -13,7 +13,7 @@ verifying "declarations.c";
 int32 identity(int32 x, int32 choice) {
     ensures result == old(identity.parameter(0));
 } by {
-    step_until(statement(1));
+    step_until(statement(1).entry);
     have identity.local(0) == identity.statement(0).local(y) by { known(); }
     have identity.local(0) == identity.parameter(0) by { known(); }
     if identity.parameter(1) != 0 {

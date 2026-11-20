@@ -69,7 +69,7 @@ const WIDEST_CELL: i64 = crate::kernel::MAX_SCALAR_ACCESS_BYTES;
 
 /// The constants the ranges ever name: small enough that every 32-bit byte
 /// difference the ladder computes between two of them is exact.
-const CONSTANT_LIMIT: i64 = 1 << 29;
+pub(in crate::kernel) const CONSTANT_LIMIT: i64 = 1 << 29;
 
 #[cfg(test)]
 thread_local! {

@@ -197,7 +197,7 @@ implementation has these frontier positions:
 
 - function entry, before C execution has started,
 - statement entry after `step()`, explicit entry into a selected `if`
-  arm, or a straight-line `step_until(region(N))` pause,
+  arm, or a straight-line `step_until(region(N).entry)` pause,
 - function exit, after `step_until(function.exit)` or the implicit tail has
   executed the rest of the function on the current path.
 

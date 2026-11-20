@@ -33,7 +33,7 @@ uint32 sum(const uint8* bytes, uint64 length, uint64 start) {
     views bytes[0..length];
     ensures result == result;
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         decreases 16u64 - done;
         views chunk[0..16];
@@ -42,7 +42,7 @@ uint32 sum(const uint8* bytes, uint64 length, uint64 start) {
             have done <= 12u64;
             have to_integer(done + 4u64) <= to_integer(16u64) by { solve() using { done <= 12u64; }; }
             mark head;
-            step_until(back_edge());
+            step_until(loop.back_edge);
             have to_integer(done) == to_integer(at(head, done) + 4u64);
             have at(head, done) <= 12u64;
             have done <= 16u64 by { solve() using { to_integer(done) == to_integer(at(head, done) + 4u64); at(head, done) <= 12u64; }; }

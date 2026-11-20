@@ -147,7 +147,7 @@ fn reject_compute(contract: &str, before: &str, after: &str) -> click::surface::
     let changed = contract.replacen(before, after, 1);
     assert!(changed != contract, "missing mutation: {before}");
     let invalid = compute_proof(&changed);
-    let offset = invalid.find("step_until(assignment(b, 0))").unwrap();
+    let offset = invalid.find("step_until(assignment(b, 0).entry)").unwrap();
     let line = invalid[..offset].bytes().filter(|&b| b == b'\n').count() + 1;
     let error = click::surface::verify_sources_at(
         &invalid,
@@ -1115,7 +1115,7 @@ fn reject_empty_compute(before: &str, after: &str) {
     let invalid = format!("{library}// Empty-input boundary{changed}");
     // Reject this claim without reproving unrelated helper bodies for every
     // mutation; the complete fixture is checked separately below.
-    let offset = invalid.find("step_until(assignment(b, 0))").unwrap();
+    let offset = invalid.find("step_until(assignment(b, 0).entry)").unwrap();
     let line = invalid[..offset].bytes().filter(|&b| b == b'\n').count() + 1;
     let error = click::surface::verify_sources_at(
         &invalid,
@@ -1173,7 +1173,7 @@ fn charon_adler2_empty_compute_tools_recheck_original_contract() {
         assert_cli(&p, &[command]);
     }
     let source = fs::read_to_string(p.root.join("borrow.click")).unwrap();
-    let offset = source.find("step_until(assignment(b, 4))").unwrap();
+    let offset = source.find("step_until(assignment(b, 4).entry)").unwrap();
     let line = source[..offset].bytes().filter(|&b| b == b'\n').count() + 1;
     let cursor = format!("{}:{line}:2", p.root.join("borrow.click").display());
     let audit = Command::new(env!("CARGO_BIN_EXE_click"))
@@ -1262,9 +1262,9 @@ fn recheck_compute_tools(contract: &str, bytes: usize) {
     assert_cli(&p, &["profile"]);
     let source = fs::read_to_string(p.root.join("borrow.click")).unwrap();
     let site = if bytes == 4 {
-        "step_until(loop(4).statement(0));"
+        "step_until(loop(4).statement(0).entry);"
     } else {
-        "step_until(loop(5).statement(0));"
+        "step_until(loop(5).statement(0).entry);"
     };
     let offset = source.rfind(site).unwrap();
     let line = source[..offset].bytes().filter(|&b| b == b'\n').count() + 1;
@@ -1486,7 +1486,7 @@ fn charon_adler2_four_byte_cursor_have_keeps_its_pre_regression_work_bound() {
     let p = compute_project(FOUR_BYTE_COMPUTE);
     let prepared = p.prepared().unwrap();
     let source = compute_proof(FOUR_BYTE_COMPUTE);
-    let offset = source.find("step_until(assignment(b, 0))").unwrap();
+    let offset = source.find("step_until(assignment(b, 0).entry)").unwrap();
     let line = source[..offset].bytes().filter(|&b| b == b'\n').count() + 1;
     let inputs = click::surface::ProgramInputs::program(&prepared);
     let (_, samples) = click::instrumentation::collect_tactic_work(|| {

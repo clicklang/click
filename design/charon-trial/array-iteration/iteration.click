@@ -28,7 +28,7 @@ fn shadowed(a: u32) -> u32 {
 } by {
     // The second `let x` takes the name from where its storage starts; the
     // first is the `x` statement 0 declares.
-    step_until(assignment(x, 1));
+    step_until(assignment(x, 1).entry);
     have shadowed.statement(0).local(x) == (a & 7u32);
     have to_integer(a & 7u32) <= 7;
     step();

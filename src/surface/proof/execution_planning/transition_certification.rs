@@ -752,6 +752,19 @@ fn certified_transitions_from_execution(
                     &prerequisite_assumptions
                 };
                 let proposition = obligation.proposition();
+                // The call can ask for a different descriptor for the same
+                // physical byte spans. Check that entry fact before collecting
+                // an internal prerequisite whose descriptor may not raise.
+                // Keep collecting obligations already stated as written so
+                // explicit step proofs keep their existing obligation list.
+                if !rejected_contract_call
+                    && obligation.call_requirement_site().is_some()
+                    && obligation.live_view_write_overlap() == Some(false)
+                    && !executed_under.contains_assumed_exact(proposition)
+                    && executed_under.states_memory_separation(proposition)
+                {
+                    continue;
+                }
                 // An allocation step can establish this exact separation
                 // before the temporary has a Surface name. Its predecessor
                 // fact is checked here, without opening a source proof.

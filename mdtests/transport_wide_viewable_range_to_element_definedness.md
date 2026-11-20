@@ -19,7 +19,7 @@ uint64 f(uint8 bytes[], uint64 n) {
     requires n < 18446744073709551615u64;
     requires viewable(bytes[0..n + 1u64]);
     ensures result == 0u64 by {
-        step_until(region(1));
+        step_until(region(1).entry);
         have forall (k: uint64) { to_integer(k) < to_integer(n + 1u64) implies defined(bytes[k]) } by {
             intro();
             intro();

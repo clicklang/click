@@ -30,7 +30,7 @@ verifying "local_reads.c";
 int16 read_int16(int16 value) {
     ensures result == value;
 } by {
-    step_until(statement(5));
+    step_until(statement(5).entry);
     mark written;
     step();
     have *p == value by solve();
@@ -48,7 +48,7 @@ int16 read_int16(int16 value) {
 uint16 read_uint16(uint16 value) {
     ensures result == value;
 } by {
-    step_until(statement(5));
+    step_until(statement(5).entry);
     mark written;
     step();
     have *p == value by solve();

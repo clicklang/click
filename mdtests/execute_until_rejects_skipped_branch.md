@@ -19,11 +19,11 @@ int32 execute_until_skipped_branch(int32 flag) {
 
     ensures result == 1 by {
         step();
-        step_until(region(2));
+        step_until(region(2).entry);
     }
 }
 ```
 
 ```expect
-fail: `step_until(region(2))` target is not reachable from the current execution path
+fail: `step_until(region(2).entry)` target is not reachable from the current execution path
 ```
