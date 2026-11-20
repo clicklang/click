@@ -5,7 +5,7 @@
 //! arguments. A profile names one recorded build's option set: a closed list
 //! of exact spellings, each accepted because ignoring it cannot make Click
 //! accept a program the compiler treats differently. Each spelling's reason is
-//! in the classification table of `docs/reference/cli/import.md`, which a test
+//! in the classification table of `docs/reference/cli/capture.md`, which a test
 //! keeps in step with these lists. There are no prefix or pattern matches: an
 //! unknown option, or a known option with another value, is refused. Some
 //! options are accepted only beside others that make them safe.

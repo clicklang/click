@@ -14,7 +14,7 @@ To refresh with the installed frontend on Linux x86-64 GNU:
 
 ```sh
 click add rust
-click import lock examples/basic-rust/borrow.click
+click capture examples/basic-rust/borrow.click
 click verify examples/basic-rust/borrow.click
 ```
 

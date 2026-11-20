@@ -151,7 +151,7 @@ mod tests {
     fn enumerate_count_and_a_source_local_have_distinct_bindings() {
         let mut export = crate::languages::rust::charon::decode(
             include_bytes!(
-                "../../../../design/charon-trial/enumerate/.click/enumerate/enumerate.rs.ullbc"
+                "../../../../design/charon-trial/enumerate/.click/captures/enumerate/enumerate.rs.ullbc"
             ),
             "enumerate.rs",
             include_bytes!("../../../../design/charon-trial/enumerate/enumerate.rs"),

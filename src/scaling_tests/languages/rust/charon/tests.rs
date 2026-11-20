@@ -164,7 +164,7 @@ fn charon_nonuniform_sparse_states_have_bounded_work_at_large_lengths() {
         let _session = crate::kernel::VerificationSession::enter();
         let mut export = decode(
             include_bytes!(
-                "../../../../../design/charon-trial/array-states/.click/states/states.rs.ullbc"
+                "../../../../../design/charon-trial/array-states/.click/captures/states/states.rs.ullbc"
             ),
             "states.rs",
             include_bytes!("../../../../../design/charon-trial/array-states/states.rs"),

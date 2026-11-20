@@ -139,13 +139,13 @@ fn cpp_release_archive_installs_and_locks() {
     let basic = t.path().join("basic");
     copy(&example, &basic);
     fs::remove_dir_all(basic.join(".click")).unwrap();
-    fs::remove_file(basic.join("click.project.lock.json")).unwrap();
-    success(cli(&binary, &relocated, &basic, &["import", "lock"]));
+    fs::remove_file(basic.join(".click/captures/manifest.json")).unwrap();
+    success(cli(&binary, &relocated, &basic, &["capture"]));
     for file in [
-        "click.project.lock.json",
-        ".click/basic/increment.cpp.click-cpp.json",
-        ".click/basic/with_restore.cpp.click-cpp.json",
-        ".click/basic/with_restore_caller.cpp.click-cpp.json",
+        ".click/captures/manifest.json",
+        ".click/captures/basic/increment.cpp.click-cpp.json",
+        ".click/captures/basic/with_restore.cpp.click-cpp.json",
+        ".click/captures/basic/with_restore_caller.cpp.click-cpp.json",
     ] {
         assert_eq!(
             fs::read(basic.join(file)).unwrap(),

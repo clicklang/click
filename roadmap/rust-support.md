@@ -51,7 +51,7 @@ the rest of the subset is in the [Rust reference](../docs/reference/rust.md).
    [shared front-end design](#shared-front-end-design)
    requires.
 2. **Crates with dependencies.** A project unit can describe a crate that
-   depends on third-party crates, and `click import lock` imports it. The
+   depends on third-party crates, and `click capture` imports it. The
    lock records every dependency input the compiler reads, so offline
    verification on a fresh clone needs neither the network nor a registry.
    The design states:
@@ -108,7 +108,7 @@ This section is the shared design for the C++ and Rust front ends, moved
 here when the C++ front end was delivered
 ([cpp-support.md](cpp-support.md#p1-front-end-delivered)); the Rust front
 end follows it.
-[Project units](../docs/reference/cli/import.md#project-units) describes project configuration and the lock
+[Project units](../docs/reference/cli/capture.md#project-units) describes project configuration and the lock
 format for all three languages.
 
 - **Install layout and versioning.** Each Click version pins exactly one

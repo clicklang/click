@@ -1104,7 +1104,7 @@ fn prepared_audit_reuses_validated_inputs_across_sites() {
     let mut worker = AuditSessionWorker::start(&path, AuditLimits::default().session).unwrap();
     // An active audit has already selected an immutable input. Any attempt to
     // reread the importer per tactic would now fail. A new audit must fail.
-    fs::remove_file(directory.join(".click/unit/unit.c.i")).unwrap();
+    fs::remove_file(directory.join(".click/captures/unit/unit.c.i")).unwrap();
     for site in &sites {
         audit_site(
             site,

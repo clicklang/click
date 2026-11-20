@@ -5019,7 +5019,7 @@ pub(crate) fn parse_translation_unit_for_import_target(
 /// those promises. Without optimization GCC does not act on them, so they
 /// are accepted and ignored; under an option profile that accepts `-O2` they
 /// are refused. The GCC 13 measurements behind the list are in
-/// `docs/reference/cli/import.md`.
+/// `docs/reference/cli/capture.md`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PromiseAttributes {
     Accept,

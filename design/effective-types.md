@@ -6,7 +6,7 @@ and staging below describe the historical baseline, not a fresh false
 acceptance on current master.
 The maintainer chose a kernel check over a frontend refusal the same day. This is the
 prerequisite for one optimization level per project with `-O2` as the default
-([optimization level](../docs/reference/cli/import.md#optimization-level)).
+([optimization level](../docs/reference/cli/capture.md#optimization-level)).
 
 ## Historical hole at `ea081fe3`
 

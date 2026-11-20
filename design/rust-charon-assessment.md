@@ -30,7 +30,7 @@ Delivery landed in [#1086](https://github.com/clicklang/click/pull/1086),
 entry has been removed. Additional release hosts and third-party dependencies
 are now P1 under the linked Rust support item; other language coverage follows
 the current roadmap. Shared project configuration is described under
-[Project units](../docs/reference/cli/import.md#project-units).
+[Project units](../docs/reference/cli/capture.md#project-units).
 
 The compiler investigation below is historical evidence. Current production
 borrow authority is recorded in its [assessment](rust-borrow-authority-assessment.md),

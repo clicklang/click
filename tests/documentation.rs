@@ -1573,7 +1573,7 @@ fn cli_inventory_matches_argument_parsers() {
         ("profile", "src/bin/click-profile.rs"),
         ("expand", "src/bin/click-expand.rs"),
         ("audit", "src/bin/click-audit.rs"),
-        ("import", "src/bin/click-import.rs"),
+        ("capture", "src/bin/click-capture.rs"),
     ] {
         let source = fs::read_to_string(root().join(file)).expect("read CLI source");
         let parser = source
@@ -1915,7 +1915,7 @@ fn cli_synopses_are_exact_help_includes() {
         ("profile", "src/bin/click-profile.rs"),
         ("expand", "src/bin/click-expand.rs"),
         ("audit", "src/bin/click-audit.rs"),
-        ("import", "src/bin/click-import.rs"),
+        ("capture", "src/bin/click-capture.rs"),
         ("docs", "src/bin/click-docs.rs"),
     ] {
         let source = fs::read_to_string(root().join(file)).expect("read CLI source");
@@ -2175,7 +2175,7 @@ fn language_support_summaries_link_to_the_coverage_matrix() {
         "reference/language/limitations.md",
         "reference/language/c.md",
         "reference/rust.md",
-        "reference/cli/import.md",
+        "reference/cli/capture.md",
     ];
     let no_type_lists = [
         "concepts/what-click-proves.md",

@@ -3595,20 +3595,20 @@ id = "cli.docs.command"
 path = "reference/cli/docs.md#click-docs-command"
 
 [[item]]
-id = "cli.import.command"
-path = "reference/cli/import.md#click-import"
+id = "cli.capture.command"
+path = "reference/cli/capture.md#click-capture"
 
 [[item]]
-id = "cli.import.--help"
-path = "reference/cli/import.md#options-and-exit-status"
+id = "cli.capture.--help"
+path = "reference/cli/capture.md#options-and-exit-status"
 
 [[item]]
-id = "cli.import.-h"
-path = "reference/cli/import.md#options-and-exit-status"
+id = "cli.capture.-h"
+path = "reference/cli/capture.md#options-and-exit-status"
 
 [[item]]
-id = "cli.import.--"
-path = "reference/cli/import.md#options-and-exit-status"
+id = "cli.capture.--"
+path = "reference/cli/capture.md#options-and-exit-status"
 
 [[item]]
 id = "cli.upgrade.command"
@@ -3725,19 +3725,19 @@ path = "reference/cli/versions.md#synopsis"
 
 [[item]]
 id = "cli.behavior.import.lock"
-path = "reference/cli/import.md#project-units"
+path = "reference/cli/capture.md#project-units"
 
 [[item]]
 id = "cli.behavior.import.source-selection"
-path = "reference/cli/import.md#project-units"
+path = "reference/cli/capture.md#project-units"
 
 [[item]]
 id = "cli.behavior.import.validation"
-path = "reference/cli/import.md#validation-and-supported-profile"
+path = "reference/cli/capture.md#validation-and-supported-profile"
 
 [[item]]
 id = "cli.behavior.import.trust-boundary"
-path = "reference/cli/import.md#locations-and-trust-boundary"
+path = "reference/cli/capture.md#locations-and-trust-boundary"
 
 [[item]]
 id = "library.theorem.integer::uint32_add_to_integer"

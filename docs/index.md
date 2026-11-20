@@ -27,7 +27,7 @@ To verify a function today, read in this order:
    language features at all.
 3. [Your first proof](concepts/first-proof.md), then
    [Verify a function in your own project](concepts/own-project.md) for
-   include paths, `-D` settings, libc calls, and `click import lock`.
+   include paths, `-D` settings, libc calls, and `click capture`.
 4. [Contracts](concepts/contracts.md),
    [propositions](concepts/propositions.md),
    [proofs and proof scripts](concepts/proof-scripts.md), and the
@@ -47,7 +47,7 @@ To verify a function today, read in this order:
 ```console
 $ click verify path/to/file.click
 $ click verify --trace-proof FUNCTION path/to/file.click
-$ click import lock path/to/file.click
+$ click capture path/to/file.click
 ```
 
 `click verify` exits with status 0 when every claim verifies. From a checkout,

@@ -3,7 +3,7 @@ use crate::surface::ProgramVerificationSession;
 #[test]
 fn nested_box_fields_keep_their_pointer_type_in_old_reads() {
     let artifact = include_bytes!(
-        "../../../../design/charon-trial/generic-stack/.click/generic_stack/stack.rs.ullbc"
+        "../../../../design/charon-trial/generic-stack/.click/captures/generic_stack/stack.rs.ullbc"
     );
     let source = include_bytes!("../../../../design/charon-trial/generic-stack/stack.rs");
     let value: serde_json::Value = serde_json::from_slice(artifact).unwrap();

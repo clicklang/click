@@ -214,7 +214,7 @@ fn entry_lock(unit: &UnitConfig, entry: &Entry) -> Result<(Lock, Option<String>)
         .map_err(|error| format!("parse the Rust lock section: {error}"))?;
     let recorded = entry.sources.get(&unit.source).ok_or_else(|| {
         format!(
-            "the project lock has no source `{}`; run `click import lock`",
+            "the project lock has no source `{}`; run `click capture`",
             unit.source
         )
     })?;
@@ -429,7 +429,7 @@ fn load_locked(
         })
     {
         return Err(format!(
-            "Rust source `{}` differs from its import lock; run `click import lock`",
+            "Rust source `{}` differs from its import lock; run `click capture`",
             root.join(name).display()
         ));
     }
@@ -548,7 +548,7 @@ pub(crate) fn load_unit(
     let (lock, semantic_profile) = entry_lock(unit, &entry)?;
     if lock.config != unit.unit_digest {
         return Err(format!(
-            "the project lock for unit `{}` does not match its description in `click.project.json`; run `click import lock` to prepare it again",
+            "the project lock for unit `{}` does not match its description in `click.project.json`; run `click capture` to prepare it again",
             unit.unit_name
         ));
     }
@@ -582,16 +582,17 @@ mod unit_tests {
         for name in ["borrow.rs", "click.project.json"] {
             fs::copy(example.join(name), root.path().join(name)).unwrap();
         }
-        let artifact = ".click/borrow/borrow.rs.ullbc";
-        fs::create_dir_all(root.path().join(".click/borrow")).unwrap();
+        let artifact = ".click/captures/borrow/borrow.rs.ullbc";
+        fs::create_dir_all(root.path().join(".click/captures/borrow")).unwrap();
         fs::copy(example.join(artifact), root.path().join(artifact)).unwrap();
         let bytes = fs::metadata(root.path().join(artifact)).unwrap().len() as usize;
         let project =
             crate::project::Project::load(&root.path().join("click.project.json")).unwrap();
         let unit = project.rust_unit("borrow").unwrap();
-        let saved: serde_json::Value =
-            serde_json::from_slice(&fs::read(example.join("click.project.lock.json")).unwrap())
-                .unwrap();
+        let saved: serde_json::Value = serde_json::from_slice(
+            &fs::read(example.join(".click/captures/manifest.json")).unwrap(),
+        )
+        .unwrap();
         let saved = saved["units"]["borrow"]["lock"].clone();
         // The committed entry is in the earlier schema and records the
         // semantic profile it was extracted under.
@@ -665,12 +666,16 @@ mod unit_tests {
         let crate_root = root.join("vendor/adler2-2.0.1");
         let proofs = root.join("proofs");
         fs::create_dir_all(crate_root.join("src")).unwrap();
-        fs::create_dir_all(proofs.join(".click/adler2/src")).unwrap();
+        fs::create_dir_all(proofs.join(".click/captures/adler2/src")).unwrap();
         for file in ["src/lib.rs", "src/algo.rs"] {
             fs::copy(upstream.join(file), crate_root.join(file)).unwrap();
         }
-        let artifact = fs::read(trial.join("../.click/adler2/src/lib.rs.ullbc")).unwrap();
-        fs::write(proofs.join(".click/adler2/src/lib.rs.ullbc"), &artifact).unwrap();
+        let artifact = fs::read(trial.join("../.click/captures/adler2/src/lib.rs.ullbc")).unwrap();
+        fs::write(
+            proofs.join(".click/captures/adler2/src/lib.rs.ullbc"),
+            &artifact,
+        )
+        .unwrap();
         let proof = fs::read_to_string(trial.join("restoration.click"))
             .unwrap()
             .replace(

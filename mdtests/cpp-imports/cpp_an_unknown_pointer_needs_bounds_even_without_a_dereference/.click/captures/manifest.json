@@ -1,0 +1,73 @@
+{
+  "schema": 1,
+  "units": {
+    "fixture": {
+      "language": "c++",
+      "lock": {
+        "c++": {
+          "sources": {
+            "formation.cpp": {
+              "compilation_database_sha256": "16b66ba1520f7544c2032f3525acb22acf5be0100ba41f713814256c6fffcdd8",
+              "dependencies": {},
+              "logical_source_sha256": "dc69d2bc0060efa1aa5e8e2936f51624061da33327f66cbb139851a4fdb13fdf",
+              "prepared_roots": [
+                "$unit",
+                "$project"
+              ],
+              "profile": {
+                "compilation_command": [
+                  "clang++",
+                  "-x",
+                  "c++",
+                  "-std=c++20",
+                  "--target=x86_64-unknown-linux-gnu",
+                  "-fno-exceptions",
+                  "-fno-rtti",
+                  "-O2",
+                  "-fno-strict-aliasing",
+                  "-funsigned-char",
+                  "-ffreestanding",
+                  "-nostdinc",
+                  "-nostdinc++",
+                  "-c",
+                  "formation.cpp",
+                  "-o",
+                  "formation.cpp.o"
+                ],
+                "compilation_directory": "$unit",
+                "compilation_file": "formation.cpp",
+                "exceptions": false,
+                "frontend": "clang",
+                "frontend_version": "clang version 19.1.7",
+                "rtti": false,
+                "standard": "c++20",
+                "target": "x86_64-unknown-linux-gnu"
+              },
+              "schema": 6,
+              "source_sha256": "dc69d2bc0060efa1aa5e8e2936f51624061da33327f66cbb139851a4fdb13fdf"
+            }
+          }
+        },
+        "envelope": 1,
+        "frontend": {
+          "identity": "abcba821f53be0cf6eaca36f7cf965760fe3ab3912c356ee9682523fe41cb90d",
+          "name": "clang"
+        },
+        "sources": {
+          "formation.cpp": {
+            "artifact": {
+              "bytes": 4569,
+              "path": ".click/captures/fixture/formation.cpp.click-cpp.json",
+              "sha256": "6d7852459d4333ece7a4a4388e2821ceeaab96086702e78f87d34e702e1cd421"
+            },
+            "identity": "de753eb69c2269dc90166c5799ea668bc8e98daf0247b084c0a1cf31b615a06c",
+            "inputs": {
+              "$unit/formation.cpp": "dc69d2bc0060efa1aa5e8e2936f51624061da33327f66cbb139851a4fdb13fdf"
+            }
+          }
+        },
+        "unit": "11b3f1d5af128ffbfb9a7a5e9452479c0965abf505ab1232415e530ae23fcecb"
+      }
+    }
+  }
+}

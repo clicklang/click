@@ -93,7 +93,7 @@ pub fn lower_import(import: &PreparedCppImport) -> Result<LoweredCppFunction, St
         .map(|function| {
             if function.path.is_empty() {
                 return Err(format!(
-                    "C++ artifact names `{}` without its C++ path; refresh it with `click import lock`",
+                    "C++ artifact names `{}` without its C++ path; refresh it with `click capture`",
                     function.name
                 ));
             }
