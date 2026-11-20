@@ -8062,41 +8062,6 @@ impl AnnotationLowerer<'_> {
             }
             ContractExpression::AlgebraicMatch { scrutinee, arms } => {
                 let scrutinee = self.lower_contract_algebraic_to_spec(scrutinee, environment)?;
-                if let SpecAlgebraicExpressionNode::Constructor { variant, fields } =
-                    &scrutinee.node
-                {
-                    let arm = arms
-                        .iter()
-                        .find(|arm| arm.variant == *variant)
-                        .ok_or_else(|| format!("missing match arm for `{variant}`"))?;
-                    let mut body_environment = environment.clone();
-                    for (binding, field) in arm.bindings.iter().zip(fields.iter()) {
-                        match field {
-                            SpecAlgebraicValue::Program(field) => {
-                                body_environment.integer_values.remove(binding);
-                                body_environment.algebraic_values.remove(binding);
-                                body_environment
-                                    .values
-                                    .insert(binding.clone(), field.clone());
-                            }
-                            SpecAlgebraicValue::Algebraic(field) => {
-                                body_environment.values.remove(binding);
-                                body_environment.integer_values.remove(binding);
-                                body_environment
-                                    .algebraic_values
-                                    .insert(binding.clone(), field.clone());
-                            }
-                            SpecAlgebraicValue::Integer(field) => {
-                                body_environment.values.remove(binding);
-                                body_environment.algebraic_values.remove(binding);
-                                body_environment
-                                    .integer_values
-                                    .insert(binding.clone(), field.clone());
-                            }
-                        }
-                    }
-                    return self.lower_contract_algebraic_to_spec(&arm.body, &body_environment);
-                }
                 let mut lowered_arms = Vec::new();
                 let mut result_type = None;
                 for arm in arms {
