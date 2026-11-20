@@ -19129,6 +19129,61 @@ public:
 "#;
 
 #[test]
+fn cpp_memcpy_copies_initialized_bytes_through_implicit_void_conversions() {
+    let project = Project::with_fixture(
+        "driver.cpp",
+        "probe",
+        r#"#include "copy.h"
+unsigned char probe(unsigned char* destination, const unsigned char* source) noexcept {
+    memcpy(destination, source, 1);
+    return destination[0];
+}
+"#,
+    );
+    fs::write(
+        project.directory.join("copy.h"),
+        "#pragma clang system_header\nextern \"C\" void* memcpy(void*, const void*, unsigned long) noexcept;\n",
+    )
+    .unwrap();
+    project.write_config("probe");
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "driver.cpp";
+uint8 probe(uint8* destination, const uint8* source) {
+    owns uninitialized(destination[0..1]);
+    views source[0..1];
+    ensures result == old(source[0]);
+} by {
+    step();
+    have destination[0] == old(source[0]) by {
+        instantiate(forall (k: uint64) {
+            true and k < 1u64 implies destination[0u64 + k] == old(source[0u64 + k])
+        }, 0u64);
+        solve();
+    }
+    step_until(function.exit);
+}
+"#;
+    let path = project.directory.join("copy.click");
+    fs::write(&path, source).unwrap();
+    let parsed = read_click_project(&path, source).unwrap();
+    let (summary, verification) =
+        click::surface::verify_project_with_summary(&parsed, &ProgramInputs::program(&import))
+            .unwrap_or_else(|error| panic!("{}", error.report()));
+    verification.unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(summary.assumptions["probe"].iter().any(|assumption| {
+        assumption.family == click::surface::ModelFamily::CppStd && assumption.name == "memcpy"
+    }));
+    let missing_write = source.replace(
+        "owns uninitialized(destination[0..1]);",
+        "views destination[0..1];",
+    );
+    let parsed = read_click_project(&path, &missing_write).unwrap();
+    let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
+    assert!(error.report().contains("memcpy"), "{}", error.report());
+}
+
+#[test]
 fn byte_vector_size_uses_a_layout_free_catalog_contract() {
     let project = Project::with_fixture(
         "driver.cpp",
@@ -20408,7 +20463,6 @@ fn unlocked_copy(example: &str, name: &str) -> PathBuf {
     let copy = scratch_copy(name);
     copy_tree(&Path::new(env!("CARGO_MANIFEST_DIR")).join(example), &copy);
     fs::remove_dir_all(copy.join(".click")).unwrap();
-    fs::remove_file(copy.join(click::project::LOCK_NAME)).unwrap();
     copy
 }
 

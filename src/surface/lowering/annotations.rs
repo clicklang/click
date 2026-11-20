@@ -6893,6 +6893,7 @@ impl AnnotationLowerer<'_> {
                     } => {
                         if *target_type == ProgramType::UInt8Pointer
                             && pointee_struct.is_none()
+                            && *integer_mode != crate::kernel::IntegerCastMode::PointerCoercion
                             && !matches!(
                                 self.contract_expression_click_type(operand, environment),
                                 Some(ClickType::Program(

@@ -6355,6 +6355,26 @@ names, `std::span<int>::size`. Its name table,
 types it maps to them. The model accessors `std_span_data`,
 `std_span_size` and `std_array_data` name a span's or array's state.
 
+### C++ `memcpy`
+
+The C++ interface uses the native pointer types and the same byte equality
+predicate as the C interface. It borrows initialized source bytes and
+turns writable destination storage into an initialized byte range.
+
+```click
+void* memcpy(void* destination, const void* source, unsigned long bytes) {
+    views (source as (const uint8*))[0..bytes];
+    consumes uninitialized((destination as (uint8*))[0..bytes]);
+    produces (destination as (uint8*))[0..bytes];
+    ensures result == destination;
+    ensures bytes::equal(destination as (uint8*), 0u64, old(source as (const uint8*)), 0u64, bytes);
+}
+```
+
+**Verified use:** [C++ importer tests](https://github.com/clicklang/click/blob/master/tests/cpp_import.rs)
+copy a byte through the implicit pointer conversions and check the required
+destination authority.
+
 ### `std::vector<unsigned char>`
 
 The `click::cpp::vector_state::vector_state` resource records an existing
