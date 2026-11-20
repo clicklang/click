@@ -7359,6 +7359,16 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
             describe_binary_contract_expression(left, "++", right)
         }
         ContractExpression::QualifiedC { name, .. } => name.clone(),
+        ContractExpression::MemoryLoad {
+            pointer,
+            value_type,
+            volatile,
+            pointee_constant,
+        } => format!(
+            "load<{}>({})",
+            typed_load_type_argument(*value_type, *volatile, *pointee_constant),
+            describe_contract_expression(pointer)
+        ),
         ContractExpression::CUnary { operand, lowered } => {
             let operand = describe_contract_expression(operand);
             match lowered {

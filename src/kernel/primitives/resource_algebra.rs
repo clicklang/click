@@ -12970,6 +12970,56 @@ pub(crate) fn memory_ranges_proven_overlapping_ignoring_separation(
     memory_ranges_proven_overlapping_with_separation(left, right, assumptions, false)
 }
 
+/// Entry checks the written ownership/view partition before it can use that
+/// partition as separation evidence. Align the two selected ranges using
+/// the checked pointer graph, including a retained additive address when a
+/// pointer names an interior address. Either endpoint can carry the spine.
+pub(in crate::kernel) fn contract_entry_memory_overlap(
+    owned: &MemoryRange,
+    viewed: &MemoryRange,
+    assumptions: &PureFactContext,
+) -> bool {
+    #[cfg(test)]
+    let _fast = crate::kernel::search::FastOperationScope::enter("contract entry view overlap");
+    let wide = owned.wide_bounds().is_some() || viewed.wide_bounds().is_some();
+    let overlap = |left: &MemoryRange, right: &MemoryRange| {
+        super::super::loans::protected_ranges_constant_overlap(left, right).unwrap_or_else(|| {
+            // Wide range comparison can consult memory-resolution separation
+            // while matching bases. Entry needs a common base established
+            // by the pointer graph alone, or exact byte geometry.
+            if wide && left.base() != right.base() {
+                return constant_memory_overlap(left, right) == Some(true);
+            }
+            memory_ranges_proven_overlapping_ignoring_separation(left, right, assumptions)
+        })
+    };
+    let compare = |left: &MemoryRange, right: &MemoryRange| {
+        [(left, right), (right, left)]
+            .into_iter()
+            .any(|(left, right)| {
+                overlap(left, right)
+                    || assumptions
+                        .equality_graph
+                        .pointer_at_base(right.base(), left.base())
+                        .is_some_and(|aligned| {
+                            aligned != *right.base() && overlap(left, &right.with_base(aligned))
+                        })
+            })
+    };
+    if wide
+        || (constant_memory_coordinates(owned).is_some()
+            && constant_memory_coordinates(viewed).is_some())
+    {
+        return compare(owned, viewed);
+    }
+    // The byte form keeps the selected start address available to the index
+    // when a symbolic range's bounds are written in different element units.
+    compare(
+        &byte_normalized_memory_range(owned),
+        &byte_normalized_memory_range(viewed),
+    )
+}
+
 /// Exact geometry in a shared coordinate system. None means the bases or
 /// bounds need other reasoning, not that the ranges are disjoint.
 pub(in crate::kernel) fn constant_memory_overlap(

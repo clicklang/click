@@ -49,7 +49,7 @@ pub(crate) struct StepLog {
     named_cells_origin: Option<NamedCellsOrigin>,
     first_base: SharedMemory,
     contiguous: bool,
-    preserves_external_array: bool,
+    preserves_external_storage: bool,
 }
 
 /// The exact source of a suffix that only names existing cells. The log
@@ -94,9 +94,9 @@ impl StepLog {
                 )
             },
         );
-        let preserves_external_array = previous
+        let preserves_external_storage = previous
             .as_ref()
-            .is_none_or(|old| old.preserves_external_array)
+            .is_none_or(|old| old.preserves_external_storage)
             && match step.as_ref() {
                 MemoryDerivation::Store { pointer, .. }
                 | MemoryDerivation::RepresentationWrite { pointer, .. } => {
@@ -112,7 +112,7 @@ impl StepLog {
             named_cells_origin,
             first_base,
             contiguous,
-            preserves_external_array,
+            preserves_external_storage,
         })
     }
 
@@ -225,6 +225,7 @@ impl PartialEq for PointReadWrite {
 #[derive(Debug)]
 struct PointNode {
     id: ProgramPointId,
+    function_entry: bool,
     /// The memory state the path had here.
     memory: SharedMemory,
     /// The steps the path took from its predecessor to here, newest first;
@@ -239,12 +240,12 @@ struct PointNode {
     /// predecessor chain owns the version points.
     point_read_index: PointReadIndex,
     /// Earliest recorded view in a suffix of effects disjoint from parameter
-    /// array storage. The normal block selector starts here.
-    external_array_start: Option<ExternalArrayStart>,
+    /// storage. Read selection can start here.
+    external_read_start: Option<ExternalReadStart>,
 }
 
 #[derive(Clone, Debug)]
-struct ExternalArrayStart {
+struct ExternalReadStart {
     point: Weak<PointNode>,
     view: IndexedView,
     memory: SharedMemory,
@@ -279,6 +280,7 @@ pub(crate) struct PathLink(Option<Arc<PointNode>>, IndexedView);
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum PointTransition {
+    FunctionEntry,
     Execution,
     Provisional,
     LoopHead,
@@ -330,6 +332,16 @@ impl PathLink {
             self.1 = IndexedView::Materialized(view.arena_id());
         }
         self
+    }
+
+    pub(super) fn function_entry(memory: SharedMemory) -> Self {
+        Self::reached_from(
+            memory,
+            None,
+            Box::new([]),
+            None,
+            PointTransition::FunctionEntry,
+        )
     }
 
     /// A new point reached from this one by `steps`, where the path has
@@ -396,12 +408,13 @@ impl PathLink {
         Self(
             Some(Arc::new(PointNode {
                 id,
+                function_entry: false,
                 memory,
                 steps: None,
                 predecessors,
                 split: split.filter(|point| point.0.is_some()).cloned(),
                 point_read_index,
-                external_array_start: None,
+                external_read_start: None,
             })),
             IndexedView::Recorded,
         )
@@ -419,7 +432,7 @@ impl PathLink {
             .into_iter()
             .filter(|point| point.0.is_some())
             .collect::<Box<[_]>>();
-        let external_array_start = external_array_start(&predecessors, steps.as_deref(), &memory);
+        let external_read_start = external_read_start(&predecessors, steps.as_deref(), &memory);
         Self(
             Some(Arc::new_cyclic(|version| {
                 let id = ProgramPointId::fresh();
@@ -433,12 +446,13 @@ impl PathLink {
                 );
                 PointNode {
                     id,
+                    function_entry: transition == PointTransition::FunctionEntry,
                     memory,
                     steps,
                     predecessors,
                     split: split.filter(|point| point.0.is_some()),
                     point_read_index,
-                    external_array_start,
+                    external_read_start,
                 }
             })),
             IndexedView::Recorded,
@@ -590,18 +604,18 @@ fn join_point_read_indexes(points: &[ProgramPoint]) -> Option<PointReadIndex> {
     Some(result)
 }
 
-fn external_array_start(
+fn external_read_start(
     predecessors: &[PathLink],
     steps: Option<&StepLog>,
     memory: &SharedMemory,
-) -> Option<ExternalArrayStart> {
+) -> Option<ExternalReadStart> {
     let [from @ PathLink(Some(point), view)] = predecessors else {
         return None;
     };
     let source = match steps {
         Some(log)
             if log.contiguous
-                && log.preserves_external_array
+                && log.preserves_external_storage
                 && log.produced.arena_id() == memory.arena_id() =>
         {
             &log.first_base
@@ -612,8 +626,8 @@ fn external_array_start(
     if !from.matches_indexed_view(source) {
         return None;
     }
-    point.external_array_start.clone().or_else(|| {
-        Some(ExternalArrayStart {
+    point.external_read_start.clone().or_else(|| {
+        Some(ExternalReadStart {
             point: Arc::downgrade(point),
             view: view.clone(),
             memory: source.clone(),
@@ -853,10 +867,15 @@ impl Ord for PathLink {
 pub struct ProgramPoint {
     memory: SharedMemory,
     path: PathLink,
-    // A read that has selected its actual version keys on that identity too.
-    // Other users are still migrating off the legacy memory key.
-    indexed_write: Option<Arc<MemoryDerivation>>,
-    exact_read: bool,
+    read: ReadSelection,
+}
+
+#[derive(Clone)]
+enum ReadSelection {
+    Legacy,
+    Exact,
+    Entry,
+    IndexedWrite(Arc<MemoryDerivation>),
 }
 
 impl std::fmt::Debug for ProgramPoint {
@@ -967,8 +986,7 @@ impl ProgramPoint {
         Self {
             memory: memory.clone(),
             path: PathLink::default(),
-            indexed_write: None,
-            exact_read: false,
+            read: ReadSelection::Legacy,
         }
     }
 
@@ -988,8 +1006,7 @@ impl ProgramPoint {
         Self {
             memory: shared,
             path,
-            indexed_write: None,
-            exact_read: false,
+            read: ReadSelection::Legacy,
         }
     }
 
@@ -1009,8 +1026,7 @@ impl ProgramPoint {
         Self {
             memory: shared,
             path,
-            indexed_write: None,
-            exact_read: false,
+            read: ReadSelection::Legacy,
         }
     }
 
@@ -1024,8 +1040,7 @@ impl ProgramPoint {
         Self {
             memory,
             path: self.path.clone(),
-            indexed_write: self.indexed_write.clone(),
-            exact_read: self.exact_read,
+            read: self.read.clone(),
         }
     }
 
@@ -1052,7 +1067,7 @@ impl ProgramPoint {
 
     /// The point in a read's key, whether selected exactly or as a version.
     pub(crate) fn read_version_id(&self) -> Option<ProgramPointId> {
-        if self.exact_read || self.indexed_write.is_some() {
+        if !matches!(self.read, ReadSelection::Legacy) {
             self.id()
         } else {
             None
@@ -1069,6 +1084,11 @@ impl ProgramPoint {
     /// Read applications use the execution version when known. Legacy views
     /// retain their existing read identity across pure memory materialization.
     pub(in crate::kernel) fn congruence_read_key(&self) -> ReadKey {
+        // Fold instantiation can still produce a bare read of the empty
+        // entry view. Share its comparison key while retaining the point.
+        if self.is_entry_read() {
+            return ReadKey::Memory(self.memory.read_identity());
+        }
         match self.read_version_id() {
             Some(id) => self.read_key_at(id),
             None => ReadKey::Memory(self.memory.read_identity()),
@@ -1098,17 +1118,17 @@ impl ProgramPoint {
     /// An exact read keeps the selected point even if another point has equal
     /// memory or supplies the cell's ordinary version.
     pub(in crate::kernel) fn for_exact_read(mut self) -> Self {
-        self.exact_read = true;
+        self.read = ReadSelection::Exact;
         self
     }
 
     pub(crate) fn is_exact_read(&self) -> bool {
-        self.exact_read && self.id().is_some()
+        matches!(self.read, ReadSelection::Exact) && self.id().is_some()
     }
 
     /// Skip the recorded suffix that is already known to leave the entire
-    /// parameter array alone. An unverified view cannot use the suffix.
-    pub(in crate::kernel) fn array_read_start(&self, block: &AddressBase) -> Self {
+    /// parameter storage alone. An unverified view cannot use the suffix.
+    pub(in crate::kernel) fn parameter_read_start(&self, block: &AddressBase) -> Self {
         if !external_storage(block) {
             return self.clone();
         }
@@ -1117,18 +1137,62 @@ impl ProgramPoint {
             .0
             .as_ref()
             .filter(|_| self.path.matches_indexed_view(&self.memory))
-            .and_then(|point| point.external_array_start.as_ref());
+            .and_then(|point| point.external_read_start.as_ref());
         if let Some(anchor) = anchor
             && let Some(point) = anchor.point.upgrade()
         {
             return Self {
                 memory: anchor.memory.clone(),
                 path: PathLink(Some(point), anchor.view.clone()),
-                indexed_write: None,
-                exact_read: false,
+                read: ReadSelection::Legacy,
             };
         }
         self.clone()
+    }
+
+    /// A scalar supplied by the caller can have a version even when no
+    /// store supplies a value. Use the recorded disjoint suffix only when
+    /// it reaches a verified function-entry view.
+    pub(crate) fn entry_integer_version(&self, pointer: &Address, kind: LoadKind) -> Option<Self> {
+        let direct_parameter = matches!(pointer.offset, AddressOffset::Constant(0))
+            || matches!(&pointer.offset, AddressOffset::Int32Scaled { value, byte_width: 4 }
+                if value.operand_view().variable().is_some());
+        if kind != LoadKind::Int32
+            || pointer.base != AddressBase::ExternalArgument
+            || !direct_parameter
+        {
+            return None;
+        }
+        let mut entry = self.parameter_read_start(&pointer.base);
+        let node = entry.path.0.as_ref()?;
+        // An empty entry view needs no projection to compare with an
+        // older producer that still carries a bare memory view.
+        if !node.function_entry
+            || !entry.path.matches_indexed_view(&entry.memory)
+            || entry.memory() != &SymbolicMemory::default()
+        {
+            return None;
+        }
+        entry.read = ReadSelection::Entry;
+        Some(entry)
+    }
+
+    pub(in crate::kernel) fn is_entry_read(&self) -> bool {
+        matches!(self.read, ReadSelection::Entry) && self.path.matches_indexed_view(&self.memory)
+    }
+
+    pub(crate) fn ordinary_typed_version(
+        &self,
+        pointer: &Address,
+        value_type: ProgramType,
+    ) -> Option<Self> {
+        self.indexed_typed_version(pointer, value_type).or_else(|| {
+            if value_type == ProgramType::Int32 {
+                self.entry_integer_version(pointer, LoadKind::Int32)
+            } else {
+                None
+            }
+        })
     }
 
     pub(crate) fn supports_indexed_version(pointer: &Address) -> bool {
@@ -1185,8 +1249,7 @@ impl ProgramPoint {
         Some(Self {
             memory: version.memory.clone(),
             path: PathLink(Some(version), IndexedView::Recorded),
-            indexed_write: Some(write.store.clone()),
-            exact_read: false,
+            read: ReadSelection::IndexedWrite(write.store.clone()),
         })
     }
 
@@ -1203,10 +1266,11 @@ impl ProgramPoint {
     }
 
     fn indexed_write(&self) -> Option<&MemoryDerivation> {
-        if self.path.matches_indexed_view(&self.memory) {
-            self.indexed_write.as_deref()
-        } else {
-            None
+        match &self.read {
+            ReadSelection::IndexedWrite(store) if self.path.matches_indexed_view(&self.memory) => {
+                Some(store)
+            }
+            _ => None,
         }
     }
 
@@ -1326,6 +1390,55 @@ mod tests {
         assert_eq!(
             joined.path_link().split().and_then(PathLink::id),
             start.program_point().id()
+        );
+    }
+
+    #[test]
+    fn an_entry_read_names_its_point_without_a_store_receipt() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let entry = ExecutionState::new().begin_function_entry_memory();
+        let other_entry = ExecutionState::new().begin_function_entry_memory();
+        let pointer = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Constant(0),
+        };
+        let select = |state: &ExecutionState| {
+            state
+                .program_point()
+                .ordinary_typed_version(&pointer, ProgramType::Int32)
+        };
+        let version = select(&entry).expect("an ordinary entry version");
+        assert_eq!(version.read_version_id(), entry.program_point().id());
+        assert!(version.indexed_integer_store_bits().is_none());
+        assert!(
+            entry
+                .program_point()
+                .ordinary_typed_version(&pointer, ProgramType::Int32Pointer)
+                .is_none()
+        );
+        assert_ne!(select(&other_entry).unwrap(), version);
+
+        let declared = entry
+            .clone()
+            .with_memory(entry.memory().clone().with_block("local:slot", 4));
+        let after_local_store = stored(&declared, 3);
+        assert_eq!(select(&after_local_store), Some(version.clone()));
+        let exact = after_local_store.program_point().for_exact_read();
+        assert!(exact.is_exact_read());
+        assert_ne!(exact, version);
+
+        let overwritten =
+            after_local_store
+                .clone()
+                .with_memory(after_local_store.memory().clone().store(
+                    pointer.clone(),
+                    ProgramValue::Int32(MachineTerm::constant(7)),
+                ));
+        let new_version = select(&overwritten).expect("the defining store is indexed");
+        assert_ne!(new_version, version);
+        assert_eq!(
+            new_version.indexed_integer_store_bits(),
+            Some(&MachineTerm::constant(7))
         );
     }
 

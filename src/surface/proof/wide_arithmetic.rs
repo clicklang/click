@@ -430,6 +430,7 @@ fn linear(expression: &ContractExpression) -> bool {
             | ContractExpression::BitwiseNot(..)
             | ContractExpression::Negate(..)
             | ContractExpression::CUnary { .. }
+            | ContractExpression::MemoryLoad { .. }
             | ContractExpression::If { .. }
     )
 }

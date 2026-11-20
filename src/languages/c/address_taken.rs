@@ -295,6 +295,9 @@ pub(crate) fn child_expressions<'a>(
         | CExpression::SizeOfUnion { .. }
         | CExpression::SizeOfType { .. } => {}
         CExpression::Call { arguments, .. } => expressions.extend(arguments.iter()),
+        CExpression::VariableArguments(arguments) => {
+            expressions.extend(arguments.iter().map(|(_, argument)| argument));
+        }
         CExpression::IndirectCall {
             function,
             arguments,

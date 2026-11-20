@@ -3,7 +3,8 @@
 //! A name is an alias, never a second resource. In particular, a copied name
 //! does not keep an authority alive after its owned occurrence is consumed.
 
-use super::{ExecutionState, Resource, ResourceFact, ResourceOccurrenceId, Variable};
+use super::MutexAuthorityId;
+use super::{ExecutionState, Resource, ResourceFact, ResourceOccurrenceId};
 use crate::persistent::PersistentMap;
 use std::cmp::Ordering;
 use std::hash::{Hash, Hasher};
@@ -22,8 +23,8 @@ pub(in crate::kernel) struct NamedMutexAuthorities {
     identity: u64,
     /// Binder-to-fact identity, unchanged by an exact occurrence transfer.
     logical_bindings_identity: u64,
-    aliases: PersistentMap<Variable, NamedMutexAuthority>,
-    occupied: PersistentMap<ResourceOccurrenceId, Variable>,
+    aliases: PersistentMap<MutexAuthorityId, NamedMutexAuthority>,
+    occupied: PersistentMap<ResourceOccurrenceId, MutexAuthorityId>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -60,7 +61,7 @@ impl NamedMutexAuthorities {
     /// an equal fact cannot revive a stale alias.
     pub(in crate::kernel) fn bind(
         &self,
-        binder: Variable,
+        binder: MutexAuthorityId,
         fact: &ResourceFact,
         state: &ExecutionState,
     ) -> Result<Self, NamedMutexAuthorityError> {
@@ -108,7 +109,7 @@ impl NamedMutexAuthorities {
     /// never proves ownership or licenses a mutex transition.
     pub(in crate::kernel) fn resolve<'a>(
         &'a self,
-        binder: Variable,
+        binder: MutexAuthorityId,
         state: &ExecutionState,
     ) -> Option<&'a ResourceFact> {
         let alias = self.aliases.get(&binder)?;
@@ -119,7 +120,7 @@ impl NamedMutexAuthorities {
     }
 
     #[cfg(test)]
-    pub(in crate::kernel) fn forget(&self, binder: Variable) -> Self {
+    pub(in crate::kernel) fn forget(&self, binder: MutexAuthorityId) -> Self {
         let Some(previous) = self.aliases.get(&binder) else {
             return self.clone();
         };
@@ -138,7 +139,7 @@ impl NamedMutexAuthorities {
     /// exactly; a guard from a later acquisition cannot inherit this name.
     pub(in crate::kernel) fn rebind_existing_exact(
         &self,
-        binder: Variable,
+        binder: MutexAuthorityId,
         expected: &ResourceFact,
         state: &ExecutionState,
     ) -> Result<Self, NamedMutexAuthorityError> {
@@ -205,7 +206,7 @@ impl NamedMutexAuthorities {
     /// the selected source and new uniquely owned occurrence.
     pub(in crate::kernel) fn transport_checked_use(
         &self,
-        binder: Variable,
+        binder: MutexAuthorityId,
         source: &ResourceFact,
         derived: &ResourceFact,
         state: &ExecutionState,
@@ -292,6 +293,11 @@ impl Hash for NamedMutexAuthorities {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::kernel::Variable;
+
+    fn name(number: u64) -> MutexAuthorityId {
+        MutexAuthorityId::from_variable(Variable(number))
+    }
     use crate::kernel::{Address, MutexIdentity, MutexUseIdentity, ResourceContext};
 
     fn authority(epoch: u64) -> ResourceFact {
@@ -318,41 +324,33 @@ mod tests {
         let mut state = ExecutionState::new();
         state.resources = ResourceContext::new().unchecked_with_fact(source.clone());
         let named = NamedMutexAuthorities::new()
-            .bind(Variable(1), &source, &state)
+            .bind(name(1), &source, &state)
             .unwrap();
         state.resources = ResourceContext::new().unchecked_with_fact(derived.clone());
         assert_eq!(
-            named.transport_checked_use(Variable(1), &other, &derived, &state),
+            named.transport_checked_use(name(1), &other, &derived, &state),
             Err(NamedMutexAuthorityError::MismatchedAuthority)
         );
         assert_eq!(
-            named.transport_checked_use(
-                Variable(1),
-                &source,
-                &use_authority(2, Variable(400)),
-                &state,
-            ),
+            named
+                .transport_checked_use(name(1), &source, &use_authority(2, Variable(400)), &state,),
             Err(NamedMutexAuthorityError::MismatchedAuthority)
         );
         assert_eq!(
-            named.transport_checked_use(
-                Variable(1),
-                &source,
-                &use_authority(1, Variable(401)),
-                &state,
-            ),
+            named
+                .transport_checked_use(name(1), &source, &use_authority(1, Variable(401)), &state,),
             Err(NamedMutexAuthorityError::MismatchedAuthority)
         );
         let moved = named
-            .transport_checked_use(Variable(1), &source, &derived, &state)
+            .transport_checked_use(name(1), &source, &derived, &state)
             .unwrap();
-        assert_eq!(moved.resolve(Variable(1), &state), Some(&derived));
+        assert_eq!(moved.resolve(name(1), &state), Some(&derived));
         assert_ne!(moved, named);
         assert!(!moved.same_logical_bindings(&named));
         state.resources = ResourceContext::new();
-        assert_eq!(moved.resolve(Variable(1), &state), None);
+        assert_eq!(moved.resolve(name(1), &state), None);
         assert_eq!(
-            named.transport_checked_use(Variable(1), &source, &derived, &state),
+            named.transport_checked_use(name(1), &source, &derived, &state),
             Err(NamedMutexAuthorityError::NotUniquelyOwned)
         );
     }
@@ -363,23 +361,23 @@ mod tests {
         let mut state = ExecutionState::new();
         let empty = NamedMutexAuthorities::new();
         assert_eq!(
-            empty.bind(Variable(1), &fact, &state),
+            empty.bind(name(1), &fact, &state),
             Err(NamedMutexAuthorityError::NotUniquelyOwned)
         );
         state.resources = ResourceContext::new().unchecked_with_fact(fact.clone());
-        let named = empty.bind(Variable(1), &fact, &state).unwrap();
-        assert_eq!(named.resolve(Variable(1), &state), Some(&fact));
-        assert_eq!(named.resolve(Variable(2), &state), None);
+        let named = empty.bind(name(1), &fact, &state).unwrap();
+        assert_eq!(named.resolve(name(1), &state), Some(&fact));
+        assert_eq!(named.resolve(name(2), &state), None);
         assert_eq!(
-            named.bind(Variable(2), &fact, &state),
+            named.bind(name(2), &fact, &state),
             Err(NamedMutexAuthorityError::AlreadyNamed)
         );
         assert_eq!(
-            named.bind(Variable(1), &fact, &state),
+            named.bind(name(1), &fact, &state),
             Err(NamedMutexAuthorityError::AlreadyBound)
         );
         assert_eq!(
-            named.bind(Variable(2), &authority(2), &state),
+            named.bind(name(2), &authority(2), &state),
             Err(NamedMutexAuthorityError::NotUniquelyOwned)
         );
         let token = ResourceFact::own(Resource::Token {
@@ -387,26 +385,24 @@ mod tests {
             arguments: vec![].into(),
         });
         assert_eq!(
-            named.bind(Variable(2), &token, &state),
+            named.bind(name(2), &token, &state),
             Err(NamedMutexAuthorityError::NotMutexAuthority)
         );
         state.resources = ResourceContext::new().unchecked_with_fact(fact.clone());
-        assert_eq!(named.resolve(Variable(1), &state), None);
-        assert_eq!(named.forget(Variable(1)).resolve(Variable(1), &state), None);
-        let rebound = named
-            .rebind_existing_exact(Variable(1), &fact, &state)
-            .unwrap();
-        assert_eq!(rebound.resolve(Variable(1), &state), Some(&fact));
+        assert_eq!(named.resolve(name(1), &state), None);
+        assert_eq!(named.forget(name(1)).resolve(name(1), &state), None);
+        let rebound = named.rebind_existing_exact(name(1), &fact, &state).unwrap();
+        assert_eq!(rebound.resolve(name(1), &state), Some(&fact));
         assert_ne!(named, rebound);
         assert!(named.same_logical_bindings(&rebound));
         let other_guard = authority(2);
         state.resources = ResourceContext::new().unchecked_with_fact(other_guard.clone());
         assert_eq!(
-            rebound.rebind_existing_exact(Variable(1), &other_guard, &state),
+            rebound.rebind_existing_exact(name(1), &other_guard, &state),
             Err(NamedMutexAuthorityError::MismatchedAuthority)
         );
         let different = NamedMutexAuthorities::new()
-            .bind(Variable(1), &other_guard, &state)
+            .bind(name(1), &other_guard, &state)
             .unwrap();
         assert!(!rebound.same_logical_bindings(&different));
     }

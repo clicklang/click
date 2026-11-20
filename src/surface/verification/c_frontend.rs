@@ -12,7 +12,7 @@ pub(super) fn link_c_units(
     verifying_sources: &[String],
     target: CTarget,
     thread_runtime: crate::languages::c::thread_runtime::CThreadRuntime,
-    external_functions: &[&str],
+    external_functions: &[(&str, bool)],
     c_sources: &ProgramSourceContext<'_>,
     build_storage: bool,
 ) -> Result<BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>, ClickError> {
@@ -64,6 +64,23 @@ pub(super) fn link_c_units(
             } else {
                 function_declarations.insert(name, (source_path, declaration));
             }
+        }
+    }
+    // A contract names a variadic function's variable arguments with its last
+    // parameter, `...args`, exactly when C declares the function with `...`.
+    for (name, variable_arguments) in external_functions {
+        let Some((source_path, declaration)) = function_declarations.get(name) else {
+            continue;
+        };
+        if declaration.is_variadic() && !variable_arguments {
+            return Err(ClickError::new(format!(
+                "`{name}` is declared with `...` in `{source_path}`; its `extern` contract names the variable arguments with a last parameter `...args`"
+            )));
+        }
+        if !declaration.is_variadic() && *variable_arguments {
+            return Err(ClickError::new(format!(
+                "`{name}` is not declared with `...` in `{source_path}`, so its `extern` contract has no `...args` parameter"
+            )));
         }
     }
 
@@ -646,7 +663,7 @@ pub(super) fn link_c_units(
         })?;
     }
 
-    for name in external_functions {
+    for (name, _) in external_functions {
         if parsed.contains_key(*name) {
             return Err(ClickError::new(format!(
                 "external function `{name}` is also defined by a `verifying` source"
