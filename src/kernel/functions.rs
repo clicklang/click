@@ -4175,11 +4175,12 @@ fn execute_verified_function_applications_with_suspension(
         match initialize_produced_memory(
             &entry_resource_state,
             &output_resource_state,
-            application,
+            interface,
             &mut post_state,
             &effective_assumptions,
             &mut facts,
             budget,
+            application.evidence.is_none() && application.representation_copy.is_none(),
         )? {
             Ok(()) => {}
             Err(error) => {
@@ -13009,14 +13010,13 @@ fn prepare_contract_resource_transfer_unexplained(
 fn initialize_produced_memory(
     entry_state: &ExecutionState,
     output_resource_state: &ExecutionState,
-    application: FunctionContractApplication<'_>,
+    interface: &FunctionContractInterface,
     post_state: &mut ExecutionState,
     assumptions: &PureFactContext,
     facts: &mut ExecutionFacts,
     budget: &mut ExecutionBudget,
+    opaque_output: bool,
 ) -> ExecutionResult<Result<(), RuntimeError>> {
-    let interface = application.interface;
-    let opaque_output = application.evidence.is_none() && application.representation_copy.is_none();
     let mut memory = post_state.memory().clone();
     let mut word_outputs = Vec::new();
     for resource in interface.resource_ensures() {
