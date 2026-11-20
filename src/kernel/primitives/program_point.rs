@@ -1276,6 +1276,20 @@ impl ProgramPoint {
         matches!(self.read, ReadSelection::Entry) && self.path.matches_indexed_view(&self.memory)
     }
 
+    /// A rewritten address keeps this entry only when ordinary lowering can
+    /// select it for the new cell too.
+    pub(in crate::kernel) fn entry_version_after_rewrite(
+        &self,
+        pointer: &Address,
+        kind: LoadKind,
+    ) -> Option<Self> {
+        if self.is_entry_read() {
+            self.entry_integer_version(pointer, kind)
+        } else {
+            None
+        }
+    }
+
     pub(crate) fn ordinary_typed_version(
         &self,
         pointer: &Address,

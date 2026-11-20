@@ -94,13 +94,14 @@ point. External arrays can use function entry after disjoint local
 declarations, stores and checked calls whose write set is one range in an automatic
 object. Declared predicates also retain that entry version for external
 `int32` array arguments, including when unfolding their bodies or raising
-a predicate fact.
+a predicate fact. Scalar fold instantiation keeps a selected entry point
+when the substituted index still uses the indexed entry selector.
 
 The remaining memory-state paths have production callers:
 
 | Path | Remaining caller |
 | --- | --- |
-| Equality | `AlgebraicTermNode::parameter_load` still produces projected-memory reads for generic parameter cells. `canonical_scalar_read` and the congruence key still bridge the scalar entry version to the empty view used by fold instantiation. |
+| Equality | `AlgebraicTermNode::parameter_load` still produces projected-memory reads for generic parameter cells. `canonical_scalar_read` and the congruence key still bridge scalar entry reads to the empty view for legacy producers, including computed fold endpoints, contract-entry resource quantities and loop-boundary reads. |
 | Observation | `canonical_cell_load` and `symbolic_load_value_unrecorded` still construct memory-state observations for bare memory producers and unsupported indexed types or addresses. |
 | Preservation | `array_ref_argument_point` uses the block version walk outside the indexed suffix, and the scalar naming walk also calls it. `last_same_named_cell` still follows recorded memory derivations for unsupported cells. |
 | Raising | `synthesize_at_memory` still raises function and predicate array arguments that carry a bare memory view. Legacy scalar and abstract reads use `RecordedStates::point_reading_load`. |
